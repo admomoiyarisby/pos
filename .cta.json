@@ -1,0 +1,34 @@
+{
+  "projectName": "omoiyari-pos",
+  "mode": "file-router",
+  "typescript": true,
+  "packageManager": "npm",
+  "includeExamples": true,
+  "tailwind": true,
+  "addOnOptions": {
+    "drizzle": {
+      "database": "postgresql"
+    }
+  },
+  "envVarValues": {
+    "CONVEX_DEPLOYMENT": "pleasant-gnu-635",
+    "VITE_CONVEX_URL": "https://pleasant-gnu-635.convex.cloud/"
+  },
+  "git": false,
+  "install": true,
+  "routerOnly": false,
+  "version": 1,
+  "framework": "react",
+  "chosenAddOns": [
+    "nitro",
+    "convex",
+    "compiler",
+    "drizzle",
+    "shadcn",
+    "table",
+    "tanstack-query",
+    "form",
+    "better-auth",
+    "resume"
+  ]
+}
