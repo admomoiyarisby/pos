@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getModifierGroups, createModifierGroup } from "#/lib/server/modifier-groups";
@@ -76,14 +77,11 @@ function ModifierGroupsPage() {
     };
     void createMutation.mutateAsync({ data });
   };
+  usePageTitle("Modifier Groups", "Kelola grup modifier & add-ons menu");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
-      <PageHeader
-        title="Modifier Groups"
-        description="Kelola grup modifier & add-ons menu"
-        action={{ label: "Tambah Group", onClick: () => setModalOpen(true) }}
-      />
+      <PageHeader action={{ label: "Tambah Group", onClick: () => setModalOpen(true) }} />
 
       <DataTable columns={columns} data={groups} keyExtractor={(r) => r.id} />
 

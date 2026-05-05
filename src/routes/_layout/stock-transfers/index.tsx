@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getStockTransfers, createStockTransfer, approveStockTransfer } from "#/lib/server/scm";
@@ -161,14 +162,11 @@ function TransferPage() {
       ),
     },
   ];
+  usePageTitle("Mutasi Stok", "Transfer antar cabang dengan approval");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
-      <PageHeader
-        title="Mutasi Stok"
-        description="Transfer antar cabang dengan approval"
-        action={{ label: "Ajukan Mutasi", onClick: () => setModalOpen(true) }}
-      />
+      <PageHeader action={{ label: "Ajukan Mutasi", onClick: () => setModalOpen(true) }} />
 
       <DataTable columns={columns} data={transfers} keyExtractor={(r) => r.id} />
 

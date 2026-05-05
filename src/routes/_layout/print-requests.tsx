@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import { Badge } from "#/components/ui/badge";
 
 export const Route = createFileRoute("/_layout/print-requests")({
@@ -19,14 +19,10 @@ function PrintRequestsPage() {
       createdAt: "2026-05-02 10:30",
     },
   ]);
+  usePageTitle("Permintaan Cetak Ulang", "Review dan approve permintaan re-print struk dari kasir");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
-      <PageHeader
-        title="Permintaan Cetak Ulang"
-        description="Review dan approve permintaan re-print struk dari kasir"
-      />
-
       <div className="rounded-md border">
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/50">

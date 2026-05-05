@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getVouchers, createVoucher } from "#/lib/server/vouchers";
@@ -95,14 +96,11 @@ function VouchersPage() {
     };
     void createMutation.mutateAsync({ data });
   };
+  usePageTitle("Manajemen Voucher", "Buat & kelola voucher promo untuk semua cabang");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
-      <PageHeader
-        title="Manajemen Voucher"
-        description="Buat & kelola voucher promo untuk semua cabang"
-        action={{ label: "Tambah Voucher", onClick: () => setModalOpen(true) }}
-      />
+      <PageHeader action={{ label: "Tambah Voucher", onClick: () => setModalOpen(true) }} />
 
       <DataTable columns={columns} data={vouchers} keyExtractor={(r) => r.id} />
 

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getStockLedger } from "#/lib/server/inventory";
 import type { Column } from "#/components/ui/DataTable";
@@ -80,6 +80,7 @@ function LedgerPage() {
     },
     { key: "notes", header: "Keterangan", render: (r) => r.notes ?? "-" },
   ];
+  usePageTitle("Kartu Stok", "Riwayat mutasi masuk dan keluar");
 
   return (
     <RoleGuard
@@ -91,8 +92,6 @@ function LedgerPage() {
         "central_kitchen",
       ]}
     >
-      <PageHeader title="Kartu Stok" description="Riwayat mutasi masuk dan keluar" />
-
       <DataTable columns={columns} data={ledger} keyExtractor={(r) => r.id} pageSize={15} />
 
       <div className="flex items-center justify-between mt-4">

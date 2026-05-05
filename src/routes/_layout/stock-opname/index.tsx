@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getStockOpnames, triggerStockOpname } from "#/lib/server/inventory";
@@ -106,6 +107,7 @@ function StockOpnamePage() {
       data: { branchId: selectedBranch, date: selectedDate },
     });
   };
+  usePageTitle("Stock Opname", "Verifikasi fisik stok per cabang");
 
   return (
     <RoleGuard
@@ -118,8 +120,6 @@ function StockOpnamePage() {
       ]}
     >
       <PageHeader
-        title="Stock Opname"
-        description="Verifikasi fisik stok per cabang"
         action={
           canTrigger ? { label: "Trigger SO", onClick: () => setTriggerModal(true) } : undefined
         }

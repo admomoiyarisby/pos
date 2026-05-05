@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getBrands, createBrand, updateBrand } from "#/lib/server/brands";
@@ -71,12 +72,11 @@ function BrandsPage() {
       void createMutation.mutateAsync({ data });
     }
   };
+  usePageTitle("Manajemen Brand", "Kelola brand / merek menu");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <PageHeader
-        title="Manajemen Brand"
-        description="Kelola brand / merek menu"
         action={{
           label: "Tambah Brand",
           onClick: () => {

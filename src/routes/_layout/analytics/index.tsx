@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import { getSalesAnalytics } from "#/lib/server/finance";
 import { getBranches } from "#/lib/server/branches";
 import {
@@ -58,12 +58,11 @@ function AnalyticsPage() {
       qty: t.totalQty,
       revenue: t.totalRevenue,
     })) ?? [];
+  usePageTitle("Dashboard Analytics", "Analisis penjualan & performa");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
       <div className="space-y-6">
-        <PageHeader title="Dashboard Analytics" description="Analisis penjualan & performa" />
-
         {/* Filters */}
         <div className="flex items-center gap-3">
           <select

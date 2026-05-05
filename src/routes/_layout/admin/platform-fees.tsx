@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getPlatformFees, updatePlatformFee } from "#/lib/server/platform-fees";
@@ -70,11 +70,10 @@ function PlatformFeesPage() {
     };
     void updateMutation.mutateAsync({ data });
   };
+  usePageTitle("Platform Fees", "Atur MDR dan biaya tetap per channel");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
-      <PageHeader title="Platform Fees" description="Atur MDR dan biaya tetap per channel" />
-
       <DataTable
         columns={columns}
         data={fees}

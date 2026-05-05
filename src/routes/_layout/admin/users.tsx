@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getUsers, createUser, updateUser } from "#/lib/server/users";
@@ -122,12 +123,11 @@ function UsersPage() {
       void createMutation.mutateAsync({ data });
     }
   };
+  usePageTitle("Manajemen User", "Kelola pengguna sistem dan PIN kasir");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
       <PageHeader
-        title="Manajemen User"
-        description="Kelola pengguna sistem dan PIN kasir"
         action={{
           label: "Tambah User",
           onClick: () => {

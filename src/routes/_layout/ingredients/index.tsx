@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getIngredients, createIngredient } from "#/lib/server/ingredients";
@@ -119,14 +120,11 @@ function IngredientsPage() {
     };
     void createMutation.mutateAsync({ data });
   };
+  usePageTitle("Bahan Baku", "Kelola master bahan baku, semi-finished, dan finished goods");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "central_kitchen"]}>
-      <PageHeader
-        title="Bahan Baku"
-        description="Kelola master bahan baku, semi-finished, dan finished goods"
-        action={{ label: "Tambah Bahan", onClick: () => setModalOpen(true) }}
-      />
+      <PageHeader action={{ label: "Tambah Bahan", onClick: () => setModalOpen(true) }} />
 
       <DataTable columns={columns} data={ingredients} keyExtractor={(r) => r.id} />
 

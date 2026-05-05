@@ -23,7 +23,7 @@ import { z } from "zod";
 
 export const getPosMenu = createServerFn({ method: "GET" })
   .inputValidator(
-    (data: { branchId: string; brandId?: string; category?: string; search?: string }) => data,
+    (data: { branchId?: string; brandId?: string; category?: string; search?: string }) => data,
   )
   .handler(async ({ data }) => {
     await requireAuth();
@@ -198,6 +198,8 @@ export const createOrder = createServerFn({ method: "POST" })
       orderCode?: string;
       items: z.infer<typeof orderItemInput>[];
       voucherCode?: string;
+      voucherDiscount?: number;
+      taxAmount?: number;
       paymentMethod?: string;
       shiftId?: string;
     }) => data,
@@ -208,7 +210,8 @@ export const createOrder = createServerFn({ method: "POST" })
     // Calculate totals
     let subtotal = 0;
     let totalCogs = 0;
-    const voucherDiscount = 0;
+    const voucherDiscount = data.voucherDiscount ?? 0;
+    const taxAmount = data.taxAmount ?? 0;
 
     // Process each item
     for (const item of data.items) {
@@ -236,8 +239,7 @@ export const createOrder = createServerFn({ method: "POST" })
       }
     }
 
-    // Calculate tax and totals (simplified for now)
-    const taxAmount = 0;
+    // Calculate totals
     const totalAmount = subtotal - voucherDiscount + taxAmount;
 
     // Get platform fee

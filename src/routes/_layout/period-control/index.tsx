@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getPeriods, openPeriod, closePeriod } from "#/lib/server/finance";
@@ -104,13 +105,12 @@ function PeriodControlPage() {
       ),
     },
   ];
+  usePageTitle("Period Control", "Kendali pembukaan & penutupan buku fiskal");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
       <div className="space-y-6">
         <PageHeader
-          title="Period Control"
-          description="Kendali pembukaan & penutupan buku fiskal"
           action={
             openPeriodCount === 0
               ? { label: "Buka Periode", onClick: () => setOpenModal(true) }

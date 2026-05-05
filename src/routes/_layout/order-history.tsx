@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getOrders } from "#/lib/server/pos";
@@ -96,14 +96,10 @@ function OrderHistoryPage() {
     queryFn: () => getOrders({ data: {} }),
     initialData: initial,
   });
+  usePageTitle("Riwayat Pemesanan", "Daftar lengkap pesanan dari semua cabang");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
-      <PageHeader
-        title="Riwayat Pemesanan"
-        description="Daftar lengkap pesanan dari semua cabang"
-      />
-
       <DataTable
         columns={columns}
         data={orders}

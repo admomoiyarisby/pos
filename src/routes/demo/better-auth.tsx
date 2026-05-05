@@ -53,8 +53,9 @@ function BetterAuthDemo() {
           </div>
 
           <button
-            onClick={() => {
-              void authClient.signOut();
+            onClick={async () => {
+              await authClient.signOut();
+              window.location.href = "/login";
             }}
             className="w-full h-9 px-4 text-sm font-medium border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
           >

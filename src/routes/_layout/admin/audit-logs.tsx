@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getAuditLogs } from "#/lib/server/system";
@@ -112,12 +112,11 @@ function AuditLogsPage() {
       ),
     },
   ];
+  usePageTitle("Audit Logs", "Database-level audit trail perubahan data");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
       <div className="space-y-6">
-        <PageHeader title="Audit Logs" description="Database-level audit trail perubahan data" />
-
         {/* Filters */}
         <div className="flex items-center gap-3">
           <input

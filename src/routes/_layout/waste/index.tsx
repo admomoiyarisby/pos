@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getWasteEntries, createWasteEntry } from "#/lib/server/waste";
@@ -101,6 +102,7 @@ function WastePage() {
     };
     void createMutation.mutateAsync({ data });
   };
+  usePageTitle("Waste", "Pencatatan barang rusak, jatah makan, dan spoiled");
 
   return (
     <RoleGuard
@@ -112,11 +114,7 @@ function WastePage() {
         "central_kitchen",
       ]}
     >
-      <PageHeader
-        title="Waste"
-        description="Pencatatan barang rusak, jatah makan, dan spoiled"
-        action={{ label: "Input Waste", onClick: () => setModalOpen(true) }}
-      />
+      <PageHeader action={{ label: "Input Waste", onClick: () => setModalOpen(true) }} />
 
       <DataTable columns={columns} data={entries} keyExtractor={(r) => r.id} pageSize={15} />
 

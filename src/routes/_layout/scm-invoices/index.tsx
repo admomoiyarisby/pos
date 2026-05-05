@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getSCMInvoices, generateSCMInvoice, paySCMInvoice } from "#/lib/server/scm";
 import { getDeliveryNotes } from "#/lib/server/scm";
@@ -120,14 +121,11 @@ function SCMInvoicePage() {
       ),
     },
   ];
+  usePageTitle("Invoice SCM", "Invoice berdasarkan penerimaan barang");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
-      <PageHeader
-        title="Invoice SCM"
-        description="Invoice berdasarkan penerimaan barang"
-        action={{ label: "Buat Invoice", onClick: () => setGenerateModal(true) }}
-      />
+      <PageHeader action={{ label: "Buat Invoice", onClick: () => setGenerateModal(true) }} />
 
       <DataTable columns={columns} data={invoices} keyExtractor={(r) => r.id} />
 

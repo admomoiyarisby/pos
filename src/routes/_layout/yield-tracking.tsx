@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getYieldConversions, createYieldConversion } from "#/lib/server/yield";
@@ -152,15 +153,12 @@ function YieldTrackingPage() {
       ),
     },
   ];
+  usePageTitle("Yield Tracking", "Tracking produksi & yield bahan mentah ke matang");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "central_kitchen"]}>
       <div className="space-y-6">
-        <PageHeader
-          title="Yield Tracking"
-          description="Tracking produksi & yield bahan mentah ke matang"
-          action={{ label: "Input Produksi", onClick: () => setModalOpen(true) }}
-        />
+        <PageHeader action={{ label: "Input Produksi", onClick: () => setModalOpen(true) }} />
 
         {result && (
           <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">

@@ -27,6 +27,20 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
+  notFoundComponent: () => (
+    <div className="flex h-screen items-center justify-center bg-background">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold text-foreground">404</h1>
+        <p className="mt-2 text-muted-foreground">Halaman tidak ditemukan</p>
+        <a
+          href="/"
+          className="mt-6 inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
+        >
+          Kembali ke Beranda
+        </a>
+      </div>
+    </div>
+  ),
   loader: async () => {
     const user = await getCurrentUser();
     return { user };

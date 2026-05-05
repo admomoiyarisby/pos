@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import { getBrokenStock } from "#/lib/server/waste";
 import { Badge } from "#/components/ui/badge";
 
@@ -21,14 +21,10 @@ function BrokenStockPage() {
     queryFn: () => getBrokenStock({ data: {} }),
     initialData: initial,
   });
+  usePageTitle("Broken Stock", "Audit visual waste kategori Biaya Operasional");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
-      <PageHeader
-        title="Broken Stock"
-        description="Audit visual waste kategori Biaya Operasional"
-      />
-
       <div className="grid grid-cols-2 gap-6">
         {/* Left: Broken Stock List */}
         <div className="space-y-3">

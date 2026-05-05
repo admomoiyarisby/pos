@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getPurchaseOrders } from "#/lib/server/scm";
 import type { Column } from "#/components/ui/DataTable";
@@ -88,9 +88,10 @@ function POPage() {
     },
   ];
 
+  usePageTitle("Purchase Order", "Order ke supplier / pusat");
+
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
-      <PageHeader title="Purchase Order" description="Order ke supplier / pusat" />
       <DataTable columns={columns} data={pos} keyExtractor={(r) => r.id} />
     </RoleGuard>
   );

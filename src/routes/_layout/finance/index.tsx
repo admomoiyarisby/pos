@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import Modal from "#/components/ui/Modal";
 import { getFinanceSummary, createManualRevenue, createChannelRevenue } from "#/lib/server/finance";
 import { getBranches } from "#/lib/server/branches";
@@ -95,15 +96,12 @@ function FinancePage() {
       color: summary.grossProfit >= 0 ? "text-emerald-600" : "text-red-500",
     },
   ];
+  usePageTitle("Finance & Reconciliation", "Input uang cair & kalkulasi profitabilitas");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
       <div className="space-y-6">
-        <PageHeader
-          title="Finance & Reconciliation"
-          description="Input uang cair & kalkulasi profitabilitas"
-          action={{ label: "Input Revenue", onClick: () => setModalOpen(true) }}
-        />
+        <PageHeader action={{ label: "Input Revenue", onClick: () => setModalOpen(true) }} />
 
         {/* Date Range Filter */}
         <div className="flex items-center gap-3">

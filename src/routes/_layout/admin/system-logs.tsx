@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getSystemLogs } from "#/lib/server/system";
 import type { Column } from "#/components/ui/DataTable";
@@ -81,11 +81,11 @@ function SystemLogsPage() {
     { key: "userName", header: "User", width: "w-32", render: (r) => r.userName ?? "system" },
   ];
 
+  usePageTitle("System Logs", "Log operasional sistem");
+
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
       <div className="space-y-6">
-        <PageHeader title="System Logs" description="Log operasional sistem" />
-
         <div className="flex items-center gap-3">
           <select
             value={statusFilter}

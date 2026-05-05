@@ -1,12 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import Modal from "#/components/ui/Modal";
 import { getPosMenu, createOrder, getShiftStatus, openShift, closeShift } from "#/lib/server/pos";
 import { getBrands } from "#/lib/server/brands";
-import { Search, ShoppingCart, Trash2, Plus, Minus, X, Clock } from "lucide-react";
+import { getBranches } from "#/lib/server/branches";
+import { getVouchers } from "#/lib/server/vouchers";
+import {
+  Search,
+  ShoppingCart,
+  Trash2,
+  Plus,
+  Minus,
+  X,
+  Clock,
+  TicketPercent,
+  Percent,
+} from "lucide-react";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import { Badge } from "#/components/ui/badge";
 
 interface CartItem {
@@ -38,6 +51,17 @@ interface MenuItem {
   modifierGroups: ModifierGroup[];
 }
 
+interface Voucher {
+  id: string;
+  code: string;
+  description: string;
+  discountType: "percentage" | "fixed";
+  discountValue: number;
+  minOrder: number;
+  validUntil: Date;
+  isActive: boolean;
+}
+
 const categories = [
   { key: "", label: "Semua" },
   { key: "makanan", label: "Makanan" },
@@ -56,16 +80,27 @@ const channels = [
 export const Route = createFileRoute("/_layout/pos")({
   component: PosPage,
   loader: async () => {
-    const brands = await getBrands({ data: {} });
-    return { brands };
+    const [brandsData, branchesData, vouchersData] = await Promise.all([
+      getBrands({ data: {} }),
+      getBranches({ data: {} }),
+      getVouchers({ data: { activeOnly: true } }),
+    ]);
+    return { brands: brandsData, branches: branchesData, vouchers: vouchersData };
   },
 });
 
 function PosPage() {
+  usePageTitle("POS", "Point of Sale");
+
   const { user } = useAuth();
-  const { brands } = Route.useLoaderData();
+  const { brands, branches: allBranches, vouchers: allVouchers } = Route.useLoaderData();
   const queryClient = useQueryClient();
-  const branchId = user?.branchId ?? "";
+
+  const isAdmin = user?.role === "super_admin" || user?.role === "admin_pusat";
+  const userBranch = allBranches.find((b) => b.id === user?.branchId);
+
+  // Active branch: branch_admin uses their assigned branch, admin can pick
+  const [activeBranchId, setActiveBranchId] = useState(user?.branchId ?? allBranches[0]?.id ?? "");
 
   const [selectedBrandId, setSelectedBrandId] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
@@ -76,6 +111,12 @@ function PosPage() {
   const [orderCode, setOrderCode] = useState("");
   const [, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Cash");
+
+  // Voucher state
+  const [selectedVoucher, setSelectedVoucher] = useState<Voucher | null>(null);
+
+  // PPN state
+  const [ppnEnabled, setPpnEnabled] = useState(false);
 
   const [modifierModal, setModifierModal] = useState<{
     item: MenuItem;
@@ -90,24 +131,24 @@ function PosPage() {
     { id: string; total: number; items: string; time: string }[]
   >([]);
 
+  // Menu query — always enabled, uses activeBranchId for context but getPosMenu doesn't filter by it
   const { data: menuItems = [] } = useQuery({
-    queryKey: ["pos-menu", branchId, selectedBrandId, selectedCategory, searchQuery],
+    queryKey: ["pos-menu", selectedBrandId, selectedCategory, searchQuery],
     queryFn: () =>
       getPosMenu({
         data: {
-          branchId,
           brandId: selectedBrandId || undefined,
           category: selectedCategory || undefined,
           search: searchQuery || undefined,
         },
       }),
-    enabled: !!branchId,
   });
 
+  // Shift query
   const { data: activeShift } = useQuery({
-    queryKey: ["shift", branchId, user?.id],
-    queryFn: () => getShiftStatus({ data: { branchId, userId: user?.id ?? "" } }),
-    enabled: !!branchId && !!user?.id,
+    queryKey: ["shift", activeBranchId, user?.id],
+    queryFn: () => getShiftStatus({ data: { branchId: activeBranchId, userId: user?.id ?? "" } }),
+    enabled: !!activeBranchId && !!user?.id,
   });
 
   const createOrderMutation = useMutation({
@@ -117,7 +158,8 @@ function PosPage() {
       setCustomerName("");
       setOrderCode("");
       setNotes("");
-      // Add to last orders
+      setSelectedVoucher(null);
+      setPpnEnabled(false);
       setLastOrders((prev) => [
         {
           id: order.id,
@@ -148,6 +190,33 @@ function PosPage() {
       setActualCash("");
     },
   });
+
+  // ─── Cart calculations ───
+
+  const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  const voucherDiscount = useMemo(() => {
+    if (!selectedVoucher) return 0;
+    const meetsMinOrder = cartTotal >= selectedVoucher.minOrder;
+    if (!meetsMinOrder) return 0;
+
+    if (selectedVoucher.discountType === "percentage") {
+      return Math.round((cartTotal * selectedVoucher.discountValue) / 100);
+    }
+    return selectedVoucher.discountValue;
+  }, [selectedVoucher, cartTotal]);
+
+  const subtotalAfterDiscount = Math.max(0, cartTotal - voucherDiscount);
+
+  const taxAmount = useMemo(() => {
+    if (!ppnEnabled) return 0;
+    return Math.round(subtotalAfterDiscount * 0.11);
+  }, [ppnEnabled, subtotalAfterDiscount]);
+
+  const finalTotal = subtotalAfterDiscount + taxAmount;
+
+  // ─── Handlers ───
 
   const handleAddToCart = (item: MenuItem) => {
     if (item.modifierGroups.length > 0) {
@@ -202,8 +271,9 @@ function PosPage() {
     setCart(cart.filter((_, i) => i !== idx));
   };
 
-  const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const toggleVoucher = (v: Voucher) => {
+    setSelectedVoucher((prev) => (prev?.id === v.id ? null : v));
+  };
 
   const handleCheckout = () => {
     if (cart.length === 0 || !activeShift) return;
@@ -219,13 +289,17 @@ function PosPage() {
       })),
       notes: c.notes,
     }));
+
     void createOrderMutation.mutateAsync({
       data: {
-        branchId,
+        branchId: activeBranchId,
         channel: channel as "Dine-in" | "Gofood" | "Grabfood" | "ShopeeFood",
         customerName: channel === "Dine-in" ? customerName : undefined,
         orderCode: channel !== "Dine-in" ? orderCode : undefined,
         items,
+        voucherCode: selectedVoucher?.code,
+        voucherDiscount: voucherDiscount > 0 ? voucherDiscount : undefined,
+        taxAmount: taxAmount > 0 ? taxAmount : undefined,
         paymentMethod,
         shiftId: activeShift.id,
       },
@@ -236,7 +310,7 @@ function PosPage() {
     if (!cashFloat || !user) return;
     void openShiftMutation.mutateAsync({
       data: {
-        branchId,
+        branchId: activeBranchId,
         userId: user.id,
         cashFloat: Number(cashFloat),
       },
@@ -254,12 +328,32 @@ function PosPage() {
   };
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "branch_admin"]}>
+    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "branch_admin"]}>
       <div className="flex h-[calc(100vh-3rem)] -m-6">
         {/* Main Content */}
         <div className="flex-1 flex flex-col p-6 overflow-hidden">
           {/* Top Bar */}
-          <div className="flex items-center gap-3 mb-4 shrink-0">
+          <div className="flex items-center gap-3 mb-4 shrink-0 flex-wrap">
+            {/* Branch selector for admin, badge for branch_admin */}
+            {isAdmin ? (
+              <select
+                value={activeBranchId}
+                onChange={(e) => setActiveBranchId(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm font-medium"
+              >
+                {allBranches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 text-sm font-medium">
+                <span className="text-base">📍</span>
+                {userBranch?.name ?? "Unknown"}
+              </div>
+            )}
+
             <select
               value={channel}
               onChange={(e) => setChannel(e.target.value)}
@@ -427,7 +521,9 @@ function PosPage() {
                         </div>
                       )}
                       {item.notes && (
-                        <p className="text-xs text-muted-foreground mt-1 italic">"{item.notes}"</p>
+                        <p className="text-xs text-muted-foreground mt-1 italic">
+                          &quot;{item.notes}&quot;
+                        </p>
                       )}
                     </div>
                     <button
@@ -463,10 +559,90 @@ function PosPage() {
           </div>
 
           <div className="border-t p-4 space-y-3">
+            {/* Voucher Section */}
+            {allVouchers.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <TicketPercent className="h-3.5 w-3.5" />
+                  <span className="font-semibold">Voucher</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {allVouchers.map((v) => {
+                    const meetsMinOrder = cartTotal >= v.minOrder;
+                    const isSelected = selectedVoucher?.id === v.id;
+                    return (
+                      <button
+                        key={v.id}
+                        onClick={() => toggleVoucher(v)}
+                        disabled={!meetsMinOrder}
+                        className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs transition-all ${
+                          isSelected
+                            ? "border-primary bg-primary/10 text-primary font-semibold"
+                            : meetsMinOrder
+                              ? "hover:border-primary/50 hover:bg-muted"
+                              : "opacity-40 cursor-not-allowed"
+                        }`}
+                        title={
+                          !meetsMinOrder
+                            ? `Min. order Rp ${v.minOrder.toLocaleString("id-ID")}`
+                            : undefined
+                        }
+                      >
+                        <Percent className="h-3 w-3" />
+                        <span>{v.code}</span>
+                        <span className="text-muted-foreground">
+                          {v.discountType === "percentage"
+                            ? `-${v.discountValue}%`
+                            : `-Rp${v.discountValue.toLocaleString("id-ID")}`}
+                        </span>
+                        {isSelected && <span className="ml-0.5 text-primary">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Subtotal */}
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Subtotal</span>
               <span className="font-medium">Rp {cartTotal.toLocaleString("id-ID")}</span>
             </div>
+
+            {/* Voucher Discount */}
+            {voucherDiscount > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Diskon ({selectedVoucher?.code})</span>
+                <span className="font-medium text-emerald-600">
+                  -Rp {voucherDiscount.toLocaleString("id-ID")}
+                </span>
+              </div>
+            )}
+
+            {/* PPN Toggle */}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ppnEnabled}
+                  onChange={(e) => setPpnEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                PPN 11%
+              </label>
+              {taxAmount > 0 && (
+                <span className="text-sm text-muted-foreground">
+                  +Rp {taxAmount.toLocaleString("id-ID")}
+                </span>
+              )}
+            </div>
+
+            {/* Total */}
+            <div className="flex justify-between text-sm font-bold border-t pt-2">
+              <span>Total</span>
+              <span>Rp {finalTotal.toLocaleString("id-ID")}</span>
+            </div>
+
             <div className="space-y-2">
               <label className="text-xs text-muted-foreground">Metode Pembayaran</label>
               <select
@@ -553,7 +729,13 @@ function PosPage() {
           {activeShift && (
             <div className="rounded-md bg-muted p-3 text-sm space-y-1">
               <p>Modal Awal: Rp {activeShift.cashFloat.toLocaleString("id-ID")}</p>
-              <p>Shift dimulai: {new Date(activeShift.startTime).toLocaleTimeString("id-ID")}</p>
+              <p>
+                Shift dimulai:{" "}
+                {new Date(activeShift.startTime).toLocaleTimeString("id-ID", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
             </div>
           )}
           <div className="space-y-2">
@@ -611,13 +793,11 @@ function ModifierModal({
       setSelected(selected.filter((s) => !(s.groupId === groupId && s.modifierId === modifierId)));
     } else {
       if (maxSelection === 1) {
-        // Single selection - replace all in group
         setSelected([
           ...selected.filter((s) => s.groupId !== groupId),
           { groupId, modifierId, name, price },
         ]);
       } else {
-        // Multi selection
         if (existing.length < maxSelection) {
           setSelected([...selected, { groupId, modifierId, name, price }]);
         }

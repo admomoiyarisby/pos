@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getInventory } from "#/lib/server/inventory";
 import { useAuth } from "#/lib/auth-context";
@@ -87,6 +87,7 @@ function InventoryPage() {
   if (showBranchColumn) {
     columns.splice(2, 0, { key: "branchName", header: "Cabang", width: "w-40" });
   }
+  usePageTitle("Stok Saat Ini", "Real-time inventory per cabang");
 
   return (
     <RoleGuard
@@ -98,8 +99,6 @@ function InventoryPage() {
         "central_kitchen",
       ]}
     >
-      <PageHeader title="Stok Saat Ini" description="Real-time inventory per cabang" />
-
       <div className="flex items-center gap-3 mb-4">
         <div className="flex gap-1.5">
           {(["", "Fresh", "Dry", "Packaging"] as const).map((cat) => (

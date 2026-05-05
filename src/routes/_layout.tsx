@@ -1,6 +1,7 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useAuth } from "#/lib/auth-context";
 import AppShell from "#/components/AppShell";
+import { PageTitleProvider } from "#/components/PageTitleProvider";
 
 export const Route = createFileRoute("/_layout")({
   component: LayoutComponent,
@@ -21,5 +22,9 @@ function LayoutComponent() {
     return <Navigate to="/login" />;
   }
 
-  return <AppShell userRole={user.role} />;
+  return (
+    <PageTitleProvider>
+      <AppShell userRole={user.role} />
+    </PageTitleProvider>
+  );
 }
