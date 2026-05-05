@@ -9,6 +9,8 @@ import type { AuthUser } from "../lib/auth-context";
 
 import appCss from "../styles.css?url";
 
+//
+
 interface MyRouterContext {
   queryClient: QueryClient;
   user: AuthUser | null;
