@@ -10,10 +10,7 @@
       "database": "postgresql"
     }
   },
-  "envVarValues": {
-    "CONVEX_DEPLOYMENT": "pleasant-gnu-635",
-    "VITE_CONVEX_URL": "https://pleasant-gnu-635.convex.cloud/"
-  },
+  "envVarValues": {},
   "git": false,
   "install": true,
   "routerOnly": false,
@@ -21,7 +18,6 @@
   "framework": "react",
   "chosenAddOns": [
     "nitro",
-    "convex",
     "compiler",
     "drizzle",
     "shadcn",

@@ -1,7 +1,6 @@
 import { HeadContent, Scripts, createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
-import ConvexProvider from "../integrations/convex/provider";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import { AuthProvider } from "../lib/auth-context";
 import { getCurrentUser } from "../lib/server/auth";
@@ -43,21 +42,19 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere]">
-        <ConvexProvider>
-          <AuthProvider user={user ?? null} isLoading={false}>
-            <Outlet />
-            <TanStackDevtools
-              config={{ position: "bottom-right" }}
-              plugins={[
-                {
-                  name: "Tanstack Router",
-                  render: <TanStackRouterDevtoolsPanel />,
-                },
-                TanStackQueryDevtools,
-              ]}
-            />
-          </AuthProvider>
-        </ConvexProvider>
+        <AuthProvider user={user ?? null} isLoading={false}>
+          <Outlet />
+          <TanStackDevtools
+            config={{ position: "bottom-right" }}
+            plugins={[
+              {
+                name: "Tanstack Router",
+                render: <TanStackRouterDevtoolsPanel />,
+              },
+              TanStackQueryDevtools,
+            ]}
+          />
+        </AuthProvider>
         <Scripts />
       </body>
     </html>

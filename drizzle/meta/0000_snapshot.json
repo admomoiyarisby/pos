@@ -1,5 +1,5 @@
 {
-  "id": "33bce0ea-8740-4d42-83c2-f1934573d5dc",
+  "id": "062b9ae2-a9db-4927-ae31-ed1990080a51",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -5491,8 +5491,7 @@
           "type": "user_role",
           "typeSchema": "public",
           "primaryKey": false,
-          "notNull": true,
-          "default": null
+          "notNull": true
         },
         "pin": {
           "name": "pin",
