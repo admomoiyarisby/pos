@@ -41,7 +41,7 @@ function RootDocument() {
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
       </head>
-      <body className="font-sans antialiased [overflow-wrap:anywhere]">
+      <body className="font-sans antialiased wrap-anywhere">
         <AuthProvider user={user ?? null} isLoading={false}>
           <Outlet />
           <TanStackDevtools
