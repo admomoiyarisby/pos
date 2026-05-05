@@ -28,7 +28,6 @@
     "table",
     "tanstack-query",
     "form",
-    "better-auth",
-    "resume"
+    "better-auth"
   ]
 }

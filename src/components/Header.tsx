@@ -1,7 +1,6 @@
-import { Link } from '@tanstack/react-router'
-import BetterAuthHeader from '../integrations/better-auth/header-user.tsx'
-import ResumeAssistantButton from './ResumeAssistantButton'
-import ThemeToggle from './ThemeToggle'
+import { Link } from "@tanstack/react-router";
+import BetterAuthHeader from "../integrations/better-auth/header-user.tsx";
+import ThemeToggle from "./ThemeToggle";
 
 export default function Header() {
   return (
@@ -47,24 +46,15 @@ export default function Header() {
             </svg>
           </a>
           <BetterAuthHeader />
-          <ResumeAssistantButton />
 
           <ThemeToggle />
         </div>
 
         <div className="order-3 flex w-full flex-wrap items-center gap-x-4 gap-y-1 pb-1 text-sm font-semibold sm:order-2 sm:w-auto sm:flex-nowrap sm:pb-0">
-          <Link
-            to="/"
-            className="nav-link"
-            activeProps={{ className: 'nav-link is-active' }}
-          >
+          <Link to="/" className="nav-link" activeProps={{ className: "nav-link is-active" }}>
             Home
           </Link>
-          <Link
-            to="/about"
-            className="nav-link"
-            activeProps={{ className: 'nav-link is-active' }}
-          >
+          <Link to="/about" className="nav-link" activeProps={{ className: "nav-link is-active" }}>
             About
           </Link>
           <a
@@ -76,9 +66,7 @@ export default function Header() {
             Docs
           </a>
           <details className="relative w-full sm:w-auto">
-            <summary className="nav-link list-none cursor-pointer">
-              Demos
-            </summary>
+            <summary className="nav-link list-none cursor-pointer">Demos</summary>
             <div className="mt-2 min-w-56 rounded-xl border border-[var(--line)] bg-[var(--header-bg)] p-2 shadow-lg sm:absolute sm:right-0">
               <a
                 href="/demo/convex"
@@ -127,5 +115,5 @@ export default function Header() {
         </div>
       </nav>
     </header>
-  )
+  );
 }

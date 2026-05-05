@@ -1,0 +1,804 @@
+import { createServerFn } from "@tanstack/react-start";
+import { db } from "#/db/index";
+import {
+  purchaseRequisitions,
+  purchaseRequisitionItems,
+  purchaseOrders,
+  purchaseOrderItems,
+  deliveryNotes,
+  deliveryNoteItems,
+  scmInvoices,
+  scmInvoiceItems,
+  stockTransfers,
+  inventory,
+  inTransitInventory,
+  stockLedger,
+  ingredients,
+  branches,
+} from "#/db/schema";
+import { eq, and, desc } from "drizzle-orm";
+import { requireAuth, requireRole } from "./auth";
+
+// ─── Purchase Requisitions ───
+
+export const getPurchaseRequisitions = createServerFn({ method: "GET" })
+  .inputValidator((data: { branchId?: string; status?: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    let branchFilter = data.branchId;
+    if (user.role === "branch_admin" && user.branchId) {
+      branchFilter = user.branchId;
+    }
+
+    const result = await db
+      .select({
+        id: purchaseRequisitions.id,
+        code: purchaseRequisitions.code,
+        branchId: purchaseRequisitions.branchId,
+        status: purchaseRequisitions.status,
+        requestedBy: purchaseRequisitions.requestedBy,
+        createdAt: purchaseRequisitions.createdAt,
+        updatedAt: purchaseRequisitions.updatedAt,
+        branchName: branches.name,
+      })
+      .from(purchaseRequisitions)
+      .leftJoin(branches, eq(purchaseRequisitions.branchId, branches.id))
+      .where(branchFilter ? eq(purchaseRequisitions.branchId, branchFilter) : undefined)
+      .orderBy(desc(purchaseRequisitions.createdAt));
+
+    return result;
+  });
+
+export const getPurchaseRequisition = createServerFn({ method: "GET" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await requireAuth();
+
+    const [pr] = await db
+      .select()
+      .from(purchaseRequisitions)
+      .where(eq(purchaseRequisitions.id, data.id))
+      .limit(1);
+
+    if (!pr) return null;
+
+    const items = await db
+      .select({
+        id: purchaseRequisitionItems.id,
+        ingredientId: purchaseRequisitionItems.ingredientId,
+        quantity: purchaseRequisitionItems.quantity,
+        ingredientName: ingredients.name,
+        ingredientCode: ingredients.code,
+        stockUnit: ingredients.stockUnit,
+      })
+      .from(purchaseRequisitionItems)
+      .leftJoin(ingredients, eq(purchaseRequisitionItems.ingredientId, ingredients.id))
+      .where(eq(purchaseRequisitionItems.purchaseRequisitionId, data.id));
+
+    return { ...pr, items };
+  });
+
+export const createPurchaseRequisition = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      branchId: string;
+      code: string;
+      items: { ingredientId: string; quantity: number }[];
+      notes?: string;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    if (user.role === "branch_admin" && user.branchId !== data.branchId) {
+      throw new Error("Unauthorized branch");
+    }
+
+    const [pr] = await db
+      .insert(purchaseRequisitions)
+      .values({
+        code: data.code,
+        branchId: data.branchId,
+        requestedBy: user.id,
+        status: "Pending",
+        notes: data.notes,
+      })
+      .returning();
+
+    if (data.items.length > 0) {
+      await db.insert(purchaseRequisitionItems).values(
+        data.items.map((item) => ({
+          purchaseRequisitionId: pr.id,
+          ingredientId: item.ingredientId,
+          quantity: item.quantity,
+        })),
+      );
+    }
+
+    return pr;
+  });
+
+export const updatePurchaseRequisition = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: { id: string; items?: { ingredientId: string; quantity: number }[]; status?: string }) =>
+      data,
+  )
+  .handler(async ({ data }) => {
+    await requireAuth();
+
+    const { id, items, status } = data;
+
+    if (status) {
+      await db
+        .update(purchaseRequisitions)
+        .set({
+          status: status as typeof purchaseRequisitions.$inferSelect.status,
+          updatedAt: new Date(),
+        })
+        .where(eq(purchaseRequisitions.id, id));
+    }
+
+    if (items) {
+      await db
+        .delete(purchaseRequisitionItems)
+        .where(eq(purchaseRequisitionItems.purchaseRequisitionId, id));
+      if (items.length > 0) {
+        await db.insert(purchaseRequisitionItems).values(
+          items.map((item) => ({
+            purchaseRequisitionId: id,
+            ingredientId: item.ingredientId,
+            quantity: item.quantity,
+          })),
+        );
+      }
+    }
+
+    return { success: true };
+  });
+
+// ─── Purchase Orders ───
+
+export const getPurchaseOrders = createServerFn({ method: "GET" })
+  .inputValidator((data: { status?: string }) => data)
+  .handler(async () => {
+    await requireRole("super_admin", "admin_pusat");
+
+    const result = await db
+      .select({
+        id: purchaseOrders.id,
+        code: purchaseOrders.code,
+        fromBranchId: purchaseOrders.fromBranchId,
+        toBranchId: purchaseOrders.toBranchId,
+        status: purchaseOrders.status,
+        createdAt: purchaseOrders.createdAt,
+      })
+      .from(purchaseOrders)
+      .orderBy(desc(purchaseOrders.createdAt));
+
+    return result;
+  });
+
+export const createPurchaseOrder = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      code: string;
+      purchaseRequisitionId: string;
+      fromBranchId: string;
+      toBranchId: string;
+      items: { ingredientId: string; quantity: number }[];
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [po] = await db
+      .insert(purchaseOrders)
+      .values({
+        code: data.code,
+        purchaseRequisitionId: data.purchaseRequisitionId,
+        fromBranchId: data.fromBranchId,
+        toBranchId: data.toBranchId,
+        status: "Draft",
+        createdBy: user.id,
+      })
+      .returning();
+
+    if (data.items.length > 0) {
+      await db.insert(purchaseOrderItems).values(
+        data.items.map((item) => ({
+          purchaseOrderId: po.id,
+          ingredientId: item.ingredientId,
+          quantity: item.quantity,
+        })),
+      );
+    }
+
+    return po;
+  });
+
+// ─── Delivery Notes (Surat Jalan) ───
+
+export const getDeliveryNotes = createServerFn({ method: "GET" })
+  .inputValidator((data: { branchId?: string; status?: string }) => data)
+  .handler(async ({ data: _data }) => {
+    await requireAuth();
+
+    const result = await db
+      .select({
+        id: deliveryNotes.id,
+        code: deliveryNotes.code,
+        fromBranchId: deliveryNotes.fromBranchId,
+        toBranchId: deliveryNotes.toBranchId,
+        status: deliveryNotes.status,
+        driverName: deliveryNotes.driverName,
+        createdAt: deliveryNotes.createdAt,
+        updatedAt: deliveryNotes.updatedAt,
+      })
+      .from(deliveryNotes)
+      .orderBy(desc(deliveryNotes.createdAt));
+
+    return result;
+  });
+
+export const getDeliveryNote = createServerFn({ method: "GET" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await requireAuth();
+
+    const [dn] = await db
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.id))
+      .limit(1);
+
+    if (!dn) return null;
+
+    const items = await db
+      .select({
+        id: deliveryNoteItems.id,
+        ingredientId: deliveryNoteItems.ingredientId,
+        quantity: deliveryNoteItems.quantity,
+        readyQuantity: deliveryNoteItems.readyQuantity,
+        pickedQuantity: deliveryNoteItems.pickedQuantity,
+        receivedQuantity: deliveryNoteItems.receivedQuantity,
+        rejectedQuantity: deliveryNoteItems.rejectedQuantity,
+        discrepancyNote: deliveryNoteItems.discrepancyNote,
+        ingredientName: ingredients.name,
+        ingredientCode: ingredients.code,
+      })
+      .from(deliveryNoteItems)
+      .leftJoin(ingredients, eq(deliveryNoteItems.ingredientId, ingredients.id))
+      .where(eq(deliveryNoteItems.deliveryNoteId, data.id));
+
+    return { ...dn, items };
+  });
+
+export const createDeliveryNote = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      code: string;
+      prId?: string;
+      fromBranchId: string;
+      toBranchId: string;
+      driverName: string;
+      vehicleNumber?: string;
+      items: { ingredientId: string; quantity: number; readyQuantity: number }[];
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    await requireRole("super_admin", "admin_pusat");
+
+    const [dn] = await db
+      .insert(deliveryNotes)
+      .values({
+        code: data.code,
+        purchaseRequisitionId: data.prId,
+        fromBranchId: data.fromBranchId,
+        toBranchId: data.toBranchId,
+        driverName: data.driverName,
+        vehicleNumber: data.vehicleNumber,
+        status: "Picking",
+      })
+      .returning();
+
+    if (data.items.length > 0) {
+      await db.insert(deliveryNoteItems).values(
+        data.items.map((item) => ({
+          deliveryNoteId: dn.id,
+          ingredientId: item.ingredientId,
+          quantity: item.quantity,
+          readyQuantity: item.readyQuantity,
+        })),
+      );
+    }
+
+    return dn;
+  });
+
+export const shipDeliveryNote = createServerFn({ method: "POST" })
+  .inputValidator((data: { dnId: string }) => data)
+  .handler(async ({ data }) => {
+    await requireRole("super_admin", "admin_pusat");
+
+    // Get DN items
+    const items = await db
+      .select()
+      .from(deliveryNoteItems)
+      .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
+
+    const [dn] = await db
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .limit(1);
+
+    if (!dn) throw new Error("Delivery note not found");
+
+    // Deduct from source inventory
+    for (const item of items) {
+      const [inv] = await db
+        .select()
+        .from(inventory)
+        .where(
+          and(
+            eq(inventory.branchId, dn.fromBranchId),
+            eq(inventory.ingredientId, item.ingredientId),
+          ),
+        )
+        .limit(1);
+
+      if (inv) {
+        const newQty = Math.max(0, inv.quantity - (item.pickedQuantity ?? item.quantity));
+        await db
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, inv.id));
+
+        // Create ledger OUT
+        await db.insert(stockLedger).values({
+          branchId: dn.fromBranchId,
+          ingredientId: item.ingredientId,
+          type: "OUT",
+          quantity: item.pickedQuantity ?? item.quantity,
+          balance: newQty,
+          reference: data.dnId,
+          notes: `SJ Kirim ${dn.code}`,
+        });
+      }
+
+      // Create in-transit record
+      await db.insert(inTransitInventory).values({
+        deliveryNoteId: data.dnId,
+        branchId: dn.toBranchId,
+        ingredientId: item.ingredientId,
+        quantity: item.pickedQuantity ?? item.quantity,
+      });
+    }
+
+    // Update DN status
+    await db
+      .update(deliveryNotes)
+      .set({ status: "In Transit", updatedAt: new Date() })
+      .where(eq(deliveryNotes.id, data.dnId));
+
+    return { success: true };
+  });
+
+export const receiveDeliveryNote = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      dnId: string;
+      items: {
+        itemId: string;
+        receivedQuantity: number;
+        rejectedQuantity: number;
+        discrepancyNote?: string;
+      }[];
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    const [dn] = await db
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .limit(1);
+
+    if (!dn) throw new Error("Delivery note not found");
+
+    // Update each item
+    for (const item of data.items) {
+      await db
+        .update(deliveryNoteItems)
+        .set({
+          receivedQuantity: item.receivedQuantity,
+          rejectedQuantity: item.rejectedQuantity,
+          discrepancyNote: item.discrepancyNote,
+        })
+        .where(eq(deliveryNoteItems.id, item.itemId));
+
+      // Add received to destination inventory
+      await db
+        .select()
+        .from(inventory)
+        .where(
+          and(
+            eq(inventory.branchId, dn.toBranchId),
+            eq(
+              inventory.ingredientId,
+              (
+                await db
+                  .select({ ingredientId: deliveryNoteItems.ingredientId })
+                  .from(deliveryNoteItems)
+                  .where(eq(deliveryNoteItems.id, item.itemId))
+                  .limit(1)
+              )[0]?.ingredientId ?? "",
+            ),
+          ),
+        )
+        .limit(1);
+
+      const dnItem = await db
+        .select()
+        .from(deliveryNoteItems)
+        .where(eq(deliveryNoteItems.id, item.itemId))
+        .limit(1);
+
+      const ingredientId = dnItem[0]?.ingredientId;
+      if (!ingredientId) continue;
+
+      const [targetInv] = await db
+        .select()
+        .from(inventory)
+        .where(and(eq(inventory.branchId, dn.toBranchId), eq(inventory.ingredientId, ingredientId)))
+        .limit(1);
+
+      if (targetInv) {
+        const newQty = targetInv.quantity + item.receivedQuantity;
+        await db
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, targetInv.id));
+
+        // Ledger IN
+        await db.insert(stockLedger).values({
+          branchId: dn.toBranchId,
+          ingredientId,
+          type: "IN",
+          quantity: item.receivedQuantity,
+          balance: newQty,
+          reference: data.dnId,
+          notes: `SJ Terima ${dn.code}${item.rejectedQuantity > 0 ? ` (Reject: ${item.rejectedQuantity})` : ""}`,
+        });
+      } else {
+        // Create new inventory record
+        await db
+          .insert(inventory)
+          .values({
+            branchId: dn.toBranchId,
+            ingredientId,
+            quantity: item.receivedQuantity,
+          })
+          .returning();
+
+        await db.insert(stockLedger).values({
+          branchId: dn.toBranchId,
+          ingredientId,
+          type: "IN",
+          quantity: item.receivedQuantity,
+          balance: item.receivedQuantity,
+          reference: data.dnId,
+          notes: `SJ Terima ${dn.code}`,
+        });
+      }
+
+      // Remove from in-transit
+      await db
+        .delete(inTransitInventory)
+        .where(
+          and(
+            eq(inTransitInventory.deliveryNoteId, data.dnId),
+            eq(inTransitInventory.ingredientId, ingredientId),
+          ),
+        );
+    }
+
+    // Update DN status
+    await db
+      .update(deliveryNotes)
+      .set({
+        status: "Received",
+        receivedBy: user.id,
+        receivedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(deliveryNotes.id, data.dnId));
+
+    return { success: true };
+  });
+
+// ─── SCM Invoices ───
+
+export const getSCMInvoices = createServerFn({ method: "GET" })
+  .inputValidator((data: { status?: string }) => data)
+  .handler(async () => {
+    await requireAuth();
+
+    const result = await db
+      .select({
+        id: scmInvoices.id,
+        code: scmInvoices.code,
+        deliveryNoteId: scmInvoices.deliveryNoteId,
+        fromBranchId: scmInvoices.fromBranchId,
+        toBranchId: scmInvoices.toBranchId,
+        totalAmount: scmInvoices.totalAmount,
+        status: scmInvoices.status,
+        createdAt: scmInvoices.createdAt,
+      })
+      .from(scmInvoices)
+      .orderBy(desc(scmInvoices.createdAt));
+
+    return result;
+  });
+
+export const getSCMInvoice = createServerFn({ method: "GET" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await requireAuth();
+
+    const [inv] = await db.select().from(scmInvoices).where(eq(scmInvoices.id, data.id)).limit(1);
+
+    if (!inv) return null;
+
+    const items = await db
+      .select({
+        id: scmInvoiceItems.id,
+        ingredientId: scmInvoiceItems.ingredientId,
+        quantity: scmInvoiceItems.quantity,
+        unitPrice: scmInvoiceItems.unitPrice,
+        totalPrice: scmInvoiceItems.totalPrice,
+        ingredientName: ingredients.name,
+      })
+      .from(scmInvoiceItems)
+      .leftJoin(ingredients, eq(scmInvoiceItems.ingredientId, ingredients.id))
+      .where(eq(scmInvoiceItems.scmInvoiceId, data.id));
+
+    return { ...inv, items };
+  });
+
+export const generateSCMInvoice = createServerFn({ method: "POST" })
+  .inputValidator((data: { dnId: string }) => data)
+  .handler(async ({ data }) => {
+    await requireRole("super_admin", "admin_pusat");
+
+    const [dn] = await db
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .limit(1);
+
+    if (!dn) throw new Error("Delivery note not found");
+
+    // Get received items
+    const items = await db
+      .select({
+        ingredientId: deliveryNoteItems.ingredientId,
+        receivedQuantity: deliveryNoteItems.receivedQuantity,
+      })
+      .from(deliveryNoteItems)
+      .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
+
+    // Get ingredient costs
+    let totalAmount = 0;
+    const invoiceItems = [];
+
+    for (const item of items) {
+      const [ing] = await db
+        .select()
+        .from(ingredients)
+        .where(eq(ingredients.id, item.ingredientId))
+        .limit(1);
+
+      const unitPrice = ing?.averageCost ?? 0;
+      const qty = item.receivedQuantity ?? 0;
+      const totalPrice = unitPrice * qty;
+      totalAmount += totalPrice;
+
+      invoiceItems.push({
+        ingredientId: item.ingredientId,
+        quantity: qty,
+        unitPrice,
+        totalPrice,
+      });
+    }
+
+    const [invoice] = await db
+      .insert(scmInvoices)
+      .values({
+        code: `INV-${dn.code}`,
+        deliveryNoteId: data.dnId,
+        fromBranchId: dn.fromBranchId,
+        toBranchId: dn.toBranchId,
+        totalAmount,
+        status: "Unpaid",
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      })
+      .returning();
+
+    if (invoiceItems.length > 0) {
+      await db.insert(scmInvoiceItems).values(
+        invoiceItems.map((item) => ({
+          scmInvoiceId: invoice.id,
+          ...item,
+        })),
+      );
+    }
+
+    return invoice;
+  });
+
+export const paySCMInvoice = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await requireRole("super_admin", "admin_pusat");
+
+    const [invoice] = await db
+      .update(scmInvoices)
+      .set({ status: "Paid", paidAt: new Date() })
+      .where(eq(scmInvoices.id, data.id))
+      .returning();
+
+    return invoice;
+  });
+
+// ─── Stock Transfers (Mutasi Stok) ───
+
+export const getStockTransfers = createServerFn({ method: "GET" })
+  .inputValidator((data: { branchId?: string }) => data)
+  .handler(async ({ data: _data }) => {
+    await requireAuth();
+
+    const result = await db
+      .select({
+        id: stockTransfers.id,
+        code: stockTransfers.code,
+        fromBranchId: stockTransfers.fromBranchId,
+        toBranchId: stockTransfers.toBranchId,
+        ingredientId: stockTransfers.ingredientId,
+        quantity: stockTransfers.quantity,
+        status: stockTransfers.status,
+        requestedBy: stockTransfers.requestedBy,
+        createdAt: stockTransfers.createdAt,
+      })
+      .from(stockTransfers)
+      .orderBy(desc(stockTransfers.createdAt));
+
+    return result;
+  });
+
+export const createStockTransfer = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      code: string;
+      fromBranchId: string;
+      toBranchId: string;
+      ingredientId: string;
+      quantity: number;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    const [transfer] = await db
+      .insert(stockTransfers)
+      .values({
+        code: data.code,
+        fromBranchId: data.fromBranchId,
+        toBranchId: data.toBranchId,
+        ingredientId: data.ingredientId,
+        quantity: data.quantity,
+        status: "Pending Approval",
+        requestedBy: user.id,
+      })
+      .returning();
+
+    return transfer;
+  });
+
+export const approveStockTransfer = createServerFn({ method: "POST" })
+  .inputValidator((data: { transferId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    await requireRole("super_admin", "area_manager");
+
+    const [transfer] = await db
+      .select()
+      .from(stockTransfers)
+      .where(eq(stockTransfers.id, data.transferId))
+      .limit(1);
+
+    if (!transfer) throw new Error("Transfer not found");
+
+    // Deduct from source
+    const [sourceInv] = await db
+      .select()
+      .from(inventory)
+      .where(
+        and(
+          eq(inventory.branchId, transfer.fromBranchId),
+          eq(inventory.ingredientId, transfer.ingredientId),
+        ),
+      )
+      .limit(1);
+
+    if (sourceInv) {
+      const newQty = Math.max(0, sourceInv.quantity - transfer.quantity);
+      await db
+        .update(inventory)
+        .set({ quantity: newQty, lastUpdated: new Date() })
+        .where(eq(inventory.id, sourceInv.id));
+
+      await db.insert(stockLedger).values({
+        branchId: transfer.fromBranchId,
+        ingredientId: transfer.ingredientId,
+        type: "OUT",
+        quantity: transfer.quantity,
+        balance: newQty,
+        reference: data.transferId,
+        notes: `Mutasi ke ${transfer.toBranchId}`,
+      });
+    }
+
+    // Add to target
+    const [targetInv] = await db
+      .select()
+      .from(inventory)
+      .where(
+        and(
+          eq(inventory.branchId, transfer.toBranchId),
+          eq(inventory.ingredientId, transfer.ingredientId),
+        ),
+      )
+      .limit(1);
+
+    if (targetInv) {
+      const newQty = targetInv.quantity + transfer.quantity;
+      await db
+        .update(inventory)
+        .set({ quantity: newQty, lastUpdated: new Date() })
+        .where(eq(inventory.id, targetInv.id));
+
+      await db.insert(stockLedger).values({
+        branchId: transfer.toBranchId,
+        ingredientId: transfer.ingredientId,
+        type: "IN",
+        quantity: transfer.quantity,
+        balance: newQty,
+        reference: data.transferId,
+        notes: `Mutasi dari ${transfer.fromBranchId}`,
+      });
+    } else {
+      await db.insert(inventory).values({
+        branchId: transfer.toBranchId,
+        ingredientId: transfer.ingredientId,
+        quantity: transfer.quantity,
+      });
+
+      await db.insert(stockLedger).values({
+        branchId: transfer.toBranchId,
+        ingredientId: transfer.ingredientId,
+        type: "IN",
+        quantity: transfer.quantity,
+        balance: transfer.quantity,
+        reference: data.transferId,
+        notes: `Mutasi dari ${transfer.fromBranchId}`,
+      });
+    }
+
+    await db
+      .update(stockTransfers)
+      .set({ status: "Completed", approvedBy: user.id })
+      .where(eq(stockTransfers.id, data.transferId));
+
+    return { success: true };
+  });

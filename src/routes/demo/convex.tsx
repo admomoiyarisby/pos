@@ -1,72 +1,66 @@
-import { useCallback, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
-import { useQuery, useMutation } from 'convex/react'
-import { Trash2, Plus, Check, Circle } from 'lucide-react'
+import { useCallback, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useMutation } from "convex/react";
+import { Trash2, Plus, Check, Circle } from "lucide-react";
 
-import { api } from '../../../convex/_generated/api'
-import type { Id } from '../../../convex/_generated/dataModel'
+import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 
-export const Route = createFileRoute('/demo/convex')({
+export const Route = createFileRoute("/demo/convex")({
   ssr: false,
   component: ConvexTodos,
-})
+});
 
 function ConvexTodos() {
-  const todos = useQuery(api.todos.list)
-  const addTodo = useMutation(api.todos.add)
-  const toggleTodo = useMutation(api.todos.toggle)
-  const removeTodo = useMutation(api.todos.remove)
+  const todos = useQuery(api.todos.list);
+  const addTodo = useMutation(api.todos.add);
+  const toggleTodo = useMutation(api.todos.toggle);
+  const removeTodo = useMutation(api.todos.remove);
 
-  const [newTodo, setNewTodo] = useState('')
+  const [newTodo, setNewTodo] = useState("");
 
   const handleAddTodo = useCallback(async () => {
     if (newTodo.trim()) {
-      await addTodo({ text: newTodo.trim() })
-      setNewTodo('')
+      await addTodo({ text: newTodo.trim() });
+      setNewTodo("");
     }
-  }, [addTodo, newTodo])
+  }, [addTodo, newTodo]);
 
   const handleToggleTodo = useCallback(
-    async (id: Id<'todos'>) => {
-      await toggleTodo({ id })
+    async (id: Id<"todos">) => {
+      await toggleTodo({ id });
     },
     [toggleTodo],
-  )
+  );
 
   const handleRemoveTodo = useCallback(
-    async (id: Id<'todos'>) => {
-      await removeTodo({ id })
+    async (id: Id<"todos">) => {
+      await removeTodo({ id });
     },
     [removeTodo],
-  )
+  );
 
-  const completedCount = todos?.filter((todo) => todo.completed).length || 0
-  const totalCount = todos?.length || 0
+  const completedCount = todos?.filter((todo) => todo.completed).length || 0;
+  const totalCount = todos?.length || 0;
 
   return (
     <div
       className="min-h-screen flex items-center justify-center p-4"
       style={{
         background:
-          'linear-gradient(135deg, #667a56 0%, #8fbc8f 25%, #90ee90 50%, #98fb98 75%, #f0fff0 100%)',
+          "linear-gradient(135deg, #667a56 0%, #8fbc8f 25%, #90ee90 50%, #98fb98 75%, #f0fff0 100%)",
       }}
     >
       <div className="w-full max-w-2xl">
         {/* Header Card */}
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl border border-green-200/50 p-8 mb-6">
           <div className="text-center">
-            <h1 className="text-4xl font-bold text-green-800 mb-2">
-              Convex Todos
-            </h1>
+            <h1 className="text-4xl font-bold text-green-800 mb-2">Convex Todos</h1>
             <p className="text-green-600 text-lg">Powered by real-time sync</p>
             {totalCount > 0 && (
               <div className="mt-4 flex justify-center space-x-6 text-sm">
-                <span className="text-green-700 font-medium">
-                  {completedCount} completed
-                </span>
-                <span className="text-gray-600">
-                  {totalCount - completedCount} remaining
-                </span>
+                <span className="text-green-700 font-medium">{completedCount} completed</span>
+                <span className="text-gray-600">{totalCount - completedCount} remaining</span>
               </div>
             )}
           </div>
@@ -80,8 +74,8 @@ function ConvexTodos() {
               value={newTodo}
               onChange={(e) => setNewTodo(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleAddTodo()
+                if (e.key === "Enter") {
+                  void handleAddTodo();
                 }
               }}
               placeholder="What needs to be done?"
@@ -108,12 +102,8 @@ function ConvexTodos() {
           ) : todos.length === 0 ? (
             <div className="p-12 text-center">
               <Circle size={48} className="text-green-300 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-green-800 mb-2">
-                No todos yet
-              </h3>
-              <p className="text-green-600">
-                Add your first todo above to get started!
-              </p>
+              <h3 className="text-xl font-semibold text-green-800 mb-2">No todos yet</h3>
+              <p className="text-green-600">Add your first todo above to get started!</p>
             </div>
           ) : (
             <div className="divide-y divide-green-100">
@@ -121,7 +111,7 @@ function ConvexTodos() {
                 <div
                   key={todo._id}
                   className={`p-4 flex items-center gap-4 hover:bg-green-50/50 transition-colors ${
-                    todo.completed ? 'opacity-75' : ''
+                    todo.completed ? "opacity-75" : ""
                   }`}
                   style={{
                     animationDelay: `${index * 50}ms`,
@@ -131,8 +121,8 @@ function ConvexTodos() {
                     onClick={() => handleToggleTodo(todo._id)}
                     className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${
                       todo.completed
-                        ? 'bg-green-500 border-green-500 text-white'
-                        : 'border-green-300 hover:border-green-400 text-transparent hover:text-green-400'
+                        ? "bg-green-500 border-green-500 text-white"
+                        : "border-green-300 hover:border-green-400 text-transparent hover:text-green-400"
                     }`}
                   >
                     <Check size={14} />
@@ -140,9 +130,7 @@ function ConvexTodos() {
 
                   <span
                     className={`flex-1 text-lg transition-all duration-200 ${
-                      todo.completed
-                        ? 'line-through text-gray-500'
-                        : 'text-gray-800'
+                      todo.completed ? "line-through text-gray-500" : "text-gray-800"
                     }`}
                   >
                     {todo.text}
@@ -168,5 +156,5 @@ function ConvexTodos() {
         </div>
       </div>
     </div>
-  )
+  );
 }

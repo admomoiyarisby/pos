@@ -1,9 +1,57 @@
-import { betterAuth } from 'better-auth'
-import { tanstackStartCookies } from 'better-auth/tanstack-start'
+import { db } from "#/db";
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { account, session, users, verification } from "#/db/schema";
+import { tanstackStartCookies } from "better-auth/tanstack-start";
 
 export const auth = betterAuth({
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema: {
+      user: users,
+      session,
+      account,
+      verification,
+    },
+  }),
+
+  advanced: {
+    database: {
+      generateId: () => crypto.randomUUID(),
+    },
+  },
+
+  user: {
+    additionalFields: {
+      role: {
+        type: "string",
+        required: true,
+      },
+      status: {
+        type: "string",
+        required: false,
+        defaultValue: "Active",
+      },
+      branchId: {
+        type: "string",
+        required: false,
+      },
+      pin: {
+        type: "string",
+        required: false,
+      },
+    },
+  },
+
   emailAndPassword: {
     enabled: true,
   },
   plugins: [tanstackStartCookies()],
-})
+});
+
+export type AuthUser = typeof auth.$Infer.Session.user & {
+  role: string;
+  branchId?: string;
+  pin?: string;
+  status: string;
+};

@@ -9,27 +9,81 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AboutRouteImport } from './routes/about'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as LayoutRouteImport } from './routes/_layout'
+import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as DemoTableRouteImport } from './routes/demo/table'
-import { Route as DemoDrizzleRouteImport } from './routes/demo/drizzle'
 import { Route as DemoConvexRouteImport } from './routes/demo/convex'
 import { Route as DemoBetterAuthRouteImport } from './routes/demo/better-auth'
-import { Route as ApiResumeChatRouteImport } from './routes/api.resume-chat'
+import { Route as ApiSetupRouteImport } from './routes/api/setup'
+import { Route as ApiSeedRouteImport } from './routes/api/seed'
+import { Route as LayoutYieldTrackingRouteImport } from './routes/_layout/yield-tracking'
+import { Route as LayoutPrintRequestsRouteImport } from './routes/_layout/print-requests'
+import { Route as LayoutPosRouteImport } from './routes/_layout/pos'
+import { Route as LayoutOrderHistoryRouteImport } from './routes/_layout/order-history'
+import { Route as LayoutDashboardRouteImport } from './routes/_layout/dashboard'
+import { Route as LayoutCancelRequestsRouteImport } from './routes/_layout/cancel-requests'
+import { Route as LayoutWasteIndexRouteImport } from './routes/_layout/waste/index'
+import { Route as LayoutStockTransfersIndexRouteImport } from './routes/_layout/stock-transfers/index'
+import { Route as LayoutStockOpnameIndexRouteImport } from './routes/_layout/stock-opname/index'
+import { Route as LayoutScmInvoicesIndexRouteImport } from './routes/_layout/scm-invoices/index'
+import { Route as LayoutRecipesIndexRouteImport } from './routes/_layout/recipes/index'
+import { Route as LayoutPurchaseRequisitionsIndexRouteImport } from './routes/_layout/purchase-requisitions/index'
+import { Route as LayoutPurchaseOrdersIndexRouteImport } from './routes/_layout/purchase-orders/index'
+import { Route as LayoutPeriodControlIndexRouteImport } from './routes/_layout/period-control/index'
+import { Route as LayoutModifierGroupsIndexRouteImport } from './routes/_layout/modifier-groups/index'
+import { Route as LayoutInventoryIndexRouteImport } from './routes/_layout/inventory/index'
+import { Route as LayoutIngredientsIndexRouteImport } from './routes/_layout/ingredients/index'
+import { Route as LayoutFinanceIndexRouteImport } from './routes/_layout/finance/index'
+import { Route as LayoutDeliveryNotesIndexRouteImport } from './routes/_layout/delivery-notes/index'
+import { Route as LayoutAnalyticsIndexRouteImport } from './routes/_layout/analytics/index'
+import { Route as LayoutAdminIndexRouteImport } from './routes/_layout/admin/index'
 import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
 import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as LayoutWasteBrokenStockRouteImport } from './routes/_layout/waste/broken-stock'
+import { Route as LayoutStockTransfersTrIdRouteImport } from './routes/_layout/stock-transfers/$trId'
+import { Route as LayoutStockOpnameSoIdRouteImport } from './routes/_layout/stock-opname/$soId'
+import { Route as LayoutScmInvoicesInvIdRouteImport } from './routes/_layout/scm-invoices/$invId'
+import { Route as LayoutRecipesRecipeIdRouteImport } from './routes/_layout/recipes/$recipeId'
+import { Route as LayoutPurchaseRequisitionsPrIdRouteImport } from './routes/_layout/purchase-requisitions/$prId'
+import { Route as LayoutPurchaseOrdersPoIdRouteImport } from './routes/_layout/purchase-orders/$poId'
+import { Route as LayoutPeriodControlPeriodIdRouteImport } from './routes/_layout/period-control/$periodId'
+import { Route as LayoutModifierGroupsMgIdRouteImport } from './routes/_layout/modifier-groups/$mgId'
+import { Route as LayoutInventoryLedgerRouteImport } from './routes/_layout/inventory/ledger'
+import { Route as LayoutIngredientsIngIdRouteImport } from './routes/_layout/ingredients/$ingId'
+import { Route as LayoutFinanceReconciliationRouteImport } from './routes/_layout/finance/reconciliation'
+import { Route as LayoutDeliveryNotesDnIdRouteImport } from './routes/_layout/delivery-notes/$dnId'
+import { Route as LayoutAnalyticsSalesRouteImport } from './routes/_layout/analytics/sales'
+import { Route as LayoutAnalyticsInventoryRouteImport } from './routes/_layout/analytics/inventory'
+import { Route as LayoutAdminVouchersRouteImport } from './routes/_layout/admin/vouchers'
+import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin/users'
+import { Route as LayoutAdminSystemLogsRouteImport } from './routes/_layout/admin/system-logs'
+import { Route as LayoutAdminPlatformFeesRouteImport } from './routes/_layout/admin/platform-fees'
+import { Route as LayoutAdminBrandsRouteImport } from './routes/_layout/admin/brands'
+import { Route as LayoutAdminBranchesRouteImport } from './routes/_layout/admin/branches'
+import { Route as LayoutAdminAuditLogsRouteImport } from './routes/_layout/admin/audit-logs'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
+const LayoutRoute = LayoutRouteImport.update({
+  id: '/_layout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LayoutIndexRoute = LayoutIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => LayoutRoute,
 } as any)
 const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
   id: '/demo/tanstack-query',
@@ -39,11 +93,6 @@ const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
 const DemoTableRoute = DemoTableRouteImport.update({
   id: '/demo/table',
   path: '/demo/table',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoDrizzleRoute = DemoDrizzleRouteImport.update({
-  id: '/demo/drizzle',
-  path: '/demo/drizzle',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoConvexRoute = DemoConvexRouteImport.update({
@@ -56,10 +105,126 @@ const DemoBetterAuthRoute = DemoBetterAuthRouteImport.update({
   path: '/demo/better-auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiResumeChatRoute = ApiResumeChatRouteImport.update({
-  id: '/api/resume-chat',
-  path: '/api/resume-chat',
+const ApiSetupRoute = ApiSetupRouteImport.update({
+  id: '/api/setup',
+  path: '/api/setup',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSeedRoute = ApiSeedRouteImport.update({
+  id: '/api/seed',
+  path: '/api/seed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LayoutYieldTrackingRoute = LayoutYieldTrackingRouteImport.update({
+  id: '/yield-tracking',
+  path: '/yield-tracking',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutPrintRequestsRoute = LayoutPrintRequestsRouteImport.update({
+  id: '/print-requests',
+  path: '/print-requests',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutPosRoute = LayoutPosRouteImport.update({
+  id: '/pos',
+  path: '/pos',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutOrderHistoryRoute = LayoutOrderHistoryRouteImport.update({
+  id: '/order-history',
+  path: '/order-history',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutDashboardRoute = LayoutDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutCancelRequestsRoute = LayoutCancelRequestsRouteImport.update({
+  id: '/cancel-requests',
+  path: '/cancel-requests',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutWasteIndexRoute = LayoutWasteIndexRouteImport.update({
+  id: '/waste/',
+  path: '/waste/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutStockTransfersIndexRoute =
+  LayoutStockTransfersIndexRouteImport.update({
+    id: '/stock-transfers/',
+    path: '/stock-transfers/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutStockOpnameIndexRoute = LayoutStockOpnameIndexRouteImport.update({
+  id: '/stock-opname/',
+  path: '/stock-opname/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutScmInvoicesIndexRoute = LayoutScmInvoicesIndexRouteImport.update({
+  id: '/scm-invoices/',
+  path: '/scm-invoices/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutRecipesIndexRoute = LayoutRecipesIndexRouteImport.update({
+  id: '/recipes/',
+  path: '/recipes/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutPurchaseRequisitionsIndexRoute =
+  LayoutPurchaseRequisitionsIndexRouteImport.update({
+    id: '/purchase-requisitions/',
+    path: '/purchase-requisitions/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutPurchaseOrdersIndexRoute =
+  LayoutPurchaseOrdersIndexRouteImport.update({
+    id: '/purchase-orders/',
+    path: '/purchase-orders/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutPeriodControlIndexRoute =
+  LayoutPeriodControlIndexRouteImport.update({
+    id: '/period-control/',
+    path: '/period-control/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutModifierGroupsIndexRoute =
+  LayoutModifierGroupsIndexRouteImport.update({
+    id: '/modifier-groups/',
+    path: '/modifier-groups/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutInventoryIndexRoute = LayoutInventoryIndexRouteImport.update({
+  id: '/inventory/',
+  path: '/inventory/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutIngredientsIndexRoute = LayoutIngredientsIndexRouteImport.update({
+  id: '/ingredients/',
+  path: '/ingredients/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutFinanceIndexRoute = LayoutFinanceIndexRouteImport.update({
+  id: '/finance/',
+  path: '/finance/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutDeliveryNotesIndexRoute =
+  LayoutDeliveryNotesIndexRouteImport.update({
+    id: '/delivery-notes/',
+    path: '/delivery-notes/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutAnalyticsIndexRoute = LayoutAnalyticsIndexRouteImport.update({
+  id: '/analytics/',
+  path: '/analytics/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutAdminIndexRoute = LayoutAdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => LayoutRoute,
 } as any)
 const DemoFormSimpleRoute = DemoFormSimpleRouteImport.update({
   id: '/demo/form/simple',
@@ -76,96 +241,480 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LayoutWasteBrokenStockRoute = LayoutWasteBrokenStockRouteImport.update({
+  id: '/waste/broken-stock',
+  path: '/waste/broken-stock',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutStockTransfersTrIdRoute =
+  LayoutStockTransfersTrIdRouteImport.update({
+    id: '/stock-transfers/$trId',
+    path: '/stock-transfers/$trId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutStockOpnameSoIdRoute = LayoutStockOpnameSoIdRouteImport.update({
+  id: '/stock-opname/$soId',
+  path: '/stock-opname/$soId',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutScmInvoicesInvIdRoute = LayoutScmInvoicesInvIdRouteImport.update({
+  id: '/scm-invoices/$invId',
+  path: '/scm-invoices/$invId',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutRecipesRecipeIdRoute = LayoutRecipesRecipeIdRouteImport.update({
+  id: '/recipes/$recipeId',
+  path: '/recipes/$recipeId',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutPurchaseRequisitionsPrIdRoute =
+  LayoutPurchaseRequisitionsPrIdRouteImport.update({
+    id: '/purchase-requisitions/$prId',
+    path: '/purchase-requisitions/$prId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutPurchaseOrdersPoIdRoute =
+  LayoutPurchaseOrdersPoIdRouteImport.update({
+    id: '/purchase-orders/$poId',
+    path: '/purchase-orders/$poId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutPeriodControlPeriodIdRoute =
+  LayoutPeriodControlPeriodIdRouteImport.update({
+    id: '/period-control/$periodId',
+    path: '/period-control/$periodId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutModifierGroupsMgIdRoute =
+  LayoutModifierGroupsMgIdRouteImport.update({
+    id: '/modifier-groups/$mgId',
+    path: '/modifier-groups/$mgId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutInventoryLedgerRoute = LayoutInventoryLedgerRouteImport.update({
+  id: '/inventory/ledger',
+  path: '/inventory/ledger',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutIngredientsIngIdRoute = LayoutIngredientsIngIdRouteImport.update({
+  id: '/ingredients/$ingId',
+  path: '/ingredients/$ingId',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutFinanceReconciliationRoute =
+  LayoutFinanceReconciliationRouteImport.update({
+    id: '/finance/reconciliation',
+    path: '/finance/reconciliation',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutDeliveryNotesDnIdRoute = LayoutDeliveryNotesDnIdRouteImport.update({
+  id: '/delivery-notes/$dnId',
+  path: '/delivery-notes/$dnId',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutAnalyticsSalesRoute = LayoutAnalyticsSalesRouteImport.update({
+  id: '/analytics/sales',
+  path: '/analytics/sales',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutAnalyticsInventoryRoute =
+  LayoutAnalyticsInventoryRouteImport.update({
+    id: '/analytics/inventory',
+    path: '/analytics/inventory',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutAdminVouchersRoute = LayoutAdminVouchersRouteImport.update({
+  id: '/admin/vouchers',
+  path: '/admin/vouchers',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutAdminUsersRoute = LayoutAdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutAdminSystemLogsRoute = LayoutAdminSystemLogsRouteImport.update({
+  id: '/admin/system-logs',
+  path: '/admin/system-logs',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutAdminPlatformFeesRoute = LayoutAdminPlatformFeesRouteImport.update({
+  id: '/admin/platform-fees',
+  path: '/admin/platform-fees',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutAdminBrandsRoute = LayoutAdminBrandsRouteImport.update({
+  id: '/admin/brands',
+  path: '/admin/brands',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutAdminBranchesRoute = LayoutAdminBranchesRouteImport.update({
+  id: '/admin/branches',
+  path: '/admin/branches',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutAdminAuditLogsRoute = LayoutAdminAuditLogsRouteImport.update({
+  id: '/admin/audit-logs',
+  path: '/admin/audit-logs',
+  getParentRoute: () => LayoutRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof LayoutIndexRoute
   '/about': typeof AboutRoute
-  '/api/resume-chat': typeof ApiResumeChatRoute
+  '/login': typeof LoginRoute
+  '/cancel-requests': typeof LayoutCancelRequestsRoute
+  '/dashboard': typeof LayoutDashboardRoute
+  '/order-history': typeof LayoutOrderHistoryRoute
+  '/pos': typeof LayoutPosRoute
+  '/print-requests': typeof LayoutPrintRequestsRoute
+  '/yield-tracking': typeof LayoutYieldTrackingRoute
+  '/api/seed': typeof ApiSeedRoute
+  '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/convex': typeof DemoConvexRoute
-  '/demo/drizzle': typeof DemoDrizzleRoute
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
+  '/admin/branches': typeof LayoutAdminBranchesRoute
+  '/admin/brands': typeof LayoutAdminBrandsRoute
+  '/admin/platform-fees': typeof LayoutAdminPlatformFeesRoute
+  '/admin/system-logs': typeof LayoutAdminSystemLogsRoute
+  '/admin/users': typeof LayoutAdminUsersRoute
+  '/admin/vouchers': typeof LayoutAdminVouchersRoute
+  '/analytics/inventory': typeof LayoutAnalyticsInventoryRoute
+  '/analytics/sales': typeof LayoutAnalyticsSalesRoute
+  '/delivery-notes/$dnId': typeof LayoutDeliveryNotesDnIdRoute
+  '/finance/reconciliation': typeof LayoutFinanceReconciliationRoute
+  '/ingredients/$ingId': typeof LayoutIngredientsIngIdRoute
+  '/inventory/ledger': typeof LayoutInventoryLedgerRoute
+  '/modifier-groups/$mgId': typeof LayoutModifierGroupsMgIdRoute
+  '/period-control/$periodId': typeof LayoutPeriodControlPeriodIdRoute
+  '/purchase-orders/$poId': typeof LayoutPurchaseOrdersPoIdRoute
+  '/purchase-requisitions/$prId': typeof LayoutPurchaseRequisitionsPrIdRoute
+  '/recipes/$recipeId': typeof LayoutRecipesRecipeIdRoute
+  '/scm-invoices/$invId': typeof LayoutScmInvoicesInvIdRoute
+  '/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
+  '/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
+  '/waste/broken-stock': typeof LayoutWasteBrokenStockRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
+  '/admin/': typeof LayoutAdminIndexRoute
+  '/analytics/': typeof LayoutAnalyticsIndexRoute
+  '/delivery-notes/': typeof LayoutDeliveryNotesIndexRoute
+  '/finance/': typeof LayoutFinanceIndexRoute
+  '/ingredients/': typeof LayoutIngredientsIndexRoute
+  '/inventory/': typeof LayoutInventoryIndexRoute
+  '/modifier-groups/': typeof LayoutModifierGroupsIndexRoute
+  '/period-control/': typeof LayoutPeriodControlIndexRoute
+  '/purchase-orders/': typeof LayoutPurchaseOrdersIndexRoute
+  '/purchase-requisitions/': typeof LayoutPurchaseRequisitionsIndexRoute
+  '/recipes/': typeof LayoutRecipesIndexRoute
+  '/scm-invoices/': typeof LayoutScmInvoicesIndexRoute
+  '/stock-opname/': typeof LayoutStockOpnameIndexRoute
+  '/stock-transfers/': typeof LayoutStockTransfersIndexRoute
+  '/waste/': typeof LayoutWasteIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/api/resume-chat': typeof ApiResumeChatRoute
+  '/login': typeof LoginRoute
+  '/cancel-requests': typeof LayoutCancelRequestsRoute
+  '/dashboard': typeof LayoutDashboardRoute
+  '/order-history': typeof LayoutOrderHistoryRoute
+  '/pos': typeof LayoutPosRoute
+  '/print-requests': typeof LayoutPrintRequestsRoute
+  '/yield-tracking': typeof LayoutYieldTrackingRoute
+  '/api/seed': typeof ApiSeedRoute
+  '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/convex': typeof DemoConvexRoute
-  '/demo/drizzle': typeof DemoDrizzleRoute
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/': typeof LayoutIndexRoute
+  '/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
+  '/admin/branches': typeof LayoutAdminBranchesRoute
+  '/admin/brands': typeof LayoutAdminBrandsRoute
+  '/admin/platform-fees': typeof LayoutAdminPlatformFeesRoute
+  '/admin/system-logs': typeof LayoutAdminSystemLogsRoute
+  '/admin/users': typeof LayoutAdminUsersRoute
+  '/admin/vouchers': typeof LayoutAdminVouchersRoute
+  '/analytics/inventory': typeof LayoutAnalyticsInventoryRoute
+  '/analytics/sales': typeof LayoutAnalyticsSalesRoute
+  '/delivery-notes/$dnId': typeof LayoutDeliveryNotesDnIdRoute
+  '/finance/reconciliation': typeof LayoutFinanceReconciliationRoute
+  '/ingredients/$ingId': typeof LayoutIngredientsIngIdRoute
+  '/inventory/ledger': typeof LayoutInventoryLedgerRoute
+  '/modifier-groups/$mgId': typeof LayoutModifierGroupsMgIdRoute
+  '/period-control/$periodId': typeof LayoutPeriodControlPeriodIdRoute
+  '/purchase-orders/$poId': typeof LayoutPurchaseOrdersPoIdRoute
+  '/purchase-requisitions/$prId': typeof LayoutPurchaseRequisitionsPrIdRoute
+  '/recipes/$recipeId': typeof LayoutRecipesRecipeIdRoute
+  '/scm-invoices/$invId': typeof LayoutScmInvoicesInvIdRoute
+  '/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
+  '/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
+  '/waste/broken-stock': typeof LayoutWasteBrokenStockRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
+  '/admin': typeof LayoutAdminIndexRoute
+  '/analytics': typeof LayoutAnalyticsIndexRoute
+  '/delivery-notes': typeof LayoutDeliveryNotesIndexRoute
+  '/finance': typeof LayoutFinanceIndexRoute
+  '/ingredients': typeof LayoutIngredientsIndexRoute
+  '/inventory': typeof LayoutInventoryIndexRoute
+  '/modifier-groups': typeof LayoutModifierGroupsIndexRoute
+  '/period-control': typeof LayoutPeriodControlIndexRoute
+  '/purchase-orders': typeof LayoutPurchaseOrdersIndexRoute
+  '/purchase-requisitions': typeof LayoutPurchaseRequisitionsIndexRoute
+  '/recipes': typeof LayoutRecipesIndexRoute
+  '/scm-invoices': typeof LayoutScmInvoicesIndexRoute
+  '/stock-opname': typeof LayoutStockOpnameIndexRoute
+  '/stock-transfers': typeof LayoutStockTransfersIndexRoute
+  '/waste': typeof LayoutWasteIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_layout': typeof LayoutRouteWithChildren
   '/about': typeof AboutRoute
-  '/api/resume-chat': typeof ApiResumeChatRoute
+  '/login': typeof LoginRoute
+  '/_layout/cancel-requests': typeof LayoutCancelRequestsRoute
+  '/_layout/dashboard': typeof LayoutDashboardRoute
+  '/_layout/order-history': typeof LayoutOrderHistoryRoute
+  '/_layout/pos': typeof LayoutPosRoute
+  '/_layout/print-requests': typeof LayoutPrintRequestsRoute
+  '/_layout/yield-tracking': typeof LayoutYieldTrackingRoute
+  '/api/seed': typeof ApiSeedRoute
+  '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/convex': typeof DemoConvexRoute
-  '/demo/drizzle': typeof DemoDrizzleRoute
   '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/_layout/': typeof LayoutIndexRoute
+  '/_layout/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
+  '/_layout/admin/branches': typeof LayoutAdminBranchesRoute
+  '/_layout/admin/brands': typeof LayoutAdminBrandsRoute
+  '/_layout/admin/platform-fees': typeof LayoutAdminPlatformFeesRoute
+  '/_layout/admin/system-logs': typeof LayoutAdminSystemLogsRoute
+  '/_layout/admin/users': typeof LayoutAdminUsersRoute
+  '/_layout/admin/vouchers': typeof LayoutAdminVouchersRoute
+  '/_layout/analytics/inventory': typeof LayoutAnalyticsInventoryRoute
+  '/_layout/analytics/sales': typeof LayoutAnalyticsSalesRoute
+  '/_layout/delivery-notes/$dnId': typeof LayoutDeliveryNotesDnIdRoute
+  '/_layout/finance/reconciliation': typeof LayoutFinanceReconciliationRoute
+  '/_layout/ingredients/$ingId': typeof LayoutIngredientsIngIdRoute
+  '/_layout/inventory/ledger': typeof LayoutInventoryLedgerRoute
+  '/_layout/modifier-groups/$mgId': typeof LayoutModifierGroupsMgIdRoute
+  '/_layout/period-control/$periodId': typeof LayoutPeriodControlPeriodIdRoute
+  '/_layout/purchase-orders/$poId': typeof LayoutPurchaseOrdersPoIdRoute
+  '/_layout/purchase-requisitions/$prId': typeof LayoutPurchaseRequisitionsPrIdRoute
+  '/_layout/recipes/$recipeId': typeof LayoutRecipesRecipeIdRoute
+  '/_layout/scm-invoices/$invId': typeof LayoutScmInvoicesInvIdRoute
+  '/_layout/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
+  '/_layout/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
+  '/_layout/waste/broken-stock': typeof LayoutWasteBrokenStockRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
+  '/_layout/admin/': typeof LayoutAdminIndexRoute
+  '/_layout/analytics/': typeof LayoutAnalyticsIndexRoute
+  '/_layout/delivery-notes/': typeof LayoutDeliveryNotesIndexRoute
+  '/_layout/finance/': typeof LayoutFinanceIndexRoute
+  '/_layout/ingredients/': typeof LayoutIngredientsIndexRoute
+  '/_layout/inventory/': typeof LayoutInventoryIndexRoute
+  '/_layout/modifier-groups/': typeof LayoutModifierGroupsIndexRoute
+  '/_layout/period-control/': typeof LayoutPeriodControlIndexRoute
+  '/_layout/purchase-orders/': typeof LayoutPurchaseOrdersIndexRoute
+  '/_layout/purchase-requisitions/': typeof LayoutPurchaseRequisitionsIndexRoute
+  '/_layout/recipes/': typeof LayoutRecipesIndexRoute
+  '/_layout/scm-invoices/': typeof LayoutScmInvoicesIndexRoute
+  '/_layout/stock-opname/': typeof LayoutStockOpnameIndexRoute
+  '/_layout/stock-transfers/': typeof LayoutStockTransfersIndexRoute
+  '/_layout/waste/': typeof LayoutWasteIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/about'
-    | '/api/resume-chat'
+    | '/login'
+    | '/cancel-requests'
+    | '/dashboard'
+    | '/order-history'
+    | '/pos'
+    | '/print-requests'
+    | '/yield-tracking'
+    | '/api/seed'
+    | '/api/setup'
     | '/demo/better-auth'
     | '/demo/convex'
-    | '/demo/drizzle'
     | '/demo/table'
     | '/demo/tanstack-query'
+    | '/admin/audit-logs'
+    | '/admin/branches'
+    | '/admin/brands'
+    | '/admin/platform-fees'
+    | '/admin/system-logs'
+    | '/admin/users'
+    | '/admin/vouchers'
+    | '/analytics/inventory'
+    | '/analytics/sales'
+    | '/delivery-notes/$dnId'
+    | '/finance/reconciliation'
+    | '/ingredients/$ingId'
+    | '/inventory/ledger'
+    | '/modifier-groups/$mgId'
+    | '/period-control/$periodId'
+    | '/purchase-orders/$poId'
+    | '/purchase-requisitions/$prId'
+    | '/recipes/$recipeId'
+    | '/scm-invoices/$invId'
+    | '/stock-opname/$soId'
+    | '/stock-transfers/$trId'
+    | '/waste/broken-stock'
     | '/api/auth/$'
     | '/demo/form/address'
     | '/demo/form/simple'
+    | '/admin/'
+    | '/analytics/'
+    | '/delivery-notes/'
+    | '/finance/'
+    | '/ingredients/'
+    | '/inventory/'
+    | '/modifier-groups/'
+    | '/period-control/'
+    | '/purchase-orders/'
+    | '/purchase-requisitions/'
+    | '/recipes/'
+    | '/scm-invoices/'
+    | '/stock-opname/'
+    | '/stock-transfers/'
+    | '/waste/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/about'
-    | '/api/resume-chat'
+    | '/login'
+    | '/cancel-requests'
+    | '/dashboard'
+    | '/order-history'
+    | '/pos'
+    | '/print-requests'
+    | '/yield-tracking'
+    | '/api/seed'
+    | '/api/setup'
     | '/demo/better-auth'
     | '/demo/convex'
-    | '/demo/drizzle'
     | '/demo/table'
     | '/demo/tanstack-query'
+    | '/'
+    | '/admin/audit-logs'
+    | '/admin/branches'
+    | '/admin/brands'
+    | '/admin/platform-fees'
+    | '/admin/system-logs'
+    | '/admin/users'
+    | '/admin/vouchers'
+    | '/analytics/inventory'
+    | '/analytics/sales'
+    | '/delivery-notes/$dnId'
+    | '/finance/reconciliation'
+    | '/ingredients/$ingId'
+    | '/inventory/ledger'
+    | '/modifier-groups/$mgId'
+    | '/period-control/$periodId'
+    | '/purchase-orders/$poId'
+    | '/purchase-requisitions/$prId'
+    | '/recipes/$recipeId'
+    | '/scm-invoices/$invId'
+    | '/stock-opname/$soId'
+    | '/stock-transfers/$trId'
+    | '/waste/broken-stock'
     | '/api/auth/$'
     | '/demo/form/address'
     | '/demo/form/simple'
+    | '/admin'
+    | '/analytics'
+    | '/delivery-notes'
+    | '/finance'
+    | '/ingredients'
+    | '/inventory'
+    | '/modifier-groups'
+    | '/period-control'
+    | '/purchase-orders'
+    | '/purchase-requisitions'
+    | '/recipes'
+    | '/scm-invoices'
+    | '/stock-opname'
+    | '/stock-transfers'
+    | '/waste'
   id:
     | '__root__'
-    | '/'
+    | '/_layout'
     | '/about'
-    | '/api/resume-chat'
+    | '/login'
+    | '/_layout/cancel-requests'
+    | '/_layout/dashboard'
+    | '/_layout/order-history'
+    | '/_layout/pos'
+    | '/_layout/print-requests'
+    | '/_layout/yield-tracking'
+    | '/api/seed'
+    | '/api/setup'
     | '/demo/better-auth'
     | '/demo/convex'
-    | '/demo/drizzle'
     | '/demo/table'
     | '/demo/tanstack-query'
+    | '/_layout/'
+    | '/_layout/admin/audit-logs'
+    | '/_layout/admin/branches'
+    | '/_layout/admin/brands'
+    | '/_layout/admin/platform-fees'
+    | '/_layout/admin/system-logs'
+    | '/_layout/admin/users'
+    | '/_layout/admin/vouchers'
+    | '/_layout/analytics/inventory'
+    | '/_layout/analytics/sales'
+    | '/_layout/delivery-notes/$dnId'
+    | '/_layout/finance/reconciliation'
+    | '/_layout/ingredients/$ingId'
+    | '/_layout/inventory/ledger'
+    | '/_layout/modifier-groups/$mgId'
+    | '/_layout/period-control/$periodId'
+    | '/_layout/purchase-orders/$poId'
+    | '/_layout/purchase-requisitions/$prId'
+    | '/_layout/recipes/$recipeId'
+    | '/_layout/scm-invoices/$invId'
+    | '/_layout/stock-opname/$soId'
+    | '/_layout/stock-transfers/$trId'
+    | '/_layout/waste/broken-stock'
     | '/api/auth/$'
     | '/demo/form/address'
     | '/demo/form/simple'
+    | '/_layout/admin/'
+    | '/_layout/analytics/'
+    | '/_layout/delivery-notes/'
+    | '/_layout/finance/'
+    | '/_layout/ingredients/'
+    | '/_layout/inventory/'
+    | '/_layout/modifier-groups/'
+    | '/_layout/period-control/'
+    | '/_layout/purchase-orders/'
+    | '/_layout/purchase-requisitions/'
+    | '/_layout/recipes/'
+    | '/_layout/scm-invoices/'
+    | '/_layout/stock-opname/'
+    | '/_layout/stock-transfers/'
+    | '/_layout/waste/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  LayoutRoute: typeof LayoutRouteWithChildren
   AboutRoute: typeof AboutRoute
-  ApiResumeChatRoute: typeof ApiResumeChatRoute
+  LoginRoute: typeof LoginRoute
+  ApiSeedRoute: typeof ApiSeedRoute
+  ApiSetupRoute: typeof ApiSetupRoute
   DemoBetterAuthRoute: typeof DemoBetterAuthRoute
   DemoConvexRoute: typeof DemoConvexRoute
-  DemoDrizzleRoute: typeof DemoDrizzleRoute
   DemoTableRoute: typeof DemoTableRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -175,6 +724,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -182,12 +738,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
+    '/_layout': {
+      id: '/_layout'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof LayoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_layout/': {
+      id: '/_layout/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof LayoutIndexRouteImport
+      parentRoute: typeof LayoutRoute
     }
     '/demo/tanstack-query': {
       id: '/demo/tanstack-query'
@@ -201,13 +764,6 @@ declare module '@tanstack/react-router' {
       path: '/demo/table'
       fullPath: '/demo/table'
       preLoaderRoute: typeof DemoTableRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/drizzle': {
-      id: '/demo/drizzle'
-      path: '/demo/drizzle'
-      fullPath: '/demo/drizzle'
-      preLoaderRoute: typeof DemoDrizzleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/convex': {
@@ -224,12 +780,166 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoBetterAuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/resume-chat': {
-      id: '/api/resume-chat'
-      path: '/api/resume-chat'
-      fullPath: '/api/resume-chat'
-      preLoaderRoute: typeof ApiResumeChatRouteImport
+    '/api/setup': {
+      id: '/api/setup'
+      path: '/api/setup'
+      fullPath: '/api/setup'
+      preLoaderRoute: typeof ApiSetupRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/seed': {
+      id: '/api/seed'
+      path: '/api/seed'
+      fullPath: '/api/seed'
+      preLoaderRoute: typeof ApiSeedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_layout/yield-tracking': {
+      id: '/_layout/yield-tracking'
+      path: '/yield-tracking'
+      fullPath: '/yield-tracking'
+      preLoaderRoute: typeof LayoutYieldTrackingRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/print-requests': {
+      id: '/_layout/print-requests'
+      path: '/print-requests'
+      fullPath: '/print-requests'
+      preLoaderRoute: typeof LayoutPrintRequestsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/pos': {
+      id: '/_layout/pos'
+      path: '/pos'
+      fullPath: '/pos'
+      preLoaderRoute: typeof LayoutPosRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/order-history': {
+      id: '/_layout/order-history'
+      path: '/order-history'
+      fullPath: '/order-history'
+      preLoaderRoute: typeof LayoutOrderHistoryRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/dashboard': {
+      id: '/_layout/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof LayoutDashboardRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/cancel-requests': {
+      id: '/_layout/cancel-requests'
+      path: '/cancel-requests'
+      fullPath: '/cancel-requests'
+      preLoaderRoute: typeof LayoutCancelRequestsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/waste/': {
+      id: '/_layout/waste/'
+      path: '/waste'
+      fullPath: '/waste/'
+      preLoaderRoute: typeof LayoutWasteIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/stock-transfers/': {
+      id: '/_layout/stock-transfers/'
+      path: '/stock-transfers'
+      fullPath: '/stock-transfers/'
+      preLoaderRoute: typeof LayoutStockTransfersIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/stock-opname/': {
+      id: '/_layout/stock-opname/'
+      path: '/stock-opname'
+      fullPath: '/stock-opname/'
+      preLoaderRoute: typeof LayoutStockOpnameIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-invoices/': {
+      id: '/_layout/scm-invoices/'
+      path: '/scm-invoices'
+      fullPath: '/scm-invoices/'
+      preLoaderRoute: typeof LayoutScmInvoicesIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/recipes/': {
+      id: '/_layout/recipes/'
+      path: '/recipes'
+      fullPath: '/recipes/'
+      preLoaderRoute: typeof LayoutRecipesIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/purchase-requisitions/': {
+      id: '/_layout/purchase-requisitions/'
+      path: '/purchase-requisitions'
+      fullPath: '/purchase-requisitions/'
+      preLoaderRoute: typeof LayoutPurchaseRequisitionsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/purchase-orders/': {
+      id: '/_layout/purchase-orders/'
+      path: '/purchase-orders'
+      fullPath: '/purchase-orders/'
+      preLoaderRoute: typeof LayoutPurchaseOrdersIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/period-control/': {
+      id: '/_layout/period-control/'
+      path: '/period-control'
+      fullPath: '/period-control/'
+      preLoaderRoute: typeof LayoutPeriodControlIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/modifier-groups/': {
+      id: '/_layout/modifier-groups/'
+      path: '/modifier-groups'
+      fullPath: '/modifier-groups/'
+      preLoaderRoute: typeof LayoutModifierGroupsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/inventory/': {
+      id: '/_layout/inventory/'
+      path: '/inventory'
+      fullPath: '/inventory/'
+      preLoaderRoute: typeof LayoutInventoryIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/ingredients/': {
+      id: '/_layout/ingredients/'
+      path: '/ingredients'
+      fullPath: '/ingredients/'
+      preLoaderRoute: typeof LayoutIngredientsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/finance/': {
+      id: '/_layout/finance/'
+      path: '/finance'
+      fullPath: '/finance/'
+      preLoaderRoute: typeof LayoutFinanceIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/delivery-notes/': {
+      id: '/_layout/delivery-notes/'
+      path: '/delivery-notes'
+      fullPath: '/delivery-notes/'
+      preLoaderRoute: typeof LayoutDeliveryNotesIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/analytics/': {
+      id: '/_layout/analytics/'
+      path: '/analytics'
+      fullPath: '/analytics/'
+      preLoaderRoute: typeof LayoutAnalyticsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/': {
+      id: '/_layout/admin/'
+      path: '/admin'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof LayoutAdminIndexRouteImport
+      parentRoute: typeof LayoutRoute
     }
     '/demo/form/simple': {
       id: '/demo/form/simple'
@@ -252,16 +962,268 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_layout/waste/broken-stock': {
+      id: '/_layout/waste/broken-stock'
+      path: '/waste/broken-stock'
+      fullPath: '/waste/broken-stock'
+      preLoaderRoute: typeof LayoutWasteBrokenStockRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/stock-transfers/$trId': {
+      id: '/_layout/stock-transfers/$trId'
+      path: '/stock-transfers/$trId'
+      fullPath: '/stock-transfers/$trId'
+      preLoaderRoute: typeof LayoutStockTransfersTrIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/stock-opname/$soId': {
+      id: '/_layout/stock-opname/$soId'
+      path: '/stock-opname/$soId'
+      fullPath: '/stock-opname/$soId'
+      preLoaderRoute: typeof LayoutStockOpnameSoIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-invoices/$invId': {
+      id: '/_layout/scm-invoices/$invId'
+      path: '/scm-invoices/$invId'
+      fullPath: '/scm-invoices/$invId'
+      preLoaderRoute: typeof LayoutScmInvoicesInvIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/recipes/$recipeId': {
+      id: '/_layout/recipes/$recipeId'
+      path: '/recipes/$recipeId'
+      fullPath: '/recipes/$recipeId'
+      preLoaderRoute: typeof LayoutRecipesRecipeIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/purchase-requisitions/$prId': {
+      id: '/_layout/purchase-requisitions/$prId'
+      path: '/purchase-requisitions/$prId'
+      fullPath: '/purchase-requisitions/$prId'
+      preLoaderRoute: typeof LayoutPurchaseRequisitionsPrIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/purchase-orders/$poId': {
+      id: '/_layout/purchase-orders/$poId'
+      path: '/purchase-orders/$poId'
+      fullPath: '/purchase-orders/$poId'
+      preLoaderRoute: typeof LayoutPurchaseOrdersPoIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/period-control/$periodId': {
+      id: '/_layout/period-control/$periodId'
+      path: '/period-control/$periodId'
+      fullPath: '/period-control/$periodId'
+      preLoaderRoute: typeof LayoutPeriodControlPeriodIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/modifier-groups/$mgId': {
+      id: '/_layout/modifier-groups/$mgId'
+      path: '/modifier-groups/$mgId'
+      fullPath: '/modifier-groups/$mgId'
+      preLoaderRoute: typeof LayoutModifierGroupsMgIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/inventory/ledger': {
+      id: '/_layout/inventory/ledger'
+      path: '/inventory/ledger'
+      fullPath: '/inventory/ledger'
+      preLoaderRoute: typeof LayoutInventoryLedgerRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/ingredients/$ingId': {
+      id: '/_layout/ingredients/$ingId'
+      path: '/ingredients/$ingId'
+      fullPath: '/ingredients/$ingId'
+      preLoaderRoute: typeof LayoutIngredientsIngIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/finance/reconciliation': {
+      id: '/_layout/finance/reconciliation'
+      path: '/finance/reconciliation'
+      fullPath: '/finance/reconciliation'
+      preLoaderRoute: typeof LayoutFinanceReconciliationRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/delivery-notes/$dnId': {
+      id: '/_layout/delivery-notes/$dnId'
+      path: '/delivery-notes/$dnId'
+      fullPath: '/delivery-notes/$dnId'
+      preLoaderRoute: typeof LayoutDeliveryNotesDnIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/analytics/sales': {
+      id: '/_layout/analytics/sales'
+      path: '/analytics/sales'
+      fullPath: '/analytics/sales'
+      preLoaderRoute: typeof LayoutAnalyticsSalesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/analytics/inventory': {
+      id: '/_layout/analytics/inventory'
+      path: '/analytics/inventory'
+      fullPath: '/analytics/inventory'
+      preLoaderRoute: typeof LayoutAnalyticsInventoryRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/vouchers': {
+      id: '/_layout/admin/vouchers'
+      path: '/admin/vouchers'
+      fullPath: '/admin/vouchers'
+      preLoaderRoute: typeof LayoutAdminVouchersRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/users': {
+      id: '/_layout/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof LayoutAdminUsersRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/system-logs': {
+      id: '/_layout/admin/system-logs'
+      path: '/admin/system-logs'
+      fullPath: '/admin/system-logs'
+      preLoaderRoute: typeof LayoutAdminSystemLogsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/platform-fees': {
+      id: '/_layout/admin/platform-fees'
+      path: '/admin/platform-fees'
+      fullPath: '/admin/platform-fees'
+      preLoaderRoute: typeof LayoutAdminPlatformFeesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/brands': {
+      id: '/_layout/admin/brands'
+      path: '/admin/brands'
+      fullPath: '/admin/brands'
+      preLoaderRoute: typeof LayoutAdminBrandsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/branches': {
+      id: '/_layout/admin/branches'
+      path: '/admin/branches'
+      fullPath: '/admin/branches'
+      preLoaderRoute: typeof LayoutAdminBranchesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/audit-logs': {
+      id: '/_layout/admin/audit-logs'
+      path: '/admin/audit-logs'
+      fullPath: '/admin/audit-logs'
+      preLoaderRoute: typeof LayoutAdminAuditLogsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
   }
 }
 
+interface LayoutRouteChildren {
+  LayoutCancelRequestsRoute: typeof LayoutCancelRequestsRoute
+  LayoutDashboardRoute: typeof LayoutDashboardRoute
+  LayoutOrderHistoryRoute: typeof LayoutOrderHistoryRoute
+  LayoutPosRoute: typeof LayoutPosRoute
+  LayoutPrintRequestsRoute: typeof LayoutPrintRequestsRoute
+  LayoutYieldTrackingRoute: typeof LayoutYieldTrackingRoute
+  LayoutIndexRoute: typeof LayoutIndexRoute
+  LayoutAdminAuditLogsRoute: typeof LayoutAdminAuditLogsRoute
+  LayoutAdminBranchesRoute: typeof LayoutAdminBranchesRoute
+  LayoutAdminBrandsRoute: typeof LayoutAdminBrandsRoute
+  LayoutAdminPlatformFeesRoute: typeof LayoutAdminPlatformFeesRoute
+  LayoutAdminSystemLogsRoute: typeof LayoutAdminSystemLogsRoute
+  LayoutAdminUsersRoute: typeof LayoutAdminUsersRoute
+  LayoutAdminVouchersRoute: typeof LayoutAdminVouchersRoute
+  LayoutAnalyticsInventoryRoute: typeof LayoutAnalyticsInventoryRoute
+  LayoutAnalyticsSalesRoute: typeof LayoutAnalyticsSalesRoute
+  LayoutDeliveryNotesDnIdRoute: typeof LayoutDeliveryNotesDnIdRoute
+  LayoutFinanceReconciliationRoute: typeof LayoutFinanceReconciliationRoute
+  LayoutIngredientsIngIdRoute: typeof LayoutIngredientsIngIdRoute
+  LayoutInventoryLedgerRoute: typeof LayoutInventoryLedgerRoute
+  LayoutModifierGroupsMgIdRoute: typeof LayoutModifierGroupsMgIdRoute
+  LayoutPeriodControlPeriodIdRoute: typeof LayoutPeriodControlPeriodIdRoute
+  LayoutPurchaseOrdersPoIdRoute: typeof LayoutPurchaseOrdersPoIdRoute
+  LayoutPurchaseRequisitionsPrIdRoute: typeof LayoutPurchaseRequisitionsPrIdRoute
+  LayoutRecipesRecipeIdRoute: typeof LayoutRecipesRecipeIdRoute
+  LayoutScmInvoicesInvIdRoute: typeof LayoutScmInvoicesInvIdRoute
+  LayoutStockOpnameSoIdRoute: typeof LayoutStockOpnameSoIdRoute
+  LayoutStockTransfersTrIdRoute: typeof LayoutStockTransfersTrIdRoute
+  LayoutWasteBrokenStockRoute: typeof LayoutWasteBrokenStockRoute
+  LayoutAdminIndexRoute: typeof LayoutAdminIndexRoute
+  LayoutAnalyticsIndexRoute: typeof LayoutAnalyticsIndexRoute
+  LayoutDeliveryNotesIndexRoute: typeof LayoutDeliveryNotesIndexRoute
+  LayoutFinanceIndexRoute: typeof LayoutFinanceIndexRoute
+  LayoutIngredientsIndexRoute: typeof LayoutIngredientsIndexRoute
+  LayoutInventoryIndexRoute: typeof LayoutInventoryIndexRoute
+  LayoutModifierGroupsIndexRoute: typeof LayoutModifierGroupsIndexRoute
+  LayoutPeriodControlIndexRoute: typeof LayoutPeriodControlIndexRoute
+  LayoutPurchaseOrdersIndexRoute: typeof LayoutPurchaseOrdersIndexRoute
+  LayoutPurchaseRequisitionsIndexRoute: typeof LayoutPurchaseRequisitionsIndexRoute
+  LayoutRecipesIndexRoute: typeof LayoutRecipesIndexRoute
+  LayoutScmInvoicesIndexRoute: typeof LayoutScmInvoicesIndexRoute
+  LayoutStockOpnameIndexRoute: typeof LayoutStockOpnameIndexRoute
+  LayoutStockTransfersIndexRoute: typeof LayoutStockTransfersIndexRoute
+  LayoutWasteIndexRoute: typeof LayoutWasteIndexRoute
+}
+
+const LayoutRouteChildren: LayoutRouteChildren = {
+  LayoutCancelRequestsRoute: LayoutCancelRequestsRoute,
+  LayoutDashboardRoute: LayoutDashboardRoute,
+  LayoutOrderHistoryRoute: LayoutOrderHistoryRoute,
+  LayoutPosRoute: LayoutPosRoute,
+  LayoutPrintRequestsRoute: LayoutPrintRequestsRoute,
+  LayoutYieldTrackingRoute: LayoutYieldTrackingRoute,
+  LayoutIndexRoute: LayoutIndexRoute,
+  LayoutAdminAuditLogsRoute: LayoutAdminAuditLogsRoute,
+  LayoutAdminBranchesRoute: LayoutAdminBranchesRoute,
+  LayoutAdminBrandsRoute: LayoutAdminBrandsRoute,
+  LayoutAdminPlatformFeesRoute: LayoutAdminPlatformFeesRoute,
+  LayoutAdminSystemLogsRoute: LayoutAdminSystemLogsRoute,
+  LayoutAdminUsersRoute: LayoutAdminUsersRoute,
+  LayoutAdminVouchersRoute: LayoutAdminVouchersRoute,
+  LayoutAnalyticsInventoryRoute: LayoutAnalyticsInventoryRoute,
+  LayoutAnalyticsSalesRoute: LayoutAnalyticsSalesRoute,
+  LayoutDeliveryNotesDnIdRoute: LayoutDeliveryNotesDnIdRoute,
+  LayoutFinanceReconciliationRoute: LayoutFinanceReconciliationRoute,
+  LayoutIngredientsIngIdRoute: LayoutIngredientsIngIdRoute,
+  LayoutInventoryLedgerRoute: LayoutInventoryLedgerRoute,
+  LayoutModifierGroupsMgIdRoute: LayoutModifierGroupsMgIdRoute,
+  LayoutPeriodControlPeriodIdRoute: LayoutPeriodControlPeriodIdRoute,
+  LayoutPurchaseOrdersPoIdRoute: LayoutPurchaseOrdersPoIdRoute,
+  LayoutPurchaseRequisitionsPrIdRoute: LayoutPurchaseRequisitionsPrIdRoute,
+  LayoutRecipesRecipeIdRoute: LayoutRecipesRecipeIdRoute,
+  LayoutScmInvoicesInvIdRoute: LayoutScmInvoicesInvIdRoute,
+  LayoutStockOpnameSoIdRoute: LayoutStockOpnameSoIdRoute,
+  LayoutStockTransfersTrIdRoute: LayoutStockTransfersTrIdRoute,
+  LayoutWasteBrokenStockRoute: LayoutWasteBrokenStockRoute,
+  LayoutAdminIndexRoute: LayoutAdminIndexRoute,
+  LayoutAnalyticsIndexRoute: LayoutAnalyticsIndexRoute,
+  LayoutDeliveryNotesIndexRoute: LayoutDeliveryNotesIndexRoute,
+  LayoutFinanceIndexRoute: LayoutFinanceIndexRoute,
+  LayoutIngredientsIndexRoute: LayoutIngredientsIndexRoute,
+  LayoutInventoryIndexRoute: LayoutInventoryIndexRoute,
+  LayoutModifierGroupsIndexRoute: LayoutModifierGroupsIndexRoute,
+  LayoutPeriodControlIndexRoute: LayoutPeriodControlIndexRoute,
+  LayoutPurchaseOrdersIndexRoute: LayoutPurchaseOrdersIndexRoute,
+  LayoutPurchaseRequisitionsIndexRoute: LayoutPurchaseRequisitionsIndexRoute,
+  LayoutRecipesIndexRoute: LayoutRecipesIndexRoute,
+  LayoutScmInvoicesIndexRoute: LayoutScmInvoicesIndexRoute,
+  LayoutStockOpnameIndexRoute: LayoutStockOpnameIndexRoute,
+  LayoutStockTransfersIndexRoute: LayoutStockTransfersIndexRoute,
+  LayoutWasteIndexRoute: LayoutWasteIndexRoute,
+}
+
+const LayoutRouteWithChildren =
+  LayoutRoute._addFileChildren(LayoutRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  LayoutRoute: LayoutRouteWithChildren,
   AboutRoute: AboutRoute,
-  ApiResumeChatRoute: ApiResumeChatRoute,
+  LoginRoute: LoginRoute,
+  ApiSeedRoute: ApiSeedRoute,
+  ApiSetupRoute: ApiSetupRoute,
   DemoBetterAuthRoute: DemoBetterAuthRoute,
   DemoConvexRoute: DemoConvexRoute,
-  DemoDrizzleRoute: DemoDrizzleRoute,
   DemoTableRoute: DemoTableRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
