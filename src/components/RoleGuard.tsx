@@ -1,6 +1,7 @@
 import { Navigate } from "@tanstack/react-router";
 import type { UserRole } from "#/lib/auth-context";
 import { useAuth } from "#/lib/auth-context";
+import { Skeleton } from "./ui/skeleton";
 
 interface RoleGuardProps {
   allowedRoles: UserRole[];
@@ -13,8 +14,20 @@ export default function RoleGuard({ allowedRoles, children, fallback }: RoleGuar
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      <div className="space-y-6 py-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-lg border p-4 space-y-3">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-8 w-32" />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-full" />
+          ))}
+        </div>
       </div>
     );
   }

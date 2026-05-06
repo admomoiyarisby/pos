@@ -41,6 +41,16 @@ const columns: Column<UserRow>[] = [
   },
   { key: "branchName", header: "Cabang", render: (r) => r.branchName ?? "-" },
   {
+    key: "pin",
+    header: "PIN",
+    render: (r) =>
+      r.role === "branch_admin" && r.pin ? (
+        <code className="text-sm font-mono tracking-widest">{r.pin}</code>
+      ) : (
+        <span className="text-muted-foreground">-</span>
+      ),
+  },
+  {
     key: "status",
     header: "Status",
     render: (r) =>
@@ -66,6 +76,8 @@ function UsersPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
+  const [selectedRole, setSelectedRole] = useState("branch_admin");
+  const [mutationError, setMutationError] = useState("");
 
   const { data: users } = useQuery({
     queryKey: ["users"],
@@ -80,6 +92,9 @@ function UsersPage() {
       setModalOpen(false);
       setEditing(null);
     },
+    onError: (err) => {
+      setMutationError(err.message);
+    },
   });
 
   const updateMutation = useMutation({
@@ -88,6 +103,9 @@ function UsersPage() {
       void queryClient.invalidateQueries({ queryKey: ["users"] });
       setModalOpen(false);
       setEditing(null);
+    },
+    onError: (err) => {
+      setMutationError(err.message);
     },
   });
 
@@ -125,15 +143,24 @@ function UsersPage() {
   };
   usePageTitle("Manajemen User", "Kelola pengguna sistem dan PIN kasir");
 
+  const handleCloseModal = () => {
+    setModalOpen(false);
+    setMutationError("");
+  };
+
+  const handleOpenCreate = () => {
+    setEditing(null);
+    setSelectedRole("branch_admin");
+    setMutationError("");
+    setModalOpen(true);
+  };
+
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
       <PageHeader
         action={{
           label: "Tambah User",
-          onClick: () => {
-            setEditing(null);
-            setModalOpen(true);
-          },
+          onClick: handleOpenCreate,
         }}
       />
 
@@ -143,13 +170,15 @@ function UsersPage() {
         keyExtractor={(r) => r.id}
         onRowClick={(r) => {
           setEditing(r);
+          setSelectedRole(r.role);
+          setMutationError("");
           setModalOpen(true);
         }}
       />
 
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={handleCloseModal}
         title={editing ? "Edit User" : "Tambah User"}
         size="lg"
       >
@@ -196,6 +225,7 @@ function UsersPage() {
               <select
                 name="role"
                 defaultValue={editing?.role ?? "branch_admin"}
+                onChange={(e) => setSelectedRole(e.target.value)}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="super_admin">Super Admin</option>
@@ -223,16 +253,26 @@ function UsersPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">PIN (4 digit)</label>
-              <input
-                name="pin"
-                defaultValue={editing?.pin ?? ""}
-                maxLength={4}
-                pattern="\d{4}"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
+            {/* PIN field — only for branch_admin role */}
+            {selectedRole === "branch_admin" && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  PIN (4 digit) <span className="text-destructive">*</span>
+                </label>
+                <input
+                  name="pin"
+                  defaultValue={editing?.pin ?? ""}
+                  maxLength={4}
+                  pattern="\d{4}"
+                  inputMode="numeric"
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-mono tracking-widest"
+                  placeholder="1234"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  PIN unik per cabang. Digunakan untuk login cepat di terminal kasir.
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium">Status</label>
               <select
@@ -246,10 +286,24 @@ function UsersPage() {
             </div>
           </div>
 
+          {/* Mutation error */}
+          {mutationError && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {mutationError}
+            </div>
+          )}
+
+          {/* If role is branch_admin and no branch selected, show warning */}
+          {selectedRole === "branch_admin" && !editing?.branchId && (
+            <p className="text-xs text-amber-600">
+              Branch Admin harus memiliki cabang. Pilih cabang sebelum menyimpan.
+            </p>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={() => setModalOpen(false)}
+              onClick={handleCloseModal}
               className="h-9 px-4 rounded-md border text-sm"
             >
               Batal

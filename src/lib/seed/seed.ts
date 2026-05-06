@@ -65,11 +65,15 @@ async function createUserViaAuth(
   role: string,
   branchCode?: string,
   branchIdMap?: IdMap["branch"],
+  pin?: string,
 ) {
   try {
     const body: any = { email, password, name, role, status: "Active" };
     if (branchCode && branchIdMap) {
       body.branchId = branchIdMap.get(branchCode);
+    }
+    if (pin) {
+      body.pin = pin;
     }
     await auth.api.signUpEmail({ body: body as never });
   } catch {
@@ -77,6 +81,9 @@ async function createUserViaAuth(
     const updateData: any = { name, role, status: "Active" };
     if (branchCode && branchIdMap) {
       updateData.branchId = branchIdMap.get(branchCode);
+    }
+    if (pin) {
+      updateData.pin = pin;
     }
     await db.update(usersTable).set(updateData).where(eq(usersTable.email, email));
   }
@@ -165,7 +172,7 @@ export async function seedSuppliers(idMap: IdMap) {
 
 export async function seedUsers(idMap: IdMap) {
   for (const u of USERS_TO_CREATE) {
-    await createUserViaAuth(u.email, u.password, u.name, u.role, u.branchCode, idMap.branch);
+    await createUserViaAuth(u.email, u.password, u.name, u.role, u.branchCode, idMap.branch, u.pin);
     const userId = await getUserIdByEmail(u.email);
     idMap.user.set(u.email, userId);
   }

@@ -6,6 +6,7 @@ import { AuthProvider } from "../lib/auth-context";
 import { getCurrentUser } from "../lib/server/auth";
 import type { QueryClient } from "@tanstack/react-query";
 import type { AuthUser } from "../lib/auth-context";
+import TopProgressBar from "../components/TopProgressBar";
 
 import appCss from "../styles.css?url";
 
@@ -58,6 +59,7 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body className="font-sans antialiased wrap-anywhere">
+        <TopProgressBar />
         <AuthProvider user={user ?? null} isLoading={false}>
           <Outlet />
           <TanStackDevtools

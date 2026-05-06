@@ -1250,6 +1250,29 @@ export const verification = pgTable(
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
+export const passkey = pgTable(
+  "passkey",
+  {
+    id: text("id").primaryKey(),
+    name: text("name"),
+    publicKey: text("public_key").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    credentialID: text("credential_id").notNull(),
+    counter: integer("counter").notNull(),
+    deviceType: text("device_type").notNull(),
+    backedUp: boolean("backed_up").notNull(),
+    transports: text("transports"),
+    createdAt: timestamp("created_at"),
+    aaguid: text("aaguid"),
+  },
+  (table) => [
+    index("passkey_userId_idx").on(table.userId),
+    index("passkey_credentialID_idx").on(table.credentialID),
+  ],
+);
+
 // =============================================================================
 // RELATIONS
 // =============================================================================
@@ -1259,6 +1282,8 @@ export const verification = pgTable(
 export const usersRelations = relations(users, ({ one, many }) => ({
   branch: one(branches, { fields: [users.branchId], references: [branches.id] }),
   areaManagerBranches: many(areaManagerBranches),
+  passkeys: many(passkey),
+
   sessions: many(session),
   accounts: many(account),
   shifts: many(shifts),
@@ -1531,6 +1556,13 @@ export const sessionRelations = relations(session, ({ one }) => ({
 export const accountRelations = relations(account, ({ one }) => ({
   user: one(users, {
     fields: [account.userId],
+    references: [users.id],
+  }),
+}));
+
+export const passkeyRelations = relations(passkey, ({ one }) => ({
+  user: one(users, {
+    fields: [passkey.userId],
     references: [users.id],
   }),
 }));

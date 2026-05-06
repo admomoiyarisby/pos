@@ -3,6 +3,8 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { account, session, users, verification } from "#/db/schema";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
+import { passkey } from "@better-auth/passkey";
+import { pinAuth } from "./auth-plugins/pin-auth";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -46,7 +48,7 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
-  plugins: [tanstackStartCookies()],
+  plugins: [passkey(), pinAuth(), tanstackStartCookies()],
 });
 
 export type AuthUser = typeof auth.$Infer.Session.user & {

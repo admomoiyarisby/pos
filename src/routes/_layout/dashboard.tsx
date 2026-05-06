@@ -4,6 +4,7 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
 import { getDashboardData } from "#/lib/server/dashboard";
+import { Skeleton } from "#/components/ui/skeleton";
 import { StatsCards } from "#/components/dashboard/StatsCards";
 import { CogsAnalysisTable, computeCogsData } from "#/components/dashboard/CogsAnalysisTable";
 import { RopRoqTable, computeRopData } from "#/components/dashboard/RopRoqTable";
@@ -42,8 +43,34 @@ function DashboardPage() {
   if (isLoading || !data) {
     return (
       <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
-        <div className="flex items-center justify-center py-20">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <div className="space-y-6">
+          {/* Stats skeletons */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-lg border p-4 space-y-3">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-8 w-32" />
+              </div>
+            ))}
+          </div>
+          {/* Chart skeletons */}
+          <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
+            <div className="rounded-lg border p-4 space-y-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+            <div className="rounded-lg border p-4 space-y-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          </div>
+          {/* Table skeleton */}
+          <div className="rounded-lg border p-4 space-y-3">
+            <Skeleton className="h-4 w-40" />
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
         </div>
       </RoleGuard>
     );

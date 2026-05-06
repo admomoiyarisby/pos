@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/db/index";
 import { users as usersTable, areaManagerBranches, branches } from "#/db/schema";
-import { eq, ilike, and } from "drizzle-orm";
+import { eq, ilike, and, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { z } from "zod";
 import { auth } from "#/lib/auth";
@@ -88,6 +88,18 @@ export const createUser = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireRole("super_admin");
 
+    // Validate PIN uniqueness per branch
+    if (data.pin && data.branchId) {
+      const [existing] = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(and(eq(usersTable.pin, data.pin), eq(usersTable.branchId, data.branchId)))
+        .limit(1);
+      if (existing) {
+        throw new Error("PIN sudah digunakan oleh user lain di cabang ini");
+      }
+    }
+
     // Create via better-auth
     const baResult = await auth.api.signUpEmail({
       body: {
@@ -164,6 +176,36 @@ export const updateUser = createServerFn({ method: "POST" })
     await requireRole("super_admin");
 
     const { id, assignedBranches, ...updates } = data;
+
+    // Validate PIN uniqueness per branch
+    if (data.pin) {
+      // Determine the branchId to check: use new branchId if provided, otherwise current
+      let branchIdToCheck = data.branchId;
+      if (!branchIdToCheck) {
+        const [currentUser] = await db
+          .select({ branchId: usersTable.branchId })
+          .from(usersTable)
+          .where(eq(usersTable.id, id))
+          .limit(1);
+        branchIdToCheck = currentUser?.branchId ?? undefined;
+      }
+      if (branchIdToCheck) {
+        const [existing] = await db
+          .select({ id: usersTable.id })
+          .from(usersTable)
+          .where(
+            and(
+              eq(usersTable.pin, data.pin),
+              eq(usersTable.branchId, branchIdToCheck),
+              ne(usersTable.id, id),
+            ),
+          )
+          .limit(1);
+        if (existing) {
+          throw new Error("PIN sudah digunakan oleh user lain di cabang ini");
+        }
+      }
+    }
 
     const setData: Record<string, unknown> = { ...updates };
     if (updates.branchId === undefined && "branchId" in data) {
