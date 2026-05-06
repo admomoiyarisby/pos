@@ -32,7 +32,7 @@ function RecipeDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-2xl font-bold">{recipe.name}</h1>
             <p className="text-sm text-muted-foreground">Kode: {recipe.code}</p>
@@ -45,7 +45,7 @@ function RecipeDetailPage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Kategori</p>
             <p className="font-medium mt-1 capitalize">{recipe.category}</p>
@@ -71,8 +71,8 @@ function RecipeDetailPage() {
           {recipe.ingredients.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada bahan</p>
           ) : (
-            <div className="rounded-md border">
-              <table className="w-full text-sm">
+            <div className="rounded-md border overflow-x-auto">
+              <table className="w-full text-sm min-w-[480px]">
                 <thead className="border-b bg-muted/50">
                   <tr>
                     <th className="px-4 py-2 text-left font-medium">Bahan</th>

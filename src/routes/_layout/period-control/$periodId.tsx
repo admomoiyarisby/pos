@@ -49,13 +49,13 @@ function PeriodDetailPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="rounded-lg border p-4">
             <h3 className="text-sm font-semibold mb-3">
               Opening Balance ({openingBalances.length} item)
             </h3>
-            <div className="rounded-md border max-h-64 overflow-y-auto">
-              <table className="w-full text-sm">
+            <div className="rounded-md border overflow-auto max-h-64">
+              <table className="w-full text-sm min-w-[480px]">
                 <thead className="border-b bg-muted/50 sticky top-0">
                   <tr>
                     <th className="px-3 py-2 text-left font-medium">Branch</th>
@@ -79,8 +79,8 @@ function PeriodDetailPage() {
               Closing Balance ({closingBalances.length} item)
             </h3>
             {closingBalances.length > 0 ? (
-              <div className="rounded-md border max-h-64 overflow-y-auto">
-                <table className="w-full text-sm">
+              <div className="rounded-md border overflow-auto max-h-64">
+                <table className="w-full text-sm min-w-[480px]">
                   <thead className="border-b bg-muted/50 sticky top-0">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">Branch</th>

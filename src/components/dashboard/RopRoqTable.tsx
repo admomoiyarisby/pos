@@ -92,25 +92,25 @@ export function RopRoqTable({ data }: { data: ReturnType<typeof computeRopData> 
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left">
+        <table className="w-full border-collapse text-left min-w-[640px]">
           <thead>
             <tr className="border-b">
-              <th className="px-4 py-3 text-xs font-bold uppercase text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase text-muted-foreground sticky left-0 bg-background z-10 border-r border-border">
                 Bahan Baku
               </th>
-              <th className="px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
                 Avg. Daily Usage
               </th>
-              <th className="px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
                 Reorder Point (ROP)
               </th>
-              <th className="px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
                 Stok Saat Ini
               </th>
-              <th className="px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
                 Saran Order (ROQ)
               </th>
-              <th className="px-4 py-3 text-xs font-bold uppercase text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase text-muted-foreground">
                 Status
               </th>
             </tr>
@@ -118,27 +118,27 @@ export function RopRoqTable({ data }: { data: ReturnType<typeof computeRopData> 
           <tbody>
             {data.map((item) => (
               <tr key={item.id} className="border-b last:border-0 hover:bg-muted/50">
-                <td className="px-4 py-3">
+                <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-3">
                   <div className="text-sm font-bold text-foreground">{item.name}</div>
                   <div className="text-[10px] text-muted-foreground">{item.stockUnit}</div>
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-sm">
+                <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-sm">
                   {item.avgDailyUsage.toFixed(2)}
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-sm font-bold text-foreground">
+                <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-sm font-bold text-foreground">
                   {item.rop.toFixed(2)}
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-sm">
+                <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-sm">
                   <span
                     className={item.isLow ? "font-bold text-rose-600" : "text-muted-foreground"}
                   >
                     {item.currentStock.toLocaleString("id-ID")}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-sm font-bold text-emerald-600">
+                <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-sm font-bold text-emerald-600">
                   {item.roq > 0 ? item.roq.toFixed(2) : "-"}
                 </td>
-                <td className="px-4 py-3">
+                <td className="whitespace-nowrap px-4 py-3">
                   {item.isLow ? (
                     <Badge variant="destructive">REORDER NOW</Badge>
                   ) : (

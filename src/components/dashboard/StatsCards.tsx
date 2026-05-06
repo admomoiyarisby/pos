@@ -11,7 +11,7 @@ interface StatsCardsProps {
 export function StatsCards({ totalSales, completedCount, voidCount, anomalies }: StatsCardsProps) {
   return (
     <>
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:gap-6 md:grid-cols-3">
         <div className="rounded-lg border bg-emerald-600 p-4 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <DollarSign className="h-6 w-6 text-emerald-100" />

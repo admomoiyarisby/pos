@@ -26,9 +26,16 @@ import {
   Percent,
   ShieldCheck,
   ScrollText,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { authClient } from "#/lib/auth-client";
+
+interface SidebarProps {
+  userRole: UserRole;
+  mobileOpen: boolean;
+  onClose: () => void;
+}
 
 interface NavItem {
   label: string;
@@ -242,34 +249,84 @@ function SidebarGroup({ group, userRole }: { group: NavGroup; userRole: UserRole
   );
 }
 
-export default function Sidebar({ userRole }: { userRole: UserRole }) {
+export default function Sidebar({ userRole, mobileOpen, onClose }: SidebarProps) {
   return (
-    <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r border-sidebar-border bg-sidebar">
-      <div className="flex h-14 items-center border-b border-sidebar-border px-4">
-        <Link to="/" className="flex items-center gap-2 font-semibold text-sidebar-foreground">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          Omoiyari POS
-        </Link>
-      </div>
+    <>
+      {/* Mobile backdrop */}
+      {mobileOpen && <div className="fixed inset-0 z-50 bg-black/50 md:hidden" onClick={onClose} />}
 
-      <nav className="flex-1 overflow-y-auto py-2">
-        {navGroups.map((group) => (
-          <SidebarGroup key={group.label} group={group} userRole={userRole} />
-        ))}
-      </nav>
+      {/* Mobile slide-in drawer */}
+      <aside
+        className={
+          "fixed left-0 top-0 z-50 flex h-screen w-64 flex-col border-r border-sidebar-border bg-sidebar transition-transform md:hidden " +
+          (mobileOpen ? "translate-x-0" : "-translate-x-full")
+        }
+      >
+        <div className="flex h-14 items-center justify-between border-b border-sidebar-border px-4">
+          <Link
+            to="/"
+            className="flex items-center gap-2 font-semibold text-sidebar-foreground"
+            onClick={onClose}
+          >
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Omoiyari POS
+          </Link>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-      <div className="border-t border-sidebar-border p-3">
-        <button
-          onClick={async () => {
-            await authClient.signOut();
-            window.location.href = "/login";
-          }}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        >
-          <LogOut className="h-4 w-4" />
-          Keluar
-        </button>
-      </div>
-    </aside>
+        <nav className="flex-1 overflow-y-auto py-2">
+          {navGroups.map((group) => (
+            <SidebarGroup key={group.label} group={group} userRole={userRole} />
+          ))}
+        </nav>
+
+        <div className="border-t border-sidebar-border p-3">
+          <button
+            onClick={async () => {
+              await authClient.signOut();
+              window.location.href = "/login";
+            }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <LogOut className="h-4 w-4" />
+            Keluar
+          </button>
+        </div>
+      </aside>
+
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-64 flex-col border-r border-sidebar-border bg-sidebar">
+        <div className="flex h-14 items-center border-b border-sidebar-border px-4">
+          <Link to="/" className="flex items-center gap-2 font-semibold text-sidebar-foreground">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Omoiyari POS
+          </Link>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto py-2">
+          {navGroups.map((group) => (
+            <SidebarGroup key={group.label} group={group} userRole={userRole} />
+          ))}
+        </nav>
+
+        <div className="border-t border-sidebar-border p-3">
+          <button
+            onClick={async () => {
+              await authClient.signOut();
+              window.location.href = "/login";
+            }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <LogOut className="h-4 w-4" />
+            Keluar
+          </button>
+        </div>
+      </aside>
+    </>
   );
 }

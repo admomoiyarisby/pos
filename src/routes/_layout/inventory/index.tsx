@@ -99,8 +99,8 @@ function InventoryPage() {
         "central_kitchen",
       ]}
     >
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex gap-1.5">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
           {(["", "Fresh", "Dry", "Packaging"] as const).map((cat) => (
             <button
               key={cat || "all"}

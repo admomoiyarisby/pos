@@ -120,7 +120,7 @@ export function computeSalesByBrand(
 
 export function SalesTrendChart({ data }: { data: { name: string; sales: number }[] }) {
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
+    <div className="rounded-lg border bg-card p-3 md:p-4 shadow-sm">
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">Tren Penjualan (7 Hari Terakhir)</h3>
         <p className="text-sm text-muted-foreground">Dalam ribuan Rupiah</p>
@@ -168,7 +168,7 @@ export function ChannelPieChart({ data }: { data: { name: string; value: number 
   const chartData = data.length > 0 ? data : [{ name: "Belum Ada Data", value: 1 }];
 
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
+    <div className="rounded-lg border bg-card p-3 md:p-4 shadow-sm">
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">Distribusi Channel</h3>
         <p className="text-sm text-muted-foreground">Berdasarkan volume pesanan</p>
@@ -223,7 +223,7 @@ export function SalesByBranchChart({
   if (data.length === 0) return null;
 
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
+    <div className="rounded-lg border bg-card p-3 md:p-4 shadow-sm">
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">Penjualan per Cabang</h3>
         <p className="text-sm text-muted-foreground">Total pendapatan kotor per outlet</p>
@@ -258,7 +258,7 @@ export function BrandPerformanceChart({
   if (data.length === 0) return null;
 
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
+    <div className="rounded-lg border bg-card p-3 md:p-4 shadow-sm">
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">Brand Performance</h3>
         <p className="text-sm text-muted-foreground">

@@ -52,30 +52,30 @@ export function OrderHistoryTable({
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left">
+        <table className="w-full border-collapse text-left min-w-[640px]">
           <thead>
             <tr className="border-b">
-              <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground sticky left-0 bg-background z-10 border-r border-border">
                 ID Pesanan
               </th>
-              <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Waktu
               </th>
               {showBranch && (
-                <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <th className="whitespace-nowrap px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Cabang
                 </th>
               )}
-              <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Channel
               </th>
-              <th className="px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Menu
               </th>
-              <th className="px-4 py-4 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-4 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Total
               </th>
-              <th className="px-4 py-4 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-4 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Status
               </th>
             </tr>
@@ -94,13 +94,13 @@ export function OrderHistoryTable({
 
               return (
                 <tr key={order.id} className="border-b hover:bg-muted/50">
-                  <td className="px-4 py-4 font-mono text-xs text-muted-foreground">
+                  <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-4 font-mono text-xs text-muted-foreground">
                     <div>{order.id.slice(0, 8)}...</div>
                     {order.orderCode && (
                       <div className="mt-1 font-bold text-emerald-600">Code: {order.orderCode}</div>
                     )}
                   </td>
-                  <td className="px-4 py-4 text-sm text-muted-foreground">
+                  <td className="whitespace-nowrap px-4 py-4 text-sm text-muted-foreground">
                     {new Date(order.createdAt).toLocaleDateString("id-ID", {
                       day: "2-digit",
                       month: "short",
@@ -109,11 +109,11 @@ export function OrderHistoryTable({
                     })}
                   </td>
                   {showBranch && (
-                    <td className="px-4 py-4 font-bold text-foreground">
+                    <td className="whitespace-nowrap px-4 py-4 font-bold text-foreground">
                       {branch?.name ?? "Unknown"}
                     </td>
                   )}
-                  <td className="px-4 py-4">
+                  <td className="whitespace-nowrap px-4 py-4">
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
                         channelColors[order.channel] ?? "bg-slate-100 text-slate-600"
@@ -122,7 +122,7 @@ export function OrderHistoryTable({
                       {order.channel}
                     </span>
                   </td>
-                  <td className="px-4 py-4">
+                  <td className="whitespace-nowrap px-4 py-4">
                     <div className="text-xs text-muted-foreground">
                       {order.items.map((item, idx) => {
                         const recipe = recipes.find((r) => r.id === item.recipeId);
@@ -134,10 +134,10 @@ export function OrderHistoryTable({
                       })}
                     </div>
                   </td>
-                  <td className="px-4 py-4 text-right font-mono font-bold text-foreground">
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-foreground">
                     Rp {order.totalAmount.toLocaleString("id-ID")}
                   </td>
-                  <td className="px-4 py-4 text-center">
+                  <td className="whitespace-nowrap px-4 py-4 text-center">
                     <Badge
                       variant={badgeVariant as "success" | "destructive" | "warning" | "default"}
                     >

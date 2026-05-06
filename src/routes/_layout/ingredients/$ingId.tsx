@@ -65,7 +65,7 @@ function IngredientDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "central_kitchen"]}>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-2xl font-bold">{ingredient.name}</h1>
             <p className="text-sm text-muted-foreground">Kode: {ingredient.code}</p>
@@ -80,7 +80,7 @@ function IngredientDetailPage() {
 
         {isEditing ? (
           <form onSubmit={handleSubmit} className="space-y-4 max-w-xl">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Kode</label>
                 <input
@@ -100,7 +100,7 @@ function IngredientDetailPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Tipe SKU</label>
                 <select
@@ -126,7 +126,7 @@ function IngredientDetailPage() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Satuan Beli</label>
                 <input
@@ -146,7 +146,7 @@ function IngredientDetailPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Konversi</label>
                 <input
@@ -200,7 +200,7 @@ function IngredientDetailPage() {
             </div>
           </form>
         ) : (
-          <div className="grid grid-cols-2 gap-4 max-w-xl">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl">
             <div className="rounded-lg border p-4">
               <p className="text-xs text-muted-foreground uppercase">Tipe SKU</p>
               <p className="font-medium mt-1">{skuLabels[ingredient.skuType]}</p>

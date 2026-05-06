@@ -16,7 +16,7 @@ function AdminSettingsPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="rounded-lg border p-4 space-y-3">
             <h2 className="font-semibold">Pajak Restoran (PB1)</h2>
             <p className="text-sm text-muted-foreground">

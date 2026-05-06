@@ -115,7 +115,7 @@ function OrderHistoryPage() {
       >
         {selectedOrder && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground uppercase">ID Pesanan</p>
                 <p className="font-medium">{selectedOrder.id.slice(0, 8)}</p>

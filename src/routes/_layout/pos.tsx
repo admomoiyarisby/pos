@@ -327,11 +327,13 @@ function PosPage() {
     });
   };
 
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
+
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "branch_admin"]}>
-      <div className="flex h-[calc(100vh-3rem)] -m-6">
+      <div className="flex flex-col md:flex-row h-[calc(100vh-3rem)] -m-4 md:-m-6">
         {/* Main Content */}
-        <div className="flex-1 flex flex-col p-6 overflow-hidden">
+        <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden">
           {/* Top Bar */}
           <div className="flex items-center gap-3 mb-4 shrink-0 flex-wrap">
             {/* Branch selector for admin, badge for branch_admin */}
@@ -370,14 +372,14 @@ function PosPage() {
                 placeholder="Nama Pelanggan"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                className="h-9 flex-1 max-w-xs rounded-md border border-input bg-background px-3 text-sm"
+                className="h-9 flex-1 max-w-full sm:max-w-xs rounded-md border border-input bg-background px-3 text-sm"
               />
             ) : (
               <input
                 placeholder="Kode Order"
                 value={orderCode}
                 onChange={(e) => setOrderCode(e.target.value)}
-                className="h-9 flex-1 max-w-xs rounded-md border border-input bg-background px-3 text-sm"
+                className="h-9 flex-1 max-w-full sm:max-w-xs rounded-md border border-input bg-background px-3 text-sm"
               />
             )}
             <div className="ml-auto flex items-center gap-2">
@@ -419,8 +421,8 @@ function PosPage() {
           </div>
 
           {/* Category + Search */}
-          <div className="flex items-center gap-3 mb-4 shrink-0">
-            <div className="flex gap-1.5">
+          <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center">
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
               {categories.map((cat) => (
                 <button
                   key={cat.key}
@@ -445,7 +447,7 @@ function PosPage() {
 
           {/* Menu Grid */}
           <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {menuItems.map((item) => (
                 <button
                   key={item.id}
@@ -484,8 +486,8 @@ function PosPage() {
           </div>
         </div>
 
-        {/* Cart Sidebar */}
-        <div className="w-80 border-l bg-card flex flex-col">
+        {/* Cart Sidebar — desktop */}
+        <div className="hidden md:flex w-80 border-l bg-card flex-col">
           <div className="p-4 border-b">
             <div className="flex items-center gap-2 mb-1">
               <ShoppingCart className="h-5 w-5" />
@@ -759,6 +761,192 @@ function PosPage() {
           </button>
         </div>
       </Modal>
+
+      {/* Mobile cart FAB — visible when cart has items */}
+      {cart.length > 0 && (
+        <>
+          <button
+            onClick={() => setMobileCartOpen(true)}
+            className="fixed bottom-6 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg md:hidden"
+          >
+            <ShoppingCart className="h-6 w-6" />
+            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-[11px] font-bold text-destructive-foreground">
+              {cartCount}
+            </span>
+          </button>
+
+          {/* Mobile cart drawer */}
+          {mobileCartOpen && (
+            <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden">
+              <div className="flex items-center justify-between border-b px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="h-5 w-5" />
+                  <h2 className="font-semibold">Keranjang</h2>
+                  <span className="text-sm text-muted-foreground">({cartCount} item)</span>
+                </div>
+                <button
+                  onClick={() => setMobileCartOpen(false)}
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {cart.map((item, idx) => (
+                  <div key={idx} className="rounded-lg border p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">{item.name}</p>
+                        {item.modifiers.length > 0 && (
+                          <div className="mt-1 space-y-0.5">
+                            {item.modifiers.map((m, mi) => (
+                              <p key={mi} className="text-xs text-muted-foreground">
+                                + {m.name}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {item.notes && (
+                          <p className="text-xs text-muted-foreground mt-1 italic">
+                            &quot;{item.notes}&quot;
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => removeItem(idx)}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => updateQty(idx, -1)}
+                          className="h-7 w-7 rounded-md border flex items-center justify-center text-xs"
+                        >
+                          <Minus className="h-3 w-3" />
+                        </button>
+                        <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
+                        <button
+                          onClick={() => updateQty(idx, 1)}
+                          className="h-7 w-7 rounded-md border flex items-center justify-center text-xs"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <p className="text-sm font-semibold">
+                        Rp {(item.price * item.quantity).toLocaleString("id-ID")}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Mobile cart checkout area */}
+              <div className="border-t p-4 space-y-3">
+                {/* Voucher Section */}
+                {allVouchers.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <TicketPercent className="h-3.5 w-3.5" />
+                      <span className="font-semibold">Voucher</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {allVouchers.map((v) => {
+                        const meetsMinOrder = cartTotal >= v.minOrder;
+                        const isSelected = selectedVoucher?.id === v.id;
+                        return (
+                          <button
+                            key={v.id}
+                            onClick={() => toggleVoucher(v)}
+                            disabled={!meetsMinOrder}
+                            className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs transition-all ${isSelected ? "border-primary bg-primary/10 text-primary font-semibold" : meetsMinOrder ? "hover:border-primary/50 hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}
+                            title={
+                              !meetsMinOrder
+                                ? `Min. order Rp ${v.minOrder.toLocaleString("id-ID")}`
+                                : undefined
+                            }
+                          >
+                            <Percent className="h-3 w-3" />
+                            <span>{v.code}</span>
+                            <span className="text-muted-foreground">
+                              {v.discountType === "percentage"
+                                ? `-${v.discountValue}%`
+                                : `-Rp${v.discountValue.toLocaleString("id-ID")}`}
+                            </span>
+                            {isSelected && <span className="ml-0.5 text-primary">✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="font-medium">Rp {cartTotal.toLocaleString("id-ID")}</span>
+                </div>
+
+                {voucherDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Diskon ({selectedVoucher?.code})</span>
+                    <span className="font-medium text-emerald-600">
+                      -Rp {voucherDiscount.toLocaleString("id-ID")}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ppnEnabled}
+                      onChange={(e) => setPpnEnabled(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    PPN 11%
+                  </label>
+                  {taxAmount > 0 && (
+                    <span className="text-sm text-muted-foreground">
+                      +Rp {taxAmount.toLocaleString("id-ID")}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex justify-between text-sm font-bold border-t pt-2">
+                  <span>Total</span>
+                  <span>Rp {finalTotal.toLocaleString("id-ID")}</span>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground">Metode Pembayaran</label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="Cash">Cash / Tunai</option>
+                    <option value="QRIS">QRIS</option>
+                    <option value="Transfer">Transfer</option>
+                  </select>
+                </div>
+                <button
+                  onClick={handleCheckout}
+                  disabled={cart.length === 0 || !activeShift || createOrderMutation.isPending}
+                  className="w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {createOrderMutation.isPending ? "Memproses..." : "Bayar"}
+                </button>
+                {!activeShift && (
+                  <p className="text-xs text-center text-destructive">Buka shift terlebih dahulu</p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </RoleGuard>
   );
 }
@@ -810,7 +998,7 @@ function ModifierModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-lg border bg-card p-6 shadow-lg max-h-[90vh] overflow-y-auto">
+      <div className="w-full max-w-md rounded-lg border bg-card p-4 sm:p-6 shadow-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-lg font-semibold">{modal.item.name}</h2>

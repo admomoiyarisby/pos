@@ -96,7 +96,7 @@ function AnalyticsPage() {
         {analytics && (
           <>
             {/* Channel Distribution */}
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="rounded-lg border p-4">
                 <h3 className="text-sm font-semibold mb-4">Distribusi Channel</h3>
                 <div className="h-64">
@@ -152,8 +152,8 @@ function AnalyticsPage() {
             </div>
 
             {/* Top Sales Table */}
-            <div className="rounded-md border">
-              <table className="w-full text-sm">
+            <div className="rounded-md border overflow-x-auto">
+              <table className="w-full text-sm min-w-[480px]">
                 <thead className="border-b bg-muted/50">
                   <tr>
                     <th className="px-4 py-3 text-left font-medium">Menu</th>

@@ -25,14 +25,14 @@ function BrokenStockPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Left: Broken Stock List */}
         <div className="space-y-3">
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">
             Daftar Broken Stock
           </h2>
-          <div className="rounded-md border">
-            <table className="w-full text-sm">
+          <div className="rounded-md border overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
               <thead className="border-b bg-muted/50">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Waktu</th>
@@ -69,8 +69,8 @@ function BrokenStockPage() {
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">
             Ringkasan Barang Keluar
           </h2>
-          <div className="rounded-md border">
-            <table className="w-full text-sm">
+          <div className="rounded-md border overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
               <thead className="border-b bg-muted/50">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Bahan</th>

@@ -122,7 +122,7 @@ function VouchersPage() {
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Tipe Diskon</label>
               <select
@@ -144,7 +144,7 @@ function VouchersPage() {
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Min. Order (Rp)</label>
               <input

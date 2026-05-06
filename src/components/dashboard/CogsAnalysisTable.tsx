@@ -60,25 +60,25 @@ export function CogsAnalysisTable({ data }: { data: CogsItem[] }) {
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left">
+        <table className="w-full border-collapse text-left min-w-[640px]">
           <thead>
             <tr className="border-b">
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground sticky left-0 bg-background z-10 border-r border-border">
                 Menu Item
               </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Harga Jual
               </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 COGS Est.
               </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Margin
               </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Food Cost %
               </th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Status
               </th>
             </tr>
@@ -86,17 +86,19 @@ export function CogsAnalysisTable({ data }: { data: CogsItem[] }) {
           <tbody>
             {data.map((item) => (
               <tr key={item.id} className="border-b last:border-0 hover:bg-muted/50">
-                <td className="px-4 py-4 font-medium text-foreground">{item.name}</td>
-                <td className="px-4 py-4 text-right text-muted-foreground">
+                <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-4 font-medium text-foreground">
+                  {item.name}
+                </td>
+                <td className="whitespace-nowrap px-4 py-4 text-right text-muted-foreground">
                   Rp {item.basePrice.toLocaleString("id-ID")}
                 </td>
-                <td className="px-4 py-4 font-mono text-right text-muted-foreground">
+                <td className="whitespace-nowrap px-4 py-4 font-mono text-right text-muted-foreground">
                   Rp {Math.round(item.cogs).toLocaleString("id-ID")}
                 </td>
-                <td className="px-4 py-4 text-right font-semibold text-emerald-600">
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-emerald-600">
                   Rp {Math.round(item.margin).toLocaleString("id-ID")}
                 </td>
-                <td className="px-4 py-4 text-right">
+                <td className="whitespace-nowrap px-4 py-4 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
                       <div
@@ -123,7 +125,7 @@ export function CogsAnalysisTable({ data }: { data: CogsItem[] }) {
                     </span>
                   </div>
                 </td>
-                <td className="px-4 py-4">
+                <td className="whitespace-nowrap px-4 py-4">
                   {item.alert ? (
                     <div className="flex animate-pulse items-center text-xs font-bold text-rose-600">
                       <AlertTriangle className="mr-1 h-4 w-4" />

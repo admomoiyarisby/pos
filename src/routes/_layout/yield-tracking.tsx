@@ -175,7 +175,7 @@ function YieldTrackingPage() {
         )}
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="rounded-lg border p-4">
             <div className="flex items-center gap-2">
               <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />

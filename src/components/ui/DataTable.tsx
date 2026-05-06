@@ -71,10 +71,12 @@ export default function DataTable<T>({
     });
   };
 
+  const stickyClass = "sticky left-0 bg-background z-10 border-r border-border";
+
   return (
     <div className="space-y-3">
       {searchable && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
             <input
@@ -88,18 +90,24 @@ export default function DataTable<T>({
               className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
-          <span className="text-xs text-muted-foreground ml-auto">{filtered.length} item</span>
+          <span className="text-xs text-muted-foreground">{filtered.length} item</span>
         </div>
       )}
 
-      <div className="rounded-md border">
-        <table className="w-full caption-bottom text-sm">
+      <div className="rounded-md border overflow-x-auto relative">
+        <table className="w-full caption-bottom text-sm min-w-[640px]">
           <thead className="[&_tr]:border-b">
             <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-              {columns.map((col) => (
+              {columns.map((col, colIdx) => (
                 <th
                   key={col.key}
-                  className={`h-10 px-3 text-left align-middle font-medium text-muted-foreground ${col.width ?? ""} ${col.sortable ? "cursor-pointer select-none" : ""}`}
+                  className={
+                    "h-10 px-3 text-left align-middle font-medium text-muted-foreground whitespace-nowrap min-w-[80px] " +
+                    (col.width ?? "") +
+                    " " +
+                    (col.sortable ? "cursor-pointer select-none " : " ") +
+                    (colIdx === 0 ? stickyClass : "")
+                  }
                   style={{ textAlign: col.align ?? "left" }}
                   onClick={() => col.sortable && handleSort(col.key)}
                 >
@@ -127,10 +135,13 @@ export default function DataTable<T>({
                   onClick={() => onRowClick?.(row)}
                   className={`border-b transition-colors hover:bg-muted/50 ${onRowClick ? "cursor-pointer" : ""}`}
                 >
-                  {columns.map((col) => (
+                  {columns.map((col, colIdx) => (
                     <td
                       key={col.key}
-                      className="p-3 align-middle"
+                      className={
+                        "p-3 align-middle whitespace-nowrap min-w-[80px] " +
+                        (colIdx === 0 ? stickyClass : "")
+                      }
                       style={{ textAlign: col.align ?? "left" }}
                     >
                       {col.render
@@ -146,11 +157,11 @@ export default function DataTable<T>({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs text-muted-foreground">
             Halaman {currentPage + 1} dari {totalPages}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
             <button
               onClick={() => setPage(0)}
               disabled={currentPage === 0}

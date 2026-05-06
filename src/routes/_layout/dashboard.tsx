@@ -156,7 +156,7 @@ function DashboardPage() {
         {isBranchAdmin && <RopRoqTable data={ropData} />}
 
         {/* 4. Charts Row 1 */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
           <SalesTrendChart data={salesTrend} />
           <ChannelPieChart data={channelData} />
         </div>
@@ -164,20 +164,20 @@ function DashboardPage() {
         {/* 5. Charts Row 2 (super_admin only) */}
         {isSuperAdmin && (
           <>
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
               <SalesByBranchChart data={salesByBranch} />
               <BrandPerformanceChart data={salesByBrand} />
             </div>
 
             {/* 6. HPP + Discrepancy + Waste Row */}
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-3">
               <HppAlertCards data={hppAlerts} />
               <div className="lg:col-span-2">
                 <DiscrepancyTable data={discrepancies} />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
               <WasteLossTable data={wasteLoss} />
             </div>
           </>

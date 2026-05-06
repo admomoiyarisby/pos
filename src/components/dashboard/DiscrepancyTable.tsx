@@ -63,16 +63,16 @@ export function DiscrepancyTable({
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left">
+        <table className="w-full border-collapse text-left min-w-[640px]">
           <thead>
             <tr className="border-b">
-              <th className="px-4 py-3 text-xs font-bold uppercase text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase text-muted-foreground sticky left-0 bg-background z-10 border-r border-border">
                 Bahan Baku
               </th>
-              <th className="px-4 py-3 text-xs font-bold uppercase text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase text-muted-foreground">
                 Cabang
               </th>
-              <th className="px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
+              <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
                 Variance %
               </th>
             </tr>
@@ -80,18 +80,23 @@ export function DiscrepancyTable({
           <tbody>
             {data.length === 0 ? (
               <tr>
-                <td colSpan={3} className="py-8 text-center italic text-muted-foreground">
+                <td
+                  colSpan={3}
+                  className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap py-8 text-center italic text-muted-foreground"
+                >
                   Tidak ada selisih stok signifikan.
                 </td>
               </tr>
             ) : (
               data.map((item, idx) => (
                 <tr key={idx} className="border-b last:border-0 hover:bg-muted/50">
-                  <td className="px-4 py-3 text-sm font-medium text-foreground">
+                  <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-3 text-sm font-medium text-foreground">
                     {item.ingredientName}
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{item.branchName}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
+                    {item.branchName}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
                     <Badge variant="destructive">{item.variancePercentage.toFixed(1)}%</Badge>
                   </td>
                 </tr>

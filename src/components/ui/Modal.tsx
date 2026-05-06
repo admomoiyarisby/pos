@@ -10,10 +10,10 @@ interface ModalProps {
 }
 
 const sizeClasses = {
-  sm: "max-w-sm",
-  md: "max-w-md",
-  lg: "max-w-lg",
-  xl: "max-w-xl",
+  sm: "max-w-[calc(100vw-1rem)] sm:max-w-sm",
+  md: "max-w-[calc(100vw-1rem)] sm:max-w-md",
+  lg: "max-w-[calc(100vw-1rem)] sm:max-w-lg",
+  xl: "max-w-[calc(100vw-1rem)] sm:max-w-xl",
 };
 
 export default function Modal({ open, onClose, title, children, size = "md" }: ModalProps) {
@@ -38,12 +38,14 @@ export default function Modal({ open, onClose, title, children, size = "md" }: M
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-2 sm:p-4 pt-10 sm:pt-16"
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
       }}
     >
-      <div className={`w-full ${sizeClasses[size]} rounded-lg border bg-card p-6 shadow-lg`}>
+      <div
+        className={`w-full ${sizeClasses[size]} rounded-lg border bg-card p-4 sm:p-6 shadow-lg max-h-[calc(100vh-2rem)] overflow-y-auto`}
+      >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button

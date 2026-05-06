@@ -177,7 +177,7 @@ function AuditLogsPage() {
         >
           {selectedLog && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-md border p-3">
                   <p className="text-xs text-muted-foreground uppercase">Tabel</p>
                   <p className="font-medium">{selectedLog.tableName}</p>

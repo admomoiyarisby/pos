@@ -33,7 +33,7 @@ function SCMInvoiceDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-2xl font-bold">{invoice.code}</h1>
             <p className="text-sm text-muted-foreground">Invoice SCM</p>
@@ -51,7 +51,7 @@ function SCMInvoiceDetailPage() {
           </Badge>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Total</p>
             <p className="font-medium mt-1">Rp {invoice.totalAmount.toLocaleString("id-ID")}</p>
@@ -66,8 +66,8 @@ function SCMInvoiceDetailPage() {
           </div>
         </div>
 
-        <div className="rounded-md border">
-          <table className="w-full text-sm">
+        <div className="rounded-md border overflow-x-auto">
+          <table className="w-full text-sm min-w-[480px]">
             <thead className="border-b bg-muted/50">
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Bahan</th>

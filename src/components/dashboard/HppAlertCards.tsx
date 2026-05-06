@@ -41,7 +41,10 @@ export function HppAlertCards({ data }: { data: ReturnType<typeof computeHppAler
           </p>
         ) : (
           data.map((item) => (
-            <div key={item.id} className="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+            <div
+              key={item.id}
+              className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3"
+            >
               <div className="mb-2 flex items-start justify-between">
                 <span className="text-sm font-bold text-foreground">{item.name}</span>
                 <Badge variant="success">{item.hppPercentage.toFixed(1)}% HPP</Badge>

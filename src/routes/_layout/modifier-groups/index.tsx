@@ -87,7 +87,7 @@ function ModifierGroupsPage() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Tambah Modifier Group">
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Kode</label>
               <input
@@ -105,7 +105,7 @@ function ModifierGroupsPage() {
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Min Pilihan</label>
               <input
@@ -129,7 +129,7 @@ function ModifierGroupsPage() {
           </div>
           <div className="rounded-md border p-3 space-y-2">
             <p className="text-sm font-medium">Modifier Pertama</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-xs text-muted-foreground">Nama</label>
                 <input
