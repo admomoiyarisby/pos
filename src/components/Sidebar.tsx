@@ -24,7 +24,6 @@ import {
   Store,
   Tag,
   Percent,
-  ShieldCheck,
   ScrollText,
   X,
   type LucideIcon,
@@ -191,7 +190,7 @@ const navGroups: NavGroup[] = [
     roles: ["super_admin"],
     items: [
       { label: "Period Control", to: "/period-control", icon: Calendar, roles: ["super_admin"] },
-      { label: "Audit Logs", to: "/admin/audit-logs", icon: ShieldCheck, roles: ["super_admin"] },
+      // { label: "Audit Logs", to: "/admin/audit-logs", icon: ShieldCheck, roles: ["super_admin"] },
       { label: "System Logs", to: "/admin/system-logs", icon: ScrollText, roles: ["super_admin"] },
       { label: "Pengaturan", to: "/admin", icon: Settings, roles: ["super_admin", "admin_pusat"] },
     ],
