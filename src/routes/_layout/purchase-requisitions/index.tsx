@@ -11,6 +11,7 @@ import {
   getPurchaseRequisitions,
   createPurchaseRequisition,
   updatePurchaseRequisition,
+  processPurchaseRequisition,
 } from "#/lib/server/scm";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
@@ -19,7 +20,7 @@ import { generateReorderRecommendations } from "#/lib/server/reorder";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Plus, Package, RefreshCw } from "lucide-react";
+import { ArrowRight, Plus, Package, RefreshCw, Truck } from "lucide-react";
 
 interface PRRow {
   id: string;
@@ -58,6 +59,13 @@ function PRPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [prItems, setPrItems] = useState<{ ingredientId: string; quantity: number }[]>([]);
   const [selectedPrBranchId, setSelectedPrBranchId] = useState(user?.branchId ?? "");
+  const [processPr, setProcessPr] = useState<PRRow | null>(null);
+  const [rejectPr, setRejectPr] = useState<PRRow | null>(null);
+  const [createSJPrompt, setCreateSJPrompt] = useState(false);
+
+  const isBranchAdmin = user?.role === "branch_admin";
+  const isApprover =
+    user?.role === "super_admin" || user?.role === "admin_pusat" || user?.role === "area_manager";
 
   const { data: branchInventoryResult } = useQuery({
     queryKey: ["inventory", selectedPrBranchId],
@@ -83,10 +91,21 @@ function PRPage() {
     },
   });
 
-  const updateMutation = useMutation({
+  const processMutation = useMutation({
+    mutationFn: processPurchaseRequisition,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["purchase-requisitions"] });
+      void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+      setProcessPr(null);
+      setCreateSJPrompt(false);
+    },
+  });
+
+  const rejectMutation = useMutation({
     mutationFn: updatePurchaseRequisition,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["purchase-requisitions"] });
+      setRejectPr(null);
     },
   });
 
@@ -113,8 +132,27 @@ function PRPage() {
     void createMutation.mutateAsync({ data: { code, branchId, items: prItems } });
   };
 
-  const handleProcess = (id: string) => {
-    void updateMutation.mutateAsync({ data: { id, status: "Processed" } });
+  const handleProcessClick = (pr: PRRow) => {
+    setProcessPr(pr);
+    setCreateSJPrompt(true);
+  };
+
+  const handleRejectClick = (pr: PRRow) => {
+    setRejectPr(pr);
+  };
+
+  const confirmProcess = (alsoCreateSJ: boolean) => {
+    if (!processPr) return;
+    void processMutation.mutateAsync({
+      data: { id: processPr.id, alsoCreateSJ },
+    });
+  };
+
+  const confirmReject = (reason: string) => {
+    if (!rejectPr) return;
+    void rejectMutation.mutateAsync({
+      data: { id: rejectPr.id, status: "Rejected", rejectionReason: reason },
+    });
   };
 
   const columns: Column<PRRow>[] = [
@@ -134,30 +172,56 @@ function PRPage() {
     },
     {
       key: "id",
-      header: "",
-      width: "w-24",
-      render: (r) => (
-        <div className="flex items-center justify-end gap-1">
-          {["super_admin", "admin_pusat"].includes(user?.role ?? "") && r.status === "Pending" && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleProcess(r.id);
-              }}
-              className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-medium"
+      header: "Aksi",
+      width: "w-40",
+      render: (r) => {
+        const canProcess = isApprover && ["Pending", "Approved"].includes(r.status);
+        const canReject = isApprover && ["Pending", "Approved"].includes(r.status);
+        const canEdit = isBranchAdmin && r.status === "Draft";
+
+        return (
+          <div className="flex items-center justify-end gap-1">
+            {canProcess && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleProcessClick(r);
+                }}
+                className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-medium whitespace-nowrap"
+              >
+                Proses
+              </button>
+            )}
+            {canReject && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRejectClick(r);
+                }}
+                className="h-7 px-2 rounded-md bg-red-600 text-white text-[10px] font-medium whitespace-nowrap"
+              >
+                Tolak
+              </button>
+            )}
+            {canEdit && (
+              <Link
+                to="/purchase-requisitions/$prId"
+                params={{ prId: r.id }}
+                className="inline-flex h-7 px-2 items-center rounded-md border text-[10px] whitespace-nowrap"
+              >
+                Edit
+              </Link>
+            )}
+            <Link
+              to="/purchase-requisitions/$prId"
+              params={{ prId: r.id }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
             >
-              Proses
-            </button>
-          )}
-          <Link
-            to="/purchase-requisitions/$prId"
-            params={{ prId: r.id }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
-          >
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      ),
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        );
+      },
     },
   ];
   usePageTitle("Purchase Requisition", "Permintaan order barang dari cabang ke pusat");
@@ -165,23 +229,29 @@ function PRPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
       <div className="flex items-center justify-between">
-        <PageHeader action={{ label: "Buat PR", onClick: () => setModalOpen(true) }} />
-        <button
-          onClick={() => {
-            if (selectedPrBranchId) {
-              void reorderMutation.mutateAsync({ data: { branchId: selectedPrBranchId } });
-            }
-          }}
-          disabled={reorderMutation.isPending || !selectedPrBranchId}
-          className="h-9 px-3 rounded-md border text-sm flex items-center gap-2 hover:bg-muted disabled:opacity-50 shrink-0"
-        >
-          <RefreshCw className={"h-4 w-4 " + (reorderMutation.isPending ? "animate-spin" : "")} />
-          {reorderMutation.isPending ? "Menghitung..." : "Smart Reordering"}
-        </button>
+        {isBranchAdmin && (
+          <PageHeader action={{ label: "Buat PR", onClick: () => setModalOpen(true) }} />
+        )}
+        {!isBranchAdmin && <div />}
+        {isBranchAdmin && (
+          <button
+            onClick={() => {
+              if (selectedPrBranchId) {
+                void reorderMutation.mutateAsync({ data: { branchId: selectedPrBranchId } });
+              }
+            }}
+            disabled={reorderMutation.isPending || !selectedPrBranchId}
+            className="h-9 px-3 rounded-md border text-sm flex items-center gap-2 hover:bg-muted disabled:opacity-50 shrink-0"
+          >
+            <RefreshCw className={"h-4 w-4 " + (reorderMutation.isPending ? "animate-spin" : "")} />
+            {reorderMutation.isPending ? "Menghitung..." : "Smart Reordering"}
+          </button>
+        )}
       </div>
 
       <DataTable columns={columns} data={prs} keyExtractor={(r) => r.id} />
 
+      {/* Create PR Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -203,7 +273,7 @@ function PRPage() {
               <select
                 name="branchId"
                 defaultValue={user?.branchId ?? ""}
-                disabled={!!user?.branchId}
+                disabled={isBranchAdmin}
                 onChange={function (e) {
                   setSelectedPrBranchId(e.target.value);
                 }}
@@ -321,6 +391,94 @@ function PRPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Process Confirmation Modal */}
+      <Modal
+        open={!!processPr && createSJPrompt}
+        onClose={() => {
+          setProcessPr(null);
+          setCreateSJPrompt(false);
+        }}
+        title="Proses Purchase Requisition"
+      >
+        {processPr && (
+          <div className="space-y-4">
+            <p className="text-sm">
+              Proses PR <strong>{processPr.code}</strong>?
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Tindakan ini akan mengubah status PR menjadi <strong>Processed</strong>.
+            </p>
+            <div className="rounded-md border p-3 space-y-2">
+              <p className="text-sm font-medium">Buat Surat Jalan juga?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => confirmProcess(true)}
+                  className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm flex items-center gap-2"
+                >
+                  <Truck className="h-4 w-4" />
+                  Ya, Buat SJ
+                </button>
+                <button
+                  onClick={() => confirmProcess(false)}
+                  className="h-9 px-4 rounded-md border text-sm"
+                >
+                  Tidak, Hanya Proses
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setProcessPr(null);
+                setCreateSJPrompt(false);
+              }}
+              className="h-9 px-4 rounded-md border text-sm w-full"
+            >
+              Batal
+            </button>
+          </div>
+        )}
+      </Modal>
+
+      {/* Reject Confirmation Modal */}
+      <Modal open={!!rejectPr} onClose={() => setRejectPr(null)} title="Tolak Purchase Requisition">
+        {rejectPr && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              confirmReject(fd.get("reason") as string);
+            }}
+            className="space-y-4"
+          >
+            <p className="text-sm">
+              Tolak PR <strong>{rejectPr.code}</strong>?
+            </p>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Alasan Penolakan</label>
+              <textarea
+                name="reason"
+                required
+                rows={3}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="Contoh: Stok masih mencukupi, tidak perlu pengadaan..."
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectPr(null)}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button type="submit" className="h-9 px-4 rounded-md bg-red-600 text-white text-sm">
+                Tolak PR
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
     </RoleGuard>
   );

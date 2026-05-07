@@ -41,12 +41,16 @@ export const getPurchaseRequisitions = createServerFn({ method: "GET" })
         branchId: purchaseRequisitions.branchId,
         status: purchaseRequisitions.status,
         requestedBy: purchaseRequisitions.requestedBy,
+        approvedBy: purchaseRequisitions.approvedBy,
+        rejectionReason: purchaseRequisitions.rejectionReason,
         createdAt: purchaseRequisitions.createdAt,
         updatedAt: purchaseRequisitions.updatedAt,
         branchName: branches.name,
+        approvedByName: users.name,
       })
       .from(purchaseRequisitions)
       .leftJoin(branches, eq(purchaseRequisitions.branchId, branches.id))
+      .leftJoin(users, eq(purchaseRequisitions.approvedBy, users.id))
       .where(branchFilter ? eq(purchaseRequisitions.branchId, branchFilter) : undefined)
       .orderBy(desc(purchaseRequisitions.createdAt));
 
@@ -137,13 +141,17 @@ export const createPurchaseRequisition = createServerFn({ method: "POST" })
 
 export const updatePurchaseRequisition = createServerFn({ method: "POST" })
   .inputValidator(
-    (data: { id: string; items?: { ingredientId: string; quantity: number }[]; status?: string }) =>
-      data,
+    (data: {
+      id: string;
+      items?: { ingredientId: string; quantity: number }[];
+      status?: string;
+      rejectionReason?: string;
+    }) => data,
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
-    const { id, items, status } = data;
+    const { id, items, status, rejectionReason } = data;
 
     const [oldPr] = await db
       .select()
@@ -151,14 +159,39 @@ export const updatePurchaseRequisition = createServerFn({ method: "POST" })
       .where(eq(purchaseRequisitions.id, id))
       .limit(1);
 
+    if (!oldPr) throw new Error("PR not found");
+
+    // Role-based validation
+    if (user.role === "branch_admin") {
+      if (oldPr.requestedBy !== user.id) {
+        throw new Error("Unauthorized: can only edit your own PR");
+      }
+      if (!["Draft", "Pending"].includes(oldPr.status)) {
+        throw new Error("Cannot modify PR that is already processed");
+      }
+      if (status && !["Draft", "Pending"].includes(status)) {
+        throw new Error("Unauthorized: cannot change to this status");
+      }
+    }
+
+    if (user.role === "area_manager") {
+      if (status && !["Approved", "Processed", "Rejected"].includes(status)) {
+        throw new Error("Unauthorized status change");
+      }
+    }
+
     if (status) {
-      await db
-        .update(purchaseRequisitions)
-        .set({
-          status: status as typeof purchaseRequisitions.$inferSelect.status,
-          updatedAt: new Date(),
-        })
-        .where(eq(purchaseRequisitions.id, id));
+      const updateData: Record<string, unknown> = {
+        status: status as typeof purchaseRequisitions.$inferSelect.status,
+        updatedAt: new Date(),
+      };
+      if (status === "Rejected" && rejectionReason) {
+        updateData.rejectionReason = rejectionReason;
+      }
+      if (status === "Approved" || status === "Processed" || status === "Rejected") {
+        updateData.approvedBy = user.id;
+      }
+      await db.update(purchaseRequisitions).set(updateData).where(eq(purchaseRequisitions.id, id));
     }
 
     if (items) {
@@ -197,6 +230,114 @@ export const updatePurchaseRequisition = createServerFn({ method: "POST" })
     );
 
     return { success: true };
+  });
+
+export const processPurchaseRequisition = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: { id: string; alsoCreateSJ: boolean; driverName?: string; vehicleNumber?: string }) =>
+      data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    if (!["area_manager", "admin_pusat", "super_admin"].includes(user.role)) {
+      throw new Error("Forbidden: insufficient role to process PR");
+    }
+
+    const [pr] = await db
+      .select()
+      .from(purchaseRequisitions)
+      .where(eq(purchaseRequisitions.id, data.id))
+      .limit(1);
+
+    if (!pr) throw new Error("PR not found");
+    if (!["Pending", "Approved"].includes(pr.status)) {
+      throw new Error("PR must be Pending or Approved to process");
+    }
+
+    // Get PR items
+    const items = await db
+      .select()
+      .from(purchaseRequisitionItems)
+      .where(eq(purchaseRequisitionItems.purchaseRequisitionId, data.id));
+
+    // Update PR status to Processed
+    await db
+      .update(purchaseRequisitions)
+      .set({
+        status: "Processed",
+        approvedBy: user.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(purchaseRequisitions.id, data.id));
+
+    let dn: { id: string; code: string } | null = null;
+
+    // Auto-create Delivery Note if requested
+    if (data.alsoCreateSJ) {
+      const [centralBranch] = await db
+        .select()
+        .from(branches)
+        .where(eq(branches.type, "Central"))
+        .limit(1);
+
+      const fromBranchId = centralBranch?.id ?? pr.branchId;
+
+      // Generate SJ code
+      const sjCode = `SJ-${pr.code}`;
+
+      [dn] = await db
+        .insert(deliveryNotes)
+        .values({
+          code: sjCode,
+          purchaseRequisitionId: data.id,
+          fromBranchId,
+          toBranchId: pr.branchId,
+          status: "Picking",
+          driverName: data.driverName ?? "Belum ditentukan",
+          vehicleNumber: data.vehicleNumber,
+        })
+        .returning();
+
+      // Copy PR items to DN items
+      if (items.length > 0) {
+        await db.insert(deliveryNoteItems).values(
+          items.map((item) => ({
+            deliveryNoteId: dn!.id,
+            ingredientId: item.ingredientId,
+            quantity: item.quantity,
+            readyQuantity: item.quantity,
+            pickedQuantity: 0,
+            receivedQuantity: 0,
+            rejectedQuantity: 0,
+          })),
+        );
+      }
+
+      // Create in-transit inventory records
+      for (const item of items) {
+        await db.insert(inTransitInventory).values({
+          deliveryNoteId: dn.id,
+          branchId: pr.branchId,
+          ingredientId: item.ingredientId,
+          quantity: item.quantity,
+        });
+      }
+
+      await logSystemAction(
+        user,
+        "Auto-Create Delivery Note",
+        `SJ "${sjCode}" dibuat otomatis dari PR "${pr.code}" oleh ${user.name}`,
+      );
+    }
+
+    await logSystemAction(
+      user,
+      "Process Purchase Requisition",
+      `PR "${pr.code}" diproses oleh ${user.name}${data.alsoCreateSJ ? ` (dengan SJ "${dn?.code}")` : ""}`,
+    );
+
+    return { success: true, prId: data.id, dnId: dn?.id ?? null };
   });
 
 // ─── Purchase Orders ───
@@ -288,6 +429,7 @@ export const getDeliveryNotes = createServerFn({ method: "GET" })
         toBranchId: deliveryNotes.toBranchId,
         status: deliveryNotes.status,
         driverName: deliveryNotes.driverName,
+        purchaseRequisitionId: deliveryNotes.purchaseRequisitionId,
         createdAt: deliveryNotes.createdAt,
         updatedAt: deliveryNotes.updatedAt,
       })

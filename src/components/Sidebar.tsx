@@ -182,7 +182,6 @@ const navGroups: NavGroup[] = [
       { label: "Cabang", to: "/admin/branches", icon: Store, roles: ["super_admin"] },
       { label: "Brand", to: "/admin/brands", icon: Tag, roles: ["super_admin", "admin_pusat"] },
       { label: "Voucher", to: "/admin/vouchers", icon: Percent, roles: ["super_admin"] },
-      { label: "Platform Fees", to: "/admin/platform-fees", icon: Percent, roles: ["super_admin"] },
     ],
   },
   {
