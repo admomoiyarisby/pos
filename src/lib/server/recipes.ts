@@ -12,6 +12,8 @@ import {
 } from "#/db/schema";
 import { eq, ilike } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
+import { recalculateAllRecipeCosts as recalcAllCosts } from "./cost-rollup";
 import { z } from "zod";
 
 const recipeIngredientInput = z.object({
@@ -54,6 +56,7 @@ export const getRecipes = createServerFn({ method: "GET" })
         category: recipes.category,
         isSubRecipe: recipes.isSubRecipe,
         basePrice: recipes.basePrice,
+        totalCogs: recipes.totalCogs,
         isBOGO: recipes.isBOGO,
         status: recipes.status,
       })
@@ -143,7 +146,7 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
 export const createRecipe = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => recipeInput.parse(data))
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     // Insert recipe
     const [recipe] = await db
@@ -194,6 +197,16 @@ export const createRecipe = createServerFn({ method: "POST" })
         );
     }
 
+    await logSystemAction(user, "Create Recipe", `Resep "${recipe.name}" dibuat oleh ${user.name}`);
+    await logAudit(
+      user,
+      "recipes",
+      recipe.id,
+      "CREATE",
+      undefined,
+      recipe as Record<string, unknown>,
+    );
+
     return recipe;
   });
 
@@ -202,7 +215,7 @@ export const updateRecipe = createServerFn({ method: "POST" })
     recipeInput.partial().extend({ id: z.string().uuid() }).parse(data),
   )
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     const {
       id,
@@ -212,6 +225,9 @@ export const updateRecipe = createServerFn({ method: "POST" })
       modifierGroupIds,
       ...recipeUpdates
     } = data;
+
+    // Fetch old recipe for audit
+    const [old] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
 
     // Update recipe base fields
     await db.update(recipes).set(recipeUpdates).where(eq(recipes.id, id));
@@ -260,5 +276,35 @@ export const updateRecipe = createServerFn({ method: "POST" })
       }
     }
 
+    const [updated] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
+
+    await logSystemAction(
+      user,
+      "Update Recipe",
+      `Resep "${updated?.name}" diperbarui oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "recipes",
+      id,
+      "UPDATE",
+      old as Record<string, unknown>,
+      updated as Record<string, unknown>,
+    );
+
     return { success: true };
   });
+
+export const recalculateAllRecipeCosts = createServerFn({ method: "POST" }).handler(async () => {
+  const user = await requireRole("super_admin");
+
+  await recalcAllCosts();
+
+  await logSystemAction(
+    user,
+    "Recalculate HPP",
+    `Semua HPP resep dihitung ulang oleh ${user.name}`,
+  );
+
+  return { success: true };
+});

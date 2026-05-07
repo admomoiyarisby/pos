@@ -60,6 +60,7 @@ function AuditLogsPage() {
       key: "createdAt",
       header: "Waktu",
       width: "w-36",
+      sortable: true,
       render: (r) =>
         new Date(r.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
@@ -68,11 +69,12 @@ function AuditLogsPage() {
           minute: "2-digit",
         }),
     },
-    { key: "tableName", header: "Tabel", width: "w-28" },
+    { key: "tableName", header: "Tabel", width: "w-28", sortable: true },
     {
       key: "action",
       header: "Aksi",
       width: "w-24",
+      sortable: true,
       render: (r) => (
         <Badge
           variant={
@@ -96,6 +98,7 @@ function AuditLogsPage() {
     {
       key: "userName",
       header: "User",
+      sortable: true,
       render: (r) => r.userName ?? r.userId?.slice(0, 8) ?? "system",
     },
     {

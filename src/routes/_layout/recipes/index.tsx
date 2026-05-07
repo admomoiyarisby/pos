@@ -7,11 +7,12 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getRecipes, createRecipe } from "#/lib/server/recipes";
+import { getRecipes, createRecipe, recalculateAllRecipeCosts } from "#/lib/server/recipes";
 import { getBrands } from "#/lib/server/brands";
+import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, RefreshCw } from "lucide-react";
 
 interface RecipeRow {
   id: string;
@@ -20,6 +21,7 @@ interface RecipeRow {
   category: string;
   isSubRecipe: boolean;
   basePrice: number;
+  totalCogs: number;
   status: "Active" | "Inactive";
   brands: { id: string; name: string | null }[];
 }
@@ -32,22 +34,44 @@ const catLabels: Record<string, string> = {
 };
 
 const columns: Column<RecipeRow>[] = [
-  { key: "code", header: "Kode", width: "w-24" },
-  { key: "name", header: "Nama Menu" },
+  { key: "code", header: "Kode", width: "w-24", sortable: true },
+  { key: "name", header: "Nama Menu", sortable: true },
   {
     key: "category",
     header: "Kategori",
+    sortable: true,
     render: (r) => <Badge variant="secondary">{catLabels[r.category] ?? r.category}</Badge>,
   },
   {
     key: "basePrice",
     header: "Harga Dasar",
     align: "right",
+    sortable: true,
     render: (r) => `Rp ${r.basePrice.toLocaleString("id-ID")}`,
+  },
+  {
+    key: "totalCogs",
+    header: "HPP Total",
+    align: "right",
+    sortable: true,
+    render: (r) => {
+      const pct = r.totalCogs > 0 && r.basePrice > 0 ? (r.totalCogs / r.basePrice) * 100 : 0;
+      return (
+        <div className="flex items-center gap-1.5 justify-end">
+          <span>Rp {r.totalCogs.toLocaleString("id-ID")}</span>
+          {pct > 40 && (
+            <Badge variant="destructive" className="text-[10px]">
+              &gt;40%
+            </Badge>
+          )}
+        </div>
+      );
+    },
   },
   {
     key: "status",
     header: "Status",
+    sortable: true,
     render: (r) => (
       <Badge variant={r.status === "Active" ? "success" : "secondary"}>
         {r.status === "Active" ? "Aktif" : "Nonaktif"}
@@ -83,6 +107,7 @@ function RecipesPage() {
   const { recipes: initial, brands } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
+  const user = useAuth().user;
 
   const { data: recipes } = useQuery({
     queryKey: ["recipes"],
@@ -95,6 +120,13 @@ function RecipesPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["recipes"] });
       setModalOpen(false);
+    },
+  });
+
+  const recalcMutation = useMutation({
+    mutationFn: recalculateAllRecipeCosts,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["recipes"] });
     },
   });
 
@@ -116,7 +148,19 @@ function RecipesPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
-      <PageHeader action={{ label: "Tambah Menu", onClick: () => setModalOpen(true) }} />
+      <div className="flex items-center justify-between">
+        <PageHeader action={{ label: "Tambah Menu", onClick: () => setModalOpen(true) }} />
+        {user?.role === "super_admin" && (
+          <button
+            onClick={() => recalcMutation.mutateAsync({})}
+            disabled={recalcMutation.isPending}
+            className="h-9 px-3 rounded-md border text-sm flex items-center gap-2 hover:bg-muted disabled:opacity-50"
+          >
+            <RefreshCw className={"h-4 w-4 " + (recalcMutation.isPending ? "animate-spin" : "")} />
+            {recalcMutation.isPending ? "Menghitung..." : "Hitung Ulang HPP"}
+          </button>
+        )}
+      </div>
 
       <DataTable columns={columns} data={recipes} keyExtractor={(r) => r.id} />
 

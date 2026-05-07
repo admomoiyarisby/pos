@@ -29,6 +29,25 @@ import {
   wasteEntries as wasteEntriesTable,
   systemLogs as systemLogsTable,
   appSettings as appSettingsTable,
+  recipeModifierExclusions as recipeModifierExclusionsTable,
+  purchaseRequisitions as purchaseRequisitionsTable,
+  purchaseRequisitionItems as purchaseRequisitionItemsTable,
+  purchaseOrders as purchaseOrdersTable,
+  purchaseOrderItems as purchaseOrderItemsTable,
+  deliveryNotes as deliveryNotesTable,
+  deliveryNoteItems as deliveryNoteItemsTable,
+  scmInvoices as scmInvoicesTable,
+  stockOpnames as stockOpnamesTable,
+  stockOpnameItems as stockOpnameItemsTable,
+  periodLogs as periodLogsTable,
+  systemNotifications as systemNotificationsTable,
+  cancelRequests as cancelRequestsTable,
+  printRequests as printRequestsTable,
+  manualRevenues as manualRevenuesTable,
+  channelRevenues as channelRevenuesTable,
+  yieldConversions as yieldConversionsTable,
+  operationalExpenses as operationalExpensesTable,
+  inTransitInventory as inTransitInventoryTable,
 } from "#/db/schema";
 
 import {
@@ -41,6 +60,25 @@ import {
   MODIFIER_GROUPS_DATA,
   RECIPES_DATA,
   ORDERS_DATA,
+  RECIPE_MODIFIER_EXCLUSIONS,
+  PURCHASE_REQUISITIONS_DATA,
+  PURCHASE_ORDERS_DATA,
+  DELIVERY_NOTES_DATA,
+  SCM_INVOICES_DATA,
+  STOCK_OPNAME_DATA,
+  PERIOD_LOGS_DATA,
+  SYSTEM_NOTIFICATIONS_DATA,
+  CANCEL_REQUESTS_DATA,
+  PRINT_REQUESTS_DATA,
+  MANUAL_REVENUES_DATA,
+  CHANNEL_REVENUES_DATA,
+  YIELD_CONVERSIONS_DATA,
+  WASTE_ENTRIES_DATA,
+  OPERATIONAL_EXPENSES_DATA,
+  STOCK_TRANSFERS_DATA,
+  SUPPLIER_DELIVERIES_DATA,
+  STOCK_LEDGER_DATA,
+  SYSTEM_LOGS_DATA,
 } from "./seed-data";
 import type { IdMap } from "./index";
 import { createIdMap } from "./index";
@@ -77,7 +115,6 @@ async function createUserViaAuth(
     }
     await auth.api.signUpEmail({ body: body as never });
   } catch {
-    // Already exists — update fields
     const updateData: any = { name, role, status: "Active" };
     if (branchCode && branchIdMap) {
       updateData.branchId = branchIdMap.get(branchCode);
@@ -177,7 +214,6 @@ export async function seedUsers(idMap: IdMap) {
     idMap.user.set(u.email, userId);
   }
 
-  // Area manager branches
   const areaUser = await db
     .select({ id: usersTable.id })
     .from(usersTable)
@@ -297,7 +333,6 @@ export async function seedModifiers(idMap: IdMap) {
         }
       }
 
-      // Modifier ingredients
       if ("ingredients" in mod && mod.ingredients) {
         for (const mi of mod.ingredients) {
           const ingId = idMap.ingredient.get(mi.ingredientProtoId);
@@ -324,13 +359,10 @@ export async function seedModifiers(idMap: IdMap) {
 }
 
 // ──────────────────────────────────────────
-// Seed: Recipes (Pass 1 — tables, brands, ingredients, modifier groups)
+// Seed: Recipes (Pass 1)
 // ──────────────────────────────────────────
 
 export async function seedRecipesPass1(idMap: IdMap) {
-  // Remap modifier proto IDs to DB IDs for recipeModifierGroups
-  // We need to do this after mods are seeded
-
   for (const r of RECIPES_DATA) {
     let recId = idMap.recipe.get(r.protoId);
     if (!recId) {
@@ -355,7 +387,6 @@ export async function seedRecipesPass1(idMap: IdMap) {
       }
     }
 
-    // Recipe brands
     for (const bpId of (r as any).brandProtoIds || []) {
       const brandId = idMap.brand.get(bpId);
       if (!brandId) continue;
@@ -369,7 +400,6 @@ export async function seedRecipesPass1(idMap: IdMap) {
       }
     }
 
-    // Recipe ingredients
     for (const ri of r.ingredients) {
       const ingId = idMap.ingredient.get(ri.ingredientProtoId);
       if (!ingId) continue;
@@ -390,7 +420,6 @@ export async function seedRecipesPass1(idMap: IdMap) {
       }
     }
 
-    // Recipe modifier groups
     if ("modifierGroupProtoIds" in r && r.modifierGroupProtoIds) {
       for (const mgpId of r.modifierGroupProtoIds) {
         const mgId = idMap.modifierGroup.get(mgpId);
@@ -414,7 +443,6 @@ export async function seedRecipesPass1(idMap: IdMap) {
     }
   }
 
-  // Pass 2: Recipe child recipes
   for (const r of RECIPES_DATA) {
     if (!("childRecipes" in r) || !r.childRecipes) continue;
     const parentId = idMap.recipe.get(r.protoId);
@@ -508,46 +536,77 @@ export async function seedVouchers(idMap: IdMap) {
 }
 
 // ──────────────────────────────────────────
-// Seed: Inventory
+// Seed: Inventory (all branches, all countable ingredients)
 // ──────────────────────────────────────────
 
 export async function seedInventory(idMap: IdMap) {
-  // Create inventory for key ingredients in major branches
-  const branchesToSeed = ["SBY-01", "SBY-02", "SBY-03", "SBY-04"];
+  const branchCodes = [
+    "CENTRAL",
+    "SBY-01",
+    "SBY-02",
+    "SBY-03",
+    "SBY-04",
+    "MLG-01",
+    "GRS-01",
+    "JKT-01",
+    "JKT-02",
+    "BDG-01",
+  ];
   const ingredientProtoIds = [
     "ing-01",
     "ing-02",
     "ing-03",
     "ing-04",
     "ing-05",
+    "ing-06",
     "ing-07",
+    "ing-08",
+    "ing-09",
+    "ing-10",
+    "ing-11",
     "ing-12",
-    "ing-sfg-01",
-    "ing-sfg-02",
-    "ing-sfg-03",
+    "ing-13",
+    "ing-14",
+    "ing-15",
+    "ing-19",
+    "ing-21",
+    "ing-22",
+    "ing-23",
+    "ing-24",
+    "ing-25",
+    "ing-26",
+    "ing-27",
+    "ing-28",
+    "ing-29",
+    "ing-30",
     "ing-16",
     "ing-17",
     "ing-18",
     "ing-20",
+    "ing-31",
+    "ing-32",
+    "ing-sfg-01",
+    "ing-sfg-02",
+    "ing-sfg-03",
+    "ing-sfg-04",
+    "ing-sfg-05",
+    "ing-sfg-06",
+    "ing-sfg-07",
+    "ing-sfg-08",
+    "ing-sfg-09",
+    "ing-sfg-10",
+    "ing-sfg-11",
+    "ing-sfg-12",
+    "ing-sfg-13",
+    "ing-sfg-14",
+    "ing-sfg-15",
+    "ing-sfg-16",
+    "ing-sfg-17",
   ];
-  const baseQty: Record<string, number> = {
-    "ing-01": 50000,
-    "ing-02": 10000,
-    "ing-03": 5000,
-    "ing-04": 25000,
-    "ing-05": 25000,
-    "ing-07": 300,
-    "ing-12": 20000,
-    "ing-sfg-01": 30000,
-    "ing-sfg-02": 10000,
-    "ing-sfg-03": 5000,
-    "ing-16": 500,
-    "ing-17": 1000,
-    "ing-18": 500,
-    "ing-20": 500,
-  };
-  for (const bc of branchesToSeed) {
-    const bid = idMap.branch.get(bc);
+  for (const bc of branchCodes) {
+    const bid = idMap.branch.get(
+      bc === "CENTRAL" ? "br-central" : `br-${bc.toLowerCase().replace("-", "-")}`,
+    );
     if (!bid) continue;
     for (const ipid of ingredientProtoIds) {
       const iid = idMap.ingredient.get(ipid);
@@ -558,9 +617,11 @@ export async function seedInventory(idMap: IdMap) {
         .where(and(eq(inventoryTable.branchId, bid), eq(inventoryTable.ingredientId, iid)))
         .limit(1);
       if (!existing[0]) {
+        // Vary quantities by branch type
+        const baseQty = bc === "CENTRAL" ? 500000 : 10000 + Math.random() * 50000;
         await db
           .insert(inventoryTable)
-          .values({ branchId: bid, ingredientId: iid, quantity: baseQty[ipid] || 1000 });
+          .values({ branchId: bid, ingredientId: iid, quantity: Math.round(baseQty) });
       }
     }
   }
@@ -571,23 +632,32 @@ export async function seedInventory(idMap: IdMap) {
 // ──────────────────────────────────────────
 
 export async function seedShifts(idMap: IdMap) {
-  const hansId = idMap.user.get("hans@omoiyari.net");
-  const sb01 = idMap.branch.get("SBY-01");
-  if (!hansId || !sb01) return;
-  const existing = await db
-    .select()
-    .from(shiftsTable)
-    .where(eq(shiftsTable.userId, hansId))
-    .limit(1);
-  if (!existing[0]) {
-    await db.insert(shiftsTable).values({
-      branchId: sb01,
-      userId: hansId,
-      startTime: new Date("2026-05-01T08:00:00Z"),
-      cashFloat: 500000,
-      status: "Open",
-      notes: "Shift demo",
-    });
+  const shiftData = [
+    { email: "hans@omoiyari.net", branchCode: "SBY-01" },
+    { email: "siti@omoiyari.net", branchCode: "SBY-02" },
+    { email: "budi@omoiyari.net", branchCode: "SBY-03" },
+    { email: "rina@omoiyari.net", branchCode: "SBY-04" },
+    { email: "dewi@omoiyari.net", branchCode: "MLG-01" },
+  ];
+  for (const sd of shiftData) {
+    const userId = idMap.user.get(sd.email);
+    const branchId = idMap.branch.get(`br-${sd.branchCode.toLowerCase().replace("-", "-")}`);
+    if (!userId || !branchId) continue;
+    const existing = await db
+      .select()
+      .from(shiftsTable)
+      .where(and(eq(shiftsTable.userId, userId), eq(shiftsTable.branchId, branchId)))
+      .limit(1);
+    if (!existing[0]) {
+      await db.insert(shiftsTable).values({
+        branchId: branchId,
+        userId: userId,
+        startTime: new Date(Date.now() - (shiftData.indexOf(sd) + 1) * 86400000),
+        cashFloat: 500000,
+        status: "Open",
+        notes: `Shift demo ${sd.branchCode}`,
+      });
+    }
   }
 }
 
@@ -597,17 +667,15 @@ export async function seedShifts(idMap: IdMap) {
 
 export async function seedOrders(idMap: IdMap, _allSuccess: boolean) {
   for (const o of ORDERS_DATA) {
-    const bid = idMap.branch.get(o.branchCode);
+    const bid = idMap.branch.get(`br-${o.branchCode.toLowerCase().replace("-", "-")}`);
     if (!bid) continue;
     const brandId = idMap.brand.get("BRAND-1");
     if (!brandId) continue;
 
-    const orderCodeVal = o.status === "New" ? undefined : o.orderCode;
-
     const existingOrder = await db
       .select()
       .from(ordersTable)
-      .where(eq(ordersTable.orderCode, orderCodeVal || ""))
+      .where(eq(ordersTable.orderCode, o.orderCode))
       .limit(1);
 
     if (existingOrder[0]) continue;
@@ -625,9 +693,11 @@ export async function seedOrders(idMap: IdMap, _allSuccess: boolean) {
         totalCogs: o.totalCogs,
         mdrFee: o.mdrFee,
         netSales: o.netSales,
-        orderCode: orderCodeVal,
+        orderCode: o.orderCode,
         status: o.status,
         createdAt: o.createdAt,
+        voucherCode: o.voucherCode,
+        voucherDiscount: o.voucherDiscount,
       })
       .returning({ id: ordersTable.id });
 
@@ -652,52 +722,39 @@ export async function seedOrders(idMap: IdMap, _allSuccess: boolean) {
 // ──────────────────────────────────────────
 
 export async function seedStockLedger(idMap: IdMap) {
-  const branches = ["SBY-01"];
-  const entries = [
-    { ing: "ing-01", qty: 5000, day: 1, ref: "POS-001" },
-    { ing: "ing-01", qty: 4800, day: 2, ref: "POS-002" },
-    { ing: "ing-01", qty: 5200, day: 3, ref: "POS-003" },
-    { ing: "ing-01", qty: 5000, day: 4, ref: "POS-004" },
-    { ing: "ing-01", qty: 5000, day: 5, ref: "POS-005" },
-    { ing: "ing-02", qty: 2000, day: 1, ref: "POS-001" },
-    { ing: "ing-02", qty: 2100, day: 2, ref: "POS-002" },
-    { ing: "ing-02", qty: 1900, day: 3, ref: "POS-003" },
-    { ing: "ing-02", qty: 2000, day: 4, ref: "POS-004" },
-    { ing: "ing-02", qty: 2000, day: 5, ref: "POS-005" },
-  ];
-  let balanceAccum: Record<string, number> = {};
-  for (const branchCode of branches) {
-    const bid = idMap.branch.get(branchCode);
-    if (!bid) continue;
-    balanceAccum = {};
-    for (const e of entries) {
-      const iid = idMap.ingredient.get(e.ing);
-      if (!iid) continue;
-      balanceAccum[e.ing] = (balanceAccum[e.ing] || 50000) - e.qty;
-      const createdAt = new Date(Date.now() - e.day * 86400000);
-      const existing = await db
-        .select()
-        .from(stockLedgerTable)
-        .where(
-          and(
-            eq(stockLedgerTable.branchId, bid),
-            eq(stockLedgerTable.ingredientId, iid),
-            eq(stockLedgerTable.reference, e.ref),
-          ),
-        )
-        .limit(1);
-      if (!existing[0]) {
-        await db.insert(stockLedgerTable).values({
-          branchId: bid,
-          ingredientId: iid,
-          type: "OUT",
-          quantity: e.qty,
-          balance: balanceAccum[e.ing],
-          reference: e.ref,
-          notes: "Penjualan Daily",
-          createdAt,
-        });
-      }
+  const balanceMap: Record<string, number> = {};
+  for (const e of STOCK_LEDGER_DATA) {
+    const bid = idMap.branch.get(`br-${e.branchCode.toLowerCase().replace("-", "-")}`);
+    const iid = idMap.ingredient.get(e.ingredientProtoId);
+    if (!bid || !iid) continue;
+
+    const key = `${bid}-${iid}`;
+    const currentBalance = balanceMap[key] || 50000;
+    const newBalance = e.type === "IN" ? currentBalance + e.quantity : currentBalance - e.quantity;
+    balanceMap[key] = newBalance;
+
+    const existing = await db
+      .select()
+      .from(stockLedgerTable)
+      .where(
+        and(
+          eq(stockLedgerTable.branchId, bid),
+          eq(stockLedgerTable.ingredientId, iid),
+          eq(stockLedgerTable.reference, e.reference),
+        ),
+      )
+      .limit(1);
+    if (!existing[0]) {
+      await db.insert(stockLedgerTable).values({
+        branchId: bid,
+        ingredientId: iid,
+        type: e.type,
+        quantity: e.quantity,
+        balance: newBalance,
+        reference: e.reference,
+        notes: e.notes,
+        createdAt: new Date(Date.now() - e.dayAgo * 86400000),
+      });
     }
   }
 }
@@ -707,62 +764,18 @@ export async function seedStockLedger(idMap: IdMap) {
 // ──────────────────────────────────────────
 
 export async function seedStockTransfers(idMap: IdMap) {
-  const transfersData = [
-    {
-      protoId: "tr-001",
-      code: "TR-001",
-      from: "br-central",
-      to: "br-sub-01",
-      ing: "ing-01",
-      qty: 50000,
-      status: "Completed" as const,
-      requestedByEmail: "superadmin@omoiyari.net",
-    },
-    {
-      protoId: "tr-002",
-      code: "TR-002",
-      from: "br-central",
-      to: "br-sub-02",
-      ing: "ing-02",
-      qty: 20000,
-      status: "Completed" as const,
-      requestedByEmail: "hans@omoiyari.net",
-    },
-    {
-      protoId: "tr-003",
-      code: "TR-003",
-      from: "br-central",
-      to: "br-sub-03",
-      ing: "ing-03",
-      qty: 10000,
-      status: "Completed" as const,
-      requestedByEmail: "hans@omoiyari.net",
-    },
-    {
-      protoId: "tr-004",
-      code: "TR-004",
-      from: "br-central",
-      to: "br-sub-04",
-      ing: "ing-04",
-      qty: 5000,
-      status: "In Transit" as const,
-      requestedByEmail: "hans@omoiyari.net",
-    },
-    {
-      protoId: "tr-005",
-      code: "TR-005",
-      from: "br-central",
-      to: "br-mlg-01",
-      ing: "ing-01",
-      qty: 25000,
-      status: "Pending Approval" as const,
-      requestedByEmail: "hans@omoiyari.net",
-    },
-  ];
-  for (const t of transfersData) {
-    const fromBid = idMap.branch.get(t.from);
-    const toBid = idMap.branch.get(t.to);
-    const iid = idMap.ingredient.get(t.ing);
+  for (const t of STOCK_TRANSFERS_DATA) {
+    const fromBid = idMap.branch.get(
+      t.fromBranchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${t.fromBranchCode.toLowerCase().replace("-", "-")}`,
+    );
+    const toBid = idMap.branch.get(
+      t.toBranchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${t.toBranchCode.toLowerCase().replace("-", "-")}`,
+    );
+    const iid = idMap.ingredient.get(t.ingredientProtoId);
     const reqUid = idMap.user.get(t.requestedByEmail);
     if (!fromBid || !toBid || !iid || !reqUid) continue;
     const existing = await db
@@ -776,10 +789,12 @@ export async function seedStockTransfers(idMap: IdMap) {
         fromBranchId: fromBid,
         toBranchId: toBid,
         ingredientId: iid,
-        quantity: t.qty,
+        quantity: t.quantity,
         status: t.status,
         requestedBy: reqUid,
-        createdAt: new Date(Date.now() - transfersData.indexOf(t) * 86400000),
+        approvedBy: t.approvedByEmail ? idMap.user.get(t.approvedByEmail) : undefined,
+        rejectionReason: t.rejectionReason,
+        createdAt: t.createdAt,
       });
     }
   }
@@ -790,75 +805,66 @@ export async function seedStockTransfers(idMap: IdMap) {
 // ──────────────────────────────────────────
 
 export async function seedSupplierDeliveries(idMap: IdMap) {
-  const adminId = idMap.user.get("superadmin@omoiyari.net");
-  if (!adminId) return;
-  const deliveries = [
-    {
-      supCode: "SUP-001",
-      ing: "ing-01",
-      qty: 500000,
-      price: 7000000,
-      day: 5,
-      supName: "PT Beras Makmur",
-    },
-    {
-      supCode: "SUP-002",
-      ing: "ing-02",
-      qty: 50000,
-      price: 2250000,
-      day: 4,
-      supName: "CV Ayam Segar",
-    },
-    {
-      supCode: "SUP-003",
-      ing: "ing-03",
-      qty: 30000,
-      price: 3450000,
-      day: 3,
-      supName: "Importir Sapi Jaya",
-    },
-    {
-      supCode: "SUP-004",
-      ing: "ing-04",
-      qty: 25000,
-      price: 600000,
-      day: 2,
-      supName: "PT Saus Nusantara",
-    },
-    {
-      supCode: "SUP-004",
-      ing: "ing-05",
-      qty: 25000,
-      price: 675000,
-      day: 1,
-      supName: "PT Saus Nusantara",
-    },
-  ];
-  for (const d of deliveries) {
-    const iid = idMap.ingredient.get(d.ing);
-    const supId = idMap.supplier.get(d.supCode);
-    if (!iid) continue;
+  for (const d of SUPPLIER_DELIVERIES_DATA) {
+    const iid = idMap.ingredient.get(d.ingredientProtoId);
+    const supId = d.supplierCode ? idMap.supplier.get(d.supplierCode) : null;
+    const receivedById = idMap.user.get(d.receivedByEmail);
+    if (!iid || !receivedById) continue;
     const existing = await db
       .select()
       .from(supplierDeliveriesTable)
       .where(
         and(
-          eq(supplierDeliveriesTable.supplierName, d.supName),
+          eq(supplierDeliveriesTable.supplierName, d.supplierName),
           eq(supplierDeliveriesTable.ingredientId, iid),
-          eq(supplierDeliveriesTable.quantity, d.qty),
+          eq(supplierDeliveriesTable.quantity, d.quantity),
         ),
       )
       .limit(1);
     if (!existing[0]) {
       await db.insert(supplierDeliveriesTable).values({
-        supplierId: supId || null,
-        supplierName: d.supName,
+        supplierId: supId,
+        supplierName: d.supplierName,
         ingredientId: iid,
-        quantity: d.qty,
+        quantity: d.quantity,
         price: d.price,
-        deliveryDate: new Date(Date.now() - d.day * 86400000),
-        receivedBy: adminId,
-        status: "Completed",
+        deliveryDate: d.deliveryDate,
+        receivedBy: receivedById,
+        status: d.status,
+      });
+    }
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Recipe Modifier Exclusions
+// ──────────────────────────────────────────
+
+export async function seedRecipeModifierExclusions(idMap: IdMap) {
+  for (const excl of RECIPE_MODIFIER_EXCLUSIONS) {
+    const recipeId = idMap.recipe.get(excl.recipeProtoId);
+    const modifierId = idMap.modifier.get(excl.modifierProtoId);
+    const ingredientId = idMap.ingredient.get(excl.ingredientProtoId);
+    if (!recipeId || !modifierId || !ingredientId) continue;
+
+    const existing = await db
+      .select()
+      .from(recipeModifierExclusionsTable)
+      .where(
+        and(
+          eq(recipeModifierExclusionsTable.recipeId, recipeId),
+          eq(recipeModifierExclusionsTable.modifierId, modifierId),
+          eq(recipeModifierExclusionsTable.ingredientId, ingredientId),
+        ),
+      )
+      .limit(1);
+
+    if (!existing[0]) {
+      await db.insert(recipeModifierExclusionsTable).values({
+        recipeId,
+        modifierId,
+        ingredientId,
+        quantity: 1,
       });
     }
   }
@@ -869,25 +875,68 @@ export async function seedSupplierDeliveries(idMap: IdMap) {
 // ──────────────────────────────────────────
 
 export async function seedWasteEntries(idMap: IdMap) {
-  const hansId = idMap.user.get("hans@omoiyari.net");
-  const sb01 = idMap.branch.get("SBY-01");
-  const ing02 = idMap.ingredient.get("ing-02");
-  if (!hansId || !sb01 || !ing02) return;
-  const existing = await db
-    .select()
-    .from(wasteEntriesTable)
-    .where(and(eq(wasteEntriesTable.branchId, sb01), eq(wasteEntriesTable.ingredientId, ing02)))
-    .limit(1);
-  if (!existing[0]) {
-    await db.insert(wasteEntriesTable).values({
-      branchId: sb01,
-      ingredientId: ing02,
-      quantity: 500,
-      category: "Spoiled",
-      notes: "Kedaluwarsa",
-      submittedBy: hansId,
-      createdAt: new Date(Date.now() - 2 * 86400000),
-    });
+  for (const w of WASTE_ENTRIES_DATA) {
+    const branchId = idMap.branch.get(`br-${w.branchCode.toLowerCase().replace("-", "-")}`);
+    const ingId = idMap.ingredient.get(w.ingredientProtoId);
+    const userId = idMap.user.get(w.submittedByEmail);
+    if (!branchId || !ingId || !userId) continue;
+    const existing = await db
+      .select()
+      .from(wasteEntriesTable)
+      .where(
+        and(
+          eq(wasteEntriesTable.branchId, branchId),
+          eq(wasteEntriesTable.ingredientId, ingId),
+          eq(wasteEntriesTable.quantity, w.quantity),
+          eq(wasteEntriesTable.category, w.category),
+        ),
+      )
+      .limit(1);
+    if (!existing[0]) {
+      await db.insert(wasteEntriesTable).values({
+        branchId,
+        ingredientId: ingId,
+        quantity: w.quantity,
+        category: w.category,
+        notes: w.notes,
+        investigationNote: w.investigationNote,
+        submittedBy: userId,
+        createdAt: w.createdAt,
+      });
+    }
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Operational Expenses
+// ──────────────────────────────────────────
+
+export async function seedOperationalExpenses(idMap: IdMap) {
+  for (const oe of OPERATIONAL_EXPENSES_DATA) {
+    const branchId = idMap.branch.get(`br-${oe.branchCode.toLowerCase().replace("-", "-")}`);
+    const userId = idMap.user.get(oe.submittedByEmail);
+    if (!branchId || !userId) continue;
+    const existing = await db
+      .select()
+      .from(operationalExpensesTable)
+      .where(
+        and(
+          eq(operationalExpensesTable.branchId, branchId),
+          eq(operationalExpensesTable.category, oe.category),
+          eq(operationalExpensesTable.date, oe.date),
+        ),
+      )
+      .limit(1);
+    if (!existing[0]) {
+      await db.insert(operationalExpensesTable).values({
+        branchId,
+        category: oe.category,
+        amount: oe.amount,
+        date: oe.date,
+        notes: oe.notes,
+        submittedBy: userId,
+      });
+    }
   }
 }
 
@@ -896,76 +945,20 @@ export async function seedWasteEntries(idMap: IdMap) {
 // ──────────────────────────────────────────
 
 export async function seedSystemLogs() {
-  const logs = [
-    {
-      action: "Reset Database",
-      detail: "Super Admin mereset seluruh data ke kondisi awal",
-      userName: "Super Admin",
-      status: "Success" as const,
-    },
-    {
-      action: "Pembaruan Resep",
-      detail: "Resep Chicken Teriyaki Bowl diperbarui harganya",
-      userName: "Super Admin",
-      status: "Success" as const,
-    },
-    {
-      action: "Penambahan Cabang",
-      detail: "Cabang baru Omoiyari Malang ditambahkan",
-      userName: "Super Admin",
-      status: "Success" as const,
-    },
-    {
-      action: "Penerimaan Barang",
-      detail: "Penerimaan Beras Premium 500kg dari PT Beras Makmur",
-      userName: "Super Admin",
-      status: "Success" as const,
-    },
-    {
-      action: "Gagal Login",
-      detail: "Percobaan login gagal dengan email tidak dikenal",
-      userName: "unknown",
-      status: "Warning" as const,
-    },
-    {
-      action: "Buka Periode",
-      detail: "Periode April 2026 dibuka oleh Super Admin",
-      userName: "Super Admin",
-      status: "Success" as const,
-    },
-    {
-      action: "Tutup Periode",
-      detail: "Periode Maret 2026 ditutup oleh Super Admin",
-      userName: "Super Admin",
-      status: "Success" as const,
-    },
-    {
-      action: "Penyesuaian Stok",
-      detail: "Stock Opname br-sub-01 disetujui",
-      userName: "Super Admin",
-      status: "Success" as const,
-    },
-    {
-      action: "Transfer Stok",
-      detail: "Transfer 50kg Beras ke br-sub-01 selesai",
-      userName: "Super Admin",
-      status: "Success" as const,
-    },
-    {
-      action: "Input Pendapatan",
-      detail: "Pendapatan manual br-sub-01 diinput",
-      userName: "Hans",
-      status: "Success" as const,
-    },
-  ];
-  for (const l of logs) {
+  for (const l of SYSTEM_LOGS_DATA) {
     const existing = await db
       .select()
       .from(systemLogsTable)
       .where(and(eq(systemLogsTable.action, l.action), eq(systemLogsTable.detail, l.detail)))
       .limit(1);
     if (!existing[0]) {
-      await db.insert(systemLogsTable).values(l);
+      await db.insert(systemLogsTable).values({
+        action: l.action,
+        detail: l.detail,
+        userName: l.userName,
+        status: l.status,
+        createdAt: l.createdAt,
+      });
     }
   }
 }
@@ -995,83 +988,623 @@ export async function seedAppSettings(idMap: IdMap) {
 }
 
 // ──────────────────────────────────────────
+// Seed: Purchase Requisitions
+// ──────────────────────────────────────────
+
+export async function seedPurchaseRequisitions(idMap: IdMap) {
+  for (const pr of PURCHASE_REQUISITIONS_DATA) {
+    const branchId = idMap.branch.get(`br-${pr.branchCode.toLowerCase().replace("-", "-")}`);
+    const reqById = idMap.user.get(pr.requestedByEmail);
+    if (!branchId || !reqById) continue;
+
+    const existing = await db
+      .select()
+      .from(purchaseRequisitionsTable)
+      .where(eq(purchaseRequisitionsTable.code, pr.code))
+      .limit(1);
+    if (existing[0]) continue;
+
+    const [inserted] = await db
+      .insert(purchaseRequisitionsTable)
+      .values({
+        code: pr.code,
+        branchId,
+        status: pr.status,
+        requestedBy: reqById,
+        approvedBy: pr.approvedByEmail ? idMap.user.get(pr.approvedByEmail) : undefined,
+        notes: pr.notes,
+        rejectionReason: pr.rejectionReason,
+        isAutoGenerated: pr.isAutoGenerated,
+        createdAt: pr.createdAt,
+      })
+      .returning({ id: purchaseRequisitionsTable.id });
+
+    for (const item of pr.items) {
+      const ingId = idMap.ingredient.get(item.ingredientProtoId);
+      if (!ingId) continue;
+      await db.insert(purchaseRequisitionItemsTable).values({
+        purchaseRequisitionId: inserted.id,
+        ingredientId: ingId,
+        quantity: item.quantity,
+      });
+    }
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Purchase Orders
+// ──────────────────────────────────────────
+
+export async function seedPurchaseOrders(idMap: IdMap) {
+  for (const po of PURCHASE_ORDERS_DATA) {
+    const fromBranchId = idMap.branch.get(
+      po.fromBranchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${po.fromBranchCode.toLowerCase().replace("-", "-")}`,
+    );
+    const toBranchId = idMap.branch.get(
+      po.toBranchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${po.toBranchCode.toLowerCase().replace("-", "-")}`,
+    );
+    const createdById = idMap.user.get(po.createdByEmail);
+    const supplierId = idMap.supplier.get(po.supplierCode);
+    if (!fromBranchId || !toBranchId || !createdById) continue;
+
+    const existing = await db
+      .select()
+      .from(purchaseOrdersTable)
+      .where(eq(purchaseOrdersTable.code, po.code))
+      .limit(1);
+    if (existing[0]) continue;
+
+    const [inserted] = await db
+      .insert(purchaseOrdersTable)
+      .values({
+        code: po.code,
+        fromBranchId,
+        toBranchId,
+        supplierId: supplierId || null,
+        status: po.status,
+        notes: po.notes,
+        createdBy: createdById,
+        createdAt: po.createdAt,
+      })
+      .returning({ id: purchaseOrdersTable.id });
+
+    for (const item of po.items) {
+      const ingId = idMap.ingredient.get(item.ingredientProtoId);
+      if (!ingId) continue;
+      await db.insert(purchaseOrderItemsTable).values({
+        purchaseOrderId: inserted.id,
+        ingredientId: ingId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice,
+      });
+    }
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Delivery Notes
+// ──────────────────────────────────────────
+
+export async function seedDeliveryNotes(idMap: IdMap) {
+  for (const dn of DELIVERY_NOTES_DATA) {
+    const fromBranchId = idMap.branch.get(
+      dn.fromBranchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${dn.fromBranchCode.toLowerCase().replace("-", "-")}`,
+    );
+    const toBranchId = idMap.branch.get(
+      dn.toBranchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${dn.toBranchCode.toLowerCase().replace("-", "-")}`,
+    );
+    if (!fromBranchId || !toBranchId) continue;
+
+    const existing = await db
+      .select()
+      .from(deliveryNotesTable)
+      .where(eq(deliveryNotesTable.code, dn.code))
+      .limit(1);
+    if (existing[0]) continue;
+
+    const [inserted] = await db
+      .insert(deliveryNotesTable)
+      .values({
+        code: dn.code,
+        fromBranchId,
+        toBranchId,
+        status: dn.status,
+        driverName: dn.driverName,
+        vehicleNumber: dn.vehicleNumber,
+        createdAt: dn.createdAt,
+      })
+      .returning({ id: deliveryNotesTable.id });
+
+    for (const item of dn.items) {
+      const ingId = idMap.ingredient.get(item.ingredientProtoId);
+      if (!ingId) continue;
+      await db.insert(deliveryNoteItemsTable).values({
+        deliveryNoteId: inserted.id,
+        ingredientId: ingId,
+        quantity: item.quantity,
+        readyQuantity: item.readyQuantity ?? null,
+        pickedQuantity: item.pickedQuantity ?? null,
+        receivedQuantity: item.receivedQuantity ?? null,
+        rejectedQuantity: item.rejectedQuantity ?? 0,
+      });
+    }
+
+    // Create in-transit inventory for non-draft, non-cancelled DNs
+    if (dn.status !== "Draft" && dn.status !== "Cancelled") {
+      for (const item of dn.items) {
+        const ingId = idMap.ingredient.get(item.ingredientProtoId);
+        if (!ingId) continue;
+        const existingIti = await db
+          .select()
+          .from(inTransitInventoryTable)
+          .where(
+            and(
+              eq(inTransitInventoryTable.deliveryNoteId, inserted.id),
+              eq(inTransitInventoryTable.ingredientId, ingId),
+            ),
+          )
+          .limit(1);
+        if (!existingIti[0]) {
+          await db.insert(inTransitInventoryTable).values({
+            deliveryNoteId: inserted.id,
+            branchId: toBranchId,
+            ingredientId: ingId,
+            quantity: item.quantity,
+          });
+        }
+      }
+    }
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: SCM Invoices
+// ──────────────────────────────────────────
+
+export async function seedScmInvoices(idMap: IdMap) {
+  for (const inv of SCM_INVOICES_DATA) {
+    const fromBranchId = idMap.branch.get(
+      inv.fromBranchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${inv.fromBranchCode.toLowerCase().replace("-", "-")}`,
+    );
+    const toBranchId = idMap.branch.get(
+      inv.toBranchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${inv.toBranchCode.toLowerCase().replace("-", "-")}`,
+    );
+    if (!fromBranchId || !toBranchId) continue;
+
+    const dnExisting = await db
+      .select()
+      .from(deliveryNotesTable)
+      .where(eq(deliveryNotesTable.code, inv.dnCode))
+      .limit(1);
+    if (!dnExisting[0]) continue;
+
+    const existing = await db
+      .select()
+      .from(scmInvoicesTable)
+      .where(eq(scmInvoicesTable.code, inv.code))
+      .limit(1);
+    if (existing[0]) continue;
+
+    await db.insert(scmInvoicesTable).values({
+      code: inv.code,
+      deliveryNoteId: dnExisting[0].id,
+      fromBranchId,
+      toBranchId,
+      totalAmount: inv.totalAmount,
+      status: inv.status,
+      dueDate: inv.dueDate,
+      paidAt: inv.paidAt,
+    });
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Stock Opnames
+// ──────────────────────────────────────────
+
+export async function seedStockOpnames(idMap: IdMap) {
+  for (const so of STOCK_OPNAME_DATA) {
+    const branchId = idMap.branch.get(`br-${so.branchCode.toLowerCase().replace("-", "-")}`);
+    const triggeredById = idMap.user.get(so.triggeredByEmail);
+    const submittedById = idMap.user.get(so.submittedByEmail);
+    if (!branchId || !triggeredById || !submittedById) continue;
+
+    const existing = await db
+      .select()
+      .from(stockOpnamesTable)
+      .where(and(eq(stockOpnamesTable.branchId, branchId), eq(stockOpnamesTable.date, so.date)))
+      .limit(1);
+    if (existing[0]) continue;
+
+    const [inserted] = await db
+      .insert(stockOpnamesTable)
+      .values({
+        branchId,
+        date: so.date,
+        status: so.status,
+        triggeredBy: triggeredById,
+        submittedBy: submittedById,
+        approvedBy: so.approvedByEmail ? idMap.user.get(so.approvedByEmail) : undefined,
+        createdAt: so.createdAt,
+      })
+      .returning({ id: stockOpnamesTable.id });
+
+    for (const item of so.items) {
+      const ingId = idMap.ingredient.get(item.ingredientProtoId);
+      if (!ingId) continue;
+      await db.insert(stockOpnameItemsTable).values({
+        stockOpnameId: inserted.id,
+        ingredientId: ingId,
+        systemStock: item.systemStock,
+        physicalStock: item.physicalStock,
+        variance: item.variance,
+        investigationNote: item.investigationNote,
+      });
+    }
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Period Logs
+// ──────────────────────────────────────────
+
+export async function seedPeriodLogs(idMap: IdMap) {
+  for (const pl of PERIOD_LOGS_DATA) {
+    const openedById = idMap.user.get(pl.openedByEmail);
+    const closedById = pl.closedByEmail ? idMap.user.get(pl.closedByEmail) : undefined;
+    if (!openedById) continue;
+
+    const existing = await db
+      .select()
+      .from(periodLogsTable)
+      .where(eq(periodLogsTable.periodName, pl.periodName))
+      .limit(1);
+    if (existing[0]) continue;
+
+    await db.insert(periodLogsTable).values({
+      periodName: pl.periodName,
+      status: pl.status,
+      openedAt: pl.openedAt,
+      closedAt: pl.closedAt,
+      openedBy: openedById,
+      closedBy: closedById,
+    });
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: System Notifications
+// ──────────────────────────────────────────
+
+export async function seedSystemNotifications(idMap: IdMap) {
+  for (const n of SYSTEM_NOTIFICATIONS_DATA) {
+    const userId = idMap.user.get(n.userEmail);
+    if (!userId) continue;
+
+    const existing = await db
+      .select()
+      .from(systemNotificationsTable)
+      .where(
+        and(
+          eq(systemNotificationsTable.userId, userId),
+          eq(systemNotificationsTable.title, n.title),
+          eq(systemNotificationsTable.message, n.message),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) continue;
+
+    await db.insert(systemNotificationsTable).values({
+      userId,
+      title: n.title,
+      message: n.message,
+      type: n.type,
+      isRead: n.isRead,
+      createdAt: n.createdAt,
+    });
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Cancel Requests
+// ──────────────────────────────────────────
+
+export async function seedCancelRequests(idMap: IdMap) {
+  for (const cr of CANCEL_REQUESTS_DATA) {
+    // Find order by index in the orders table
+    const orderCode = `GF-${20250000 + cr.orderIdx}`;
+    const order = await db
+      .select()
+      .from(ordersTable)
+      .where(eq(ordersTable.orderCode, orderCode))
+      .limit(1);
+    if (!order[0]) continue;
+
+    const reqById = idMap.user.get(cr.requestedByEmail);
+    if (!reqById) continue;
+
+    const existing = await db
+      .select()
+      .from(cancelRequestsTable)
+      .where(eq(cancelRequestsTable.orderId, order[0].id))
+      .limit(1);
+    if (existing[0]) continue;
+
+    await db.insert(cancelRequestsTable).values({
+      orderId: order[0].id,
+      reason: cr.reason,
+      detail: cr.detail,
+      requestedBy: reqById,
+      approvedBy: cr.approvedByEmail ? idMap.user.get(cr.approvedByEmail) : undefined,
+      status: cr.status,
+      createdAt: cr.createdAt,
+    });
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Print Requests
+// ──────────────────────────────────────────
+
+export async function seedPrintRequests(idMap: IdMap) {
+  for (const pr of PRINT_REQUESTS_DATA) {
+    const orderCode = `GF-${20250000 + pr.orderIdx}`;
+    const order = await db
+      .select()
+      .from(ordersTable)
+      .where(eq(ordersTable.orderCode, orderCode))
+      .limit(1);
+    if (!order[0]) continue;
+
+    const reqById = idMap.user.get(pr.requestedByEmail);
+    if (!reqById) continue;
+
+    const existing = await db
+      .select()
+      .from(printRequestsTable)
+      .where(
+        and(
+          eq(printRequestsTable.orderId, order[0].id),
+          eq(printRequestsTable.requestType, pr.requestType),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) continue;
+
+    await db.insert(printRequestsTable).values({
+      orderId: order[0].id,
+      requestType: pr.requestType,
+      requestedBy: reqById,
+      approvedBy: pr.approvedByEmail ? idMap.user.get(pr.approvedByEmail) : undefined,
+      status: pr.status,
+      createdAt: pr.createdAt,
+    });
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Manual Revenues
+// ──────────────────────────────────────────
+
+export async function seedManualRevenues(idMap: IdMap) {
+  for (const mr of MANUAL_REVENUES_DATA) {
+    const branchId = idMap.branch.get(`br-${mr.branchCode.toLowerCase().replace("-", "-")}`);
+    const userId = idMap.user.get(mr.submittedByEmail);
+    if (!branchId || !userId) continue;
+
+    const existing = await db
+      .select()
+      .from(manualRevenuesTable)
+      .where(
+        and(
+          eq(manualRevenuesTable.branchId, branchId),
+          eq(manualRevenuesTable.date, mr.date),
+          eq(manualRevenuesTable.amount, mr.amount),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) continue;
+
+    await db.insert(manualRevenuesTable).values({
+      branchId,
+      date: mr.date,
+      amount: mr.amount,
+      notes: mr.notes,
+      submittedBy: userId,
+      createdAt: mr.createdAt,
+    });
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Channel Revenues
+// ──────────────────────────────────────────
+
+export async function seedChannelRevenues(idMap: IdMap) {
+  for (const cr of CHANNEL_REVENUES_DATA) {
+    const branchId = idMap.branch.get(`br-${cr.branchCode.toLowerCase().replace("-", "-")}`);
+    const userId = idMap.user.get(cr.submittedByEmail);
+    if (!branchId || !userId) continue;
+
+    const existing = await db
+      .select()
+      .from(channelRevenuesTable)
+      .where(
+        and(
+          eq(channelRevenuesTable.branchId, branchId),
+          eq(channelRevenuesTable.date, cr.date),
+          eq(channelRevenuesTable.channel, cr.channel),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) continue;
+
+    await db.insert(channelRevenuesTable).values({
+      branchId,
+      date: cr.date,
+      channel: cr.channel,
+      amount: cr.amount,
+      notes: cr.notes,
+      submittedBy: userId,
+    });
+  }
+}
+
+// ──────────────────────────────────────────
+// Seed: Yield Conversions
+// ──────────────────────────────────────────
+
+export async function seedYieldConversions(idMap: IdMap) {
+  for (const yc of YIELD_CONVERSIONS_DATA) {
+    const branchId = idMap.branch.get(`br-${yc.branchCode.toLowerCase().replace("-", "-")}`);
+    const sourceId = idMap.ingredient.get(yc.sourceIngredientProtoId);
+    const targetId = idMap.ingredient.get(yc.targetIngredientProtoId);
+    const processedById = idMap.user.get(yc.processedByEmail);
+    if (!branchId || !sourceId || !targetId || !processedById) continue;
+
+    const existing = await db
+      .select()
+      .from(yieldConversionsTable)
+      .where(
+        and(
+          eq(yieldConversionsTable.branchId, branchId),
+          eq(yieldConversionsTable.sourceIngredientId, sourceId),
+          eq(yieldConversionsTable.createdAt, yc.createdAt),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) continue;
+
+    await db.insert(yieldConversionsTable).values({
+      branchId,
+      sourceIngredientId: sourceId,
+      sourceQuantity: yc.sourceQuantity,
+      targetIngredientId: targetId,
+      targetQuantity: yc.targetQuantity,
+      yieldPercentage: yc.yieldPercentage,
+      shrinkageQuantity: yc.shrinkageQuantity,
+      notes: yc.notes,
+      processedBy: processedById,
+      createdAt: yc.createdAt,
+    });
+  }
+}
+
+// ──────────────────────────────────────────
 // Main orchestrator
 // ──────────────────────────────────────────
 
 export async function seedAll(allSuccess = true) {
   const idMap = createIdMap();
 
-  // Step 1: Branches
   console.log("[seed] Seeding branches...");
   await seedBranches(idMap);
 
-  // Step 2: Brands
   console.log("[seed] Seeding brands...");
   await seedBrands(idMap);
 
-  // Step 3: Suppliers
   console.log("[seed] Seeding suppliers...");
   await seedSuppliers(idMap);
 
-  // Step 4: Users
   console.log("[seed] Seeding users...");
   await seedUsers(idMap);
 
-  // Step 5: Ingredients
   console.log("[seed] Seeding ingredients...");
   await seedIngredients(idMap);
 
-  // Step 6: Modifier groups + modifiers
   console.log("[seed] Seeding modifier groups & modifiers...");
   await seedModifiers(idMap);
 
-  // Step 7: Recipes (Pass 1) + recipe joins
   console.log("[seed] Seeding recipes...");
   await seedRecipesPass1(idMap);
 
-  // Step 8: Platform fees
   console.log("[seed] Seeding platform fees...");
   await seedPlatformFees();
 
-  // Step 9: Vouchers
   console.log("[seed] Seeding vouchers...");
   await seedVouchers(idMap);
 
-  // Step 10: Inventory
   console.log("[seed] Seeding inventory...");
   await seedInventory(idMap);
 
-  // Step 11: Shifts
   console.log("[seed] Seeding shifts...");
   await seedShifts(idMap);
 
-  // Step 12: Orders
   console.log("[seed] Seeding orders...");
   await seedOrders(idMap, allSuccess);
 
-  // Step 13: Stock ledger
   console.log("[seed] Seeding stock ledger...");
   await seedStockLedger(idMap);
 
-  // Step 14: Stock transfers
   console.log("[seed] Seeding stock transfers...");
   await seedStockTransfers(idMap);
 
-  // Step 15: Supplier deliveries
   console.log("[seed] Seeding supplier deliveries...");
   await seedSupplierDeliveries(idMap);
 
-  // Step 16: Waste entries
+  console.log("[seed] Seeding recipe modifier exclusions...");
+  await seedRecipeModifierExclusions(idMap);
+
   console.log("[seed] Seeding waste entries...");
   await seedWasteEntries(idMap);
 
-  // Step 17: System logs
+  console.log("[seed] Seeding operational expenses...");
+  await seedOperationalExpenses(idMap);
+
   console.log("[seed] Seeding system logs...");
   await seedSystemLogs();
 
-  // Step 18: App settings
   console.log("[seed] Seeding app settings...");
   await seedAppSettings(idMap);
+
+  console.log("[seed] Seeding purchase requisitions...");
+  await seedPurchaseRequisitions(idMap);
+
+  console.log("[seed] Seeding purchase orders...");
+  await seedPurchaseOrders(idMap);
+
+  console.log("[seed] Seeding delivery notes...");
+  await seedDeliveryNotes(idMap);
+
+  console.log("[seed] Seeding SCM invoices...");
+  await seedScmInvoices(idMap);
+
+  console.log("[seed] Seeding stock opnames...");
+  await seedStockOpnames(idMap);
+
+  console.log("[seed] Seeding period logs...");
+  await seedPeriodLogs(idMap);
+
+  console.log("[seed] Seeding system notifications...");
+  await seedSystemNotifications(idMap);
+
+  console.log("[seed] Seeding cancel requests...");
+  await seedCancelRequests(idMap);
+
+  console.log("[seed] Seeding print requests...");
+  await seedPrintRequests(idMap);
+
+  console.log("[seed] Seeding manual revenues...");
+  await seedManualRevenues(idMap);
+
+  console.log("[seed] Seeding channel revenues...");
+  await seedChannelRevenues(idMap);
+
+  console.log("[seed] Seeding yield conversions...");
+  await seedYieldConversions(idMap);
 
   console.log("[seed] Done!");
   return { success: true, message: "All data seeded" };

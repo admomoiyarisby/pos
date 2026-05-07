@@ -3,6 +3,7 @@ import { db } from "#/db/index";
 import { vouchers } from "#/db/schema";
 import { eq, ilike, gte } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
 
 const voucherInput = z.object({
@@ -41,16 +42,30 @@ export const getVouchers = createServerFn({ method: "GET" })
 export const createVoucher = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => voucherInput.parse(data))
   .handler(async ({ data }) => {
-    await requireRole("super_admin");
+    const user = await requireRole("super_admin");
 
     const [result] = await db
       .insert(vouchers)
       .values({
         ...data,
         validUntil: new Date(data.validUntil),
-        createdBy: (await requireAuth()).id,
+        createdBy: user.id,
       })
       .returning();
+
+    await logSystemAction(
+      user,
+      "Create Voucher",
+      `Voucher "${result.code}" dibuat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "vouchers",
+      result.id,
+      "CREATE",
+      undefined,
+      result as Record<string, unknown>,
+    );
 
     return result;
   });
@@ -60,9 +75,12 @@ export const updateVoucher = createServerFn({ method: "POST" })
     voucherInput.partial().extend({ id: z.string().uuid() }).parse(data),
   )
   .handler(async ({ data }) => {
-    await requireRole("super_admin");
+    const user = await requireRole("super_admin");
 
     const { id, validUntil, ...rest } = data;
+
+    const [old] = await db.select().from(vouchers).where(eq(vouchers.id, id)).limit(1);
+
     const [result] = await db
       .update(vouchers)
       .set({
@@ -71,6 +89,20 @@ export const updateVoucher = createServerFn({ method: "POST" })
       })
       .where(eq(vouchers.id, id))
       .returning();
+
+    await logSystemAction(
+      user,
+      "Update Voucher",
+      `Voucher "${result.code}" diperbarui oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "vouchers",
+      id,
+      "UPDATE",
+      old as Record<string, unknown>,
+      result as Record<string, unknown>,
+    );
 
     return result;
   });

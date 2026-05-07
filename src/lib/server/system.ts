@@ -3,6 +3,7 @@ import { db } from "#/db/index";
 import { auditLogs, systemLogs, systemNotifications, users } from "#/db/schema";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction } from "./logging";
 
 export const getAuditLogs = createServerFn({ method: "GET" })
   .inputValidator(
@@ -116,12 +117,14 @@ export const getNotifications = createServerFn({ method: "GET" })
 export const markNotificationRead = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     await db
       .update(systemNotifications)
       .set({ isRead: true })
       .where(eq(systemNotifications.id, data.id));
+
+    await logSystemAction(user, "Mark Notification Read", `Notifikasi dibaca oleh ${user.name}`);
 
     return { success: true };
   });
@@ -136,7 +139,7 @@ export const createSystemNotification = createServerFn({ method: "POST" })
     }) => data,
   )
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     const [notif] = await db
       .insert(systemNotifications)
@@ -151,6 +154,19 @@ export const createSystemNotification = createServerFn({ method: "POST" })
         metadata: sql<string>`${systemNotifications.metadata}`,
         createdAt: systemNotifications.createdAt,
       });
+
+    // Fetch target user name for logging
+    const [targetUser] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, data.userId))
+      .limit(1);
+
+    await logSystemAction(
+      user,
+      "Create System Notification",
+      `Notifikasi "${data.title}" dibuat untuk user ${targetUser?.name ?? data.userId} oleh ${user.name}`,
+    );
 
     return notif;
   });

@@ -3,6 +3,7 @@ import { db } from "#/db/index";
 import { brands } from "#/db/schema";
 import { eq, ilike } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
 
 const brandInput = z.object({
@@ -28,9 +29,19 @@ export const getBrands = createServerFn({ method: "GET" })
 export const createBrand = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => brandInput.parse(data))
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     const [result] = await db.insert(brands).values(data).returning();
+
+    await logSystemAction(user, "Create Brand", `Brand "${result.name}" dibuat oleh ${user.name}`);
+    await logAudit(
+      user,
+      "brands",
+      result.id,
+      "CREATE",
+      undefined,
+      result as Record<string, unknown>,
+    );
 
     return result;
   });
@@ -40,10 +51,27 @@ export const updateBrand = createServerFn({ method: "POST" })
     brandInput.partial().extend({ id: z.string().uuid() }).parse(data),
   )
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     const { id, ...updates } = data;
+
+    const [old] = await db.select().from(brands).where(eq(brands.id, id)).limit(1);
+
     const [result] = await db.update(brands).set(updates).where(eq(brands.id, id)).returning();
+
+    await logSystemAction(
+      user,
+      "Update Brand",
+      `Brand "${result.name}" diperbarui oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "brands",
+      id,
+      "UPDATE",
+      old as Record<string, unknown>,
+      result as Record<string, unknown>,
+    );
 
     return result;
   });

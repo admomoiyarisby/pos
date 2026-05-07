@@ -23,12 +23,24 @@ const channelLabels: Record<string, string> = {
 };
 
 const columns: Column<FeeRow>[] = [
-  { key: "channel", header: "Channel", render: (r) => channelLabels[r.channel] ?? r.channel },
-  { key: "feePercentage", header: "MDR (%)", align: "right", render: (r) => `${r.feePercentage}%` },
+  {
+    key: "channel",
+    header: "Channel",
+    sortable: true,
+    render: (r) => channelLabels[r.channel] ?? r.channel,
+  },
+  {
+    key: "feePercentage",
+    header: "MDR (%)",
+    align: "right",
+    sortable: true,
+    render: (r) => `${r.feePercentage}%`,
+  },
   {
     key: "fixedFee",
     header: "Biaya Tetap (Rp)",
     align: "right",
+    sortable: true,
     render: (r) => `Rp ${r.fixedFee.toLocaleString("id-ID")}`,
   },
 ];

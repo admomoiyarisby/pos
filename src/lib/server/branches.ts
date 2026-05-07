@@ -3,6 +3,7 @@ import { db } from "#/db/index";
 import { branches } from "#/db/schema";
 import { eq, ilike, or, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
 
 const branchInput = z.object({
@@ -12,6 +13,7 @@ const branchInput = z.object({
   type: z.enum(["Central", "Outlet"]),
   active: z.boolean().optional(),
   isOnline: z.boolean().optional(),
+  pb1Rate: z.number().int().min(0).max(100).optional(),
 });
 
 export const getBranches = createServerFn({ method: "GET" })
@@ -64,6 +66,7 @@ export const createBranch = createServerFn({ method: "POST" })
         type: data.type,
         active: data.active ?? true,
         isOnline: data.isOnline ?? true,
+        pb1Rate: data.pb1Rate ?? 11,
       })
       .returning();
 
@@ -75,14 +78,31 @@ export const updateBranch = createServerFn({ method: "POST" })
     branchInput.partial().extend({ id: z.string().uuid() }).parse(data),
   )
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     const { id, ...updates } = data;
+
+    const [old] = await db.select().from(branches).where(eq(branches.id, id)).limit(1);
+
     const [result] = await db
       .update(branches)
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(branches.id, id))
       .returning();
+
+    await logSystemAction(
+      user,
+      "Update Branch",
+      `Cabang "${result.name}" diperbarui oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "branches",
+      id,
+      "UPDATE",
+      old as Record<string, unknown>,
+      result as Record<string, unknown>,
+    );
 
     return result;
   });

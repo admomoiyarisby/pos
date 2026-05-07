@@ -136,6 +136,12 @@ const navGroups: NavGroup[] = [
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
       },
       {
+        label: "Barang Masuk",
+        to: "/supplier-deliveries",
+        icon: Truck,
+        roles: ["super_admin", "admin_pusat"],
+      },
+      {
         label: "Mutasi Stok",
         to: "/stock-transfers",
         icon: ArrowRightLeft,
@@ -219,9 +225,7 @@ function SidebarItem({ item, active }: { item: NavItem; active: boolean }) {
 
 function SidebarGroup({ group, userRole }: { group: NavGroup; userRole: UserRole }) {
   const location = useLocation();
-  const [open, setOpen] = useState(() =>
-    group.items.some((item) => location.pathname.startsWith(item.to)),
-  );
+  const [open, setOpen] = useState(true);
 
   if (!group.roles.includes(userRole)) return null;
 

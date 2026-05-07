@@ -3,6 +3,7 @@ import { db } from "#/db/index";
 import { platformFees } from "#/db/schema";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
 
 const feeInput = z.object({
@@ -21,7 +22,9 @@ export const getPlatformFees = createServerFn({ method: "GET" }).handler(async (
 export const updatePlatformFee = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => feeInput.parse(data))
   .handler(async ({ data }) => {
-    await requireRole("super_admin");
+    const user = await requireRole("super_admin");
+
+    const [old] = await db.select().from(platformFees).where(eq(platformFees.id, data.id)).limit(1);
 
     const [result] = await db
       .update(platformFees)
@@ -31,6 +34,20 @@ export const updatePlatformFee = createServerFn({ method: "POST" })
       })
       .where(eq(platformFees.id, data.id))
       .returning();
+
+    await logSystemAction(
+      user,
+      "Update Platform Fee",
+      `Platform fee "${result.channel}" diperbarui oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "platformFees",
+      data.id,
+      "UPDATE",
+      old as Record<string, unknown>,
+      result as Record<string, unknown>,
+    );
 
     return result;
   });

@@ -15,6 +15,20 @@
       "when": 1778091860056,
       "tag": "0001_previous_devos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778098821790,
+      "tag": "0002_jittery_fixer",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778117652243,
+      "tag": "0003_large_doctor_faustus",
+      "breakpoints": true
     }
   ]
 }

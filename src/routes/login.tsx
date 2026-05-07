@@ -217,32 +217,34 @@ function LoginPage() {
         <div className="pt-2 border-t border-border">
           <p className="text-xs text-muted-foreground text-center mb-3">Quick Access (Demo)</p>
           <div className="grid grid-cols-2 gap-2">
-            {demoUsers.map((u) => (
-              <button
-                key={u.email}
-                type="button"
-                onClick={() => {
-                  if (mode === "email") {
-                    setEmail(u.email);
-                    setPassword("password123");
-                    setTimeout(() => {
-                      const form = document.querySelector("form");
-                      if (form) form.requestSubmit();
-                    }, 0);
-                  } else {
-                    // PIN mode
-                    setPin("");
-                    setTimeout(() => handlePinSubmit(u.pin), 50);
-                  }
-                }}
-                className="py-2 px-3 text-xs font-medium text-left rounded-lg border hover:bg-muted transition-colors flex flex-col"
-              >
-                <span className="font-bold truncate text-foreground">{u.name}</span>
-                <span className="text-[10px] text-muted-foreground mt-0.5">
-                  {mode === "email" ? u.email : `PIN: ${u.pin}`}
-                </span>
-              </button>
-            ))}
+            {(mode === "pin" ? demoUsers.filter((u) => u.role === "branch_admin") : demoUsers).map(
+              (u) => (
+                <button
+                  key={u.email}
+                  type="button"
+                  onClick={() => {
+                    if (mode === "email") {
+                      setEmail(u.email);
+                      setPassword("password123");
+                      setTimeout(() => {
+                        const form = document.querySelector("form");
+                        if (form) form.requestSubmit();
+                      }, 0);
+                    } else {
+                      // PIN mode
+                      setPin("");
+                      setTimeout(() => handlePinSubmit(u.pin), 50);
+                    }
+                  }}
+                  className="py-2 px-3 text-xs font-medium text-left rounded-lg border hover:bg-muted transition-colors flex flex-col"
+                >
+                  <span className="font-bold truncate text-foreground">{u.name}</span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">
+                    {mode === "email" ? u.email : `PIN: ${u.pin}`}
+                  </span>
+                </button>
+              ),
+            )}
           </div>
         </div>
       </div>

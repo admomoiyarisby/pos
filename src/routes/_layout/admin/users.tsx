@@ -32,14 +32,15 @@ const roleLabels: Record<string, string> = {
 };
 
 const columns: Column<UserRow>[] = [
-  { key: "name", header: "Nama" },
-  { key: "email", header: "Email" },
+  { key: "name", header: "Nama", sortable: true },
+  { key: "email", header: "Email", sortable: true },
   {
     key: "role",
     header: "Role",
+    sortable: true,
     render: (r) => <Badge variant="outline">{roleLabels[r.role] ?? r.role}</Badge>,
   },
-  { key: "branchName", header: "Cabang", render: (r) => r.branchName ?? "-" },
+  { key: "branchName", header: "Cabang", sortable: true, render: (r) => r.branchName ?? "-" },
   {
     key: "pin",
     header: "PIN",
@@ -53,6 +54,7 @@ const columns: Column<UserRow>[] = [
   {
     key: "status",
     header: "Status",
+    sortable: true,
     render: (r) =>
       r.status === "Active" ? (
         <Badge variant="success">Aktif</Badge>

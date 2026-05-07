@@ -17,8 +17,8 @@ interface BrandRow {
 }
 
 const columns: Column<BrandRow>[] = [
-  { key: "code", header: "Kode", width: "w-24" },
-  { key: "name", header: "Nama Brand" },
+  { key: "code", header: "Kode", width: "w-24", sortable: true },
+  { key: "name", header: "Nama Brand", sortable: true },
 ];
 
 export const Route = createFileRoute("/_layout/admin/brands")({

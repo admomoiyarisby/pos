@@ -97,7 +97,9 @@ export function DiscrepancyTable({
                     {item.branchName}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right">
-                    <Badge variant="destructive">{item.variancePercentage.toFixed(1)}%</Badge>
+                    <Badge variant="destructive">
+                      {Number(item.variancePercentage).toFixed(1)}%
+                    </Badge>
                   </td>
                 </tr>
               ))

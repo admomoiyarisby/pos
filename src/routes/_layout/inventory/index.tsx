@@ -34,40 +34,56 @@ const skuLabels: Record<string, string> = { RM: "RM", SFG: "SFG", FG: "FG" };
 export const Route = createFileRoute("/_layout/inventory/")({
   component: InventoryPage,
   loader: async () => {
-    const inventory = await getInventory({ data: {} });
-    return { inventory };
+    const result = await getInventory({ data: {} });
+    return { inventory: result.data, total: result.total };
   },
 });
 
 function InventoryPage() {
   const { user } = useAuth();
-  const { inventory: initial } = Route.useLoaderData();
+  const { inventory: initialData, total: initialTotal } = Route.useLoaderData();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<"Fresh" | "Dry" | "Packaging" | "">("");
+  const [page, setPage] = useState(0);
+  const pageSize = 25;
 
-  const { data: inventory } = useQuery({
-    queryKey: ["inventory", search, category],
+  const { data: result } = useQuery({
+    queryKey: ["inventory", search, category, page],
     queryFn: () =>
-      getInventory({ data: { search: search || undefined, category: category || null } }),
-    initialData: initial,
+      getInventory({
+        data: {
+          search: search || undefined,
+          category: category || null,
+          page,
+          limit: pageSize,
+        },
+      }),
+    initialData: { data: initialData, total: initialTotal },
   });
+
+  const inventory = result?.data ?? [];
+  const total = result?.total ?? 0;
+
+  const totalPages = Math.ceil(total / pageSize) || 1;
 
   const showBranchColumn =
     user?.role === "super_admin" || user?.role === "area_manager" || user?.role === "admin_pusat";
 
   const columns: Column<InvRow>[] = [
-    { key: "ingredientCode", header: "Kode", width: "w-20" },
-    { key: "ingredientName", header: "Nama Bahan" },
+    { key: "ingredientCode", header: "Kode", width: "w-20", sortable: true },
+    { key: "ingredientName", header: "Nama Bahan", sortable: true },
     {
       key: "ingredientSkuType",
       header: "SKU",
       width: "w-16",
+      sortable: true,
       render: (r) => <Badge variant="outline">{skuLabels[r.ingredientSkuType ?? ""] ?? "-"}</Badge>,
     },
     {
       key: "ingredientCategory",
       header: "Kategori",
       width: "w-24",
+      sortable: true,
       render: (r) =>
         r.ingredientCategory ? (
           <Badge variant={catColors[r.ingredientCategory]}>{r.ingredientCategory}</Badge>
@@ -80,12 +96,13 @@ function InventoryPage() {
       header: "Stok",
       align: "right",
       width: "w-24",
+      sortable: true,
       render: (r) => `${r.quantity.toLocaleString("id-ID")} ${r.stockUnit ?? ""}`,
     },
   ];
 
   if (showBranchColumn) {
-    columns.splice(2, 0, { key: "branchName", header: "Cabang", width: "w-40" });
+    columns.splice(2, 0, { key: "branchName", header: "Cabang", width: "w-40", sortable: true });
   }
   usePageTitle("Stok Saat Ini", "Real-time inventory per cabang");
 
@@ -123,6 +140,31 @@ function InventoryPage() {
       </div>
 
       <DataTable columns={columns} data={inventory} keyExtractor={(r) => r.id} pageSize={15} />
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>{total} item</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="h-7 px-2 rounded border disabled:opacity-30 hover:bg-muted"
+            >
+              Sebelumnya
+            </button>
+            <span>
+              Halaman {page + 1} dari {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="h-7 px-2 rounded border disabled:opacity-30 hover:bg-muted"
+            >
+              Selanjutnya
+            </button>
+          </div>
+        </div>
+      )}
     </RoleGuard>
   );
 }

@@ -32,16 +32,18 @@ const skuLabels: Record<string, string> = {
 };
 
 const columns: Column<IngredientRow>[] = [
-  { key: "code", header: "Kode", width: "w-24" },
-  { key: "name", header: "Nama Bahan" },
+  { key: "code", header: "Kode", width: "w-24", sortable: true },
+  { key: "name", header: "Nama Bahan", sortable: true },
   {
     key: "skuType",
     header: "Tipe SKU",
+    sortable: true,
     render: (r) => <Badge variant="outline">{skuLabels[r.skuType]}</Badge>,
   },
   {
     key: "category",
     header: "Kategori",
+    sortable: true,
     render: (r) => (
       <Badge
         variant={
@@ -52,12 +54,13 @@ const columns: Column<IngredientRow>[] = [
       </Badge>
     ),
   },
-  { key: "purchaseUnit", header: "Satuan Beli", width: "w-28" },
-  { key: "stockUnit", header: "Satuan Stok", width: "w-28" },
+  { key: "purchaseUnit", header: "Satuan Beli", width: "w-28", sortable: true },
+  { key: "stockUnit", header: "Satuan Stok", width: "w-28", sortable: true },
   {
     key: "averageCost",
     header: "HPP",
     align: "right",
+    sortable: true,
     render: (r) => `Rp ${r.averageCost.toLocaleString("id-ID")}`,
   },
   {

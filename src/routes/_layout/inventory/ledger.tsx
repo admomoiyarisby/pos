@@ -43,6 +43,7 @@ function LedgerPage() {
       key: "createdAt",
       header: "Waktu",
       width: "w-36",
+      sortable: true,
       render: (r) =>
         new Date(r.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
@@ -51,11 +52,12 @@ function LedgerPage() {
           minute: "2-digit",
         }),
     },
-    { key: "ingredientName", header: "Bahan" },
+    { key: "ingredientName", header: "Bahan", sortable: true },
     {
       key: "type",
       header: "Tipe",
       width: "w-16",
+      sortable: true,
       render: (r) => <Badge variant={r.type === "IN" ? "success" : "destructive"}>{r.type}</Badge>,
     },
     {
@@ -63,6 +65,7 @@ function LedgerPage() {
       header: "Qty",
       align: "right",
       width: "w-20",
+      sortable: true,
       render: (r) => r.quantity.toLocaleString("id-ID"),
     },
     {
@@ -70,6 +73,7 @@ function LedgerPage() {
       header: "Saldo",
       align: "right",
       width: "w-20",
+      sortable: true,
       render: (r) => r.balance.toLocaleString("id-ID"),
     },
     {

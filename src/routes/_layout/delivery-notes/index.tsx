@@ -90,22 +90,25 @@ function DNPage() {
   };
 
   const columns: Column<DNRow>[] = [
-    { key: "code", header: "Kode SJ", width: "w-28" },
+    { key: "code", header: "Kode SJ", width: "w-28", sortable: true },
     {
       key: "fromBranchId",
       header: "Dari",
+      sortable: true,
       render: (r) =>
         branches.find((b) => b.id === r.fromBranchId)?.name ?? r.fromBranchId.slice(0, 8),
     },
     {
       key: "toBranchId",
       header: "Ke",
+      sortable: true,
       render: (r) => branches.find((b) => b.id === r.toBranchId)?.name ?? r.toBranchId.slice(0, 8),
     },
-    { key: "driverName", header: "Driver", render: (r) => r.driverName ?? "-" },
+    { key: "driverName", header: "Driver", sortable: true, render: (r) => r.driverName ?? "-" },
     {
       key: "status",
       header: "Status",
+      sortable: true,
       render: (r) => (
         <Badge
           variant={

@@ -45,7 +45,7 @@ function RecipeDetailPage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Kategori</p>
             <p className="font-medium mt-1 capitalize">{recipe.category}</p>
@@ -53,6 +53,23 @@ function RecipeDetailPage() {
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Harga Dasar</p>
             <p className="font-medium mt-1">Rp {recipe.basePrice.toLocaleString("id-ID")}</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-xs text-muted-foreground uppercase">HPP Total</p>
+            <p className="font-medium mt-1 text-lg font-bold">
+              Rp {recipe.totalCogs.toLocaleString("id-ID")}
+            </p>
+            {recipe.totalCogs > 0 && recipe.basePrice > 0 && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Margin:{" "}
+                {(((recipe.basePrice - recipe.totalCogs) / recipe.basePrice) * 100).toFixed(1)}%
+                {recipe.totalCogs / recipe.basePrice > 0.4 && (
+                  <Badge variant="destructive" className="ml-1 text-[10px]">
+                    HPP &gt; 40%!
+                  </Badge>
+                )}
+              </p>
+            )}
           </div>
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Sub-resep</p>

@@ -1,7 +1,7 @@
 import { createAuthEndpoint, APIError } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { db } from "#/db/index";
-import { users as usersTable } from "#/db/schema";
+import { users as usersTable, systemLogs } from "#/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 
@@ -42,9 +42,6 @@ export const pinAuth = () => ({
           )
           .limit(1);
 
-        console.log("HERE");
-        console.log(user);
-
         // 2. Validate user exists and has branchId
         if (!user || !user.branchId) {
           throw APIError.from("UNAUTHORIZED", {
@@ -52,8 +49,6 @@ export const pinAuth = () => ({
             message: "PIN tidak valid",
           });
         }
-
-        console.log("after branchId");
 
         // 3. Create session via internal adapter
         const session = await ctx.context.internalAdapter.createSession(user.id);
@@ -79,7 +74,15 @@ export const pinAuth = () => ({
         //    better-auth's own sign-in endpoints.
         await setSessionCookie(ctx, { session, user: userData });
 
-        // 6. Return success
+        // 6. Log PIN login
+        await db.insert(systemLogs).values({
+          action: "PIN Login",
+          detail: `User "${String(userData.name)}" (${String((userData as Record<string, unknown>).role)}) login via PIN`,
+          userId: userData.id,
+          userName: String(userData.name),
+        });
+
+        // 7. Return success
         return ctx.json({
           success: true,
           user: {

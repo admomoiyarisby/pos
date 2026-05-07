@@ -70,10 +70,11 @@ function PeriodControlPage() {
   const openPeriodCount = periods.filter((p) => p.status === "Open").length;
 
   const columns: Column<PeriodRow>[] = [
-    { key: "periodName", header: "Nama Periode" },
+    { key: "periodName", header: "Nama Periode", sortable: true },
     {
       key: "status",
       header: "Status",
+      sortable: true,
       render: (r) => (
         <Badge variant={r.status === "Open" ? "success" : "secondary"}>
           {r.status === "Open" ? "Terbuka" : "Tertutup"}
@@ -83,11 +84,13 @@ function PeriodControlPage() {
     {
       key: "openedAt",
       header: "Dibuka",
+      sortable: true,
       render: (r) => new Date(r.openedAt).toLocaleDateString("id-ID"),
     },
     {
       key: "closedAt",
       header: "Ditutup",
+      sortable: true,
       render: (r) => (r.closedAt ? new Date(r.closedAt).toLocaleDateString("id-ID") : "-"),
     },
     {

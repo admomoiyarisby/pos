@@ -22,17 +22,19 @@ interface VoucherRow {
 }
 
 const columns: Column<VoucherRow>[] = [
-  { key: "code", header: "Kode" },
-  { key: "description", header: "Deskripsi" },
+  { key: "code", header: "Kode", sortable: true },
+  { key: "description", header: "Deskripsi", sortable: true },
   {
     key: "discountType",
     header: "Tipe",
+    sortable: true,
     render: (r) => <Badge variant="outline">{r.discountType === "percentage" ? "%" : "Rp"}</Badge>,
   },
   {
     key: "discountValue",
     header: "Nilai",
     align: "right",
+    sortable: true,
     render: (r) =>
       r.discountType === "percentage"
         ? `${r.discountValue}%`
@@ -42,11 +44,13 @@ const columns: Column<VoucherRow>[] = [
     key: "minOrder",
     header: "Min. Order",
     align: "right",
+    sortable: true,
     render: (r) => `Rp ${r.minOrder.toLocaleString("id-ID")}`,
   },
   {
     key: "isActive",
     header: "Status",
+    sortable: true,
     render: (r) => (
       <Badge variant={r.isActive ? "success" : "secondary"}>
         {r.isActive ? "Aktif" : "Nonaktif"}

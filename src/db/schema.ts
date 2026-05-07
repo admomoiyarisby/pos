@@ -175,6 +175,7 @@ export const branches = pgTable("branches", {
   active: boolean("active").notNull().default(true),
   isOnline: boolean("is_online").notNull().default(true),
   type: branchTypeEnum("type").notNull().default("Outlet"),
+  pb1Rate: integer("pb1_rate").notNull().default(11),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
@@ -229,6 +230,7 @@ export const recipes = pgTable("recipes", {
   category: recipeCategoryEnum("category").notNull().default("makanan"),
   isSubRecipe: boolean("is_sub_recipe").notNull().default(false),
   basePrice: integer("base_price").notNull(),
+  totalCogs: integer("total_cogs").notNull().default(0),
   isBOGO: boolean("is_bogo").notNull().default(false),
   status: ingredientStatusEnum("status").notNull().default("Active"),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
@@ -423,6 +425,7 @@ export const orders = pgTable(
     voidReason: text("void_reason"),
     shiftId: uuid("shift_id").references(() => shifts.id),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    notes: text("notes"),
     completedAt: timestamp("completed_at", { mode: "date" }),
   },
   (t) => [

@@ -76,9 +76,15 @@ function SystemLogsPage() {
         );
       },
     },
-    { key: "action", header: "Aksi", width: "w-40" },
+    { key: "action", header: "Aksi", width: "w-40", sortable: true },
     { key: "detail", header: "Detail" },
-    { key: "userName", header: "User", width: "w-32", render: (r) => r.userName ?? "system" },
+    {
+      key: "userName",
+      header: "User",
+      width: "w-32",
+      sortable: true,
+      render: (r) => r.userName ?? "system",
+    },
   ];
 
   usePageTitle("System Logs", "Log operasional sistem");

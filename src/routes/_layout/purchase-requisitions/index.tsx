@@ -14,10 +14,12 @@ import {
 } from "#/lib/server/scm";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
+import { getInventory } from "#/lib/server/inventory";
+import { generateReorderRecommendations } from "#/lib/server/reorder";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowRight, Plus, Package, RefreshCw } from "lucide-react";
 
 interface PRRow {
   id: string;
@@ -55,6 +57,16 @@ function PRPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [prItems, setPrItems] = useState<{ ingredientId: string; quantity: number }[]>([]);
+  const [selectedPrBranchId, setSelectedPrBranchId] = useState(user?.branchId ?? "");
+
+  const { data: branchInventoryResult } = useQuery({
+    queryKey: ["inventory", selectedPrBranchId],
+    queryFn: function () {
+      return getInventory({ data: { branchId: selectedPrBranchId } });
+    },
+    enabled: !!selectedPrBranchId,
+  });
+  const branchInventory = branchInventoryResult?.data ?? [];
 
   const { data: prs } = useQuery({
     queryKey: ["purchase-requisitions"],
@@ -78,6 +90,20 @@ function PRPage() {
     },
   });
 
+  const reorderMutation = useMutation({
+    mutationFn: generateReorderRecommendations,
+    onSuccess: (results) => {
+      if (results) {
+        const mapped = results.map((r: { ingredientId: string; roq: number }) => ({
+          ingredientId: r.ingredientId,
+          quantity: r.roq,
+        }));
+        setPrItems(mapped);
+        setModalOpen(true);
+      }
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -92,16 +118,18 @@ function PRPage() {
   };
 
   const columns: Column<PRRow>[] = [
-    { key: "code", header: "Kode PR", width: "w-28" },
-    { key: "branchName", header: "Cabang" },
+    { key: "code", header: "Kode PR", width: "w-28", sortable: true },
+    { key: "branchName", header: "Cabang", sortable: true },
     {
       key: "status",
       header: "Status",
+      sortable: true,
       render: (r) => <Badge variant={statusColors[r.status] ?? "default"}>{r.status}</Badge>,
     },
     {
       key: "createdAt",
       header: "Dibuat",
+      sortable: true,
       render: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
     },
     {
@@ -136,7 +164,21 @@ function PRPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
-      <PageHeader action={{ label: "Buat PR", onClick: () => setModalOpen(true) }} />
+      <div className="flex items-center justify-between">
+        <PageHeader action={{ label: "Buat PR", onClick: () => setModalOpen(true) }} />
+        <button
+          onClick={() => {
+            if (selectedPrBranchId) {
+              void reorderMutation.mutateAsync({ data: { branchId: selectedPrBranchId } });
+            }
+          }}
+          disabled={reorderMutation.isPending || !selectedPrBranchId}
+          className="h-9 px-3 rounded-md border text-sm flex items-center gap-2 hover:bg-muted disabled:opacity-50 shrink-0"
+        >
+          <RefreshCw className={"h-4 w-4 " + (reorderMutation.isPending ? "animate-spin" : "")} />
+          {reorderMutation.isPending ? "Menghitung..." : "Smart Reordering"}
+        </button>
+      </div>
 
       <DataTable columns={columns} data={prs} keyExtractor={(r) => r.id} />
 
@@ -162,6 +204,9 @@ function PRPage() {
                 name="branchId"
                 defaultValue={user?.branchId ?? ""}
                 disabled={!!user?.branchId}
+                onChange={function (e) {
+                  setSelectedPrBranchId(e.target.value);
+                }}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
               >
                 {branches.map((b) => (
@@ -175,57 +220,80 @@ function PRPage() {
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Item</label>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <select
                 id="pr-ingredient"
-                className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                className="h-9 flex-1 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">Pilih bahan...</option>
-                {ingredients.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name} ({i.stockUnit})
-                  </option>
-                ))}
+                {ingredients.map(function (i) {
+                  var invItem = branchInventory.find(function (inv: any) {
+                    return inv.ingredientId === i.id;
+                  });
+                  var invQty = invItem ? invItem.quantity : 0;
+                  return (
+                    <option key={i.id} value={i.id}>
+                      {i.name} ({i.stockUnit}) — Stok: {invQty}
+                    </option>
+                  );
+                })}
               </select>
-              <input
-                id="pr-qty"
-                type="number"
-                min={1}
-                placeholder="Qty"
-                className="h-9 w-24 rounded-md border border-input bg-background px-3 text-sm"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const ingEl = document.getElementById("pr-ingredient") as HTMLSelectElement;
-                  const qtyEl = document.getElementById("pr-qty") as HTMLInputElement;
-                  if (ingEl.value && qtyEl.value) {
-                    setPrItems([
-                      ...prItems,
-                      { ingredientId: ingEl.value, quantity: Number(qtyEl.value) },
-                    ]);
-                    ingEl.value = "";
-                    qtyEl.value = "";
-                  }
-                }}
-                className="h-9 px-3 rounded-md border text-sm"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
+              <div className="flex gap-2 shrink-0">
+                <input
+                  id="pr-qty"
+                  type="number"
+                  min={1}
+                  placeholder="Qty"
+                  className="h-9 w-20 rounded-md border border-input bg-background px-3 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ingEl = document.getElementById("pr-ingredient") as HTMLSelectElement;
+                    const qtyEl = document.getElementById("pr-qty") as HTMLInputElement;
+                    if (ingEl.value && qtyEl.value) {
+                      setPrItems([
+                        ...prItems,
+                        { ingredientId: ingEl.value, quantity: Number(qtyEl.value) },
+                      ]);
+                      ingEl.value = "";
+                      qtyEl.value = "";
+                    }
+                  }}
+                  className="h-9 px-3 rounded-md border text-sm shrink-0"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             {prItems.length > 0 && (
               <div className="rounded-md border divide-y">
                 {prItems.map((item, idx) => {
                   const ing = ingredients.find((i) => i.id === item.ingredientId);
+                  const invItem = branchInventory.find(
+                    (inv: { ingredientId: string }) => inv.ingredientId === item.ingredientId,
+                  );
+                  const stockQty = invItem?.quantity ?? 0;
                   return (
                     <div key={idx} className="flex items-center justify-between px-3 py-2 text-sm">
-                      <span>
-                        {ing?.name} × {item.quantity} {ing?.stockUnit}
-                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span>
+                          {ing?.name} × {item.quantity} {ing?.stockUnit}
+                        </span>
+                        <span
+                          className={
+                            "ml-2 text-xs " +
+                            (stockQty > 0 ? "text-muted-foreground" : "text-destructive")
+                          }
+                        >
+                          <Package className="inline h-3 w-3 mr-0.5" />
+                          Stok: {stockQty}
+                        </span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setPrItems(prItems.filter((_, i) => i !== idx))}
-                        className="text-muted-foreground hover:text-destructive"
+                        className="text-muted-foreground hover:text-destructive shrink-0 ml-2"
                       >
                         ×
                       </button>

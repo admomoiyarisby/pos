@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import { getSalesAnalytics } from "#/lib/server/finance";
+import { getSalesAnalytics, getHourlyAnalytics } from "#/lib/server/finance";
+import { formatRp } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
 import {
   BarChart,
@@ -42,6 +43,15 @@ function AnalyticsPage() {
     queryKey: ["analytics", dateFrom, dateTo, selectedBranch],
     queryFn: () =>
       getSalesAnalytics({ data: { dateFrom, dateTo, branchId: selectedBranch || undefined } }),
+    enabled: !!dateFrom && !!dateTo,
+  });
+
+  const { data: hourlyData } = useQuery({
+    queryKey: ["hourly-analytics", dateFrom, dateTo, selectedBranch],
+    queryFn: () =>
+      getHourlyAnalytics({
+        data: { dateFrom, dateTo, branchId: selectedBranch || undefined },
+      }),
     enabled: !!dateFrom && !!dateTo,
   });
 
@@ -115,9 +125,7 @@ function AnalyticsPage() {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip
-                        formatter={(value) => `Rp ${Number(value).toLocaleString("id-ID")}`}
-                      />
+                      <Tooltip formatter={(value) => formatRp(value as number)} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -168,14 +176,47 @@ function AnalyticsPage() {
                       <td className="px-4 py-3 text-right">
                         {item.totalQty.toLocaleString("id-ID")}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        Rp {item.totalRevenue.toLocaleString("id-ID")}
-                      </td>
+                      <td className="px-4 py-3 text-right">{formatRp(item.totalRevenue)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            {/* Hourly Heatmap */}
+            {hourlyData && hourlyData.length > 0 && (
+              <div className="rounded-lg border p-4">
+                <h3 className="text-sm font-semibold mb-4">Beban Kerja Dapur per Jam</h3>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={(() => {
+                        const filled: { hour: string; count: number; revenue: number }[] = [];
+                        for (let h = 0; h < 24; h++) {
+                          const found = hourlyData.find((d: { hour: number }) => d.hour === h);
+                          filled.push({
+                            hour: h.toString().padStart(2, "0") + ":00",
+                            count: found ? found.count : 0,
+                            revenue: found ? found.revenue : 0,
+                          });
+                        }
+                        return filled;
+                      })()}
+                      margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={2} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip
+                        formatter={(value: any) => formatRp(value)}
+                        labelFormatter={(label: any) => `Jam ${label}`}
+                      />
+                      <Bar dataKey="count" fill="#8884d8" radius={[2, 2, 0, 0]} name="Pesanan" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

@@ -35,6 +35,7 @@ const columns: Column<WasteRow>[] = [
     key: "createdAt",
     header: "Waktu",
     width: "w-36",
+    sortable: true,
     render: (r) =>
       new Date(r.createdAt).toLocaleString("id-ID", {
         day: "2-digit",
@@ -43,10 +44,11 @@ const columns: Column<WasteRow>[] = [
         minute: "2-digit",
       }),
   },
-  { key: "ingredientName", header: "Bahan" },
+  { key: "ingredientName", header: "Bahan", sortable: true },
   {
     key: "category",
     header: "Kategori",
+    sortable: true,
     render: (r) => <Badge variant={catColors[r.category]}>{r.category}</Badge>,
   },
   {
@@ -54,6 +56,7 @@ const columns: Column<WasteRow>[] = [
     header: "Qty",
     align: "right",
     width: "w-20",
+    sortable: true,
     render: (r) => r.quantity.toLocaleString("id-ID"),
   },
   { key: "notes", header: "Keterangan", render: (r) => r.notes ?? "-" },

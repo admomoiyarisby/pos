@@ -15,9 +15,13 @@ import {
   stockLedger,
   ingredients,
   branches,
+  systemNotifications,
+  users,
 } from "#/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
+import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 
 // ─── Purchase Requisitions ───
 
@@ -114,6 +118,20 @@ export const createPurchaseRequisition = createServerFn({ method: "POST" })
       );
     }
 
+    await logSystemAction(
+      user,
+      "Create Purchase Requisition",
+      `PR "${data.code}" dibuat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "purchaseRequisitions",
+      pr.id,
+      "CREATE",
+      undefined,
+      pr as Record<string, unknown>,
+    );
+
     return pr;
   });
 
@@ -123,9 +141,15 @@ export const updatePurchaseRequisition = createServerFn({ method: "POST" })
       data,
   )
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     const { id, items, status } = data;
+
+    const [oldPr] = await db
+      .select()
+      .from(purchaseRequisitions)
+      .where(eq(purchaseRequisitions.id, id))
+      .limit(1);
 
     if (status) {
       await db
@@ -151,6 +175,26 @@ export const updatePurchaseRequisition = createServerFn({ method: "POST" })
         );
       }
     }
+
+    const [updatedPr] = await db
+      .select()
+      .from(purchaseRequisitions)
+      .where(eq(purchaseRequisitions.id, id))
+      .limit(1);
+
+    await logSystemAction(
+      user,
+      "Update Purchase Requisition",
+      `PR "${updatedPr?.code}" status diubah ke ${status ?? "-"} oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "purchaseRequisitions",
+      id,
+      status ? "STATUS_CHANGE" : "UPDATE",
+      oldPr as Record<string, unknown>,
+      updatedPr as Record<string, unknown>,
+    );
 
     return { success: true };
   });
@@ -211,6 +255,20 @@ export const createPurchaseOrder = createServerFn({ method: "POST" })
         })),
       );
     }
+
+    await logSystemAction(
+      user,
+      "Create Purchase Order",
+      `PO "${data.code}" dibuat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "purchaseOrders",
+      po.id,
+      "CREATE",
+      undefined,
+      po as Record<string, unknown>,
+    );
 
     return po;
   });
@@ -285,7 +343,7 @@ export const createDeliveryNote = createServerFn({ method: "POST" })
     }) => data,
   )
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     const [dn] = await db
       .insert(deliveryNotes)
@@ -311,13 +369,27 @@ export const createDeliveryNote = createServerFn({ method: "POST" })
       );
     }
 
+    await logSystemAction(
+      user,
+      "Create Delivery Note",
+      `SJ "${data.code}" dibuat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "deliveryNotes",
+      dn.id,
+      "CREATE",
+      undefined,
+      dn as Record<string, unknown>,
+    );
+
     return dn;
   });
 
 export const shipDeliveryNote = createServerFn({ method: "POST" })
   .inputValidator((data: { dnId: string }) => data)
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     // Get DN items
     const items = await db
@@ -379,6 +451,22 @@ export const shipDeliveryNote = createServerFn({ method: "POST" })
       .update(deliveryNotes)
       .set({ status: "In Transit", updatedAt: new Date() })
       .where(eq(deliveryNotes.id, data.dnId));
+
+    const [updatedDn] = await db
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .limit(1);
+
+    await logSystemAction(user, "Ship Delivery Note", `SJ "${dn?.code}" dikirim oleh ${user.name}`);
+    await logAudit(
+      user,
+      "deliveryNotes",
+      data.dnId,
+      "STATUS_CHANGE",
+      dn as Record<string, unknown>,
+      updatedDn as Record<string, unknown>,
+    );
 
     return { success: true };
   });
@@ -514,6 +602,57 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
       })
       .where(eq(deliveryNotes.id, data.dnId));
 
+    const [updatedDn] = await db
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .limit(1);
+
+    await logSystemAction(
+      user,
+      "Receive Delivery Note",
+      `SJ "${dn?.code}" diterima oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "deliveryNotes",
+      data.dnId,
+      "STATUS_CHANGE",
+      dn as Record<string, unknown>,
+      updatedDn as Record<string, unknown>,
+    );
+
+    // Trigger BOM cost roll-up for all received ingredients
+    for (const item of data.items) {
+      const dnItem = await db
+        .select({ ingredientId: deliveryNoteItems.ingredientId })
+        .from(deliveryNoteItems)
+        .where(eq(deliveryNoteItems.id, item.itemId))
+        .limit(1);
+      if (dnItem[0]?.ingredientId) {
+        await recalculateRecipeCostsForIngredient(dnItem[0].ingredientId);
+      }
+    }
+
+    // Notify admin pusat that items were received
+    const [branchName] = await db
+      .select({ name: branches.name })
+      .from(branches)
+      .where(eq(branches.id, dn.toBranchId))
+      .limit(1);
+    const adminPusatUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.role, "admin_pusat"));
+    for (const u of adminPusatUsers) {
+      await db.insert(systemNotifications).values({
+        userId: u.id,
+        title: "SJ Diterima",
+        message: `SJ "${dn.code}" telah diterima oleh ${branchName?.name ?? dn.toBranchId}`,
+        type: "info",
+      });
+    }
+
     return { success: true };
   });
 
@@ -569,7 +708,7 @@ export const getSCMInvoice = createServerFn({ method: "GET" })
 export const generateSCMInvoice = createServerFn({ method: "POST" })
   .inputValidator((data: { dnId: string }) => data)
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     const [dn] = await db
       .select()
@@ -634,19 +773,53 @@ export const generateSCMInvoice = createServerFn({ method: "POST" })
       );
     }
 
+    await logSystemAction(
+      user,
+      "Generate SCM Invoice",
+      `Invoice SCM "${invoice.code}" (Rp${totalAmount.toLocaleString()}) dibuat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "scmInvoices",
+      invoice.id,
+      "CREATE",
+      undefined,
+      invoice as Record<string, unknown>,
+    );
+
     return invoice;
   });
 
 export const paySCMInvoice = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string }) => data)
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [oldInv] = await db
+      .select()
+      .from(scmInvoices)
+      .where(eq(scmInvoices.id, data.id))
+      .limit(1);
 
     const [invoice] = await db
       .update(scmInvoices)
       .set({ status: "Paid", paidAt: new Date() })
       .where(eq(scmInvoices.id, data.id))
       .returning();
+
+    await logSystemAction(
+      user,
+      "Pay SCM Invoice",
+      `Invoice SCM "${invoice.code}" dibayar oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "scmInvoices",
+      data.id,
+      "STATUS_CHANGE",
+      oldInv as Record<string, unknown>,
+      invoice as Record<string, unknown>,
+    );
 
     return invoice;
   });
@@ -701,6 +874,20 @@ export const createStockTransfer = createServerFn({ method: "POST" })
         requestedBy: user.id,
       })
       .returning();
+
+    await logSystemAction(
+      user,
+      "Create Stock Transfer",
+      `Mutasi stok "${data.code}" dibuat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "stockTransfers",
+      transfer.id,
+      "CREATE",
+      undefined,
+      transfer as Record<string, unknown>,
+    );
 
     return transfer;
   });
@@ -799,6 +986,20 @@ export const approveStockTransfer = createServerFn({ method: "POST" })
       .update(stockTransfers)
       .set({ status: "Completed", approvedBy: user.id })
       .where(eq(stockTransfers.id, data.transferId));
+
+    await logSystemAction(
+      user,
+      "Approve Stock Transfer",
+      `Mutasi stok "${transfer.code}" diapprove oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "stockTransfers",
+      data.transferId,
+      "STATUS_CHANGE",
+      transfer as Record<string, unknown>,
+      { ...transfer, status: "Completed", approvedBy: user.id } as Record<string, unknown>,
+    );
 
     return { success: true };
   });

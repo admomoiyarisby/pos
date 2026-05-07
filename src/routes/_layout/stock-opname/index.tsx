@@ -30,11 +30,12 @@ const statusColors: Record<string, "default" | "warning" | "success"> = {
 };
 
 const columns: Column<SORow>[] = [
-  { key: "date", header: "Tanggal" },
-  { key: "branchName", header: "Cabang" },
+  { key: "date", header: "Tanggal", sortable: true },
+  { key: "branchName", header: "Cabang", sortable: true },
   {
     key: "status",
     header: "Status",
+    sortable: true,
     render: (r) => (
       <Badge variant={statusColors[r.status] ?? "default"}>
         {r.status === "Under Investigation" ? "Investigasi" : r.status}
@@ -44,6 +45,7 @@ const columns: Column<SORow>[] = [
   {
     key: "createdAt",
     header: "Dibuat",
+    sortable: true,
     render: (r) =>
       new Date(r.createdAt).toLocaleString("id-ID", {
         day: "2-digit",

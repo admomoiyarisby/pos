@@ -89,21 +89,24 @@ function TransferPage() {
   };
 
   const columns: Column<TRRow>[] = [
-    { key: "code", header: "Kode", width: "w-28" },
+    { key: "code", header: "Kode", width: "w-28", sortable: true },
     {
       key: "fromBranchId",
       header: "Dari",
+      sortable: true,
       render: (r) =>
         branches.find((b) => b.id === r.fromBranchId)?.name ?? r.fromBranchId.slice(0, 8),
     },
     {
       key: "toBranchId",
       header: "Ke",
+      sortable: true,
       render: (r) => branches.find((b) => b.id === r.toBranchId)?.name ?? r.toBranchId.slice(0, 8),
     },
     {
       key: "ingredientId",
       header: "Bahan",
+      sortable: true,
       render: (r) =>
         ingredients.find((i) => i.id === r.ingredientId)?.name ?? r.ingredientId.slice(0, 8),
     },
@@ -112,11 +115,13 @@ function TransferPage() {
       header: "Qty",
       align: "right",
       width: "w-20",
+      sortable: true,
       render: (r) => r.quantity.toLocaleString("id-ID"),
     },
     {
       key: "status",
       header: "Status",
+      sortable: true,
       render: (r) => (
         <Badge
           variant={

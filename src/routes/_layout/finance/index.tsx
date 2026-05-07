@@ -7,7 +7,8 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import Modal from "#/components/ui/Modal";
 import { getFinanceSummary, createManualRevenue, createChannelRevenue } from "#/lib/server/finance";
 import { getBranches } from "#/lib/server/branches";
-import { TrendingDown, DollarSign, ShoppingCart, PiggyBank } from "lucide-react";
+import { TrendingDown, DollarSign, PiggyBank, Percent, Banknote, Receipt } from "lucide-react";
+import { formatRp } from "#/lib/utils";
 
 export const Route = createFileRoute("/_layout/finance/")({
   component: FinancePage,
@@ -77,10 +78,28 @@ function FinancePage() {
 
   const cards = [
     {
-      label: "Total Penjualan",
+      label: "Omzet Bruto",
       value: summary.totalSales,
-      icon: ShoppingCart,
+      icon: Receipt,
       color: "text-blue-600",
+    },
+    {
+      label: "Diskon Merchant",
+      value: summary.totalMerchantDiscount,
+      icon: Percent,
+      color: "text-red-500",
+    },
+    {
+      label: "MDR Ojol",
+      value: summary.totalMdr,
+      icon: Banknote,
+      color: "text-orange-500",
+    },
+    {
+      label: "Omzet Netto",
+      value: summary.netSales,
+      icon: DollarSign,
+      color: "text-green-600",
     },
     {
       label: "Total HPP / COGS",
@@ -88,7 +107,6 @@ function FinancePage() {
       icon: TrendingDown,
       color: "text-red-500",
     },
-    { label: "Net Sales", value: summary.netSales, icon: DollarSign, color: "text-green-600" },
     {
       label: "Gross Profit",
       value: summary.grossProfit,
@@ -128,7 +146,7 @@ function FinancePage() {
                 <card.icon className={`h-4 w-4 ${card.color}`} />
                 <span className="text-xs text-muted-foreground uppercase">{card.label}</span>
               </div>
-              <p className="text-2xl font-bold mt-2">Rp {card.value.toLocaleString("id-ID")}</p>
+              <p className="text-2xl font-bold mt-2">{formatRp(card.value)}</p>
             </div>
           ))}
         </div>
@@ -143,13 +161,11 @@ function FinancePage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total MDR</p>
-              <p className="text-lg font-medium">Rp {summary.totalMdr.toLocaleString("id-ID")}</p>
+              <p className="text-lg font-medium">{formatRp(summary.totalMdr)}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Manual Revenue</p>
-              <p className="text-lg font-medium">
-                Rp {summary.manualRevenue.toLocaleString("id-ID")}
-              </p>
+              <p className="text-lg font-medium">{formatRp(summary.manualRevenue)}</p>
             </div>
           </div>
           {summary.totalCogs > 0 && (
@@ -196,7 +212,7 @@ function FinancePage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Cabang</label>
                 <select

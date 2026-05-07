@@ -19,15 +19,16 @@ interface MGRow {
 }
 
 const columns: Column<MGRow>[] = [
-  { key: "code", header: "Kode", width: "w-24" },
-  { key: "name", header: "Nama Group" },
-  { key: "minSelection", header: "Min", width: "w-16", align: "center" },
-  { key: "maxSelection", header: "Max", width: "w-16", align: "center" },
+  { key: "code", header: "Kode", width: "w-24", sortable: true },
+  { key: "name", header: "Nama Group", sortable: true },
+  { key: "minSelection", header: "Min", width: "w-16", align: "center", sortable: true },
+  { key: "maxSelection", header: "Max", width: "w-16", align: "center", sortable: true },
   {
     key: "modifiers",
     header: "Jumlah Modifier",
     width: "w-28",
     align: "center",
+    sortable: true,
     render: (r) => r.modifiers.length,
   },
 ];

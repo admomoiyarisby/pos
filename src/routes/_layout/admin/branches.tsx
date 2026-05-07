@@ -21,19 +21,21 @@ interface BranchRow {
 }
 
 const columns: Column<BranchRow>[] = [
-  { key: "code", header: "Kode", width: "w-24" },
-  { key: "name", header: "Nama Cabang" },
-  { key: "location", header: "Lokasi" },
+  { key: "code", header: "Kode", width: "w-24", sortable: true },
+  { key: "name", header: "Nama Cabang", sortable: true },
+  { key: "location", header: "Lokasi", sortable: true },
   {
     key: "type",
     header: "Tipe",
     width: "w-24",
+    sortable: true,
     render: (r) => <Badge variant={r.type === "Central" ? "default" : "secondary"}>{r.type}</Badge>,
   },
   {
     key: "active",
     header: "Status",
     width: "w-20",
+    sortable: true,
     render: (r) =>
       r.active ? (
         <Badge variant="success">Aktif</Badge>

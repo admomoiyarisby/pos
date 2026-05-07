@@ -3,6 +3,7 @@ import { db } from "#/db/index";
 import { modifierGroups, modifiers, modifierIngredients } from "#/db/schema";
 import { eq, ilike } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
 
 const modifierInput = z.object({
@@ -77,7 +78,7 @@ export const getModifierGroup = createServerFn({ method: "GET" })
 export const createModifierGroup = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => modifierGroupInput.parse(data))
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     const [group] = await db
       .insert(modifierGroups)
@@ -110,6 +111,20 @@ export const createModifierGroup = createServerFn({ method: "POST" })
       }
     }
 
+    await logSystemAction(
+      user,
+      "Create Modifier Group",
+      `Modifier group "${group.name}" dibuat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "modifierGroups",
+      group.id,
+      "CREATE",
+      undefined,
+      group as Record<string, unknown>,
+    );
+
     return group;
   });
 
@@ -118,9 +133,11 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
     modifierGroupInput.partial().extend({ id: z.string().uuid() }).parse(data),
   )
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     const { id, modifiers: mods, ...groupUpdates } = data;
+
+    const [old] = await db.select().from(modifierGroups).where(eq(modifierGroups.id, id)).limit(1);
 
     if (Object.keys(groupUpdates).length > 0) {
       await db.update(modifierGroups).set(groupUpdates).where(eq(modifierGroups.id, id));
@@ -156,6 +173,26 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
         }
       }
     }
+
+    const [updated] = await db
+      .select()
+      .from(modifierGroups)
+      .where(eq(modifierGroups.id, id))
+      .limit(1);
+
+    await logSystemAction(
+      user,
+      "Update Modifier Group",
+      `Modifier group "${updated?.name}" diperbarui oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "modifierGroups",
+      id,
+      "UPDATE",
+      old as Record<string, unknown>,
+      updated as Record<string, unknown>,
+    );
 
     return { success: true };
   });

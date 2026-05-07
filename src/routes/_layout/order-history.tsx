@@ -39,6 +39,7 @@ const columns: Column<OrderRow>[] = [
     key: "createdAt",
     header: "Waktu",
     width: "w-32",
+    sortable: true,
     render: (r) =>
       new Date(r.createdAt).toLocaleString("id-ID", {
         day: "2-digit",
@@ -50,18 +51,26 @@ const columns: Column<OrderRow>[] = [
   {
     key: "channel",
     header: "Channel",
+    sortable: true,
     render: (r) => <Badge variant="outline">{channelLabels[r.channel] ?? r.channel}</Badge>,
   },
-  { key: "orderCode", header: "Kode", render: (r) => r.orderCode ?? r.customerName ?? "-" },
+  {
+    key: "orderCode",
+    header: "Kode",
+    sortable: true,
+    render: (r) => r.orderCode ?? r.customerName ?? "-",
+  },
   {
     key: "totalAmount",
     header: "Total",
     align: "right",
+    sortable: true,
     render: (r) => `Rp ${r.totalAmount.toLocaleString("id-ID")}`,
   },
   {
     key: "status",
     header: "Status",
+    sortable: true,
     render: (r) => (
       <Badge
         variant={

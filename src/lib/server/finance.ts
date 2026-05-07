@@ -13,13 +13,27 @@ import {
   scmInvoices,
   cancelRequests,
   inventory,
+  systemNotifications,
+  users,
 } from "#/db/schema";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
+
+export interface FinanceSummary {
+  totalSales: number;
+  totalMerchantDiscount: number;
+  totalCogs: number;
+  totalMdr: number;
+  netSales: number;
+  orderCount: number;
+  manualRevenue: number;
+  grossProfit: number;
+}
 
 export const getFinanceSummary = createServerFn({ method: "GET" })
   .inputValidator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<FinanceSummary> => {
     await requireRole("super_admin");
 
     const conditions = [];
@@ -30,6 +44,7 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
     const orderData = await db
       .select({
         totalSales: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        totalMerchantDiscount: sql<number>`COALESCE(SUM(${orders.merchantDiscount}), 0)`,
         totalCogs: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
         totalMdr: sql<number>`COALESCE(SUM(${orders.mdrFee}), 0)`,
         netSales: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
@@ -51,14 +66,22 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
         ),
       );
 
+    const toNum = (v: string | number | null | undefined): number =>
+      typeof v === "string" ? Number(v) : (v ?? 0);
+    const totalSales = toNum(orderData[0]?.totalSales);
+    const totalMerchantDiscount = toNum(orderData[0]?.totalMerchantDiscount);
+    const totalCogs = toNum(orderData[0]?.totalCogs);
+    const totalMdr = toNum(orderData[0]?.totalMdr);
+    const netSales = toNum(orderData[0]?.netSales);
     return {
-      totalSales: orderData[0]?.totalSales ?? 0,
-      totalCogs: orderData[0]?.totalCogs ?? 0,
-      totalMdr: orderData[0]?.totalMdr ?? 0,
-      netSales: orderData[0]?.netSales ?? 0,
-      orderCount: orderData[0]?.count ?? 0,
-      manualRevenue: manualRev[0]?.total ?? 0,
-      grossProfit: (orderData[0]?.netSales ?? 0) - (orderData[0]?.totalCogs ?? 0),
+      totalSales,
+      totalMerchantDiscount,
+      totalCogs,
+      totalMdr,
+      netSales,
+      orderCount: toNum(orderData[0]?.count),
+      manualRevenue: toNum(manualRev[0]?.total),
+      grossProfit: netSales - totalCogs,
     };
   });
 
@@ -95,6 +118,20 @@ export const createManualRevenue = createServerFn({ method: "POST" })
         })),
       );
     }
+
+    await logSystemAction(
+      user,
+      "Create Manual Revenue",
+      `Manual revenue Rp${data.amount.toLocaleString()} (${data.branchId}) dicatat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "revenues",
+      revenue.id,
+      "CREATE",
+      undefined,
+      revenue as Record<string, unknown>,
+    );
 
     return revenue;
   });
@@ -143,16 +180,36 @@ export const createChannelRevenue = createServerFn({ method: "POST" })
       })
       .returning();
 
+    await logSystemAction(
+      user,
+      "Create Channel Revenue",
+      `Channel revenue Rp${data.amount.toLocaleString()} (${data.channel}) dicatat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "revenues",
+      revenue.id,
+      "CREATE",
+      undefined,
+      revenue as Record<string, unknown>,
+    );
+
     return revenue;
   });
 
 // ─── Analytics ───
 
+export interface SalesAnalytics {
+  channelData: { channel: string; total: number; count: number }[];
+  topSales: { recipeId: string; totalQty: number; totalRevenue: number; name: string }[];
+  dateRange: { from: string; to: string };
+}
+
 export const getSalesAnalytics = createServerFn({ method: "GET" })
   .inputValidator(
     (data: { branchId?: string; dateFrom: string; dateTo: string; category?: string }) => data,
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<SalesAnalytics> => {
     await requireRole("super_admin");
 
     // Validate max 31 days
@@ -211,9 +268,15 @@ export const getSalesAnalytics = createServerFn({ method: "GET" })
     }
 
     return {
-      channelData,
+      channelData: channelData.map((c) => ({
+        ...c,
+        total: Number(c.total),
+        count: Number(c.count),
+      })),
       topSales: topSales.map((t) => ({
         ...t,
+        totalQty: Number(t.totalQty),
+        totalRevenue: Number(t.totalRevenue),
         name: recipeNames[t.recipeId] ?? t.recipeId,
       })),
       dateRange: { from: data.dateFrom, to: data.dateTo },
@@ -286,6 +349,20 @@ export const openPeriod = createServerFn({ method: "POST" })
         quantity: inv.quantity,
       });
     }
+
+    await logSystemAction(
+      user,
+      "Open Period",
+      `Periode "${data.periodName}" dibuka oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "periodLogs",
+      period.id,
+      "CREATE",
+      undefined,
+      period as Record<string, unknown>,
+    );
 
     return period;
   });
@@ -396,5 +473,79 @@ export const closePeriod = createServerFn({ method: "POST" })
       })
       .where(eq(periodLogs.id, data.periodId));
 
+    const [updatedPeriod] = await db
+      .select()
+      .from(periodLogs)
+      .where(eq(periodLogs.id, data.periodId))
+      .limit(1);
+
+    // Notify all active users that period is closed
+    const allActiveUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.status, "Active"));
+    for (const u of allActiveUsers) {
+      await db.insert(systemNotifications).values({
+        userId: u.id,
+        title: "Periode Ditutup",
+        message: `Periode "${period.periodName}" telah ditutup oleh ${user.name}`,
+        type: "warning",
+      });
+    }
+
+    await logSystemAction(
+      user,
+      "Close Period",
+      `Periode "${period.periodName}" ditutup oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "periodLogs",
+      data.periodId,
+      "UPDATE",
+      period as Record<string, unknown>,
+      updatedPeriod as Record<string, unknown>,
+    );
+
     return { success: true, checks, message: "Periode berhasil ditutup" };
+  });
+
+export interface HourlyDataPoint {
+  hour: number;
+  count: number;
+  revenue: number;
+}
+
+export const getHourlyAnalytics = createServerFn({ method: "GET" })
+  .inputValidator((data: { branchId?: string; dateFrom: string; dateTo: string }) => data)
+  .handler(async ({ data }): Promise<HourlyDataPoint[]> => {
+    await requireRole("super_admin");
+
+    const fromDate = new Date(data.dateFrom);
+    const toDate = new Date(data.dateTo);
+    const daysDiff = (toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysDiff > 31) throw new Error("Maksimal rentang waktu 31 hari");
+
+    const result = await db
+      .select({
+        hour: sql<number>`EXTRACT(HOUR FROM ${orders.createdAt})`,
+        count: sql<number>`COUNT(*)`,
+        revenue: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+      })
+      .from(orders)
+      .where(
+        and(
+          gte(orders.createdAt, fromDate),
+          lte(orders.createdAt, toDate),
+          data.branchId ? eq(orders.branchId, data.branchId) : undefined,
+        ),
+      )
+      .groupBy(sql`EXTRACT(HOUR FROM ${orders.createdAt})`)
+      .orderBy(sql`EXTRACT(HOUR FROM ${orders.createdAt})`);
+
+    return result.map((r) => ({
+      hour: Number(r.hour),
+      count: Number(r.count),
+      revenue: Number(r.revenue),
+    }));
   });

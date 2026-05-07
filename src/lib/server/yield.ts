@@ -1,15 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/db/index";
-import {
-  yieldConversions,
-  ingredients,
-  recipes,
-  recipeIngredients,
-  stockLedger,
-  inventory,
-} from "#/db/schema";
+import { yieldConversions, ingredients, stockLedger, inventory } from "#/db/schema";
+import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import { eq, and } from "drizzle-orm";
 import { requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
 
 export const getYieldConversions = createServerFn({ method: "GET" })
   .inputValidator((data: { branchId?: string }) => data)
@@ -182,48 +177,22 @@ export const createYieldConversion = createServerFn({ method: "POST" })
       notes: `Yield: produksi → ${targetNames[data.targetIngredientId] ?? data.targetIngredientId}${data.notes ? " (" + data.notes + ")" : ""}`,
     });
 
-    // BOM Cost Roll-Up: Update all recipes using target ingredient
-    const [targetIng] = await db
-      .select()
-      .from(ingredients)
-      .where(eq(ingredients.id, data.targetIngredientId))
-      .limit(1);
+    // BOM Cost Roll-Up: Recalculate all recipes using the target ingredient
+    await recalculateRecipeCostsForIngredient(data.targetIngredientId);
 
-    if (targetIng) {
-      // Find all recipes that use this ingredient
-      const affectedRecipes = await db
-        .select({
-          recipeId: recipeIngredients.recipeId,
-          quantity: recipeIngredients.quantity,
-        })
-        .from(recipeIngredients)
-        .where(eq(recipeIngredients.ingredientId, data.targetIngredientId));
-
-      // Also find recipes that use child recipes containing this ingredient
-      // For simplicity, we update direct usage recipes here
-      for (const rec of affectedRecipes) {
-        // Recalculate recipe COGS
-        const allRecipeIngs = await db
-          .select()
-          .from(recipeIngredients)
-          .where(eq(recipeIngredients.recipeId, rec.recipeId));
-
-        let totalCogs = 0;
-        for (const ri of allRecipeIngs) {
-          const [ing] = await db
-            .select()
-            .from(ingredients)
-            .where(eq(ingredients.id, ri.ingredientId))
-            .limit(1);
-          if (ing) {
-            totalCogs += ing.averageCost * ri.quantity;
-          }
-        }
-
-        // Update recipe's basePrice (as COGS indicator)
-        await db.update(recipes).set({ updatedAt: new Date() }).where(eq(recipes.id, rec.recipeId));
-      }
-    }
+    await logSystemAction(
+      user,
+      "Create Yield Conversion",
+      `Yield conversion "${sourceIng.name}" (${data.sourceQuantity} → ${data.targetQuantity}) dibuat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "yieldConversions",
+      conversion.id,
+      "CREATE",
+      undefined,
+      conversion as Record<string, unknown>,
+    );
 
     return {
       success: true,

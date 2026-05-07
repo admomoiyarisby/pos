@@ -90,6 +90,7 @@ function YieldTrackingPage() {
       key: "createdAt",
       header: "Waktu",
       width: "w-36",
+      sortable: true,
       render: (r) =>
         new Date(r.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
@@ -101,6 +102,7 @@ function YieldTrackingPage() {
     {
       key: "sourceName",
       header: "Bahan Mentah",
+      sortable: true,
       render: (r) => (
         <div>
           <span className="font-medium">{r.sourceName}</span>
@@ -113,6 +115,7 @@ function YieldTrackingPage() {
     {
       key: "targetName",
       header: "Hasil Produksi",
+      sortable: true,
       render: (r) => (
         <div>
           <span className="font-medium">{r.targetName}</span>
@@ -127,6 +130,7 @@ function YieldTrackingPage() {
       header: "Yield",
       width: "w-24",
       align: "right",
+      sortable: true,
       render: (r) => (
         <Badge
           variant={
@@ -146,6 +150,7 @@ function YieldTrackingPage() {
       header: "Shrinkage",
       align: "right",
       width: "w-24",
+      sortable: true,
       render: (r) => (
         <span className="text-destructive font-medium">
           -{r.shrinkageQuantity.toLocaleString("id-ID")}

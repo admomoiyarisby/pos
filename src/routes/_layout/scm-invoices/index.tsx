@@ -64,16 +64,18 @@ function SCMInvoicePage() {
   const receivedDns = dns.filter((d) => d.status === "Received");
 
   const columns: Column<InvRow>[] = [
-    { key: "code", header: "Kode Invoice", width: "w-32" },
+    { key: "code", header: "Kode Invoice", width: "w-32", sortable: true },
     {
       key: "totalAmount",
       header: "Total",
       align: "right",
+      sortable: true,
       render: (r) => `Rp ${r.totalAmount.toLocaleString("id-ID")}`,
     },
     {
       key: "status",
       header: "Status",
+      sortable: true,
       render: (r) => (
         <Badge
           variant={
@@ -91,6 +93,7 @@ function SCMInvoicePage() {
     {
       key: "createdAt",
       header: "Dibuat",
+      sortable: true,
       render: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
     },
     {

@@ -47,12 +47,18 @@ function POPage() {
   });
 
   const columns: Column<PORow>[] = [
-    { key: "code", header: "Kode PO", width: "w-28" },
-    { key: "fromBranchId", header: "Dari", render: (r) => r.fromBranchId.slice(0, 8) },
-    { key: "toBranchId", header: "Ke", render: (r) => r.toBranchId.slice(0, 8) },
+    { key: "code", header: "Kode PO", width: "w-28", sortable: true },
+    {
+      key: "fromBranchId",
+      header: "Dari",
+      sortable: true,
+      render: (r) => r.fromBranchId.slice(0, 8),
+    },
+    { key: "toBranchId", header: "Ke", sortable: true, render: (r) => r.toBranchId.slice(0, 8) },
     {
       key: "status",
       header: "Status",
+      sortable: true,
       render: (r) => (
         <Badge
           variant={
@@ -70,6 +76,7 @@ function POPage() {
     {
       key: "createdAt",
       header: "Dibuat",
+      sortable: true,
       render: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
     },
     {

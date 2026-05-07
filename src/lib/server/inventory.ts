@@ -7,9 +7,12 @@ import {
   branches,
   stockOpnames,
   stockOpnameItems,
+  systemNotifications,
+  areaManagerBranches,
 } from "#/db/schema";
-import { eq, and, ilike, desc } from "drizzle-orm";
+import { eq, and, ilike, desc, asc, count } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
 
 export const getInventory = createServerFn({ method: "GET" })
   .inputValidator(
@@ -18,6 +21,10 @@ export const getInventory = createServerFn({ method: "GET" })
       search?: string;
       category?: "Fresh" | "Dry" | "Packaging" | null;
       skuType?: "RM" | "SFG" | "FG" | null;
+      page?: number;
+      limit?: number;
+      sortBy?: string;
+      sortOrder?: "asc" | "desc";
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -30,6 +37,26 @@ export const getInventory = createServerFn({ method: "GET" })
       // Admin pusat sees central warehouse or all depending on preference
       // Default to no filter (all) for now
     }
+
+    const conditions = [
+      branchFilter ? eq(inventory.branchId, branchFilter) : undefined,
+      data.search ? ilike(ingredients.name, `%${data.search}%`) : undefined,
+      data.category ? eq(ingredients.category, data.category) : undefined,
+      data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
+    ];
+    const where = and(...conditions.filter(Boolean));
+
+    // Get total count
+    const [totalResult] = await db
+      .select({ total: count() })
+      .from(inventory)
+      .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
+      .leftJoin(branches, eq(inventory.branchId, branches.id))
+      .where(where);
+
+    const total = totalResult?.total ?? 0;
+    const limit = Math.min(data.limit ?? 50, 100);
+    const offset = (data.page ?? 0) * limit;
 
     const result = await db
       .select({
@@ -49,17 +76,12 @@ export const getInventory = createServerFn({ method: "GET" })
       .from(inventory)
       .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
       .leftJoin(branches, eq(inventory.branchId, branches.id))
-      .where(
-        and(
-          branchFilter ? eq(inventory.branchId, branchFilter) : undefined,
-          data.search ? ilike(ingredients.name, `%${data.search}%`) : undefined,
-          data.category ? eq(ingredients.category, data.category) : undefined,
-          data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
-        ),
-      )
-      .orderBy(ingredients.name);
+      .where(where)
+      .orderBy(data.sortOrder === "desc" ? desc(ingredients.name) : asc(ingredients.name))
+      .limit(limit)
+      .offset(offset);
 
-    return result;
+    return { data: result, total };
   });
 
 export const getStockLedger = createServerFn({ method: "GET" })
@@ -143,6 +165,13 @@ export const triggerStockOpname = createServerFn({ method: "POST" })
       });
     }
 
+    await logSystemAction(
+      user,
+      "Trigger Stock Opname",
+      `Stock opname "${so.id}" dimulai untuk cabang ${data.branchId} oleh ${user.name}`,
+    );
+    await logAudit(user, "stockOpnames", so.id, "CREATE", undefined, so as Record<string, unknown>);
+
     return so;
   });
 
@@ -222,6 +251,12 @@ export const submitStockOpname = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
+    const [oldSo] = await db
+      .select()
+      .from(stockOpnames)
+      .where(eq(stockOpnames.id, data.soId))
+      .limit(1);
+
     for (const item of data.items) {
       // Get current system stock
       const [soItem] = await db
@@ -256,15 +291,31 @@ export const submitStockOpname = createServerFn({ method: "POST" })
 
     const hasVariance = allItems.some((i) => Math.abs(i.variance) > 0);
 
+    const newStatus = hasVariance ? "Under Investigation" : "Submitted";
+
     await db
       .update(stockOpnames)
       .set({
-        status: hasVariance ? "Under Investigation" : "Submitted",
+        status: newStatus,
         submittedBy: user.id,
       })
       .where(eq(stockOpnames.id, data.soId));
 
-    return { success: true, status: hasVariance ? "Under Investigation" : "Submitted" };
+    await logSystemAction(
+      user,
+      "Submit Stock Opname",
+      `Stock opname "${data.soId}" disubmit oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "stockOpnames",
+      data.soId,
+      "STATUS_CHANGE",
+      oldSo as Record<string, unknown>,
+      { ...oldSo, status: newStatus } as Record<string, unknown>,
+    );
+
+    return { success: true, status: newStatus };
   });
 
 export const approveStockOpname = createServerFn({ method: "POST" })
@@ -281,6 +332,8 @@ export const approveStockOpname = createServerFn({ method: "POST" })
       .limit(1);
 
     if (!so) throw new Error("Stock opname not found");
+
+    const oldSo = { ...so };
 
     // Adjust inventory to physical stock
     const items = await db
@@ -329,6 +382,52 @@ export const approveStockOpname = createServerFn({ method: "POST" })
         approvedBy: user.id,
       })
       .where(eq(stockOpnames.id, data.soId));
+
+    // Notify the branch admin who submitted the SO
+    await db.insert(systemNotifications).values({
+      userId: so.submittedBy,
+      title: "Stock Opname Approved",
+      message: `Stock opname cabang telah disetujui oleh ${user.name}${data.investigationNote ? ". Catatan: " + data.investigationNote : ""}`,
+      type: "info",
+    });
+
+    // Also notify area managers if there was significant variance
+    const soItems = await db
+      .select()
+      .from(stockOpnameItems)
+      .where(eq(stockOpnameItems.stockOpnameId, data.soId));
+    const highVariance = soItems.filter((i) => {
+      const pct = i.variancePercentage ? Number(i.variancePercentage) : 0;
+      return pct > 3;
+    });
+    if (highVariance.length > 0) {
+      const ams = await db
+        .select({ userId: areaManagerBranches.userId })
+        .from(areaManagerBranches)
+        .where(eq(areaManagerBranches.branchId, so.branchId));
+      for (const am of ams) {
+        await db.insert(systemNotifications).values({
+          userId: am.userId,
+          title: "⚠️ Variance SO Signifikan",
+          message: `${highVariance.length} item memiliki variance > 3% pada SO ${data.soId.slice(0, 8)}`,
+          type: "alert",
+        });
+      }
+    }
+
+    await logSystemAction(
+      user,
+      "Approve Stock Opname",
+      `Stock opname "${data.soId}" diapprove oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "stockOpnames",
+      data.soId,
+      "STATUS_CHANGE",
+      oldSo as Record<string, unknown>,
+      { ...oldSo, status: "Approved", approvedBy: user.id } as Record<string, unknown>,
+    );
 
     return { success: true };
   });

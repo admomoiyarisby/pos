@@ -3,6 +3,7 @@ import { db } from "#/db/index";
 import { users as usersTable, areaManagerBranches, branches } from "#/db/schema";
 import { eq, ilike, and, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
 import { auth } from "#/lib/auth";
 
@@ -86,7 +87,7 @@ export const createUser = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data }) => {
-    await requireRole("super_admin");
+    const user = await requireRole("super_admin");
 
     // Validate PIN uniqueness per branch
     if (data.pin && data.branchId) {
@@ -155,6 +156,21 @@ export const createUser = createServerFn({ method: "POST" })
       }
     }
 
+    // Log
+    await logSystemAction(
+      user,
+      "Create User",
+      `User "${data.name}" (${data.role}) dibuat oleh ${user.name}`,
+    );
+    await logAudit(user, "users", userId, "CREATE", undefined, {
+      id: userId,
+      name: data.name,
+      email: data.email,
+      role: data.role,
+      branchId: data.branchId,
+      status: data.status ?? "Active",
+    });
+
     return { success: true, userId };
   });
 
@@ -173,9 +189,14 @@ export const updateUser = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data }) => {
-    await requireRole("super_admin");
+    const user = await requireRole("super_admin");
 
     const { id, assignedBranches, ...updates } = data;
+
+    // Fetch old user data for logging
+    const [oldUser] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+
+    if (!oldUser) throw new Error("User not found");
 
     // Validate PIN uniqueness per branch
     if (data.pin) {
@@ -213,6 +234,43 @@ export const updateUser = createServerFn({ method: "POST" })
     }
 
     await db.update(usersTable).set(setData).where(eq(usersTable.id, id));
+
+    // Build new user data for audit
+    const newUserData: Record<string, unknown> = { ...oldUser, ...setData };
+    const nameHint = (newUserData.name as string) || oldUser.name;
+
+    // Log user update
+    await logSystemAction(user, "Update User", `User "${nameHint}" diperbarui oleh ${user.name}`);
+
+    // Check for role change
+    if (data.role && data.role !== oldUser.role) {
+      await logSystemAction(
+        user,
+        "Update User",
+        `Role user "${nameHint}" diubah dari ${oldUser.role} ke ${data.role} oleh ${user.name}`,
+        "Warning",
+      );
+    }
+
+    // Check for PIN change
+    if (data.pin && data.pin !== oldUser.pin) {
+      await logSystemAction(
+        user,
+        "Update User PIN",
+        `PIN user "${nameHint}" diperbarui oleh ${user.name}`,
+      );
+    }
+
+    // Check for status change
+    if (data.status && data.status !== oldUser.status) {
+      await logSystemAction(
+        user,
+        "Update User Status",
+        `Status user "${nameHint}" diubah dari ${oldUser.status} ke ${data.status} oleh ${user.name}`,
+      );
+    }
+
+    await logAudit(user, "users", id, "UPDATE", oldUser as Record<string, unknown>, newUserData);
 
     // Update area manager branches
     if (assignedBranches !== undefined) {

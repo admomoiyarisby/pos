@@ -3,6 +3,7 @@ import { db } from "#/db/index";
 import { wasteEntries, ingredients, branches, stockLedger, inventory } from "#/db/schema";
 import { eq, and, desc, ilike } from "drizzle-orm";
 import { requireAuth } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
 
 export const getWasteEntries = createServerFn({ method: "GET" })
@@ -72,7 +73,11 @@ export const createWasteEntry = createServerFn({ method: "POST" })
     }
 
     // Get ingredient cost for valuation
-    await db.select().from(ingredients).where(eq(ingredients.id, data.ingredientId)).limit(1);
+    const [ing] = await db
+      .select()
+      .from(ingredients)
+      .where(eq(ingredients.id, data.ingredientId))
+      .limit(1);
 
     const [entry] = await db
       .insert(wasteEntries)
@@ -113,6 +118,20 @@ export const createWasteEntry = createServerFn({ method: "POST" })
         notes: `Waste: ${data.category}${data.notes ? " - " + data.notes : ""}`,
       });
     }
+
+    await logSystemAction(
+      user,
+      "Create Waste Entry",
+      `Waste entry untuk "${ing?.name ?? data.ingredientId}" (${data.quantity} ${ing?.stockUnit ?? ""}) dicatat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "wasteEntries",
+      entry.id,
+      "CREATE",
+      undefined,
+      entry as Record<string, unknown>,
+    );
 
     return entry;
   });

@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Search,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+} from "lucide-react";
 
 export interface Column<T> {
   key: string;
@@ -19,6 +28,7 @@ interface DataTableProps<T> {
   searchKeys?: (keyof T)[];
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
+  defaultSort?: { key: string; dir: "asc" | "desc" };
 }
 
 export default function DataTable<T>({
@@ -30,13 +40,20 @@ export default function DataTable<T>({
   searchKeys,
   emptyMessage = "Tidak ada data",
   onRowClick,
+  defaultSort,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
-  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
+  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(
+    defaultSort ?? null,
+  );
 
-  const safeStr = (v: unknown) =>
-    typeof v === "string" ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : "";
+  const safeStr = (v: unknown) => {
+    if (v instanceof Date) return v.toISOString();
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    return "";
+  };
 
   const filtered =
     searchable && search.trim()
@@ -102,20 +119,31 @@ export default function DataTable<T>({
                 <th
                   key={col.key}
                   className={
-                    "h-10 px-3 text-left align-middle font-medium text-muted-foreground whitespace-nowrap min-w-[80px] " +
+                    "h-10 px-3 text-left align-middle font-medium whitespace-nowrap min-w-[80px] " +
                     (col.width ?? "") +
                     " " +
                     (col.sortable ? "cursor-pointer select-none " : " ") +
-                    (colIdx === 0 ? stickyClass : "")
+                    (colIdx === 0 ? stickyClass : "") +
+                    " " +
+                    (col.sortable && sort?.key === col.key
+                      ? "text-foreground"
+                      : "text-muted-foreground")
                   }
                   style={{ textAlign: col.align ?? "left" }}
                   onClick={() => col.sortable && handleSort(col.key)}
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     {col.header}
-                    {col.sortable && sort?.key === col.key && (
-                      <span className="text-xs">{sort.dir === "asc" ? "↑" : "↓"}</span>
-                    )}
+                    {col.sortable &&
+                      (sort?.key === col.key ? (
+                        sort.dir === "asc" ? (
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        ) : (
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        )
+                      ) : (
+                        <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />
+                      ))}
                   </div>
                 </th>
               ))}
