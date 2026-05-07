@@ -7,13 +7,19 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getDeliveryNotes, createDeliveryNote, shipDeliveryNote } from "#/lib/server/scm";
+import {
+  getDeliveryNotes,
+  createDeliveryNote,
+  shipDeliveryNote,
+  reviewDeliveryNote,
+  generateSCMInvoice,
+} from "#/lib/server/scm";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Truck } from "lucide-react";
+import { ArrowRight, Truck, CheckCircle, DollarSign } from "lucide-react";
 
 interface DNRow {
   id: string;
@@ -22,6 +28,7 @@ interface DNRow {
   toBranchId: string;
   status: "Draft" | "Picking" | "In Transit" | "Received" | "Cancelled";
   driverName: string | null;
+  reviewedByAdminPusat: boolean;
   createdAt: Date;
 }
 
@@ -54,6 +61,7 @@ function DNPage() {
   const [dnItems, setDnItems] = useState<
     { ingredientId: string; quantity: number; readyQuantity: number }[]
   >([]);
+  const [reviewSJ, setReviewSJ] = useState<DNRow | null>(null);
 
   const { data: dns } = useQuery({
     queryKey: ["delivery-notes"],
@@ -73,6 +81,22 @@ function DNPage() {
   const shipMutation = useMutation({
     mutationFn: shipDeliveryNote,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] }),
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: reviewDeliveryNote,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+      setReviewSJ(null);
+    },
+  });
+
+  const generateInvoiceMutation = useMutation({
+    mutationFn: generateSCMInvoice,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+      void queryClient.invalidateQueries({ queryKey: ["scm-invoices"] });
+    },
   });
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -127,7 +151,7 @@ function DNPage() {
     {
       key: "id",
       header: "",
-      width: "w-32",
+      width: "w-48",
       render: (r) => (
         <div className="flex items-center justify-end gap-1">
           {["super_admin", "admin_pusat"].includes(user?.role ?? "") && r.status === "Picking" && (
@@ -141,6 +165,33 @@ function DNPage() {
               <Truck className="h-3 w-3 inline mr-1" />
               Kirim
             </button>
+          )}
+          {["super_admin", "admin_pusat"].includes(user?.role ?? "") && r.status === "Received" && (
+            <>
+              {!r.reviewedByAdminPusat ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setReviewSJ(r);
+                  }}
+                  className="h-7 px-2 rounded-md bg-amber-500 text-white text-[10px] font-medium flex items-center gap-1"
+                >
+                  <CheckCircle className="h-3 w-3" />
+                  Review SJ
+                </button>
+              ) : (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void generateInvoiceMutation.mutateAsync({ data: { dnId: r.id } });
+                  }}
+                  className="h-7 px-2 rounded-md bg-emerald-600 text-white text-[10px] font-medium flex items-center gap-1"
+                >
+                  <DollarSign className="h-3 w-3" />
+                  Buat Invoice
+                </button>
+              )}
+            </>
           )}
           <Link
             to="/delivery-notes/$dnId"
@@ -160,6 +211,67 @@ function DNPage() {
       <PageHeader action={{ label: "Buat SJ", onClick: () => setModalOpen(true) }} />
 
       <DataTable columns={columns} data={dns} keyExtractor={(r) => r.id} />
+
+      {/* Review SJ Modal */}
+      <Modal
+        open={!!reviewSJ}
+        onClose={() => setReviewSJ(null)}
+        title={`Review Surat Jalan: ${reviewSJ?.code ?? ""}`}
+        size="lg"
+      >
+        {reviewSJ && (
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg">
+              <p className="text-sm font-medium text-blue-900">Review Data Surat Jalan</p>
+              <p className="text-xs text-blue-700 mt-1">
+                Pastikan semua data pengiriman dan penerimaan sudah benar. Setelah di-review, Anda
+                dapat membuat Invoice Internal.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase">Rute</p>
+                <p className="font-medium">
+                  {branches.find((b) => b.id === reviewSJ.fromBranchId)?.name ??
+                    reviewSJ.fromBranchId}{" "}
+                  →{" "}
+                  {branches.find((b) => b.id === reviewSJ.toBranchId)?.name ?? reviewSJ.toBranchId}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground uppercase">Status</p>
+                <Badge variant="success">{reviewSJ.status}</Badge>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Setelah dikonfirmasi, status review akan tercatat dan tombol "Buat Invoice" akan
+              muncul.
+            </p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setReviewSJ(null)}
+                className="flex-1 h-9 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  if (reviewSJ) {
+                    void reviewMutation.mutateAsync({ data: { dnId: reviewSJ.id } });
+                  }
+                }}
+                disabled={reviewMutation.isPending}
+                className="flex-1 h-9 rounded-md bg-emerald-600 text-white text-sm font-medium disabled:opacity-50"
+              >
+                {reviewMutation.isPending ? "Memproses..." : "Konfirmasi Review"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={modalOpen}

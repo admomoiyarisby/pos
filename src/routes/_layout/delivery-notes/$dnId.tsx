@@ -3,9 +3,15 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
-import { getDeliveryNote, receiveDeliveryNote } from "#/lib/server/scm";
+import {
+  getDeliveryNote,
+  receiveDeliveryNote,
+  reviewDeliveryNote,
+  generateSCMInvoice,
+} from "#/lib/server/scm";
 import { getBranches } from "#/lib/server/branches";
 import { Badge } from "#/components/ui/badge";
+import { CheckCircle } from "lucide-react";
 
 interface DNItem {
   id: string;
@@ -63,10 +69,35 @@ function DNDetailPage() {
     },
   });
 
+  const reviewMutation = useMutation({
+    mutationFn: reviewDeliveryNote,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["delivery-note", dnId] });
+      void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+    },
+  });
+
+  const generateInvoiceMutation = useMutation({
+    mutationFn: generateSCMInvoice,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["delivery-note", dnId] });
+      void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+      void queryClient.invalidateQueries({ queryKey: ["scm-invoices"] });
+    },
+  });
+
   if (!dn) return <div className="text-muted-foreground">Surat jalan tidak ditemukan</div>;
 
   const canReceive =
     dn.status === "In Transit" && (user?.role === "branch_admin" || user?.role === "super_admin");
+  const canReview =
+    dn.status === "Received" &&
+    !dn.reviewedByAdminPusat &&
+    ["super_admin", "admin_pusat"].includes(user?.role ?? "");
+  const canGenerateInvoice =
+    dn.status === "Received" &&
+    dn.reviewedByAdminPusat &&
+    ["super_admin", "admin_pusat"].includes(user?.role ?? "");
   const fromBranch = branches.find((b) => b.id === dn.fromBranchId);
   const toBranch = branches.find((b) => b.id === dn.toBranchId);
 
@@ -90,18 +121,38 @@ function DNDetailPage() {
             <h1 className="text-2xl font-bold">{dn.code}</h1>
             <p className="text-sm text-muted-foreground">Surat Jalan & Transfer Stok</p>
           </div>
-          <Badge
-            variant={
-              (statusColors[dn.status] ?? "default") as
-                | "default"
-                | "success"
-                | "warning"
-                | "destructive"
-                | "secondary"
-            }
-          >
-            {dn.status}
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge
+              variant={
+                (statusColors[dn.status] ?? "default") as
+                  | "default"
+                  | "success"
+                  | "warning"
+                  | "destructive"
+                  | "secondary"
+              }
+            >
+              {dn.status}
+            </Badge>
+            {canReview && (
+              <button
+                onClick={() => void reviewMutation.mutateAsync({ data: { dnId } })}
+                disabled={reviewMutation.isPending}
+                className="h-9 px-4 rounded-md bg-amber-500 text-white text-sm font-medium disabled:opacity-50"
+              >
+                {reviewMutation.isPending ? "Memproses..." : "Review SJ"}
+              </button>
+            )}
+            {canGenerateInvoice && (
+              <button
+                onClick={() => void generateInvoiceMutation.mutateAsync({ data: { dnId } })}
+                disabled={generateInvoiceMutation.isPending}
+                className="h-9 px-4 rounded-md bg-emerald-600 text-white text-sm font-medium disabled:opacity-50"
+              >
+                {generateInvoiceMutation.isPending ? "Memproses..." : "Buat Invoice"}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -118,6 +169,15 @@ function DNDetailPage() {
             <p className="font-medium mt-1">{dn.driverName ?? "-"}</p>
           </div>
         </div>
+
+        {dn.reviewedByAdminPusat && (
+          <div className="rounded-md border p-3 bg-emerald-50">
+            <p className="text-xs text-emerald-700">
+              <CheckCircle className="inline h-3 w-3 mr-1" />
+              Direview oleh Admin Pusat
+            </p>
+          </div>
+        )}
 
         <div className="rounded-md border overflow-x-auto">
           <table className="w-full text-sm min-w-[480px]">

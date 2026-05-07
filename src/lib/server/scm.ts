@@ -429,7 +429,11 @@ export const getDeliveryNotes = createServerFn({ method: "GET" })
         toBranchId: deliveryNotes.toBranchId,
         status: deliveryNotes.status,
         driverName: deliveryNotes.driverName,
+        vehicleNumber: deliveryNotes.vehicleNumber,
         purchaseRequisitionId: deliveryNotes.purchaseRequisitionId,
+        reviewedByAdminPusat: deliveryNotes.reviewedByAdminPusat,
+        receivedBy: deliveryNotes.receivedBy,
+        receivedAt: deliveryNotes.receivedAt,
         createdAt: deliveryNotes.createdAt,
         updatedAt: deliveryNotes.updatedAt,
       })
@@ -798,6 +802,36 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
     return { success: true };
   });
 
+// ─── Review Delivery Note ───
+
+export const reviewDeliveryNote = createServerFn({ method: "POST" })
+  .inputValidator((data: { dnId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [dn] = await db
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .limit(1);
+
+    if (!dn) throw new Error("Delivery note not found");
+    if (dn.status !== "Received") throw new Error("Only Received SJ can be reviewed");
+
+    await db
+      .update(deliveryNotes)
+      .set({ reviewedByAdminPusat: true, updatedAt: new Date() })
+      .where(eq(deliveryNotes.id, data.dnId));
+
+    await logSystemAction(
+      user,
+      "Review Delivery Note",
+      `SJ "${dn.code}" direview oleh ${user.name}`,
+    );
+
+    return { success: true };
+  });
+
 // ─── SCM Invoices ───
 
 export const getSCMInvoices = createServerFn({ method: "GET" })
@@ -953,6 +987,43 @@ export const paySCMInvoice = createServerFn({ method: "POST" })
       user,
       "Pay SCM Invoice",
       `Invoice SCM "${invoice.code}" dibayar oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "scmInvoices",
+      data.id,
+      "STATUS_CHANGE",
+      oldInv as Record<string, unknown>,
+      invoice as Record<string, unknown>,
+    );
+
+    return invoice;
+  });
+
+export const cancelSCMInvoice = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [oldInv] = await db
+      .select()
+      .from(scmInvoices)
+      .where(eq(scmInvoices.id, data.id))
+      .limit(1);
+
+    if (!oldInv) throw new Error("Invoice not found");
+    if (oldInv.status !== "Unpaid") throw new Error("Only Unpaid invoices can be cancelled");
+
+    const [invoice] = await db
+      .update(scmInvoices)
+      .set({ status: "Cancelled" })
+      .where(eq(scmInvoices.id, data.id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Cancel SCM Invoice",
+      `Invoice SCM "${invoice.code}" dibatalkan oleh ${user.name}`,
     );
     await logAudit(
       user,

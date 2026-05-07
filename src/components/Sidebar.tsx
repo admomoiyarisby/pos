@@ -118,12 +118,6 @@ const navGroups: NavGroup[] = [
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
       },
       {
-        label: "Purchase Order",
-        to: "/purchase-orders",
-        icon: FileText,
-        roles: ["super_admin", "admin_pusat"],
-      },
-      {
         label: "Surat Jalan",
         to: "/delivery-notes",
         icon: Truck,

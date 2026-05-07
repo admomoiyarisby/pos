@@ -5,7 +5,12 @@ import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
-import { getSCMInvoices, generateSCMInvoice, paySCMInvoice } from "#/lib/server/scm";
+import {
+  getSCMInvoices,
+  generateSCMInvoice,
+  paySCMInvoice,
+  cancelSCMInvoice,
+} from "#/lib/server/scm";
 import { getDeliveryNotes } from "#/lib/server/scm";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
@@ -61,6 +66,11 @@ function SCMInvoicePage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scm-invoices"] }),
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: cancelSCMInvoice,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scm-invoices"] }),
+  });
+
   const receivedDns = dns.filter((d) => d.status === "Received");
 
   const columns: Column<InvRow>[] = [
@@ -103,15 +113,28 @@ function SCMInvoicePage() {
       render: (r) => (
         <div className="flex items-center justify-end gap-1">
           {r.status === "Unpaid" && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                void payMutation.mutateAsync({ data: { id: r.id } });
-              }}
-              className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-medium"
-            >
-              Bayar
-            </button>
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void payMutation.mutateAsync({ data: { id: r.id } });
+                }}
+                className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-medium"
+              >
+                Bayar
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm("Yakin ingin membatalkan invoice ini?")) {
+                    void cancelMutation.mutateAsync({ data: { id: r.id } });
+                  }
+                }}
+                className="h-7 px-2 rounded-md bg-red-600 text-white text-[10px] font-medium"
+              >
+                Batal
+              </button>
+            </>
           )}
           <Link
             to="/scm-invoices/$invId"

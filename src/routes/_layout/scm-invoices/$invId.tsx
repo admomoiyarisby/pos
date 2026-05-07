@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
-import { getSCMInvoice } from "#/lib/server/scm";
+import { getSCMInvoice, paySCMInvoice, cancelSCMInvoice } from "#/lib/server/scm";
 import { Badge } from "#/components/ui/badge";
 
 export const Route = createFileRoute("/_layout/scm-invoices/$invId")({
@@ -13,8 +14,10 @@ export const Route = createFileRoute("/_layout/scm-invoices/$invId")({
 });
 
 function SCMInvoiceDetailPage() {
+  const { user } = useAuth();
   const { invoice: initial } = Route.useLoaderData();
   const { invId } = Route.useParams();
+  const queryClient = useQueryClient();
 
   const { data: invoice } = useQuery({
     queryKey: ["scm-invoice", invId],
@@ -22,7 +25,26 @@ function SCMInvoiceDetailPage() {
     initialData: initial,
   });
 
+  const payMutation = useMutation({
+    mutationFn: paySCMInvoice,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scm-invoice", invId] });
+      void queryClient.invalidateQueries({ queryKey: ["scm-invoices"] });
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: cancelSCMInvoice,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scm-invoice", invId] });
+      void queryClient.invalidateQueries({ queryKey: ["scm-invoices"] });
+    },
+  });
+
   if (!invoice) return <div className="text-muted-foreground">Invoice tidak ditemukan</div>;
+
+  const canAct =
+    invoice.status === "Unpaid" && ["super_admin", "admin_pusat"].includes(user?.role ?? "");
 
   const statusColors: Record<string, "default" | "warning" | "success" | "destructive"> = {
     Unpaid: "warning",
@@ -38,17 +60,41 @@ function SCMInvoiceDetailPage() {
             <h1 className="text-2xl font-bold">{invoice.code}</h1>
             <p className="text-sm text-muted-foreground">Invoice SCM</p>
           </div>
-          <Badge
-            variant={
-              (statusColors[invoice.status] ?? "default") as
-                | "default"
-                | "success"
-                | "warning"
-                | "destructive"
-            }
-          >
-            {invoice.status}
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge
+              variant={
+                (statusColors[invoice.status] ?? "default") as
+                  | "default"
+                  | "success"
+                  | "warning"
+                  | "destructive"
+              }
+            >
+              {invoice.status}
+            </Badge>
+            {canAct && (
+              <>
+                <button
+                  onClick={() => void payMutation.mutateAsync({ data: { id: invoice.id } })}
+                  disabled={payMutation.isPending}
+                  className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+                >
+                  {payMutation.isPending ? "Memproses..." : "Bayar"}
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm("Yakin ingin membatalkan invoice ini?")) {
+                      void cancelMutation.mutateAsync({ data: { id: invoice.id } });
+                    }
+                  }}
+                  disabled={cancelMutation.isPending}
+                  className="h-9 px-4 rounded-md bg-red-600 text-white text-sm disabled:opacity-50"
+                >
+                  {cancelMutation.isPending ? "Memproses..." : "Batal"}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
