@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Pagination } from "#/components/ui/Pagination";
 
 interface Recipe {
   id: string;
@@ -23,6 +25,8 @@ interface CogsItem {
   cogsPercentage: number;
   alert: boolean;
 }
+
+const PAGE_SIZE = 15;
 
 export function computeCogsData(recipes: Recipe[], ingredients: Ingredient[]): CogsItem[] {
   return recipes.map((r) => {
@@ -51,6 +55,11 @@ export function computeCogsData(recipes: Recipe[], ingredients: Ingredient[]): C
 }
 
 export function CogsAnalysisTable({ data }: { data: CogsItem[] }) {
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginated = data.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
       <div className="mb-2">
@@ -84,65 +93,77 @@ export function CogsAnalysisTable({ data }: { data: CogsItem[] }) {
             </tr>
           </thead>
           <tbody>
-            {data.map((item) => (
-              <tr key={item.id} className="border-b last:border-0 hover:bg-muted/50">
-                <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-4 font-medium text-foreground">
-                  {item.name}
-                </td>
-                <td className="whitespace-nowrap px-4 py-4 text-right text-muted-foreground">
-                  Rp {item.basePrice.toLocaleString("id-ID")}
-                </td>
-                <td className="whitespace-nowrap px-4 py-4 font-mono text-right text-muted-foreground">
-                  Rp {Math.round(item.cogs).toLocaleString("id-ID")}
-                </td>
-                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-emerald-600">
-                  Rp {Math.round(item.margin).toLocaleString("id-ID")}
-                </td>
-                <td className="whitespace-nowrap px-4 py-4 text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={`h-full rounded-full ${
-                          item.cogsPercentage > 70
-                            ? "bg-rose-500"
-                            : item.cogsPercentage > 50
-                              ? "bg-amber-500"
-                              : "bg-emerald-500"
-                        }`}
-                        style={{ width: `${Math.min(item.cogsPercentage, 100)}%` }}
-                      />
-                    </div>
-                    <span
-                      className={`text-xs font-bold ${
-                        item.cogsPercentage > 70
-                          ? "text-rose-600"
-                          : item.cogsPercentage > 50
-                            ? "text-amber-600"
-                            : "text-emerald-600"
-                      }`}
-                    >
-                      {item.cogsPercentage.toFixed(1)}%
-                    </span>
-                  </div>
-                </td>
-                <td className="whitespace-nowrap px-4 py-4">
-                  {item.alert ? (
-                    <div className="flex animate-pulse items-center text-xs font-bold text-rose-600">
-                      <AlertTriangle className="mr-1 h-4 w-4" />
-                      HIGH COGS
-                    </div>
-                  ) : (
-                    <div className="flex items-center text-xs font-bold text-emerald-600">
-                      <CheckCircle2 className="mr-1 h-4 w-4" />
-                      HEALTHY
-                    </div>
-                  )}
+            {paginated.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap py-8 text-center italic text-muted-foreground"
+                >
+                  Tidak ada data.
                 </td>
               </tr>
-            ))}
+            ) : (
+              paginated.map((item) => (
+                <tr key={item.id} className="border-b last:border-0 hover:bg-muted/50">
+                  <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-4 font-medium text-foreground">
+                    {item.name}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right text-muted-foreground">
+                    Rp {item.basePrice.toLocaleString("id-ID")}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4 font-mono text-right text-muted-foreground">
+                    Rp {Math.round(item.cogs).toLocaleString("id-ID")}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-emerald-600">
+                    Rp {Math.round(item.margin).toLocaleString("id-ID")}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={`h-full rounded-full ${
+                            item.cogsPercentage > 70
+                              ? "bg-rose-500"
+                              : item.cogsPercentage > 50
+                                ? "bg-amber-500"
+                                : "bg-emerald-500"
+                          }`}
+                          style={{ width: `${Math.min(item.cogsPercentage, 100)}%` }}
+                        />
+                      </div>
+                      <span
+                        className={`text-xs font-bold ${
+                          item.cogsPercentage > 70
+                            ? "text-rose-600"
+                            : item.cogsPercentage > 50
+                              ? "text-amber-600"
+                              : "text-emerald-600"
+                        }`}
+                      >
+                        {item.cogsPercentage.toFixed(1)}%
+                      </span>
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4">
+                    {item.alert ? (
+                      <div className="flex animate-pulse items-center text-xs font-bold text-rose-600">
+                        <AlertTriangle className="mr-1 h-4 w-4" />
+                        HIGH COGS
+                      </div>
+                    ) : (
+                      <div className="flex items-center text-xs font-bold text-emerald-600">
+                        <CheckCircle2 className="mr-1 h-4 w-4" />
+                        HEALTHY
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
+      <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }

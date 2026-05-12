@@ -108,7 +108,7 @@ function PeriodControlPage() {
       ),
     },
   ];
-  usePageTitle("Period Control", "Kendali pembukaan & penutupan buku fiskal");
+  usePageTitle("Kontrol Periode", "Kendali pembukaan & penutupan buku fiskal");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>

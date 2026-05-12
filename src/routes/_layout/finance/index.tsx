@@ -114,7 +114,7 @@ function FinancePage() {
       color: summary.grossProfit >= 0 ? "text-emerald-600" : "text-red-500",
     },
   ];
-  usePageTitle("Finance & Reconciliation", "Input uang cair & kalkulasi profitabilitas");
+  usePageTitle("Keuangan & Rekonsiliasi", "Input uang cair & kalkulasi profitabilitas");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>

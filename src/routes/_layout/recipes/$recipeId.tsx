@@ -5,6 +5,8 @@ import RoleGuard from "#/components/RoleGuard";
 import { getRecipeDetail } from "#/lib/server/recipes";
 
 import { Badge } from "#/components/ui/badge";
+import { Card } from "#/components/ui/card";
+import { Zap, Package } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/recipes/$recipeId")({
   component: RecipeDetailPage,
@@ -33,9 +35,26 @@ function RecipeDetailPage() {
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">{recipe.name}</h1>
-            <p className="text-sm text-muted-foreground">Kode: {recipe.code}</p>
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                {recipe.name}
+                {recipe.isBOGO && (
+                  <Badge variant="warning" className="gap-0.5">
+                    <Zap className="h-3.5 w-3.5" /> BOGO
+                  </Badge>
+                )}
+                {recipe.childRecipes?.length > 0 && (
+                  <Badge
+                    variant="outline"
+                    className="gap-0.5 border-blue-200 text-blue-600 bg-blue-50"
+                  >
+                    <Package className="h-3.5 w-3.5" /> Paket
+                  </Badge>
+                )}
+              </h1>
+              <p className="text-sm text-muted-foreground">Kode: {recipe.code}</p>
+            </div>
           </div>
           <button
             onClick={() => setIsEditing(!isEditing)}
@@ -109,16 +128,73 @@ function RecipeDetailPage() {
           )}
         </div>
 
+        {recipe.childRecipes?.length > 0 && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Komposisi Paket (Bundling)</h2>
+            <div className="rounded-md border overflow-x-auto">
+              <table className="w-full text-sm min-w-[480px]">
+                <thead className="border-b bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium">Menu</th>
+                    <th className="px-4 py-2 text-right font-medium">Qty</th>
+                    <th className="px-4 py-2 text-right font-medium">Harga</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recipe.childRecipes.map((cr, i) => (
+                    <tr key={i} className="border-b">
+                      <td className="px-4 py-2">{cr.childRecipeName ?? cr.childRecipeId}</td>
+                      <td className="px-4 py-2 text-right">{cr.quantity}</td>
+                      <td className="px-4 py-2 text-right text-muted-foreground">—</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {recipe.modifierGroups.length > 0 && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Modifier Groups</h2>
-            <div className="flex flex-wrap gap-2">
-              {recipe.modifierGroups.map((mg) => (
-                <Badge key={mg.modifierGroupId} variant="outline">
-                  {mg.modifierGroupName ?? mg.modifierGroupId}
-                </Badge>
-              ))}
-            </div>
+            <h2 className="text-lg font-semibold">Grup Modifier</h2>
+            {recipe.modifierGroups.map((mg: any) => (
+              <Card key={mg.modifierGroupId} className="p-0">
+                <div className="px-4 py-3 border-b">
+                  <h3 className="font-medium">
+                    {mg.modifierGroupName ?? mg.modifierGroupId}
+                    <Badge variant="outline" className="ml-2">
+                      min: {mg.minSelection}, max: {mg.maxSelection}
+                    </Badge>
+                  </h3>
+                </div>
+                <div className="divide-y">
+                  {mg.modifiers?.length > 0 ? (
+                    mg.modifiers.map((m: any) => (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between px-4 py-2 text-sm"
+                      >
+                        <span>
+                          {m.name}
+                          {m.isExclusion && (
+                            <Badge variant="destructive" className="ml-2 text-[10px]">
+                              Exclusion
+                            </Badge>
+                          )}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {m.price > 0 ? `+Rp ${m.price.toLocaleString("id-ID")}` : "—"}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-2 text-sm text-muted-foreground">
+                      Tidak ada modifier
+                    </div>
+                  )}
+                </div>
+              </Card>
+            ))}
           </div>
         )}
       </div>

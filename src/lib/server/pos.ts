@@ -989,6 +989,28 @@ export const requestReprint = createServerFn({ method: "POST" })
     return req;
   });
 
+export const getReprintRequestStatus = createServerFn({ method: "GET" })
+  .inputValidator((data: { orderId: string }) => data)
+  .handler(async ({ data }) => {
+    await requireAuth();
+
+    const [req] = await db
+      .select({
+        id: printRequests.id,
+        orderId: printRequests.orderId,
+        status: printRequests.status,
+        approvedBy: printRequests.approvedBy,
+        approvedAt: printRequests.approvedAt,
+        createdAt: printRequests.createdAt,
+      })
+      .from(printRequests)
+      .where(eq(printRequests.orderId, data.orderId))
+      .orderBy(desc(printRequests.createdAt))
+      .limit(1);
+
+    return req ?? null;
+  });
+
 export const getPendingPrintRequests = createServerFn({ method: "GET" })
   .inputValidator((data: { branchId?: string } | null | undefined) => data ?? {})
   .handler(async ({ data }) => {

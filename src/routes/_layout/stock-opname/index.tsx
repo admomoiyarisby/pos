@@ -109,7 +109,7 @@ function StockOpnamePage() {
       data: { branchId: selectedBranch, date: selectedDate },
     });
   };
-  usePageTitle("Stock Opname", "Verifikasi fisik stok per cabang");
+  usePageTitle("Opname Stok", "Verifikasi fisik stok per cabang");
 
   return (
     <RoleGuard

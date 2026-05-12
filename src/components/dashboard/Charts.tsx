@@ -11,9 +11,18 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  type TooltipProps,
 } from "recharts";
+import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
 
 const CHANNEL_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444"];
+
+type FormatterFn = NonNullable<TooltipProps<ValueType, NameType>["formatter"]>;
+
+const orderCountFormatter: FormatterFn = (_value, _name) =>
+  [_value, "Pesanan"] as unknown as ReturnType<FormatterFn>;
+const revenueFormatter: FormatterFn = (_value, _name) =>
+  [`Rp ${Number(_value).toLocaleString("id-ID")}`, "Revenue"] as unknown as ReturnType<FormatterFn>;
 
 interface Order {
   id: string;
@@ -193,7 +202,7 @@ export function ChannelPieChart({ data }: { data: { name: string; value: number 
                 <Cell key={`cell-${index}`} fill={CHANNEL_COLORS[index % CHANNEL_COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip formatter={((value: number) => [value, "Pesanan"]) as any} />
+            <Tooltip formatter={orderCountFormatter} />
           </PieChart>
         </ResponsiveContainer>
       </div>
@@ -237,11 +246,7 @@ export function SalesByBranchChart({
               tickFormatter={(value: number) => `Rp${value / 1000}k`}
               tick={{ fontSize: 10 }}
             />
-            <Tooltip
-              formatter={
-                ((value: number) => [`Rp ${value.toLocaleString("id-ID")}`, "Revenue"]) as any
-              }
-            />
+            <Tooltip formatter={revenueFormatter} />
             <Bar dataKey="revenue" fill="#059669" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
@@ -274,11 +279,7 @@ export function BrandPerformanceChart({
               tickFormatter={(value: number) => `Rp${value / 1000}k`}
               tick={{ fontSize: 10 }}
             />
-            <Tooltip
-              formatter={
-                ((value: number) => [`Rp ${value.toLocaleString("id-ID")}`, "Revenue"]) as any
-              }
-            />
+            <Tooltip formatter={revenueFormatter} />
             <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>

@@ -87,7 +87,7 @@ function SystemLogsPage() {
     },
   ];
 
-  usePageTitle("System Logs", "Log operasional sistem");
+  usePageTitle("Log Sistem", "Log operasional sistem");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>

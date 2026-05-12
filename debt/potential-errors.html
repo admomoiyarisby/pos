@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Potential Errors - Omoiyari POS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; line-height: 1.6; }
+  h1 { color: #f8fafc; font-size: 1.75rem; margin-bottom: 0.5rem; }
+  .subtitle { color: #94a3b8; margin-bottom: 2rem; font-size: 0.9rem; }
+  .summary { display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; }
+  .stat { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1rem 1.5rem; }
+  .stat-num { font-size: 1.5rem; font-weight: 700; }
+  .stat-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; }
+  .critical .stat-num { color: #f87171; }
+  .warning .stat-num { color: #fbbf24; }
+  .info .stat-num { color: #60a5fa; }
+  .section { margin-bottom: 2rem; }
+  .section-title { font-size: 1.1rem; font-weight: 600; color: #f1f5f9; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #334155; }
+  .issue { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 0.75rem; }
+  .issue-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+  .badge { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; letter-spacing: 0.05em; }
+  .badge-critical { background: #7f1d1d; color: #fca5a5; }
+  .badge-warning { background: #78350f; color: #fcd34d; }
+  .badge-info { background: #1e3a5f; color: #93c5fd; }
+  .badge-type { background: #334155; color: #cbd5e1; }
+  .issue-title { font-weight: 600; color: #f1f5f9; font-size: 0.95rem; }
+  .issue-file { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; color: #60a5fa; margin-bottom: 0.4rem; }
+  .issue-desc { color: #94a3b8; font-size: 0.85rem; }
+  .issue-code { background: #0f172a; border: 1px solid #334155; border-radius: 4px; padding: 0.5rem 0.75rem; margin-top: 0.5rem; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; color: #e2e8f0; overflow-x: auto; white-space: pre-wrap; }
+  .issue-fix { margin-top: 0.5rem; font-size: 0.85rem; }
+  .issue-fix strong { color: #4ade80; }
+</style>
+</head>
+<body>
+
+<h1>🔍 Potential Errors Report</h1>
+<p class="subtitle">Generated: 2026-05-11 — Omoiyari POS Codebase Audit</p>
+
+<div class="summary">
+  <div class="stat critical"><div class="stat-num">3</div><div class="stat-label">Critical</div></div>
+  <div class="stat warning"><div class="stat-num">7</div><div class="stat-label">Warnings</div></div>
+  <div class="stat info"><div class="stat-num">6</div><div class="stat-label">Info / Suggestions</div></div>
+</div>
+
+<!-- ==================== CRITICAL ==================== -->
+<div class="section">
+<div class="section-title">🔴 Critical Issues</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-critical">Critical</span>
+    <span class="badge badge-type">Runtime Error</span>
+    <span class="issue-title">Variable used before declaration in yield.ts</span>
+  </div>
+  <div class="issue-file">src/lib/server/yield.ts — createYieldConversion()</div>
+  <div class="issue-desc">The variable <code>targetNames</code> is used in the ledger IN note string on the line creating the stock ledger entry for the target ingredient, but <code>targetNames</code> is only declared as an empty const object at the very bottom of the file (line ~160), after it's already been referenced. This will cause a runtime error or the name will always be undefined.</div>
+  <div class="issue-code">// Used here (around line 130):
+notes: `Yield: produksi → ${targetNames[data.targetIngredientId] ?? data.targetIngredientId}...`
+
+// Declared here (at bottom of file, line ~160):
+const targetNames: Record&lt;string, string&gt; = {};</div>
+  <div class="issue-fix"><strong>Fix:</strong> Move the <code>targetNames</code> declaration and population (the loop that fetches target ingredient names) to before the ledger IN insertion, similar to how <code>getYieldConversions</code> does it.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-critical">Critical</span>
+    <span class="badge badge-type">Type Safety</span>
+    <span class="issue-title">Stock opnames passed as `any` in dashboard</span>
+  </div>
+  <div class="issue-file">src/routes/_layout/dashboard.tsx — line 163</div>
+  <div class="issue-desc">The <code>stockOpnames</code> data from the API is cast as <code>any</code> when passed to <code>computeDiscrepancies()</code>. The actual data shape from <code>getDashboardData</code> includes nested <code>items</code> with <code>variancePercentage</code> as a string (from DB), but the <code>computeDiscrepancies</code> function expects <code>variancePercentage</code> as <code>number | undefined</code>. This could cause incorrect filtering (e.g., <code>Math.abs("5") &gt; 3</code> works by coercion, but <code>Math.abs("0") &gt; 3</code> would fail silently).</div>
+  <div class="issue-code">const discrepancies = computeDiscrepancies(stockOpnames as any, ingredients, branches);</div>
+  <div class="issue-fix"><strong>Fix:</strong> Define a proper type for the dashboard data return value and remove the <code>as any</code> cast. Ensure <code>variancePercentage</code> is properly converted to number in the compute function.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-critical">Critical</span>
+    <span class="badge badge-type">Data Integrity</span>
+    <span class="issue-title">Duplicate markNotificationRead function</span>
+  </div>
+  <div class="issue-file">src/lib/server/approvals.ts & src/lib/server/system.ts</div>
+  <div class="issue-desc">Two server functions named <code>markNotificationRead</code> exist in different files (<code>approvals.ts</code> and <code>system.ts</code>). They have different implementations — the one in <code>system.ts</code> includes a <code>logSystemAction</code> call and doesn't filter by <code>userId</code>, while the one in <code>approvals.ts</code> filters by <code>userId</code>. The import in <code>NotificationBell.tsx</code> comes from <code>system/server</code>, but the one in <code>approvals.ts</code> is unused. This is a naming conflict that could cause confusion.</div>
+  <div class="issue-code">// approvals.ts:
+export const markNotificationRead = createServerFn({ method: "POST" })
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    await db.update(systemNotifications).set({ isRead: true })
+      .where(and(eq(systemNotifications.id, data.notificationId), eq(systemNotifications.userId, user.id)));
+    return { success: true };
+  });
+
+// system.ts:
+export const markNotificationRead = createServerFn({ method: "POST" })
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    await db.update(systemNotifications).set({ isRead: true })
+      .where(eq(systemNotifications.id, data.id));  // No userId filter!
+    await logSystemAction(user, "Mark Notification Read", ...);
+    return { success: true };
+  });</div>
+  <div class="issue-fix"><strong>Fix:</strong> Remove the duplicate from <code>approvals.ts</code>. The <code>system.ts</code> version should also add a <code>userId</code> filter to prevent users from marking other users' notifications as read.</div>
+</div>
+</div>
+
+<!-- ==================== WARNINGS ==================== -->
+<div class="section">
+<div class="section-title">🟡 Warnings</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-warning">Warning</span>
+    <span class="badge badge-type">UX Issue</span>
+    <span class="issue-title">Math.random() used for percentage display in StatsCards</span>
+  </div>
+  <div class="issue-file">src/components/dashboard/StatsCards.tsx — line 27</div>
+  <div class="issue-desc">The "Pesanan Selesai" card shows a random percentage increase <code>+{Math.round(Math.random() * 20)}%</code> on every render. This is not based on real data and will show a different number each time the component re-renders, which is misleading to users.</div>
+  <div class="issue-code">&lt;Badge variant="success"&gt;+{Math.round(Math.random() * 20)}%&lt;/Badge&gt;</div>
+  <div class="issue-fix"><strong>Fix:</strong> Calculate the actual percentage change compared to yesterday or last week, or remove the badge entirely.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-warning">Warning</span>
+    <span class="badge badge-type">Type Safety</span>
+    <span class="issue-title">Multiple `as any` casts in Charts.tsx</span>
+  </div>
+  <div class="issue-file">src/components/dashboard/Charts.tsx — lines 196, 242, 279</div>
+  <div class="issue-desc">Three <code>as any</code> casts are used on Tooltip formatter functions in recharts. This bypasses type checking and could lead to runtime errors if the recharts API changes.</div>
+  <div class="issue-code">&lt;Tooltip formatter={((value: number) =&gt; [value, "Pesanan"]) as any} /&gt;</div>
+  <div class="issue-fix"><strong>Fix:</strong> Define proper formatter functions with correct types, or use recharts' built-in formatter typing.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-warning">Warning</span>
+    <span class="badge badge-type">Type Safety</span>
+    <span class="issue-title">Seed data uses `as any` for brand proto IDs</span>
+  </div>
+  <div class="issue-file">src/lib/seed/seed.ts — line 390</div>
+  <div class="issue-desc">The seed script casts recipe data as <code>any</code> to access <code>brandProtoIds</code>. This is expected for seed scripts but could mask data shape issues.</div>
+  <div class="issue-code">for (const bpId of (r as any).brandProtoIds || []) {</div>
+  <div class="issue-fix"><strong>Fix:</strong> Define a proper interface for seed recipe data that includes <code>brandProtoIds</code>.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-warning">Warning</span>
+    <span class="badge badge-type">Security</span>
+    <span class="issue-title">markNotificationRead in system.ts doesn't filter by userId</span>
+  </div>
+  <div class="issue-file">src/lib/server/system.ts — markNotificationRead handler</div>
+  <div class="issue-desc">The <code>markNotificationRead</code> function in <code>system.ts</code> updates the notification without checking that it belongs to the authenticated user. Any authenticated user could mark any other user's notification as read by providing a valid notification ID.</div>
+  <div class="issue-code">await db.update(systemNotifications)
+  .set({ isRead: true })
+  .where(eq(systemNotifications.id, data.id));
+  // Missing: eq(systemNotifications.userId, user.id)</div>
+  <div class="issue-fix"><strong>Fix:</strong> Add <code>eq(systemNotifications.userId, user.id)</code> to the where clause.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-warning">Warning</span>
+    <span class="badge badge-type">Data Integrity</span>
+    <span class="issue-title">getUsers only fetches AM branches for first user</span>
+  </div>
+  <div class="issue-file">src/lib/server/users.ts — getUsers handler</div>
+  <div class="issue-desc">The comment says "Drizzle doesn't have in-array for multiple, simplify" but the code only fetches area manager branches for <code>userIds[0]</code> (the first user). This means if multiple area managers exist, only the first one's assigned branches will be returned correctly.</div>
+  <div class="issue-code">const amBranches = userIds.length &gt; 0
+  ? await db.select()...where(eq(areaManagerBranches.userId, userIds[0]))
+  : [];</div>
+  <div class="issue-fix"><strong>Fix:</strong> Use <code>inArray(areaManagerBranches.userId, userIds)</code> to fetch branches for all users at once.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-warning">Warning</span>
+    <span class="badge badge-type">Error Handling</span>
+    <span class="issue-title">Silent catch blocks in login page</span>
+  </div>
+  <div class="issue-file">src/routes/login.tsx — lines 57, 81</div>
+  <div class="issue-desc">Two catch blocks in the login page have no error parameter logging. If the error is not a standard Error object (e.g., network failure), the error message could be undefined or unhelpful.</div>
+  <div class="issue-code">} catch {
+  setError("Terjadi kesalahan saat login");
+}</div>
+  <div class="issue-fix"><strong>Fix:</strong> Log the error for debugging: <code>} catch (e) { console.error(e); setError(...) }</code></div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-warning">Warning</span>
+    <span class="badge badge-type">DOM Access</span>
+    <span class="issue-title">document.getElementById used in React component</span>
+  </div>
+  <div class="issue-file">src/routes/_layout/delivery-notes/index.tsx — lines 368-370</div>
+  <div class="issue-desc">The delivery notes page uses <code>document.getElementById</code> to access form values instead of React state. This is an anti-pattern in React and can cause issues with SSR/hydration, and won't trigger re-renders when values change.</div>
+  <div class="issue-code">const ing = (document.getElementById("dn-ing") as HTMLSelectElement).value;
+const qty = (document.getElementById("dn-qty") as HTMLInputElement).value;
+const ready = (document.getElementById("dn-ready") as HTMLInputElement).value;</div>
+  <div class="issue-fix"><strong>Fix:</strong> Use React <code>useState</code> hooks to manage form state instead of direct DOM access.</div>
+</div>
+</div>
+
+<!-- ==================== INFO / SUGGESTIONS ==================== -->
+<div class="section">
+<div class="section-title">🔵 Info / Suggestions</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-info">Info</span>
+    <span class="badge badge-type">Missing Feature</span>
+    <span class="issue-title">No pagination on server-side data tables</span>
+  </div>
+  <div class="issue-file">Various list pages (inventory, orders, recipes, etc.)</div>
+  <div class="issue-desc">Several list pages fetch all data at once without server-side pagination. The inventory page supports pagination parameters but many other pages (orders, recipes, users, etc.) fetch all records. This could cause performance issues as data grows.</div>
+  <div class="issue-fix"><strong>Suggestion:</strong> Add server-side pagination to all list endpoints and their corresponding UI tables.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-info">Info</span>
+    <span class="badge badge-type">Missing Feature</span>
+    <span class="issue-title">No loading states on many pages</span>
+  </div>
+  <div class="issue-file">Various route components</div>
+  <div class="issue-desc">Many route components don't have loading skeletons or spinners while data is being fetched. Users see empty content or partial renders during loading.</div>
+  <div class="issue-fix"><strong>Suggestion:</strong> Add consistent loading states using the existing <code>Skeleton</code> component.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-info">Info</span>
+    <span class="badge badge-type">Missing Feature</span>
+    <span class="issue-title">No error boundaries</span>
+  </div>
+  <div class="issue-file">Entire application</div>
+  <div class="issue-desc">The application has no error boundaries. If any component throws an error during rendering, the entire app will crash with a blank screen.</div>
+  <div class="issue-fix"><strong>Suggestion:</strong> Add React error boundaries at the route level and around major feature areas.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-info">Info</span>
+    <span class="badge badge-type">Missing Feature</span>
+    <span class="issue-title">No confirmation dialogs for destructive actions</span>
+  </div>
+  <div class="issue-file">Various pages (delete, void, cancel, etc.)</div>
+  <div class="issue-desc">Destructive actions like deleting supplier deliveries, voiding orders, and rejecting requests don't have confirmation dialogs. Users could accidentally perform irreversible actions.</div>
+  <div class="issue-fix"><strong>Suggestion:</strong> Add confirmation modals using the existing <code>Modal</code> component before all destructive actions.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-info">Info</span>
+    <span class="badge badge-type">Code Quality</span>
+    <span class="issue-title">Inconsistent naming: printRequests vs deliveryNotes</span>
+  </div>
+  <div class="issue-file">src/db/schema.ts & src/lib/server/pos.ts</div>
+  <div class="issue-desc">The <code>printRequests</code> table is used for reprint approval flow, but the naming could be confused with actual print operations. Also, <code>deliveryNotes</code> and <code>printRequests</code> have overlapping approval patterns that could be unified.</div>
+  <div class="issue-fix"><strong>Suggestion:</strong> Consider renaming to <code>reprintRequests</code> for clarity, or unify the approval flow pattern.</div>
+</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-info">Info</span>
+    <span class="badge badge-type">Missing Feature</span>
+    <span class="issue-title">No data export functionality</span>
+  </div>
+  <div class="issue-file">Dashboard and list pages</div>
+  <div class="issue-desc">There's no way to export data (CSV, PDF) from the dashboard or list pages. Business users typically need to export reports for accounting and analysis.</div>
+  <div class="issue-fix"><strong>Suggestion:</strong> Add export buttons to tables and charts for CSV/PDF export.</div>
+</div>
+</div>
+
+<!-- ==================== DARK MODE ISSUES ==================== -->
+<div class="section">
+<div class="section-title">🌙 Dark Mode Contrast Issues (Fixed Today)</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-info">Fixed</span>
+    <span class="badge badge-type">UX</span>
+    <span class="issue-title">Anomaly alert cards had poor contrast in dark mode</span>
+  </div>
+  <div class="issue-file">src/components/dashboard/StatsCards.tsx</div>
+  <div class="issue-desc">Alert cards used hardcoded light-mode colors (bg-rose-50, bg-amber-50) that were nearly invisible in dark mode. Fixed by using translucent colors (bg-rose-500/10, bg-amber-500/10).</div>
+</div>
+</div>
+
+<!-- ==================== PAGINATION ADDED ==================== -->
+<div class="section">
+<div class="section-title">📄 Pagination Added (Today)</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-info">Done</span>
+    <span class="badge badge-type">Feature</span>
+    <span class="issue-title">Client-side pagination added to dashboard tables</span>
+  </div>
+  <div class="issue-file">src/components/dashboard/*.tsx</div>
+  <div class="issue-desc">Added client-side pagination (15 items/page) to: OrderHistoryTable, CogsAnalysisTable, RopRoqTable, WasteLossTable, DiscrepancyTable. Created reusable Pagination component at <code>src/components/ui/Pagination.tsx</code>.</div>
+</div>
+</div>
+
+<!-- ==================== SCHEMA FIX ==================== -->
+<div class="section">
+<div class="section-title">🗄️ Schema Fix (Today)</div>
+
+<div class="issue">
+  <div class="issue-header">
+    <span class="badge badge-info">Fixed</span>
+    <span class="badge badge-type">Schema</span>
+    <span class="issue-title">brandId made nullable in order_items table</span>
+  </div>
+  <div class="issue-file">src/db/schema.ts</div>
+  <div class="issue-desc">The <code>brandId</code> column in <code>order_items</code> was <code>NOT NULL</code>, causing insert failures when recipes had no brand associations. Changed to nullable to allow recipes without brands to be ordered.</div>
+</div>
+</div>
+
+</body>
+</html>

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import { getSalesAnalytics, getHourlyAnalytics } from "#/lib/server/finance";
+import { getSalesAnalytics } from "#/lib/server/finance";
 import { formatRp } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
 import {
@@ -46,15 +46,6 @@ function AnalyticsPage() {
     enabled: !!dateFrom && !!dateTo,
   });
 
-  const { data: hourlyData } = useQuery({
-    queryKey: ["hourly-analytics", dateFrom, dateTo, selectedBranch],
-    queryFn: () =>
-      getHourlyAnalytics({
-        data: { dateFrom, dateTo, branchId: selectedBranch || undefined },
-      }),
-    enabled: !!dateFrom && !!dateTo,
-  });
-
   const channelData =
     analytics?.channelData.map((c) => ({
       name: c.channel,
@@ -68,7 +59,7 @@ function AnalyticsPage() {
       qty: t.totalQty,
       revenue: t.totalRevenue,
     })) ?? [];
-  usePageTitle("Dashboard Analytics", "Analisis penjualan & performa");
+  usePageTitle("Dashboard Analitik", "Analisis penjualan & performa");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
@@ -184,7 +175,7 @@ function AnalyticsPage() {
             </div>
 
             {/* Hourly Heatmap */}
-            {hourlyData && hourlyData.length > 0 && (
+            {/* {hourlyData && hourlyData.length > 0 && (
               <div className="rounded-lg border p-4">
                 <h3 className="text-sm font-semibold mb-4">Beban Kerja Dapur per Jam</h3>
                 <div className="h-64">
@@ -216,7 +207,7 @@ function AnalyticsPage() {
                   </ResponsiveContainer>
                 </div>
               </div>
-            )}
+            )} */}
           </>
         )}
       </div>

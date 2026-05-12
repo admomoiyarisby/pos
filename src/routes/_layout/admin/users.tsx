@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
@@ -10,6 +10,7 @@ import { getUsers, createUser, updateUser } from "#/lib/server/users";
 import { getBranches } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
+import { Eye, EyeOff } from "lucide-react";
 
 interface UserRow {
   id: string;
@@ -31,39 +32,6 @@ const roleLabels: Record<string, string> = {
   central_kitchen: "Central Kitchen",
 };
 
-const columns: Column<UserRow>[] = [
-  { key: "name", header: "Nama", sortable: true },
-  { key: "email", header: "Email", sortable: true },
-  {
-    key: "role",
-    header: "Role",
-    sortable: true,
-    render: (r) => <Badge variant="outline">{roleLabels[r.role] ?? r.role}</Badge>,
-  },
-  { key: "branchName", header: "Cabang", sortable: true, render: (r) => r.branchName ?? "-" },
-  {
-    key: "pin",
-    header: "PIN",
-    render: (r) =>
-      r.role === "branch_admin" && r.pin ? (
-        <code className="text-sm font-mono tracking-widest">{r.pin}</code>
-      ) : (
-        <span className="text-muted-foreground">-</span>
-      ),
-  },
-  {
-    key: "status",
-    header: "Status",
-    sortable: true,
-    render: (r) =>
-      r.status === "Active" ? (
-        <Badge variant="success">Aktif</Badge>
-      ) : (
-        <Badge variant="secondary">Nonaktif</Badge>
-      ),
-  },
-];
-
 export const Route = createFileRoute("/_layout/admin/users")({
   component: UsersPage,
   loader: async () => {
@@ -80,6 +48,68 @@ function UsersPage() {
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [selectedRole, setSelectedRole] = useState("branch_admin");
   const [mutationError, setMutationError] = useState("");
+  const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
+
+  const togglePin = useCallback((userId: string) => {
+    setVisiblePins((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }, []);
+
+  const columns: Column<UserRow>[] = [
+    { key: "name", header: "Nama", sortable: true },
+    { key: "email", header: "Email", sortable: true },
+    {
+      key: "role",
+      header: "Role",
+      sortable: true,
+      render: (r) => <Badge variant="outline">{roleLabels[r.role] ?? r.role}</Badge>,
+    },
+    { key: "branchName", header: "Cabang", sortable: true, render: (r) => r.branchName ?? "-" },
+    {
+      key: "pin",
+      header: "PIN",
+      render: (r) =>
+        r.role === "branch_admin" && r.pin ? (
+          <span className="inline-flex items-center gap-1.5">
+            <code className="text-sm font-mono tracking-widest">
+              {visiblePins.has(r.id) ? r.pin : "••••"}
+            </code>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePin(r.id);
+              }}
+              className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+              title={visiblePins.has(r.id) ? "Sembunyikan PIN" : "Tampilkan PIN"}
+            >
+              {visiblePins.has(r.id) ? (
+                <EyeOff className="h-3.5 w-3.5" />
+              ) : (
+                <Eye className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </span>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      render: (r) =>
+        r.status === "Active" ? (
+          <Badge variant="success">Aktif</Badge>
+        ) : (
+          <Badge variant="secondary">Nonaktif</Badge>
+        ),
+    },
+  ];
 
   const { data: users } = useQuery({
     queryKey: ["users"],
@@ -143,7 +173,7 @@ function UsersPage() {
       void createMutation.mutateAsync({ data });
     }
   };
-  usePageTitle("Manajemen User", "Kelola pengguna sistem dan PIN kasir");
+  usePageTitle("Manajemen Pengguna", "Kelola pengguna sistem dan PIN kasir");
 
   const handleCloseModal = () => {
     setModalOpen(false);
@@ -181,7 +211,7 @@ function UsersPage() {
       <Modal
         open={modalOpen}
         onClose={handleCloseModal}
-        title={editing ? "Edit User" : "Tambah User"}
+        title={editing ? "Edit Pengguna" : "Tambah Pengguna"}
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">

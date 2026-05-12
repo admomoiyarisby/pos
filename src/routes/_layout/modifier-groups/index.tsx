@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -8,6 +9,22 @@ import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getModifierGroups, createModifierGroup } from "#/lib/server/modifier-groups";
 import type { Column } from "#/components/ui/DataTable";
+import { Button } from "#/components/ui/button";
+import { Input } from "#/components/ui/input";
+import { Card } from "#/components/ui/card";
+import { Separator } from "#/components/ui/separator";
+import { Switch } from "#/components/ui/switch";
+import { Label } from "#/components/ui/label";
+import { Badge } from "#/components/ui/badge";
+import { ArrowRight, X, Plus } from "lucide-react";
+
+interface ModifierFormInput {
+  name: string;
+  price: number;
+  isExclusion: boolean;
+  ingredientId?: string;
+  ingredientQty?: number;
+}
 
 interface MGRow {
   id: string;
@@ -20,16 +37,35 @@ interface MGRow {
 
 const columns: Column<MGRow>[] = [
   { key: "code", header: "Kode", width: "w-24", sortable: true },
-  { key: "name", header: "Nama Group", sortable: true },
+  {
+    key: "name",
+    header: "Nama Grup",
+    sortable: true,
+    render: (r) => <span className="font-medium">{r.name}</span>,
+  },
   { key: "minSelection", header: "Min", width: "w-16", align: "center", sortable: true },
   { key: "maxSelection", header: "Max", width: "w-16", align: "center", sortable: true },
   {
     key: "modifiers",
-    header: "Jumlah Modifier",
-    width: "w-28",
+    header: "Jumlah Opsi",
+    width: "w-24",
     align: "center",
     sortable: true,
-    render: (r) => r.modifiers.length,
+    render: (r) => <Badge variant="secondary">{r.modifiers.length}</Badge>,
+  },
+  {
+    key: "id",
+    header: "",
+    width: "w-12",
+    render: (r) => (
+      <Link
+        to="/modifier-groups/$mgId"
+        params={{ mgId: r.id }}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      >
+        <ArrowRight className="h-4 w-4" />
+      </Link>
+    ),
   },
 ];
 
@@ -45,6 +81,9 @@ function ModifierGroupsPage() {
   const { groups: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
+  const [modifiersInput, setModifiersInput] = useState<ModifierFormInput[]>([
+    { name: "", price: 0, isExclusion: false },
+  ]);
 
   const { data: groups } = useQuery({
     queryKey: ["modifier-groups"],
@@ -57,6 +96,15 @@ function ModifierGroupsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["modifier-groups"] });
       setModalOpen(false);
+      setModifiersInput([
+        {
+          name: "",
+          price: 0,
+          isExclusion: false,
+          ingredientId: undefined,
+          ingredientQty: undefined,
+        },
+      ]);
     },
   });
 
@@ -68,17 +116,19 @@ function ModifierGroupsPage() {
       name: fd.get("name") as string,
       minSelection: Number(fd.get("minSelection")),
       maxSelection: Number(fd.get("maxSelection")),
-      modifiers: [
-        {
-          name: fd.get("modName") as string,
-          price: Number(fd.get("modPrice")),
-          isExclusion: false,
-        },
-      ],
+      modifiers: modifiersInput
+        .filter((m) => m.name.trim())
+        .map((m) => ({
+          name: m.name,
+          price: m.price,
+          isExclusion: m.isExclusion,
+          ingredientId: m.ingredientId || undefined,
+          ingredientQty: m.ingredientQty || undefined,
+        })),
     };
     void createMutation.mutateAsync({ data });
   };
-  usePageTitle("Modifier Groups", "Kelola grup modifier & add-ons menu");
+  usePageTitle("Grup Modifier", "Kelola grup modifier & add-ons menu");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
@@ -86,85 +136,147 @@ function ModifierGroupsPage() {
 
       <DataTable columns={columns} data={groups} keyExtractor={(r) => r.id} />
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Tambah Modifier Group">
+      <Modal
+        open={modalOpen}
+        onClose={() => {
+          setModalOpen(false);
+          setModifiersInput([
+            {
+              name: "",
+              price: 0,
+              isExclusion: false,
+              ingredientId: undefined,
+              ingredientQty: undefined,
+            },
+          ]);
+        }}
+        title="Tambah Grup Modifier"
+        size="lg"
+      >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Kode</label>
-              <input
-                name="code"
-                required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
+              <Label>Kode</Label>
+              <Input name="code" required />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Nama</label>
-              <input
-                name="name"
-                required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
+              <Label>Nama</Label>
+              <Input name="name" required />
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Min Pilihan</label>
-              <input
-                name="minSelection"
-                type="number"
-                min={0}
-                defaultValue={0}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
+              <Label>Min Pilihan</Label>
+              <Input name="minSelection" type="number" min={0} defaultValue={0} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Max Pilihan</label>
-              <input
-                name="maxSelection"
-                type="number"
-                min={1}
-                defaultValue={1}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
+              <Label>Max Pilihan</Label>
+              <Input name="maxSelection" type="number" min={1} defaultValue={1} />
             </div>
           </div>
-          <div className="rounded-md border p-3 space-y-2">
-            <p className="text-sm font-medium">Modifier Pertama</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs text-muted-foreground">Nama</label>
-                <input
-                  name="modName"
-                  required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs text-muted-foreground">Harga Tambahan</label>
-                <input
-                  name="modPrice"
-                  type="number"
-                  min={0}
-                  defaultValue={0}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                />
-              </div>
+
+          <Separator />
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <Label className="font-semibold">Opsi Modifier</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setModifiersInput([
+                    ...modifiersInput,
+                    {
+                      name: "",
+                      price: 0,
+                      isExclusion: false,
+                      ingredientId: undefined,
+                      ingredientQty: undefined,
+                    },
+                  ])
+                }
+              >
+                <Plus className="h-3 w-3 mr-1" /> Tambah Opsi
+              </Button>
             </div>
+            {modifiersInput.map((mod, i) => (
+              <Card key={i} className="p-3 mb-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-muted-foreground">Opsi #{i + 1}</span>
+                  {modifiersInput.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setModifiersInput(modifiersInput.filter((_, j) => j !== i))}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 space-y-1">
+                    <Label className="text-xs">Nama</Label>
+                    <Input
+                      value={mod.name}
+                      onChange={(e) => {
+                        const next = [...modifiersInput];
+                        next[i] = { ...next[i], name: e.target.value };
+                        setModifiersInput(next);
+                      }}
+                      required
+                    />
+                  </div>
+                  <div className="w-24 space-y-1">
+                    <Label className="text-xs">Harga</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={mod.price}
+                      onChange={(e) => {
+                        const next = [...modifiersInput];
+                        next[i] = { ...next[i], price: Number(e.target.value) };
+                        setModifiersInput(next);
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 pt-5">
+                    <Switch
+                      checked={mod.isExclusion}
+                      onCheckedChange={(checked) => {
+                        const next = [...modifiersInput];
+                        next[i] = { ...next[i], isExclusion: checked };
+                        setModifiersInput(next);
+                      }}
+                    />
+                    <Label className="text-xs">Exclusion</Label>
+                  </div>
+                </div>
+              </Card>
+            ))}
           </div>
+
           <div className="flex justify-end gap-2 pt-2">
-            <button
+            <Button
               type="button"
-              onClick={() => setModalOpen(false)}
-              className="h-9 px-4 rounded-md border text-sm"
+              variant="outline"
+              onClick={() => {
+                setModalOpen(false);
+                setModifiersInput([
+                  {
+                    name: "",
+                    price: 0,
+                    isExclusion: false,
+                    ingredientId: undefined,
+                    ingredientQty: undefined,
+                  },
+                ]);
+              }}
             >
               Batal
-            </button>
-            <button
-              type="submit"
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
-            >
-              Tambah
-            </button>
+            </Button>
+            <Button type="submit">Tambah</Button>
           </div>
         </form>
       </Modal>

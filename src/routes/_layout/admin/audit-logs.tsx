@@ -115,7 +115,7 @@ function AuditLogsPage() {
       ),
     },
   ];
-  usePageTitle("Audit Logs", "Database-level audit trail perubahan data");
+  usePageTitle("Log Audit", "Jejak audit perubahan data tingkat database");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
@@ -175,7 +175,7 @@ function AuditLogsPage() {
         <Modal
           open={!!selectedLog}
           onClose={() => setSelectedLog(null)}
-          title="Detail Audit Log"
+          title="Detail Log Audit"
           size="lg"
         >
           {selectedLog && (

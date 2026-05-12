@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { RefreshCw } from "lucide-react";
+import { Pagination } from "#/components/ui/Pagination";
 
 interface Order {
   id: string;
@@ -30,6 +32,8 @@ interface Ingredient {
   name: string;
   stockUnit: string;
 }
+
+const PAGE_SIZE = 15;
 
 export function computeRopData(
   orders: Order[],
@@ -79,7 +83,13 @@ export function computeRopData(
 }
 
 export function RopRoqTable({ data }: { data: ReturnType<typeof computeRopData> }) {
+  const [page, setPage] = useState(0);
+
   if (data.length === 0) return null;
+
+  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginated = data.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
@@ -116,7 +126,7 @@ export function RopRoqTable({ data }: { data: ReturnType<typeof computeRopData> 
             </tr>
           </thead>
           <tbody>
-            {data.map((item) => (
+            {paginated.map((item) => (
               <tr key={item.id} className="border-b last:border-0 hover:bg-muted/50">
                 <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-3">
                   <div className="text-sm font-bold text-foreground">{item.name}</div>
@@ -150,6 +160,7 @@ export function RopRoqTable({ data }: { data: ReturnType<typeof computeRopData> 
           </tbody>
         </table>
       </div>
+      <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
       <div className="mt-4 flex items-start rounded-xl bg-blue-50 p-3">
         <RefreshCw className="mr-3 mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600" />
         <p className="text-xs leading-relaxed text-blue-700">

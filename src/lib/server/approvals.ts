@@ -132,25 +132,3 @@ export const rejectPrintRequest = createServerFn({ method: "POST" })
 
     return req;
   });
-
-// ─── Get unread notifications ───
-
-// ─── Mark notification as read ───
-
-export const markNotificationRead = createServerFn({ method: "POST" })
-  .inputValidator((data: { notificationId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-
-    await db
-      .update(systemNotifications)
-      .set({ isRead: true })
-      .where(
-        and(
-          eq(systemNotifications.id, data.notificationId),
-          eq(systemNotifications.userId, user.id),
-        ),
-      );
-
-    return { success: true };
-  });

@@ -54,7 +54,8 @@ function LoginPage() {
       } else {
         void router.invalidate();
       }
-    } catch {
+    } catch (e) {
+      console.error("Email login error:", e);
       setError("Terjadi kesalahan saat login");
     } finally {
       setLoading(false);
@@ -78,7 +79,8 @@ function LoginPage() {
         // Cookie is set by the API response, invalidate router to re-run root loader
         void router.invalidate();
       }
-    } catch {
+    } catch (e) {
+      console.error("PIN login error:", e);
       setPinError("Terjadi kesalahan saat login");
       setPin("");
     } finally {

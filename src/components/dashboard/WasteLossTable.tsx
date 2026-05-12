@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { Pagination } from "#/components/ui/Pagination";
+
 interface WasteEntry {
   id: string;
   ingredientId: string;
@@ -11,6 +14,8 @@ interface Ingredient {
   conversionFactor: number;
 }
 
+const PAGE_SIZE = 15;
+
 export function computeWasteLoss(wasteEntries: WasteEntry[], ingredients: Ingredient[]) {
   return wasteEntries
     .map((w) => {
@@ -23,8 +28,7 @@ export function computeWasteLoss(wasteEntries: WasteEntry[], ingredients: Ingred
         lossAmount,
       };
     })
-    .sort((a, b) => b.lossAmount - a.lossAmount)
-    .slice(0, 10);
+    .sort((a, b) => b.lossAmount - a.lossAmount);
 }
 
 export function WasteLossTable({
@@ -32,6 +36,11 @@ export function WasteLossTable({
 }: {
   data: { ingredientName: string; quantity: number; lossAmount: number }[];
 }) {
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginated = data.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
       <div className="mb-2">
@@ -56,7 +65,7 @@ export function WasteLossTable({
             </tr>
           </thead>
           <tbody>
-            {data.length === 0 ? (
+            {paginated.length === 0 ? (
               <tr>
                 <td
                   colSpan={3}
@@ -66,7 +75,7 @@ export function WasteLossTable({
                 </td>
               </tr>
             ) : (
-              data.map((item, idx) => (
+              paginated.map((item, idx) => (
                 <tr key={idx} className="border-b last:border-0 hover:bg-muted/50">
                   <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-3 text-sm font-medium text-foreground">
                     {item.ingredientName}
@@ -83,6 +92,7 @@ export function WasteLossTable({
           </tbody>
         </table>
       </div>
+      <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }

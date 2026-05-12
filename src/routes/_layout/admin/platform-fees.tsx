@@ -82,7 +82,7 @@ function PlatformFeesPage() {
     };
     void updateMutation.mutateAsync({ data });
   };
-  usePageTitle("Platform Fees", "Atur MDR dan biaya tetap per channel");
+  usePageTitle("Biaya Platform", "Atur MDR dan biaya tetap per channel");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>

@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/db/index";
 import { modifierGroups, modifiers, modifierIngredients } from "#/db/schema";
-import { eq, ilike } from "drizzle-orm";
+import { eq, ilike, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -36,7 +36,7 @@ export const getModifierGroups = createServerFn({ method: "GET" })
     const groupIds = groups.map((g) => g.id);
     const allModifiers =
       groupIds.length > 0
-        ? await db.select().from(modifiers).where(eq(modifiers.modifierGroupId, groupIds[0]))
+        ? await db.select().from(modifiers).where(inArray(modifiers.modifierGroupId, groupIds))
         : [];
 
     return groups.map((g) => ({
@@ -63,7 +63,7 @@ export const getModifierGroup = createServerFn({ method: "GET" })
         ? await db
             .select()
             .from(modifierIngredients)
-            .where(eq(modifierIngredients.modifierId, modIds[0]))
+            .where(inArray(modifierIngredients.modifierId, modIds))
         : [];
 
     return {
@@ -192,6 +192,46 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
       "UPDATE",
       old as Record<string, unknown>,
       updated as Record<string, unknown>,
+    );
+
+    return { success: true };
+  });
+
+export const deleteModifierGroup = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [old] = await db
+      .select()
+      .from(modifierGroups)
+      .where(eq(modifierGroups.id, data.id))
+      .limit(1);
+    if (!old) throw new Error("Modifier group not found");
+
+    // Delete cascade: modifiers → modifierIngredients
+    const existingMods = await db
+      .select()
+      .from(modifiers)
+      .where(eq(modifiers.modifierGroupId, data.id));
+    for (const m of existingMods) {
+      await db.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, m.id));
+    }
+    await db.delete(modifiers).where(eq(modifiers.modifierGroupId, data.id));
+    await db.delete(modifierGroups).where(eq(modifierGroups.id, data.id));
+
+    await logSystemAction(
+      user,
+      "Delete Modifier Group",
+      `Modifier group "${old.name}" dihapus oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "modifierGroups",
+      data.id,
+      "DELETE",
+      old as Record<string, unknown>,
+      undefined,
     );
 
     return { success: true };

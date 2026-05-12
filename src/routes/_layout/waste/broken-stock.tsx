@@ -21,7 +21,7 @@ function BrokenStockPage() {
     queryFn: () => getBrokenStock({ data: {} }),
     initialData: initial,
   });
-  usePageTitle("Broken Stock", "Audit visual waste kategori Biaya Operasional");
+  usePageTitle("Barang Rusak", "Audit visual pemborosan kategori Biaya Operasional");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>

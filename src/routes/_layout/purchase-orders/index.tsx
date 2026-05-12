@@ -95,7 +95,7 @@ function POPage() {
     },
   ];
 
-  usePageTitle("Purchase Order", "Order ke supplier / pusat");
+  usePageTitle("Pemesanan Pembelian", "Order ke supplier / pusat");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>

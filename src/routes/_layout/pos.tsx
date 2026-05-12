@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -13,6 +13,8 @@ import {
   getOrders,
   voidOrder,
   requestReprint,
+  getReprintRequestStatus,
+  getOrderWithItems,
 } from "#/lib/server/pos";
 import { getBrands } from "#/lib/server/brands";
 import { getBranches } from "#/lib/server/branches";
@@ -30,6 +32,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  Zap,
+  Package,
 } from "lucide-react";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { Badge } from "#/components/ui/badge";
@@ -75,6 +79,8 @@ interface MenuItem {
   imageUrl: string | null;
   category: string;
   basePrice: number;
+  isBOGO: boolean;
+  isBundle: boolean;
   brands: { id: string; name: string | null }[];
   modifierGroups: ModifierGroup[];
   ingredientIds: { ingredientId: string; quantity: number }[];
@@ -186,8 +192,11 @@ function printReceipt(order: OrderResult, cartItems: CartItem[], branchName: str
     "<html><head>",
     "<title>Struk - " + idStr + "</title>",
     "<style>",
-    "@page { size: 80mm auto; margin: 0; }",
-    "body { font-family: 'Courier New', monospace; width: 80mm; margin: 0; padding: 5mm; font-size: 12px; }",
+    "@page { margin: 0; }",
+    "body { font-family: 'Courier New', monospace; max-width: 80mm; margin: 5mm auto; padding: 5mm; font-size: 12px; position: relative; }",
+    ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
+    ".wm-wrap img { max-width: 60mm; opacity: 0.06; }",
+    ".content { position: relative; z-index: 1; }",
     ".center { text-align: center; }",
     ".header { font-size: 16px; font-weight: bold; margin-bottom: 2mm; }",
     ".subheader { font-size: 11px; color: #444; margin-bottom: 4mm; }",
@@ -196,6 +205,8 @@ function printReceipt(order: OrderResult, cartItems: CartItem[], branchName: str
     ".total { font-size: 14px; font-weight: bold; margin-top: 2mm; }",
     ".footer { margin-top: 5mm; font-size: 10px; color: #444; text-align: center; }",
     "</style></head><body>",
+    '<div class="wm-wrap"><img src="/logo-for-light-mode.png" alt="" /></div>',
+    '<div class="content">',
     '<div class="center header">Omoiyari POS</div>',
     '<div class="center subheader">' + branchName + "</div>",
     '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
@@ -232,6 +243,7 @@ function printReceipt(order: OrderResult, cartItems: CartItem[], branchName: str
       "</span></div>",
     '<div class="divider"></div>',
     '<div class="footer">Terima kasih telah berbelanja</div>',
+    "</div>",
     "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",
     "</body></html>",
   );
@@ -293,8 +305,11 @@ function printBill(
     "<html><head>",
     "<title>Bill</title>",
     "<style>",
-    "@page { size: 80mm auto; margin: 0; }",
-    "body { font-family: 'Courier New', monospace; width: 80mm; margin: 0; padding: 5mm; font-size: 12px; }",
+    "@page { margin: 0; }",
+    "body { font-family: 'Courier New', monospace; max-width: 80mm; margin: 5mm auto; padding: 5mm; font-size: 12px; position: relative; }",
+    ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
+    ".wm-wrap img { max-width: 60mm; opacity: 0.06; }",
+    ".content { position: relative; z-index: 1; }",
     ".center { text-align: center; }",
     ".watermark { text-align: center; border: 2px dashed #999; padding: 2mm; margin: 3mm 0; color: #999; font-weight: bold; font-size: 14px; }",
     ".header { font-size: 16px; font-weight: bold; margin-bottom: 2mm; }",
@@ -303,6 +318,8 @@ function printBill(
     ".row { display: flex; justify-content: space-between; }",
     ".total { font-size: 14px; font-weight: bold; margin-top: 2mm; }",
     "</style></head><body>",
+    '<div class="wm-wrap"><img src="/logo-for-light-mode.png" alt="" /></div>',
+    '<div class="content">',
     '<div class="watermark">BELUM DIBAYAR / UNPAID</div>',
     '<div class="center header">' + branchName + "</div>",
     '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
@@ -332,6 +349,7 @@ function printBill(
       finalTotal.toLocaleString("id-ID") +
       "</span></div>",
     '<div class="watermark">BELUM DIBAYAR</div>',
+    "</div>",
     "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",
     "</body></html>",
   );
@@ -358,7 +376,7 @@ function getStockQuantity(
 }
 
 function PosPage() {
-  usePageTitle("POS", "Point of Sale");
+  usePageTitle("POS", "Titik Penjualan");
 
   let user = useAuth().user;
   let loaderData = Route.useLoaderData();
@@ -455,6 +473,85 @@ function PosPage() {
   let _v = useState<string | null>(null);
   let reprintRequestStatus = _v[0];
   let setReprintRequestStatus = _v[1];
+  let _w = useState<string | null>(null);
+  let reprintOrderId = _w[0];
+  let setReprintOrderId = _w[1];
+
+  let reprintStatusQuery = useQuery({
+    queryKey: ["reprint-status", reprintOrderId],
+    queryFn: async function () {
+      if (!reprintOrderId) return null;
+      return await getReprintRequestStatus({ data: { orderId: reprintOrderId } });
+    },
+    enabled:
+      !!reprintOrderId &&
+      (reprintRequestStatus === "pending" || reprintRequestStatus === "already_pending"),
+    refetchInterval: 5000,
+  });
+
+  let resolvedReprintStatus =
+    reprintStatusQuery.data?.status === "Approved"
+      ? "approved"
+      : reprintStatusQuery.data?.status === "Rejected"
+        ? "rejected"
+        : reprintRequestStatus;
+
+  // Auto-print when reprint is approved
+  useEffect(() => {
+    if (resolvedReprintStatus !== "approved" || !reprintOrderId) return;
+
+    let cancelled = false;
+    void (async () => {
+      const orderData = await getOrderWithItems({ data: { id: reprintOrderId } });
+      if (!orderData || cancelled) return;
+
+      const branch = allBranches.find((b: any) => b.id === orderData.branchId);
+      const branchName = branch?.name ?? "Cabang";
+
+      const cartItems: CartItem[] = orderData.items.map((item: any) => ({
+        recipeId: item.recipeId,
+        brandId: "",
+        name: item.recipeName ?? item.recipeId,
+        price: item.price,
+        quantity: item.quantity,
+        modifiers: (item.modifiers ?? []).map((mName: string) => ({
+          groupId: "",
+          modifierId: "",
+          name: mName,
+          price: 0,
+          isExclusion: false,
+        })),
+        notes: item.notes ?? "",
+      }));
+
+      const printOrder: OrderResult = {
+        id: orderData.id,
+        branchId: orderData.branchId,
+        channel: orderData.channel,
+        subtotal: orderData.subtotal,
+        taxAmount: orderData.taxAmount ?? 0,
+        totalAmount: orderData.totalAmount,
+        totalCogs: orderData.totalCogs ?? 0,
+        orderCode: orderData.orderCode,
+        customerName: orderData.customerName,
+        paymentMethod: orderData.paymentMethod,
+        voucherCode: orderData.voucherCode,
+        voucherDiscount: orderData.voucherDiscount,
+        status: orderData.status,
+        voidReason: orderData.voidReason,
+        notes: orderData.notes,
+        shiftId: orderData.shiftId,
+        createdAt: orderData.createdAt,
+        completedAt: orderData.completedAt,
+      };
+
+      printReceipt(printOrder, cartItems, branchName);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedReprintStatus, reprintOrderId]);
 
   let menuResult = useQuery({
     queryKey: ["pos-menu", selectedBrandId, selectedCategory, searchQuery],
@@ -753,6 +850,7 @@ function PosPage() {
 
   function handleReprint(orderId: string) {
     setReprintRequestStatus(null);
+    setReprintOrderId(orderId);
     void requestReprintMutation.mutateAsync({
       data: { orderId: orderId, requestType: "reprint" },
     });
@@ -992,6 +1090,21 @@ function PosPage() {
                       </div>
                     </div>
                     <p className="text-sm font-medium leading-tight line-clamp-2">{item.name}</p>
+                    <div className="flex gap-1 mt-0.5 flex-wrap">
+                      {item.isBOGO && (
+                        <Badge variant="warning" className="text-[9px] gap-0.5 px-1 py-0">
+                          <Zap className="h-2.5 w-2.5" /> BOGO
+                        </Badge>
+                      )}
+                      {item.isBundle && (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] gap-0.5 px-1 py-0 border-blue-200 text-blue-600 bg-blue-50"
+                        >
+                          <Package className="h-2.5 w-2.5" /> Paket
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-sm font-semibold text-primary mt-1">
                       Rp {item.basePrice.toLocaleString("id-ID")}
                     </p>
@@ -1256,15 +1369,33 @@ function PosPage() {
           {/* Reprint status */}
           {reprintRequestStatus && (
             <div className="shrink-0 border-t px-3 py-1.5 text-[10px] flex items-center gap-1.5">
-              <Clock className="h-3 w-3 text-amber-500 shrink-0" />
+              {resolvedReprintStatus === "approved" ? (
+                <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+              ) : resolvedReprintStatus === "rejected" ? (
+                <AlertCircle className="h-3 w-3 text-destructive shrink-0" />
+              ) : (
+                <Clock className="h-3 w-3 text-amber-500 shrink-0" />
+              )}
               <span
-                className={reprintRequestStatus === "error" ? "text-destructive" : "text-amber-600"}
+                className={
+                  resolvedReprintStatus === "error"
+                    ? "text-destructive"
+                    : resolvedReprintStatus === "approved"
+                      ? "text-emerald-600"
+                      : resolvedReprintStatus === "rejected"
+                        ? "text-destructive"
+                        : "text-amber-600"
+                }
               >
-                {reprintRequestStatus === "pending"
+                {resolvedReprintStatus === "pending"
                   ? "Menunggu persetujuan Area Manager..."
-                  : reprintRequestStatus === "already_pending"
+                  : resolvedReprintStatus === "already_pending"
                     ? "Permintaan cetak ulang sudah diajukan sebelumnya"
-                    : "Gagal mengajukan permintaan"}
+                    : resolvedReprintStatus === "approved"
+                      ? "Permintaan cetak ulang telah disetujui"
+                      : resolvedReprintStatus === "rejected"
+                        ? "Permintaan cetak ulang ditolak"
+                        : "Gagal mengajukan permintaan"}
               </span>
               <button
                 onClick={function () {

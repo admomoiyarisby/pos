@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/db/index";
 import { users as usersTable, areaManagerBranches, branches } from "#/db/schema";
-import { eq, ilike, and, ne } from "drizzle-orm";
+import { eq, ilike, and, ne, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -59,7 +59,7 @@ export const getUsers = createServerFn({ method: "GET" })
             })
             .from(areaManagerBranches)
             .leftJoin(branches, eq(areaManagerBranches.branchId, branches.id))
-            .where(eq(areaManagerBranches.userId, userIds[0])) // Drizzle doesn't have in-array for multiple, simplify
+            .where(inArray(areaManagerBranches.userId, userIds))
         : [];
 
     return result.map((u) => ({

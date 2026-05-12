@@ -9,7 +9,7 @@ function PODetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div>
-        <h1 className="text-2xl font-bold">Detail Purchase Order</h1>
+        <h1 className="text-2xl font-bold">Detail Pemesanan Pembelian</h1>
         <p className="text-muted-foreground">Halaman detail PO akan ditampilkan di sini.</p>
       </div>
     </RoleGuard>

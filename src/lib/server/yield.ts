@@ -85,6 +85,14 @@ export const createYieldConversion = createServerFn({ method: "POST" })
         : 0;
     const shrinkageQuantity = data.sourceQuantity - data.targetQuantity;
 
+    // Fetch target ingredient name
+    const [targetIng] = await db
+      .select({ name: ingredients.name })
+      .from(ingredients)
+      .where(eq(ingredients.id, data.targetIngredientId))
+      .limit(1);
+    const targetName = targetIng?.name ?? data.targetIngredientId;
+
     // Create yield conversion record
     const [conversion] = await db
       .insert(yieldConversions)
@@ -174,7 +182,7 @@ export const createYieldConversion = createServerFn({ method: "POST" })
       quantity: data.targetQuantity,
       balance: targetBalance,
       reference: conversion.id,
-      notes: `Yield: produksi → ${targetNames[data.targetIngredientId] ?? data.targetIngredientId}${data.notes ? " (" + data.notes + ")" : ""}`,
+      notes: `Yield: produksi → ${targetName}${data.notes ? " (" + data.notes + ")" : ""}`,
     });
 
     // BOM Cost Roll-Up: Recalculate all recipes using the target ingredient
@@ -202,5 +210,3 @@ export const createYieldConversion = createServerFn({ method: "POST" })
       shrinkageQuantity,
     };
   });
-
-const targetNames: Record<string, string> = {};

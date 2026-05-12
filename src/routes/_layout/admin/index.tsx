@@ -13,7 +13,7 @@ function AdminSettingsPage() {
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="max-w-lg">
         <div className="rounded-lg border p-4 space-y-3">
-          <h2 className="font-semibold">Smart Reordering</h2>
+          <h2 className="font-semibold">Pemesanan Ulang Otomatis</h2>
           <p className="text-sm text-muted-foreground">
             Rumus perhitungan rekomendasi order otomatis
           </p>

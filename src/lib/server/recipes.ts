@@ -9,8 +9,9 @@ import {
   ingredients,
   brands,
   modifierGroups,
+  modifiers,
 } from "#/db/schema";
-import { eq, ilike } from "drizzle-orm";
+import { eq, ilike, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateAllRecipeCosts as recalcAllCosts } from "./cost-rollup";
@@ -31,7 +32,7 @@ const recipeInput = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),
   imageUrl: z.string().optional(),
-  category: z.enum(["makanan", "minuman", "snack", "add_ons"]),
+  category: z.enum(["makanan", "minuman", "snack", "add_ons", "paket_bundle"]),
   isSubRecipe: z.boolean().default(false),
   basePrice: z.number().int().min(0),
   isBOGO: z.boolean().default(false),
@@ -76,8 +77,24 @@ export const getRecipes = createServerFn({ method: "GET" })
             })
             .from(recipeBrands)
             .leftJoin(brands, eq(recipeBrands.brandId, brands.id))
-            .where(eq(recipeBrands.recipeId, recipeIds[0]))
+            .where(inArray(recipeBrands.recipeId, recipeIds))
         : [];
+
+    // Get child recipe counts
+    const childCounts: Record<string, number> = {};
+    if (recipeIds.length > 0) {
+      const rows = await db
+        .select({
+          parentRecipeId: recipeChildRecipes.parentRecipeId,
+          count: sql<number>`count(*)`,
+        })
+        .from(recipeChildRecipes)
+        .where(inArray(recipeChildRecipes.parentRecipeId, recipeIds))
+        .groupBy(recipeChildRecipes.parentRecipeId);
+      for (const row of rows) {
+        childCounts[row.parentRecipeId] = Number(row.count);
+      }
+    }
 
     return result.map((r) => ({
       ...r,
@@ -87,6 +104,7 @@ export const getRecipes = createServerFn({ method: "GET" })
           id: b.brandId,
           name: b.brandName,
         })),
+      hasChildren: (childCounts[r.id] ?? 0) > 0,
     }));
   });
 
@@ -120,26 +138,45 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
       db
         .select({
           childRecipeId: recipeChildRecipes.childRecipeId,
+          childRecipeName: recipes.name,
           quantity: recipeChildRecipes.quantity,
         })
         .from(recipeChildRecipes)
+        .leftJoin(recipes, eq(recipeChildRecipes.childRecipeId, recipes.id))
         .where(eq(recipeChildRecipes.parentRecipeId, data.id)),
       db
         .select({
           modifierGroupId: recipeModifierGroups.modifierGroupId,
           modifierGroupName: modifierGroups.name,
+          minSelection: modifierGroups.minSelection,
+          maxSelection: modifierGroups.maxSelection,
         })
         .from(recipeModifierGroups)
         .leftJoin(modifierGroups, eq(recipeModifierGroups.modifierGroupId, modifierGroups.id))
         .where(eq(recipeModifierGroups.recipeId, data.id)),
     ]);
 
+    // Fetch full modifier data for each group
+    const modifierGroupIds = modifierLinks.map((m) => m.modifierGroupId);
+    const allModifiers =
+      modifierGroupIds.length > 0
+        ? await db
+            .select()
+            .from(modifiers)
+            .where(inArray(modifiers.modifierGroupId, modifierGroupIds))
+        : [];
+
+    const modGroupsWithModifiers = modifierLinks.map((mg) => ({
+      ...mg,
+      modifiers: allModifiers.filter((m) => m.modifierGroupId === mg.modifierGroupId),
+    }));
+
     return {
       ...recipe,
       brands: brandLinks,
       ingredients: ingredientLinks,
       childRecipes: childLinks,
-      modifierGroups: modifierLinks,
+      modifierGroups: modGroupsWithModifiers,
     };
   });
 

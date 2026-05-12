@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import type { UserRole } from "#/lib/auth-context";
 import {
@@ -25,6 +25,7 @@ import {
   Tag,
   Percent,
   ScrollText,
+  Printer,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -59,15 +60,21 @@ const navGroups: NavGroup[] = [
   },
   {
     label: "Operasional",
-    roles: ["super_admin", "branch_admin"],
+    roles: ["super_admin", "branch_admin", "area_manager"],
     items: [
       {
-        label: "Order Entry (POS)",
+        label: "Entry Pesanan (POS)",
         to: "/pos",
         icon: ShoppingCart,
         roles: ["super_admin", "branch_admin"],
       },
       { label: "Riwayat Pemesanan", to: "/order-history", icon: History, roles: ["super_admin"] },
+      {
+        label: "Cetak Ulang",
+        to: "/print-requests",
+        icon: Printer,
+        roles: ["super_admin", "area_manager"],
+      },
     ],
   },
   {
@@ -87,19 +94,19 @@ const navGroups: NavGroup[] = [
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
       },
       {
-        label: "Stock Opname",
+        label: "Opname Stok",
         to: "/stock-opname",
         icon: ClipboardList,
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
       },
       {
-        label: "Waste",
+        label: "Pemborosan",
         to: "/waste",
         icon: Trash2,
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
       },
       {
-        label: "Broken Stock",
+        label: "Barang Rusak",
         to: "/waste/broken-stock",
         icon: Trash2,
         roles: ["super_admin", "admin_pusat", "area_manager"],
@@ -107,11 +114,11 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Supply Chain",
+    label: "Rantai Pasok",
     roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
     items: [
       {
-        label: "Purchase Requisition",
+        label: "Permintaan Pembelian",
         to: "/purchase-requisitions",
         icon: FileText,
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
@@ -147,7 +154,7 @@ const navGroups: NavGroup[] = [
     roles: ["super_admin", "central_kitchen"],
     items: [
       {
-        label: "Yield Tracking",
+        label: "Tracking Produksi",
         to: "/yield-tracking",
         icon: RefreshCw,
         roles: ["super_admin", "central_kitchen"],
@@ -161,19 +168,19 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Master Data",
+    label: "Data Master",
     roles: ["super_admin", "admin_pusat"],
     items: [
       { label: "Menu / Resep", to: "/recipes", icon: Tag, roles: ["super_admin", "admin_pusat"] },
       {
-        label: "Modifier Groups",
+        label: "Grup Modifier",
         to: "/modifier-groups",
         icon: Tag,
         roles: ["super_admin", "admin_pusat"],
       },
-      { label: "Users", to: "/admin/users", icon: Users, roles: ["super_admin"] },
+      { label: "Pengguna", to: "/admin/users", icon: Users, roles: ["super_admin"] },
       { label: "Cabang", to: "/admin/branches", icon: Store, roles: ["super_admin"] },
-      { label: "Brand", to: "/admin/brands", icon: Tag, roles: ["super_admin", "admin_pusat"] },
+      { label: "Merek", to: "/admin/brands", icon: Tag, roles: ["super_admin", "admin_pusat"] },
       { label: "Voucher", to: "/admin/vouchers", icon: Percent, roles: ["super_admin"] },
     ],
   },
@@ -181,17 +188,22 @@ const navGroups: NavGroup[] = [
     label: "Keuangan & Analitik",
     roles: ["super_admin"],
     items: [
-      { label: "Finance & Recon", to: "/finance", icon: DollarSign, roles: ["super_admin"] },
-      { label: "Dashboard Analytics", to: "/analytics", icon: BarChart3, roles: ["super_admin"] },
+      {
+        label: "Keuangan & Rekonsiliasi",
+        to: "/finance",
+        icon: DollarSign,
+        roles: ["super_admin"],
+      },
+      { label: "Dashboard Analitik", to: "/analytics", icon: BarChart3, roles: ["super_admin"] },
     ],
   },
   {
     label: "Sistem",
     roles: ["super_admin"],
     items: [
-      { label: "Period Control", to: "/period-control", icon: Calendar, roles: ["super_admin"] },
-      // { label: "Audit Logs", to: "/admin/audit-logs", icon: ShieldCheck, roles: ["super_admin"] },
-      { label: "System Logs", to: "/admin/system-logs", icon: ScrollText, roles: ["super_admin"] },
+      { label: "Kontrol Periode", to: "/period-control", icon: Calendar, roles: ["super_admin"] },
+      // { label: "Log Audit", to: "/admin/audit-logs", icon: ShieldCheck, roles: ["super_admin"] },
+      { label: "Log Sistem", to: "/admin/system-logs", icon: ScrollText, roles: ["super_admin"] },
       { label: "Pengaturan", to: "/admin", icon: Settings, roles: ["super_admin", "admin_pusat"] },
     ],
   },
@@ -246,6 +258,20 @@ function SidebarGroup({ group, userRole }: { group: NavGroup; userRole: UserRole
 }
 
 export default function Sidebar({ userRole, mobileOpen, onClose }: SidebarProps) {
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const updateTheme = () => {
+      setDark(document.documentElement.classList.contains("dark"));
+    };
+    updateTheme();
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  const logoSrc = dark ? "/logo-for-dark-mode.png" : "/logo-for-light-mode.png";
+
   return (
     <>
       {/* Mobile backdrop */}
@@ -264,7 +290,7 @@ export default function Sidebar({ userRole, mobileOpen, onClose }: SidebarProps)
             className="flex items-center gap-2 font-semibold text-sidebar-foreground"
             onClick={onClose}
           >
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <img src={logoSrc} alt="Omoiyari POS" className="h-8 w-auto" />
             Omoiyari POS
           </Link>
           <button
@@ -299,7 +325,7 @@ export default function Sidebar({ userRole, mobileOpen, onClose }: SidebarProps)
       <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-64 flex-col border-r border-sidebar-border bg-sidebar">
         <div className="flex h-14 items-center border-b border-sidebar-border px-4">
           <Link to="/" className="flex items-center gap-2 font-semibold text-sidebar-foreground">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <img src={logoSrc} alt="Omoiyari POS" className="h-8 w-auto" />
             Omoiyari POS
           </Link>
         </div>

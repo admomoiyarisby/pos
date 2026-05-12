@@ -40,6 +40,7 @@ export const recipeCategoryEnum = pgEnum("recipe_category", [
   "minuman",
   "snack",
   "add_ons",
+  "paket_bundle",
 ]);
 
 export const orderChannelEnum = pgEnum("order_channel", [
@@ -446,9 +447,7 @@ export const orderItems = pgTable(
     recipeId: uuid("recipe_id")
       .notNull()
       .references(() => recipes.id),
-    brandId: uuid("brand_id")
-      .notNull()
-      .references(() => brands.id),
+    brandId: uuid("brand_id").references(() => brands.id),
     quantity: integer("quantity").notNull(),
     price: integer("price").notNull(),
     cogsAtTransaction: integer("cogs_at_transaction").notNull().default(0),

@@ -29,7 +29,7 @@ export const Route = createFileRoute("/_layout/dashboard")({
 
 function DashboardPage() {
   const { user } = useAuth();
-  usePageTitle("Dashboard", "Analytics & overview");
+  usePageTitle("Dashboard", "Analitik & ikhtisar");
 
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard-data"],
@@ -160,7 +160,7 @@ function DashboardPage() {
   const hppAlerts = computeHppAlerts(recipes, ingredients);
 
   // ─── Discrepancies ───
-  const discrepancies = computeDiscrepancies(stockOpnames as any, ingredients, branches);
+  const discrepancies = computeDiscrepancies(stockOpnames, ingredients, branches);
 
   // ─── Waste Loss ───
   const wasteLoss = computeWasteLoss(wasteEntries, ingredients);

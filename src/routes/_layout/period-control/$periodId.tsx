@@ -52,14 +52,14 @@ function PeriodDetailPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="rounded-lg border p-4">
             <h3 className="text-sm font-semibold mb-3">
-              Opening Balance ({openingBalances.length} item)
+              Saldo Awal ({openingBalances.length} item)
             </h3>
             <div className="rounded-md border overflow-auto max-h-64">
               <table className="w-full text-sm min-w-[480px]">
                 <thead className="border-b bg-muted/50 sticky top-0">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium">Branch</th>
-                    <th className="px-3 py-2 text-right font-medium">Qty</th>
+                    <th className="px-3 py-2 text-left font-medium">Cabang</th>
+                    <th className="px-3 py-2 text-right font-medium">Jml</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -76,15 +76,15 @@ function PeriodDetailPage() {
 
           <div className="rounded-lg border p-4">
             <h3 className="text-sm font-semibold mb-3">
-              Closing Balance ({closingBalances.length} item)
+              Saldo Akhir ({closingBalances.length} item)
             </h3>
             {closingBalances.length > 0 ? (
               <div className="rounded-md border overflow-auto max-h-64">
                 <table className="w-full text-sm min-w-[480px]">
                   <thead className="border-b bg-muted/50 sticky top-0">
                     <tr>
-                      <th className="px-3 py-2 text-left font-medium">Branch</th>
-                      <th className="px-3 py-2 text-right font-medium">Qty</th>
+                      <th className="px-3 py-2 text-left font-medium">Cabang</th>
+                      <th className="px-3 py-2 text-right font-medium">Jml</th>
                     </tr>
                   </thead>
                   <tbody>

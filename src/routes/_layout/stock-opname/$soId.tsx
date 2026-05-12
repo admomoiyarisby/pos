@@ -119,7 +119,7 @@ function StockOpnameDetailPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Stock Opname</h1>
+            <h1 className="text-2xl font-bold">Opname Stok</h1>
             <p className="text-sm text-muted-foreground">
               Tanggal: {detail.date} · Cabang: {detail.branchId.slice(0, 8)}
             </p>
@@ -208,7 +208,7 @@ function StockOpnameDetailPage() {
               disabled={submitMutation.isPending}
               className="h-10 px-6 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
             >
-              {submitMutation.isPending ? "Menyimpan..." : "Submit SO"}
+              {submitMutation.isPending ? "Menyimpan..." : "Kirim Opname"}
             </button>
           )}
 
@@ -217,17 +217,13 @@ function StockOpnameDetailPage() {
               onClick={() => setApproveModal(true)}
               className="h-10 px-6 rounded-md bg-primary text-primary-foreground text-sm font-medium"
             >
-              Approve & Adjust
+              Setujui & Sesuaikan
             </button>
           )}
         </div>
       </div>
 
-      <Modal
-        open={approveModal}
-        onClose={() => setApproveModal(false)}
-        title="Approve Stock Opname"
-      >
+      <Modal open={approveModal} onClose={() => setApproveModal(false)} title="Setujui Opname Stok">
         <div className="space-y-4">
           <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
             <p className="font-medium">Perhatian</p>

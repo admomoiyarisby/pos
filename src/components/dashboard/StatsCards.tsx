@@ -24,7 +24,7 @@ export function StatsCards({ totalSales, completedCount, voidCount, anomalies }:
         <div className="rounded-lg border bg-card p-4 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <ShoppingCart className="h-6 w-6 text-blue-600" />
-            <Badge variant="success">+{Math.round(Math.random() * 20)}%</Badge>
+            {completedCount > 0 && <Badge variant="success">{completedCount} Pesanan</Badge>}
           </div>
           <p className="text-sm font-medium text-muted-foreground">Pesanan Selesai</p>
           <h3 className="text-2xl font-bold text-foreground">{completedCount}</h3>
@@ -52,15 +52,15 @@ export function StatsCards({ totalSales, completedCount, voidCount, anomalies }:
                 key={i}
                 className={`flex items-start rounded-xl border p-4 ${
                   a.severity === "error"
-                    ? "border-rose-100 bg-rose-50"
-                    : "border-amber-100 bg-amber-50"
+                    ? "border-rose-500/30 bg-rose-500/10"
+                    : "border-amber-500/30 bg-amber-500/10"
                 }`}
               >
                 <div
                   className={`mr-4 rounded-lg p-2 ${
                     a.severity === "error"
-                      ? "bg-rose-100 text-rose-600"
-                      : "bg-amber-100 text-amber-600"
+                      ? "bg-rose-500/20 text-rose-500"
+                      : "bg-amber-500/20 text-amber-500"
                   }`}
                 >
                   <AlertTriangle className="h-5 w-5" />

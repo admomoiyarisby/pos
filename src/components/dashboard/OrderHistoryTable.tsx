@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Badge } from "#/components/ui/badge";
+import { Pagination } from "#/components/ui/Pagination";
 
 interface Order {
   id: string;
@@ -21,6 +23,8 @@ interface Branch {
   name: string;
 }
 
+const PAGE_SIZE = 15;
+
 export function OrderHistoryTable({
   orders,
   recipes,
@@ -32,9 +36,13 @@ export function OrderHistoryTable({
   branches: Branch[];
   showBranch: boolean;
 }) {
+  const [page, setPage] = useState(0);
   const sorted = [...orders].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginated = sorted.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   const channelColors: Record<string, string> = {
     Gofood: "bg-rose-100 text-rose-600",
@@ -81,75 +89,89 @@ export function OrderHistoryTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((order) => {
-              const branch = branches.find((b) => b.id === order.branchId);
-              const badgeVariant =
-                order.status === "Completed"
-                  ? "success"
-                  : order.status === "Void"
-                    ? "destructive"
-                    : order.status === "Cancel Requested"
-                      ? "warning"
-                      : "default";
+            {paginated.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap py-8 text-center italic text-muted-foreground"
+                >
+                  Tidak ada data.
+                </td>
+              </tr>
+            ) : (
+              paginated.map((order) => {
+                const branch = branches.find((b) => b.id === order.branchId);
+                const badgeVariant =
+                  order.status === "Completed"
+                    ? "success"
+                    : order.status === "Void"
+                      ? "destructive"
+                      : order.status === "Cancel Requested"
+                        ? "warning"
+                        : "default";
 
-              return (
-                <tr key={order.id} className="border-b hover:bg-muted/50">
-                  <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-4 font-mono text-xs text-muted-foreground">
-                    <div>{order.id.slice(0, 8)}...</div>
-                    {order.orderCode && (
-                      <div className="mt-1 font-bold text-emerald-600">Code: {order.orderCode}</div>
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-4 text-sm text-muted-foreground">
-                    {new Date(order.createdAt).toLocaleDateString("id-ID", {
-                      day: "2-digit",
-                      month: "short",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </td>
-                  {showBranch && (
-                    <td className="whitespace-nowrap px-4 py-4 font-bold text-foreground">
-                      {branch?.name ?? "Unknown"}
+                return (
+                  <tr key={order.id} className="border-b hover:bg-muted/50">
+                    <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-4 font-mono text-xs text-muted-foreground">
+                      <div>{order.id.slice(0, 8)}...</div>
+                      {order.orderCode && (
+                        <div className="mt-1 font-bold text-emerald-600">
+                          Code: {order.orderCode}
+                        </div>
+                      )}
                     </td>
-                  )}
-                  <td className="whitespace-nowrap px-4 py-4">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                        channelColors[order.channel] ?? "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {order.channel}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-4">
-                    <div className="text-xs text-muted-foreground">
-                      {order.items.map((item, idx) => {
-                        const recipe = recipes.find((r) => r.id === item.recipeId);
-                        return (
-                          <div key={idx}>
-                            {item.quantity}x {recipe?.name ?? "Unknown"}
-                          </div>
-                        );
+                    <td className="whitespace-nowrap px-4 py-4 text-sm text-muted-foreground">
+                      {new Date(order.createdAt).toLocaleDateString("id-ID", {
+                        day: "2-digit",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
                       })}
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-foreground">
-                    Rp {order.totalAmount.toLocaleString("id-ID")}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-4 text-center">
-                    <Badge
-                      variant={badgeVariant as "success" | "destructive" | "warning" | "default"}
-                    >
-                      {order.status}
-                    </Badge>
-                  </td>
-                </tr>
-              );
-            })}
+                    </td>
+                    {showBranch && (
+                      <td className="whitespace-nowrap px-4 py-4 font-bold text-foreground">
+                        {branch?.name ?? "Unknown"}
+                      </td>
+                    )}
+                    <td className="whitespace-nowrap px-4 py-4">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                          channelColors[order.channel] ?? "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {order.channel}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4">
+                      <div className="text-xs text-muted-foreground">
+                        {order.items.map((item, idx) => {
+                          const recipe = recipes.find((r) => r.id === item.recipeId);
+                          return (
+                            <div key={idx}>
+                              {item.quantity}x {recipe?.name ?? "Unknown"}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-bold text-foreground">
+                      Rp {order.totalAmount.toLocaleString("id-ID")}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 text-center">
+                      <Badge
+                        variant={badgeVariant as "success" | "destructive" | "warning" | "default"}
+                      >
+                        {order.status}
+                      </Badge>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
+      <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }

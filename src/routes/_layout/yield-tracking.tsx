@@ -158,7 +158,7 @@ function YieldTrackingPage() {
       ),
     },
   ];
-  usePageTitle("Yield Tracking", "Tracking produksi & yield bahan mentah ke matang");
+  usePageTitle("Tracking Produksi", "Tracking produksi & yield bahan mentah ke matang");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "central_kitchen"]}>

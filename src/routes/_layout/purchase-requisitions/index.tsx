@@ -224,7 +224,7 @@ function PRPage() {
       },
     },
   ];
-  usePageTitle("Purchase Requisition", "Permintaan order barang dari cabang ke pusat");
+  usePageTitle("Permintaan Pembelian", "Permintaan order barang dari cabang ke pusat");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>

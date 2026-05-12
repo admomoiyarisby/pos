@@ -1,10 +1,17 @@
+import { useState } from "react";
 import { Badge } from "#/components/ui/badge";
+import { Pagination } from "#/components/ui/Pagination";
+
+interface StockOpnameItem {
+  ingredientId: string;
+  variancePercentage?: number | string | null;
+}
 
 interface StockOpname {
   id: string;
   branchId: string;
   date: string;
-  items: { ingredientId: string; variancePercentage?: number }[];
+  items: StockOpnameItem[];
 }
 
 interface Ingredient {
@@ -16,6 +23,8 @@ interface Branch {
   id: string;
   name: string;
 }
+
+const PAGE_SIZE = 15;
 
 export function computeDiscrepancies(
   stockOpnames: StockOpname[],
@@ -31,7 +40,7 @@ export function computeDiscrepancies(
 
   stockOpnames.forEach((so) => {
     so.items.forEach((item) => {
-      const vp = item.variancePercentage ?? 0;
+      const vp = Number(item.variancePercentage) || 0;
       if (Math.abs(vp) > 3) {
         allItems.push({
           ingredientName:
@@ -44,9 +53,7 @@ export function computeDiscrepancies(
     });
   });
 
-  return allItems
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 10);
+  return allItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 export function DiscrepancyTable({
@@ -54,6 +61,11 @@ export function DiscrepancyTable({
 }: {
   data: { ingredientName: string; branchName: string; variancePercentage: number }[];
 }) {
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginated = data.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
       <div className="mb-2">
@@ -78,7 +90,7 @@ export function DiscrepancyTable({
             </tr>
           </thead>
           <tbody>
-            {data.length === 0 ? (
+            {paginated.length === 0 ? (
               <tr>
                 <td
                   colSpan={3}
@@ -88,7 +100,7 @@ export function DiscrepancyTable({
                 </td>
               </tr>
             ) : (
-              data.map((item, idx) => (
+              paginated.map((item, idx) => (
                 <tr key={idx} className="border-b last:border-0 hover:bg-muted/50">
                   <td className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap px-4 py-3 text-sm font-medium text-foreground">
                     {item.ingredientName}
@@ -107,6 +119,7 @@ export function DiscrepancyTable({
           </tbody>
         </table>
       </div>
+      <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }

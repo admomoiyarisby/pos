@@ -105,7 +105,7 @@ function WastePage() {
     };
     void createMutation.mutateAsync({ data });
   };
-  usePageTitle("Waste", "Pencatatan barang rusak, jatah makan, dan spoiled");
+  usePageTitle("Pemborosan", "Pencatatan sisa produksi, jatah makan, dan barang rusak");
 
   return (
     <RoleGuard

@@ -72,13 +72,13 @@ function BrandsPage() {
       void createMutation.mutateAsync({ data });
     }
   };
-  usePageTitle("Manajemen Brand", "Kelola brand / merek menu");
+  usePageTitle("Manajemen Merek", "Kelola merek menu");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <PageHeader
         action={{
-          label: "Tambah Brand",
+          label: "Tambah Merek",
           onClick: () => {
             setEditing(null);
             setModalOpen(true);
@@ -99,7 +99,7 @@ function BrandsPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? "Edit Brand" : "Tambah Brand"}
+        title={editing ? "Edit Merek" : "Tambah Merek"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">

@@ -122,7 +122,7 @@ export const markNotificationRead = createServerFn({ method: "POST" })
     await db
       .update(systemNotifications)
       .set({ isRead: true })
-      .where(eq(systemNotifications.id, data.id));
+      .where(and(eq(systemNotifications.id, data.id), eq(systemNotifications.userId, user.id)));
 
     await logSystemAction(user, "Mark Notification Read", `Notifikasi dibaca oleh ${user.name}`);
 
