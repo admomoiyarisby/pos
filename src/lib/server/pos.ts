@@ -258,7 +258,7 @@ export const closeShift = createServerFn({ method: "POST" })
 
 const orderItemInput = z.object({
   recipeId: z.string().uuid(),
-  brandId: z.string().uuid(),
+  brandId: z.string().uuid().optional(),
   quantity: z.number().int().min(1),
   price: z.number().int().min(0),
   selectedModifiers: z
@@ -516,10 +516,11 @@ export const createOrder = createServerFn({ method: "POST" })
         .values({
           orderId: order.id,
           recipeId: item.recipeId,
-          brandId: item.brandId,
+          brandId: item.brandId || undefined,
           quantity: item.quantity,
           price: item.price,
-          cogsAtTransaction: item.quantity > 0 ? Math.round(itemCogs / item.quantity) : 0,
+          cogsAtTransaction:
+            item.quantity > 0 ? Math.max(0, Math.round(itemCogs / item.quantity)) : 0,
           notes: item.notes,
         })
         .returning();

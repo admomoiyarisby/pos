@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -11,7 +11,6 @@ import { getStockOpnames, triggerStockOpname } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
-import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 
 interface SORow {
@@ -83,6 +82,7 @@ function StockOpnamePage() {
   const { user } = useAuth();
   const { opnames: initial, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
+  const navigate = useNavigate({ from: Route.fullPath });
   const [triggerModal, setTriggerModal] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState("");
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -97,9 +97,9 @@ function StockOpnamePage() {
 
   const triggerMutation = useMutation({
     mutationFn: triggerStockOpname,
-    onSuccess: () => {
+    onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
-      setTriggerModal(false);
+      void navigate({ to: "/stock-opname/$soId", params: { soId: result.id } });
     },
   });
 

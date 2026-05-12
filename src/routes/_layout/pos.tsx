@@ -48,7 +48,7 @@ interface CartModifier {
 
 interface CartItem {
   recipeId: string;
-  brandId: string;
+  brandId?: string;
   name: string;
   price: number;
   quantity: number;
@@ -510,7 +510,7 @@ function PosPage() {
 
       const cartItems: CartItem[] = orderData.items.map((item: any) => ({
         recipeId: item.recipeId,
-        brandId: "",
+        brandId: undefined,
         name: item.recipeName ?? item.recipeId,
         price: item.price,
         quantity: item.quantity,
@@ -755,7 +755,7 @@ function PosPage() {
         cart.concat([
           {
             recipeId: item.id,
-            brandId: item.brands[0]?.id ?? "",
+            brandId: item.brands[0]?.id ?? undefined,
             name: item.name,
             price: item.basePrice + modPrice,
             quantity: 1,
@@ -830,6 +830,7 @@ function PosPage() {
         },
       });
     } catch (err) {
+      console.error("Checkout error:", err);
       setCheckoutError(err instanceof Error ? err.message : "Transaksi gagal");
     }
   }

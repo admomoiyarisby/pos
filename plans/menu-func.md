@@ -87,37 +87,120 @@ Add to the create modal:
 
 ---
 
-### Task 3: Add Bundling (Child Recipes) Section to Recipe Edit/Create
+### Task 3: Recipe Edit/Create Modal — Unified Checkbox Layout
 
-**File**: `src/routes/_layout/recipes/index.tsx` (in the create Modal)
+**File**: `src/routes/_layout/recipes/index.tsx` (in the create/edit Modal)
 
-**Add these to the form, placed alongside the ingredients BOM section:**
+Replace the previous Task 3 (separate Bundling + BOGO sections) and Task M4 (Grup Modifier) with a **single unified section** containing **three groups of checkboxes** — each checkbox has an optional addon that expands when checked:
 
-1. **"Bundling (Menu Paket)" section** — `Card` container with:
-   - Header: Package icon + "Bundling (Menu Paket)" label
-   - "Tambah" button: `Button` with `size="sm"` + `Plus` icon
-   - Dynamic list of child recipe pickers: each row is `flex items-center gap-2`:
-     - `<Select>` (shadcn) dropdown: "Pilih Menu" — populated with non-sub-recipe recipes, excluding current editing recipe
-     - `<Input type="number">` for quantity (w-20)
-     - `Button` with `X` icon, `variant="ghost"` + `size="sm"`
-   - Empty state: `<p className="text-sm text-muted-foreground">Bukan paket bundling.</p>`
-   - Divider: `<Separator />` above this section
+#### Section Header: "Opsi Tambahan"
 
-2. **"Promo BOGO" section** — below bundling, in a `Card`:
-   - Header: Zap icon + "Promo BOGO" label
-   - Description text: "Aktifkan jika menu ini adalah promo beli 1 gratis 1."
-   - `Switch` component from `components/ui/switch.tsx` with `Label`
+Render three groups vertically, each separated by `<Separator />`:
 
-3. Update `handleSubmit` to include `isBOGO` and `childRecipes` in the payload sent to `createMutation`.
+---
+
+#### Group 1 — Bundling (Menu Paket)
+
+```
+[☐] Bundling (Menu Paket)
+     [+ Anak Opsi]          ← only shown when checkbox is checked
+     [Dropdown: Pilih Menu] [Qty input] [X]
+     [Dropdown: Pilih Menu] [Qty input] [X]
+```
+
+- `Checkbox` + `Label`: "Bundling (Menu Paket)"
+- When **checked**, expand an addon panel (`Card` with `ml-6` indent):
+  - "Tambah Anak" button (`Button` size="sm" + Plus)
+  - Each child recipe row: `<Select>` (non-sub-recipe items, excluding self) + `<Input>` qty + remove `Button` (ghost, X)
+  - `<p className="text-sm text-muted-foreground">` when no children: "Pilih menu yang menjadi bagian paket."
+- State: `isBundling: boolean`, `childRecipes: { recipeId, quantity }[]`
+
+---
+
+#### Group 2 — BOGO (Buy 1 Get 1)
+
+```
+[☐] BOGO (Beli 1 Gratis 1)
+```
+
+- `Checkbox` + `Label`: "BOGO (Beli 1 Gratis 1)"
+- Description helper text under label: `<p className="text-xs text-muted-foreground">` — "Harga pelanggan tetap 1×, stok terpotong 2×."
+- No addon — this is a pure toggle
+- State: `isBOGO: boolean`
+
+---
+
+#### Group 3 — Modifier Groups (each group = one checkbox)
+
+```
+[☐] Level Pedas (wajib)
+     [+ Jenis Pedas]              ← only shown when checkbox is checked
+     [Nama: Original]    [Harga: 0]   [☐ Exclusion]   [X]
+     [Nama: Level 1]     [Harga: 0]   [☐ Exclusion]   [X]
+     [Nama: Level 2]     [Harga: 2000][☐ Exclusion]   [X]
+
+[☐] Extra Topping (opsional)
+     [+ Jenis Tambahan]            ← only shown when checkbox is checked
+     [Nama: Extra Telur]  [Harga: 5000]  [Nama: Extra Keju] [Harga: 4000]
+
+[☐] Pilihan (Exclusion)
+```
+
+- Fetch all modifier groups via `getModifierGroups({})`
+- For **each modifier group**, render one `Checkbox` + `Label`:
+  - Label text: `{group.name}`
+  - Badge showing required vs optional: `<Badge variant={group.minSelection > 0 ? "default" : "secondary"}>` with text "wajib"/"opsional"
+- When a group's checkbox is **checked**, expand an addon panel (`Card` with `ml-6` indent):
+  - **Existing options** from the group are listed as read-only pills/badges — each option shows: name + price surcharge
+  - This is because options belong to the modifier group (they're defined in the group), not to the recipe. The recipe just _uses_ the group.
+  - **No editing of options here** — option management happens on `/modifier-groups/` pages (Task M2/M3).
+  - The addon serves as a **preview** showing what options the cashier will see in POS for this recipe.
+- State: `linkedModifierGroupIds: string[]` (array of checked group IDs)
+
+**Data flow**: On submit, `handleSubmit` passes:
+
+- `isBOGO` → from Group 2 checkbox
+- `childRecipes[]` → from Group 1 addon (only if Group 1 is checked)
+- `modifierGroupIds[]` → from Group 3 checkbox states
+
+---
+
+#### Modal Form Structure (full picture)
+
+```
+┌── Modal: Tambah Menu ───────────────────────────┐
+│  Kode: [__________]  Nama: [______________]     │
+│  Kategori: [Makanan ▼]  Harga Dasar: [______]   │
+│  Brand: [☐ Omoiyari] [☐ Brand B]                │
+│  ─── Separator ───                                │
+│  Bahan Baku / BOM: [add/remove rows as before]   │
+│  ─── Separator ───                                │
+│  **Opsi Tambahan**                                │
+│  [☐] Bundling (Menu Paket)                       │
+│      └─ addon panel (child recipe pickers)       │
+│  ─── Separator ───                                │
+│  [☐] BOGO (Beli 1 Gratis 1)                      │
+│  ─── Separator ───                                │
+│  [☐] Level Pedas (wajib)                         │
+│      └─ addon panel (option preview)             │
+│  [☐] Extra Topping (opsional)                    │
+│      └─ addon panel (option preview)             │
+│  [☐] Pilihan (Exclusion)                         │
+│      └─ addon panel (option preview)             │
+│  ─── Footer ───                                   │
+│  [Batal]                          [Simpan]       │
+└──────────────────────────────────────────────────┘
+```
+
+---
 
 **Validation rules**:
 
-- A recipe can be BOGO, Bundling, both, or neither.
-- If both, child recipe quantities should naturally reflect the "2x" (e.g., include `quantity: 2` for a BOGO child recipe).
-- Child recipes cannot include themselves (check `r.id !== editingId`).
-- Only non-sub recipes should appear in the child picker.
-
----
+- Bundling checkbox ON requires at least 1 child recipe
+- BOGO checkbox ON is standalone (no additional fields)
+- A recipe can have bundling BOGO and/or modifier groups in any combination
+- Child recipes cannot include themselves (`r.id !== editingId`)
+- Only non-sub recipes appear in the child picker
 
 ### Task 4: Display Child Recipes on Recipe Detail Page
 
@@ -513,22 +596,11 @@ const modIngs =
 - Confirmation modal: `Modal` with title "Hapus Grup Modifier?", description text, `Button` destructive (Hapus) and outline (Batal)
 - Calls `deleteModifierGroup` (needs to be added to server fns if not present)
 
-### Task M4: Link Modifier Groups to Recipes
+### Task M4: Update Server Functions for Recipe Modifier Linking
 
-**File**: `src/routes/_layout/recipes/index.tsx` (create/edit Modal)
+**File**: `src/lib/server/recipes.ts`
 
-Add a **"Grup Modifier"** section to the form:
-
-1. Fetch all modifier groups via `getModifierGroups({})`
-2. Section layout (`Card`):
-   - Header: "Grup Modifier" with `Badge` variant="outline" showing count
-   - Show linked groups as removable `Badge` items: `{ name } <button className="ml-1 cursor-pointer">` (X icon)
-   - "Tambah Grup" dropdown: `<Select>` from `select.tsx` with "Pilih Grup Modifier" placeholder
-   - On select, append to the linked list
-3. Store selected IDs in state (`selectedModifierGroupIds`)
-4. Pass through to `handleSubmit` → `modifierGroupIds` in payload
-
-**Server function updates** (`src/lib/server/recipes.ts`):
+_(Task M4 was previously "Link Modifier Groups to Recipes" as a standalone UI task. That is now handled inside Task 3's unified checkbox modal. This task covers only the server-side changes.)_
 
 1. **`createRecipe`**: Currently does NOT insert into `recipeModifierGroups`. Add this step after recipe INSERT:
 
@@ -540,7 +612,9 @@ if (input.modifierGroupIds?.length) {
 }
 ```
 
-2. **`updateRecipe`**: Check if exists. If it does, delete + re-insert `recipeModifierGroups`. If no updateRecipe exists yet, create one.
+2. **`updateRecipe`** (new or existing): Delete existing `recipeModifierGroups` for the recipe, insert new set (upsert pattern).
+
+---
 
 ### Task M5: Enrich Recipe Detail Page Modifier Display
 

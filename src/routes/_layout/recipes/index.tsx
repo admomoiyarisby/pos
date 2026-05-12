@@ -17,7 +17,6 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Card } from "#/components/ui/card";
 import { Separator } from "#/components/ui/separator";
-import { Switch } from "#/components/ui/switch";
 import { Label } from "#/components/ui/label";
 import { ArrowRight, RefreshCw, Zap, Package, X, Plus } from "lucide-react";
 
@@ -58,7 +57,7 @@ const columns: Column<RecipeRow>[] = [
     render: (r) => <Badge variant="secondary">{catLabels[r.category] ?? r.category}</Badge>,
   },
   {
-    key: "id",
+    key: "type",
     header: "Tipe",
     width: "w-28",
     render: (r) => (
@@ -144,10 +143,10 @@ function RecipesPage() {
   const { recipes: initial, brands } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
+  const [isBundling, setIsBundling] = useState(false);
   const [childRecipes, setChildRecipes] = useState<ChildRecipeInput[]>([]);
   const [isBOGO, setIsBOGO] = useState(false);
-  const [menuType, setMenuType] = useState<"biasa" | "paket" | "bogo">("biasa");
-  const [selectedModifierGroupIds, setSelectedModifierGroupIds] = useState<string[]>([]);
+  const [linkedModifierGroupIds, setLinkedModifierGroupIds] = useState<string[]>([]);
   const user = useAuth().user;
 
   const { data: recipes } = useQuery({
@@ -178,10 +177,10 @@ function RecipesPage() {
   });
 
   const resetForm = () => {
+    setIsBundling(false);
     setChildRecipes([]);
     setIsBOGO(false);
-    setMenuType("biasa");
-    setSelectedModifierGroupIds([]);
+    setLinkedModifierGroupIds([]);
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -196,8 +195,8 @@ function RecipesPage() {
       isBOGO,
       brandIds,
       ingredients: [],
-      childRecipes: childRecipes.length > 0 ? childRecipes : undefined,
-      modifierGroupIds: selectedModifierGroupIds.length > 0 ? selectedModifierGroupIds : undefined,
+      childRecipes: isBundling && childRecipes.length > 0 ? childRecipes : undefined,
+      modifierGroupIds: linkedModifierGroupIds.length > 0 ? linkedModifierGroupIds : undefined,
     };
     void createMutation.mutateAsync({ data });
   };
@@ -290,151 +289,173 @@ function RecipesPage() {
 
           <Separator />
 
-          <div className="space-y-2">
-            <Label>Jenis Menu</Label>
-            <select
-              value={menuType}
-              onChange={(e) => {
-                setMenuType(e.target.value as "biasa" | "paket" | "bogo");
-                if (e.target.value !== "bogo") setIsBOGO(false);
-                if (e.target.value !== "paket") setChildRecipes([]);
-              }}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="biasa">Menu Biasa</option>
-              <option value="paket">Menu Paket (Bundling)</option>
-              <option value="bogo">Promo BOGO</option>
-            </select>
-          </div>
+          <p className="text-sm font-semibold">Opsi Tambahan</p>
 
-          {menuType === "paket" && (
-            <Card className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-sm font-semibold">
-                  <Package className="h-4 w-4" />
-                  Bundling (Menu Paket)
-                </div>
+          {/* Group 1 — Bundling */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isBundling}
+                onChange={(e) => {
+                  setIsBundling(e.target.checked);
+                  if (!e.target.checked) setChildRecipes([]);
+                }}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <div className="flex items-center gap-1.5 text-sm font-medium">
+                <Package className="h-4 w-4" />
+                Bundling (Menu Paket)
+              </div>
+            </label>
+            {isBundling && (
+              <Card className="ml-6 p-3 space-y-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() => setChildRecipes([...childRecipes, { recipeId: "", quantity: 1 }])}
                 >
-                  <Plus className="h-3 w-3 mr-1" /> Tambah
+                  <Plus className="h-3 w-3 mr-1" /> Tambah Anak
                 </Button>
-              </div>
-              {childRecipes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Bukan paket bundling.</p>
-              ) : (
-                <div className="space-y-2">
-                  {childRecipes.map((cr, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <select
-                        value={cr.recipeId}
-                        onChange={(e) => {
-                          const next = [...childRecipes];
-                          next[i] = { ...next[i], recipeId: e.target.value };
-                          setChildRecipes(next);
-                        }}
-                        className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-xs"
-                      >
-                        <option value="">Pilih Menu</option>
-                        {recipes
-                          .filter((r) => !r.isSubRecipe)
-                          .map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.name}
-                            </option>
-                          ))}
-                      </select>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={cr.quantity}
-                        onChange={(e) => {
-                          const next = [...childRecipes];
-                          next[i] = { ...next[i], quantity: Number(e.target.value) };
-                          setChildRecipes(next);
-                        }}
-                        className="w-20 h-8"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setChildRecipes(childRecipes.filter((_, j) => j !== i))}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          )}
-
-          {menuType === "bogo" && (
-            <Card className="p-4 space-y-2">
-              <div className="flex items-center gap-1.5 text-sm font-semibold">
-                <Zap className="h-4 w-4" />
-                Promo BOGO
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Aktifkan jika menu ini adalah promo beli 1 gratis 1.
-              </p>
-              <div className="flex items-center gap-3">
-                <Switch checked={isBOGO} onCheckedChange={setIsBOGO} id="bogo-switch" />
-                <Label htmlFor="bogo-switch">{isBOGO ? "Aktif" : "Nonaktif"}</Label>
-              </div>
-            </Card>
-          )}
+                {childRecipes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Pilih menu yang menjadi bagian paket.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {childRecipes.map((cr, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <select
+                          value={cr.recipeId}
+                          onChange={(e) => {
+                            const next = [...childRecipes];
+                            next[i] = { ...next[i], recipeId: e.target.value };
+                            setChildRecipes(next);
+                          }}
+                          className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-xs"
+                        >
+                          <option value="">Pilih Menu</option>
+                          {recipes
+                            .filter((r) => !r.isSubRecipe)
+                            .map((r) => (
+                              <option key={r.id} value={r.id}>
+                                {r.name}
+                              </option>
+                            ))}
+                        </select>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={cr.quantity}
+                          onChange={(e) => {
+                            const next = [...childRecipes];
+                            next[i] = { ...next[i], quantity: Number(e.target.value) };
+                            setChildRecipes(next);
+                          }}
+                          className="w-20 h-8"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setChildRecipes(childRecipes.filter((_, j) => j !== i))}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+          </div>
 
           <Separator />
 
-          <Card className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="font-semibold">Grup Modifier</Label>
-              <Badge variant="outline">{selectedModifierGroupIds.length}</Badge>
+          {/* Group 2 — BOGO */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isBOGO}
+              onChange={(e) => setIsBOGO(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <div>
+              <div className="flex items-center gap-1.5 text-sm font-medium">
+                <Zap className="h-4 w-4" />
+                BOGO (Beli 1 Gratis 1)
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Harga pelanggan tetap 1x, stok terpotong 2x.
+              </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {selectedModifierGroupIds.map((mgId) => {
-                const mg = allModifierGroups?.find((g: any) => g.id === mgId);
-                return (
-                  <Badge key={mgId} variant="outline" className="gap-1 pr-1">
-                    {mg?.name ?? mgId}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSelectedModifierGroupIds(
-                          selectedModifierGroupIds.filter((id) => id !== mgId),
-                        )
-                      }
-                      className="ml-0.5 hover:text-destructive"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                );
-              })}
-            </div>
-            <select
-              value=""
-              onChange={(e) => {
-                if (!e.target.value) return;
-                if (!selectedModifierGroupIds.includes(e.target.value)) {
-                  setSelectedModifierGroupIds([...selectedModifierGroupIds, e.target.value]);
-                }
-              }}
-              className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-            >
-              <option value="">-- Pilih Grup Modifier --</option>
-              {(allModifierGroups ?? []).map((g: any) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
-          </Card>
+          </label>
+
+          <Separator />
+
+          {/* Group 3 — Modifier Groups */}
+          <div className="space-y-3">
+            {(allModifierGroups ?? []).length > 0 && (
+              <p className="text-sm font-medium">Grup Modifier</p>
+            )}
+            {(allModifierGroups ?? []).map((g: any) => {
+              const checked = linkedModifierGroupIds.includes(g.id);
+              return (
+                <div key={g.id}>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setLinkedModifierGroupIds([...linkedModifierGroupIds, g.id]);
+                        } else {
+                          setLinkedModifierGroupIds(
+                            linkedModifierGroupIds.filter((id) => id !== g.id),
+                          );
+                        }
+                      }}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-medium">{g.name}</span>
+                      <Badge variant={g.minSelection > 0 ? "default" : "secondary"}>
+                        {g.minSelection > 0 ? "wajib" : "opsional"}
+                      </Badge>
+                    </div>
+                  </label>
+                  {checked && g.modifiers?.length > 0 && (
+                    <Card className="ml-6 mt-2 p-3 space-y-1">
+                      {g.modifiers.map((m: any) => (
+                        <div
+                          key={m.id}
+                          className="flex items-center justify-between text-sm py-0.5"
+                        >
+                          <span>
+                            {m.name}
+                            {m.isExclusion && (
+                              <Badge variant="destructive" className="ml-2 text-[10px]">
+                                Exclusion
+                              </Badge>
+                            )}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {m.price > 0 ? `+Rp ${m.price.toLocaleString("id-ID")}` : "—"}
+                          </span>
+                        </div>
+                      ))}
+                    </Card>
+                  )}
+                  {checked && (!g.modifiers || g.modifiers.length === 0) && (
+                    <Card className="ml-6 mt-2 p-3">
+                      <p className="text-sm text-muted-foreground">Tidak ada opsi</p>
+                    </Card>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
           <div className="flex justify-end gap-2 pt-2">
             <Button
