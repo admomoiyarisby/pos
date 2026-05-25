@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import { branches } from "#/db/schema";
 
 const seedData = createServerFn({ method: "POST" }).handler(async () => {

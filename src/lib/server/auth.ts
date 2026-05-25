@@ -1,8 +1,8 @@
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { auth } from "#/lib/auth";
-import { db } from "#/db/index";
-import { areaManagerBranches } from "#/db/schema";
-import { eq } from "drizzle-orm";
+import { db } from "#/lib/server/db";
+import { areaManagerBranches, periodLogs } from "#/db/schema";
+import { eq, desc } from "drizzle-orm";
 
 export type UserRole =
   | "super_admin"
@@ -118,3 +118,17 @@ export const requireRole = createServerOnlyFn(
     return user;
   },
 );
+
+export async function requireOpenPeriod(user: AppUser): Promise<void> {
+  if (user.role === "super_admin") return;
+
+  const [latestPeriod] = await db
+    .select()
+    .from(periodLogs)
+    .orderBy(desc(periodLogs.openedAt))
+    .limit(1);
+
+  if (!latestPeriod || latestPeriod.status !== "Open") {
+    throw new Error("Periode sedang ditutup. Hanya Super Admin yang dapat mengedit.");
+  }
+}

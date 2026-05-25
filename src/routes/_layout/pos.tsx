@@ -564,6 +564,7 @@ function PosPage() {
         },
       });
     },
+    retry: 1,
   });
   let menuItems = menuResult.data || [];
 
@@ -591,6 +592,7 @@ function PosPage() {
       return getOrders({ data: { branchId: activeBranchId, limit: 20 } });
     },
     enabled: !!activeBranchId,
+    retry: 1,
   });
   let recentOrders = ordersResult.data || [];
 

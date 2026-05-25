@@ -6,6 +6,7 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
+import { Checkbox } from "#/components/ui/checkbox";
 import { getUsers, createUser, updateUser } from "#/lib/server/users";
 import { getBranches } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
@@ -47,6 +48,7 @@ function UsersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [selectedRole, setSelectedRole] = useState("branch_admin");
+  const [amBranches, setAmBranches] = useState<string[]>([]);
   const [mutationError, setMutationError] = useState("");
   const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
 
@@ -57,6 +59,12 @@ function UsersPage() {
       else next.add(userId);
       return next;
     });
+  }, []);
+
+  const toggleAmBranch = useCallback((branchId: string) => {
+    setAmBranches((prev) =>
+      prev.includes(branchId) ? prev.filter((id) => id !== branchId) : [...prev, branchId],
+    );
   }, []);
 
   const columns: Column<UserRow>[] = [
@@ -157,6 +165,7 @@ function UsersPage() {
       branchId: (fd.get("branchId") as string) || undefined,
       pin: (fd.get("pin") as string) || undefined,
       status: fd.get("status") as "Active" | "Inactive",
+      assignedBranches: selectedRole === "area_manager" ? amBranches : undefined,
     };
 
     if (editing) {
@@ -167,6 +176,7 @@ function UsersPage() {
         branchId: data.branchId,
         pin: data.pin,
         status: data.status,
+        assignedBranches: selectedRole === "area_manager" ? amBranches : [],
       };
       void updateMutation.mutateAsync({ data: updateData });
     } else {
@@ -178,11 +188,13 @@ function UsersPage() {
   const handleCloseModal = () => {
     setModalOpen(false);
     setMutationError("");
+    setAmBranches([]);
   };
 
   const handleOpenCreate = () => {
     setEditing(null);
     setSelectedRole("branch_admin");
+    setAmBranches([]);
     setMutationError("");
     setModalOpen(true);
   };
@@ -203,6 +215,7 @@ function UsersPage() {
         onRowClick={(r) => {
           setEditing(r);
           setSelectedRole(r.role);
+          setAmBranches(r.role === "area_manager" ? (r.assignedBranches ?? []) : []);
           setMutationError("");
           setModalOpen(true);
         }}
@@ -283,6 +296,29 @@ function UsersPage() {
               </select>
             </div>
           </div>
+
+          {/* Area Manager: assign branches */}
+          {selectedRole === "area_manager" && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Cabang yang Dikelola</label>
+              <div className="grid grid-cols-2 gap-2 rounded-md border p-3 max-h-40 overflow-y-auto">
+                {branches.map((b) => (
+                  <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={amBranches.includes(b.id)}
+                      onCheckedChange={() => toggleAmBranch(b.id)}
+                    />
+                    <span>{b.name}</span>
+                  </label>
+                ))}
+              </div>
+              {amBranches.length === 0 && (
+                <p className="text-xs text-amber-600">
+                  Area Manager harus memiliki minimal 1 cabang yang dikelola.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* PIN field — only for branch_admin role */}

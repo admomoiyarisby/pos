@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import {
   orders,
   orderItems,

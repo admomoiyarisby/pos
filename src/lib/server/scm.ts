@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import {
   purchaseRequisitions,
   purchaseRequisitionItems,
@@ -17,11 +17,36 @@ import {
   branches,
   systemNotifications,
   users,
+  wasteEntries,
 } from "#/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
+
+// ─── Helpers ───
+
+async function notifyUsers(
+  roles: string[],
+  title: string,
+  message: string,
+  type: "info" | "warning" | "alert" = "info",
+) {
+  const targets = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(inArray(users.role, roles as (typeof users.$inferSelect.role)[]));
+  for (const u of targets) {
+    await db.insert(systemNotifications).values({ userId: u.id, title, message, type });
+  }
+}
+
+function assertBranchAccess(user: Awaited<ReturnType<typeof requireAuth>>, branchId: string) {
+  if (user.role === "super_admin" || user.role === "admin_pusat") return;
+  if (user.role === "branch_admin" && user.branchId === branchId) return;
+  if (user.role === "area_manager" && user.assignedBranches?.includes(branchId)) return;
+  throw new Error("Forbidden: you do not have access to this branch");
+}
 
 // ─── Purchase Requisitions ───
 
@@ -32,6 +57,31 @@ export const getPurchaseRequisitions = createServerFn({ method: "GET" })
     let branchFilter = data.branchId;
     if (user.role === "branch_admin" && user.branchId) {
       branchFilter = user.branchId;
+    } else if (user.role === "area_manager" && user.assignedBranches?.length) {
+      if (!branchFilter || !user.assignedBranches.includes(branchFilter)) {
+        // Return all assigned branches if no specific filter or filter not in assignments
+        const assigned = user.assignedBranches;
+        const result = await db
+          .select({
+            id: purchaseRequisitions.id,
+            code: purchaseRequisitions.code,
+            branchId: purchaseRequisitions.branchId,
+            status: purchaseRequisitions.status,
+            requestedBy: purchaseRequisitions.requestedBy,
+            approvedBy: purchaseRequisitions.approvedBy,
+            rejectionReason: purchaseRequisitions.rejectionReason,
+            createdAt: purchaseRequisitions.createdAt,
+            updatedAt: purchaseRequisitions.updatedAt,
+            branchName: branches.name,
+            approvedByName: users.name,
+          })
+          .from(purchaseRequisitions)
+          .leftJoin(branches, eq(purchaseRequisitions.branchId, branches.id))
+          .leftJoin(users, eq(purchaseRequisitions.approvedBy, users.id))
+          .where(sql`${purchaseRequisitions.branchId} IN (${sql.join(assigned)})`)
+          .orderBy(desc(purchaseRequisitions.createdAt));
+        return result;
+      }
     }
 
     const result = await db
@@ -97,15 +147,33 @@ export const createPurchaseRequisition = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
-    if (user.role === "branch_admin" && user.branchId !== data.branchId) {
-      throw new Error("Unauthorized branch");
+
+    const branchId = data.branchId || (user.role === "branch_admin" ? user.branchId : undefined);
+    if (!branchId) throw new Error("Branch is required");
+
+    if (user.role === "branch_admin" && branchId !== user.branchId) {
+      throw new Error(
+        `Unauthorized branch: user=${user.role} userBranch=${user.branchId} dataBranch=${branchId}`,
+      );
+    }
+
+    // MOQ validation
+    for (const item of data.items) {
+      const [ing] = await db
+        .select({ moq: ingredients.moq, name: ingredients.name })
+        .from(ingredients)
+        .where(eq(ingredients.id, item.ingredientId))
+        .limit(1);
+      if (ing && ing.moq > 1 && item.quantity % ing.moq !== 0) {
+        throw new Error(`Jumlah order untuk ${ing.name} harus kelipatan MOQ (${ing.moq})`);
+      }
     }
 
     const [pr] = await db
       .insert(purchaseRequisitions)
       .values({
         code: data.code,
-        branchId: data.branchId,
+        branchId,
         requestedBy: user.id,
         status: "Pending",
         notes: data.notes,
@@ -136,6 +204,9 @@ export const createPurchaseRequisition = createServerFn({ method: "POST" })
       pr as Record<string, unknown>,
     );
 
+    // Notify admin pusat
+    await notifyUsers(["admin_pusat"], "PR Baru", `PR "${data.code}" diajukan oleh ${user.name}`);
+
     return pr;
   });
 
@@ -161,7 +232,6 @@ export const updatePurchaseRequisition = createServerFn({ method: "POST" })
 
     if (!oldPr) throw new Error("PR not found");
 
-    // Role-based validation
     if (user.role === "branch_admin") {
       if (oldPr.requestedBy !== user.id) {
         throw new Error("Unauthorized: can only edit your own PR");
@@ -175,6 +245,7 @@ export const updatePurchaseRequisition = createServerFn({ method: "POST" })
     }
 
     if (user.role === "area_manager") {
+      assertBranchAccess(user, oldPr.branchId);
       if (status && !["Approved", "Processed", "Rejected"].includes(status)) {
         throw new Error("Unauthorized status change");
       }
@@ -255,13 +326,15 @@ export const processPurchaseRequisition = createServerFn({ method: "POST" })
       throw new Error("PR must be Pending or Approved to process");
     }
 
-    // Get PR items
+    if (user.role === "area_manager") {
+      assertBranchAccess(user, pr.branchId);
+    }
+
     const items = await db
       .select()
       .from(purchaseRequisitionItems)
       .where(eq(purchaseRequisitionItems.purchaseRequisitionId, data.id));
 
-    // Update PR status to Processed
     await db
       .update(purchaseRequisitions)
       .set({
@@ -273,7 +346,6 @@ export const processPurchaseRequisition = createServerFn({ method: "POST" })
 
     let dn: { id: string; code: string } | null = null;
 
-    // Auto-create Delivery Note if requested
     if (data.alsoCreateSJ) {
       const [centralBranch] = await db
         .select()
@@ -282,8 +354,6 @@ export const processPurchaseRequisition = createServerFn({ method: "POST" })
         .limit(1);
 
       const fromBranchId = centralBranch?.id ?? pr.branchId;
-
-      // Generate SJ code
       const sjCode = `SJ-${pr.code}`;
 
       [dn] = await db
@@ -299,7 +369,6 @@ export const processPurchaseRequisition = createServerFn({ method: "POST" })
         })
         .returning();
 
-      // Copy PR items to DN items
       if (items.length > 0) {
         await db.insert(deliveryNoteItems).values(
           items.map((item) => ({
@@ -314,15 +383,8 @@ export const processPurchaseRequisition = createServerFn({ method: "POST" })
         );
       }
 
-      // Create in-transit inventory records
-      for (const item of items) {
-        await db.insert(inTransitInventory).values({
-          deliveryNoteId: dn.id,
-          branchId: pr.branchId,
-          ingredientId: item.ingredientId,
-          quantity: item.quantity,
-        });
-      }
+      // NOTE: In-transit records are NOT created here.
+      // They are created only when shipDeliveryNote is called.
 
       await logSystemAction(
         user,
@@ -362,14 +424,46 @@ export const getPurchaseOrders = createServerFn({ method: "GET" })
     return result;
   });
 
+export const getPurchaseOrder = createServerFn({ method: "GET" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await requireRole("super_admin", "admin_pusat");
+
+    const [po] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, data.id))
+      .limit(1);
+
+    if (!po) return null;
+
+    const items = await db
+      .select({
+        id: purchaseOrderItems.id,
+        ingredientId: purchaseOrderItems.ingredientId,
+        quantity: purchaseOrderItems.quantity,
+        unitPrice: purchaseOrderItems.unitPrice,
+        totalPrice: purchaseOrderItems.totalPrice,
+        ingredientName: ingredients.name,
+        ingredientCode: ingredients.code,
+      })
+      .from(purchaseOrderItems)
+      .leftJoin(ingredients, eq(purchaseOrderItems.ingredientId, ingredients.id))
+      .where(eq(purchaseOrderItems.purchaseOrderId, data.id));
+
+    return { ...po, items };
+  });
+
 export const createPurchaseOrder = createServerFn({ method: "POST" })
   .inputValidator(
     (data: {
       code: string;
-      purchaseRequisitionId: string;
+      purchaseRequisitionId?: string;
+      supplierId?: string;
       fromBranchId: string;
       toBranchId: string;
-      items: { ingredientId: string; quantity: number }[];
+      items: { ingredientId: string; quantity: number; unitPrice?: number }[];
+      notes?: string;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -380,9 +474,11 @@ export const createPurchaseOrder = createServerFn({ method: "POST" })
       .values({
         code: data.code,
         purchaseRequisitionId: data.purchaseRequisitionId,
+        supplierId: data.supplierId,
         fromBranchId: data.fromBranchId,
         toBranchId: data.toBranchId,
         status: "Draft",
+        notes: data.notes,
         createdBy: user.id,
       })
       .returning();
@@ -393,6 +489,8 @@ export const createPurchaseOrder = createServerFn({ method: "POST" })
           purchaseOrderId: po.id,
           ingredientId: item.ingredientId,
           quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.unitPrice ? item.unitPrice * item.quantity : null,
         })),
       );
     }
@@ -408,6 +506,191 @@ export const createPurchaseOrder = createServerFn({ method: "POST" })
       po.id,
       "CREATE",
       undefined,
+      po as Record<string, unknown>,
+    );
+
+    return po;
+  });
+
+export const updatePurchaseOrder = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      id: string;
+      items?: { ingredientId: string; quantity: number; unitPrice?: number }[];
+      notes?: string;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [oldPo] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, data.id))
+      .limit(1);
+
+    if (!oldPo) throw new Error("PO not found");
+    if (oldPo.status !== "Draft") throw new Error("Only Draft PO can be edited");
+
+    await db
+      .update(purchaseOrders)
+      .set({ notes: data.notes, updatedAt: new Date() })
+      .where(eq(purchaseOrders.id, data.id));
+
+    if (data.items) {
+      await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, data.id));
+      if (data.items.length > 0) {
+        await db.insert(purchaseOrderItems).values(
+          data.items.map((item) => ({
+            purchaseOrderId: data.id,
+            ingredientId: item.ingredientId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: item.unitPrice ? item.unitPrice * item.quantity : null,
+          })),
+        );
+      }
+    }
+
+    const [updatedPo] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, data.id))
+      .limit(1);
+
+    await logAudit(
+      user,
+      "purchaseOrders",
+      data.id,
+      "UPDATE",
+      oldPo as Record<string, unknown>,
+      updatedPo as Record<string, unknown>,
+    );
+
+    return { success: true };
+  });
+
+export const sendPurchaseOrder = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [oldPo] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, data.id))
+      .limit(1);
+
+    if (!oldPo) throw new Error("PO not found");
+    if (oldPo.status !== "Draft") throw new Error("Only Draft PO can be sent");
+
+    const [po] = await db
+      .update(purchaseOrders)
+      .set({ status: "Sent", updatedAt: new Date() })
+      .where(eq(purchaseOrders.id, data.id))
+      .returning();
+
+    await logSystemAction(user, "Send Purchase Order", `PO "${po.code}" dikirim oleh ${user.name}`);
+    await logAudit(
+      user,
+      "purchaseOrders",
+      data.id,
+      "STATUS_CHANGE",
+      oldPo as Record<string, unknown>,
+      po as Record<string, unknown>,
+    );
+
+    return po;
+  });
+
+export const receivePurchaseOrder = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: { id: string; items: { itemId: string; receivedQuantity: number }[] }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [po] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, data.id))
+      .limit(1);
+
+    if (!po) throw new Error("PO not found");
+    if (!["Sent", "Partial"].includes(po.status)) {
+      throw new Error("PO must be Sent or Partial to receive");
+    }
+
+    for (const item of data.items) {
+      await db
+        .update(purchaseOrderItems)
+        .set({ receivedQuantity: item.receivedQuantity })
+        .where(eq(purchaseOrderItems.id, item.itemId));
+    }
+
+    // Determine if fully received
+    const poItems = await db
+      .select()
+      .from(purchaseOrderItems)
+      .where(eq(purchaseOrderItems.purchaseOrderId, data.id));
+
+    const allReceived = poItems.every((item) => (item.receivedQuantity ?? 0) >= item.quantity);
+    const newStatus = allReceived ? "Completed" : "Partial";
+
+    const [updatedPo] = await db
+      .update(purchaseOrders)
+      .set({ status: newStatus, updatedAt: new Date() })
+      .where(eq(purchaseOrders.id, data.id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Receive Purchase Order",
+      `PO "${po.code}" status diubah ke ${newStatus} oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "purchaseOrders",
+      data.id,
+      "STATUS_CHANGE",
+      po as Record<string, unknown>,
+      updatedPo as Record<string, unknown>,
+    );
+
+    return updatedPo;
+  });
+
+export const cancelPurchaseOrder = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [oldPo] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, data.id))
+      .limit(1);
+
+    if (!oldPo) throw new Error("PO not found");
+    if (oldPo.status === "Completed") throw new Error("Completed PO cannot be cancelled");
+
+    const [po] = await db
+      .update(purchaseOrders)
+      .set({ status: "Cancelled", updatedAt: new Date() })
+      .where(eq(purchaseOrders.id, data.id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Cancel Purchase Order",
+      `PO "${po.code}" dibatalkan oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "purchaseOrders",
+      data.id,
+      "STATUS_CHANGE",
+      oldPo as Record<string, unknown>,
       po as Record<string, unknown>,
     );
 
@@ -431,6 +714,7 @@ export const getDeliveryNotes = createServerFn({ method: "GET" })
         driverName: deliveryNotes.driverName,
         vehicleNumber: deliveryNotes.vehicleNumber,
         purchaseRequisitionId: deliveryNotes.purchaseRequisitionId,
+        purchaseOrderId: deliveryNotes.purchaseOrderId,
         reviewedByAdminPusat: deliveryNotes.reviewedByAdminPusat,
         receivedBy: deliveryNotes.receivedBy,
         receivedAt: deliveryNotes.receivedAt,
@@ -465,6 +749,7 @@ export const getDeliveryNote = createServerFn({ method: "GET" })
         pickedQuantity: deliveryNoteItems.pickedQuantity,
         receivedQuantity: deliveryNoteItems.receivedQuantity,
         rejectedQuantity: deliveryNoteItems.rejectedQuantity,
+        rejectionDisposition: deliveryNoteItems.rejectionDisposition,
         discrepancyNote: deliveryNoteItems.discrepancyNote,
         ingredientName: ingredients.name,
         ingredientCode: ingredients.code,
@@ -481,6 +766,7 @@ export const createDeliveryNote = createServerFn({ method: "POST" })
     (data: {
       code: string;
       prId?: string;
+      poId?: string;
       fromBranchId: string;
       toBranchId: string;
       driverName: string;
@@ -496,6 +782,7 @@ export const createDeliveryNote = createServerFn({ method: "POST" })
       .values({
         code: data.code,
         purchaseRequisitionId: data.prId,
+        purchaseOrderId: data.poId,
         fromBranchId: data.fromBranchId,
         toBranchId: data.toBranchId,
         driverName: data.driverName,
@@ -532,12 +819,65 @@ export const createDeliveryNote = createServerFn({ method: "POST" })
     return dn;
   });
 
+export const updateDeliveryNote = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      dnId: string;
+      items: { itemId: string; pickedQuantity: number }[];
+      driverName?: string;
+      vehicleNumber?: string;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [dn] = await db
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .limit(1);
+
+    if (!dn) throw new Error("Delivery note not found");
+    if (!["Picking", "Draft"].includes(dn.status)) {
+      throw new Error("Can only edit SJ in Picking or Draft status");
+    }
+
+    for (const item of data.items) {
+      await db
+        .update(deliveryNoteItems)
+        .set({ pickedQuantity: item.pickedQuantity })
+        .where(eq(deliveryNoteItems.id, item.itemId));
+    }
+
+    if (data.driverName || data.vehicleNumber) {
+      await db
+        .update(deliveryNotes)
+        .set({
+          driverName: data.driverName ?? dn.driverName,
+          vehicleNumber: data.vehicleNumber ?? dn.vehicleNumber,
+          updatedAt: new Date(),
+        })
+        .where(eq(deliveryNotes.id, data.dnId));
+    }
+
+    await logSystemAction(user, "Update Delivery Note", `SJ "${dn.code}" diedit oleh ${user.name}`);
+    await logAudit(
+      user,
+      "deliveryNotes",
+      data.dnId,
+      "UPDATE",
+      dn as Record<string, unknown>,
+      undefined,
+    );
+
+    return { success: true };
+  });
+
 export const shipDeliveryNote = createServerFn({ method: "POST" })
   .inputValidator((data: { dnId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
-    // Get DN items
     const items = await db
       .select()
       .from(deliveryNoteItems)
@@ -550,9 +890,11 @@ export const shipDeliveryNote = createServerFn({ method: "POST" })
       .limit(1);
 
     if (!dn) throw new Error("Delivery note not found");
+    if (dn.status !== "Picking") throw new Error("SJ must be in Picking status to ship");
 
-    // Deduct from source inventory
     for (const item of items) {
+      const shipQty = item.pickedQuantity ?? item.quantity;
+
       const [inv] = await db
         .select()
         .from(inventory)
@@ -565,34 +907,31 @@ export const shipDeliveryNote = createServerFn({ method: "POST" })
         .limit(1);
 
       if (inv) {
-        const newQty = Math.max(0, inv.quantity - (item.pickedQuantity ?? item.quantity));
+        const newQty = Math.max(0, inv.quantity - shipQty);
         await db
           .update(inventory)
           .set({ quantity: newQty, lastUpdated: new Date() })
           .where(eq(inventory.id, inv.id));
 
-        // Create ledger OUT
         await db.insert(stockLedger).values({
           branchId: dn.fromBranchId,
           ingredientId: item.ingredientId,
           type: "OUT",
-          quantity: item.pickedQuantity ?? item.quantity,
+          quantity: shipQty,
           balance: newQty,
           reference: data.dnId,
           notes: `SJ Kirim ${dn.code}`,
         });
       }
 
-      // Create in-transit record
       await db.insert(inTransitInventory).values({
         deliveryNoteId: data.dnId,
         branchId: dn.toBranchId,
         ingredientId: item.ingredientId,
-        quantity: item.pickedQuantity ?? item.quantity,
+        quantity: shipQty,
       });
     }
 
-    // Update DN status
     await db
       .update(deliveryNotes)
       .set({ status: "In Transit", updatedAt: new Date() })
@@ -614,6 +953,20 @@ export const shipDeliveryNote = createServerFn({ method: "POST" })
       updatedDn as Record<string, unknown>,
     );
 
+    // Notify branch admin
+    const branchAdminUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.role, "branch_admin"), eq(users.branchId, dn.toBranchId)));
+    for (const u of branchAdminUsers) {
+      await db.insert(systemNotifications).values({
+        userId: u.id,
+        title: "SJ Dikirim",
+        message: `SJ "${dn.code}" sedang dalam perjalanan ke cabang Anda`,
+        type: "info",
+      });
+    }
+
     return { success: true };
   });
 
@@ -625,6 +978,7 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
         itemId: string;
         receivedQuantity: number;
         rejectedQuantity: number;
+        rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
         discrepancyNote?: string;
       }[];
     }) => data,
@@ -639,48 +993,44 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
       .limit(1);
 
     if (!dn) throw new Error("Delivery note not found");
+    if (!["In Transit", "Partial Received"].includes(dn.status)) {
+      throw new Error("SJ must be In Transit or Partial Received to receive");
+    }
 
-    // Update each item
+    const dnItems = await db
+      .select()
+      .from(deliveryNoteItems)
+      .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
+
+    // Validate quantities
+    for (const item of data.items) {
+      const dnItem = dnItems.find((i) => i.id === item.itemId);
+      if (!dnItem) throw new Error("Invalid item ID");
+
+      const pickedQty = dnItem.pickedQuantity ?? dnItem.quantity;
+      if (item.receivedQuantity + item.rejectedQuantity > pickedQty) {
+        throw new Error(
+          `Item ${dnItem.ingredientId}: Diterima (${item.receivedQuantity}) + Reject (${item.rejectedQuantity}) tidak boleh melebihi jumlah dikirim (${pickedQty})`,
+        );
+      }
+    }
+
+    // Process each item
     for (const item of data.items) {
       await db
         .update(deliveryNoteItems)
         .set({
           receivedQuantity: item.receivedQuantity,
           rejectedQuantity: item.rejectedQuantity,
+          rejectionDisposition: item.rejectionDisposition,
           discrepancyNote: item.discrepancyNote,
         })
         .where(eq(deliveryNoteItems.id, item.itemId));
 
+      const dnItem = dnItems.find((i) => i.id === item.itemId)!;
+      const ingredientId = dnItem.ingredientId;
+
       // Add received to destination inventory
-      await db
-        .select()
-        .from(inventory)
-        .where(
-          and(
-            eq(inventory.branchId, dn.toBranchId),
-            eq(
-              inventory.ingredientId,
-              (
-                await db
-                  .select({ ingredientId: deliveryNoteItems.ingredientId })
-                  .from(deliveryNoteItems)
-                  .where(eq(deliveryNoteItems.id, item.itemId))
-                  .limit(1)
-              )[0]?.ingredientId ?? "",
-            ),
-          ),
-        )
-        .limit(1);
-
-      const dnItem = await db
-        .select()
-        .from(deliveryNoteItems)
-        .where(eq(deliveryNoteItems.id, item.itemId))
-        .limit(1);
-
-      const ingredientId = dnItem[0]?.ingredientId;
-      if (!ingredientId) continue;
-
       const [targetInv] = await db
         .select()
         .from(inventory)
@@ -694,7 +1044,6 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
           .set({ quantity: newQty, lastUpdated: new Date() })
           .where(eq(inventory.id, targetInv.id));
 
-        // Ledger IN
         await db.insert(stockLedger).values({
           branchId: dn.toBranchId,
           ingredientId,
@@ -705,15 +1054,11 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
           notes: `SJ Terima ${dn.code}${item.rejectedQuantity > 0 ? ` (Reject: ${item.rejectedQuantity})` : ""}`,
         });
       } else {
-        // Create new inventory record
-        await db
-          .insert(inventory)
-          .values({
-            branchId: dn.toBranchId,
-            ingredientId,
-            quantity: item.receivedQuantity,
-          })
-          .returning();
+        await db.insert(inventory).values({
+          branchId: dn.toBranchId,
+          ingredientId,
+          quantity: item.receivedQuantity,
+        });
 
         await db.insert(stockLedger).values({
           branchId: dn.toBranchId,
@@ -724,6 +1069,89 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
           reference: data.dnId,
           notes: `SJ Terima ${dn.code}`,
         });
+      }
+
+      // Handle rejected quantity disposition
+      if (item.rejectedQuantity > 0) {
+        if (item.rejectionDisposition === "Return to Source") {
+          // Return stock to source branch
+          const [sourceInv] = await db
+            .select()
+            .from(inventory)
+            .where(
+              and(
+                eq(inventory.branchId, dn.fromBranchId),
+                eq(inventory.ingredientId, ingredientId),
+              ),
+            )
+            .limit(1);
+
+          if (sourceInv) {
+            const newQty = sourceInv.quantity + item.rejectedQuantity;
+            await db
+              .update(inventory)
+              .set({ quantity: newQty, lastUpdated: new Date() })
+              .where(eq(inventory.id, sourceInv.id));
+
+            await db.insert(stockLedger).values({
+              branchId: dn.fromBranchId,
+              ingredientId,
+              type: "IN",
+              quantity: item.rejectedQuantity,
+              balance: newQty,
+              reference: data.dnId,
+              notes: `SJ Return Reject ${dn.code}`,
+            });
+          } else {
+            await db.insert(inventory).values({
+              branchId: dn.fromBranchId,
+              ingredientId,
+              quantity: item.rejectedQuantity,
+            });
+
+            await db.insert(stockLedger).values({
+              branchId: dn.fromBranchId,
+              ingredientId,
+              type: "IN",
+              quantity: item.rejectedQuantity,
+              balance: item.rejectedQuantity,
+              reference: data.dnId,
+              notes: `SJ Return Reject ${dn.code}`,
+            });
+          }
+
+          // Also create an OUT ledger at destination for the rejected amount
+          await db.insert(stockLedger).values({
+            branchId: dn.toBranchId,
+            ingredientId,
+            type: "OUT",
+            quantity: item.rejectedQuantity,
+            balance: (targetInv?.quantity ?? 0) + item.receivedQuantity - item.rejectedQuantity,
+            reference: data.dnId,
+            notes: `SJ Reject OUT ${dn.code}`,
+          });
+        } else if (item.rejectionDisposition === "Scrap") {
+          // Create waste entry
+          await db.insert(wasteEntries).values({
+            branchId: dn.toBranchId,
+            ingredientId,
+            quantity: item.rejectedQuantity,
+            category: "Biaya Operasional",
+            notes: `Reject dari SJ ${dn.code}`,
+            submittedBy: user.id,
+          });
+
+          await db.insert(stockLedger).values({
+            branchId: dn.toBranchId,
+            ingredientId,
+            type: "OUT",
+            quantity: item.rejectedQuantity,
+            balance: (targetInv?.quantity ?? 0) + item.receivedQuantity - item.rejectedQuantity,
+            reference: data.dnId,
+            notes: `SJ Reject Scrap ${dn.code}`,
+          });
+        }
+        // Quarantine: for now just track in ledger; future enhancement can add quarantine table
       }
 
       // Remove from in-transit
@@ -737,11 +1165,23 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
         );
     }
 
-    // Update DN status
+    // Determine if fully received
+    const updatedItems = await db
+      .select()
+      .from(deliveryNoteItems)
+      .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
+
+    const allFullyReceived = updatedItems.every((item) => {
+      const picked = item.pickedQuantity ?? item.quantity;
+      return (item.receivedQuantity ?? 0) + (item.rejectedQuantity ?? 0) >= picked;
+    });
+
+    const newStatus = allFullyReceived ? "Received" : "Partial Received";
+
     await db
       .update(deliveryNotes)
       .set({
-        status: "Received",
+        status: newStatus,
         receivedBy: user.id,
         receivedAt: new Date(),
         updatedAt: new Date(),
@@ -757,7 +1197,7 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
     await logSystemAction(
       user,
       "Receive Delivery Note",
-      `SJ "${dn?.code}" diterima oleh ${user.name}`,
+      `SJ "${dn?.code}" diterima (${newStatus}) oleh ${user.name}`,
     );
     await logAudit(
       user,
@@ -768,7 +1208,7 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
       updatedDn as Record<string, unknown>,
     );
 
-    // Trigger BOM cost roll-up for all received ingredients
+    // Trigger BOM cost roll-up
     for (const item of data.items) {
       const dnItem = await db
         .select({ ingredientId: deliveryNoteItems.ingredientId })
@@ -780,7 +1220,7 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
       }
     }
 
-    // Notify admin pusat that items were received
+    // Notify admin pusat
     const [branchName] = await db
       .select({ name: branches.name })
       .from(branches)
@@ -799,6 +1239,95 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
       });
     }
 
+    return { success: true, status: newStatus };
+  });
+
+export const cancelDeliveryNote = createServerFn({ method: "POST" })
+  .inputValidator((data: { dnId: string; reason: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [dn] = await db
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .limit(1);
+
+    if (!dn) throw new Error("Delivery note not found");
+    if (!["Picking", "In Transit"].includes(dn.status)) {
+      throw new Error("Can only cancel SJ in Picking or In Transit status");
+    }
+
+    const items = await db
+      .select()
+      .from(deliveryNoteItems)
+      .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
+
+    if (dn.status === "In Transit") {
+      // Reverse source inventory deduction and clean up in-transit
+      for (const item of items) {
+        const shipQty = item.pickedQuantity ?? item.quantity;
+
+        const [sourceInv] = await db
+          .select()
+          .from(inventory)
+          .where(
+            and(
+              eq(inventory.branchId, dn.fromBranchId),
+              eq(inventory.ingredientId, item.ingredientId),
+            ),
+          )
+          .limit(1);
+
+        if (sourceInv) {
+          const newQty = sourceInv.quantity + shipQty;
+          await db
+            .update(inventory)
+            .set({ quantity: newQty, lastUpdated: new Date() })
+            .where(eq(inventory.id, sourceInv.id));
+
+          await db.insert(stockLedger).values({
+            branchId: dn.fromBranchId,
+            ingredientId: item.ingredientId,
+            type: "IN",
+            quantity: shipQty,
+            balance: newQty,
+            reference: data.dnId,
+            notes: `SJ Batal ${dn.code}`,
+          });
+        }
+
+        await db
+          .delete(inTransitInventory)
+          .where(
+            and(
+              eq(inTransitInventory.deliveryNoteId, data.dnId),
+              eq(inTransitInventory.ingredientId, item.ingredientId),
+            ),
+          );
+      }
+    }
+
+    const [updatedDn] = await db
+      .update(deliveryNotes)
+      .set({ status: "Cancelled", updatedAt: new Date() })
+      .where(eq(deliveryNotes.id, data.dnId))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Cancel Delivery Note",
+      `SJ "${dn.code}" dibatalkan oleh ${user.name}. Alasan: ${data.reason}`,
+    );
+    await logAudit(
+      user,
+      "deliveryNotes",
+      data.dnId,
+      "STATUS_CHANGE",
+      dn as Record<string, unknown>,
+      updatedDn as Record<string, unknown>,
+    );
+
     return { success: true };
   });
 
@@ -816,12 +1345,36 @@ export const reviewDeliveryNote = createServerFn({ method: "POST" })
       .limit(1);
 
     if (!dn) throw new Error("Delivery note not found");
-    if (dn.status !== "Received") throw new Error("Only Received SJ can be reviewed");
+    if (!["Received", "Partial Received"].includes(dn.status)) {
+      throw new Error("Only Received or Partial Received SJ can be reviewed");
+    }
 
     await db
       .update(deliveryNotes)
       .set({ reviewedByAdminPusat: true, updatedAt: new Date() })
       .where(eq(deliveryNotes.id, data.dnId));
+
+    // Auto-transition linked PR to Fulfilled if fully received
+    if (dn.purchaseRequisitionId && dn.status === "Received") {
+      const [pr] = await db
+        .select()
+        .from(purchaseRequisitions)
+        .where(eq(purchaseRequisitions.id, dn.purchaseRequisitionId))
+        .limit(1);
+
+      if (pr && pr.status === "Processed") {
+        await db
+          .update(purchaseRequisitions)
+          .set({ status: "Fulfilled", updatedAt: new Date() })
+          .where(eq(purchaseRequisitions.id, pr.id));
+
+        await logSystemAction(
+          user,
+          "Fulfill Purchase Requisition",
+          `PR "${pr.code}" otomatis ditandai Fulfilled karena SJ "${dn.code}" sudah diterima dan direview`,
+        );
+      }
+    }
 
     await logSystemAction(
       user,
@@ -894,7 +1447,13 @@ export const generateSCMInvoice = createServerFn({ method: "POST" })
 
     if (!dn) throw new Error("Delivery note not found");
 
-    // Get received items
+    const [existing] = await db
+      .select({ id: scmInvoices.id })
+      .from(scmInvoices)
+      .where(eq(scmInvoices.deliveryNoteId, data.dnId))
+      .limit(1);
+    if (existing) throw new Error(`Invoice already exists for this delivery note (${existing.id})`);
+
     const items = await db
       .select({
         ingredientId: deliveryNoteItems.ingredientId,
@@ -903,9 +1462,17 @@ export const generateSCMInvoice = createServerFn({ method: "POST" })
       .from(deliveryNoteItems)
       .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
 
-    // Get ingredient costs
+    if (items.length === 0) {
+      throw new Error("No items found in delivery note");
+    }
+
     let totalAmount = 0;
-    const invoiceItems = [];
+    const invoiceItems: {
+      ingredientId: string;
+      quantity: number;
+      unitPrice: number;
+      totalPrice: number;
+    }[] = [];
 
     for (const item of items) {
       const [ing] = await db
@@ -927,10 +1494,18 @@ export const generateSCMInvoice = createServerFn({ method: "POST" })
       });
     }
 
+    if (totalAmount <= 0) {
+      throw new Error(
+        `Cannot create invoice with zero amount (totalAmount=${totalAmount}). Received quantities may be zero or ingredient costs not set.`,
+      );
+    }
+
+    const code = `INV-${dn.code}`;
+
     const [invoice] = await db
       .insert(scmInvoices)
       .values({
-        code: `INV-${dn.code}`,
+        code,
         deliveryNoteId: data.dnId,
         fromBranchId: dn.fromBranchId,
         toBranchId: dn.toBranchId,
@@ -1042,7 +1617,15 @@ export const cancelSCMInvoice = createServerFn({ method: "POST" })
 export const getStockTransfers = createServerFn({ method: "GET" })
   .inputValidator((data: { branchId?: string }) => data)
   .handler(async ({ data: _data }) => {
-    await requireAuth();
+    const user = await requireAuth();
+
+    let whereClause = undefined;
+    if (user.role === "branch_admin" && user.branchId) {
+      whereClause = sql`(${stockTransfers.fromBranchId} = ${user.branchId} OR ${stockTransfers.toBranchId} = ${user.branchId})`;
+    } else if (user.role === "area_manager" && user.assignedBranches?.length) {
+      const assigned = user.assignedBranches;
+      whereClause = sql`(${stockTransfers.fromBranchId} IN (${sql.join(assigned)}) OR ${stockTransfers.toBranchId} IN (${sql.join(assigned)}))`;
+    }
 
     const result = await db
       .select({
@@ -1054,12 +1637,31 @@ export const getStockTransfers = createServerFn({ method: "GET" })
         quantity: stockTransfers.quantity,
         status: stockTransfers.status,
         requestedBy: stockTransfers.requestedBy,
+        approvedBy: stockTransfers.approvedBy,
+        rejectedBy: stockTransfers.rejectedBy,
+        rejectionReason: stockTransfers.rejectionReason,
         createdAt: stockTransfers.createdAt,
       })
       .from(stockTransfers)
+      .where(whereClause)
       .orderBy(desc(stockTransfers.createdAt));
 
     return result;
+  });
+
+export const getStockTransfer = createServerFn({ method: "GET" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await requireAuth();
+
+    const [transfer] = await db
+      .select()
+      .from(stockTransfers)
+      .where(eq(stockTransfers.id, data.id))
+      .limit(1);
+
+    if (!transfer) return null;
+    return transfer;
   });
 
 export const createStockTransfer = createServerFn({ method: "POST" })
@@ -1074,6 +1676,12 @@ export const createStockTransfer = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
+
+    if (user.role === "branch_admin") {
+      if (data.fromBranchId !== user.branchId && data.toBranchId !== user.branchId) {
+        throw new Error("Branch admin can only create transfers involving their branch");
+      }
+    }
 
     const [transfer] = await db
       .insert(stockTransfers)
@@ -1102,6 +1710,13 @@ export const createStockTransfer = createServerFn({ method: "POST" })
       transfer as Record<string, unknown>,
     );
 
+    // Notify area managers
+    await notifyUsers(
+      ["area_manager"],
+      "Mutasi Stok Baru",
+      `Mutasi "${data.code}" menunggu approval`,
+    );
+
     return transfer;
   });
 
@@ -1118,6 +1733,120 @@ export const approveStockTransfer = createServerFn({ method: "POST" })
       .limit(1);
 
     if (!transfer) throw new Error("Transfer not found");
+    if (transfer.status !== "Pending Approval")
+      throw new Error("Transfer must be Pending Approval");
+
+    if (user.role === "area_manager") {
+      assertBranchAccess(user, transfer.fromBranchId);
+    }
+
+    await db
+      .update(stockTransfers)
+      .set({ status: "Approved", approvedBy: user.id })
+      .where(eq(stockTransfers.id, data.transferId));
+
+    await logSystemAction(
+      user,
+      "Approve Stock Transfer",
+      `Mutasi stok "${transfer.code}" diapprove oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "stockTransfers",
+      data.transferId,
+      "STATUS_CHANGE",
+      transfer as Record<string, unknown>,
+      { ...transfer, status: "Approved", approvedBy: user.id } as Record<string, unknown>,
+    );
+
+    // Notify requester
+    await db.insert(systemNotifications).values({
+      userId: transfer.requestedBy,
+      title: "Mutasi Disetujui",
+      message: `Mutasi "${transfer.code}" telah disetujui. Siap dikirim.`,
+      type: "info",
+    });
+
+    return { success: true };
+  });
+
+export const rejectStockTransfer = createServerFn({ method: "POST" })
+  .inputValidator((data: { transferId: string; reason: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    await requireRole("super_admin", "area_manager");
+
+    const [transfer] = await db
+      .select()
+      .from(stockTransfers)
+      .where(eq(stockTransfers.id, data.transferId))
+      .limit(1);
+
+    if (!transfer) throw new Error("Transfer not found");
+    if (transfer.status !== "Pending Approval")
+      throw new Error("Transfer must be Pending Approval");
+
+    if (user.role === "area_manager") {
+      assertBranchAccess(user, transfer.fromBranchId);
+    }
+
+    await db
+      .update(stockTransfers)
+      .set({
+        status: "Rejected",
+        rejectedBy: user.id,
+        rejectionReason: data.reason,
+      })
+      .where(eq(stockTransfers.id, data.transferId));
+
+    await logSystemAction(
+      user,
+      "Reject Stock Transfer",
+      `Mutasi stok "${transfer.code}" ditolak oleh ${user.name}. Alasan: ${data.reason}`,
+    );
+    await logAudit(
+      user,
+      "stockTransfers",
+      data.transferId,
+      "STATUS_CHANGE",
+      transfer as Record<string, unknown>,
+      {
+        ...transfer,
+        status: "Rejected",
+        rejectedBy: user.id,
+        rejectionReason: data.reason,
+      } as Record<string, unknown>,
+    );
+
+    // Notify requester
+    await db.insert(systemNotifications).values({
+      userId: transfer.requestedBy,
+      title: "Mutasi Ditolak",
+      message: `Mutasi "${transfer.code}" ditolak. Alasan: ${data.reason}`,
+      type: "alert",
+    });
+
+    return { success: true };
+  });
+
+export const shipStockTransfer = createServerFn({ method: "POST" })
+  .inputValidator((data: { transferId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    await requireRole("super_admin", "admin_pusat", "branch_admin");
+
+    const [transfer] = await db
+      .select()
+      .from(stockTransfers)
+      .where(eq(stockTransfers.id, data.transferId))
+      .limit(1);
+
+    if (!transfer) throw new Error("Transfer not found");
+    if (transfer.status !== "Approved") throw new Error("Transfer must be Approved to ship");
+
+    if (user.role === "branch_admin" && transfer.fromBranchId !== user.branchId) {
+      throw new Error("Can only ship transfers from your own branch");
+    }
 
     // Deduct from source
     const [sourceInv] = await db
@@ -1149,7 +1878,70 @@ export const approveStockTransfer = createServerFn({ method: "POST" })
       });
     }
 
-    // Add to target
+    // Create in-transit record
+    await db.insert(inTransitInventory).values({
+      stockTransferId: data.transferId,
+      branchId: transfer.toBranchId,
+      ingredientId: transfer.ingredientId,
+      quantity: transfer.quantity,
+    });
+
+    await db
+      .update(stockTransfers)
+      .set({ status: "In Transit" })
+      .where(eq(stockTransfers.id, data.transferId));
+
+    await logSystemAction(
+      user,
+      "Ship Stock Transfer",
+      `Mutasi stok "${transfer.code}" dikirim oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "stockTransfers",
+      data.transferId,
+      "STATUS_CHANGE",
+      transfer as Record<string, unknown>,
+      { ...transfer, status: "In Transit" } as Record<string, unknown>,
+    );
+
+    // Notify destination branch admin
+    const destAdmins = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.role, "branch_admin"), eq(users.branchId, transfer.toBranchId)));
+    for (const u of destAdmins) {
+      await db.insert(systemNotifications).values({
+        userId: u.id,
+        title: "Mutasi Dikirim",
+        message: `Mutasi "${transfer.code}" sedang dalam perjalanan ke cabang Anda`,
+        type: "info",
+      });
+    }
+
+    return { success: true };
+  });
+
+export const receiveStockTransfer = createServerFn({ method: "POST" })
+  .inputValidator((data: { transferId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    await requireRole("super_admin", "branch_admin");
+
+    const [transfer] = await db
+      .select()
+      .from(stockTransfers)
+      .where(eq(stockTransfers.id, data.transferId))
+      .limit(1);
+
+    if (!transfer) throw new Error("Transfer not found");
+    if (transfer.status !== "In Transit") throw new Error("Transfer must be In Transit to receive");
+
+    if (user.role === "branch_admin" && transfer.toBranchId !== user.branchId) {
+      throw new Error("Can only receive transfers to your own branch");
+    }
+
+    // Add to destination
     const [targetInv] = await db
       .select()
       .from(inventory)
@@ -1195,6 +1987,11 @@ export const approveStockTransfer = createServerFn({ method: "POST" })
       });
     }
 
+    // Remove in-transit
+    await db
+      .delete(inTransitInventory)
+      .where(eq(inTransitInventory.stockTransferId, data.transferId));
+
     await db
       .update(stockTransfers)
       .set({ status: "Completed", approvedBy: user.id })
@@ -1202,8 +1999,8 @@ export const approveStockTransfer = createServerFn({ method: "POST" })
 
     await logSystemAction(
       user,
-      "Approve Stock Transfer",
-      `Mutasi stok "${transfer.code}" diapprove oleh ${user.name}`,
+      "Receive Stock Transfer",
+      `Mutasi stok "${transfer.code}" diterima oleh ${user.name}`,
     );
     await logAudit(
       user,
@@ -1212,6 +2009,80 @@ export const approveStockTransfer = createServerFn({ method: "POST" })
       "STATUS_CHANGE",
       transfer as Record<string, unknown>,
       { ...transfer, status: "Completed", approvedBy: user.id } as Record<string, unknown>,
+    );
+
+    return { success: true };
+  });
+
+export const cancelStockTransfer = createServerFn({ method: "POST" })
+  .inputValidator((data: { transferId: string; reason: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [transfer] = await db
+      .select()
+      .from(stockTransfers)
+      .where(eq(stockTransfers.id, data.transferId))
+      .limit(1);
+
+    if (!transfer) throw new Error("Transfer not found");
+    if (!["Approved", "In Transit"].includes(transfer.status)) {
+      throw new Error("Can only cancel Approved or In Transit transfers");
+    }
+
+    if (transfer.status === "In Transit") {
+      // Reverse source deduction
+      const [sourceInv] = await db
+        .select()
+        .from(inventory)
+        .where(
+          and(
+            eq(inventory.branchId, transfer.fromBranchId),
+            eq(inventory.ingredientId, transfer.ingredientId),
+          ),
+        )
+        .limit(1);
+
+      if (sourceInv) {
+        const newQty = sourceInv.quantity + transfer.quantity;
+        await db
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, sourceInv.id));
+
+        await db.insert(stockLedger).values({
+          branchId: transfer.fromBranchId,
+          ingredientId: transfer.ingredientId,
+          type: "IN",
+          quantity: transfer.quantity,
+          balance: newQty,
+          reference: data.transferId,
+          notes: `Mutasi Batal ${transfer.code}`,
+        });
+      }
+
+      await db
+        .delete(inTransitInventory)
+        .where(eq(inTransitInventory.stockTransferId, data.transferId));
+    }
+
+    await db
+      .update(stockTransfers)
+      .set({ status: "Cancelled" })
+      .where(eq(stockTransfers.id, data.transferId));
+
+    await logSystemAction(
+      user,
+      "Cancel Stock Transfer",
+      `Mutasi stok "${transfer.code}" dibatalkan oleh ${user.name}. Alasan: ${data.reason}`,
+    );
+    await logAudit(
+      user,
+      "stockTransfers",
+      data.transferId,
+      "STATUS_CHANGE",
+      transfer as Record<string, unknown>,
+      { ...transfer, status: "Cancelled" } as Record<string, unknown>,
     );
 
     return { success: true };

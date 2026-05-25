@@ -8,6 +8,7 @@ import {
   receiveDeliveryNote,
   reviewDeliveryNote,
   generateSCMInvoice,
+  cancelDeliveryNote,
 } from "#/lib/server/scm";
 import { getBranches } from "#/lib/server/branches";
 import { Badge } from "#/components/ui/badge";
@@ -23,6 +24,7 @@ interface DNItem {
   pickedQuantity: number | null;
   receivedQuantity: number | null;
   rejectedQuantity: number | null;
+  rejectionDisposition: "Return to Source" | "Scrap" | "Quarantine" | null;
   discrepancyNote: string | null;
 }
 
@@ -33,6 +35,7 @@ const statusColors: Record<
   Draft: "secondary",
   Picking: "default",
   "In Transit": "warning",
+  "Partial Received": "warning",
   Received: "success",
   Cancelled: "destructive",
 };
@@ -52,8 +55,18 @@ function DNDetailPage() {
   const { dnId } = Route.useParams();
   const queryClient = useQueryClient();
   const [receiveInputs, setReceiveInputs] = useState<
-    Record<string, { received: string; rejected: string; note: string }>
+    Record<
+      string,
+      {
+        received: string;
+        rejected: string;
+        note: string;
+        disposition: "Return to Source" | "Scrap" | "Quarantine";
+      }
+    >
   >({});
+  const [cancelReason, setCancelReason] = useState("");
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   const { data: dn } = useQuery({
     queryKey: ["delivery-note", dnId],
@@ -86,30 +99,49 @@ function DNDetailPage() {
     },
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: cancelDeliveryNote,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["delivery-note", dnId] });
+      void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+      setShowCancelModal(false);
+    },
+  });
+
   if (!dn) return <div className="text-muted-foreground">Surat jalan tidak ditemukan</div>;
 
   const canReceive =
-    dn.status === "In Transit" && (user?.role === "branch_admin" || user?.role === "super_admin");
+    (dn.status === "In Transit" || dn.status === "Partial Received") &&
+    (user?.role === "branch_admin" || user?.role === "super_admin");
   const canReview =
-    dn.status === "Received" &&
+    (dn.status === "Received" || dn.status === "Partial Received") &&
     !dn.reviewedByAdminPusat &&
     ["super_admin", "admin_pusat"].includes(user?.role ?? "");
   const canGenerateInvoice =
     dn.status === "Received" &&
     dn.reviewedByAdminPusat &&
     ["super_admin", "admin_pusat"].includes(user?.role ?? "");
+  const canCancel =
+    ["Picking", "In Transit"].includes(dn.status) &&
+    ["super_admin", "admin_pusat"].includes(user?.role ?? "");
+
   const fromBranch = branches.find((b) => b.id === dn.fromBranchId);
   const toBranch = branches.find((b) => b.id === dn.toBranchId);
 
   const handleReceive = () => {
-    const items = dn.items.map((item: DNItem) => ({
-      itemId: item.id,
-      receivedQuantity: Number(
-        receiveInputs[item.id]?.received ?? item.receivedQuantity ?? item.quantity,
-      ),
-      rejectedQuantity: Number(receiveInputs[item.id]?.rejected ?? 0),
-      discrepancyNote: receiveInputs[item.id]?.note || undefined,
-    }));
+    const items = dn.items.map((item: DNItem) => {
+      const picked = item.pickedQuantity ?? item.quantity;
+      const received = Number(receiveInputs[item.id]?.received ?? item.receivedQuantity ?? picked);
+      const rejected = Number(receiveInputs[item.id]?.rejected ?? item.rejectedQuantity ?? 0);
+      return {
+        itemId: item.id,
+        receivedQuantity: received,
+        rejectedQuantity: rejected,
+        rejectionDisposition:
+          rejected > 0 ? (receiveInputs[item.id]?.disposition ?? "Return to Source") : undefined,
+        discrepancyNote: receiveInputs[item.id]?.note || undefined,
+      };
+    });
     void receiveMutation.mutateAsync({ data: { dnId, items } });
   };
 
@@ -152,6 +184,14 @@ function DNDetailPage() {
                 {generateInvoiceMutation.isPending ? "Memproses..." : "Buat Invoice"}
               </button>
             )}
+            {canCancel && (
+              <button
+                onClick={() => setShowCancelModal(true)}
+                className="h-9 px-4 rounded-md bg-red-600 text-white text-sm font-medium"
+              >
+                Batalkan SJ
+              </button>
+            )}
           </div>
         </div>
 
@@ -180,22 +220,16 @@ function DNDetailPage() {
         )}
 
         <div className="rounded-md border overflow-x-auto">
-          <table className="w-full text-sm min-w-[480px]">
+          <table className="w-full text-sm min-w-[640px]">
             <thead className="border-b bg-muted/50">
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Bahan</th>
                 <th className="px-4 py-3 text-right font-medium">Diorder</th>
                 <th className="px-4 py-3 text-right font-medium">Ready</th>
-                {dn.status !== "Picking" && (
-                  <th className="px-4 py-3 text-right font-medium">Dikirim</th>
-                )}
-                {(dn.status === "In Transit" || dn.status === "Received") && (
-                  <>
-                    <th className="px-4 py-3 text-right font-medium">Diterima</th>
-                    <th className="px-4 py-3 text-right font-medium">Reject</th>
-                    <th className="px-4 py-3 text-left font-medium">Keterangan</th>
-                  </>
-                )}
+                <th className="px-4 py-3 text-right font-medium">Dikirim</th>
+                <th className="px-4 py-3 text-right font-medium">Diterima</th>
+                <th className="px-4 py-3 text-right font-medium">Reject</th>
+                <th className="px-4 py-3 text-left font-medium">Keterangan</th>
               </tr>
             </thead>
             <tbody>
@@ -204,68 +238,92 @@ function DNDetailPage() {
                   <td className="px-4 py-3">{item.ingredientName ?? item.ingredientCode}</td>
                   <td className="px-4 py-3 text-right">{item.quantity}</td>
                   <td className="px-4 py-3 text-right">{item.readyQuantity ?? "-"}</td>
-                  {dn.status !== "Picking" && (
-                    <td className="px-4 py-3 text-right">{item.pickedQuantity ?? item.quantity}</td>
-                  )}
-                  {(dn.status === "In Transit" || dn.status === "Received") && (
-                    <>
-                      <td className="px-4 py-3">
-                        {canReceive ? (
-                          <input
-                            type="number"
-                            min={0}
-                            defaultValue={
-                              item.receivedQuantity ?? item.pickedQuantity ?? item.quantity
-                            }
+                  <td className="px-4 py-3 text-right">{item.pickedQuantity ?? item.quantity}</td>
+                  <td className="px-4 py-3">
+                    {canReceive ? (
+                      <input
+                        type="number"
+                        min={0}
+                        defaultValue={item.receivedQuantity ?? item.pickedQuantity ?? item.quantity}
+                        onChange={(e) =>
+                          setReceiveInputs((prev) => ({
+                            ...prev,
+                            [item.id]: { ...prev[item.id], received: e.target.value },
+                          }))
+                        }
+                        className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-right"
+                      />
+                    ) : (
+                      <span className="text-right block">{item.receivedQuantity ?? "-"}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {canReceive ? (
+                      <input
+                        type="number"
+                        min={0}
+                        defaultValue={item.rejectedQuantity ?? 0}
+                        onChange={(e) =>
+                          setReceiveInputs((prev) => ({
+                            ...prev,
+                            [item.id]: { ...prev[item.id], rejected: e.target.value },
+                          }))
+                        }
+                        className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-right"
+                      />
+                    ) : (
+                      <span className="text-right block">{item.rejectedQuantity ?? "-"}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {canReceive ? (
+                      <div className="space-y-1">
+                        <input
+                          type="text"
+                          placeholder="Keterangan..."
+                          onChange={(e) =>
+                            setReceiveInputs((prev) => ({
+                              ...prev,
+                              [item.id]: { ...prev[item.id], note: e.target.value },
+                            }))
+                          }
+                          className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                        />
+                        {Number(receiveInputs[item.id]?.rejected ?? item.rejectedQuantity ?? 0) >
+                          0 && (
+                          <select
                             onChange={(e) =>
                               setReceiveInputs((prev) => ({
                                 ...prev,
-                                [item.id]: { ...prev[item.id], received: e.target.value },
+                                [item.id]: {
+                                  ...prev[item.id],
+                                  disposition: e.target.value as
+                                    | "Return to Source"
+                                    | "Scrap"
+                                    | "Quarantine",
+                                },
                               }))
                             }
-                            className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-right"
-                          />
-                        ) : (
-                          <span className="text-right block">{item.receivedQuantity ?? "-"}</span>
+                            defaultValue={item.rejectionDisposition ?? "Return to Source"}
+                            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs"
+                          >
+                            <option value="Return to Source">Return ke Pusat</option>
+                            <option value="Scrap">Scrap / Buang</option>
+                            <option value="Quarantine">Karantina</option>
+                          </select>
                         )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {canReceive ? (
-                          <input
-                            type="number"
-                            min={0}
-                            defaultValue={item.rejectedQuantity ?? 0}
-                            onChange={(e) =>
-                              setReceiveInputs((prev) => ({
-                                ...prev,
-                                [item.id]: { ...prev[item.id], rejected: e.target.value },
-                              }))
-                            }
-                            className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-right"
-                          />
-                        ) : (
-                          <span className="text-right block">{item.rejectedQuantity ?? "-"}</span>
+                      </div>
+                    ) : (
+                      <div>
+                        <span>{item.discrepancyNote ?? "-"}</span>
+                        {item.rejectionDisposition && (
+                          <span className="ml-2 text-xs text-amber-600">
+                            ({item.rejectionDisposition})
+                          </span>
                         )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {canReceive ? (
-                          <input
-                            type="text"
-                            placeholder="Keterangan..."
-                            onChange={(e) =>
-                              setReceiveInputs((prev) => ({
-                                ...prev,
-                                [item.id]: { ...prev[item.id], note: e.target.value },
-                              }))
-                            }
-                            className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
-                          />
-                        ) : (
-                          (item.discrepancyNote ?? "-")
-                        )}
-                      </td>
-                    </>
-                  )}
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -280,6 +338,47 @@ function DNDetailPage() {
           >
             {receiveMutation.isPending ? "Memproses..." : "Konfirmasi Penerimaan"}
           </button>
+        )}
+
+        {/* Cancel Modal */}
+        {showCancelModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-lg border bg-background p-6 space-y-4">
+              <h3 className="text-lg font-bold">Batalkan Surat Jalan</h3>
+              <p className="text-sm text-muted-foreground">
+                Pembatalan akan mengembalikan stok ke gudang pusat (jika sedang In Transit).
+              </p>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Alasan Pembatalan</label>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  required
+                  rows={3}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowCancelModal(false)}
+                  className="h-9 px-4 rounded-md border text-sm"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={() =>
+                    void cancelMutation.mutateAsync({
+                      data: { dnId, reason: cancelReason || "Tidak ada alasan" },
+                    })
+                  }
+                  disabled={cancelMutation.isPending || !cancelReason.trim()}
+                  className="h-9 px-4 rounded-md bg-red-600 text-white text-sm disabled:opacity-50"
+                >
+                  {cancelMutation.isPending ? "Memproses..." : "Batalkan SJ"}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </RoleGuard>

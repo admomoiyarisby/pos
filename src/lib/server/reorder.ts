@@ -1,12 +1,70 @@
 import { createServerFn } from "@tanstack/react-start";
-import { db } from "#/db/index";
-import { ingredients, stockLedger } from "#/db/schema";
+import { db } from "#/lib/server/db";
+import { ingredients, stockLedger, appSettings } from "#/db/schema";
 import { eq, and, gte } from "drizzle-orm";
 import { requireRole } from "./auth";
 
+async function getReorderDays(): Promise<{ ropDays: number; roqDays: number }> {
+  const [ropSetting] = await db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, "reorder_rop_days"))
+    .limit(1);
+  const [roqSetting] = await db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, "reorder_roq_days"))
+    .limit(1);
+  return {
+    ropDays: Number(ropSetting?.value ?? 3),
+    roqDays: Number(roqSetting?.value ?? 5),
+  };
+}
+
+export const getReorderSettings = createServerFn({ method: "GET" }).handler(async () => {
+  await requireRole("super_admin", "admin_pusat");
+  return getReorderDays();
+});
+
+export const updateReorderSettings = createServerFn({ method: "POST" })
+  .inputValidator((data: { ropDays: number; roqDays: number }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    for (const [key, value] of [
+      ["reorder_rop_days", String(data.ropDays)],
+      ["reorder_roq_days", String(data.roqDays)],
+    ] as const) {
+      const [existing] = await db
+        .select({ id: appSettings.id })
+        .from(appSettings)
+        .where(eq(appSettings.key, key))
+        .limit(1);
+
+      if (existing) {
+        await db
+          .update(appSettings)
+          .set({ value: value, updatedBy: user.id, updatedAt: new Date() })
+          .where(eq(appSettings.id, existing.id));
+      } else {
+        await db.insert(appSettings).values({
+          key,
+          value,
+          description:
+            key === "reorder_rop_days"
+              ? "Reorder Point safety stock days"
+              : "Reorder Order Quantity supply days",
+          updatedBy: user.id,
+        });
+      }
+    }
+
+    return { success: true };
+  });
+
 /**
  * Server function: Generate reorder recommendations for all ingredients in a branch.
- * Calculates ROP (3-day safety stock) and ROQ (5-day supply rounded to MOQ) from 30-day usage.
+ * Calculates ROP and ROQ from 30-day usage based on configurable days settings.
  * Returns list of ingredients with suggested order quantities.
  */
 export const generateReorderRecommendations = createServerFn({ method: "POST" })
@@ -14,6 +72,7 @@ export const generateReorderRecommendations = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat", "branch_admin");
 
+    const { ropDays, roqDays } = await getReorderDays();
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
     const allIngredients = await db
       .select()
@@ -30,7 +89,6 @@ export const generateReorderRecommendations = createServerFn({ method: "POST" })
     }[] = [];
 
     for (const ing of allIngredients) {
-      // Calculate 30-day average daily out
       const outEntries = await db
         .select({ quantity: stockLedger.quantity })
         .from(stockLedger)
@@ -45,11 +103,10 @@ export const generateReorderRecommendations = createServerFn({ method: "POST" })
 
       const totalOut = outEntries.reduce((sum, e) => sum + e.quantity, 0);
       const avgDaily = totalOut / 30;
-      const recommendedQty = Math.ceil(avgDaily * 5);
+      const recommendedQty = Math.ceil(avgDaily * roqDays);
       const roq = Math.ceil(recommendedQty / ing.moq) * ing.moq;
-      const rop = Math.ceil(avgDaily * 3);
+      const rop = Math.ceil(avgDaily * ropDays);
 
-      // Update ingredient with new values
       await db.update(ingredients).set({ rop, roq }).where(eq(ingredients.id, ing.id));
 
       results.push({

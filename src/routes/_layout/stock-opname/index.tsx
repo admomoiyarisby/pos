@@ -129,6 +129,17 @@ function StockOpnamePage() {
 
       <DataTable columns={columns} data={opnames} keyExtractor={(r) => r.id} />
 
+      {opnames.length === 0 && (
+        <div className="rounded-md border p-8 text-center">
+          <p className="text-muted-foreground text-sm">
+            Tidak ada Stock Opname yang aktif untuk cabang Anda.
+          </p>
+          <p className="text-muted-foreground text-xs mt-1">
+            Hubungi Area Manager untuk memulai proses Stock Opname.
+          </p>
+        </div>
+      )}
+
       <Modal
         open={triggerModal}
         onClose={() => setTriggerModal(false)}

@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import { printRequests, orders, users, systemNotifications } from "#/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth } from "./auth";

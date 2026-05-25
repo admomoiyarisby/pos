@@ -1,18 +1,108 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
+import { getStockTransfer } from "#/lib/server/scm";
+import { getBranches } from "#/lib/server/branches";
+import { getIngredients } from "#/lib/server/ingredients";
+import { Badge } from "#/components/ui/badge";
+
+const statusColors: Record<
+  string,
+  "default" | "warning" | "success" | "destructive" | "secondary"
+> = {
+  "Pending Approval": "warning",
+  Approved: "default",
+  Rejected: "destructive",
+  "In Transit": "warning",
+  Completed: "success",
+  Cancelled: "destructive",
+};
 
 export const Route = createFileRoute("/_layout/stock-transfers/$trId")({
   component: TransferDetailPage,
+  loader: async ({ params }) => {
+    const transfer = await getStockTransfer({ data: { id: params.trId } });
+    const branches = await getBranches({ data: {} });
+    const ingredients = await getIngredients({ data: {} });
+    return { transfer, branches, ingredients };
+  },
 });
 
 function TransferDetailPage() {
+  const { transfer: initial, branches, ingredients } = Route.useLoaderData();
+  const { trId } = Route.useParams();
+
+  const { data: transfer } = useQuery({
+    queryKey: ["stock-transfer", trId],
+    queryFn: () => getStockTransfer({ data: { id: trId } }),
+    initialData: initial,
+  });
+
+  if (!transfer) return <div className="text-muted-foreground">Mutasi stok tidak ditemukan</div>;
+
+  const fromBranch = branches.find((b) => b.id === transfer.fromBranchId);
+  const toBranch = branches.find((b) => b.id === transfer.toBranchId);
+  const ingredient = ingredients.find((i) => i.id === transfer.ingredientId);
+
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
-      <div>
-        <h1 className="text-2xl font-bold">Detail Mutasi Stok</h1>
-        <p className="text-muted-foreground">
-          Halaman detail mutasi stok akan ditampilkan di sini.
-        </p>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="text-2xl font-bold">{transfer.code}</h1>
+            <p className="text-sm text-muted-foreground">Mutasi Stok Antar Cabang</p>
+          </div>
+          <Badge
+            variant={
+              (statusColors[transfer.status] ?? "default") as
+                | "default"
+                | "success"
+                | "warning"
+                | "destructive"
+                | "secondary"
+            }
+          >
+            {transfer.status}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="rounded-lg border p-4">
+            <p className="text-xs text-muted-foreground uppercase">Dari Cabang</p>
+            <p className="font-medium mt-1">{fromBranch?.name ?? transfer.fromBranchId}</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-xs text-muted-foreground uppercase">Ke Cabang</p>
+            <p className="font-medium mt-1">{toBranch?.name ?? transfer.toBranchId}</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-xs text-muted-foreground uppercase">Bahan</p>
+            <p className="font-medium mt-1">{ingredient?.name ?? transfer.ingredientId}</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-xs text-muted-foreground uppercase">Jumlah</p>
+            <p className="font-medium mt-1">
+              {transfer.quantity.toLocaleString("id-ID")} {ingredient?.stockUnit ?? ""}
+            </p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-xs text-muted-foreground uppercase">Diajukan Oleh</p>
+            <p className="font-medium mt-1">{transfer.requestedBy.slice(0, 8)}</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-xs text-muted-foreground uppercase">Tanggal</p>
+            <p className="font-medium mt-1">
+              {new Date(transfer.createdAt).toLocaleDateString("id-ID")}
+            </p>
+          </div>
+        </div>
+
+        {transfer.rejectionReason && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4">
+            <p className="text-xs text-muted-foreground uppercase">Alasan Penolakan</p>
+            <p className="mt-1 text-destructive">{transfer.rejectionReason}</p>
+          </div>
+        )}
       </div>
     </RoleGuard>
   );

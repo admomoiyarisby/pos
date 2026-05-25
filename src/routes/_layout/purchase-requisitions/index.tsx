@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -7,6 +7,15 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
+import { AlertCircle } from "lucide-react";
+import {
+  Combobox,
+  ComboboxInput,
+  ComboboxContent,
+  ComboboxList,
+  ComboboxItem,
+  ComboboxEmpty,
+} from "#/components/ui/combobox";
 import {
   getPurchaseRequisitions,
   createPurchaseRequisition,
@@ -62,6 +71,7 @@ function PRPage() {
   const [processPr, setProcessPr] = useState<PRRow | null>(null);
   const [rejectPr, setRejectPr] = useState<PRRow | null>(null);
   const [createSJPrompt, setCreateSJPrompt] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const isBranchAdmin = user?.role === "branch_admin";
   const isApprover =
@@ -88,6 +98,10 @@ function PRPage() {
       void queryClient.invalidateQueries({ queryKey: ["purchase-requisitions"] });
       setModalOpen(false);
       setPrItems([]);
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal membuat PR");
     },
   });
 
@@ -98,6 +112,10 @@ function PRPage() {
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
       setProcessPr(null);
       setCreateSJPrompt(false);
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal memproses PR");
     },
   });
 
@@ -106,6 +124,10 @@ function PRPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["purchase-requisitions"] });
       setRejectPr(null);
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal menolak PR");
     },
   });
 
@@ -122,6 +144,31 @@ function PRPage() {
       }
     },
   });
+
+  const ingredientOptions = useMemo(() => {
+    return ingredients.map((i) => {
+      const invItem = branchInventory.find((inv) => inv.ingredientId === i.id);
+      const invQty = invItem ? invItem.quantity : 0;
+      const isLow = i.rop > 0 && invQty <= i.rop;
+      return {
+        id: i.id,
+        value: i.id,
+        name: i.name,
+        label: i.name,
+        code: i.code,
+        stockUnit: i.stockUnit,
+        stockQty: invQty,
+        moq: i.moq,
+        rop: i.rop,
+        isLow,
+      };
+    });
+  }, [ingredients, branchInventory]);
+
+  const [selectedIngredient, setSelectedIngredient] = useState<
+    (typeof ingredientOptions)[number] | null
+  >(null);
+  const [ingredientInputValue, setIngredientInputValue] = useState("");
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -254,11 +301,20 @@ function PRPage() {
       {/* Create PR Modal */}
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setSubmitError(null);
+        }}
         title="Buat Purchase Requisition"
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {submitError && (
+            <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{submitError}</span>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Kode PR</label>
@@ -291,23 +347,53 @@ function PRPage() {
           <div className="space-y-2">
             <label className="text-sm font-medium">Item</label>
             <div className="flex flex-col sm:flex-row gap-2">
-              <select
-                id="pr-ingredient"
-                className="h-9 flex-1 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+              <Combobox
+                value={selectedIngredient}
+                onValueChange={(val) => {
+                  setSelectedIngredient(val);
+                  setIngredientInputValue(val ? val.label : "");
+                }}
+                inputValue={ingredientInputValue}
+                onInputValueChange={setIngredientInputValue}
+                items={ingredientOptions}
+                itemToStringValue={(item) => item.id}
+                itemToStringLabel={(item) => item.label}
+                isItemEqualToValue={(a, b) => a?.id === b?.id}
               >
-                <option value="">Pilih bahan...</option>
-                {ingredients.map(function (i) {
-                  var invItem = branchInventory.find(function (inv: any) {
-                    return inv.ingredientId === i.id;
-                  });
-                  var invQty = invItem ? invItem.quantity : 0;
-                  return (
-                    <option key={i.id} value={i.id}>
-                      {i.name} ({i.stockUnit}) — Stok: {invQty}
-                    </option>
-                  );
-                })}
-              </select>
+                <ComboboxInput
+                  showTrigger
+                  showClear={!!selectedIngredient}
+                  placeholder="Pilih bahan..."
+                  className="flex-1 min-w-0"
+                />
+                <ComboboxContent>
+                  <ComboboxList>
+                    {(item: (typeof ingredientOptions)[number]) => (
+                      <ComboboxItem key={item.id} value={item}>
+                        <div className="flex items-center justify-between w-full">
+                          <span>
+                            {item.name}{" "}
+                            <span className="text-muted-foreground">({item.stockUnit})</span>
+                          </span>
+                          <span
+                            className={
+                              "text-xs " +
+                              (item.isLow
+                                ? "text-destructive font-medium"
+                                : "text-muted-foreground")
+                            }
+                          >
+                            Stok: {item.stockQty}
+                            {item.moq > 1 && ` (MOQ: ${item.moq})`}
+                            {item.isLow && " ⚠️ LOW"}
+                          </span>
+                        </div>
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                  <ComboboxEmpty>Tidak ada bahan yang cocok</ComboboxEmpty>
+                </ComboboxContent>
+              </Combobox>
               <div className="flex gap-2 shrink-0">
                 <input
                   id="pr-qty"
@@ -319,14 +405,14 @@ function PRPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    const ingEl = document.getElementById("pr-ingredient") as HTMLSelectElement;
                     const qtyEl = document.getElementById("pr-qty") as HTMLInputElement;
-                    if (ingEl.value && qtyEl.value) {
+                    if (selectedIngredient && qtyEl.value) {
                       setPrItems([
                         ...prItems,
-                        { ingredientId: ingEl.value, quantity: Number(qtyEl.value) },
+                        { ingredientId: selectedIngredient.id, quantity: Number(qtyEl.value) },
                       ]);
-                      ingEl.value = "";
+                      setSelectedIngredient(null);
+                      setIngredientInputValue("");
                       qtyEl.value = "";
                     }
                   }}
@@ -344,6 +430,7 @@ function PRPage() {
                     (inv: { ingredientId: string }) => inv.ingredientId === item.ingredientId,
                   );
                   const stockQty = invItem?.quantity ?? 0;
+                  const isLow = (ing?.rop ?? 0) > 0 && stockQty <= (ing?.rop ?? 0);
                   return (
                     <div key={idx} className="flex items-center justify-between px-3 py-2 text-sm">
                       <div className="flex-1 min-w-0">
@@ -353,11 +440,13 @@ function PRPage() {
                         <span
                           className={
                             "ml-2 text-xs " +
-                            (stockQty > 0 ? "text-muted-foreground" : "text-destructive")
+                            (isLow ? "text-destructive font-medium" : "text-muted-foreground")
                           }
                         >
                           <Package className="inline h-3 w-3 mr-0.5" />
                           Stok: {stockQty}
+                          {isLow && " (di bawah ROP)"}
+                          {ing && ing.moq > 1 && ` — MOQ: ${ing.moq}`}
                         </span>
                       </div>
                       <button
@@ -399,11 +488,18 @@ function PRPage() {
         onClose={() => {
           setProcessPr(null);
           setCreateSJPrompt(false);
+          setSubmitError(null);
         }}
         title="Proses Purchase Requisition"
       >
         {processPr && (
           <div className="space-y-4">
+            {submitError && (
+              <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{submitError}</span>
+              </div>
+            )}
             <p className="text-sm">
               Proses PR <strong>{processPr.code}</strong>?
             </p>
@@ -452,6 +548,12 @@ function PRPage() {
             }}
             className="space-y-4"
           >
+            {submitError && (
+              <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{submitError}</span>
+              </div>
+            )}
             <p className="text-sm">
               Tolak PR <strong>{rejectPr.code}</strong>?
             </p>

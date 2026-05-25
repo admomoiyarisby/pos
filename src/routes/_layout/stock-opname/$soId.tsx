@@ -10,6 +10,7 @@ import {
   approveStockOpname,
 } from "#/lib/server/inventory";
 import { Badge } from "#/components/ui/badge";
+import { cn } from "#/lib/utils";
 
 interface SOItem {
   id: string;
@@ -43,6 +44,7 @@ function StockOpnameDetailPage() {
   const { soId } = Route.useParams();
   const queryClient = useQueryClient();
   const [physicalInputs, setPhysicalInputs] = useState<Record<string, string>>({});
+  const [touchedItems, setTouchedItems] = useState<Set<string>>(new Set());
   const [investigationNote, setInvestigationNote] = useState("");
   const [approveModal, setApproveModal] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -82,18 +84,31 @@ function StockOpnameDetailPage() {
 
   const handleInputChange = (itemId: string, value: string) => {
     setPhysicalInputs((prev) => ({ ...prev, [itemId]: value }));
+    setTouchedItems((prev) => new Set(prev).add(itemId));
   };
 
   const handleSubmit = () => {
-    // Validate no blanks
+    // 1. Check that EVERY item has an explicit entry in physicalInputs
+    const missingItems = detail.items.filter(
+      (item: SOItem) => physicalInputs[item.id] === undefined,
+    );
+    if (missingItems.length > 0) {
+      setSubmitError(
+        `Masih ada ${missingItems.length} item yang belum diisi. Semua item wajib diisi sebelum submit.`,
+      );
+      return;
+    }
+
+    // 2. Build payload only from explicitly entered values
     const items = detail.items.map((item: SOItem) => ({
       itemId: item.id,
-      physicalStock: Number(physicalInputs[item.id] ?? item.physicalStock),
+      physicalStock: Number(physicalInputs[item.id]),
     }));
 
-    const hasBlank = items.some((i) => isNaN(i.physicalStock));
-    if (hasBlank) {
-      setSubmitError("Semua item harus diisi. Tidak boleh kosong.");
+    // 3. Validate all values are valid non-negative numbers
+    const hasInvalid = items.some((i) => isNaN(i.physicalStock) || i.physicalStock < 0);
+    if (hasInvalid) {
+      setSubmitError("Stok fisik tidak valid. Pastikan semua nilai adalah angka non-negatif.");
       return;
     }
 
@@ -121,7 +136,7 @@ function StockOpnameDetailPage() {
           <div>
             <h1 className="text-2xl font-bold">Opname Stok</h1>
             <p className="text-sm text-muted-foreground">
-              Tanggal: {detail.date} · Cabang: {detail.branchId.slice(0, 8)}
+              Tanggal: {detail.date} · Cabang: {detail.branchName}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -175,7 +190,12 @@ function StockOpnameDetailPage() {
                         value={inputValue}
                         onChange={(e) => handleInputChange(item.id, e.target.value)}
                         disabled={detail.status === "Approved"}
-                        className="h-8 w-24 rounded-md border border-input bg-background px-2 text-sm text-right disabled:opacity-50"
+                        className={cn(
+                          "h-8 w-24 rounded-md border bg-background px-2 text-sm text-right disabled:opacity-50",
+                          !touchedItems.has(item.id) && detail.status !== "Approved"
+                            ? "border-amber-300 bg-amber-50"
+                            : "border-input",
+                        )}
                       />
                     </td>
                     {!isBlind && (
@@ -208,7 +228,7 @@ function StockOpnameDetailPage() {
               disabled={submitMutation.isPending}
               className="h-10 px-6 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
             >
-              {submitMutation.isPending ? "Menyimpan..." : "Kirim Opname"}
+              {submitMutation.isPending ? "Menyimpan..." : "Simpan Opname"}
             </button>
           )}
 

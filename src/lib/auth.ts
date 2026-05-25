@@ -1,4 +1,4 @@
-import { db } from "#/db";
+import { db } from "#/lib/server/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { account, session, users, verification } from "#/db/schema";

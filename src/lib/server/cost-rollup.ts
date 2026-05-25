@@ -1,4 +1,4 @@
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import { recipes, recipeIngredients, ingredients } from "#/db/schema";
 import { eq } from "drizzle-orm";
 

@@ -1,4 +1,4 @@
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import { eq, and } from "drizzle-orm";
 import { auth } from "#/lib/auth";
 
@@ -302,9 +302,10 @@ export async function seedModifiers(idMap: IdMap) {
           })
           .returning({ id: modifierGroupsTable.id });
         mgId = inserted.id;
-        idMap.modifierGroup.set(mg.protoId, mgId);
+        idMap.modifierGroup.set(mg.protoId, mgId!);
       }
     }
+    if (!mgId) continue;
 
     for (const mod of mg.modifiers) {
       let modId = idMap.modifier.get(mod.protoId);
@@ -329,9 +330,10 @@ export async function seedModifiers(idMap: IdMap) {
             })
             .returning({ id: modifiersTable.id });
           modId = inserted.id;
-          idMap.modifier.set(mod.protoId, modId);
+          idMap.modifier.set(mod.protoId, modId!);
         }
       }
+      if (!modId) continue;
 
       if ("ingredients" in mod && mod.ingredients) {
         for (const mi of mod.ingredients) {
@@ -383,9 +385,10 @@ export async function seedRecipesPass1(idMap: IdMap) {
           })
           .returning({ id: recipesTable.id });
         recId = inserted.id;
-        idMap.recipe.set(r.protoId, recId);
+        idMap.recipe.set(r.protoId, recId!);
       }
     }
+    if (!recId) continue;
 
     for (const bpId of (r as any).brandProtoIds || []) {
       const brandId = idMap.brand.get(bpId);

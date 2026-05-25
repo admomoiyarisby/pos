@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import { yieldConversions, ingredients, stockLedger, inventory } from "#/db/schema";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import { eq, and } from "drizzle-orm";

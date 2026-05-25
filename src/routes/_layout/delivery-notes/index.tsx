@@ -19,14 +19,14 @@ import { getIngredients } from "#/lib/server/ingredients";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Truck, CheckCircle, DollarSign } from "lucide-react";
+import { ArrowRight, Truck, CheckCircle, DollarSign, AlertCircle } from "lucide-react";
 
 interface DNRow {
   id: string;
   code: string;
   fromBranchId: string;
   toBranchId: string;
-  status: "Draft" | "Picking" | "In Transit" | "Received" | "Cancelled";
+  status: "Draft" | "Picking" | "In Transit" | "Partial Received" | "Received" | "Cancelled";
   driverName: string | null;
   reviewedByAdminPusat: boolean;
   createdAt: Date;
@@ -39,6 +39,7 @@ const statusColors: Record<
   Draft: "secondary",
   Picking: "default",
   "In Transit": "warning",
+  "Partial Received": "warning",
   Received: "success",
   Cancelled: "destructive",
 };
@@ -62,6 +63,8 @@ function DNPage() {
     { ingredientId: string; quantity: number; readyQuantity: number }[]
   >([]);
   const [reviewSJ, setReviewSJ] = useState<DNRow | null>(null);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { data: dns } = useQuery({
     queryKey: ["delivery-notes"],
@@ -75,12 +78,22 @@ function DNPage() {
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
       setModalOpen(false);
       setDnItems([]);
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal membuat SJ");
     },
   });
 
   const shipMutation = useMutation({
     mutationFn: shipDeliveryNote,
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal mengirim SJ");
+    },
   });
 
   const reviewMutation = useMutation({
@@ -88,6 +101,10 @@ function DNPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
       setReviewSJ(null);
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal mereview SJ");
     },
   });
 
@@ -96,6 +113,10 @@ function DNPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
       void queryClient.invalidateQueries({ queryKey: ["scm-invoices"] });
+      setInvoiceError(null);
+    },
+    onError: (err) => {
+      setInvoiceError(err instanceof Error ? err.message : "Gagal membuat invoice");
     },
   });
 
@@ -183,6 +204,7 @@ function DNPage() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    setInvoiceError(null);
                     void generateInvoiceMutation.mutateAsync({ data: { dnId: r.id } });
                   }}
                   className="h-7 px-2 rounded-md bg-emerald-600 text-white text-[10px] font-medium flex items-center gap-1"
@@ -209,6 +231,19 @@ function DNPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
       <PageHeader action={{ label: "Buat SJ", onClick: () => setModalOpen(true) }} />
+
+      {invoiceError && (
+        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span className="flex-1">{invoiceError}</span>
+          <button
+            onClick={() => setInvoiceError(null)}
+            className="text-destructive/70 hover:text-destructive"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <DataTable columns={columns} data={dns} keyExtractor={(r) => r.id} />
 
@@ -275,11 +310,20 @@ function DNPage() {
 
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setSubmitError(null);
+        }}
         title="Buat Surat Jalan"
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {submitError && (
+            <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{submitError}</span>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Kode SJ</label>

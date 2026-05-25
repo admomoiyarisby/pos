@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import {
   manualRevenues,
   manualRevenueBrandBreakdowns,
@@ -15,6 +15,9 @@ import {
   inventory,
   systemNotifications,
   users,
+  wasteEntries,
+  stockTransfers,
+  deliveryNotes,
 } from "#/db/schema";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
@@ -443,6 +446,69 @@ export const closePeriod = createServerFn({ method: "POST" })
       message: negInvPassed
         ? "Tidak ada stok negatif"
         : `${negativeInv[0]?.count ?? 0} item stok negatif`,
+    });
+
+    // 5. Check waste >5% has investigation comments
+    const highWasteNoComment = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(wasteEntries)
+      .leftJoin(
+        inventory,
+        and(
+          eq(inventory.branchId, wasteEntries.branchId),
+          eq(inventory.ingredientId, wasteEntries.ingredientId),
+        ),
+      )
+      .where(
+        and(
+          gte(wasteEntries.createdAt, period.openedAt),
+          sql`${wasteEntries.investigationNote} IS NULL OR ${wasteEntries.investigationNote} = ''`,
+          sql`COALESCE(${inventory.quantity}, 0) > 0`,
+          sql`(${wasteEntries.quantity}::float / (${wasteEntries.quantity} + COALESCE(${inventory.quantity}, 0))::float * 100) > 5`,
+        ),
+      );
+    const wastePassed = (highWasteNoComment[0]?.count ?? 0) === 0;
+    checks.push({
+      name: "Waste Investigation",
+      passed: wastePassed,
+      message: wastePassed
+        ? "Semua waste entry memiliki komentar investigasi"
+        : `${highWasteNoComment[0]?.count ?? 0} waste entry tanpa komentar investigasi`,
+    });
+
+    // 6. Check no pending stock transfers
+    const pendingTransfers = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(stockTransfers)
+      .where(
+        and(
+          gte(stockTransfers.createdAt, period.openedAt),
+          eq(stockTransfers.status, "In Transit"),
+        ),
+      );
+    const transferPassed = (pendingTransfers[0]?.count ?? 0) === 0;
+    checks.push({
+      name: "Mutasi Stok",
+      passed: transferPassed,
+      message: transferPassed
+        ? "Tidak ada mutasi stok dalam perjalanan"
+        : `${pendingTransfers[0]?.count ?? 0} mutasi stok masih In Transit`,
+    });
+
+    // 7. Check no SJ still in In Transit
+    const pendingSJs = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(deliveryNotes)
+      .where(
+        and(gte(deliveryNotes.createdAt, period.openedAt), eq(deliveryNotes.status, "In Transit")),
+      );
+    const sjPassed = (pendingSJs[0]?.count ?? 0) === 0;
+    checks.push({
+      name: "Surat Jalan",
+      passed: sjPassed,
+      message: sjPassed
+        ? "Tidak ada SJ dalam perjalanan"
+        : `${pendingSJs[0]?.count ?? 0} SJ masih In Transit`,
     });
 
     const allPassed = checks.every((c) => c.passed);

@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import {
   inventory,
   stockLedger,
@@ -178,7 +178,12 @@ export const triggerStockOpname = createServerFn({ method: "POST" })
 export const getStockOpnames = createServerFn({ method: "GET" })
   .inputValidator((data: { branchId?: string }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
+
+    let branchFilter = data.branchId;
+    if (user.role === "branch_admin" && user.branchId) {
+      branchFilter = user.branchId;
+    }
 
     const result = await db
       .select({
@@ -194,7 +199,7 @@ export const getStockOpnames = createServerFn({ method: "GET" })
       })
       .from(stockOpnames)
       .leftJoin(branches, eq(stockOpnames.branchId, branches.id))
-      .where(data.branchId ? eq(stockOpnames.branchId, data.branchId) : undefined)
+      .where(branchFilter ? eq(stockOpnames.branchId, branchFilter) : undefined)
       .orderBy(desc(stockOpnames.createdAt));
 
     return result;
@@ -208,6 +213,18 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
     const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.id)).limit(1);
 
     if (!so) return null;
+
+    // Branch access check
+    if (user.role === "branch_admin" && user.branchId && so.branchId !== user.branchId) {
+      throw new Error("Unauthorized: you can only view Stock Opnames for your branch");
+    }
+
+    // Fetch branch name
+    const [branch] = await db
+      .select({ name: branches.name })
+      .from(branches)
+      .where(eq(branches.id, so.branchId))
+      .limit(1);
 
     const items = await db
       .select({
@@ -233,6 +250,7 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
 
     return {
       ...so,
+      branchName: branch?.name ?? so.branchId,
       items: isBlind
         ? items.map((i) => ({
             ...i,
@@ -256,6 +274,13 @@ export const submitStockOpname = createServerFn({ method: "POST" })
       .from(stockOpnames)
       .where(eq(stockOpnames.id, data.soId))
       .limit(1);
+
+    if (!oldSo) throw new Error("Stock opname not found");
+
+    // Branch access check
+    if (user.role === "branch_admin" && user.branchId && oldSo.branchId !== user.branchId) {
+      throw new Error("Unauthorized: you can only submit Stock Opnames for your branch");
+    }
 
     for (const item of data.items) {
       // Get current system stock

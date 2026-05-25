@@ -1,6 +1,6 @@
 import { createAuthEndpoint, APIError } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import { users as usersTable, systemLogs } from "#/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";

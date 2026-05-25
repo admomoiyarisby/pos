@@ -1,0 +1,1 @@
+ALTER TABLE "waste_entries" ADD COLUMN "valuation" integer DEFAULT 0 NOT NULL;

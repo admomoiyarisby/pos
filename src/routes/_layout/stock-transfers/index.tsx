@@ -7,13 +7,21 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getStockTransfers, createStockTransfer, approveStockTransfer } from "#/lib/server/scm";
+import {
+  getStockTransfers,
+  createStockTransfer,
+  approveStockTransfer,
+  rejectStockTransfer,
+  shipStockTransfer,
+  receiveStockTransfer,
+  cancelStockTransfer,
+} from "#/lib/server/scm";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check, Truck, PackageCheck, XCircle, Ban } from "lucide-react";
 
 interface TRRow {
   id: string;
@@ -30,7 +38,6 @@ const statusColors: Record<
   string,
   "default" | "warning" | "success" | "destructive" | "secondary"
 > = {
-  Pending: "secondary",
   "Pending Approval": "warning",
   Approved: "default",
   Rejected: "destructive",
@@ -54,6 +61,10 @@ function TransferPage() {
   const { transfers: initial, branches, ingredients } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
+  const [rejectModal, setRejectModal] = useState<{ id: string; code: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [cancelModal, setCancelModal] = useState<{ id: string; code: string } | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   const { data: transfers } = useQuery({
     queryKey: ["stock-transfers"],
@@ -72,6 +83,34 @@ function TransferPage() {
   const approveMutation = useMutation({
     mutationFn: approveStockTransfer,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["stock-transfers"] }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: rejectStockTransfer,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["stock-transfers"] });
+      setRejectModal(null);
+      setRejectReason("");
+    },
+  });
+
+  const shipMutation = useMutation({
+    mutationFn: shipStockTransfer,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["stock-transfers"] }),
+  });
+
+  const receiveMutation = useMutation({
+    mutationFn: receiveStockTransfer,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["stock-transfers"] }),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: cancelStockTransfer,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["stock-transfers"] });
+      setCancelModal(null);
+      setCancelReason("");
+    },
   });
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -140,31 +179,98 @@ function TransferPage() {
     {
       key: "id",
       header: "",
-      width: "w-32",
-      render: (r) => (
-        <div className="flex items-center justify-end gap-1">
-          {r.status === "Pending Approval" &&
-            ["super_admin", "area_manager"].includes(user?.role ?? "") && (
+      width: "w-48",
+      render: (r) => {
+        const canApprove =
+          r.status === "Pending Approval" &&
+          ["super_admin", "area_manager"].includes(user?.role ?? "");
+        const canReject =
+          r.status === "Pending Approval" &&
+          ["super_admin", "area_manager"].includes(user?.role ?? "");
+        const canShip =
+          r.status === "Approved" &&
+          (["super_admin", "admin_pusat"].includes(user?.role ?? "") ||
+            (user?.role === "branch_admin" && user?.branchId === r.fromBranchId));
+        const canReceive =
+          r.status === "In Transit" &&
+          (["super_admin"].includes(user?.role ?? "") ||
+            (user?.role === "branch_admin" && user?.branchId === r.toBranchId));
+        const canCancel =
+          ["Approved", "In Transit"].includes(r.status) &&
+          ["super_admin", "admin_pusat"].includes(user?.role ?? "");
+
+        return (
+          <div className="flex items-center justify-end gap-1">
+            {canApprove && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   void approveMutation.mutateAsync({ data: { transferId: r.id } });
                 }}
-                className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-medium"
+                className="h-7 px-2 rounded-md bg-emerald-600 text-white text-[10px] font-medium"
               >
                 <Check className="h-3 w-3 inline mr-1" />
                 Approve
               </button>
             )}
-          <Link
-            to="/stock-transfers/$trId"
-            params={{ trId: r.id }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
-          >
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      ),
+            {canReject && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRejectModal({ id: r.id, code: r.code });
+                }}
+                className="h-7 px-2 rounded-md bg-red-600 text-white text-[10px] font-medium"
+              >
+                <XCircle className="h-3 w-3 inline mr-1" />
+                Tolak
+              </button>
+            )}
+            {canShip && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void shipMutation.mutateAsync({ data: { transferId: r.id } });
+                }}
+                className="h-7 px-2 rounded-md bg-blue-600 text-white text-[10px] font-medium"
+              >
+                <Truck className="h-3 w-3 inline mr-1" />
+                Kirim
+              </button>
+            )}
+            {canReceive && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void receiveMutation.mutateAsync({ data: { transferId: r.id } });
+                }}
+                className="h-7 px-2 rounded-md bg-emerald-600 text-white text-[10px] font-medium"
+              >
+                <PackageCheck className="h-3 w-3 inline mr-1" />
+                Terima
+              </button>
+            )}
+            {canCancel && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCancelModal({ id: r.id, code: r.code });
+                }}
+                className="h-7 px-2 rounded-md bg-slate-500 text-white text-[10px] font-medium"
+              >
+                <Ban className="h-3 w-3 inline mr-1" />
+                Batal
+              </button>
+            )}
+            <Link
+              to="/stock-transfers/$trId"
+              params={{ trId: r.id }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
+            >
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        );
+      },
     },
   ];
   usePageTitle("Mutasi Stok", "Transfer antar cabang dengan approval");
@@ -261,6 +367,89 @@ function TransferPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Reject Modal */}
+      {rejectModal && (
+        <Modal open onClose={() => setRejectModal(null)} title="Tolak Mutasi Stok">
+          <div className="space-y-4">
+            <p className="text-sm">
+              Tolak mutasi <strong>{rejectModal.code}</strong>?
+            </p>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Alasan Penolakan</label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                required
+                rows={3}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setRejectModal(null)}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() =>
+                  void rejectMutation.mutateAsync({
+                    data: { transferId: rejectModal.id, reason: rejectReason },
+                  })
+                }
+                disabled={rejectMutation.isPending || !rejectReason.trim()}
+                className="h-9 px-4 rounded-md bg-red-600 text-white text-sm disabled:opacity-50"
+              >
+                Tolak
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Cancel Modal */}
+      {cancelModal && (
+        <Modal open onClose={() => setCancelModal(null)} title="Batalkan Mutasi Stok">
+          <div className="space-y-4">
+            <p className="text-sm">
+              Batalkan mutasi <strong>{cancelModal.code}</strong>?
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Stok akan dikembalikan ke cabang asal jika sedang dalam perjalanan.
+            </p>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Alasan Pembatalan</label>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                required
+                rows={3}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setCancelModal(null)}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Tutup
+              </button>
+              <button
+                onClick={() =>
+                  void cancelMutation.mutateAsync({
+                    data: { transferId: cancelModal.id, reason: cancelReason },
+                  })
+                }
+                disabled={cancelMutation.isPending || !cancelReason.trim()}
+                className="h-9 px-4 rounded-md bg-red-600 text-white text-sm disabled:opacity-50"
+              >
+                Batalkan
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </RoleGuard>
   );
 }

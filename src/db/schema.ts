@@ -76,7 +76,6 @@ export const stockOpnameStatusEnum = pgEnum("stock_opname_status", [
 ]);
 
 export const stockTransferStatusEnum = pgEnum("stock_transfer_status", [
-  "Pending",
   "Pending Approval",
   "Approved",
   "Rejected",
@@ -106,6 +105,7 @@ export const deliveryNoteStatusEnum = pgEnum("delivery_note_status", [
   "Draft",
   "Picking",
   "In Transit",
+  "Partial Received",
   "Received",
   "Cancelled",
 ]);
@@ -602,13 +602,22 @@ export const inventory = pgTable(
   ],
 );
 
+export const rejectionDispositionEnum = pgEnum("rejection_disposition", [
+  "Return to Source",
+  "Scrap",
+  "Quarantine",
+]);
+
 export const inTransitInventory = pgTable(
   "in_transit_inventory",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    deliveryNoteId: uuid("delivery_note_id")
-      .notNull()
-      .references(() => deliveryNotes.id, { onDelete: "cascade" }),
+    deliveryNoteId: uuid("delivery_note_id").references(() => deliveryNotes.id, {
+      onDelete: "cascade",
+    }),
+    stockTransferId: uuid("stock_transfer_id").references(() => stockTransfers.id, {
+      onDelete: "cascade",
+    }),
     branchId: uuid("branch_id")
       .notNull()
       .references(() => branches.id),
@@ -622,6 +631,7 @@ export const inTransitInventory = pgTable(
     index("iti_branch_idx").on(t.branchId),
     index("iti_ingredient_idx").on(t.ingredientId),
     index("iti_dn_idx").on(t.deliveryNoteId),
+    index("iti_st_idx").on(t.stockTransferId),
   ],
 );
 
@@ -764,6 +774,7 @@ export const purchaseOrderItems = pgTable(
     quantity: integer("quantity").notNull(),
     unitPrice: integer("unit_price"),
     totalPrice: integer("total_price"),
+    receivedQuantity: integer("received_quantity").default(0),
   },
   (t) => [index("poi_po_idx").on(t.purchaseOrderId)],
 );
@@ -819,6 +830,7 @@ export const deliveryNoteItems = pgTable(
     pickedQuantity: integer("picked_quantity"),
     receivedQuantity: integer("received_quantity"),
     rejectedQuantity: integer("rejected_quantity").default(0),
+    rejectionDisposition: rejectionDispositionEnum("rejection_disposition"),
     discrepancyNote: text("discrepancy_note"),
   },
   (t) => [index("dni_dn_idx").on(t.deliveryNoteId)],
@@ -904,11 +916,12 @@ export const stockTransfers = pgTable(
       .notNull()
       .references(() => ingredients.id),
     quantity: integer("quantity").notNull(),
-    status: stockTransferStatusEnum("status").notNull().default("Pending"),
+    status: stockTransferStatusEnum("status").notNull().default("Pending Approval"),
     requestedBy: uuid("requested_by")
       .notNull()
       .references(() => users.id),
     approvedBy: uuid("approved_by").references(() => users.id),
+    rejectedBy: uuid("rejected_by").references(() => users.id),
     rejectionReason: text("rejection_reason"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
@@ -937,6 +950,7 @@ export const wasteEntries = pgTable(
     category: wasteCategoryEnum("category").notNull(),
     notes: text("notes"),
     investigationNote: text("investigation_note"),
+    valuation: integer("valuation").notNull().default(0),
     submittedBy: uuid("submitted_by")
       .notNull()
       .references(() => users.id),

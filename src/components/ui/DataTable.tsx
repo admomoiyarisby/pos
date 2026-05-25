@@ -29,6 +29,7 @@ interface DataTableProps<T> {
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
   defaultSort?: { key: string; dir: "asc" | "desc" };
+  rowClassName?: (row: T) => string;
 }
 
 export default function DataTable<T>({
@@ -41,6 +42,7 @@ export default function DataTable<T>({
   emptyMessage = "Tidak ada data",
   onRowClick,
   defaultSort,
+  rowClassName,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
@@ -161,7 +163,7 @@ export default function DataTable<T>({
                 <tr
                   key={keyExtractor(row)}
                   onClick={() => onRowClick?.(row)}
-                  className={`border-b transition-colors hover:bg-muted/50 ${onRowClick ? "cursor-pointer" : ""}`}
+                  className={`border-b transition-colors hover:bg-muted/50 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(row) ?? ""}`}
                 >
                   {columns.map((col, colIdx) => (
                     <td

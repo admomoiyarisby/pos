@@ -1,4 +1,4 @@
-import { db } from "#/db/index";
+import { db } from "#/lib/server/db";
 import { systemLogs, auditLogs } from "#/db/schema";
 import type { AppUser } from "./auth";
 

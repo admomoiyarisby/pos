@@ -2146,29 +2146,16 @@ export const STOCK_TRANSFERS_DATA = (() => {
     toBranchCode: string;
     ingredientProtoId: string;
     quantity: number;
-    status:
-      | "Pending"
-      | "Pending Approval"
-      | "Approved"
-      | "Rejected"
-      | "In Transit"
-      | "Completed"
-      | "Cancelled";
+    status: "Pending Approval" | "Approved" | "Rejected" | "In Transit" | "Completed" | "Cancelled";
     requestedByEmail: string;
     approvedByEmail?: string;
     rejectionReason?: string;
     createdAt: Date;
   }[] = [];
   const statuses: Array<
-    | "Pending"
-    | "Pending Approval"
-    | "Approved"
-    | "Rejected"
-    | "In Transit"
-    | "Completed"
-    | "Cancelled"
+    "Pending Approval" | "Approved" | "Rejected" | "In Transit" | "Completed" | "Cancelled"
   > = [
-    "Pending",
+    "Pending Approval",
     "Pending Approval",
     "Approved",
     "In Transit",
