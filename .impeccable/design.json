@@ -4,31 +4,193 @@
   "title": "Design System: Omoiyari POS",
   "extensions": {
     "colorMeta": {
-      "neutral-bg": { "role": "neutral", "displayName": "White", "canonical": "oklch(1 0 0)", "tonalRamp": ["oklch(0.15 0.005 286)", "oklch(0.25 0.005 286)", "oklch(0.35 0.005 286)", "oklch(0.55 0.005 286)", "oklch(0.72 0.003 286)", "oklch(0.85 0.002 286)", "oklch(0.93 0.001 286)", "oklch(0.98 0 286)"] },
-      "neutral-fg": { "role": "neutral", "displayName": "Near-Black", "canonical": "oklch(0.141 0.005 285.823)", "tonalRamp": ["oklch(0.05 0.005 286)", "oklch(0.1 0.005 286)", "oklch(0.14 0.005 286)", "oklch(0.2 0.005 286)", "oklch(0.3 0.005 286)", "oklch(0.4 0.005 286)", "oklch(0.5 0.005 286)", "oklch(0.6 0.005 286)"] },
-      "neutral-muted": { "role": "neutral", "displayName": "Soft Muted", "canonical": "oklch(0.967 0.001 286.375)", "tonalRamp": ["oklch(0.85 0.002 286)", "oklch(0.88 0.002 286)", "oklch(0.91 0.001 286)", "oklch(0.93 0.001 286)", "oklch(0.95 0.001 286)", "oklch(0.96 0.001 286)", "oklch(0.97 0.001 286)", "oklch(0.98 0.001 286)"] },
-      "neutral-border": { "role": "neutral", "displayName": "Border", "canonical": "oklch(0.92 0.004 286.32)", "tonalRamp": ["oklch(0.7 0.005 286)", "oklch(0.75 0.005 286)", "oklch(0.8 0.004 286)", "oklch(0.85 0.004 286)", "oklch(0.88 0.004 286)", "oklch(0.9 0.004 286)", "oklch(0.92 0.004 286)", "oklch(0.95 0.003 286)"] },
-      "primary-bg": { "role": "primary", "displayName": "Structural Dark", "canonical": "oklch(0.21 0.006 285.885)", "tonalRamp": ["oklch(0.08 0.006 286)", "oklch(0.12 0.006 286)", "oklch(0.16 0.006 286)", "oklch(0.21 0.006 286)", "oklch(0.28 0.006 286)", "oklch(0.35 0.006 286)", "oklch(0.45 0.006 286)", "oklch(0.55 0.005 286)"] },
-      "destructive": { "role": "tertiary", "displayName": "Alert Red", "canonical": "oklch(0.577 0.245 27.325)", "tonalRamp": ["oklch(0.2 0.18 27)", "oklch(0.3 0.2 27)", "oklch(0.4 0.22 27)", "oklch(0.5 0.24 27)", "oklch(0.58 0.245 27)", "oklch(0.65 0.22 27)", "oklch(0.75 0.18 27)", "oklch(0.85 0.12 27)"] },
-      "chart-orange": { "role": "tertiary", "displayName": "Chart Orange", "canonical": "oklch(0.646 0.222 41.116)", "tonalRamp": ["oklch(0.2 0.15 41)", "oklch(0.3 0.18 41)", "oklch(0.4 0.2 41)", "oklch(0.5 0.22 41)", "oklch(0.65 0.222 41)", "oklch(0.75 0.18 41)", "oklch(0.85 0.12 41)", "oklch(0.92 0.06 41)"] },
-      "chart-teal": { "role": "tertiary", "displayName": "Chart Teal", "canonical": "oklch(0.6 0.118 184.704)", "tonalRamp": ["oklch(0.2 0.08 185)", "oklch(0.3 0.1 185)", "oklch(0.4 0.11 185)", "oklch(0.5 0.12 185)", "oklch(0.6 0.118 185)", "oklch(0.7 0.1 185)", "oklch(0.8 0.08 185)", "oklch(0.9 0.04 185)"] },
-      "chart-blue": { "role": "tertiary", "displayName": "Chart Blue", "canonical": "oklch(0.398 0.07 227.392)", "tonalRamp": ["oklch(0.15 0.05 227)", "oklch(0.22 0.06 227)", "oklch(0.3 0.07 227)", "oklch(0.4 0.07 227)", "oklch(0.5 0.07 227)", "oklch(0.6 0.06 227)", "oklch(0.7 0.05 227)", "oklch(0.8 0.03 227)"] }
+      "neutral-bg": {
+        "role": "neutral",
+        "displayName": "White",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0.005 286)",
+          "oklch(0.25 0.005 286)",
+          "oklch(0.35 0.005 286)",
+          "oklch(0.55 0.005 286)",
+          "oklch(0.72 0.003 286)",
+          "oklch(0.85 0.002 286)",
+          "oklch(0.93 0.001 286)",
+          "oklch(0.98 0 286)"
+        ]
+      },
+      "neutral-fg": {
+        "role": "neutral",
+        "displayName": "Near-Black",
+        "canonical": "oklch(0.141 0.005 285.823)",
+        "tonalRamp": [
+          "oklch(0.05 0.005 286)",
+          "oklch(0.1 0.005 286)",
+          "oklch(0.14 0.005 286)",
+          "oklch(0.2 0.005 286)",
+          "oklch(0.3 0.005 286)",
+          "oklch(0.4 0.005 286)",
+          "oklch(0.5 0.005 286)",
+          "oklch(0.6 0.005 286)"
+        ]
+      },
+      "neutral-muted": {
+        "role": "neutral",
+        "displayName": "Soft Muted",
+        "canonical": "oklch(0.967 0.001 286.375)",
+        "tonalRamp": [
+          "oklch(0.85 0.002 286)",
+          "oklch(0.88 0.002 286)",
+          "oklch(0.91 0.001 286)",
+          "oklch(0.93 0.001 286)",
+          "oklch(0.95 0.001 286)",
+          "oklch(0.96 0.001 286)",
+          "oklch(0.97 0.001 286)",
+          "oklch(0.98 0.001 286)"
+        ]
+      },
+      "neutral-border": {
+        "role": "neutral",
+        "displayName": "Border",
+        "canonical": "oklch(0.92 0.004 286.32)",
+        "tonalRamp": [
+          "oklch(0.7 0.005 286)",
+          "oklch(0.75 0.005 286)",
+          "oklch(0.8 0.004 286)",
+          "oklch(0.85 0.004 286)",
+          "oklch(0.88 0.004 286)",
+          "oklch(0.9 0.004 286)",
+          "oklch(0.92 0.004 286)",
+          "oklch(0.95 0.003 286)"
+        ]
+      },
+      "primary-bg": {
+        "role": "primary",
+        "displayName": "Structural Dark",
+        "canonical": "oklch(0.21 0.006 285.885)",
+        "tonalRamp": [
+          "oklch(0.08 0.006 286)",
+          "oklch(0.12 0.006 286)",
+          "oklch(0.16 0.006 286)",
+          "oklch(0.21 0.006 286)",
+          "oklch(0.28 0.006 286)",
+          "oklch(0.35 0.006 286)",
+          "oklch(0.45 0.006 286)",
+          "oklch(0.55 0.005 286)"
+        ]
+      },
+      "destructive": {
+        "role": "tertiary",
+        "displayName": "Alert Red",
+        "canonical": "oklch(0.577 0.245 27.325)",
+        "tonalRamp": [
+          "oklch(0.2 0.18 27)",
+          "oklch(0.3 0.2 27)",
+          "oklch(0.4 0.22 27)",
+          "oklch(0.5 0.24 27)",
+          "oklch(0.58 0.245 27)",
+          "oklch(0.65 0.22 27)",
+          "oklch(0.75 0.18 27)",
+          "oklch(0.85 0.12 27)"
+        ]
+      },
+      "chart-orange": {
+        "role": "tertiary",
+        "displayName": "Chart Orange",
+        "canonical": "oklch(0.646 0.222 41.116)",
+        "tonalRamp": [
+          "oklch(0.2 0.15 41)",
+          "oklch(0.3 0.18 41)",
+          "oklch(0.4 0.2 41)",
+          "oklch(0.5 0.22 41)",
+          "oklch(0.65 0.222 41)",
+          "oklch(0.75 0.18 41)",
+          "oklch(0.85 0.12 41)",
+          "oklch(0.92 0.06 41)"
+        ]
+      },
+      "chart-teal": {
+        "role": "tertiary",
+        "displayName": "Chart Teal",
+        "canonical": "oklch(0.6 0.118 184.704)",
+        "tonalRamp": [
+          "oklch(0.2 0.08 185)",
+          "oklch(0.3 0.1 185)",
+          "oklch(0.4 0.11 185)",
+          "oklch(0.5 0.12 185)",
+          "oklch(0.6 0.118 185)",
+          "oklch(0.7 0.1 185)",
+          "oklch(0.8 0.08 185)",
+          "oklch(0.9 0.04 185)"
+        ]
+      },
+      "chart-blue": {
+        "role": "tertiary",
+        "displayName": "Chart Blue",
+        "canonical": "oklch(0.398 0.07 227.392)",
+        "tonalRamp": [
+          "oklch(0.15 0.05 227)",
+          "oklch(0.22 0.06 227)",
+          "oklch(0.3 0.07 227)",
+          "oklch(0.4 0.07 227)",
+          "oklch(0.5 0.07 227)",
+          "oklch(0.6 0.06 227)",
+          "oklch(0.7 0.05 227)",
+          "oklch(0.8 0.03 227)"
+        ]
+      }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display", "purpose": "Page titles, section headings in dashboards. One per view." },
-      "title": { "displayName": "Title", "purpose": "Card headers, modal titles, sidebar section labels." },
-      "body": { "displayName": "Body", "purpose": "Table cells, form inputs, list items, all operational data." },
-      "label": { "displayName": "Label", "purpose": "Badge text, small metadata, table column headers." }
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page titles, section headings in dashboards. One per view."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card headers, modal titles, sidebar section labels."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Table cells, form inputs, list items, all operational data."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Badge text, small metadata, table column headers."
+      }
     },
     "shadows": [
-      { "name": "shadow-xs", "value": "0 1px 2px rgba(0,0,0,0.05)", "purpose": "Button default state, outline button backgrounds." },
-      { "name": "shadow-sm", "value": "0 1px 3px rgba(0,0,0,0.08)", "purpose": "Card containers, surface separation." },
-      { "name": "shadow-lg", "value": "0 10px 15px rgba(0,0,0,0.1)", "purpose": "Dialogs, modal overlays, popovers." }
+      {
+        "name": "shadow-xs",
+        "value": "0 1px 2px rgba(0,0,0,0.05)",
+        "purpose": "Button default state, outline button backgrounds."
+      },
+      {
+        "name": "shadow-sm",
+        "value": "0 1px 3px rgba(0,0,0,0.08)",
+        "purpose": "Card containers, surface separation."
+      },
+      {
+        "name": "shadow-lg",
+        "value": "0 10px 15px rgba(0,0,0,0.1)",
+        "purpose": "Dialogs, modal overlays, popovers."
+      }
     ],
     "motion": [
-      { "name": "transition-default", "value": "150-200ms ease-out", "purpose": "Default easing for state transitions (hover, focus, opacity)." },
-      { "name": "dialog-enter", "value": "200ms ease-out fade-in + zoom-in-95", "purpose": "Dialog/modal open animation." },
-      { "name": "dialog-exit", "value": "200ms ease-out fade-out + zoom-out-95", "purpose": "Dialog/modal close animation." }
+      {
+        "name": "transition-default",
+        "value": "150-200ms ease-out",
+        "purpose": "Default easing for state transitions (hover, focus, opacity)."
+      },
+      {
+        "name": "dialog-enter",
+        "value": "200ms ease-out fade-in + zoom-in-95",
+        "purpose": "Dialog/modal open animation."
+      },
+      {
+        "name": "dialog-exit",
+        "value": "200ms ease-out fade-out + zoom-out-95",
+        "purpose": "Dialog/modal close animation."
+      }
     ],
     "breakpoints": [
       { "name": "sm", "value": "640px" },
@@ -121,9 +283,21 @@
       "Dark and light modes maintained in parallel with full OKLCH parity"
     ],
     "rules": [
-      { "name": "The Restraint Rule", "body": "The primary surface color (structural dark) is the background for buttons and interactive elements. It does not function as a 'brand accent.' The system communicates through layout, typography weight, and data density \u2014 not through color. If the obvious question is 'what\u2019s the brand color?', the system is working correctly.", "section": "colors" },
-      { "name": "The System Stack Rule", "body": "No custom web fonts. Restaurants and kitchens have unpredictable network conditions; the system stack renders instantly regardless of connectivity.", "section": "typography" },
-      { "name": "The Flat-By-Default Rule", "body": "Surfaces are flat at rest. Shadows appear only where structural hierarchy demands it \u2014 a dialog above the page, a popover above the content. Cards do not lift on hover.", "section": "elevation" }
+      {
+        "name": "The Restraint Rule",
+        "body": "The primary surface color (structural dark) is the background for buttons and interactive elements. It does not function as a 'brand accent.' The system communicates through layout, typography weight, and data density \u2014 not through color. If the obvious question is 'what\u2019s the brand color?', the system is working correctly.",
+        "section": "colors"
+      },
+      {
+        "name": "The System Stack Rule",
+        "body": "No custom web fonts. Restaurants and kitchens have unpredictable network conditions; the system stack renders instantly regardless of connectivity.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Surfaces are flat at rest. Shadows appear only where structural hierarchy demands it \u2014 a dialog above the page, a popover above the content. Cards do not lift on hover.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do use the system font stack everywhere. No custom web fonts.",

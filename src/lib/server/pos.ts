@@ -9,8 +9,6 @@ import {
   recipeModifierGroups,
   modifierGroups,
   modifiers,
-  modifierIngredients,
-  ingredients,
   inventory,
   stockLedger,
   orders,
@@ -30,6 +28,7 @@ import {
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+import { resolveNewItemIngredients, resolvePersistedItemIngredients } from "./ingredient-resolver";
 import { z } from "zod";
 
 export const getPosMenu = createServerFn({ method: "GET" })
@@ -304,56 +303,14 @@ export const createOrder = createServerFn({ method: "POST" })
     const branchName = branchInfo?.name ?? data.branchId;
 
     for (const item of data.items) {
-      // Gather all ingredients: parent recipe + child recipes (bundling) + modifier ingredients
-      const allIngredientsToDeduct: { ingredientId: string; quantity: number }[] = [];
+      const resolved = await resolveNewItemIngredients(
+        item.recipeId,
+        item.quantity,
+        item.selectedModifiers,
+      );
 
-      // Parent recipe ingredients
-      const parentIngs = await db
-        .select()
-        .from(recipeIngredients)
-        .where(eq(recipeIngredients.recipeId, item.recipeId));
-      for (const ing of parentIngs) {
-        allIngredientsToDeduct.push({
-          ingredientId: ing.ingredientId,
-          quantity: ing.quantity * item.quantity,
-        });
-      }
-
-      // Child recipes (bundling)
-      const childLinks = await db
-        .select()
-        .from(recipeChildRecipes)
-        .where(eq(recipeChildRecipes.parentRecipeId, item.recipeId));
-      for (const link of childLinks) {
-        const childIngs = await db
-          .select()
-          .from(recipeIngredients)
-          .where(eq(recipeIngredients.recipeId, link.childRecipeId));
-        for (const ing of childIngs) {
-          allIngredientsToDeduct.push({
-            ingredientId: ing.ingredientId,
-            quantity: ing.quantity * link.quantity * item.quantity,
-          });
-        }
-      }
-
-      // Modifier ingredients (add-ons BOM)
-      for (const mod of item.selectedModifiers ?? []) {
-        if (mod.isExclusion) continue; // exclusions don't add ingredients
-        const modIngs = await db
-          .select()
-          .from(modifierIngredients)
-          .where(eq(modifierIngredients.modifierId, mod.modifierId));
-        for (const mi of modIngs) {
-          allIngredientsToDeduct.push({
-            ingredientId: mi.ingredientId,
-            quantity: mi.quantity * item.quantity,
-          });
-        }
-      }
-
-      // Check stock for all gathered ingredients
-      for (const ing of allIngredientsToDeduct) {
+      for (const ing of resolved.ingredients) {
+        if (ing.quantity <= 0) continue; // only check consumed ingredients
         const [inv] = await db
           .select()
           .from(inventory)
@@ -367,14 +324,9 @@ export const createOrder = createServerFn({ method: "POST" })
 
         const currentQty = inv?.quantity ?? 0;
         if (currentQty < ing.quantity) {
-          const [ingData] = await db
-            .select({ name: ingredients.name })
-            .from(ingredients)
-            .where(eq(ingredients.id, ing.ingredientId))
-            .limit(1);
           const shortfall = ing.quantity - currentQty;
           negativeStockAlerts.push({
-            ingredientName: ingData?.name ?? ing.ingredientId,
+            ingredientName: ing.ingredientName,
             shortfall,
             branchName,
           });
@@ -393,81 +345,15 @@ export const createOrder = createServerFn({ method: "POST" })
 
     for (const item of data.items) {
       subtotal += item.price * item.quantity;
-      let itemCogs = 0;
 
-      // Parent recipe ingredient costs
-      const parentIngs = await db
-        .select({
-          ingredientId: recipeIngredients.ingredientId,
-          quantity: recipeIngredients.quantity,
-          averageCost: ingredients.averageCost,
-        })
-        .from(recipeIngredients)
-        .leftJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
-        .where(eq(recipeIngredients.recipeId, item.recipeId));
-      for (const ing of parentIngs) {
-        itemCogs += (ing.averageCost ?? 0) * ing.quantity * item.quantity;
-      }
+      const resolved = await resolveNewItemIngredients(
+        item.recipeId,
+        item.quantity,
+        item.selectedModifiers,
+        { includeCost: true },
+      );
 
-      // Child recipe ingredient costs (bundling)
-      const childLinks = await db
-        .select()
-        .from(recipeChildRecipes)
-        .where(eq(recipeChildRecipes.parentRecipeId, item.recipeId));
-      for (const link of childLinks) {
-        const childIngs = await db
-          .select({
-            ingredientId: recipeIngredients.ingredientId,
-            quantity: recipeIngredients.quantity,
-            averageCost: ingredients.averageCost,
-          })
-          .from(recipeIngredients)
-          .leftJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
-          .where(eq(recipeIngredients.recipeId, link.childRecipeId));
-        for (const ing of childIngs) {
-          itemCogs += (ing.averageCost ?? 0) * ing.quantity * link.quantity * item.quantity;
-        }
-      }
-
-      // Modifier ingredient costs (add-ons BOM)
-      for (const mod of item.selectedModifiers ?? []) {
-        if (mod.isExclusion) continue;
-        const modIngs = await db
-          .select({
-            ingredientId: modifierIngredients.ingredientId,
-            quantity: modifierIngredients.quantity,
-            averageCost: ingredients.averageCost,
-          })
-          .from(modifierIngredients)
-          .leftJoin(ingredients, eq(modifierIngredients.ingredientId, ingredients.id))
-          .where(eq(modifierIngredients.modifierId, mod.modifierId));
-        for (const mi of modIngs) {
-          itemCogs += (mi.averageCost ?? 0) * mi.quantity * item.quantity;
-        }
-      }
-
-      // Subtract exclusion ingredient costs
-      const exclusionMods = (item.selectedModifiers ?? []).filter((m) => m.isExclusion);
-      for (const mod of exclusionMods) {
-        const [exclusion] = await db
-          .select()
-          .from(recipeModifierExclusions)
-          .where(
-            and(
-              eq(recipeModifierExclusions.recipeId, item.recipeId),
-              eq(recipeModifierExclusions.modifierId, mod.modifierId),
-            ),
-          )
-          .limit(1);
-        if (exclusion) {
-          const [exclIng] = await db
-            .select({ averageCost: ingredients.averageCost })
-            .from(ingredients)
-            .where(eq(ingredients.id, exclusion.ingredientId))
-            .limit(1);
-          itemCogs -= (exclIng?.averageCost ?? 0) * exclusion.quantity * item.quantity;
-        }
-      }
+      const itemCogs = resolved.ingredients.reduce((sum, ing) => sum + (ing.cost ?? 0), 0);
 
       itemCogsList.push(itemCogs);
       totalCogs += itemCogs;
@@ -537,101 +423,29 @@ export const createOrder = createServerFn({ method: "POST" })
       }
 
       // Persist exclusion records
-      const exclusionMods = (item.selectedModifiers ?? []).filter((m) => m.isExclusion);
-      for (const mod of exclusionMods) {
-        const [exclusion] = await db
-          .select()
-          .from(recipeModifierExclusions)
-          .where(
-            and(
-              eq(recipeModifierExclusions.recipeId, item.recipeId),
-              eq(recipeModifierExclusions.modifierId, mod.modifierId),
-            ),
-          )
-          .limit(1);
-
-        if (exclusion) {
-          await db.insert(orderItemExclusions).values({
-            orderItemId: orderItem.id,
-            ingredientId: exclusion.ingredientId,
-            quantity: exclusion.quantity * item.quantity,
-          });
-        }
+      const resolvedExclusions = await resolveNewItemIngredients(
+        item.recipeId,
+        item.quantity,
+        item.selectedModifiers,
+      );
+      for (const ex of resolvedExclusions.exclusionRecords) {
+        await db.insert(orderItemExclusions).values({
+          orderItemId: orderItem.id,
+          ingredientId: ex.ingredientId,
+          quantity: ex.quantity,
+        });
       }
     }
 
     // ─── Deduct inventory (soft block — allow negative) ───
     for (const item of data.items) {
-      const allIngredientsToDeduct: { ingredientId: string; quantity: number }[] = [];
+      const resolved = await resolveNewItemIngredients(
+        item.recipeId,
+        item.quantity,
+        item.selectedModifiers,
+      );
 
-      // Parent recipe
-      const parentIngs = await db
-        .select()
-        .from(recipeIngredients)
-        .where(eq(recipeIngredients.recipeId, item.recipeId));
-      for (const ing of parentIngs) {
-        allIngredientsToDeduct.push({
-          ingredientId: ing.ingredientId,
-          quantity: ing.quantity * item.quantity,
-        });
-      }
-
-      // Child recipes (bundling)
-      const childLinks = await db
-        .select()
-        .from(recipeChildRecipes)
-        .where(eq(recipeChildRecipes.parentRecipeId, item.recipeId));
-      for (const link of childLinks) {
-        const childIngs = await db
-          .select()
-          .from(recipeIngredients)
-          .where(eq(recipeIngredients.recipeId, link.childRecipeId));
-        for (const ing of childIngs) {
-          allIngredientsToDeduct.push({
-            ingredientId: ing.ingredientId,
-            quantity: ing.quantity * link.quantity * item.quantity,
-          });
-        }
-      }
-
-      // Modifier ingredients
-      for (const mod of item.selectedModifiers ?? []) {
-        if (mod.isExclusion) continue;
-        const modIngs = await db
-          .select()
-          .from(modifierIngredients)
-          .where(eq(modifierIngredients.modifierId, mod.modifierId));
-        for (const mi of modIngs) {
-          allIngredientsToDeduct.push({
-            ingredientId: mi.ingredientId,
-            quantity: mi.quantity * item.quantity,
-          });
-        }
-      }
-
-      // Restore excluded ingredients
-      const exclusionMods = (item.selectedModifiers ?? []).filter((m) => m.isExclusion);
-      for (const mod of exclusionMods) {
-        const [exclusion] = await db
-          .select()
-          .from(recipeModifierExclusions)
-          .where(
-            and(
-              eq(recipeModifierExclusions.recipeId, item.recipeId),
-              eq(recipeModifierExclusions.modifierId, mod.modifierId),
-            ),
-          )
-          .limit(1);
-        if (exclusion) {
-          allIngredientsToDeduct.push({
-            ingredientId: exclusion.ingredientId,
-            quantity: -exclusion.quantity * item.quantity, // negative = restore
-          });
-        }
-      }
-
-      // Apply deductions/restorations
-      for (const ing of allIngredientsToDeduct) {
+      for (const ing of resolved.ingredients) {
         const [inv] = await db
           .select()
           .from(inventory)
@@ -644,7 +458,7 @@ export const createOrder = createServerFn({ method: "POST" })
           .limit(1);
 
         if (inv) {
-          const newQty = inv.quantity - ing.quantity; // allows negative
+          const newQty = inv.quantity - ing.quantity; // negative = restore (exclusions)
           await db
             .update(inventory)
             .set({ quantity: newQty, lastUpdated: new Date() })
@@ -840,69 +654,9 @@ export const voidOrder = createServerFn({ method: "POST" })
       .where(eq(orderItems.orderId, data.orderId));
 
     for (const oi of orderItemsList) {
-      const allIngredientsToRestore: { ingredientId: string; quantity: number }[] = [];
+      const resolved = await resolvePersistedItemIngredients(oi.id);
 
-      // Parent recipe
-      const parentIngs = await db
-        .select()
-        .from(recipeIngredients)
-        .where(eq(recipeIngredients.recipeId, oi.recipeId));
-      for (const ing of parentIngs) {
-        allIngredientsToRestore.push({
-          ingredientId: ing.ingredientId,
-          quantity: ing.quantity * oi.quantity,
-        });
-      }
-
-      // Child recipes (bundling)
-      const childLinks = await db
-        .select()
-        .from(recipeChildRecipes)
-        .where(eq(recipeChildRecipes.parentRecipeId, oi.recipeId));
-      for (const link of childLinks) {
-        const childIngs = await db
-          .select()
-          .from(recipeIngredients)
-          .where(eq(recipeIngredients.recipeId, link.childRecipeId));
-        for (const ing of childIngs) {
-          allIngredientsToRestore.push({
-            ingredientId: ing.ingredientId,
-            quantity: ing.quantity * link.quantity * oi.quantity,
-          });
-        }
-      }
-
-      // Modifier ingredients
-      const oiMods = await db
-        .select()
-        .from(orderItemModifiers)
-        .where(eq(orderItemModifiers.orderItemId, oi.id));
-      for (const mod of oiMods) {
-        const modIngs = await db
-          .select()
-          .from(modifierIngredients)
-          .where(eq(modifierIngredients.modifierId, mod.modifierId));
-        for (const mi of modIngs) {
-          allIngredientsToRestore.push({
-            ingredientId: mi.ingredientId,
-            quantity: mi.quantity * oi.quantity,
-          });
-        }
-      }
-
-      // Subtract exclusions (re-deduct what was excluded)
-      const oiExclusions = await db
-        .select()
-        .from(orderItemExclusions)
-        .where(eq(orderItemExclusions.orderItemId, oi.id));
-      for (const ex of oiExclusions) {
-        allIngredientsToRestore.push({
-          ingredientId: ex.ingredientId,
-          quantity: -ex.quantity, // negative = re-deduct
-        });
-      }
-
-      for (const ing of allIngredientsToRestore) {
+      for (const ing of resolved.ingredients) {
         const [inv] = await db
           .select()
           .from(inventory)
