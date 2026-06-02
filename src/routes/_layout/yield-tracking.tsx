@@ -11,18 +11,24 @@ import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
-import { ArrowRightLeft, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowRightLeft, TrendingDown, TrendingUp, Plus, X } from "lucide-react";
 
 interface YieldRow {
   id: string;
   createdAt: Date;
   sourceName: string | null;
-  sourceQuantity: number;
+  sourceQuantity: number | null;
   targetName: string | null;
   targetQuantity: number;
   yieldPercentage: string | null;
   shrinkageQuantity: number;
   notes: string | null;
+  sources?: { ingredientId: string; quantity: number; ingredientName: string | null }[];
+}
+
+interface SourceItem {
+  ingredientId: string;
+  quantity: number;
 }
 
 export const Route = createFileRoute("/_layout/yield-tracking")({
@@ -44,12 +50,20 @@ function YieldTrackingPage() {
     yieldPercentage: number;
     shrinkageQuantity: number;
   } | null>(null);
+  const [sourceItems, setSourceItems] = useState<SourceItem[]>([
+    { ingredientId: "", quantity: 0 },
+  ]);
 
-  const { data: conversions } = useQuery({
+  const { data: rawConversions } = useQuery({
     queryKey: ["yield-conversions"],
     queryFn: () => getYieldConversions({ data: {} }),
     initialData: initial,
   });
+
+  // Sort by Waktu descending (newest first)
+  const conversions = [...rawConversions].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 
   const createMutation = useMutation({
     mutationFn: createYieldConversion,
@@ -63,23 +77,47 @@ function YieldTrackingPage() {
         yieldPercentage: data.yieldPercentage,
         shrinkageQuantity: data.shrinkageQuantity,
       });
+      setSourceItems([{ ingredientId: "", quantity: 0 }]);
       setTimeout(() => setResult(null), 5000);
     },
   });
 
+  const addSourceRow = () => {
+    setSourceItems((prev) => [...prev, { ingredientId: "", quantity: 0 }]);
+  };
+
+  const removeSourceRow = (idx: number) => {
+    setSourceItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateSourceItem = (idx: number, field: keyof SourceItem, value: string | number) => {
+    setSourceItems((prev) =>
+      prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)),
+    );
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+
+    // Build multi-source payload
+    const validSources = sourceItems.filter(
+      (s) => s.ingredientId && s.quantity > 0,
+    );
+
     void createMutation.mutateAsync({
       data: {
         branchId: fd.get("branchId") as string,
-        sourceIngredientId: fd.get("sourceIngredientId") as string,
-        sourceQuantity: Number(fd.get("sourceQuantity")),
+        sources: validSources,
         targetIngredientId: fd.get("targetIngredientId") as string,
         targetQuantity: Number(fd.get("targetQuantity")),
         notes: (fd.get("notes") as string) || undefined,
       },
     });
+  };
+
+  const resetForm = () => {
+    setSourceItems([{ ingredientId: "", quantity: 0 }]);
   };
 
   const rmIngredients = ingredients.filter((i) => i.skuType === "RM");
@@ -103,14 +141,32 @@ function YieldTrackingPage() {
       key: "sourceName",
       header: "Bahan Mentah",
       sortable: true,
-      render: (r) => (
-        <div>
-          <span className="font-medium">{r.sourceName}</span>
-          <span className="text-muted-foreground ml-2">
-            {r.sourceQuantity.toLocaleString("id-ID")} unit
-          </span>
-        </div>
-      ),
+      render: (r) => {
+        const hasSources = r.sources && r.sources.length > 0;
+        return (
+          <div>
+            {hasSources && r.sources!.length > 1 ? (
+              <div className="space-y-0.5">
+                {r.sources!.map((s, i) => (
+                  <div key={i}>
+                    <span className="font-medium">{s.ingredientName}</span>
+                    <span className="text-muted-foreground ml-2">
+                      {s.quantity.toLocaleString("id-ID")} unit
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <>
+                <span className="font-medium">{r.sourceName}</span>
+                <span className="text-muted-foreground ml-2">
+                  {(r.sourceQuantity ?? 0).toLocaleString("id-ID")} unit
+                </span>
+              </>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "targetName",
@@ -209,7 +265,7 @@ function YieldTrackingPage() {
               <span className="text-xs text-muted-foreground uppercase">Total Shrinkage</span>
             </div>
             <p className="text-2xl font-bold mt-2">
-              {conversions.reduce((sum, c) => sum + c.shrinkageQuantity, 0).toLocaleString("id-ID")}
+              {conversions.reduce((sum, c) => sum + Math.max(0, c.shrinkageQuantity ?? 0), 0).toLocaleString("id-ID")}
             </p>
           </div>
         </div>
@@ -218,7 +274,10 @@ function YieldTrackingPage() {
 
         <Modal
           open={modalOpen}
-          onClose={() => setModalOpen(false)}
+          onClose={() => {
+            setModalOpen(false);
+            resetForm();
+          }}
           title="Input Produksi (Yield)"
           size="lg"
         >
@@ -241,35 +300,61 @@ function YieldTrackingPage() {
             </div>
 
             <div className="rounded-md border p-4 space-y-4">
-              <h3 className="text-sm font-semibold">Input Bahan Mentah (RM)</h3>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Bahan Mentah</label>
-                <select
-                  name="sourceIngredientId"
-                  required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Input Bahan Mentah (RM)</h3>
+                <button
+                  type="button"
+                  onClick={addSourceRow}
+                  className="h-7 px-2 rounded-md border text-xs flex items-center gap-1 hover:bg-muted"
                 >
-                  <option value="">Pilih bahan mentah...</option>
-                  {rmIngredients.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name} (HPP: Rp {i.averageCost.toLocaleString("id-ID")} / {i.stockUnit})
-                    </option>
-                  ))}
-                </select>
+                  <Plus className="h-3 w-3" />
+                  Tambah Bahan
+                </button>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Jumlah Mentah ({rmIngredients[0]?.stockUnit ?? "unit"})
-                </label>
-                <input
-                  name="sourceQuantity"
-                  type="number"
-                  min={1}
-                  required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  placeholder="Contoh: 10000 (gram)"
-                />
-              </div>
+              {sourceItems.map((item, idx) => (
+                <div key={idx} className="flex items-start gap-3">
+                  <div className="flex-1 space-y-2">
+                    {idx === 0 && <label className="text-xs text-muted-foreground">Bahan</label>}
+                    <select
+                      value={item.ingredientId}
+                      onChange={(e) => updateSourceItem(idx, "ingredientId", e.target.value)}
+                      required
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Pilih bahan mentah...</option>
+                      {rmIngredients.map((i) => (
+                        <option key={i.id} value={i.id}>
+                          {i.name} (HPP: Rp {i.averageCost.toLocaleString("id-ID")} / {i.stockUnit})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="w-36 space-y-2">
+                    {idx === 0 && <label className="text-xs text-muted-foreground">Jumlah</label>}
+                    <input
+                      value={item.quantity > 0 ? item.quantity : ""}
+                      onChange={(e) =>
+                        updateSourceItem(idx, "quantity", Number(e.target.value))
+                      }
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      required
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      placeholder="Contoh: 5000"
+                    />
+                  </div>
+                  {sourceItems.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeSourceRow(idx)}
+                      className="mt-6 h-9 w-9 rounded-md border flex items-center justify-center text-muted-foreground hover:bg-muted"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
 
             <div className="flex items-center justify-center">
@@ -302,11 +387,12 @@ function YieldTrackingPage() {
                 </label>
                 <input
                   name="targetQuantity"
-                  type="number"
-                  min={1}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   required
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  placeholder="Contoh: 8000 (gram)"
+                  placeholder="Contoh: 8000"
                 />
               </div>
             </div>
@@ -323,7 +409,7 @@ function YieldTrackingPage() {
             <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
               <p className="font-medium">Perhitungan Otomatis</p>
               <p>
-                Sistem akan menghitung ulang HPP hasil berdasarkan: Total Biaya Mentah / Jumlah
+                Sistem akan menghitung ulang HPP hasil berdasarkan: Total Biaya Semua Bahan / Jumlah
                 Hasil. Semua resep yang menggunakan bahan hasil akan di-update otomatis.
               </p>
             </div>
@@ -331,7 +417,10 @@ function YieldTrackingPage() {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setModalOpen(false);
+                  resetForm();
+                }}
                 className="h-9 px-4 rounded-md border text-sm"
               >
                 Batal

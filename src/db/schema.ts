@@ -667,10 +667,10 @@ export const yieldConversions = pgTable(
     branchId: uuid("branch_id")
       .notNull()
       .references(() => branches.id),
+    // Single source — kept for backward compat; use yieldConversionSources for multi-source
     sourceIngredientId: uuid("source_ingredient_id")
-      .notNull()
       .references(() => ingredients.id),
-    sourceQuantity: integer("source_quantity").notNull(),
+    sourceQuantity: integer("source_quantity"),
     targetIngredientId: uuid("target_ingredient_id")
       .notNull()
       .references(() => ingredients.id),
@@ -687,6 +687,25 @@ export const yieldConversions = pgTable(
     index("yc_branch_idx").on(t.branchId),
     index("yc_source_idx").on(t.sourceIngredientId),
     index("yc_target_idx").on(t.targetIngredientId),
+  ],
+);
+
+// Junction table for multiple source ingredients per yield conversion
+export const yieldConversionSources = pgTable(
+  "yield_conversion_sources",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    yieldConversionId: uuid("yield_conversion_id")
+      .notNull()
+      .references(() => yieldConversions.id, { onDelete: "cascade" }),
+    ingredientId: uuid("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id),
+    quantity: integer("quantity").notNull(),
+  },
+  (t) => [
+    index("ycs_conversion_idx").on(t.yieldConversionId),
+    index("ycs_ingredient_idx").on(t.ingredientId),
   ],
 );
 
@@ -1611,7 +1630,7 @@ export const stockLedgerRelations = relations(stockLedger, ({ one }) => ({
   }),
 }));
 
-export const yieldConversionsRelations = relations(yieldConversions, ({ one }) => ({
+export const yieldConversionsRelations = relations(yieldConversions, ({ one, many }) => ({
   branch: one(branches, { fields: [yieldConversions.branchId], references: [branches.id] }),
   sourceIngredient: one(ingredients, {
     fields: [yieldConversions.sourceIngredientId],
@@ -1623,7 +1642,19 @@ export const yieldConversionsRelations = relations(yieldConversions, ({ one }) =
     references: [ingredients.id],
     relationName: "target",
   }),
+  sources: many(yieldConversionSources),
   processedByUser: one(users, { fields: [yieldConversions.processedBy], references: [users.id] }),
+}));
+
+export const yieldConversionSourcesRelations = relations(yieldConversionSources, ({ one }) => ({
+  yieldConversion: one(yieldConversions, {
+    fields: [yieldConversionSources.yieldConversionId],
+    references: [yieldConversions.id],
+  }),
+  ingredient: one(ingredients, {
+    fields: [yieldConversionSources.ingredientId],
+    references: [ingredients.id],
+  }),
 }));
 
 // ─── SCM ───

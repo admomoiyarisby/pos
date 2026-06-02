@@ -6,6 +6,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { getSalesAnalytics } from "#/lib/server/finance";
 import { formatRp } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
+import { BarChart3 } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -94,7 +95,17 @@ function AnalyticsPage() {
           <span className="text-xs text-muted-foreground ml-auto">Maks 31 hari</span>
         </div>
 
-        {analytics && (
+        {!analytics ? (
+          <div className="rounded-lg border border-dashed p-8 text-center">
+            <div className="mx-auto h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
+              <BarChart3 className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h3 className="font-semibold text-foreground mb-1">Belum Ada Data Analitik</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Pilih rentang tanggal untuk melihat analitik penjualan.
+            </p>
+          </div>
+        ) : (
           <>
             {/* Channel Distribution */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

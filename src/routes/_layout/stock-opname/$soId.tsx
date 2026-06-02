@@ -262,10 +262,11 @@ function StockOpnameDetailPage() {
                         {item.systemStock.toLocaleString("id-ID")}
                       </td>
                     )}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-right">
                       <input
-                        type="number"
-                        min={0}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={inputValue}
                         onChange={(e) => handleInputChange(item.id, e.target.value)}
                         disabled={detail.status === "Approved"}

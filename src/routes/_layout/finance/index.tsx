@@ -24,7 +24,14 @@ function FinancePage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [revenueType, setRevenueType] = useState<"manual" | "channel">("manual");
-  const [dateRange, setDateRange] = useState({ from: "", to: "" });
+  const [dateRange, setDateRange] = useState(() => {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    return {
+      from: firstDay.toISOString().split("T")[0],
+      to: now.toISOString().split("T")[0],
+    };
+  });
 
   const { data: summary } = useQuery({
     queryKey: ["finance-summary", dateRange.from, dateRange.to],

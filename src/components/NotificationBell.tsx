@@ -68,9 +68,6 @@ export default function NotificationBell() {
         <div className="absolute right-0 top-10 z-50 w-[calc(100vw-2rem)] sm:w-80 rounded-lg border bg-card shadow-lg">
           <div className="flex items-center justify-between border-b p-3">
             <h3 className="text-sm font-semibold">Notifikasi</h3>
-            {unreadCount > 0 && (
-              <span className="text-xs text-muted-foreground">{unreadCount} belum dibaca</span>
-            )}
           </div>
           <div className="max-h-80 overflow-y-auto">
             {notifications.length === 0 ? (
