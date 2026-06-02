@@ -34,7 +34,7 @@ export function HppAlertCards({ data }: { data: ReturnType<typeof computeHppAler
         <h3 className="text-base font-bold text-foreground">HPP Monitoring Alert</h3>
         <p className="text-sm text-muted-foreground">Menu dengan HPP di bawah 40% (High Margin)</p>
       </div>
-      <div className="max-h-80 space-y-4 overflow-y-auto">
+      <div className="space-y-4">
         {data.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             Tidak ada menu dengan HPP &lt; 40%.

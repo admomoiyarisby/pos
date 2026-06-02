@@ -2,6 +2,7 @@
 // SuccessModal — Order confirmation modal
 // ============================================================
 
+import { useEffect } from "react";
 import { CheckCircle2, Printer } from "lucide-react";
 import type { OrderResult, CartItem } from "#/lib/pos-types";
 
@@ -18,10 +19,19 @@ export default function SuccessModal({
   order,
   cartItems,
   branchName,
-  onClose,
+  onClose: _onClose,
   onNewTransaction,
   onPrintReceipt,
 }: SuccessModalProps) {
+  // Auto-close after 4 seconds
+  useEffect(() => {
+    if (!order) return;
+    const timer = setTimeout(() => {
+      onNewTransaction();
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [order, onNewTransaction]);
+
   if (!order) return null;
 
   let o = order;
@@ -68,9 +78,6 @@ export default function SuccessModal({
             className="w-full h-10 rounded-md border text-sm font-medium"
           >
             Transaksi Baru
-          </button>
-          <button onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground">
-            Tutup
           </button>
         </div>
       </div>

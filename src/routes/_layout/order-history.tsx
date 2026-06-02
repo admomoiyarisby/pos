@@ -14,6 +14,7 @@ import {
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Printer, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { printReceipt } from "#/lib/pos-print";
 
 type ReprintStatus = "idle" | "pending" | "already_pending" | "error";
 
@@ -91,7 +92,7 @@ const columns: Column<OrderRow>[] = [
             | "secondary"
         }
       >
-        {r.status}
+        {r.status || "-"}
       </Badge>
     ),
   },
@@ -301,59 +302,112 @@ function OrderHistoryPage() {
             </div>
 
             {isCompleted && (
-              <div className="border-t pt-4">
+              <div className="border-t pt-4 space-y-3">
                 <button
-                  onClick={handleReprint}
-                  disabled={reprintMutation.isPending}
-                  className="w-full h-10 rounded-md border border-dashed text-sm font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-2 disabled:opacity-50"
+                  onClick={async function () {
+                    const orderData = await getOrderWithItems({ data: { id: selectedOrder.id } });
+                    if (!orderData) return;
+                    const cartItems = orderData.items.map((item: any) => ({
+                      recipeId: item.recipeId,
+                      brandId: undefined,
+                      name: item.recipeName ?? item.recipeId,
+                      price: item.price,
+                      quantity: item.quantity,
+                      modifiers: (item.modifiers ?? []).map((mName: string) => ({
+                        groupId: "",
+                        modifierId: "",
+                        name: mName,
+                        price: 0,
+                        isExclusion: false,
+                      })),
+                      notes: item.notes ?? "",
+                    }));
+                    const printOrder = {
+                      id: orderData.id,
+                      branchId: orderData.branchId,
+                      channel: orderData.channel,
+                      subtotal: orderData.subtotal,
+                      taxAmount: orderData.taxAmount ?? 0,
+                      totalAmount: orderData.totalAmount,
+                      totalCogs: orderData.totalCogs ?? 0,
+                      orderCode: orderData.orderCode,
+                      customerName: orderData.customerName,
+                      paymentMethod: orderData.paymentMethod,
+                      voucherCode: orderData.voucherCode,
+                      voucherDiscount: orderData.voucherDiscount,
+                      status: orderData.status,
+                      voidReason: orderData.voidReason,
+                      notes: orderData.notes,
+                      shiftId: orderData.shiftId,
+                      createdAt: orderData.createdAt,
+                      completedAt: orderData.completedAt,
+                    };
+                    printReceipt({
+                      order: printOrder as any,
+                      cartItems,
+                      branchName: "",
+                    });
+                  }}
+                  className="w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2"
                 >
                   <Printer className="h-4 w-4" />
-                  {reprintMutation.isPending ? "Memproses..." : "Cetak Ulang Invoice"}
+                  Cetak Invoice
                 </button>
 
-                {reprintStatus === "pending" && (
-                  <div className="mt-3 rounded-md bg-blue-500/10 px-3 py-2 text-xs text-blue-600 flex items-center gap-2">
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                    <span>Permintaan cetak ulang dikirim ke Area Manager untuk disetujui</span>
-                  </div>
-                )}
+                <div className="border-t pt-3">
+                  <button
+                    onClick={handleReprint}
+                    disabled={reprintMutation.isPending}
+                    className="w-full h-10 rounded-md border border-dashed text-sm font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <Printer className="h-4 w-4" />
+                    {reprintMutation.isPending ? "Memproses..." : "Cetak Ulang (via Approval)"}
+                  </button>
 
-                {reprintStatus === "already_pending" && (
-                  <div className="mt-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600 flex items-center gap-2">
-                    <Clock className="h-3.5 w-3.5 shrink-0" />
-                    <span>
-                      Permintaan cetak ulang sudah diajukan sebelumnya dan menunggu persetujuan
-                    </span>
-                  </div>
-                )}
+                  {reprintStatus === "pending" && (
+                    <div className="mt-3 rounded-md bg-blue-500/10 px-3 py-2 text-xs text-blue-600 flex items-center gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                      <span>Permintaan cetak ulang dikirim ke Area Manager untuk disetujui</span>
+                    </div>
+                  )}
 
-                {resolvedStatus === "approved" && (
-                  <div className="mt-3 rounded-md bg-emerald-500/10 px-3 py-2 text-xs text-emerald-600 flex items-center gap-2">
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                    <span className="flex-1">Permintaan cetak ulang telah disetujui</span>
-                    <button
-                      onClick={printApprovedInvoice}
-                      className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-emerald-700"
-                    >
-                      <Printer className="h-3 w-3" />
-                      Cetak
-                    </button>
-                  </div>
-                )}
+                  {reprintStatus === "already_pending" && (
+                    <div className="mt-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600 flex items-center gap-2">
+                      <Clock className="h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        Permintaan cetak ulang sudah diajukan sebelumnya dan menunggu persetujuan
+                      </span>
+                    </div>
+                  )}
 
-                {resolvedStatus === "rejected" && (
-                  <div className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-center gap-2">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                    <span>Permintaan cetak ulang ditolak</span>
-                  </div>
-                )}
+                  {resolvedStatus === "approved" && (
+                    <div className="mt-3 rounded-md bg-emerald-500/10 px-3 py-2 text-xs text-emerald-600 flex items-center gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                      <span className="flex-1">Permintaan cetak ulang telah disetujui</span>
+                      <button
+                        onClick={printApprovedInvoice}
+                        className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-emerald-700"
+                      >
+                        <Printer className="h-3 w-3" />
+                        Cetak
+                      </button>
+                    </div>
+                  )}
 
-                {reprintStatus === "error" && (
-                  <div className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-center gap-2">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                    <span>Gagal mengajukan permintaan cetak ulang</span>
-                  </div>
-                )}
+                  {resolvedStatus === "rejected" && (
+                    <div className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-center gap-2">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                      <span>Permintaan cetak ulang ditolak</span>
+                    </div>
+                  )}
+
+                  {reprintStatus === "error" && (
+                    <div className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-center gap-2">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                      <span>Gagal mengajukan permintaan cetak ulang</span>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

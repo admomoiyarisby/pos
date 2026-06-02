@@ -50,7 +50,7 @@ export function WasteLossTable({
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left min-w-[640px]">
+        <table className="w-full border-collapse text-left min-w-[800px]">
           <thead>
             <tr className="border-b">
               <th className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase text-muted-foreground sticky left-0 bg-background z-10 border-r border-border">

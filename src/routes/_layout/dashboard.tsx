@@ -112,7 +112,7 @@ function DashboardPage() {
   const voidCount = todayOrders.filter((o) => o.status === "Void").length;
 
   // Anomaly detection
-  const anomalies: { type: string; message: string; severity: "error" | "warning" }[] = [];
+  const anomalies: { type: string; message: string; severity: "error" | "warning"; detail?: string[] }[] = [];
   if (voidCount > todayOrders.length * 0.1 && todayOrders.length > 5) {
     anomalies.push({
       type: "Void Anomaly",
@@ -121,11 +121,21 @@ function DashboardPage() {
     });
   }
   const lowStock = inventory.filter((i) => i.quantity < 100);
+  const lowStockItems = lowStock
+    .map((i) => {
+      const ing = ingredients.find((ig) => ig.id === i.ingredientId);
+      return { ...i, ingredientName: ing?.name ?? i.ingredientId, rop: ing?.rop ?? 0 };
+    })
+    .sort((a, b) => a.quantity - b.quantity)
+    .slice(0, 10);
   if (lowStock.length > 0) {
     anomalies.push({
       type: "Stock Alert",
       message: `${lowStock.length} bahan baku di bawah batas aman`,
       severity: "error",
+      detail: lowStockItems.map(
+        (item) => `${item.ingredientName}: ${item.quantity} (ROP: ${item.rop})`,
+      ),
     });
   }
 

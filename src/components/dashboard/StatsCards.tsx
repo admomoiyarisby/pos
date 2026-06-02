@@ -5,7 +5,7 @@ interface StatsCardsProps {
   totalSales: number;
   completedCount: number;
   voidCount: number;
-  anomalies: { type: string; message: string; severity: "error" | "warning" }[];
+  anomalies: { type: string; message: string; severity: "error" | "warning"; detail?: string[] }[];
 }
 
 export function StatsCards({ totalSales, completedCount, voidCount, anomalies }: StatsCardsProps) {
@@ -67,9 +67,18 @@ export function StatsCards({ totalSales, completedCount, voidCount, anomalies }:
                 >
                   <AlertTriangle className="h-5 w-5" />
                 </div>
-                <div>
+                <div className="flex-1 min-w-0">
                   <p className="font-bold text-foreground">{a.type}</p>
                   <p className="text-sm text-muted-foreground">{a.message}</p>
+                  {a.detail && a.detail.length > 0 && (
+                    <ul className="mt-1.5 space-y-0.5">
+                      {a.detail.map((d, i) => (
+                        <li key={i} className="text-xs text-muted-foreground/80 truncate">
+                          {d}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             ))}

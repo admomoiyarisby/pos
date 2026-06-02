@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useAuth } from "#/lib/auth-context";
@@ -30,6 +30,8 @@ function PRDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [showProcessModal, setShowProcessModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [editedQuantities, setEditedQuantities] = useState<Record<string, number>>({});
+  const [editError, setEditError] = useState<string | null>(null);
 
   const isApprover =
     user?.role === "super_admin" || user?.role === "admin_pusat" || user?.role === "area_manager";
@@ -41,12 +43,38 @@ function PRDetailPage() {
     initialData: initial,
   });
 
+  // Sync edited quantities when PR loads or edit mode opens
+  useEffect(() => {
+    if (pr && isEditing) {
+      const qtyMap: Record<string, number> = {};
+      for (const item of pr.items) {
+        qtyMap[(item as any).id] = (item as any).quantity;
+      }
+      setEditedQuantities(qtyMap);
+      setEditError(null);
+    }
+  }, [pr, isEditing]);
+
   const { data: deliveryNotes } = useQuery({
     queryKey: ["delivery-notes"],
     queryFn: () => getDeliveryNotes({ data: {} }),
   });
 
   const linkedDN = deliveryNotes?.find((dn) => dn.purchaseRequisitionId === prId);
+
+  const editMutation = useMutation({
+    mutationFn: updatePurchaseRequisition,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["purchase-requisition", prId] });
+      void queryClient.invalidateQueries({ queryKey: ["purchase-requisitions"] });
+      setIsEditing(false);
+      setEditedQuantities({});
+      setEditError(null);
+    },
+    onError: (err) => {
+      setEditError(err instanceof Error ? err.message : 'Gagal menyimpan perubahan');
+    },
+  });
 
   const processMutation = useMutation({
     mutationFn: processPurchaseRequisition,
@@ -117,13 +145,44 @@ function PRDetailPage() {
                 Tolak
               </button>
             )}
-            {canEdit && (
+            {canEdit && !isEditing && (
               <button
-                onClick={() => setIsEditing(!isEditing)}
+                onClick={() => setIsEditing(true)}
                 className="h-9 px-4 rounded-md border text-sm"
               >
-                {isEditing ? "Batal" : "Edit"}
+                Edit
               </button>
+            )}
+            {isEditing && (
+              <>
+                {editError && (
+                  <span className="text-xs text-destructive">{editError}</span>
+                )}
+                <button
+                  onClick={() => {
+                    setIsEditing(false);
+                    setEditError(null);
+                  }}
+                  className="h-9 px-4 rounded-md border text-sm"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={() => {
+                    const items = Object.entries(editedQuantities).map(([id, quantity]) => ({
+                      ingredientId: id,
+                      quantity,
+                    }));
+                    void editMutation.mutateAsync({
+                      data: { id: prId, items },
+                    });
+                  }}
+                  disabled={editMutation.isPending}
+                  className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+                >
+                  {editMutation.isPending ? "Menyimpan..." : "Simpan"}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -151,7 +210,22 @@ function PRDetailPage() {
                     <td className="px-4 py-3 font-mono text-xs">{item.ingredientCode}</td>
                     <td className="px-4 py-3">{item.ingredientName}</td>
                     <td className="px-4 py-3 text-right font-medium">
-                      {item.quantity.toLocaleString("id-ID")}
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          min={1}
+                          value={editedQuantities[item.id] ?? item.quantity}
+                          onChange={(e) =>
+                            setEditedQuantities((prev) => ({
+                              ...prev,
+                              [item.id]: Number(e.target.value),
+                            }))
+                          }
+                          className="h-8 w-24 rounded-md border border-input bg-background px-2 text-sm text-right"
+                        />
+                      ) : (
+                        item.quantity.toLocaleString("id-ID")
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{item.stockUnit}</td>
                   </tr>

@@ -5,6 +5,7 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getInventory } from "#/lib/server/inventory";
+import { getBranches } from "#/lib/server/branches";
 import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
@@ -44,16 +45,26 @@ function InventoryPage() {
   const { inventory: initialData, total: initialTotal } = Route.useLoaderData();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<"Fresh" | "Dry" | "Packaging" | "">("");
+  const [branchId, setBranchId] = useState("");
   const [page, setPage] = useState(0);
   const pageSize = 25;
 
+  const { data: branches } = useQuery({
+    queryKey: ["branches"],
+    queryFn: () => getBranches({ data: {} }),
+  });
+
+  const canFilterBranches =
+    user?.role === "super_admin" || user?.role === "admin_pusat" || user?.role === "area_manager";
+
   const { data: result } = useQuery({
-    queryKey: ["inventory", search, category, page],
+    queryKey: ["inventory", search, category, branchId, page],
     queryFn: () =>
       getInventory({
         data: {
           search: search || undefined,
           category: category || null,
+          branchId: branchId || undefined,
           page,
           limit: pageSize,
         },
@@ -117,6 +128,23 @@ function InventoryPage() {
       ]}
     >
       <div className="flex flex-wrap items-center gap-3 mb-4">
+        {canFilterBranches && branches && (
+          <select
+            value={branchId}
+            onChange={(e) => {
+              setBranchId(e.target.value);
+              setPage(0);
+            }}
+            className="h-8 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="">Semua Cabang</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {(["", "Fresh", "Dry", "Packaging"] as const).map((cat) => (
             <button
