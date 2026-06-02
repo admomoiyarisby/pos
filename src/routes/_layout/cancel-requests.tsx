@@ -6,6 +6,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { Badge } from "#/components/ui/badge";
 import Modal from "#/components/ui/Modal";
 import { getCancelRequests, approveCancelRequest, rejectCancelRequest } from "#/lib/server/pos";
+import { useAuth } from "#/lib/auth-context";
 import { XCircle } from "lucide-react";
 
 interface CancelRequest {
@@ -42,13 +43,19 @@ function StatusBadge({ status }: { status: string }) {
 function CancelRequestsPage() {
   usePageTitle("Permintaan Pembatalan", "Review dan approve permintaan cancel order dari kasir");
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<"approve" | "reject" | null>(null);
 
+  const isBranchAdmin = user?.role === "branch_admin";
+
   const { data, isLoading } = useQuery({
-    queryKey: ["cancel-requests"],
-    queryFn: () => getCancelRequests({ data: {} }),
+    queryKey: ["cancel-requests", user?.branchId],
+    queryFn: () =>
+      getCancelRequests({
+        data: isBranchAdmin && user?.branchId ? { branchId: user.branchId } : {},
+      }),
   });
 
   const requests: CancelRequest[] = data ?? [];
@@ -80,7 +87,7 @@ function CancelRequestsPage() {
   }
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
+    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
       {isLoading ? (
         <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
           Memuat...
@@ -89,7 +96,11 @@ function CancelRequestsPage() {
         <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
           <XCircle className="h-10 w-10 mb-2 opacity-30" />
           <p className="text-sm font-medium">Tidak ada permintaan pembatalan</p>
-          <p className="text-xs">Permintaan dari kasir akan muncul di sini</p>
+          <p className="text-xs">
+            {isBranchAdmin
+              ? "Belum ada permintaan pembatalan untuk cabang ini"
+              : "Permintaan dari kasir akan muncul di sini"}
+          </p>
         </div>
       ) : (
         <div className="rounded-md border overflow-x-auto">
@@ -130,7 +141,7 @@ function CancelRequestsPage() {
                     <StatusBadge status={r.status} />
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {r.status === "Pending" && (
+                    {!isBranchAdmin && r.status === "Pending" && (
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => {
@@ -160,42 +171,44 @@ function CancelRequestsPage() {
         </div>
       )}
 
-      {/* Confirm modal */}
-      <Modal
-        open={!!confirmAction}
-        onClose={() => setConfirmAction(null)}
-        title={confirmAction === "approve" ? "Setujui Pembatalan" : "Tolak Pembatalan"}
-        size="sm"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            {confirmAction === "approve"
-              ? "Apakah Anda yakin ingin menyetujui pembatalan ini? Pesanan akan dibatalkan dan stok akan dikembalikan."
-              : "Apakah Anda yakin ingin menolak permintaan pembatalan ini?"}
-          </p>
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setConfirmAction(null)}
-              className="h-9 px-4 rounded-md border text-sm"
-            >
-              Batal
-            </button>
-            <button
-              onClick={() => {
-                if (confirmAction === "approve" && selectedRequest) handleApprove(selectedRequest);
-                else if (selectedRequest) handleReject(selectedRequest);
-              }}
-              disabled={approveMutation.isPending || rejectMutation.isPending}
-              className={
-                "h-9 px-4 rounded-md text-sm text-white disabled:opacity-50 " +
-                (confirmAction === "approve" ? "bg-primary" : "bg-destructive")
-              }
-            >
-              {confirmAction === "approve" ? "Setujui" : "Tolak"}
-            </button>
+      {/* Confirm modal — only for non-kasir (approve/reject) */}
+      {!isBranchAdmin && confirmAction && (
+        <Modal
+          open={!!confirmAction}
+          onClose={() => setConfirmAction(null)}
+          title={confirmAction === "approve" ? "Setujui Pembatalan" : "Tolak Pembatalan"}
+          size="sm"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {confirmAction === "approve"
+                ? "Apakah Anda yakin ingin menyetujui pembatalan ini? Pesanan akan dibatalkan dan stok akan dikembalikan."
+                : "Apakah Anda yakin ingin menolak permintaan pembatalan ini?"}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  if (confirmAction === "approve" && selectedRequest) handleApprove(selectedRequest);
+                  else if (selectedRequest) handleReject(selectedRequest);
+                }}
+                disabled={approveMutation.isPending || rejectMutation.isPending}
+                className={
+                  "h-9 px-4 rounded-md text-sm text-white disabled:opacity-50 " +
+                  (confirmAction === "approve" ? "bg-primary" : "bg-destructive")
+                }
+              >
+                {confirmAction === "approve" ? "Setujui" : "Tolak"}
+              </button>
+            </div>
           </div>
-        </div>
-      </Modal>
+        </Modal>
+      )}
     </RoleGuard>
   );
 }

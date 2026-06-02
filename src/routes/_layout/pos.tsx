@@ -15,6 +15,7 @@ import {
   requestReprint,
   getReprintRequestStatus,
   getOrderWithItems,
+  createCancelRequest,
 } from "#/lib/server/pos";
 import { getBrands } from "#/lib/server/brands";
 import { getBranches } from "#/lib/server/branches";
@@ -132,30 +133,33 @@ function PosPage() {
   let _o = useState<string | null>(null);
   let stockError = _o[0];
   let setStockError = _o[1];
+  let _p = useState(false);
+  let confirmPaymentModal = _p[0];
+  let setConfirmPaymentModal = _p[1];
 
-  let _p = useState<{
+  let _q = useState<{
     item: MenuItem;
     selectedModifiers: CartModifier[];
     itemNotes: string;
   } | null>(null);
-  let modifierModal = _p[0];
-  let setModifierModal = _p[1];
+  let modifierModal = _q[0];
+  let setModifierModal = _q[1];
 
-  let _q = useState<"open" | "close" | null>(null);
-  let shiftModal = _q[0];
-  let setShiftModal = _q[1];
-  let _r = useState("");
-  let cashFloat = _r[0];
-  let setCashFloat = _r[1];
+  let _r = useState<"open" | "close" | null>(null);
+  let shiftModal = _r[0];
+  let setShiftModal = _r[1];
   let _s = useState("");
-  let actualCash = _s[0];
-  let setActualCash = _s[1];
-  let _t = useState<{ orderId: string; reason: string } | null>(null);
-  let voidModal = _t[0];
-  let setVoidModal = _t[1];
-  let _u = useState(false);
-  let mobileCartOpen = _u[0];
-  let setMobileCartOpen = _u[1];
+  let cashFloat = _s[0];
+  let setCashFloat = _s[1];
+  let _t = useState("");
+  let actualCash = _t[0];
+  let setActualCash = _t[1];
+  let _u = useState<{ orderId: string; reason: string; mode?: "direct" | "request" } | null>(null);
+  let voidModal = _u[0];
+  let setVoidModal = _u[1];
+  let _v = useState(false);
+  let mobileCartOpen = _v[0];
+  let setMobileCartOpen = _v[1];
   // PB1 rate from branch config
   let pb1Rate = 11;
   let activeBranch = allBranches.find(function (b) {
@@ -166,12 +170,12 @@ function PosPage() {
   }
 
   // Reprint approval state
-  let _v = useState<string | null>(null);
-  let reprintRequestStatus = _v[0];
-  let setReprintRequestStatus = _v[1];
   let _w = useState<string | null>(null);
-  let reprintOrderId = _w[0];
-  let setReprintOrderId = _w[1];
+  let reprintRequestStatus = _w[0];
+  let setReprintRequestStatus = _w[1];
+  let _x = useState<string | null>(null);
+  let reprintOrderId = _x[0];
+  let setReprintOrderId = _x[1];
 
   let reprintStatusQuery = useQuery({
     queryKey: ["reprint-status", reprintOrderId],
@@ -192,61 +196,61 @@ function PosPage() {
         ? "rejected"
         : reprintRequestStatus;
 
+  // Fetch and print an approved reprint order
+  async function printApprovedOrder(orderId: string) {
+    const orderData = await getOrderWithItems({ data: { id: orderId } });
+    if (!orderData) return;
+
+    const branch = allBranches.find((b: any) => b.id === orderData.branchId);
+    const branchName = branch?.name ?? "Cabang";
+
+    const cartItems: CartItem[] = orderData.items.map((item: any) => ({
+      recipeId: item.recipeId,
+      brandId: undefined,
+      name: item.recipeName ?? item.recipeId,
+      price: item.price,
+      quantity: item.quantity,
+      modifiers: (item.modifiers ?? []).map((mName: string) => ({
+        groupId: "",
+        modifierId: "",
+        name: mName,
+        price: 0,
+        isExclusion: false,
+      })),
+      notes: item.notes ?? "",
+    }));
+
+    const printOrder: OrderResult = {
+      id: orderData.id,
+      branchId: orderData.branchId,
+      channel: orderData.channel,
+      subtotal: orderData.subtotal,
+      taxAmount: orderData.taxAmount ?? 0,
+      totalAmount: orderData.totalAmount,
+      totalCogs: orderData.totalCogs ?? 0,
+      orderCode: orderData.orderCode,
+      customerName: orderData.customerName,
+      paymentMethod: orderData.paymentMethod,
+      voucherCode: orderData.voucherCode,
+      voucherDiscount: orderData.voucherDiscount,
+      status: orderData.status,
+      voidReason: orderData.voidReason,
+      notes: orderData.notes,
+      shiftId: orderData.shiftId,
+      createdAt: orderData.createdAt,
+      completedAt: orderData.completedAt,
+    };
+
+    printReceipt({ order: printOrder, cartItems: cartItems, branchName: branchName });
+  }
+
   // Auto-print when reprint is approved
   useEffect(() => {
     if (resolvedReprintStatus !== "approved" || !reprintOrderId) return;
 
-    let cancelled = false;
     void (async () => {
-      const orderData = await getOrderWithItems({ data: { id: reprintOrderId } });
-      if (!orderData || cancelled) return;
-
-      const branch = allBranches.find((b: any) => b.id === orderData.branchId);
-      const branchName = branch?.name ?? "Cabang";
-
-      const cartItems: CartItem[] = orderData.items.map((item: any) => ({
-        recipeId: item.recipeId,
-        brandId: undefined,
-        name: item.recipeName ?? item.recipeId,
-        price: item.price,
-        quantity: item.quantity,
-        modifiers: (item.modifiers ?? []).map((mName: string) => ({
-          groupId: "",
-          modifierId: "",
-          name: mName,
-          price: 0,
-          isExclusion: false,
-        })),
-        notes: item.notes ?? "",
-      }));
-
-      const printOrder: OrderResult = {
-        id: orderData.id,
-        branchId: orderData.branchId,
-        channel: orderData.channel,
-        subtotal: orderData.subtotal,
-        taxAmount: orderData.taxAmount ?? 0,
-        totalAmount: orderData.totalAmount,
-        totalCogs: orderData.totalCogs ?? 0,
-        orderCode: orderData.orderCode,
-        customerName: orderData.customerName,
-        paymentMethod: orderData.paymentMethod,
-        voucherCode: orderData.voucherCode,
-        voucherDiscount: orderData.voucherDiscount,
-        status: orderData.status,
-        voidReason: orderData.voidReason,
-        notes: orderData.notes,
-        shiftId: orderData.shiftId,
-        createdAt: orderData.createdAt,
-        completedAt: orderData.completedAt,
-      };
-
-      printReceipt({ order: printOrder, cartItems: cartItems, branchName: branchName });
+      await printApprovedOrder(reprintOrderId);
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [resolvedReprintStatus, reprintOrderId]);
 
   let menuResult = useQuery({
@@ -337,7 +341,7 @@ function PosPage() {
           )
             return;
           e.preventDefault();
-          void handleCheckout();
+          setConfirmPaymentModal(true);
           return;
         }
 
@@ -416,6 +420,20 @@ function PosPage() {
       void queryClient.invalidateQueries({ queryKey: ["pos-recent-orders"] });
       void queryClient.invalidateQueries({ queryKey: ["inventory"] });
       setVoidModal(null);
+    },
+  });
+
+  let cancelRequestMutation = useMutation({
+    mutationFn: createCancelRequest,
+    onSuccess: function () {
+      void queryClient.invalidateQueries({ queryKey: ["pos-recent-orders"] });
+      setVoidModal(null);
+      setCheckoutError(null);
+    },
+    onError: function (err) {
+      setCheckoutError(
+        err instanceof Error ? err.message : "Gagal mengajukan permintaan pembatalan",
+      );
     },
   });
 
@@ -602,6 +620,12 @@ function PosPage() {
   async function handleCheckout() {
     if (cart.length === 0 || !activeShift) return;
     setCheckoutError(null);
+    setConfirmPaymentModal(true);
+  }
+
+  async function handleConfirmPayment() {
+    if (cart.length === 0 || !activeShift) return;
+    setConfirmPaymentModal(false);
 
     let items = cart.map(function (c) {
       return {
@@ -667,9 +691,18 @@ function PosPage() {
 
   function handleVoid() {
     if (!voidModal) return;
-    void voidOrderMutation.mutateAsync({
-      data: { orderId: voidModal.orderId, reason: voidModal.reason },
-    });
+    if (voidModal.mode === "request") {
+      void cancelRequestMutation.mutateAsync({
+        data: {
+          orderId: voidModal.orderId,
+          reason: voidModal.reason as "Stok Habis" | "Salah Input" | "Customer Cancel",
+        },
+      });
+    } else {
+      void voidOrderMutation.mutateAsync({
+        data: { orderId: voidModal.orderId, reason: voidModal.reason },
+      });
+    }
   }
 
   function handleOpenShift() {
@@ -687,6 +720,7 @@ function PosPage() {
   }
 
   let canVoid = user?.role === "super_admin" || user?.role === "admin_pusat";
+  let canRequestCancel = user?.role === "branch_admin";
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "branch_admin"]}>
@@ -879,11 +913,21 @@ function PosPage() {
                         ? "Permintaan cetak ulang ditolak"
                         : "Gagal mengajukan permintaan"}
               </span>
+              {resolvedReprintStatus === "approved" && reprintOrderId && (
+                <button
+                  onClick={function () {
+                    void printApprovedOrder(reprintOrderId);
+                  }}
+                  className="ml-auto h-5 px-2 rounded text-[10px] font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  Cetak
+                </button>
+              )}
               <button
                 onClick={function () {
                   setReprintRequestStatus(null);
                 }}
-                className="ml-auto text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -892,13 +936,94 @@ function PosPage() {
           <OrderHistory
             recentOrders={recentOrders}
             canVoid={canVoid}
+            canRequestCancel={canRequestCancel}
             onReprint={handleReprint}
             onVoid={function (orderId) {
               setVoidModal({ orderId: orderId, reason: "" });
             }}
+            onRequestCancel={function (orderId) {
+              setVoidModal({ orderId: orderId, reason: "", mode: "request" });
+            }}
           />
         </CartSidebar>
       </div>
+
+      {/* Payment Confirmation Modal */}
+      <Modal
+        open={confirmPaymentModal}
+        onClose={function () {
+          setConfirmPaymentModal(false);
+        }}
+        title="Konfirmasi Pembayaran"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="rounded-md bg-muted p-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Channel</span>
+              <span className="font-medium">{channel}</span>
+            </div>
+            {channel !== "Dine-in" && orderCode && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Kode Order</span>
+                <span className="font-medium">{orderCode}</span>
+              </div>
+            )}
+            {channel === "Dine-in" && customerName && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Pelanggan</span>
+                <span className="font-medium">{customerName}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Jumlah Item</span>
+              <span className="font-medium">{cart.length} item</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Metode Pembayaran</span>
+              <span className="font-medium">{paymentMethod}</span>
+            </div>
+            <div className="flex justify-between border-t pt-2">
+              <span className="font-semibold">Total</span>
+              <span className="font-bold text-lg text-primary">
+                Rp {finalTotal.toLocaleString("id-ID")}
+              </span>
+            </div>
+          </div>
+
+          {voucherDiscount > 0 && (
+            <div className="rounded-md bg-primary/5 border border-primary/10 px-4 py-2 text-sm flex items-center gap-2">
+              <TicketPercent className="h-4 w-4 text-primary" />
+              <span>
+                Diskon <strong>{selectedVoucher?.code}</strong>: -
+                Rp {voucherDiscount.toLocaleString("id-ID")}
+              </span>
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Pastikan pesanan sudah benar sebelum melanjutkan pembayaran.
+          </p>
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={function () {
+                setConfirmPaymentModal(false);
+              }}
+              className="h-10 px-6 rounded-md border text-sm font-medium"
+            >
+              Batal
+            </button>
+            <button
+              onClick={handleConfirmPayment}
+              disabled={createOrderMutation.isPending}
+              className="h-10 px-6 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+            >
+              {createOrderMutation.isPending ? "Memproses..." : isDineIn ? "Bayar" : "Konfirmasi"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Success Modal */}
       <SuccessModal
@@ -917,32 +1042,54 @@ function PosPage() {
         }}
       />
 
-      {/* Void Modal */}
+      {/* Void / Cancel Request Modal */}
       <Modal
         open={!!voidModal}
         onClose={function () {
           setVoidModal(null);
         }}
-        title="Batalkan Pesanan"
+        title={voidModal?.mode === "request" ? "Minta Pembatalan" : "Batalkan Pesanan"}
         size="sm"
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Apakah Anda yakin ingin membatalkan pesanan ini? Stok bahan baku akan dikembalikan.
+            {voidModal?.mode === "request"
+              ? "Ajukan permintaan pembatalan pesanan ini. Area Manager akan menyetujui atau menolak permintaan Anda."
+              : "Apakah Anda yakin ingin membatalkan pesanan ini? Stok bahan baku akan dikembalikan."}
           </p>
           <div className="space-y-2">
             <label className="text-sm font-medium">Alasan Pembatalan</label>
-            <input
-              type="text"
-              value={voidModal?.reason ?? ""}
-              onChange={function (e) {
-                setVoidModal(function (prev) {
-                  return prev ? { ...prev, reason: e.target.value } : null;
-                });
-              }}
-              placeholder="Alasan pembatalan..."
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
+            {voidModal?.mode === "request" ? (
+              <select
+                value={voidModal?.reason ?? ""}
+                onChange={function (e) {
+                  setVoidModal(function (prev) {
+                    return prev ? { ...prev, reason: e.target.value } : null;
+                  });
+                }}
+                required
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="" disabled>
+                  Pilih alasan...
+                </option>
+                <option value="Stok Habis">Stok Habis</option>
+                <option value="Salah Input">Salah Input</option>
+                <option value="Customer Cancel">Customer Cancel</option>
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={voidModal?.reason ?? ""}
+                onChange={function (e) {
+                  setVoidModal(function (prev) {
+                    return prev ? { ...prev, reason: e.target.value } : null;
+                  });
+                }}
+                placeholder="Alasan pembatalan..."
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            )}
           </div>
           <div className="flex justify-end gap-2">
             <button
@@ -957,10 +1104,18 @@ function PosPage() {
             <button
               type="button"
               onClick={handleVoid}
-              disabled={!voidModal?.reason || voidOrderMutation.isPending}
+              disabled={
+                !voidModal?.reason ||
+                voidOrderMutation.isPending ||
+                cancelRequestMutation.isPending
+              }
               className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
             >
-              {voidOrderMutation.isPending ? "Memproses..." : "Batalkan Pesanan"}
+              {voidOrderMutation.isPending || cancelRequestMutation.isPending
+                ? "Memproses..."
+                : voidModal?.mode === "request"
+                  ? "Ajukan Permintaan"
+                  : "Batalkan Pesanan"}
             </button>
           </div>
         </div>

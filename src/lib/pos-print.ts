@@ -91,6 +91,16 @@ export function printReceipt({ order, cartItems, branchName }: PrintReceiptParam
     '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
     '<div class="divider"></div>',
     '<div class="row"><span>No. Order:</span><span>' + idStr + "</span></div>",
+    (order.orderCode
+      ? '<div class="row"><span>Kode Order:</span><span>' +
+        order.orderCode +
+        "</span></div>"
+      : ""),
+    (order.customerName
+      ? '<div class="row"><span>Pelanggan:</span><span>' +
+        order.customerName +
+        "</span></div>"
+      : ""),
     '<div class="row"><span>Channel:</span><span>' + order.channel + "</span></div>",
     '<div class="row"><span>Pembayaran:</span><span>' +
       (order.paymentMethod || "-") +
@@ -201,4 +211,149 @@ export function printBill({
 
   printWindow.document.write(lines.join("\n"));
   printWindow.document.close();
+}
+
+// ============================================================
+// SCM Print Utilities — Surat Jalan and Invoice
+// ============================================================
+
+export function printSuratJalan(dn: {
+  code: string;
+  fromBranchName: string;
+  toBranchName: string;
+  driverName: string | null;
+  vehicleNumber: string | null;
+  status: string;
+  items: { ingredientName: string; quantity: number; readyQuantity: number | null }[];
+  createdAt: Date;
+}) {
+  const lines: string[] = [
+    "<html><head>",
+    "<title>Surat Jalan - " + dn.code + "</title>",
+    "<style>",
+    "@page { margin: 10mm; }",
+    "body { font-family: 'Courier New', monospace; max-width: 210mm; margin: 0 auto; padding: 10mm; font-size: 12px; }",
+    ".header { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 2mm; }",
+    ".subheader { text-align: center; font-size: 11px; color: #444; margin-bottom: 5mm; }",
+    ".info-grid { display: flex; justify-content: space-between; margin-bottom: 5mm; }",
+    ".info-block { font-size: 11px; }",
+    ".divider { border-top: 1px solid #000; margin: 3mm 0; }",
+    "table { width: 100%; border-collapse: collapse; font-size: 11px; }",
+    "th { border-bottom: 1px solid #000; padding: 2mm; text-align: left; }",
+    "td { padding: 2mm; border-bottom: 1px dashed #ccc; }",
+    "td:last-child, th:last-child { text-align: right; }",
+    ".footer { margin-top: 10mm; font-size: 10px; text-align: center; color: #666; }",
+    "</style></head><body>",
+    '<div class="header">SURAT JALAN</div>',
+    '<div class="subheader">' + dn.code + "</div>",
+    '<div class="subheader">' + new Date(dn.createdAt).toLocaleString("id-ID") + "</div>",
+    '<div class="divider"></div>',
+    '<div class="info-grid">',
+    '<div class="info-block"><strong>Dari:</strong><br>' + dn.fromBranchName + "</div>",
+    '<div class="info-block"><strong>Ke:</strong><br>' + dn.toBranchName + "</div>",
+    '<div class="info-block"><strong>Driver:</strong><br>' + (dn.driverName || "-") + "</div>",
+    '<div class="info-block"><strong>Kendaraan:</strong><br>' + (dn.vehicleNumber || "-") + "</div>",
+    "</div>",
+    '<div class="divider"></div>',
+    "<table>",
+    "<thead><tr><th>Bahan</th><th>Order</th><th>Ready</th></tr></thead>",
+    "<tbody>",
+  ];
+
+  for (const item of dn.items) {
+    lines.push(
+      "<tr><td>" +
+        item.ingredientName +
+        "</td><td>" +
+        item.quantity +
+        "</td><td>" +
+        (item.readyQuantity ?? "-") +
+        "</td></tr>",
+    );
+  }
+
+  lines.push(
+    "</tbody></table>",
+    '<div class="divider"></div>',
+    '<div class="footer">Dokumen ini dicetak dari Omoiyari POS</div>',
+    "</body></html>",
+  );
+
+  const pw = window.open("", "_blank");
+  if (!pw) return;
+  pw.document.write(lines.join("\n"));
+  pw.document.close();
+}
+
+export function printSCMInvoice(inv: {
+  code: string;
+  dnCode: string;
+  totalAmount: number;
+  status: string;
+  items: {
+    ingredientName: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }[];
+  createdAt: Date;
+}) {
+  const lines: string[] = [
+    "<html><head>",
+    "<title>Invoice - " + inv.code + "</title>",
+    "<style>",
+    "@page { margin: 10mm; }",
+    "body { font-family: 'Courier New', monospace; max-width: 210mm; margin: 0 auto; padding: 10mm; font-size: 12px; }",
+    ".header { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 2mm; }",
+    ".subheader { text-align: center; font-size: 11px; color: #444; margin-bottom: 5mm; }",
+    ".info { font-size: 11px; margin-bottom: 5mm; }",
+    ".divider { border-top: 1px solid #000; margin: 3mm 0; }",
+    "table { width: 100%; border-collapse: collapse; font-size: 11px; }",
+    "th { border-bottom: 1px solid #000; padding: 2mm; text-align: left; }",
+    "td { padding: 2mm; border-bottom: 1px dashed #ccc; }",
+    "td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: right; }",
+    "th:nth-child(2), th:nth-child(3), th:nth-child(4) { text-align: right; }",
+    ".total-row td { font-weight: bold; border-top: 1px solid #000; font-size: 13px; }",
+    ".footer { margin-top: 10mm; font-size: 10px; text-align: center; color: #666; }",
+    "</style></head><body>",
+    '<div class="header">INVOICE SCM</div>',
+    '<div class="subheader">' + inv.code + "</div>",
+    '<div class="subheader">' + new Date(inv.createdAt).toLocaleString("id-ID") + "</div>",
+    '<div class="info"><strong>Surat Jalan:</strong> ' + inv.dnCode + "</div>",
+    '<div class="divider"></div>',
+    "<table>",
+    "<thead><tr><th>Bahan</th><th>Qty</th><th>Harga Satuan</th><th>Total</th></tr></thead>",
+    "<tbody>",
+  ];
+
+  for (const item of inv.items) {
+    lines.push(
+      "<tr><td>" +
+        item.ingredientName +
+        "</td><td>" +
+        item.quantity +
+        "</td><td>Rp " +
+        item.unitPrice.toLocaleString("id-ID") +
+        "</td><td>Rp " +
+        item.totalPrice.toLocaleString("id-ID") +
+        "</td></tr>",
+    );
+  }
+
+  lines.push(
+    '<tr class="total-row"><td colspan="3">TOTAL</td><td>Rp ' +
+      inv.totalAmount.toLocaleString("id-ID") +
+      "</td></tr>",
+    "</tbody></table>",
+    '<div class="divider"></div>',
+    '<div class="footer">Status: ' +
+      (inv.status === "Unpaid" ? "BELUM DIBAYAR" : "LUNAS") +
+      " | Dicetak dari Omoiyari POS</div>",
+    "</body></html>",
+  );
+
+  const pw = window.open("", "_blank");
+  if (!pw) return;
+  pw.document.write(lines.join("\n"));
+  pw.document.close();
 }

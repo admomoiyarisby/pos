@@ -906,7 +906,7 @@ export const createCancelRequest = createServerFn({ method: "POST" })
   });
 
 export const getCancelRequests = createServerFn({ method: "GET" })
-  .inputValidator((data: { status?: string }) => data)
+  .inputValidator((data: { status?: string; branchId?: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -915,6 +915,9 @@ export const getCancelRequests = createServerFn({ method: "GET" })
       conditions.push(
         eq(cancelRequests.status, data.status as typeof cancelRequests.$inferSelect.status),
       );
+    }
+    if (data.branchId) {
+      conditions.push(eq(orders.branchId, data.branchId));
     }
 
     const result = await db
@@ -930,6 +933,7 @@ export const getCancelRequests = createServerFn({ method: "GET" })
       })
       .from(cancelRequests)
       .leftJoin(users, eq(cancelRequests.requestedBy, users.id))
+      .leftJoin(orders, eq(cancelRequests.orderId, orders.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(cancelRequests.createdAt));
 

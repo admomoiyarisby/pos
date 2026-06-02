@@ -8,15 +8,19 @@ import type { OrderResult } from "#/lib/pos-types";
 interface OrderHistoryProps {
   recentOrders: OrderResult[];
   canVoid: boolean;
+  canRequestCancel?: boolean;
   onReprint: (orderId: string) => void;
   onVoid: (orderId: string) => void;
+  onRequestCancel?: (orderId: string) => void;
 }
 
 export default function OrderHistory({
   recentOrders,
   canVoid,
+  canRequestCancel,
   onReprint,
   onVoid,
+  onRequestCancel,
 }: OrderHistoryProps) {
   return (
     <div className="shrink-0 border-t h-40 flex flex-col">
@@ -61,9 +65,20 @@ export default function OrderHistory({
                         onVoid(o.id);
                       }}
                       className="h-5 w-5 inline-flex items-center justify-center rounded border text-destructive hover:bg-destructive/10"
-                      title="Batal"
+                      title="Batalkan"
                     >
                       <X className="h-2.5 w-2.5" />
+                    </button>
+                  )}
+                  {!canVoid && canRequestCancel && o.status !== "Void" && (
+                    <button
+                      onClick={function () {
+                        onRequestCancel?.(o.id);
+                      }}
+                      className="h-5 px-1.5 inline-flex items-center justify-center rounded border text-destructive hover:bg-destructive/10 text-[10px] font-medium"
+                      title="Minta Batalkan"
+                    >
+                      Minta Btl
                     </button>
                   )}
                 </div>

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { useAuth } from "#/lib/auth-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
@@ -7,6 +8,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import {
   getSCMInvoices,
+  getSCMInvoice,
   generateSCMInvoice,
   paySCMInvoice,
   cancelSCMInvoice,
@@ -15,7 +17,8 @@ import { getDeliveryNotes } from "#/lib/server/scm";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Printer } from "lucide-react";
+import { printSCMInvoice } from "#/lib/pos-print";
 
 interface InvRow {
   id: string;
@@ -41,6 +44,7 @@ export const Route = createFileRoute("/_layout/scm-invoices/")({
 });
 
 function SCMInvoicePage() {
+  const { user } = useAuth();
   const { invoices: initial, dns } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [generateModal, setGenerateModal] = useState(false);
@@ -136,6 +140,31 @@ function SCMInvoicePage() {
               </button>
             </>
           )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              void getSCMInvoice({ data: { id: r.id } }).then(function (inv) {
+                if (!inv) return;
+                printSCMInvoice({
+                  code: inv.code,
+                  dnCode: inv.deliveryNoteId.slice(0, 8).toUpperCase(),
+                  totalAmount: inv.totalAmount,
+                  status: inv.status,
+                  items: ((inv as any).items ?? []).map((item: any) => ({
+                    ingredientName: item.ingredientName ?? item.ingredientId,
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
+                    totalPrice: item.totalPrice,
+                  })),
+                  createdAt: inv.createdAt,
+                });
+              });
+            }}
+            className="h-7 px-2 rounded-md border text-[10px] font-medium flex items-center gap-1 hover:bg-accent"
+            title="Cetak Invoice"
+          >
+            <Printer className="h-3 w-3" />
+          </button>
           <Link
             to="/scm-invoices/$invId"
             params={{ invId: r.id }}
@@ -151,7 +180,13 @@ function SCMInvoicePage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
-      <PageHeader action={{ label: "Buat Invoice", onClick: () => setGenerateModal(true) }} />
+      <PageHeader
+        action={
+          ["super_admin", "admin_pusat"].includes(user?.role ?? "")
+            ? { label: "Buat Invoice", onClick: () => setGenerateModal(true) }
+            : undefined
+        }
+      />
 
       <DataTable columns={columns} data={invoices} keyExtractor={(r) => r.id} />
 

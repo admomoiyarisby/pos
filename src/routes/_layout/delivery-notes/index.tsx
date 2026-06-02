@@ -230,7 +230,13 @@ function DNPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
-      <PageHeader action={{ label: "Buat SJ", onClick: () => setModalOpen(true) }} />
+      <PageHeader
+        action={
+          ["super_admin", "admin_pusat"].includes(user?.role ?? "")
+            ? { label: "Buat SJ", onClick: () => setModalOpen(true) }
+            : undefined
+        }
+      />
 
       {invoiceError && (
         <div className="rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive flex items-center gap-2">

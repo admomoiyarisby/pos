@@ -28,6 +28,7 @@ import {
   ScrollText,
   Printer,
   X,
+  XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { authClient } from "#/lib/auth-client";
@@ -83,7 +84,13 @@ const navGroups: NavGroup[] = [
         label: "Cetak Ulang",
         to: "/print-requests",
         icon: Printer,
-        roles: ["super_admin", "area_manager"],
+        roles: ["super_admin", "area_manager", "branch_admin"],
+      },
+      {
+        label: "Batalkan Pesanan",
+        to: "/cancel-requests",
+        icon: XCircle,
+        roles: ["super_admin", "area_manager", "branch_admin"],
       },
     ],
   },

@@ -10,9 +10,10 @@ import {
   generateSCMInvoice,
   cancelDeliveryNote,
 } from "#/lib/server/scm";
+import { printSuratJalan } from "#/lib/pos-print";
 import { getBranches } from "#/lib/server/branches";
 import { Badge } from "#/components/ui/badge";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, Printer } from "lucide-react";
 
 interface DNItem {
   id: string;
@@ -154,6 +155,29 @@ function DNDetailPage() {
             <p className="text-sm text-muted-foreground">Surat Jalan & Transfer Stok</p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                printSuratJalan({
+                  code: dn.code,
+                  fromBranchName: fromBranch?.name ?? dn.fromBranchId.slice(0, 8),
+                  toBranchName: toBranch?.name ?? dn.toBranchId.slice(0, 8),
+                  driverName: dn.driverName,
+                  vehicleNumber: dn.vehicleNumber ?? null,
+                  status: dn.status,
+                  items: dn.items.map((item: any) => ({
+                    ingredientName: item.ingredientName ?? item.ingredientCode,
+                    quantity: item.quantity,
+                    readyQuantity: item.readyQuantity,
+                  })),
+                  createdAt: dn.createdAt,
+                });
+              }}
+              className="h-9 px-3 rounded-md border text-sm flex items-center gap-2 hover:bg-accent"
+              title="Cetak Surat Jalan"
+            >
+              <Printer className="h-4 w-4" />
+              Cetak
+            </button>
             <Badge
               variant={
                 (statusColors[dn.status] ?? "default") as
