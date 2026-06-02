@@ -21,7 +21,7 @@ import { getIngredients } from "#/lib/server/ingredients";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Check, Truck, PackageCheck, XCircle, Ban } from "lucide-react";
+import { AlertCircle, ArrowRight, Check, Truck, PackageCheck, XCircle, Ban } from "lucide-react";
 
 interface TRRow {
   id: string;
@@ -65,6 +65,7 @@ function TransferPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [cancelModal, setCancelModal] = useState<{ id: string; code: string } | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { data: transfers } = useQuery({
     queryKey: ["stock-transfers"],
@@ -77,12 +78,22 @@ function TransferPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["stock-transfers"] });
       setModalOpen(false);
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal membuat mutasi stok");
     },
   });
 
   const approveMutation = useMutation({
     mutationFn: approveStockTransfer,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["stock-transfers"] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["stock-transfers"] });
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal approve mutasi");
+    },
   });
 
   const rejectMutation = useMutation({
@@ -91,17 +102,33 @@ function TransferPage() {
       void queryClient.invalidateQueries({ queryKey: ["stock-transfers"] });
       setRejectModal(null);
       setRejectReason("");
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal menolak mutasi");
     },
   });
 
   const shipMutation = useMutation({
     mutationFn: shipStockTransfer,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["stock-transfers"] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["stock-transfers"] });
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal mengirim mutasi");
+    },
   });
 
   const receiveMutation = useMutation({
     mutationFn: receiveStockTransfer,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["stock-transfers"] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["stock-transfers"] });
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal menerima mutasi");
+    },
   });
 
   const cancelMutation = useMutation({
@@ -110,6 +137,10 @@ function TransferPage() {
       void queryClient.invalidateQueries({ queryKey: ["stock-transfers"] });
       setCancelModal(null);
       setCancelReason("");
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal membatalkan mutasi");
     },
   });
 
@@ -279,11 +310,22 @@ function TransferPage() {
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
       <PageHeader action={{ label: "Ajukan Mutasi", onClick: () => setModalOpen(true) }} />
 
+      {submitError && (
+        <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span className="flex-1">{submitError}</span>
+          <button onClick={() => setSubmitError(null)} className="text-destructive/70 hover:text-destructive">✕</button>
+        </div>
+      )}
+
       <DataTable columns={columns} data={transfers} keyExtractor={(r) => r.id} />
 
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setSubmitError(null);
+        }}
         title="Ajukan Mutasi Stok"
         size="lg"
       >
@@ -350,19 +392,29 @@ function TransferPage() {
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
+          {submitError && (
+            <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span className="flex-1">{submitError}</span>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={() => setModalOpen(false)}
+              onClick={() => {
+                setModalOpen(false);
+                setSubmitError(null);
+              }}
               className="h-9 px-4 rounded-md border text-sm"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
+              disabled={createMutation.isPending}
+              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
             >
-              Ajukan
+              {createMutation.isPending ? "Memproses..." : "Ajukan"}
             </button>
           </div>
         </form>
@@ -370,8 +422,14 @@ function TransferPage() {
 
       {/* Reject Modal */}
       {rejectModal && (
-        <Modal open onClose={() => setRejectModal(null)} title="Tolak Mutasi Stok">
+        <Modal open onClose={() => { setRejectModal(null); setSubmitError(null); }} title="Tolak Mutasi Stok">
           <div className="space-y-4">
+            {submitError && (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{submitError}</span>
+              </div>
+            )}
             <p className="text-sm">
               Tolak mutasi <strong>{rejectModal.code}</strong>?
             </p>
@@ -387,7 +445,7 @@ function TransferPage() {
             </div>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setRejectModal(null)}
+                onClick={() => { setRejectModal(null); setSubmitError(null); }}
                 className="h-9 px-4 rounded-md border text-sm"
               >
                 Batal
@@ -401,7 +459,7 @@ function TransferPage() {
                 disabled={rejectMutation.isPending || !rejectReason.trim()}
                 className="h-9 px-4 rounded-md bg-red-600 text-white text-sm disabled:opacity-50"
               >
-                Tolak
+                {rejectMutation.isPending ? "Memproses..." : "Tolak"}
               </button>
             </div>
           </div>
@@ -410,8 +468,14 @@ function TransferPage() {
 
       {/* Cancel Modal */}
       {cancelModal && (
-        <Modal open onClose={() => setCancelModal(null)} title="Batalkan Mutasi Stok">
+        <Modal open onClose={() => { setCancelModal(null); setSubmitError(null); }} title="Batalkan Mutasi Stok">
           <div className="space-y-4">
+            {submitError && (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{submitError}</span>
+              </div>
+            )}
             <p className="text-sm">
               Batalkan mutasi <strong>{cancelModal.code}</strong>?
             </p>
@@ -430,7 +494,7 @@ function TransferPage() {
             </div>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setCancelModal(null)}
+                onClick={() => { setCancelModal(null); setSubmitError(null); }}
                 className="h-9 px-4 rounded-md border text-sm"
               >
                 Tutup
@@ -444,7 +508,7 @@ function TransferPage() {
                 disabled={cancelMutation.isPending || !cancelReason.trim()}
                 className="h-9 px-4 rounded-md bg-red-600 text-white text-sm disabled:opacity-50"
               >
-                Batalkan
+                {cancelMutation.isPending ? "Memproses..." : "Batalkan"}
               </button>
             </div>
           </div>

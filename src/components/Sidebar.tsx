@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import type { UserRole } from "#/lib/auth-context";
+import { Badge } from "#/components/ui/badge";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -33,9 +34,18 @@ import { authClient } from "#/lib/auth-client";
 
 interface SidebarProps {
   userRole: UserRole;
+  userName?: string;
   mobileOpen: boolean;
   onClose: () => void;
 }
+
+const roleLabels: Record<UserRole, string> = {
+  super_admin: "Super Admin",
+  admin_pusat: "Admin Pusat",
+  area_manager: "Area Manager",
+  branch_admin: "Branch Admin",
+  central_kitchen: "Central Kitchen",
+};
 
 interface NavItem {
   label: string;
@@ -257,7 +267,7 @@ function SidebarGroup({ group, userRole }: { group: NavGroup; userRole: UserRole
   );
 }
 
-export default function Sidebar({ userRole, mobileOpen, onClose }: SidebarProps) {
+export default function Sidebar({ userRole, userName, mobileOpen, onClose }: SidebarProps) {
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -301,6 +311,14 @@ export default function Sidebar({ userRole, mobileOpen, onClose }: SidebarProps)
           </button>
         </div>
 
+        {/* User info */}
+        <div className="border-b border-sidebar-border px-4 py-3">
+          <p className="text-sm font-medium text-sidebar-foreground truncate">{userName || "User"}</p>
+          <Badge variant="outline" className="mt-1 text-xs">
+            {roleLabels[userRole] || userRole}
+          </Badge>
+        </div>
+
         <nav className="flex-1 overflow-y-auto py-2">
           {navGroups.map((group) => (
             <SidebarGroup key={group.label} group={group} userRole={userRole} />
@@ -328,6 +346,14 @@ export default function Sidebar({ userRole, mobileOpen, onClose }: SidebarProps)
             <img src={logoSrc} alt="Omoiyari POS" className="h-8 w-auto" />
             Omoiyari POS
           </Link>
+        </div>
+
+        {/* User info */}
+        <div className="border-b border-sidebar-border px-4 py-3">
+          <p className="text-sm font-medium text-sidebar-foreground truncate">{userName || "User"}</p>
+          <Badge variant="outline" className="mt-1 text-xs">
+            {roleLabels[userRole] || userRole}
+          </Badge>
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2">

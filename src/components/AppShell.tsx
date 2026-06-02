@@ -7,7 +7,7 @@ import ThemeToggle from "./ThemeToggle";
 import { usePageTitleContext } from "./PageTitleProvider";
 import type { UserRole } from "#/lib/auth-context";
 
-export default function AppShell({ userRole }: { userRole: UserRole }) {
+export default function AppShell({ userRole, userName }: { userRole: UserRole; userName?: string }) {
   const { state } = usePageTitleContext();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -15,6 +15,7 @@ export default function AppShell({ userRole }: { userRole: UserRole }) {
     <div className="flex min-h-screen bg-background">
       <Sidebar
         userRole={userRole}
+        userName={userName}
         mobileOpen={mobileSidebarOpen}
         onClose={() => setMobileSidebarOpen(false)}
       />

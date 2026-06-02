@@ -15,7 +15,12 @@ import {
 } from "recharts";
 import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
 
-const CHANNEL_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444"];
+const CHANNEL_COLORS = [
+  "var(--color-chart-1)",
+  "var(--color-chart-2)",
+  "var(--color-chart-3)",
+  "var(--color-chart-4)",
+];
 
 type FormatterFn = NonNullable<TooltipProps<ValueType, NameType>["formatter"]>;
 
@@ -139,18 +144,22 @@ export function SalesTrendChart({ data }: { data: { name: string; sales: number 
           <AreaChart data={data}>
             <defs>
               <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--color-chart-1)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--color-chart-1)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
             <XAxis
               dataKey="name"
               axisLine={false}
               tickLine={false}
-              tick={{ fill: "#64748b", fontSize: 12 }}
+              tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }}
             />
-            <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+            <YAxis
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }}
+            />
             <Tooltip
               contentStyle={{
                 borderRadius: "12px",
@@ -161,7 +170,7 @@ export function SalesTrendChart({ data }: { data: { name: string; sales: number 
             <Area
               type="monotone"
               dataKey="sales"
-              stroke="#10b981"
+              stroke="var(--color-chart-2)"
               strokeWidth={3}
               fillOpacity={1}
               fill="url(#colorSales)"
@@ -247,7 +256,7 @@ export function SalesByBranchChart({
               tick={{ fontSize: 10 }}
             />
             <Tooltip formatter={revenueFormatter} />
-            <Bar dataKey="revenue" fill="#059669" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="revenue" fill="var(--color-chart-1)" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -280,7 +289,7 @@ export function BrandPerformanceChart({
               tick={{ fontSize: 10 }}
             />
             <Tooltip formatter={revenueFormatter} />
-            <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="revenue" fill="var(--color-chart-3)" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

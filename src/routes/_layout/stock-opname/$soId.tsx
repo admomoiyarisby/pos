@@ -8,9 +8,12 @@ import {
   getStockOpnameDetail,
   submitStockOpname,
   approveStockOpname,
+  updateStockOpnameCounts,
+  markStockOpnameInvestigation,
 } from "#/lib/server/inventory";
 import { Badge } from "#/components/ui/badge";
 import { cn } from "#/lib/utils";
+import { toast } from "sonner";
 
 interface SOItem {
   id: string;
@@ -47,6 +50,7 @@ function StockOpnameDetailPage() {
   const [touchedItems, setTouchedItems] = useState<Set<string>>(new Set());
   const [investigationNote, setInvestigationNote] = useState("");
   const [approveModal, setApproveModal] = useState(false);
+  const [investigationModal, setInvestigationModal] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
   const { data: detail } = useQuery({
@@ -61,6 +65,10 @@ function StockOpnameDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setSubmitError("");
+      toast.success("Stock opname berhasil disubmit");
+    },
+    onError: (error) => {
+      toast.error("Gagal submit stock opname", { description: error.message });
     },
   });
 
@@ -70,6 +78,37 @@ function StockOpnameDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setApproveModal(false);
+      toast.success("Stock opname berhasil diapprove");
+    },
+    onError: (error) => {
+      toast.error("Gagal approve stock opname", { description: error.message });
+    },
+  });
+
+  const updateCountsMutation = useMutation({
+    mutationFn: updateStockOpnameCounts,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
+      void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
+      setSubmitError("");
+      toast.success("Hitungan berhasil diperbarui");
+    },
+    onError: (error) => {
+      toast.error("Gagal memperbarui hitungan", { description: error.message });
+    },
+  });
+
+  const markInvestigationMutation = useMutation({
+    mutationFn: markStockOpnameInvestigation,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
+      void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
+      setInvestigationModal(false);
+      setInvestigationNote("");
+      toast.success("SO ditandai Under Investigation");
+    },
+    onError: (error) => {
+      toast.error("Gagal menandai investigasi", { description: error.message });
     },
   });
 
@@ -80,14 +119,16 @@ function StockOpnameDetailPage() {
   const isBlind = detail.isBlind;
   const canApprove =
     ["super_admin", "area_manager"].includes(user?.role ?? "") && detail.status !== "Approved";
-  const canSubmit = detail.status === "Submitted" || detail.status === "Under Investigation";
+  const canSubmit = (detail.status === "Submitted" || detail.status === "Under Investigation") && user?.role === "branch_admin";
+  const canUpdate = detail.status === "Under Investigation" && (user?.role === "branch_admin" || ["super_admin", "area_manager"].includes(user?.role ?? ""));
+  const canMarkInvestigation = detail.status === "Submitted" && ["super_admin", "area_manager"].includes(user?.role ?? "");
 
   const handleInputChange = (itemId: string, value: string) => {
     setPhysicalInputs((prev) => ({ ...prev, [itemId]: value }));
     setTouchedItems((prev) => new Set(prev).add(itemId));
   };
 
-  const handleSubmit = () => {
+  const buildItems = () => {
     // 1. Check that EVERY item has an explicit entry in physicalInputs
     const missingItems = detail.items.filter(
       (item: SOItem) => physicalInputs[item.id] === undefined,
@@ -96,7 +137,7 @@ function StockOpnameDetailPage() {
       setSubmitError(
         `Masih ada ${missingItems.length} item yang belum diisi. Semua item wajib diisi sebelum submit.`,
       );
-      return;
+      return null;
     }
 
     // 2. Build payload only from explicitly entered values
@@ -109,14 +150,52 @@ function StockOpnameDetailPage() {
     const hasInvalid = items.some((i) => isNaN(i.physicalStock) || i.physicalStock < 0);
     if (hasInvalid) {
       setSubmitError("Stok fisik tidak valid. Pastikan semua nilai adalah angka non-negatif.");
-      return;
+      return null;
     }
 
+    return items;
+  };
+
+  const handleSubmit = () => {
+    const items = buildItems();
+    if (!items) return;
+    setSubmitError("");
     void submitMutation.mutateAsync({ data: { soId, items } });
+  };
+
+  const handleUpdateCounts = () => {
+    const items = buildItems();
+    if (!items) return;
+    setSubmitError("");
+    void updateCountsMutation.mutateAsync({ data: { soId, items } });
   };
 
   const handleApprove = () => {
     void approveMutation.mutateAsync({
+      data: { soId, investigationNote },
+    });
+  };
+
+  // Dev-only: auto-fill stock numbers for testing
+  const handleDebugFill = () => {
+    const newInputs: Record<string, string> = {};
+    const newTouched = new Set<string>();
+    for (const item of detail.items) {
+      // Generate truly random positive number (0 to 2x system stock)
+      const maxStock = Math.max(item.systemStock * 2, 100);
+      const physicalStock = Math.floor(Math.random() * maxStock);
+      newInputs[item.id] = String(physicalStock);
+      newTouched.add(item.id);
+    }
+    setPhysicalInputs(newInputs);
+    setTouchedItems(newTouched);
+    toast.info("Debug: Angka stok diisi secara random");
+  };
+
+  const isDev = import.meta.env.DEV;
+
+  const handleMarkInvestigation = () => {
+    void markInvestigationMutation.mutateAsync({
       data: { soId, investigationNote },
     });
   };
@@ -220,8 +299,16 @@ function StockOpnameDetailPage() {
           </table>
         </div>
 
+        {/* Investigation Note (if exists) */}
+        {detail.investigationNote && (
+          <div className="rounded-md bg-amber-50 border border-amber-200 p-4">
+            <p className="text-sm font-medium text-amber-800 mb-1">Catatan Investigasi</p>
+            <p className="text-sm text-amber-700">{detail.investigationNote}</p>
+          </div>
+        )}
+
         {/* Actions */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           {canSubmit && (
             <button
               onClick={handleSubmit}
@@ -232,12 +319,41 @@ function StockOpnameDetailPage() {
             </button>
           )}
 
+          {canMarkInvestigation && (
+            <button
+              onClick={() => setInvestigationModal(true)}
+              className="h-10 px-6 rounded-md bg-amber-600 text-white text-sm font-medium hover:bg-amber-700"
+            >
+              Tandai Investigasi
+            </button>
+          )}
+
+          {canUpdate && (
+            <button
+              onClick={handleUpdateCounts}
+              disabled={updateCountsMutation.isPending}
+              className="h-10 px-6 rounded-md bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+            >
+              {updateCountsMutation.isPending ? "Memperbarui..." : "Perbarui Hitungan"}
+            </button>
+          )}
+
           {canApprove && detail.status !== "Approved" && (
             <button
               onClick={() => setApproveModal(true)}
               className="h-10 px-6 rounded-md bg-primary text-primary-foreground text-sm font-medium"
             >
               Setujui & Sesuaikan
+            </button>
+          )}
+
+          {isDev && canSubmit && (
+            <button
+              onClick={handleDebugFill}
+              className="h-10 px-4 rounded-md bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 ml-auto"
+              title="Dev only: Auto-fill with random variance"
+            >
+              🐛 Debug Fill
             </button>
           )}
         </div>
@@ -271,6 +387,39 @@ function StockOpnameDetailPage() {
               className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
             >
               {approveMutation.isPending ? "Memproses..." : "Approve"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={investigationModal} onClose={() => setInvestigationModal(false)} title="Tandai Investigasi">
+        <div className="space-y-4">
+          <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-800">
+            <p className="font-medium">Informasi</p>
+            <p>SO akan ditandai sebagai Under Investigation. Branch Admin akan diminta untuk menghitung ulang.</p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Catatan Investigasi</label>
+            <textarea
+              value={investigationNote}
+              onChange={(e) => setInvestigationNote(e.target.value)}
+              placeholder="Jelaskan mengapa hitung ulang diperlukan..."
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[80px] resize-none"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setInvestigationModal(false)}
+              className="h-9 px-4 rounded-md border text-sm"
+            >
+              Batal
+            </button>
+            <button
+              onClick={handleMarkInvestigation}
+              disabled={markInvestigationMutation.isPending || !investigationNote}
+              className="h-9 px-4 rounded-md bg-amber-600 text-white text-sm font-medium disabled:opacity-50"
+            >
+              {markInvestigationMutation.isPending ? "Memproses..." : "Tandai Investigasi"}
             </button>
           </div>
         </div>

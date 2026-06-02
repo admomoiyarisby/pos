@@ -21,102 +21,27 @@ import { getBranches } from "#/lib/server/branches";
 import { getVouchers } from "#/lib/server/vouchers";
 import { getInventory } from "#/lib/server/inventory";
 import {
-  Search,
   ShoppingCart,
   Plus,
   Minus,
   X,
   TicketPercent,
   Percent,
-  Printer,
   AlertCircle,
   CheckCircle2,
   Clock,
-  Zap,
-  Package,
 } from "lucide-react";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import { Badge } from "#/components/ui/badge";
 
-interface CartModifier {
-  groupId: string;
-  modifierId: string;
-  name: string;
-  price: number;
-  isExclusion: boolean;
-}
+import type { CartModifier, CartItem, MenuItem, Voucher, OrderResult } from "#/lib/pos-types";
+import { printReceipt, printBill } from "#/lib/pos-print";
+import { getStockQuantity } from "#/lib/pos-utils";
 
-interface CartItem {
-  recipeId: string;
-  brandId?: string;
-  name: string;
-  price: number;
-  quantity: number;
-  modifiers: CartModifier[];
-  notes: string;
-}
-
-interface MenuItemModifier {
-  id: string;
-  name: string;
-  price: number;
-  isExclusion: boolean;
-  excludedIngredientId: string | null;
-}
-
-interface ModifierGroup {
-  modifierGroupId: string;
-  groupName: string | null;
-  minSelection: number | null;
-  maxSelection: number | null;
-  modifiers: MenuItemModifier[];
-}
-
-interface MenuItem {
-  id: string;
-  code: string;
-  name: string;
-  imageUrl: string | null;
-  category: string;
-  basePrice: number;
-  isBOGO: boolean;
-  isBundle: boolean;
-  brands: { id: string; name: string | null }[];
-  modifierGroups: ModifierGroup[];
-  ingredientIds: { ingredientId: string; quantity: number }[];
-}
-
-interface Voucher {
-  id: string;
-  code: string;
-  description: string;
-  discountType: "percentage" | "fixed";
-  discountValue: number;
-  minOrder: number;
-  validUntil: Date;
-  isActive: boolean;
-}
-
-interface OrderResult {
-  id: string;
-  branchId: string;
-  channel: string;
-  subtotal: number;
-  taxAmount: number;
-  totalAmount: number;
-  totalCogs: number;
-  orderCode: string | null;
-  customerName: string | null;
-  paymentMethod: string | null;
-  voucherCode: string | null;
-  voucherDiscount: number | null;
-  status: string;
-  voidReason: string | null;
-  notes: string | null;
-  shiftId: string | null;
-  createdAt: Date;
-  completedAt: Date | null;
-}
+import MenuGrid from "#/components/pos/MenuGrid";
+import CartSidebar from "#/components/pos/CartSidebar";
+import OrderHistory from "#/components/pos/OrderHistory";
+import { default as SuccessModal } from "#/components/pos/SuccessModal";
+import { default as ModifierModalComp } from "#/components/pos/ModifierModal";
 
 const categories = [
   { key: "", label: "Semua" },
@@ -145,235 +70,7 @@ export const Route = createFileRoute("/_layout/pos")({
   },
 });
 
-function printReceipt(order: OrderResult, cartItems: CartItem[], branchName: string) {
-  let printWindow = window.open("", "_blank");
-  if (!printWindow) return;
-
-  let itemsHtml = "";
-  for (let i = 0; i < cartItems.length; i++) {
-    let item = cartItems[i];
-    let modLines = "";
-    if (item.modifiers.length > 0) {
-      let parts: string[] = [];
-      for (let j = 0; j < item.modifiers.length; j++) {
-        let m = item.modifiers[j];
-        parts.push((m.isExclusion ? "X " : "+ ") + m.name);
-      }
-      modLines =
-        '<div style="font-size: 10px; color: #444; padding-left: 2mm;">' +
-        parts.join("<br>") +
-        "</div>";
-    }
-    let noteLine = item.notes
-      ? '<div style="font-size: 10px; font-style: italic; color: #666; padding-left: 2mm;">Note: ' +
-        item.notes +
-        "</div>"
-      : "";
-    itemsHtml +=
-      '<div style="margin-bottom: 3mm;">' +
-      '<div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: bold;">' +
-      '<div style="flex: 1;">' +
-      item.name +
-      "</div>" +
-      '<div style="width: 10mm; text-align: center;">' +
-      item.quantity +
-      "</div>" +
-      '<div style="width: 25mm; text-align: right;">' +
-      (item.price * item.quantity).toLocaleString("id-ID") +
-      "</div>" +
-      "</div>" +
-      modLines +
-      noteLine +
-      "</div>";
-  }
-
-  let idStr = order.id.slice(0, 8).toUpperCase();
-  let lines = [
-    "<html><head>",
-    "<title>Struk - " + idStr + "</title>",
-    "<style>",
-    "@page { margin: 0; }",
-    "body { font-family: 'Courier New', monospace; max-width: 80mm; margin: 5mm auto; padding: 5mm; font-size: 12px; position: relative; }",
-    ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
-    ".wm-wrap img { max-width: 60mm; opacity: 0.06; }",
-    ".content { position: relative; z-index: 1; }",
-    ".center { text-align: center; }",
-    ".header { font-size: 16px; font-weight: bold; margin-bottom: 2mm; }",
-    ".subheader { font-size: 11px; color: #444; margin-bottom: 4mm; }",
-    ".divider { border-top: 1px dashed #000; margin: 3mm 0; }",
-    ".row { display: flex; justify-content: space-between; }",
-    ".total { font-size: 14px; font-weight: bold; margin-top: 2mm; }",
-    ".footer { margin-top: 5mm; font-size: 10px; color: #444; text-align: center; }",
-    "</style></head><body>",
-    '<div class="wm-wrap"><img src="/logo-for-light-mode.png" alt="" /></div>',
-    '<div class="content">',
-    '<div class="center header">Omoiyari POS</div>',
-    '<div class="center subheader">' + branchName + "</div>",
-    '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
-    '<div class="divider"></div>',
-    '<div class="row"><span>No. Order:</span><span>' + idStr + "</span></div>",
-    '<div class="row"><span>Channel:</span><span>' + order.channel + "</span></div>",
-    '<div class="row"><span>Pembayaran:</span><span>' +
-      (order.paymentMethod || "-") +
-      "</span></div>",
-    '<div class="divider"></div>',
-    itemsHtml,
-    '<div class="divider"></div>',
-    '<div class="row"><span>Subtotal</span><span>Rp ' +
-      order.subtotal.toLocaleString("id-ID") +
-      "</span></div>",
-  ];
-  if (order.voucherDiscount) {
-    lines.push(
-      '<div class="row"><span>Diskon</span><span>-Rp ' +
-        order.voucherDiscount.toLocaleString("id-ID") +
-        "</span></div>",
-    );
-  }
-  if (order.taxAmount) {
-    lines.push(
-      '<div class="row"><span>PB1</span><span>Rp ' +
-        order.taxAmount.toLocaleString("id-ID") +
-        "</span></div>",
-    );
-  }
-  lines.push(
-    '<div class="row total"><span>TOTAL</span><span>Rp ' +
-      order.totalAmount.toLocaleString("id-ID") +
-      "</span></div>",
-    '<div class="divider"></div>',
-    '<div class="footer">Terima kasih telah berbelanja</div>',
-    "</div>",
-    "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",
-    "</body></html>",
-  );
-
-  printWindow.document.write(lines.join("\n"));
-  printWindow.document.close();
-}
-
-function printBill(
-  cartItems: CartItem[],
-  branchName: string,
-  subtotal: number,
-  voucherDiscount: number,
-  taxAmount: number,
-  finalTotal: number,
-) {
-  let printWindow = window.open("", "_blank");
-  if (!printWindow) return;
-
-  let itemsHtml = "";
-  for (let i = 0; i < cartItems.length; i++) {
-    let item = cartItems[i];
-    let modLines = "";
-    if (item.modifiers.length > 0) {
-      let parts: string[] = [];
-      for (let j = 0; j < item.modifiers.length; j++) {
-        let m = item.modifiers[j];
-        parts.push((m.isExclusion ? "X " : "+ ") + m.name);
-      }
-      modLines =
-        '<div style="font-size: 10px; color: #444; padding-left: 2mm;">' +
-        parts.join("<br>") +
-        "</div>";
-    }
-    let noteLine = item.notes
-      ? '<div style="font-size: 10px; font-style: italic; color: #666; padding-left: 2mm;">' +
-        item.notes +
-        "</div>"
-      : "";
-    itemsHtml +=
-      '<div style="margin-bottom: 3mm;">' +
-      '<div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: bold;">' +
-      '<div style="flex: 1;">' +
-      item.name +
-      "</div>" +
-      '<div style="width: 10mm; text-align: center;">' +
-      item.quantity +
-      "</div>" +
-      '<div style="width: 25mm; text-align: right;">' +
-      (item.price * item.quantity).toLocaleString("id-ID") +
-      "</div>" +
-      "</div>" +
-      modLines +
-      noteLine +
-      "</div>";
-  }
-
-  let lines = [
-    "<html><head>",
-    "<title>Bill</title>",
-    "<style>",
-    "@page { margin: 0; }",
-    "body { font-family: 'Courier New', monospace; max-width: 80mm; margin: 5mm auto; padding: 5mm; font-size: 12px; position: relative; }",
-    ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
-    ".wm-wrap img { max-width: 60mm; opacity: 0.06; }",
-    ".content { position: relative; z-index: 1; }",
-    ".center { text-align: center; }",
-    ".watermark { text-align: center; border: 2px dashed #999; padding: 2mm; margin: 3mm 0; color: #999; font-weight: bold; font-size: 14px; }",
-    ".header { font-size: 16px; font-weight: bold; margin-bottom: 2mm; }",
-    ".subheader { font-size: 11px; color: #444; margin-bottom: 4mm; }",
-    ".divider { border-top: 1px dashed #000; margin: 3mm 0; }",
-    ".row { display: flex; justify-content: space-between; }",
-    ".total { font-size: 14px; font-weight: bold; margin-top: 2mm; }",
-    "</style></head><body>",
-    '<div class="wm-wrap"><img src="/logo-for-light-mode.png" alt="" /></div>',
-    '<div class="content">',
-    '<div class="watermark">BELUM DIBAYAR / UNPAID</div>',
-    '<div class="center header">' + branchName + "</div>",
-    '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
-    '<div class="divider"></div>',
-    itemsHtml,
-    '<div class="divider"></div>',
-    '<div class="row"><span>Subtotal</span><span>Rp ' +
-      subtotal.toLocaleString("id-ID") +
-      "</span></div>",
-  ];
-  if (voucherDiscount > 0) {
-    lines.push(
-      '<div class="row"><span>Diskon</span><span>-Rp ' +
-        voucherDiscount.toLocaleString("id-ID") +
-        "</span></div>",
-    );
-  }
-  if (taxAmount > 0) {
-    lines.push(
-      '<div class="row"><span>PB1</span><span>Rp ' +
-        taxAmount.toLocaleString("id-ID") +
-        "</span></div>",
-    );
-  }
-  lines.push(
-    '<div class="row total"><span>TOTAL</span><span>Rp ' +
-      finalTotal.toLocaleString("id-ID") +
-      "</span></div>",
-    '<div class="watermark">BELUM DIBAYAR</div>',
-    "</div>",
-    "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",
-    "</body></html>",
-  );
-
-  printWindow.document.write(lines.join("\n"));
-  printWindow.document.close();
-}
-
-function getStockQuantity(
-  item: MenuItem,
-  branchInventory: { ingredientId: string; quantity: number }[] | undefined,
-): number {
-  if (!branchInventory || item.ingredientIds.length === 0) return 999;
-  let minQty = Infinity;
-  for (let k = 0; k < item.ingredientIds.length; k++) {
-    let ri = item.ingredientIds[k];
-    let inv = branchInventory.find(function (i) {
-      return i.ingredientId === ri.ingredientId;
-    });
-    let q = inv ? Math.floor(inv.quantity / ri.quantity) : 0;
-    if (q < minQty) minQty = q;
-  }
-  return Number.isFinite(minQty) ? minQty : 999;
-}
+// printReceipt, printBill, and getStockQuantity are now imported from #/lib/pos-print and #/lib/pos-utils
 
 function PosPage() {
   usePageTitle("POS", "Titik Penjualan");
@@ -459,7 +156,6 @@ function PosPage() {
   let _u = useState(false);
   let mobileCartOpen = _u[0];
   let setMobileCartOpen = _u[1];
-
   // PB1 rate from branch config
   let pb1Rate = 11;
   let activeBranch = allBranches.find(function (b) {
@@ -545,7 +241,7 @@ function PosPage() {
         completedAt: orderData.completedAt,
       };
 
-      printReceipt(printOrder, cartItems, branchName);
+      printReceipt({ order: printOrder, cartItems: cartItems, branchName: branchName });
     })();
 
     return () => {
@@ -600,15 +296,101 @@ function PosPage() {
     mutationFn: createOrder,
     onSuccess: function (order) {
       setSuccessOrder(order as unknown as OrderResult);
-      resetForm();
       setMobileCartOpen(false);
       void queryClient.invalidateQueries({ queryKey: ["pos-recent-orders"] });
       void queryClient.invalidateQueries({ queryKey: ["inventory"] });
     },
     onError: function (error) {
-      setCheckoutError(error instanceof Error ? error.message : "Gagal membuat order");
+      setCheckoutError(
+        error instanceof Error
+          ? error.message
+          : "Transaksi gagal. Keranjang tetap tersimpan — coba lagi atau mulai transaksi baru.",
+      );
     },
   });
+
+  // Keyboard shortcuts for POS speed
+  useEffect(
+    function () {
+      function handleKeyDown(e: KeyboardEvent) {
+        // Only active when no modal is open
+        if (modifierModal || voidModal || shiftModal || successOrder) return;
+
+        // Escape clears cart
+        if (e.key === "Escape" && cart.length > 0 && !mobileCartOpen) {
+          e.preventDefault();
+          setCart([]);
+          setCheckoutError(null);
+          setStockError(null);
+          return;
+        }
+
+        // Enter to checkout
+        if (e.key === "Enter" && cart.length > 0 && activeShift && !createOrderMutation.isPending) {
+          // Don't intercept if focus is in an input
+          var target = e.target as HTMLElement;
+          if (
+            target &&
+            (target.tagName === "INPUT" ||
+              target.tagName === "TEXTAREA" ||
+              target.tagName === "SELECT")
+          )
+            return;
+          e.preventDefault();
+          void handleCheckout();
+          return;
+        }
+
+        // Forward slash focuses search
+        if (e.key === "/" && !mobileCartOpen) {
+          e.preventDefault();
+          var searchInput = document.querySelector<HTMLInputElement>(
+            'input[placeholder*="Cari menu"]',
+          );
+          if (searchInput) searchInput.focus();
+        }
+
+        // Number keys 1-9 map to first 9 visible menu items
+        var digit = parseInt(e.key);
+        if (digit >= 1 && digit <= 9 && !mobileCartOpen) {
+          var visibleItems = menuItems.filter(function (item) {
+            return (
+              item.ingredientIds.length === 0 ||
+              getStockQuantity(item, branchInventory) >
+                cart
+                  .filter(function (c) {
+                    return c.recipeId === item.id;
+                  })
+                  .reduce(function (s, c) {
+                    return s + c.quantity;
+                  }, 0)
+            );
+          });
+          if (digit <= visibleItems.length) {
+            e.preventDefault();
+            handleAddToCart(visibleItems[digit - 1]);
+          }
+        }
+      }
+
+      document.addEventListener("keydown", handleKeyDown);
+      return function () {
+        document.removeEventListener("keydown", handleKeyDown);
+      };
+    },
+    [
+      modifierModal,
+      voidModal,
+      shiftModal,
+      successOrder,
+      mobileCartOpen,
+      cart,
+      activeShift,
+      createOrderMutation.isPending,
+      menuItems,
+      branchInventory,
+    ],
+  );
 
   let openShiftMutation = useMutation({
     mutationFn: openShift,
@@ -793,6 +575,30 @@ function PosPage() {
     });
   }
 
+  // Wrappers for component callbacks
+  function handleSearchChange(q: string) {
+    setSearchQuery(q);
+    setCheckoutError(null);
+  }
+  function handleCategoryChange(c: string) {
+    setSelectedCategory(c);
+    setCheckoutError(null);
+  }
+  function handleBrandChange(b: string) {
+    setSelectedBrandId(b);
+    setCheckoutError(null);
+  }
+  function handlePaymentMethodChange(m: string) {
+    setPaymentMethod(m);
+    setCheckoutError(null);
+  }
+  function handlePpnToggle(checked: boolean) {
+    setPpnEnabled(checked);
+  }
+  function getStockForItem(item: MenuItem) {
+    return getStockQuantity(item, branchInventory);
+  }
+
   async function handleCheckout() {
     if (cart.length === 0 || !activeShift) return;
     setCheckoutError(null);
@@ -975,419 +781,92 @@ function PosPage() {
             </div>
           </div>
 
-          {/* Brand Tabs */}
-          <div className="flex gap-2 mb-3 shrink-0 overflow-x-auto">
-            <button
-              onClick={function () {
-                setSelectedBrandId("");
-                setCheckoutError(null);
-              }}
-              className={
-                "h-9 px-4 rounded-full text-sm font-medium whitespace-nowrap transition-colors " +
-                (selectedBrandId === ""
-                  ? "bg-primary text-primary-foreground"
-                  : "border hover:bg-muted")
-              }
-            >
-              Semua Brand
-            </button>
-            {brands.map(function (b) {
-              return (
-                <button
-                  key={b.id}
-                  onClick={function () {
-                    setSelectedBrandId(b.id);
-                    setCheckoutError(null);
-                  }}
-                  className={
-                    "h-9 px-4 rounded-full text-sm font-medium whitespace-nowrap transition-colors " +
-                    (selectedBrandId === b.id
-                      ? "bg-primary text-primary-foreground"
-                      : "border hover:bg-muted")
-                  }
-                >
-                  {b.name}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Category + Search */}
-          <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center">
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
-              {categories.map(function (cat) {
-                return (
-                  <button
-                    key={cat.key}
-                    onClick={function () {
-                      setSelectedCategory(cat.key);
-                      setCheckoutError(null);
-                    }}
-                    className={
-                      "h-8 px-3 rounded-md text-xs font-medium transition-colors " +
-                      (selectedCategory === cat.key
-                        ? "bg-secondary text-secondary-foreground"
-                        : "border hover:bg-muted")
-                    }
-                  >
-                    {cat.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="relative flex-1 max-w-xs ml-auto">
-              <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Cari menu..."
-                value={searchQuery}
-                onChange={function (e) {
-                  setSearchQuery(e.target.value);
-                  setCheckoutError(null);
-                }}
-                className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Menu Grid */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {menuItems.map(function (item: MenuItem) {
-                let stockQty = getStockQuantity(item, branchInventory);
-                let inCartCount = cart
-                  .filter(function (c) {
-                    return c.recipeId === item.id;
-                  })
-                  .reduce(function (s, c) {
-                    return s + c.quantity;
-                  }, 0);
-                let isOutOfStock = stockQty <= inCartCount;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={function () {
-                      handleAddToCart(item);
-                    }}
-                    disabled={isOutOfStock && item.ingredientIds.length > 0}
-                    className="group relative rounded-lg border bg-card p-3 text-left transition-all hover:border-primary hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isOutOfStock && item.ingredientIds.length > 0 && (
-                      <div className="absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center z-10">
-                        <span className="text-white text-xs font-bold tracking-wider">HABIS</span>
-                      </div>
-                    )}
-                    <div className="aspect-square mb-2 rounded-md bg-muted flex items-center justify-center relative overflow-hidden">
-                      {item.imageUrl ? (
-                        <img
-                          src={item.imageUrl}
-                          alt={item.name}
-                          className="h-full w-full object-cover rounded-md"
-                        />
-                      ) : (
-                        <span className="text-2xl">{}</span>
-                      )}
-                      {/* + button overlay — visible on hover */}
-                      <div className="absolute bottom-1.5 right-1.5 h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg pointer-events-none">
-                        <Plus className="h-4 w-4" />
-                      </div>
-                    </div>
-                    <p className="text-sm font-medium leading-tight line-clamp-2">{item.name}</p>
-                    <div className="flex gap-1 mt-0.5 flex-wrap">
-                      {item.isBOGO && (
-                        <Badge variant="warning" className="text-[9px] gap-0.5 px-1 py-0">
-                          <Zap className="h-2.5 w-2.5" /> BOGO
-                        </Badge>
-                      )}
-                      {item.isBundle && (
-                        <Badge
-                          variant="outline"
-                          className="text-[9px] gap-0.5 px-1 py-0 border-blue-200 text-blue-600 bg-blue-50"
-                        >
-                          <Package className="h-2.5 w-2.5" /> Paket
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm font-semibold text-primary mt-1">
-                      Rp {item.basePrice.toLocaleString("id-ID")}
-                    </p>
-                    {item.modifierGroups.length > 0 && (
-                      <Badge variant="outline" className="mt-1 text-[10px]">
-                        + {item.modifierGroups.length} Modifiers
-                      </Badge>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            {menuItems.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
-                <Search className="h-8 w-8 mb-2 opacity-50" />
-                <p className="text-sm">Menu tidak ditemukan</p>
-              </div>
-            )}
-          </div>
+          {/* Menu Grid — using extracted component */}
+          <MenuGrid
+            menuItems={menuItems}
+            onAddToCart={handleAddToCart}
+            getStockQuantity={getStockForItem}
+            cart={cart}
+            selectedBrandId={selectedBrandId}
+            selectedCategory={selectedCategory}
+            searchQuery={searchQuery}
+            onSearchChange={handleSearchChange}
+            onCategoryChange={handleCategoryChange}
+            onBrandChange={handleBrandChange}
+            categories={categories}
+            brands={brands}
+            cartTotal={cartTotal}
+            voucherDiscount={voucherDiscount}
+            taxAmount={taxAmount}
+            finalTotal={finalTotal}
+            ppnEnabled={ppnEnabled}
+            pb1Rate={pb1Rate}
+            channel={channel}
+            isDineIn={isDineIn}
+          />
         </div>
 
         {/* Cart Sidebar — Desktop */}
-        <div className="hidden md:flex w-72 border-l bg-card flex-col">
-          {/* Header */}
-          <div className="px-3 py-2 border-b shrink-0">
-            <div className="flex items-center gap-2">
-              <ShoppingCart className="h-4 w-4" />
-              <h2 className="font-semibold text-sm">Keranjang</h2>
-              {cartCount > 0 && (
-                <Badge variant="secondary" className="ml-auto text-[10px]">
-                  {cartCount}
-                </Badge>
-              )}
-            </div>
-          </div>
-
-          {/* Cart items — scrollable */}
-          <div className="flex-1 overflow-y-auto min-h-0 px-3 py-2 space-y-2">
-            {cart.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">
-                <ShoppingCart className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">Keranjang kosong</p>
-                <p className="text-xs">Pilih menu untuk memulai</p>
-              </div>
-            ) : (
-              cart.map(function (item, idx) {
-                return (
-                  <div key={idx} className="rounded-md border p-2">
-                    <div className="flex items-start justify-between gap-1.5">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium leading-tight">{item.name}</p>
-                        {item.modifiers.length > 0 && (
-                          <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                            {item.modifiers
-                              .map(function (m) {
-                                return m.name;
-                              })
-                              .join(", ")}
-                          </p>
-                        )}
-                        {item.notes && (
-                          <p className="text-[10px] text-muted-foreground italic truncate">
-                            {"\u201C" + item.notes + "\u201D"}
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        onClick={function () {
-                          removeItem(idx);
-                        }}
-                        className="text-muted-foreground hover:text-destructive shrink-0"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <div className="flex items-center gap-0.5">
-                        <button
-                          onClick={function () {
-                            updateQty(idx, -1);
-                          }}
-                          className="h-5 w-5 rounded border flex items-center justify-center"
-                        >
-                          <Minus className="h-2.5 w-2.5" />
-                        </button>
-                        <span className="w-6 text-center text-xs font-medium">{item.quantity}</span>
-                        <button
-                          onClick={function () {
-                            updateQty(idx, 1);
-                          }}
-                          className="h-5 w-5 rounded border flex items-center justify-center"
-                        >
-                          <Plus className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      <p className="text-xs font-semibold">
-                        Rp {(item.price * item.quantity).toLocaleString("id-ID")}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Checkout section */}
-          <div className="border-t px-3 py-2 space-y-1.5 shrink-0">
-            {/* Vouchers */}
-            {allVouchers.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {allVouchers.map(function (v) {
-                  let meetsMinOrder = cartTotal >= v.minOrder;
-                  let isSelected = selectedVoucher?.id === v.id;
-                  return (
-                    <button
-                      key={v.id}
-                      onClick={function () {
-                        toggleVoucher(v);
-                      }}
-                      disabled={!meetsMinOrder}
-                      className={
-                        "inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] " +
-                        (isSelected
-                          ? "border-primary bg-primary/10 text-primary font-semibold"
-                          : meetsMinOrder
-                            ? "hover:border-primary/50"
-                            : "opacity-40 cursor-not-allowed")
-                      }
-                    >
-                      <Percent className="h-2 w-2" />
-                      <span>{v.code}</span>
-                      <span className="text-muted-foreground">
-                        {v.discountType === "percentage"
-                          ? "-" + v.discountValue + "%"
-                          : "-Rp" + v.discountValue.toLocaleString("id-ID")}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Price lines */}
-            <div className="space-y-0.5">
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span>Rp {cartTotal.toLocaleString("id-ID")}</span>
-              </div>
-              {voucherDiscount > 0 && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Diskon</span>
-                  <span className="text-emerald-600">
-                    -Rp {voucherDiscount.toLocaleString("id-ID")}
-                  </span>
-                </div>
-              )}
-              {isDineIn && pb1Rate > 0 && (
-                <div className="flex items-center justify-between text-xs">
-                  <label className="flex items-center gap-1 cursor-pointer text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={ppnEnabled}
-                      onChange={function (e) {
-                        setPpnEnabled(e.target.checked);
-                      }}
-                      className="h-3 w-3 rounded border-gray-300"
-                    />
-                    PB1 {pb1Rate}%
-                  </label>
-                  {taxAmount > 0 && (
-                    <span className="text-muted-foreground">
-                      +Rp {taxAmount.toLocaleString("id-ID")}
-                    </span>
-                  )}
-                </div>
-              )}
-              <div className="flex justify-between text-sm font-bold border-t pt-1">
-                <span>Total</span>
-                <span>Rp {finalTotal.toLocaleString("id-ID")}</span>
-              </div>
-            </div>
-
-            {/* Payment — Dine-in only */}
-            {isDineIn && (
-              <select
-                value={paymentMethod}
-                onChange={function (e) {
-                  setPaymentMethod(e.target.value);
-                  setCheckoutError(null);
-                }}
-                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-              >
-                <option value="Cash">Cash</option>
-                <option value="QRIS">QRIS</option>
-                <option value="Transfer">Transfer</option>
-              </select>
-            )}
-
-            {/* Print Bill button */}
-            {cart.length > 0 && (
-              <button
-                onClick={function () {
-                  printBill(
-                    cart,
-                    userBranch?.name ?? "Cabang",
-                    cartTotal,
-                    voucherDiscount,
-                    taxAmount,
-                    finalTotal,
-                  );
-                }}
-                className="w-full h-8 rounded-md border border-dashed text-xs font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-1.5"
-              >
-                <Printer className="h-3 w-3" /> Cetak Tagihan
-              </button>
-            )}
-
-            {/* Checkout button */}
-            <button
-              onClick={handleCheckout}
-              disabled={cartTotal === 0 || !activeShift || createOrderMutation.isPending}
-              className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {createOrderMutation.isPending
-                ? "Memproses..."
-                : isDineIn
-                  ? "Bayar Rp " + finalTotal.toLocaleString("id-ID")
-                  : "Konfirmasi Pesanan"}
-            </button>
-            {!activeShift && (
-              <p className="text-[10px] text-center text-destructive">Buka shift terlebih dahulu</p>
-            )}
-
-            {checkoutError && (
-              <div className="rounded bg-destructive/10 px-2 py-1 text-[11px] text-destructive flex items-center gap-1">
-                <AlertCircle className="h-3 w-3 shrink-0" />
-                <span className="flex-1 truncate">{checkoutError}</span>
-                <button
-                  onClick={function () {
-                    setCheckoutError(null);
-                  }}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-            {stockError && (
-              <div className="rounded bg-warning/10 px-2 py-1 text-[11px] text-warning flex items-center gap-1">
-                <AlertCircle className="h-3 w-3 shrink-0" />
-                <span className="flex-1 truncate">{stockError}</span>
-                <button
-                  onClick={function () {
-                    setStockError(null);
-                  }}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Reprint status */}
+        <CartSidebar
+          cart={cart}
+          cartCount={cartCount}
+          cartTotal={cartTotal}
+          voucherDiscount={voucherDiscount}
+          taxAmount={taxAmount}
+          finalTotal={finalTotal}
+          ppnEnabled={ppnEnabled}
+          pb1Rate={pb1Rate}
+          channel={channel}
+          isDineIn={isDineIn}
+          paymentMethod={paymentMethod}
+          selectedVoucher={selectedVoucher}
+          allVouchers={allVouchers}
+          checkoutError={checkoutError}
+          stockError={stockError}
+          activeShift={activeShift}
+          createOrderPending={createOrderMutation.isPending}
+          onRemoveItem={removeItem}
+          onUpdateQty={updateQty}
+          onToggleVoucher={toggleVoucher}
+          onPaymentMethodChange={handlePaymentMethodChange}
+          onCheckout={handleCheckout}
+          onPrintBill={function () {
+            printBill({
+              cartItems: cart,
+              branchName: userBranch?.name ?? "Cabang",
+              subtotal: cartTotal,
+              voucherDiscount: voucherDiscount,
+              taxAmount: taxAmount,
+              finalTotal: finalTotal,
+            });
+          }}
+          onClearError={function () {
+            setCheckoutError(null);
+          }}
+          onClearStockError={function () {
+            setStockError(null);
+          }}
+          onPpnToggle={handlePpnToggle}
+        >
+          {/* Reprint status — kept inside CartSidebar */}
           {reprintRequestStatus && (
             <div className="shrink-0 border-t px-3 py-1.5 text-[10px] flex items-center gap-1.5">
               {resolvedReprintStatus === "approved" ? (
-                <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                <CheckCircle2 className="h-3 w-3 text-primary shrink-0" />
               ) : resolvedReprintStatus === "rejected" ? (
                 <AlertCircle className="h-3 w-3 text-destructive shrink-0" />
               ) : (
-                <Clock className="h-3 w-3 text-amber-500 shrink-0" />
+                <Clock className="h-3 w-3 text-warning shrink-0" />
               )}
               <span
                 className={
                   resolvedReprintStatus === "error"
                     ? "text-destructive"
                     : resolvedReprintStatus === "approved"
-                      ? "text-emerald-600"
+                      ? "text-primary"
                       : resolvedReprintStatus === "rejected"
                         ? "text-destructive"
-                        : "text-amber-600"
+                        : "text-warning"
                 }
               >
                 {resolvedReprintStatus === "pending"
@@ -1410,67 +889,15 @@ function PosPage() {
               </button>
             </div>
           )}
-
-          {/* Riwayat — fixed at bottom */}
-          <div className="shrink-0 border-t h-40 flex flex-col">
-            <h3 className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase text-muted-foreground border-b bg-muted/30 shrink-0">
-              Riwayat Pesanan
-            </h3>
-            <div className="flex-1 overflow-y-auto px-3 py-1.5 space-y-1">
-              {recentOrders.length === 0 ? (
-                <p className="text-[10px] text-muted-foreground text-center py-3">
-                  Belum ada pesanan
-                </p>
-              ) : (
-                recentOrders.map(function (o: any) {
-                  return (
-                    <div
-                      key={o.id}
-                      className="flex items-center justify-between text-xs py-1 border-b border-dashed last:border-0"
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-mono text-[10px] bg-muted px-1 rounded shrink-0">
-                          #{(o.id || "").slice(0, 6).toUpperCase()}
-                        </span>
-                        <span className="truncate text-muted-foreground">
-                          {new Date(o.createdAt).toLocaleTimeString("id-ID", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="font-semibold">
-                          Rp {o.totalAmount.toLocaleString("id-ID")}
-                        </span>
-                        <button
-                          onClick={function () {
-                            handleReprint(o.id);
-                          }}
-                          className="h-5 w-5 inline-flex items-center justify-center rounded border text-muted-foreground hover:bg-accent"
-                          title="Cetak"
-                        >
-                          <Printer className="h-2.5 w-2.5" />
-                        </button>
-                        {canVoid && o.status !== "Void" && (
-                          <button
-                            onClick={function () {
-                              setVoidModal({ orderId: o.id, reason: "" });
-                            }}
-                            className="h-5 w-5 inline-flex items-center justify-center rounded border text-destructive hover:bg-destructive/10"
-                            title="Batal"
-                          >
-                            <X className="h-2.5 w-2.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
+          <OrderHistory
+            recentOrders={recentOrders}
+            canVoid={canVoid}
+            onReprint={handleReprint}
+            onVoid={function (orderId) {
+              setVoidModal({ orderId: orderId, reason: "" });
+            }}
+          />
+        </CartSidebar>
       </div>
 
       {/* Success Modal */}
@@ -1484,6 +911,9 @@ function PosPage() {
         onNewTransaction={function () {
           setSuccessOrder(null);
           resetForm();
+        }}
+        onPrintReceipt={function (order, cartItems, branchName) {
+          printReceipt({ order: order, cartItems: cartItems, branchName: branchName });
         }}
       />
 
@@ -1538,7 +968,7 @@ function PosPage() {
 
       {/* Modifier Modal */}
       {modifierModal && (
-        <ModifierModal
+        <ModifierModalComp
           item={modifierModal.item}
           initial={modifierModal.selectedModifiers}
           initialNotes={modifierModal.itemNotes}
@@ -1678,8 +1108,8 @@ function PosPage() {
                                     className={
                                       "text-[10px] px-1.5 py-0.5 rounded border " +
                                       (m.isExclusion
-                                        ? "bg-amber-50 text-amber-700 border-amber-100"
-                                        : "bg-emerald-50 text-emerald-700 border-emerald-100")
+                                        ? "bg-destructive/10 text-destructive border-destructive/20"
+                                        : "bg-primary/10 text-primary border-primary/20")
                                     }
                                   >
                                     {m.isExclusion ? "X " : ""}
@@ -1797,7 +1227,7 @@ function PosPage() {
                 {voucherDiscount > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Diskon ({selectedVoucher?.code})</span>
-                    <span className="font-medium text-emerald-600">
+                    <span className="font-medium text-primary">
                       -Rp {voucherDiscount.toLocaleString("id-ID")}
                     </span>
                   </div>
@@ -1884,311 +1314,5 @@ function PosPage() {
         </>
       )}
     </RoleGuard>
-  );
-}
-
-function SuccessModal(props: {
-  order: OrderResult | null;
-  cartItems: CartItem[];
-  branchName: string;
-  onClose: () => void;
-  onNewTransaction: () => void;
-}) {
-  if (!props.order) return null;
-
-  let o = props.order;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm rounded-lg border bg-card p-6 shadow-lg">
-        <div className="text-center mb-4">
-          <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto mb-2" />
-          <h2 className="text-lg font-bold">Transaksi Berhasil!</h2>
-        </div>
-
-        <div className="rounded-md bg-muted p-4 space-y-2 text-sm mb-4">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">No. Order</span>
-            <span className="font-mono font-bold">#{(o.id || "").slice(0, 8).toUpperCase()}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Channel</span>
-            <span>{o.channel}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Pembayaran</span>
-            <span>{o.paymentMethod ?? "-"}</span>
-          </div>
-          <div className="flex justify-between border-t pt-2">
-            <span className="font-semibold">Total</span>
-            <span className="font-bold text-lg">Rp {o.totalAmount.toLocaleString("id-ID")}</span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <button
-            onClick={function () {
-              printReceipt(o, props.cartItems, props.branchName);
-            }}
-            className="w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2"
-          >
-            <Printer className="h-4 w-4" /> Cetak Struk
-          </button>
-          <button
-            onClick={props.onNewTransaction}
-            className="w-full h-10 rounded-md border text-sm font-medium"
-          >
-            Transaksi Baru
-          </button>
-          <button
-            onClick={props.onClose}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Tutup
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ModifierModal(props: {
-  item: MenuItem;
-  initial: CartModifier[];
-  initialNotes: string;
-  onClose: () => void;
-  onConfirm: (modifiers: CartModifier[], notes: string) => void;
-}) {
-  let _a = useState(props.initial);
-  let selected = _a[0];
-  let setSelected = _a[1];
-  let _b = useState(props.initialNotes);
-  let notes = _b[0];
-  let setNotes = _b[1];
-
-  function isSingleChoice(groupId: string): boolean {
-    let grp = props.item.modifierGroups.find(function (g) {
-      return g.modifierGroupId === groupId;
-    });
-    return (grp?.maxSelection ?? 1) === 1;
-  }
-
-  function toggleModifier(grp: ModifierGroup, mod: MenuItemModifier) {
-    let groupSelected = selected.filter(function (s) {
-      return s.groupId === grp.modifierGroupId;
-    });
-    let hasThis = groupSelected.some(function (s) {
-      return s.modifierId === mod.id;
-    });
-
-    if (hasThis) {
-      setSelected(
-        selected.filter(function (s) {
-          return s.modifierId !== mod.id;
-        }),
-      );
-    } else if (isSingleChoice(grp.modifierGroupId)) {
-      setSelected(
-        selected
-          .filter(function (s) {
-            return s.groupId !== grp.modifierGroupId;
-          })
-          .concat([
-            {
-              groupId: grp.modifierGroupId,
-              modifierId: mod.id,
-              name: mod.name,
-              price: mod.price,
-              isExclusion: mod.isExclusion,
-            },
-          ]),
-      );
-    } else if (groupSelected.length < (grp.maxSelection ?? 99)) {
-      setSelected(
-        selected.concat([
-          {
-            groupId: grp.modifierGroupId,
-            modifierId: mod.id,
-            name: mod.name,
-            price: mod.price,
-            isExclusion: mod.isExclusion,
-          },
-        ]),
-      );
-    }
-  }
-
-  let modTotal = selected.reduce(function (s, m) {
-    return s + m.price;
-  }, 0);
-  let totalPrice = props.item.basePrice + modTotal;
-
-  let isValid = props.item.modifierGroups.every(function (grp) {
-    let count = selected.filter(function (s) {
-      return s.groupId === grp.modifierGroupId;
-    }).length;
-    return count >= (grp.minSelection ?? 0);
-  });
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-xl border bg-card p-4 sm:p-6 shadow-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-bold">{props.item.name}</h2>
-            <p className="text-sm text-muted-foreground">
-              Rp {props.item.basePrice.toLocaleString("id-ID")}
-            </p>
-          </div>
-          <button
-            onClick={props.onClose}
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          {props.item.modifierGroups.map(function (grp) {
-            let groupSelected = selected.filter(function (s) {
-              return s.groupId === grp.modifierGroupId;
-            });
-            let required = (grp.minSelection ?? 0) > 0;
-            let meetsMin = groupSelected.length >= (grp.minSelection ?? 0);
-            return (
-              <div key={grp.modifierGroupId} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold">{grp.groupName ?? "Modifier"}</h3>
-                  <span className="text-[10px] font-bold uppercase">
-                    {required ? (
-                      <span className="text-destructive">Wajib</span>
-                    ) : (
-                      <span className="text-muted-foreground">Opsional</span>
-                    )}
-                    <span className="text-muted-foreground">
-                      {" "}
-                      &bull; {grp.maxSelection === 1 ? "Pilih 1" : "Maks " + grp.maxSelection}
-                    </span>
-                  </span>
-                </div>
-                {!meetsMin && required && (
-                  <p className="text-[10px] text-destructive">Pilih minimal {grp.minSelection}</p>
-                )}
-                <div className="space-y-1.5">
-                  {grp.modifiers.map(function (mod) {
-                    let isSel = groupSelected.some(function (s) {
-                      return s.modifierId === mod.id;
-                    });
-                    let single = isSingleChoice(grp.modifierGroupId);
-                    return (
-                      <button
-                        key={mod.id}
-                        onClick={function () {
-                          toggleModifier(grp, mod);
-                        }}
-                        className={
-                          "w-full flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer " +
-                          (isSel
-                            ? mod.isExclusion
-                              ? "bg-amber-50 border-amber-200 ring-1 ring-amber-200"
-                              : "bg-emerald-50 border-emerald-200 ring-1 ring-emerald-200"
-                            : "bg-card border-border hover:bg-muted")
-                        }
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={
-                              "flex items-center justify-center transition-colors " +
-                              (single
-                                ? "w-5 h-5 rounded-full border-2" +
-                                  (isSel ? " border-emerald-500" : " border-muted-foreground/30")
-                                : "w-5 h-5 rounded border-2" +
-                                  (isSel
-                                    ? " border-emerald-500 bg-emerald-500"
-                                    : " border-muted-foreground/30"))
-                            }
-                          >
-                            {isSel &&
-                              (single ? (
-                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                              ) : (
-                                <svg
-                                  className="w-3 h-3 text-white"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="3"
-                                >
-                                  <polyline points="20 6 9 17 4 12" />
-                                </svg>
-                              ))}
-                          </div>
-                          <span
-                            className={
-                              "text-sm font-medium " +
-                              (isSel
-                                ? mod.isExclusion
-                                  ? "text-amber-900"
-                                  : "text-emerald-900"
-                                : "")
-                            }
-                          >
-                            {mod.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {mod.price > 0 && !mod.isExclusion && (
-                            <span className="text-xs font-bold text-emerald-600">
-                              +Rp {mod.price.toLocaleString("id-ID")}
-                            </span>
-                          )}
-                          {mod.isExclusion && (
-                            <span className="text-xs font-bold text-amber-600">Exclude</span>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Catatan</label>
-            <textarea
-              value={notes}
-              onChange={function (e) {
-                setNotes(e.target.value);
-              }}
-              placeholder="Contoh: Pisah sambal, jangan pakai sayur..."
-              className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-none"
-            />
-          </div>
-
-          <div className="flex items-center justify-between border-t pt-4">
-            <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground">Total Tambahan</p>
-              <p className="text-sm font-bold text-primary">
-                Rp {modTotal.toLocaleString("id-ID")}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground">Total Item</p>
-              <p className="text-lg font-bold">Rp {totalPrice.toLocaleString("id-ID")}</p>
-            </div>
-          </div>
-
-          <button
-            onClick={function () {
-              props.onConfirm(selected, notes);
-            }}
-            disabled={!isValid}
-            className="w-full px-8 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Tambah ke Keranjang
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

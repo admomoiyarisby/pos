@@ -42,7 +42,7 @@ export function WasteLossTable({
   const paginated = data.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
+    <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">Waste Loss Report (COGS Loss)</h3>
         <p className="text-sm text-muted-foreground">

@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omoiyari POS — Detailed Analysis Report</title>
+<style>
+  :root {
+    --bg: #f8f9fa;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --muted: #64748b;
+    --critical: #dc2626;
+    --high: #ea580c;
+    --medium: #ca8a04;
+    --low: #16a34a;
+    --p0: #7c3aed;
+    --p1: #2563eb;
+    --p2: #0891b2;
+    --p3: #65a30d;
+    --p4: #a3a3a3;
+    --done: #16a34a;
+    --partial: #ca8a04;
+    --missing: #dc2626;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+    line-height: 1.6;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+  .meta { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+  .meta-item { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; flex: 1; min-width: 150px; }
+  .meta-item strong { display: block; font-size: 1.25rem; }
+  .meta-item span { font-size: 0.8rem; color: var(--muted); }
+
+  .area { background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 1.5rem; overflow: hidden; }
+  .area-header {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 1rem 1.25rem; cursor: pointer; user-select: none;
+    border-bottom: 1px solid var(--border);
+    background: #f1f5f9;
+    transition: background 0.15s;
+  }
+  .area-header:hover { background: #e2e8f0; }
+  .area-header h2 { font-size: 1.1rem; flex: 1; }
+  .area-count { font-size: 0.8rem; color: var(--muted); }
+  .area-header .chevron { transition: transform 0.2s; font-size: 0.8rem; color: var(--muted); }
+  .area-header.collapsed .chevron { transform: rotate(-90deg); }
+  .area-body { padding: 0; }
+  .area-body.collapsed { display: none; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  thead th {
+    text-align: left; padding: 0.6rem 1rem; font-weight: 600; font-size: 0.75rem;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+    background: #f8fafc; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+  }
+  td { padding: 0.6rem 1rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8fafc; }
+  .task-id { font-family: monospace; font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+  .task-title { font-weight: 500; }
+  .task-desc { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+  .task-file { font-size: 0.75rem; font-family: monospace; color: #6366f1; margin-top: 0.15rem; }
+  .task-action { font-size: 0.8rem; color: var(--text); margin-top: 0.25rem; padding: 0.25rem 0.5rem; background: #f1f5f9; border-radius: 4px; }
+
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+  .badge.critical { background: #fef2f2; color: var(--critical); }
+  .badge.high { background: #fff7ed; color: var(--high); }
+  .badge.medium { background: #fefce8; color: var(--medium); }
+  .badge.low { background: #f0fdf4; color: var(--low); }
+
+  .badge.p0 { background: #f5f3ff; color: var(--p0); }
+  .badge.p1 { background: #eff6ff; color: var(--p1); }
+  .badge.p2 { background: #ecfeff; color: var(--p2); }
+  .badge.p3 { background: #f7fee7; color: var(--p3); }
+  .badge.p4 { background: #f5f5f5; color: var(--p4); }
+
+  .badge.missing { background: #fef2f2; color: #dc2626; }
+  .badge.partial { background: #fefce8; color: #ca8a04; }
+  .badge.done { background: #f0fdf4; color: #16a34a; }
+
+  .deps { font-size: 0.75rem; color: var(--muted); margin-top: 0.15rem; }
+  .deps strong { color: var(--text); }
+
+  .legend { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; padding: 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+  .legend-group { display: flex; flex-direction: column; gap: 0.25rem; }
+  .legend-group h4 { font-size: 0.7rem; text-transform: uppercase; color: var(--muted); margin-bottom: 0.25rem; }
+  .legend-row { display: flex; align-items: center; gap: 0.5rem; }
+  .legend-row .badge { min-width: 60px; text-align: center; }
+
+  @media (max-width: 768px) {
+    body { padding: 1rem; }
+    table { font-size: 0.8rem; }
+    td, th { padding: 0.4rem 0.5rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>🔍 Omoiyari POS — Detailed Implementation Analysis</h1>
+<p class="subtitle">Comprehensive audit of user-reported issues with risk assessment, priority, and dependencies. Generated 2026-06-03.</p>
+
+<div class="meta">
+  <div class="meta-item"><strong>35</strong><span>Total Tasks</span></div>
+  <div class="meta-item"><strong style="color:var(--done)">2</strong><span>Completed (P0)</span></div>
+  <div class="meta-item"><strong style="color:var(--critical)">5</strong><span>Critical Risk</span></div>
+  <div class="meta-item"><strong style="color:var(--high)">10</strong><span>High Risk</span></div>
+  <div class="meta-item"><strong style="color:var(--medium)">10</strong><span>Medium Risk</span></div>
+  <div class="meta-item"><strong style="color:var(--low)">8</strong><span>Low Risk</span></div>
+  <div class="meta-item"><strong>12</strong><span>Files to Modify</span></div>
+</div>
+
+<div class="legend">
+  <div class="legend-group">
+    <h4>Risk Level</h4>
+    <div class="legend-row"><span class="badge critical">Critical</span> <span>Data loss / broken flow</span></div>
+    <div class="legend-row"><span class="badge high">High</span> <span>Major UX broken</span></div>
+    <div class="legend-row"><span class="badge medium">Medium</span> <span>Missing feature</span></div>
+    <div class="legend-row"><span class="badge low">Low</span> <span>Cosmetic / enhancement</span></div>
+  </div>
+  <div class="legend-group">
+    <h4>Priority</h4>
+    <div class="legend-row"><span class="badge p0">P0</span> <span>Blocker — must fix first</span></div>
+    <div class="legend-row"><span class="badge p1">P1</span> <span>Critical — next sprint</span></div>
+    <div class="legend-row"><span class="badge p2">P2</span> <span>Important — this sprint</span></div>
+    <div class="legend-row"><span class="badge p3">P3</span> <span>Nice to have</span></div>
+    <div class="legend-row"><span class="badge p4">P4</span> <span>Lowest priority</span></div>
+  </div>
+  <div class="legend-group">
+    <h4>Status</h4>
+    <div class="legend-row"><span class="badge missing">❌ Not Done</span></div>
+    <div class="legend-row"><span class="badge partial">⚠️ Partial</span></div>
+    <div class="legend-row"><span class="badge done">✅ Done</span></div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 1: ANALYTICS -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>📊 1. Analytics — Empty State</h2>
+    <span class="area-count">1 task</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">A-01</span></td>
+          <td>
+            <div class="task-title">Add empty-state placeholder for analytics</div>
+            <div class="task-desc">When no sales data exists for the selected period, show "Belum ada data" placeholder instead of blank charts.</div>
+            <div class="task-file">src/routes/_layout/analytics/index.tsx</div>
+            <div class="task-action">Add conditional rendering: if !analytics or channelData.length === 0 && topSalesData.length === 0, render empty state.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p3">P3</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 2: DASHBOARD -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>📈 2. Dashboard — Multiple Issues</h2>
+    <span class="area-count">4 tasks</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">D-01</span></td>
+          <td>
+            <div class="task-title">Remove "X belum dibaca" text from notification bell</div>
+            <div class="task-desc">The notification dropdown header shows "{unreadCount} belum dibaca". Remove this text entirely.</div>
+            <div class="task-file">src/components/NotificationBell.tsx</div>
+            <div class="task-action">Delete the <span> element containing {unreadCount} belum dibaca.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p3">P3</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">D-02</span></td>
+          <td>
+            <div class="task-title">Fix Waste Loss Report table width (cut off)</div>
+            <div class="task-desc">The COGS Loss table is clipped horizontally. Increase min-width or container width to prevent truncation.</div>
+            <div class="task-file">src/components/dashboard/WasteLossTable.tsx</div>
+            <div class="task-action">Increase min-w-[640px] to min-w-[720px] and/or ensure parent container has sufficient width.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge medium">Medium</span></td>
+          <td><span class="badge p2">P2</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">D-03</span></td>
+          <td>
+            <div class="task-title">Make HPP Monitoring Alert height dynamic</div>
+            <div class="task-desc">Currently fixed max-h-80 causes layout issues when adjacent DiscrepancyTable is taller. Remove or adjust max-height.</div>
+            <div class="task-file">src/components/dashboard/HppAlertCards.tsx</div>
+            <div class="task-action">Remove max-h-80 overflow-y-auto, or make it match the sibling's height via flex/grid.</div>
+            <div class="deps">Depends on: D-02 (layout grid context)</div>
+          </td>
+          <td><span class="badge medium">Medium</span></td>
+          <td><span class="badge p2">P2</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">D-04</span></td>
+          <td>
+            <div class="task-title">Show top 10 low-stock items in Stock Alert</div>
+            <div class="task-desc">Anomaly card currently shows only count. Expand to list top 10 items with lowest stock, showing name, quantity, and ROP.</div>
+            <div class="task-file">src/routes/_layout/dashboard.tsx + src/components/dashboard/StatsCards.tsx</div>
+            <div class="task-action">Pass lowStock data to StatsCards, render a list of top 10 with ingredient name + qty + status.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p2">P2</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 3: POS -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>🛒 3. POS — 5 Critical Issues</h2>
+    <span class="area-count">5 tasks</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">P-01</span></td>
+          <td>
+            <div class="task-title">Add payment confirmation modal before "Bayar"</div>
+            <div class="task-desc">After clicking "Bayar", show a confirmation dialog summarizing the order before final submission, preventing accidental clicks.</div>
+            <div class="task-file">src/routes/_layout/pos.tsx</div>
+            <div class="task-action">Add a new Modal state + component that shows order summary (items, total, payment method) with "Konfirmasi" and "Batal" buttons. Only proceed to createOrder on confirmation.</div>
+            <div class="deps">Depends on: None, but affects P-02 flow</div>
+          </td>
+          <td><span class="badge high">High</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">P-02</span></td>
+          <td>
+            <div class="task-title">Success modal: auto-close after 3-5s, remove "Tutup"</div>
+            <div class="task-desc">Remove the "Tutup" text button from the success modal. Add useEffect to auto-dismiss after 3-5 seconds or on new transaction.</div>
+            <div class="task-file">src/components/pos/SuccessModal.tsx</div>
+            <div class="task-action">Delete "Tutup" button. Add setTimeout(onClose, 4000) or redirect to new transaction. Clear timeout on unmount.</div>
+            <div class="deps">Depends on: P-01 (flow sequencing)</div>
+          </td>
+          <td><span class="badge medium">Medium</span></td>
+          <td><span class="badge p2">P2</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">P-03</span></td>
+          <td>
+            <div class="task-title">Add order code & customer name to invoice/bill print</div>
+            <div class="task-desc">The printed receipt and bill templates don't show orderCode or customerName. These are critical for identification.</div>
+            <div class="task-file">src/lib/pos-print.ts</div>
+            <div class="task-action">Add "Kode Order:" and "Pelanggan:" rows to both printReceipt and printBill HTML templates.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge high">High</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">P-04</span></td>
+          <td>
+            <div class="task-title">Fix reprint approval flow: kasir can't print after approved</div>
+            <div class="task-desc">After supervisor approves reprint, the kasir should be able to print. Currently the auto-print may fail (popup blocked) and there's no fallback manual print button.</div>
+            <div class="task-file">src/routes/_layout/pos.tsx</div>
+            <div class="task-action">Add explicit "Cetak" button when reprint is approved, plus handle popup blocker fallback.</div>
+            <div class="deps">Depends on: O-02 (approval UX consistency)</div>
+          </td>
+          <td><span class="badge high">High</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">P-05</span></td>
+          <td>
+            <div class="task-title">Void Order: enable for kasir (with approval), add button text</div>
+            <div class="task-desc">Currently only super_admin/admin_pusat can void. Kasir should be able to request cancellation (with approval flow). The destructive button text is missing in some views.</div>
+            <div class="task-file">src/routes/_layout/pos.tsx + src/components/pos/OrderHistory.tsx</div>
+            <div class="task-action">Add createCancelRequest for branch_admin. Update canVoid to allow branch_admin with approval flow. Fix button text in void modal.</div>
+            <div class="deps">Depends on: O-03 (cancel requests page for kasir)</div>
+          </td>
+          <td><span class="badge high">High</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 4: ORDER HISTORY -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>📋 4. Order History — Status & Print</h2>
+    <span class="area-count">2 tasks</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">OH-01</span></td>
+          <td>
+            <div class="task-title">Fix status display: empty & "Void" values</div>
+            <div class="task-desc">Status column shows "Void" and empty values. Investigate: may be missing status in DB or incorrect display logic.</div>
+            <div class="task-file">src/routes/_layout/order-history.tsx</div>
+            <div class="task-action">Add null/undefined check for status. Show "-" or "Unknown" for empty. Investigate DB data for void orders.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge medium">Medium</span></td>
+          <td><span class="badge p2">P2</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">OH-02</span></td>
+          <td>
+            <div class="task-title">Add direct print invoice for Super Admin</div>
+            <div class="task-desc">Super Admin should be able to print invoice directly from order history without going through the approval flow.</div>
+            <div class="task-file">src/routes/_layout/order-history.tsx</div>
+            <div class="task-action">Add a "Cetak Invoice" button for super_admin that prints directly, bypassing requestReprint flow.</div>
+            <div class="deps">Depends on: P-03 (invoice template fixes)</div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p2">P2</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 5: OPERASIONAL TAB -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>📂 5. Tab Operasional — New Pages & Role Access</h2>
+    <span class="area-count">3 tasks</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">O-01</span></td>
+          <td>
+            <div class="task-title">Add "Batalkan Pesanan" to sidebar navigation</div>
+            <div class="task-desc">The cancel-requests page exists at /cancel-requests but has no sidebar entry. Add it under Operasional group.</div>
+            <div class="task-file">src/components/Sidebar.tsx</div>
+            <div class="task-action">Add nav item with XCircle icon, path /cancel-requests, roles based on access policy.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge medium">Medium</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">O-02</span></td>
+          <td>
+            <div class="task-title">Cetak Ulang: add kasir visibility + branch filtering</div>
+            <div class="task-desc">Kasir (branch_admin) should see Cetak Ulang page with only their branch's orders. AM/SA see all.</div>
+            <div class="task-file">src/components/Sidebar.tsx + src/routes/_layout/print-requests.tsx</div>
+            <div class="task-action">Add branch_admin to sidebar roles. Add branch filter when user role is branch_admin. Show own-orders only for branch_admin.</div>
+            <div class="deps">Depends on: P-04 (reprint flow fixes)</div>
+          </td>
+          <td><span class="badge high">High</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">O-03</span></td>
+          <td>
+            <div class="task-title">Batalkan Pesanan: add kasir visibility + branch filtering</div>
+            <div class="task-desc">Kasir should see and create cancel requests from this page. AM/SA approve/reject.</div>
+            <div class="task-file">src/components/Sidebar.tsx + src/routes/_layout/cancel-requests.tsx</div>
+            <div class="task-action">Add branch_admin to RoleGuard. Add branch filter. Add "Ajukan Pembatalan" button for kasir. Show own-orders only for branch_admin.</div>
+            <div class="deps">Depends on: O-01 (sidebar entry), P-05 (kasir cancel flow)</div>
+          </td>
+          <td><span class="badge high">High</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 6: INVENTORY -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>📦 6. Inventory — Branch Filter</h2>
+    <span class="area-count">1 task</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">I-01</span></td>
+          <td>
+            <div class="task-title">Add branch filter for Area Manager & Super Admin</div>
+            <div class="task-desc">Multi-branch users need a dropdown to filter inventory by branch. Currently no branch filter exists.</div>
+            <div class="task-file">src/routes/_layout/inventory/index.tsx</div>
+            <div class="task-action">Add <select> filter listing all branches when role is super_admin, area_manager, or admin_pusat. Pass selection to getInventory query.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge medium">Medium</span></td>
+          <td><span class="badge p2">P2</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 7: STOCK OPNAME -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>📝 7. Stock Opname — Input UI Fixes</h2>
+    <span class="area-count">2 tasks</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">SO-01</span></td>
+          <td>
+            <div class="task-title">Change physical stock input from number to normal text input</div>
+            <div class="task-desc">The <input type="number"> causes UX issues (spinner buttons, scroll behavior). Replace with type="text" with numeric validation.</div>
+            <div class="task-file">src/routes/_layout/stock-opname/$soId.tsx</div>
+            <div class="task-action">Change type="number" to type="text". Add inputMode="numeric" and onChange number filtering.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p3">P3</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">SO-02</span></td>
+          <td>
+            <div class="task-title">Fix "Stok Fisik" column misalignment</div>
+            <div class="task-desc">The physical stock column is misaligned (mengsle). Fix column widths and alignment.</div>
+            <div class="task-file">src/routes/_layout/stock-opname/$soId.tsx</div>
+            <div class="task-action">Check table column widths, ensure text-right alignment is consistent, fix any CSS issues.</div>
+            <div class="deps">Depends on: SO-01 (input change)</div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p3">P3</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 8: RANTAI PASOK -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>🔗 8. Rantai Pasok — 5 Supply Chain Issues</h2>
+    <span class="area-count">5 tasks</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">SC-01</span></td>
+          <td>
+            <div class="task-title">Add print functionality for Surat Jalan (DN) and SCM Invoice</div>
+            <div class="task-desc">No print capability exists for delivery notes or SCM invoices. Users can't print these documents.</div>
+            <div class="task-file">src/routes/_layout/delivery-notes/index.tsx + src/routes/_layout/scm-invoices/index.tsx + new print utility</div>
+            <div class="task-action">Add print buttons that generate formatted printer-friendly HTML for DN and SCM invoices.</div>
+            <div class="deps">Depends on: P-03 (print template patterns)</div>
+          </td>
+          <td><span class="badge high">High</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">SC-02</span></td>
+          <td>
+            <div class="task-title">Fix "Simpan" button on Buat Purchase Requisition</div>
+            <div class="task-desc">User reports the save button doesn't work. Investigate form submission, mutation, or server-side validation issue.</div>
+            <div class="task-file">src/routes/_layout/purchase-requisitions/index.tsx + src/lib/server/scm.ts (createPurchaseRequisition)</div>
+            <div class="task-action">Debug the createPurchaseRequisition flow. Check validation, server response, and error handling.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge critical">Critical</span></td>
+          <td><span class="badge p0">P0</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">SC-03</span></td>
+          <td>
+            <div class="task-title">Restrict create SJ/Invoice: kasir & AM can only view</div>
+            <div class="task-desc">branch_admin and area_manager should not be able to create delivery notes or SCM invoices, only view their own.</div>
+            <div class="task-file">src/routes/_layout/delivery-notes/index.tsx + src/routes/_layout/scm-invoices/index.tsx</div>
+            <div class="task-action">Conditionally show "Buat SJ" / "Buat Invoice" buttons only for super_admin and admin_pusat. Add branch-based filtering for view.</div>
+            <div class="deps">Depends on: SC-01 (print UI integration)</div>
+          </td>
+          <td><span class="badge high">High</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">SC-04</span></td>
+          <td>
+            <div class="task-title">Allow kasir to edit PR quantities during Pending status</div>
+            <div class="task-desc">During Pending status, kasir should be able to edit quantities on their PRs. Currently no inline edit UI exists.</div>
+            <div class="task-file">src/routes/_layout/purchase-requisitions/$prId.tsx</div>
+            <div class="task-action">Add inline quantity editing when status is Pending and user is branch_admin. Use editable input fields with save/cancel.</div>
+            <div class="deps">Depends on: SC-02 (PR save fix)</div>
+          </td>
+          <td><span class="badge medium">Medium</span></td>
+          <td><span class="badge p2">P2</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">SC-05</span></td>
+          <td>
+            <div class="task-title">Fix Stock Transfer (Mutasi Stok) inventory mutation</div>
+            <div class="task-desc">User reports stock transfers aren't actually moving inventory. Investigate shipStockTransfer and receiveStockTransfer in server code.</div>
+            <div class="task-file">src/lib/server/scm.ts (shipStockTransfer, receiveStockTransfer)</div>
+            <div class="task-action">Debug the inventory deduction/restore logic in stock transfer mutations. Verify ledger entries are created.</div>
+            <div class="deps">Depends on: SC-02 (SCM server-side patterns)</div>
+          </td>
+          <td><span class="badge critical">Critical</span></td>
+          <td><span class="badge p0">P0</span></td>
+          <td><span class="badge done">✅ Fixed</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 9: PRINT DOCUMENTS -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>🖨️ 9. Print Documents — Logo Verification</h2>
+    <span class="area-count">1 task</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">PR-01</span></td>
+          <td>
+            <div class="task-title">Recheck logo in "Barang Masuk" invoice print</div>
+            <div class="task-desc">Verify the watermark/logo appears correctly on supplier delivery invoices. Check for missing or broken image paths.</div>
+            <div class="task-file">src/lib/pos-print.ts + potentially supplier-deliveries print logic</div>
+            <div class="task-action">Load the print preview for Barang Masuk and verify logo renders. Fix path if needed.</div>
+            <div class="deps">Depends on: SC-01 (print infrastructure)</div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p3">P3</span></td>
+          <td><span class="badge done">✅ Fixed</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 10: YIELD TRACKING -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>⚗️ 10. Yield Tracking — 3 Issues</h2>
+    <span class="area-count">3 tasks</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">YT-01</span></td>
+          <td>
+            <div class="task-title">Branch restriction: only Central Warehouse can cook</div>
+            <div class="task-desc">Branch filter already limits to Central type. But central_kitchen users may need additional branch-based access control.</div>
+            <div class="task-file">src/routes/_layout/yield-tracking.tsx</div>
+            <div class="task-action">Verify central_kitchen users are restricted to their assigned Central branch. Already partially done.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p4">P4</span></td>
+          <td><span class="badge partial">⚠️</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">YT-02</span></td>
+          <td>
+            <div class="task-title">Support multiple source ingredients for production</div>
+            <div class="task-desc">Currently only 1 source → 1 target. Need to support multiple ingredients (e.g., daging + saus → yakiniku).</div>
+            <div class="task-file">src/routes/_layout/yield-tracking.tsx + src/lib/server/yield.ts</div>
+            <div class="task-action">Redesign yield conversion form to support multiple source ingredients. Update server schema/handler.</div>
+            <div class="deps">Depends on: DB schema change (yield table may need normalization)</div>
+          </td>
+          <td><span class="badge critical">Critical</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">YT-03</span></td>
+          <td>
+            <div class="task-title">Default sort by "Waktu" descending</div>
+            <div class="task-desc">Yield tracking table should sort by createdAt descending by default.</div>
+            <div class="task-file">src/routes/_layout/yield-tracking.tsx</div>
+            <div class="task-action">Set default sort state on DataTable or add orderBy desc in server query.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p3">P3</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 11: DATA MASTER -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>🗃️ 11. Data Master — CRUD Verification</h2>
+    <span class="area-count">1 task</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">DM-01</span></td>
+          <td>
+            <div class="task-title">Test CRUD on all Data Master pages</div>
+            <div class="task-desc">Ensure create, read, update, and delete work on: users, branches, brands, vouchers, recipes, modifier groups, ingredients, platform fees.</div>
+            <div class="task-file">src/routes/_layout/admin/* + src/routes/_layout/recipes/* + src/routes/_layout/ingredients/* + src/routes/_layout/modifier-groups/*</div>
+            <div class="task-action">Manually test each master data page. Fix any broken forms, validation errors, or server errors.</div>
+            <div class="deps">Depends on: SC-02 (SCM server patterns for reference)</div>
+          </td>
+          <td><span class="badge high">High</span></td>
+          <td><span class="badge p1">P1</span></td>
+          <td><span class="badge partial">⚠️</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 12: FINANCE -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>💰 12. Finance — Default Date Range</h2>
+    <span class="area-count">1 task</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">FN-01</span></td>
+          <td>
+            <div class="task-title">Set sensible default date range (current month)</div>
+            <div class="task-desc">Date filter starts empty. Pre-fill with first day of current month → today so data shows immediately.</div>
+            <div class="task-file">src/routes/_layout/finance/index.tsx</div>
+            <div class="task-action">Initialize dateRange.from to YYYY-MM-01 and dateRange.to to today's date.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p3">P3</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 13: PERIOD CONTROL -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>📅 13. Period Control — 2 Issues</h2>
+    <span class="area-count">2 tasks</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">PC-01</span></td>
+          <td>
+            <div class="task-title">Add navigation links to fix issues in Close Period checks</div>
+            <div class="task-desc">When period close validation fails, show clickable links directing users to the relevant page (e.g., /stock-opname, /inventory).</div>
+            <div class="task-file">src/routes/_layout/period-control/index.tsx</div>
+            <div class="task-action">Add Link/button components to each failed check item that navigates to the issue location.</div>
+            <div class="deps">Depends on: I-01 (inventory fixes for context)</div>
+          </td>
+          <td><span class="badge medium">Medium</span></td>
+          <td><span class="badge p2">P2</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+        <tr>
+          <td><span class="task-id">PC-02</span></td>
+          <td>
+            <div class="task-title">Hide "0 pending requests" indicators</div>
+            <div class="task-desc">When cancel request count is 0, don't show "0 cancel request pending" text anywhere in UI.</div>
+            <div class="task-file">src/routes/_layout/period-control/index.tsx and any other location showing pending counts</div>
+            <div class="task-action">Find places where pending count is displayed and add conditional: only show if count > 0.</div>
+            <div class="deps"></div>
+          </td>
+          <td><span class="badge low">Low</span></td>
+          <td><span class="badge p4">P4</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- AREA 14: SAMPLE DATA -->
+<!-- ============================================================ -->
+<div class="area">
+  <div class="area-header" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+    <span class="chevron">▼</span>
+    <h2>🧪 14. Sample Data — Expansion for New Features</h2>
+    <span class="area-count">1 task</span>
+  </div>
+  <div class="area-body">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Task</th><th style="width:80px">Risk</th><th style="width:80px">Priority</th><th style="width:60px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="task-id">SD-01</span></td>
+          <td>
+            <div class="task-title">Add seed data for new features</div>
+            <div class="task-desc">Add sample data covering: cancel requests, print requests, stock transfers, yield with multiple ingredients, order with orderCode/customerName.</div>
+            <div class="task-file">src/lib/seed/seed-data.ts + src/lib/seed/seed.ts</div>
+            <div class="task-action">Add seed records for all new feature tables. Ensure data is representative for testing.</div>
+            <div class="deps">Depends on: YT-02 (yield schema changes), all other feature implementations</div>
+          </td>
+          <td><span class="badge medium">Medium</span></td>
+          <td><span class="badge p2">P2</span></td>
+          <td><span class="badge missing">❌</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div>
+
+<script>
+// All areas start expanded — no JS needed for collapse toggle (inline onclick)
+</script>
+
+</body>
+</html>

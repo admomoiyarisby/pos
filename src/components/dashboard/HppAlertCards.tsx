@@ -29,7 +29,7 @@ export function computeHppAlerts(recipes: Recipe[], ingredients: Ingredient[]) {
 
 export function HppAlertCards({ data }: { data: ReturnType<typeof computeHppAlerts> }) {
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
+    <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">HPP Monitoring Alert</h3>
         <p className="text-sm text-muted-foreground">Menu dengan HPP di bawah 40% (High Margin)</p>

@@ -7,7 +7,7 @@ import { getDashboardData } from "#/lib/server/dashboard";
 import { Skeleton } from "#/components/ui/skeleton";
 import { StatsCards } from "#/components/dashboard/StatsCards";
 import { CogsAnalysisTable, computeCogsData } from "#/components/dashboard/CogsAnalysisTable";
-import { RopRoqTable, computeRopData } from "#/components/dashboard/RopRoqTable";
+
 import {
   SalesTrendChart,
   ChannelPieChart,
@@ -31,7 +31,7 @@ function DashboardPage() {
   const { user } = useAuth();
   usePageTitle("Dashboard", "Analitik & ikhtisar");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ["dashboard-data"],
     queryFn: async () => {
       const result = await getDashboardData();
@@ -42,10 +42,10 @@ function DashboardPage() {
 
   if (isLoading || !data) {
     return (
-      <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
+      <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
         <div className="space-y-6">
           {/* Stats skeletons */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="rounded-lg border p-4 space-y-3">
                 <Skeleton className="h-4 w-24" />
@@ -97,17 +97,12 @@ function DashboardPage() {
   }));
 
   const isSuperAdmin = user?.role === "super_admin";
-  const isBranchAdmin = user?.role === "branch_admin";
-  const branchId = user?.branchId;
 
   // ─── Stats ───
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayOrders = ordersWithItems.filter((o) => new Date(o.createdAt) >= today);
-  const todayManual =
-    manualRevenues?.filter(
-      (mr) => (isBranchAdmin ? mr.branchId === branchId : true) && new Date(mr.date) >= today,
-    ) ?? [];
+  const todayManual = manualRevenues?.filter((mr) => new Date(mr.date) >= today) ?? [];
 
   const totalSales =
     todayOrders.reduce((acc, o) => acc + o.totalAmount, 0) +
@@ -137,12 +132,6 @@ function DashboardPage() {
   // ─── COGS ───
   const cogsData = computeCogsData(recipes, ingredients);
 
-  // ─── ROP/ROQ (branch_admin only) ───
-  const ropData =
-    isBranchAdmin && branchId
-      ? computeRopData(ordersWithItems, recipes, inventory, ingredients, branchId)
-      : [];
-
   // ─── Charts ───
   const salesTrend = computeSalesTrend(ordersWithItems);
   const channelData = computeChannelData(
@@ -166,9 +155,28 @@ function DashboardPage() {
   const wasteLoss = computeWasteLoss(wasteEntries, ingredients);
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
+    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
       <div className="space-y-6">
-        {/* 1. Stats Cards */}
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Dashboard</h1>
+            <p className="text-sm text-muted-foreground">Analitik & ikhtisar</p>
+          </div>
+          {dataUpdatedAt && (
+            <p className="text-xs text-muted-foreground">
+              Terakhir diperbarui:{" "}
+              {new Date(dataUpdatedAt).toLocaleString("id-ID", {
+                day: "2-digit",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+          )}
+        </div>
+
+        {/* 2. Stats Cards */}
         <StatsCards
           totalSales={totalSales}
           completedCount={completedCount}
@@ -176,11 +184,8 @@ function DashboardPage() {
           anomalies={anomalies}
         />
 
-        {/* 2. COGS Analysis (super_admin only) */}
+        {/* 3. COGS Analysis (super_admin only) */}
         {isSuperAdmin && <CogsAnalysisTable data={cogsData} />}
-
-        {/* 3. ROP/ROQ (branch_admin only) */}
-        {isBranchAdmin && <RopRoqTable data={ropData} />}
 
         {/* 4. Charts Row 1 */}
         <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
@@ -210,7 +215,7 @@ function DashboardPage() {
           </>
         )}
 
-        {/* 7. Order History */}
+        {/* 6. Order History */}
         <OrderHistoryTable
           orders={ordersWithItems}
           recipes={recipes}

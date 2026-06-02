@@ -1008,6 +1008,7 @@ export const stockOpnames = pgTable(
       .notNull()
       .references(() => users.id),
     approvedBy: uuid("approved_by").references(() => users.id),
+    investigationNote: text("investigation_note"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (t) => [

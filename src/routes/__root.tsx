@@ -7,6 +7,7 @@ import { getCurrentUser } from "../lib/server/auth";
 import type { QueryClient } from "@tanstack/react-query";
 import type { AuthUser } from "../lib/auth-context";
 import TopProgressBar from "../components/TopProgressBar";
+import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 
@@ -60,6 +61,7 @@ function RootDocument() {
       </head>
       <body className="font-sans antialiased wrap-anywhere">
         <TopProgressBar />
+        <Toaster position="top-right" richColors closeButton />
         <AuthProvider user={user ?? null} isLoading={false}>
           <Outlet />
           <TanStackDevtools

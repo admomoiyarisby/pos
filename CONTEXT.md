@@ -31,3 +31,15 @@ _Avoid_: Session, work period
 **Branch**:
 A physical location where orders are taken and inventory is stored. Branches can be of type `Central` (warehouse/kitchen) or `Outlet`.
 _Avoid_: Store, location, outlet (when referring to the general concept)
+
+**Stock Opname (SO)**:
+A physical inventory verification process where actual stock is counted and compared against system records. The SO is "triggered" by a supervisor (Area Manager or Admin Pusat), then "submitted" by the counter with physical counts. If approved, the system inventory is adjusted to match the physical count. SO can be "Blind" (counter cannot see system stock) or "See-Through" (counter can see system stock and variance).
+_Avoid_: Stock audit, physical count, inventory check
+
+**Variance**:
+The difference between physical stock (what was actually counted) and system stock (what the system believes is on hand). Calculated as `physicalStock - systemStock`. Positive means surplus, negative means shortage.
+_Avoid_: Discrepancy, difference, selisih (when used as a technical term)
+
+**System Stock (SO context)**:
+The quantity the system believed was on hand at the moment the SO was triggered. Frozen at trigger time, used only for display/investigation purposes. NOT used for inventory adjustment calculations — physical stock is the source of truth upon approval.
+_Avoid_: Expected stock, digital stock

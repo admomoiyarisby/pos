@@ -10,7 +10,7 @@ import {
   systemNotifications,
   areaManagerBranches,
 } from "#/db/schema";
-import { eq, and, ilike, desc, asc, count } from "drizzle-orm";
+import { eq, and, ilike, desc, asc, count, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 
@@ -134,14 +134,17 @@ export const triggerStockOpname = createServerFn({ method: "POST" })
     const user = await requireAuth();
     await requireRole("super_admin", "admin_pusat", "area_manager");
 
-    // Get current inventory for the branch
+    // Get current inventory for the branch (only countable items)
     const invItems = await db
       .select({
         ingredientId: inventory.ingredientId,
         quantity: inventory.quantity,
       })
       .from(inventory)
-      .where(eq(inventory.branchId, data.branchId));
+      .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
+      .where(
+        and(eq(inventory.branchId, data.branchId), eq(ingredients.countable, true)),
+      );
 
     // Create stock opname
     const [so] = await db
@@ -183,6 +186,44 @@ export const getStockOpnames = createServerFn({ method: "GET" })
     let branchFilter = data.branchId;
     if (user.role === "branch_admin" && user.branchId) {
       branchFilter = user.branchId;
+    } else if (user.role === "admin_pusat") {
+      // Admin pusat sees only Central Warehouse
+      const [centralBranch] = await db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(eq(branches.type, "Central"))
+        .limit(1);
+      branchFilter = centralBranch?.id;
+    } else if (user.role === "area_manager") {
+      // Area manager sees only assigned branches
+      const assigned = await db
+        .select({ branchId: areaManagerBranches.branchId })
+        .from(areaManagerBranches)
+        .where(eq(areaManagerBranches.userId, user.id));
+      const assignedIds = assigned.map((a) => a.branchId);
+      if (assignedIds.length === 0) {
+        return [];
+      }
+      branchFilter = assignedIds[0];
+      // Use inArray if multiple branches assigned
+      const result = await db
+        .select({
+          id: stockOpnames.id,
+          branchId: stockOpnames.branchId,
+          date: stockOpnames.date,
+          status: stockOpnames.status,
+          triggeredBy: stockOpnames.triggeredBy,
+          submittedBy: stockOpnames.submittedBy,
+          approvedBy: stockOpnames.approvedBy,
+          createdAt: stockOpnames.createdAt,
+          branchName: branches.name,
+        })
+        .from(stockOpnames)
+        .leftJoin(branches, eq(stockOpnames.branchId, branches.id))
+        .where(inArray(stockOpnames.branchId, assignedIds))
+        .orderBy(desc(stockOpnames.createdAt));
+
+      return result;
     }
 
     const result = await db
@@ -243,10 +284,20 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
       .leftJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
       .where(eq(stockOpnameItems.stockOpnameId, data.id));
 
+    // Access check for admin_pusat - can only view Central Warehouse SOs
+    if (user.role === "admin_pusat") {
+      const [centralBranch] = await db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(eq(branches.type, "Central"))
+        .limit(1);
+      if (centralBranch && so.branchId !== centralBranch.id) {
+        throw new Error("Unauthorized: Admin Pusat can only view Central Warehouse Stock Opnames");
+      }
+    }
+
     // For blind roles, strip system stock
-    const isBlind =
-      user.role === "branch_admin" ||
-      (user.role === "admin_pusat" && so.branchId !== user.branchId);
+    const isBlind = user.role === "branch_admin" || user.role === "admin_pusat";
 
     return {
       ...so,
@@ -308,15 +359,8 @@ export const submitStockOpname = createServerFn({ method: "POST" })
         .where(eq(stockOpnameItems.id, item.itemId));
     }
 
-    // Check if any variance > threshold -> mark Under Investigation
-    const allItems = await db
-      .select()
-      .from(stockOpnameItems)
-      .where(eq(stockOpnameItems.stockOpnameId, data.soId));
-
-    const hasVariance = allItems.some((i) => Math.abs(i.variance) > 0);
-
-    const newStatus = hasVariance ? "Under Investigation" : "Submitted";
+    // Always set to "Submitted" — supervisor decides if investigation is needed
+    const newStatus = "Submitted";
 
     await db
       .update(stockOpnames)
@@ -341,6 +385,56 @@ export const submitStockOpname = createServerFn({ method: "POST" })
     );
 
     return { success: true, status: newStatus };
+  });
+
+export const markStockOpnameInvestigation = createServerFn({ method: "POST" })
+  .inputValidator((data: { soId: string; investigationNote?: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    await requireRole("super_admin", "area_manager");
+
+    const [so] = await db
+      .select()
+      .from(stockOpnames)
+      .where(eq(stockOpnames.id, data.soId))
+      .limit(1);
+
+    if (!so) throw new Error("Stock opname not found");
+    if (so.status !== "Submitted") throw new Error("Stock opname is not in Submitted status");
+
+    const oldSo = { ...so };
+
+    await db
+      .update(stockOpnames)
+      .set({
+        status: "Under Investigation",
+        investigationNote: data.investigationNote || null,
+      })
+      .where(eq(stockOpnames.id, data.soId));
+
+    await logSystemAction(
+      user,
+      "Mark SO Investigation",
+      `Stock opname "${data.soId}" ditandai Under Investigation oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "stockOpnames",
+      data.soId,
+      "STATUS_CHANGE",
+      oldSo as Record<string, unknown>,
+      { ...oldSo, status: "Under Investigation", investigationNote: data.investigationNote } as Record<string, unknown>,
+    );
+
+    // Notify branch admin
+    await db.insert(systemNotifications).values({
+      userId: so.submittedBy,
+      title: "SO Under Investigation",
+      message: `Stock opname memerlukan hitung ulang. ${data.investigationNote ? "Catatan: " + data.investigationNote : ""}`,
+      type: "warning",
+    });
+
+    return { success: true };
   });
 
 export const approveStockOpname = createServerFn({ method: "POST" })
@@ -385,16 +479,27 @@ export const approveStockOpname = createServerFn({ method: "POST" })
           })
           .where(eq(inventory.id, inv.id));
 
-        // Create ledger adjustment entry
-        if (item.variance !== 0) {
+        // Create ledger adjustment entry using current inventory as reference
+        const currentVariance = item.physicalStock - inv.quantity;
+        if (currentVariance !== 0) {
           await db.insert(stockLedger).values({
             branchId: so.branchId,
             ingredientId: item.ingredientId,
-            type: item.variance > 0 ? "IN" : "OUT",
-            quantity: Math.abs(item.variance),
+            type: currentVariance > 0 ? "IN" : "OUT",
+            quantity: Math.abs(currentVariance),
             balance: item.physicalStock,
             reference: data.soId,
             notes: `SO Adjustment${data.investigationNote ? ": " + data.investigationNote : ""}`,
+          });
+        }
+
+        // Alert if inventory went negative
+        if (item.physicalStock < 0) {
+          await db.insert(systemNotifications).values({
+            userId: so.submittedBy,
+            title: "⚠️ Stok Negatif setelah SO",
+            message: `Item ${item.ingredientId} menjadi ${item.physicalStock} setelah penyesuaian SO.`,
+            type: "alert",
           });
         }
       }
@@ -405,6 +510,7 @@ export const approveStockOpname = createServerFn({ method: "POST" })
       .set({
         status: "Approved",
         approvedBy: user.id,
+        investigationNote: data.investigationNote || null,
       })
       .where(eq(stockOpnames.id, data.soId));
 
@@ -455,4 +561,85 @@ export const approveStockOpname = createServerFn({ method: "POST" })
     );
 
     return { success: true };
+  });
+
+export const updateStockOpnameCounts = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: { soId: string; items: { itemId: string; physicalStock: number }[] }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    // Branch admin and supervisors can update during investigation
+    await requireRole("branch_admin", "super_admin", "area_manager");
+
+    const [so] = await db
+      .select()
+      .from(stockOpnames)
+      .where(eq(stockOpnames.id, data.soId))
+      .limit(1);
+
+    if (!so) throw new Error("Stock opname not found");
+    if (so.status !== "Under Investigation")
+      throw new Error("Stock opname is not under investigation");
+    // Branch admin can only update their own branch SOs
+    if (user.role === "branch_admin" && user.branchId && so.branchId !== user.branchId)
+      throw new Error("Unauthorized: you can only update Stock Opnames for your branch");
+
+    const oldSo = { ...so };
+
+    for (const item of data.items) {
+      const [soItem] = await db
+        .select()
+        .from(stockOpnameItems)
+        .where(eq(stockOpnameItems.id, item.itemId))
+        .limit(1);
+
+      if (!soItem) continue;
+
+      const variance = item.physicalStock - soItem.systemStock;
+      const variancePercentage =
+        soItem.systemStock > 0
+          ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
+          : 0;
+
+      await db
+        .update(stockOpnameItems)
+        .set({
+          physicalStock: item.physicalStock,
+          variance,
+          variancePercentage: String(variancePercentage),
+        })
+        .where(eq(stockOpnameItems.id, item.itemId));
+    }
+
+    await logSystemAction(
+      user,
+      "Update SO Counts",
+      `Branch Admin updated counts for SO ${data.soId}`,
+    );
+    await logAudit(
+      user,
+      "stockOpnames",
+      data.soId,
+      "UPDATE",
+      oldSo as Record<string, unknown>,
+      { ...oldSo, items: data.items } as Record<string, unknown>,
+    );
+
+    return { success: true };
+  });
+
+export const getAssignedBranchIds = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await requireAuth();
+
+    if (user.role === "area_manager") {
+      const assigned = await db
+        .select({ branchId: areaManagerBranches.branchId })
+        .from(areaManagerBranches)
+        .where(eq(areaManagerBranches.userId, user.id));
+      return assigned.map((a) => a.branchId);
+    }
+
+    return [];
   });

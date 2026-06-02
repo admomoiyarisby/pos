@@ -61,7 +61,7 @@ export function CogsAnalysisTable({ data }: { data: CogsItem[] }) {
   const paginated = data.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
+    <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">Analisis COGS (Cost of Goods Sold)</h3>
         <p className="text-sm text-muted-foreground">
@@ -146,14 +146,14 @@ export function CogsAnalysisTable({ data }: { data: CogsItem[] }) {
                   </td>
                   <td className="whitespace-nowrap px-4 py-4">
                     {item.alert ? (
-                      <div className="flex animate-pulse items-center text-xs font-bold text-rose-600">
+                      <div className="flex items-center text-xs font-bold text-rose-600">
                         <AlertTriangle className="mr-1 h-4 w-4" />
-                        HIGH COGS
+                        BIAYA TINGGI
                       </div>
                     ) : (
                       <div className="flex items-center text-xs font-bold text-emerald-600">
                         <CheckCircle2 className="mr-1 h-4 w-4" />
-                        HEALTHY
+                        SEHAT
                       </div>
                     )}
                   </td>

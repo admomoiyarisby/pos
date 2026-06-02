@@ -78,7 +78,7 @@ export const getPurchaseRequisitions = createServerFn({ method: "GET" })
           .from(purchaseRequisitions)
           .leftJoin(branches, eq(purchaseRequisitions.branchId, branches.id))
           .leftJoin(users, eq(purchaseRequisitions.approvedBy, users.id))
-          .where(sql`${purchaseRequisitions.branchId} IN (${sql.join(assigned)})`)
+          .where(inArray(purchaseRequisitions.branchId, assigned))
           .orderBy(desc(purchaseRequisitions.createdAt));
         return result;
       }
@@ -1624,7 +1624,7 @@ export const getStockTransfers = createServerFn({ method: "GET" })
       whereClause = sql`(${stockTransfers.fromBranchId} = ${user.branchId} OR ${stockTransfers.toBranchId} = ${user.branchId})`;
     } else if (user.role === "area_manager" && user.assignedBranches?.length) {
       const assigned = user.assignedBranches;
-      whereClause = sql`(${stockTransfers.fromBranchId} IN (${sql.join(assigned)}) OR ${stockTransfers.toBranchId} IN (${sql.join(assigned)}))`;
+      whereClause = sql`(${inArray(stockTransfers.fromBranchId, assigned)} OR ${inArray(stockTransfers.toBranchId, assigned)})`;
     }
 
     const result = await db

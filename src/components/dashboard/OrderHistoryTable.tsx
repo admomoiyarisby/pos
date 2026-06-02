@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Search } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import { Pagination } from "#/components/ui/Pagination";
 
@@ -37,27 +38,49 @@ export function OrderHistoryTable({
   showBranch: boolean;
 }) {
   const [page, setPage] = useState(0);
-  const sorted = [...orders].sort(
+  const [search, setSearch] = useState("");
+
+  const filtered = orders.filter((o) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      o.id.toLowerCase().includes(q) ||
+      (o.orderCode ?? "").toLowerCase().includes(q) ||
+      o.channel.toLowerCase().includes(q) ||
+      new Date(o.createdAt).toLocaleDateString("id-ID").includes(q) ||
+      o.status.toLowerCase().includes(q)
+    );
+  });
+
+  const sorted = [...filtered].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages - 1);
   const paginated = sorted.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
-  const channelColors: Record<string, string> = {
-    Gofood: "bg-rose-100 text-rose-600",
-    Grabfood: "bg-emerald-100 text-emerald-600",
-    ShopeeFood: "bg-orange-100 text-orange-600",
-    "Dine-in": "bg-blue-100 text-blue-600",
-  };
-
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
-      <div className="mb-2">
-        <h3 className="text-base font-bold text-foreground">Riwayat Pemesanan</h3>
-        <p className="text-sm text-muted-foreground">
-          {showBranch ? "Seluruh transaksi dari semua cabang" : "Transaksi di cabang terkait"}
-        </p>
+    <div className="rounded-lg border bg-card p-6 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-bold text-foreground">Riwayat Pemesanan</h3>
+          <p className="text-sm text-muted-foreground">
+            {showBranch ? "Seluruh transaksi dari semua cabang" : "Transaksi di cabang terkait"}
+          </p>
+        </div>
+        <div className="relative w-64">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Cari ID, channel, tanggal..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+            className="h-9 w-full rounded-lg border border-border bg-transparent pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left min-w-[640px]">
@@ -135,8 +158,16 @@ export function OrderHistoryTable({
                     )}
                     <td className="whitespace-nowrap px-4 py-4">
                       <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                          channelColors[order.channel] ?? "bg-slate-100 text-slate-600"
+                        className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase border-l-2 border-border ${
+                          order.channel === "Gofood"
+                            ? "border-l-rose-500 bg-rose-50 text-rose-700"
+                            : order.channel === "Grabfood"
+                              ? "border-l-emerald-500 bg-emerald-50 text-emerald-700"
+                              : order.channel === "ShopeeFood"
+                                ? "border-l-orange-500 bg-orange-50 text-orange-700"
+                                : order.channel === "Dine-in"
+                                  ? "border-l-blue-500 bg-blue-50 text-blue-700"
+                                  : "border-l-slate-400 bg-slate-50 text-slate-600"
                         }`}
                       >
                         {order.channel}

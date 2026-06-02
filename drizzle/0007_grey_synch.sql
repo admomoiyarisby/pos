@@ -1,0 +1,1 @@
+ALTER TABLE "stock_opnames" ADD COLUMN "investigation_note" text;

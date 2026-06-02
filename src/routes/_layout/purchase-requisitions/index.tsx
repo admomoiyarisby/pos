@@ -67,7 +67,9 @@ function PRPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [prItems, setPrItems] = useState<{ ingredientId: string; quantity: number }[]>([]);
-  const [selectedPrBranchId, setSelectedPrBranchId] = useState(user?.branchId ?? "");
+  const [selectedPrBranchId, setSelectedPrBranchId] = useState(
+    user?.branchId ?? (branches.length > 0 ? branches[0].id : ""),
+  );
   const [processPr, setProcessPr] = useState<PRRow | null>(null);
   const [rejectPr, setRejectPr] = useState<PRRow | null>(null);
   const [createSJPrompt, setCreateSJPrompt] = useState(false);
@@ -76,6 +78,8 @@ function PRPage() {
   const isBranchAdmin = user?.role === "branch_admin";
   const isApprover =
     user?.role === "super_admin" || user?.role === "admin_pusat" || user?.role === "area_manager";
+  const canCreatePR =
+    user?.role === "super_admin" || user?.role === "admin_pusat" || user?.role === "branch_admin";
 
   const { data: branchInventoryResult } = useQuery({
     queryKey: ["inventory", selectedPrBranchId],
@@ -276,11 +280,11 @@ function PRPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
       <div className="flex items-center justify-between">
-        {isBranchAdmin && (
+        {canCreatePR && (
           <PageHeader action={{ label: "Buat PR", onClick: () => setModalOpen(true) }} />
         )}
-        {!isBranchAdmin && <div />}
-        {isBranchAdmin && (
+        {!canCreatePR && <div />}
+        {canCreatePR && (
           <button
             onClick={() => {
               if (selectedPrBranchId) {
@@ -328,8 +332,9 @@ function PRPage() {
               <label className="text-sm font-medium">Cabang</label>
               <select
                 name="branchId"
-                defaultValue={user?.branchId ?? ""}
+                defaultValue={user?.branchId ?? (branches.length > 0 ? branches[0].id : "")}
                 disabled={isBranchAdmin}
+                required
                 onChange={function (e) {
                   setSelectedPrBranchId(e.target.value);
                 }}

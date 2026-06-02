@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -7,7 +7,7 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getStockOpnames, triggerStockOpname } from "#/lib/server/inventory";
+import { getStockOpnames, triggerStockOpname, getAssignedBranchIds } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
@@ -87,6 +87,25 @@ function StockOpnamePage() {
   const [selectedBranch, setSelectedBranch] = useState("");
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
 
+  const { data: assignedBranchIds } = useQuery({
+    queryKey: ["assigned-branch-ids"],
+    queryFn: getAssignedBranchIds,
+    enabled: user?.role === "area_manager",
+  });
+
+  // Compute visible branches for the trigger modal based on role
+  const visibleBranches = branches.filter((b) => {
+    if (user?.role === "admin_pusat") return b.type === "Central";
+    if (user?.role === "area_manager") return assignedBranchIds?.includes(b.id);
+    return true; // super_admin sees all
+  });
+
+  useEffect(() => {
+    if (visibleBranches.length === 1 && !selectedBranch) {
+      setSelectedBranch(visibleBranches[0].id);
+    }
+  }, [visibleBranches, selectedBranch]);
+
   const canTrigger = ["super_admin", "admin_pusat", "area_manager"].includes(user?.role ?? "");
 
   const { data: opnames } = useQuery({
@@ -154,7 +173,7 @@ function StockOpnamePage() {
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="">Pilih cabang...</option>
-              {branches.map((b) => (
+              {visibleBranches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
                 </option>

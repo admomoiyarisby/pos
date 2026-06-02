@@ -62,7 +62,7 @@ function LayoutComponent() {
 
   return (
     <PageTitleProvider>
-      <AppShell userRole={user.role} />
+      <AppShell userRole={user.role} userName={user.name} />
     </PageTitleProvider>
   );
 }

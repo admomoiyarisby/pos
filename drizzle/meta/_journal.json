@@ -50,6 +50,13 @@
       "when": 1779286265602,
       "tag": "0006_powerful_maximus",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779901417457,
+      "tag": "0007_grey_synch",
+      "breakpoints": true
     }
   ]
 }

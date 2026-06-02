@@ -92,7 +92,7 @@ export function RopRoqTable({ data }: { data: ReturnType<typeof computeRopData> 
   const paginated = data.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm">
+    <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">
           Rekomendasi Pengadaan Stok (ROP/ROQ)
@@ -161,9 +161,9 @@ export function RopRoqTable({ data }: { data: ReturnType<typeof computeRopData> 
         </table>
       </div>
       <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
-      <div className="mt-4 flex items-start rounded-xl bg-blue-50 p-3">
-        <RefreshCw className="mr-3 mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600" />
-        <p className="text-xs leading-relaxed text-blue-700">
+      <div className="mt-4 flex items-start rounded-xl bg-muted p-3">
+        <RefreshCw className="mr-3 mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+        <p className="text-xs leading-relaxed text-muted-foreground">
           <strong>Algoritma ROP:</strong> Sistem menghitung rata-rata pemakaian harian selama 7 hari
           terakhir, lalu mengalikannya dengan 5 hari sebagai batas aman stok. Jika stok di bawah
           ROP, sistem menyarankan jumlah order (ROQ) untuk mencukupi kebutuhan 10 hari ke depan.

@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omoiyari POS — Execution Plan & Dependency Graph</title>
+<style>
+  :root {
+    --bg: #f8f9fa;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --muted: #64748b;
+    --critical: #dc2626;
+    --high: #ea580c;
+    --medium: #ca8a04;
+    --low: #16a34a;
+    --p0: #7c3aed;
+    --p1: #2563eb;
+    --p2: #0891b2;
+    --edge: #94a3b8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+    line-height: 1.6;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+
+  /* --- Phase timeline --- */
+  .phases { display: flex; flex-direction: column; gap: 2rem; margin-bottom: 3rem; }
+  .phase {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .phase-header {
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .phase-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: white;
+    flex-shrink: 0;
+  }
+  .phase-badge.p0-bg { background: var(--p0); }
+  .phase-badge.p1-bg { background: var(--p1); }
+  .phase-badge.p2-bg { background: var(--p2); }
+  .phase-badge.p3-bg { background: #65a30d; }
+
+  .phase h2 { font-size: 1.1rem; }
+  .phase-desc { font-size: 0.85rem; color: var(--muted); margin-top: 0.15rem; }
+  .phase-body { padding: 0 1.25rem 1.25rem; }
+
+  /* --- Task cards --- */
+  .task-grid { display: grid; gap: 0.75rem; }
+  .task-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    transition: box-shadow 0.15s;
+  }
+  .task-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .task-id {
+    font-family: monospace;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+    min-width: 50px;
+    padding-top: 0.1rem;
+  }
+  .task-content { flex: 1; }
+  .task-title { font-weight: 500; font-size: 0.9rem; }
+  .task-detail { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+  .task-meta { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.35rem; }
+  .task-deps { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+  .task-deps strong { color: var(--text); }
+
+  .badge {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge.critical { background: #fef2f2; color: var(--critical); }
+  .badge.high { background: #fff7ed; color: var(--high); }
+  .badge.medium { background: #fefce8; color: var(--medium); }
+  .badge.low { background: #f0fdf4; color: var(--low); }
+  .badge.done { background: #f0fdf4; color: #16a34a; }
+  .badge.file { background: #eef2ff; color: #4f46e5; font-family: monospace; }
+
+  /* --- Dependency graph --- */
+  .graph-section { margin-top: 2rem; }
+  .graph-section h2 { margin-bottom: 1rem; }
+
+  .dep-graph {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+    overflow-x: auto;
+  }
+  .graph-svg { min-width: 700px; }
+
+  /* --- Stats bar --- */
+  .stats { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    flex: 1;
+    min-width: 120px;
+  }
+  .stat-card .num { font-size: 1.5rem; font-weight: 700; display: block; }
+  .stat-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
+
+  @media (max-width: 768px) {
+    body { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>📋 Execution Plan — Prioritized Implementation Order</h1>
+<p class="subtitle">35 tasks organized into 5 implementation phases, with dependency-aware ordering. Generated 2026-06-03.</p>
+
+<div class="stats">
+  <div class="stat-card"><span class="num" style="color:var(--p0)">2</span><span class="label">P0 — Blocker</span></div>
+  <div class="stat-card"><span class="num" style="color:var(--p1)">10</span><span class="label">P1 — Critical</span></div>
+  <div class="stat-card"><span class="num" style="color:var(--p2)">8</span><span class="label">P2 — Important</span></div>
+  <div class="stat-card"><span class="num" style="color:#65a30d">10</span><span class="label">P3 — Nice to Have</span></div>
+  <div class="stat-card"><span class="num" style="color:#a3a3a3">5</span><span class="label">P4 — Lowest</span></div>
+  <div class="stat-card"><span class="num">7</span><span class="label">Blocked Tasks</span></div>
+  <div class="stat-card"><span class="num">6</span><span class="label">Root Tasks</span></div>
+</div>
+
+<!-- ======================================================================= -->
+<!-- PHASE 1: BLOCKERS (P0) -->
+<!-- ======================================================================= -->
+<div class="phases">
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-badge p0-bg" style="background:#16a34a">✓</div>
+      <div>
+        <h2>✅ Phase 1: Blocker Fixes <span style="font-size:0.7rem;color:#16a34a;font-weight:400">— COMPLETED</span></h2>
+        <div class="phase-desc">Both P0 tasks have been fixed. Estimated: 4-6 hours <strong style="color:#16a34a">✓ Done</strong>.</div>
+      </div>
+    </div>
+    <div class="phase-body">
+      <div class="task-grid">
+        <div class="task-card" style="border-left:3px solid #16a34a;background:#f0fdf4">
+          <span class="task-id" style="color:#16a34a">SC-02</span>
+          <div class="task-content">
+            <div class="task-title">✅ Fix "Simpan" button on Buat Purchase Requisition</div>
+            <div class="task-detail"><strong>Fix applied:</strong> "Buat PR" button was only visible for <code>branch_admin</code>. Changed to <code>canCreatePR</code> (super_admin, admin_pusat, branch_admin). Also fixed branch select default + added <code>required</code>.</div>
+            <div class="task-meta">
+              <span class="badge critical">Critical Risk</span>
+              <span class="badge file">purchase-requisitions/index.tsx</span>
+            </div>
+            <div class="task-deps
+      </div>
+    </div>
+  </div>
+
+<!-- ======================================================================= -->
+<!-- PHASE 2: CRITICAL FLOWS (P1) -->
+<!-- ======================================================================= -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-badge p1-bg">P1</div>
+      <div>
+        <h2>🔥 Phase 2: Critical Flow Fixes</h2>
+        <div class="phase-desc">Direct user-facing bugs that break core workflows. Estimated: 12-16 hours.</div>
+      </div>
+    </div>
+    <div class="phase-body">
+      <div class="task-grid">
+        <div class="task-card">
+          <span class="task-id">P-01</span>
+          <div class="task-content">
+            <div class="task-title">Add payment confirmation modal</div>
+            <div class="task-detail">Prevent accidental orders by adding a confirmation step before "Bayar".</div>
+            <div class="task-meta">
+              <span class="badge high">High Risk</span>
+              <span class="badge file">pos.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Unblocks:</strong> P-02 (success modal flow)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">P-03</span>
+          <div class="task-content">
+            <div class="task-title">Add orderCode & customerName to print templates</div>
+            <div class="task-detail">Missing critical order identifiers in printed receipts and bills.</div>
+            <div class="task-meta">
+              <span class="badge high">High Risk</span>
+              <span class="badge file">pos-print.ts</span>
+            </div>
+            <div class="task-deps"><strong>Unblocks:</strong> OH-02 (print for super admin), SC-01 (SCM print)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">P-04</span>
+          <div class="task-content">
+            <div class="task-title">Fix reprint approval: kasir can print after approved</div>
+            <div class="task-detail">Add fallback manual print button + handle popup blocker. Kasir currently blocked after approval.</div>
+            <div class="task-meta">
+              <span class="badge high">High Risk</span>
+              <span class="badge file">pos.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Unblocks:</strong> O-02 (cetak ulang visibility)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">P-05</span>
+          <div class="task-content">
+            <div class="task-title">Enable kasir to request cancellation (void with approval)</div>
+            <div class="task-detail">Add createCancelRequest for branch_admin. Update canVoid logic. Fix button text.</div>
+            <div class="task-meta">
+              <span class="badge high">High Risk</span>
+              <span class="badge file">pos.tsx</span>
+              <span class="badge file">OrderHistory.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Unblocks:</strong> O-03 (cancel requests page for kasir)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">O-01</span>
+          <div class="task-content">
+            <div class="task-title">Add "Batalkan Pesanan" to sidebar</div>
+            <div class="task-detail">Navigate the existing /cancel-requests page from the sidebar under Operasional.</div>
+            <div class="task-meta">
+              <span class="badge medium">Medium Risk</span>
+              <span class="badge file">Sidebar.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Unblocks:</strong> O-03 (cancel page visibility)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">O-02</span>
+          <div class="task-content">
+            <div class="task-title">Add kasir visibility + branch filtering for Cetak Ulang</div>
+            <div class="task-detail">Kasir sees own branch, AM/SA see all. Sidebar role update.</div>
+            <div class="task-meta">
+              <span class="badge high">High Risk</span>
+              <span class="badge file">print-requests.tsx</span>
+              <span class="badge file">Sidebar.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> P-04 (reprint flow works)<br><strong>Blocks:</strong> Kasir workflow completion</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">O-03</span>
+          <div class="task-content">
+            <div class="task-title">Add kasir visibility + branch filtering for Batalkan Pesanan</div>
+            <div class="task-detail">Kasir sees own branch, can create requests. AM/SA see all, can approve/reject.</div>
+            <div class="task-meta">
+              <span class="badge high">High Risk</span>
+              <span class="badge file">cancel-requests.tsx</span>
+              <span class="badge file">Sidebar.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> O-01 (sidebar), P-05 (kasir cancel flow)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">SC-01</span>
+          <div class="task-content">
+            <div class="task-title">Add print for Surat Jalan & SCM Invoice</div>
+            <div class="task-detail">Create print utilities for delivery notes and SCM invoices.</div>
+            <div class="task-meta">
+              <span class="badge high">High Risk</span>
+              <span class="badge file">delivery-notes/</span>
+              <span class="badge file">scm-invoices/</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> P-03 (print template patterns)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">SC-03</span>
+          <div class="task-content">
+            <div class="task-title">Restrict create SJ/Invoice by role</div>
+            <div class="task-detail">Only super_admin/admin_pusat can create. Kasir/AM can view only.</div>
+            <div class="task-meta">
+              <span class="badge high">High Risk</span>
+              <span class="badge file">delivery-notes/index.tsx</span>
+              <span class="badge file">scm-invoices/index.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> SC-01 (print integration)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">YT-02</span>
+          <div class="task-content">
+            <div class="task-title">Support multiple source ingredients for yield production</div>
+            <div class="task-detail">Add ability to select multiple source ingredients (e.g., daging + saus → yakiniku). Schema change may be needed.</div>
+            <div class="task-meta">
+              <span class="badge critical">Critical Risk</span>
+              <span class="badge file">yield-tracking.tsx</span>
+              <span class="badge file">yield.ts</span>
+              <span class="badge file">schema.ts</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> DB schema assessment<br><strong>Unblocks:</strong> SD-01 (seed data)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">DM-01</span>
+          <div class="task-content">
+            <div class="task-title">Test CRUD on all Data Master pages</div>
+            <div class="task-detail">Manual verification of all master data forms. Fix any broken creates/updates/deletes.</div>
+            <div class="task-meta">
+              <span class="badge high">High Risk</span>
+              <span class="badge file">admin/*</span>
+              <span class="badge file">recipes/*</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> SC-02 (server patterns reference)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- ======================================================================= -->
+<!-- PHASE 3: IMPORTANT (P2) -->
+<!-- ======================================================================= -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-badge p2-bg">P2</div>
+      <div>
+        <h2>📌 Phase 3: Important Improvements</h2>
+        <div class="phase-desc">Missing features that significantly improve UX but don't block critical flows. Estimated: 10-14 hours.</div>
+      </div>
+    </div>
+    <div class="phase-body">
+      <div class="task-grid">
+        <div class="task-card">
+          <span class="task-id">D-02</span>
+          <div class="task-content">
+            <div class="task-title">Fix Waste Loss Report table width (cut off)</div>
+            <div class="task-detail">Increase table min-width to prevent column truncation.</div>
+            <div class="task-meta">
+              <span class="badge medium">Medium Risk</span>
+              <span class="badge file">WasteLossTable.tsx</span>
+            </div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">D-03</span>
+          <div class="task-content">
+            <div class="task-title">Make HPP Monitoring Alert height dynamic</div>
+            <div class="task-detail">Remove fixed max-height, let it grow with sibling content.</div>
+            <div class="task-meta">
+              <span class="badge medium">Medium Risk</span>
+              <span class="badge file">HppAlertCards.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> D-02 (layout context)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">D-04</span>
+          <div class="task-content">
+            <div class="task-title">Show top 10 low-stock items in Stock Alert</div>
+            <div class="task-detail">Expand anomaly card with ingredient names, quantities, ROP values.</div>
+            <div class="task-meta">
+              <span class="badge low">Low Risk</span>
+              <span class="badge file">dashboard.tsx</span>
+              <span class="badge file">StatsCards.tsx</span>
+            </div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">P-02</span>
+          <div class="task-content">
+            <div class="task-title">Success modal auto-close, remove "Tutup"</div>
+            <div class="task-detail">Auto-dismiss after 4s. Remove the manual "Tutup" button.</div>
+            <div class="task-meta">
+              <span class="badge medium">Medium Risk</span>
+              <span class="badge file">SuccessModal.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> P-01 (flow sequencing)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">OH-01</span>
+          <div class="task-content">
+            <div class="task-title">Fix status display (empty & "Void" values)</div>
+            <div class="task-detail">Handle null/undefined status with fallback display.</div>
+            <div class="task-meta">
+              <span class="badge medium">Medium Risk</span>
+              <span class="badge file">order-history.tsx</span>
+            </div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">OH-02</span>
+          <div class="task-content">
+            <div class="task-title">Add direct print for Super Admin in Order History</div>
+            <div class="task-detail">Super Admin prints directly without approval flow.</div>
+            <div class="task-meta">
+              <span class="badge low">Low Risk</span>
+              <span class="badge file">order-history.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> P-03 (print template fixes)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">I-01</span>
+          <div class="task-content">
+            <div class="task-title">Add branch filter for Inventory</div>
+            <div class="task-detail">Dropdown to filter inventory by branch for multi-branch users.</div>
+            <div class="task-meta">
+              <span class="badge medium">Medium Risk</span>
+              <span class="badge file">inventory/index.tsx</span>
+            </div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">SC-04</span>
+          <div class="task-content">
+            <div class="task-title">Allow kasir to edit PR quantities during Pending</div>
+            <div class="task-detail">Inline editing for PR items when status is Pending.</div>
+            <div class="task-meta">
+              <span class="badge medium">Medium Risk</span>
+              <span class="badge file">purchase-requisitions/$prId.tsx</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> SC-02 (PR save fix)</div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">PC-01</span>
+          <div class="task-content">
+            <div class="task-title">Add navigation links to period close checks</div>
+            <div class="task-detail">Failed checks should link to relevant pages for fixing.</div>
+            <div class="task-meta">
+              <span class="badge medium">Medium Risk</span>
+              <span class="badge file">period-control/index.tsx</span>
+            </div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">SD-01</span>
+          <div class="task-content">
+            <div class="task-title">Add seed data for new features</div>
+            <div class="task-detail">Sample data for cancel requests, print requests, transfers, yield, etc.</div>
+            <div class="task-meta">
+              <span class="badge medium">Medium Risk</span>
+              <span class="badge file">seed-data.ts</span>
+            </div>
+            <div class="task-deps"><strong>Depends on:</strong> YT-02, SC-05, all feature impls</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- ======================================================================= -->
+<!-- PHASE 4: ENHANCEMENTS (P3) -->
+<!-- ======================================================================= -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-badge" style="background:#65a30d">P3</div>
+      <div>
+        <h2>✨ Phase 4: Nice-to-Have Enhancements</h2>
+        <div class="phase-desc">Low-risk visual/UX polish tasks. Estimated: 6-8 hours.</div>
+      </div>
+    </div>
+    <div class="phase-body">
+      <div class="task-grid">
+        <div class="task-card">
+          <span class="task-id">A-01</span>
+          <div class="task-content">
+            <div class="task-title">Add empty-state placeholder for analytics</div>
+            <div class="task-meta"><span class="badge low">Low Risk</span><span class="badge file">analytics/index.tsx</span></div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">D-01</span>
+          <div class="task-content">
+            <div class="task-title">Remove "X belum dibaca" from notification bell</div>
+            <div class="task-meta"><span class="badge low">Low Risk</span><span class="badge file">NotificationBell.tsx</span></div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">SO-01</span>
+          <div class="task-content">
+            <div class="task-title">Change physical stock input to type="text"</div>
+            <div class="task-meta"><span class="badge low">Low Risk</span><span class="badge file">$soId.tsx</span></div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">SO-02</span>
+          <div class="task-content">
+            <div class="task-title">Fix "Stok Fisik" column alignment</div>
+            <div class="task-deps"><strong>Depends on:</strong> SO-01</div>
+            <div class="task-meta"><span class="badge low">Low Risk</span><span class="badge file">$soId.tsx</span></div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">PR-01</span>
+          <div class="task-content">
+            <div class="task-title">Recheck logo on Barang Masuk invoice print</div>
+            <div class="task-deps"><strong>Depends on:</strong> SC-01</div>
+            <div class="task-meta"><span class="badge low">Low Risk</span><span class="badge file">pos-print.ts</span></div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">YT-03</span>
+          <div class="task-content">
+            <div class="task-title">Default sort yield table by Waktu desc</div>
+            <div class="task-meta"><span class="badge low">Low Risk</span><span class="badge file">yield-tracking.tsx</span></div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">FN-01</span>
+          <div class="task-content">
+            <div class="task-title">Set default date range to current month</div>
+            <div class="task-meta"><span class="badge low">Low Risk</span><span class="badge file">finance/index.tsx</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- ======================================================================= -->
+<!-- PHASE 5: NICE-TO-HAVE (P4) -->
+<!-- ======================================================================= -->
+  <div class="phase">
+    <div class="phase-header">
+      <div class="phase-badge" style="background:#a3a3a3">P4</div>
+      <div>
+        <h2>🧹 Phase 5: Polish & Cleanup</h2>
+        <div class="phase-desc">Minor improvements with no user-facing urgency. Estimated: 2-4 hours.</div>
+      </div>
+    </div>
+    <div class="phase-body">
+      <div class="task-grid">
+        <div class="task-card">
+          <span class="task-id">YT-01</span>
+          <div class="task-content">
+            <div class="task-title">Verify central_kitchen branch restriction</div>
+            <div class="task-meta"><span class="badge low">Low Risk</span><span class="badge file">yield-tracking.tsx</span></div>
+          </div>
+        </div>
+        <div class="task-card">
+          <span class="task-id">PC-02</span>
+          <div class="task-content">
+            <div class="task-title">Hide "0 pending requests" indicators</div>
+            <div class="task-meta"><span class="badge low">Low Risk</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================================= -->
+<!-- DEPENDENCY GRAPH -->
+<!-- ======================================================================= -->
+<div class="graph-section">
+  <h2>🔗 Dependency Graph</h2>
+  <div class="dep-graph">
+    <svg class="graph-svg" viewBox="0 0 900 750" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+        </marker>
+        <style>
+          .node rect { rx: 6; ry: 6; stroke-width: 1.5; fill: white; }
+          .node text { font-family: monospace; font-size: 9px; text-anchor: middle; dominant-baseline: central; }
+          .edge { stroke: #94a3b8; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+          .edge-label { font-family: sans-serif; font-size: 8px; fill: #64748b; text-anchor: middle; }
+        </style>
+      </defs>
+
+      <!-- Row 0: P0 root tasks -->
+      <!-- SC-02 (x=200) and SC-05 (x=500) -->
+      <g class="node"><rect x="160" y="10" width="80" height="28" fill="#f5f3ff" stroke="#7c3aed"/><text x="200" y="24" fill="#7c3aed" font-weight="bold">SC-02</text></g>
+      <g class="node"><rect x="460" y="10" width="80" height="28" fill="#f5f3ff" stroke="#7c3aed"/><text x="500" y="24" fill="#7c3aed" font-weight="bold">SC-05</text></g>
+
+      <!-- Row 1: P1 nodes that depend on P0s -->
+      <!-- SC-04 ← SC-02, P-04 (standalone), P-01 (standalone), P-03 (standalone), YT-02 (standalone), DM-01 ← SC-02 -->
+      <g class="node"><rect x="160" y="70" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="200" y="84" fill="#2563eb">SC-04</text></g>
+      <g class="node"><rect x="280" y="70" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="320" y="84" fill="#2563eb">P-03</text></g>
+      <g class="node"><rect x="400" y="70" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="440" y="84" fill="#2563eb">P-04</text></g>
+      <g class="node"><rect x="520" y="70" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="560" y="84" fill="#2563eb">YT-02</text></g>
+      <g class="node"><rect x="640" y="70" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="680" y="84" fill="#2563eb">P-01</text></g>
+      <g class="node"><rect x="760" y="70" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="800" y="84" fill="#2563eb">DM-01</text></g>
+
+      <!-- SC-02 → SC-04, SC-02 → DM-01 -->
+      <path class="edge" d="M240 38 L240 60 L200 60 L200 70"/>
+      <path class="edge" d="M240 38 L800 38 L800 70"/>
+      <!-- SC-05 → (no direct P1 deps) -->
+
+      <!-- Row 2: P1 nodes that depend on other P1s -->
+      <!-- O-01 (standalone), P-05 (standalone) -->
+      <g class="node"><rect x="80" y="130" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="120" y="144" fill="#2563eb">O-01</text></g>
+      <g class="node"><rect x="240" y="130" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="280" y="144" fill="#2563eb">P-05</text></g>
+
+      <!-- SC-01 ← P-03 -->
+      <g class="node"><rect x="400" y="130" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="440" y="144" fill="#2563eb">SC-01</text></g>
+      <path class="edge" d="M320 98 L440 98 L440 130"/>
+
+      <!-- O-02 ← P-04 -->
+      <g class="node"><rect x="560" y="130" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="600" y="144" fill="#2563eb">O-02</text></g>
+      <path class="edge" d="M440 98 L600 98 L600 130"/>
+
+      <!-- SC-03 ← SC-01 -->
+      <g class="node"><rect x="720" y="130" width="80" height="28" fill="#eff6ff" stroke="#2563eb"/><text x="760" y="144" fill="#2563eb">SC-03</text></g>
+      <path class="edge" d="M440 158 L760 158 L760 130"/>
+
+      <!-- Row 3: P2 nodes with deps -->
+      <!-- O-03 ← O-01, P-05 -->
+      <g class="node"><rect x="80" y="200" width="80" height="28" fill="#ecfeff" stroke="#0891b2"/><text x="120" y="214" fill="#0891b2">O-03</text></g>
+      <path class="edge" d="M120 158 L120 200"/>
+      <path class="edge" d="M280 158 L200 158 L200 180 L120 180 L120 200"/>
+
+      <!-- P-02 ← P-01 -->
+      <g class="node"><rect x="240" y="200" width="80" height="28" fill="#ecfeff" stroke="#0891b2"/><text x="280" y="214" fill="#0891b2">P-02</text></g>
+      <path class="edge" d="M680 98 L680 180 L280 180 L280 200"/>
+
+      <!-- OH-01 (standalone) -->
+      <g class="node"><rect x="400" y="200" width="80" height="28" fill="#ecfeff" stroke="#0891b2"/><text x="440" y="214" fill="#0891b2">OH-01</text></g>
+
+      <!-- OH-02 ← P-03 -->
+      <g class="node"><rect x="560" y="200" width="80" height="28" fill="#ecfeff" stroke="#0891b2"/><text x="600" y="214" fill="#0891b2">OH-02</text></g>
+      <path class="edge" d="M320 98 L600 98 L600 200"/>
+
+      <!-- I-01 (standalone) -->
+      <g class="node"><rect x="720" y="200" width="80" height="28" fill="#ecfeff" stroke="#0891b2"/><text x="760" y="214" fill="#0891b2">I-01</text></g>
+
+      <!-- PC-01 (standalone) -->
+      <g class="node"><rect x="80" y="270" width="80" height="28" fill="#ecfeff" stroke="#0891b2"/><text x="120" y="284" fill="#0891b2">PC-01</text></g>
+
+      <!-- D-02 (standalone) -->
+      <g class="node"><rect x="240" y="270" width="80" height="28" fill="#ecfeff" stroke="#0891b2"/><text x="280" y="284" fill="#0891b2">D-02</text></g>
+
+      <!-- D-03 ← D-02 -->
+      <g class="node"><rect x="400" y="270" width="80" height="28" fill="#ecfeff" stroke="#0891b2"/><text x="440" y="284" fill="#0891b2">D-03</text></g>
+      <path class="edge" d="M320 298 L360 298 L360 270 L400 270"/>
+
+      <!-- D-04 (standalone) -->
+      <g class="node"><rect x="560" y="270" width="80" height="28" fill="#ecfeff" stroke="#0891b2"/><text x="600" y="284" fill="#0891b2">D-04</text></g>
+
+      <!-- SD-01 ← YT-02, SC-05, +others -->
+      <g class="node"><rect x="720" y="270" width="80" height="28" fill="#ecfeff" stroke="#0891b2"/><text x="760" y="284" fill="#0891b2">SD-01</text></g>
+      <path class="edge" d="M560 98 L760 98 L760 270"/>
+      <path class="edge" d="M500 38 L760 38 L760 270" stroke-dasharray="4,3"/>
+
+      <!-- Row 4: P3 nodes -->
+      <g class="node"><rect x="80" y="340" width="80" height="28" fill="#f7fee7" stroke="#65a30d"/><text x="120" y="354" fill="#65a30d">A-01</text></g>
+      <g class="node"><rect x="240" y="340" width="80" height="28" fill="#f7fee7" stroke="#65a30d"/><text x="280" y="354" fill="#65a30d">D-01</text></g>
+      <g class="node"><rect x="400" y="340" width="80" height="28" fill="#f7fee7" stroke="#65a30d"/><text x="440" y="354" fill="#65a30d">SO-01</text></g>
+      <g class="node"><rect x="560" y="340" width="80" height="28" fill="#f7fee7" stroke="#65a30d"/><text x="600" y="354" fill="#65a30d">YT-03</text></g>
+      <g class="node"><rect x="720" y="340" width="80" height="28" fill="#f7fee7" stroke="#65a30d"/><text x="760" y="354" fill="#65a30d">FN-01</text></g>
+
+      <!-- SO-02 ← SO-01 -->
+      <g class="node"><rect x="400" y="410" width="80" height="28" fill="#f7fee7" stroke="#65a30d"/><text x="440" y="424" fill="#65a30d">SO-02</text></g>
+      <path class="edge" d="M440 368 L440 410"/>
+
+      <!-- PR-01 ← SC-01 -->
+      <g class="node"><rect x="560" y="410" width="80" height="28" fill="#f7fee7" stroke="#65a30d"/><text x="600" y="424" fill="#65a30d">PR-01</text></g>
+      <path class="edge" d="M440 158 L600 158 L600 410"/>
+
+      <!-- Row 5: P4 -->
+      <g class="node"><rect x="80" y="480" width="80" height="28" fill="#f5f5f5" stroke="#a3a3a3"/><text x="120" y="494" fill="#a3a3a3">YT-01</text></g>
+      <g class="node"><rect x="240" y="480" width="80" height="28" fill="#f5f5f5" stroke="#a3a3a3"/><text x="280" y="494" fill="#a3a3a3">PC-02</text></g>
+
+      <!-- Legend -->
+      <g transform="translate(80, 540)">
+        <rect x="0" y="0" width="700" height="40" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+        <rect x="10" y="10" width="12" height="12" fill="#f5f3ff" stroke="#7c3aed" rx="2"/>
+        <text x="28" y="20" font-size="9" fill="#64748b">P0</text>
+        <rect x="70" y="10" width="12" height="12" fill="#eff6ff" stroke="#2563eb" rx="2"/>
+        <text x="88" y="20" font-size="9" fill="#64748b">P1</text>
+        <rect x="130" y="10" width="12" height="12" fill="#ecfeff" stroke="#0891b2" rx="2"/>
+        <text x="148" y="20" font-size="9" fill="#64748b">P2</text>
+        <rect x="190" y="10" width="12" height="12" fill="#f7fee7" stroke="#65a30d" rx="2"/>
+        <text x="208" y="20" font-size="9" fill="#64748b">P3</text>
+        <rect x="250" y="10" width="12" height="12" fill="#f5f5f5" stroke="#a3a3a3" rx="2"/>
+        <text x="268" y="20" font-size="9" fill="#64748b">P4</text>
+        <path d="M330 16 L360 16" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="368" y="20" font-size="9" fill="#64748b">Dependency (blocks)</text>
+      </g>
+    </svg>
+  </div>
+</div>
+
+<!-- ======================================================================= -->
+<!-- FILES SUMMARY -->
+<!-- ======================================================================= -->
+<div class="graph-section">
+  <h2>📁 Files to Modify</h2>
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.25rem;">
+    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+      <thead><tr><th style="text-align:left;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">File</th><th style="text-align:left;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">Task IDs</th><th style="text-align:right;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">Changes</th></tr></thead>
+      <tbody>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/pos.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">P-01, P-04, P-05</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">3</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/components/Sidebar.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">O-01, O-02, O-03</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">3</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/lib/pos-print.ts</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">P-03</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/components/pos/SuccessModal.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">P-02</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/components/pos/OrderHistory.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">P-05</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/order-history.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">OH-01, OH-02</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">2</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/print-requests.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">O-02</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/cancel-requests.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">O-03</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/inventory/index.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">I-01</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/stock-opname/$soId.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">SO-01, SO-02</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">2</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/yield-tracking.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">YT-01, YT-02, YT-03</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">3</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/finance/index.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">FN-01</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/period-control/index.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">PC-01, PC-02</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">2</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/analytics/index.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">A-01</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/components/dashboard/WasteLossTable.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">D-02</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/components/dashboard/HppAlertCards.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">D-03</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/dashboard.tsx + StatsCards.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">D-04</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">2</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/components/NotificationBell.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">D-01</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/delivery-notes/index.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">SC-01, SC-03</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">2</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/scm-invoices/index.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">SC-01, SC-03</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">2</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/purchase-requisitions/index.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">SC-02</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/routes/_layout/purchase-requisitions/$prId.tsx</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">SC-04</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/lib/server/scm.ts</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">SC-02, SC-05</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">2</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/lib/server/yield.ts</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">YT-02</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/db/schema.ts</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">YT-02 (maybe)</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+        <tr><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-family:monospace;font-size:0.8rem;">src/lib/seed/seed-data.ts</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);">SD-01</td><td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">1</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
