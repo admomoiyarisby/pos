@@ -347,6 +347,25 @@ export const recipeModifierExclusions = pgTable(
   (t) => [unique("recipe_mod_excl_unique").on(t.recipeId, t.modifierId, t.ingredientId)],
 );
 
+// =============================================================================
+// MODULE 9 — RECIPE BRANCH VISIBILITY
+// =============================================================================
+
+export const recipeBranches = pgTable(
+  "recipe_branches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    recipeId: uuid("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (t) => [unique("recipe_branch_unique").on(t.recipeId, t.branchId)],
+);
+
 export const platformFees = pgTable("platform_fees", {
   id: uuid("id").defaultRandom().primaryKey(),
   channel: orderChannelEnum("channel").notNull().unique(),
@@ -1369,6 +1388,7 @@ export const branchesRelations = relations(branches, ({ many }) => ({
   operationalExpenses: many(operationalExpenses),
   shifts: many(shifts),
   periodBalances: many(periodBalances),
+  recipesVisible: many(recipeBranches),
 }));
 
 export const brandsRelations = relations(brands, ({ many }) => ({
@@ -1411,6 +1431,7 @@ export const recipesRelations = relations(recipes, ({ many }) => ({
   recipeModifierGroups: many(recipeModifierGroups),
   recipeModifierExclusions: many(recipeModifierExclusions),
   orderItems: many(orderItems),
+  visibleBranches: many(recipeBranches),
 }));
 
 export const recipeChildRecipesRelations = relations(recipeChildRecipes, ({ one }) => ({
@@ -1942,4 +1963,17 @@ export const appSettingsRelations = relations(appSettings, ({ one }) => ({
 export const areaManagerBranchesRelations = relations(areaManagerBranches, ({ one }) => ({
   user: one(users, { fields: [areaManagerBranches.userId], references: [users.id] }),
   branch: one(branches, { fields: [areaManagerBranches.branchId], references: [branches.id] }),
+}));
+
+// ─── Recipe Branches ───
+
+export const recipeBranchesRelations = relations(recipeBranches, ({ one }) => ({
+  recipe: one(recipes, {
+    fields: [recipeBranches.recipeId],
+    references: [recipes.id],
+  }),
+  branch: one(branches, {
+    fields: [recipeBranches.branchId],
+    references: [branches.id],
+  }),
 }));

@@ -7,10 +7,11 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getIngredients, createIngredient } from "#/lib/server/ingredients";
+import { getIngredients, createIngredient, deleteIngredient } from "#/lib/server/ingredients";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
-import { ArrowRight } from "lucide-react";
+import { Button } from "#/components/ui/button";
+import { ArrowRight, Trash2, Check, X } from "lucide-react";
 
 interface IngredientRow {
   id: string;
@@ -66,15 +67,44 @@ const columns: Column<IngredientRow>[] = [
   {
     key: "id",
     header: "",
-    width: "w-12",
+    width: "w-32",
     render: (r) => (
-      <Link
-        to="/ingredients/$ingId"
-        params={{ ingId: r.id }}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-      >
-        <ArrowRight className="h-4 w-4" />
-      </Link>
+      <div className="flex items-center justify-between gap-1">
+        <Link
+          to="/ingredients/$ingId"
+          params={{ ingId: r.id }}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        >
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+        {r.status === "Active" ? (
+          <button
+            onClick={() => handleStatusToggle(r.id, r.status)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            title="Toggle status"
+          >
+            <Check className="h-4 w-4" />
+          </button>
+        ) : (
+          <button
+            onClick={() => handleStatusToggle(r.id, r.status)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            title="Activate"
+          >
+            <Check className="h-4 w-4" />
+          </button>
+        )}
+        <button
+          onClick={() => {
+            setIngredientToDelete(r.id);
+            setDeleteModalOpen(true);
+          }}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          title="Delete"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
     ),
   },
 ];
@@ -91,6 +121,8 @@ function IngredientsPage() {
   const { ingredients: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [ingredientToDelete, setIngredientToDelete] = useState<string | null>(null);
 
   const { data: ingredients } = useQuery({
     queryKey: ["ingredients"],
@@ -103,6 +135,41 @@ function IngredientsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
       setModalOpen(false);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ data }: { data: { id: string; hardDelete: boolean } }) => deleteIngredient({ data }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
+      setDeleteModalOpen(false);
+      setIngredientToDelete(null);
+    },
+    onError: (error: Error) => {
+      alert(error.message);
+    },
+  });
+
+  const handleDelete = async () => {
+    if (ingredientToDelete) {
+      await deleteMutation.mutateAsync({
+        data: { id: ingredientToDelete, hardDelete: false },
+      });
+    }
+  };
+
+  const handleStatusToggle = async (id: string, currentStatus: "Active" | "Inactive") => {
+    const newStatus = currentStatus === "Active" ? "Inactive" : "Active";
+    await updateIngredientMutation.mutateAsync({
+      data: { id, status: newStatus },
+    });
+  };
+
+  const updateIngredientMutation = useMutation({
+    mutationFn: ({ data }: { data: Partial<typeof ingredientInput> & { id: string } }) =>
+      updateIngredient({ data }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
     },
   });
 
@@ -256,6 +323,45 @@ function IngredientsPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        open={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setIngredientToDelete(null);
+        }}
+        title="Delete Bahan Baku"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete this ingredient? This action will set the status to
+            <code className="ml-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>. The ingredient
+            cannot be recovered.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setDeleteModalOpen(false);
+                setIngredientToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </RoleGuard>
   );

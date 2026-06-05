@@ -1,31 +1,132 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import RoleGuard from "#/components/RoleGuard";
-import { getRecipeDetail } from "#/lib/server/recipes";
+import PageHeader from "#/components/ui/PageHeader";
+import { getRecipeDetail, updateRecipe, deleteRecipe } from "#/lib/server/recipes";
+import { getBrands } from "#/lib/server/brands";
+import { getModifierGroups } from "#/lib/server/modifier-groups";
+import { getBranches } from "#/lib/server/branches";
+import { useAuth } from "#/lib/auth-context";
 
 import { Badge } from "#/components/ui/badge";
 import { Card } from "#/components/ui/card";
-import { Zap, Package } from "lucide-react";
+import { Button } from "#/components/ui/button";
+import { Modal } from "#/components/ui/Modal";
+import { Input } from "#/components/ui/input";
+import { Label } from "#/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "#/components/ui/select";
+import { Separator } from "#/components/ui/separator";
+import { Checkbox } from "#/components/ui/checkbox";
+import { Plus, Trash2, X, Save, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/recipes/$recipeId")({
   component: RecipeDetailPage,
   loader: async ({ params }) => {
     const recipe = await getRecipeDetail({ data: { id: params.recipeId } });
-    return { recipe };
+    const brands = await getBrands({ data: {} });
+    const modifierGroups = await getModifierGroups({ data: {} });
+    const branches = await getBranches({ data: {} });
+    return { recipe, brands, modifierGroups, branches };
   },
 });
 
 function RecipeDetailPage() {
-  const { recipe: initial } = Route.useLoaderData();
+  const { recipe: initial, brands, modifierGroups, branches } = Route.useLoaderData();
   const { recipeId } = Route.useParams();
+  const queryClient = useQueryClient();
+  const user = useAuth().user;
   const [isEditing, setIsEditing] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isBundling, setIsBundling] = useState(false);
+  const [childRecipes, setChildRecipes] = useState<any[]>([]);
+  const [isBOGO, setIsBOGO] = useState(false);
+  const [linkedModifierGroupIds, setLinkedModifierGroupIds] = useState<string[]>([]);
+  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
 
   const { data: recipe } = useQuery({
     queryKey: ["recipe", recipeId],
     queryFn: () => getRecipeDetail({ data: { id: recipeId } }),
     initialData: initial,
   });
+
+  const { data: allModifierGroups } = useQuery({
+    queryKey: ["modifier-groups"],
+    queryFn: () => modifierGroups,
+    initialData: modifierGroups,
+  });
+
+  const { data: allBrands } = useQuery({
+    queryKey: ["brands"],
+    queryFn: () => brands,
+    initialData: brands,
+  });
+
+  const { data: allBranches } = useQuery({
+    queryKey: ["branches"],
+    queryFn: () => branches,
+    initialData: branches,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: updateRecipe,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
+      void queryClient.invalidateQueries({ queryKey: ["recipes"] });
+      setIsEditing(false);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ data }: { data: { id: string; hardDelete: boolean } }) => deleteRecipe({ data }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
+      void queryClient.invalidateQueries({ queryKey: ["recipes"] });
+      setShowDeleteModal(false);
+      window.location.href = "/recipes";
+    },
+    onError: (error: Error) => {
+      alert(error.message);
+    },
+  });
+
+  const resetForm = () => {
+    setIsBundling(false);
+    setChildRecipes([]);
+    setIsBOGO(false);
+    setLinkedModifierGroupIds([]);
+    setSelectedBranchIds([]);
+  };
+
+  const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const brandIds = fd.getAll("brandIds").map(String);
+    const data = {
+      id: recipeId,
+      code: fd.get("code") as string,
+      name: fd.get("name") as string,
+      description: fd.get("description") as string | undefined,
+      category: fd.get("category") as "makanan" | "minuman" | "snack" | "add_ons" | "paket_bundle",
+      basePrice: Number(fd.get("basePrice")),
+      isBOGO: fd.get("isBOGO") === "on",
+      brandIds,
+      ingredients: [],
+      childRecipes: isBundling && childRecipes.length > 0 ? childRecipes : undefined,
+      modifierGroupIds: linkedModifierGroupIds.length > 0 ? linkedModifierGroupIds : undefined,
+      branchIds: selectedBranchIds.length > 0 ? selectedBranchIds : undefined,
+    };
+    void updateMutation.mutateAsync({ data });
+  };
+
+  const handleDelete = async () => {
+    if (recipeId) {
+      await deleteMutation.mutateAsync({
+        data: { id: recipeId, hardDelete: false },
+      });
+    }
+  };
 
   if (!recipe) {
     return <div className="text-muted-foreground">Resep tidak ditemukan</div>;
@@ -34,37 +135,193 @@ function RecipeDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                {recipe.name}
-                {recipe.isBOGO && (
-                  <Badge variant="warning" className="gap-0.5">
-                    <Zap className="h-3.5 w-3.5" /> BOGO
-                  </Badge>
-                )}
-                {recipe.childRecipes?.length > 0 && (
-                  <Badge
-                    variant="outline"
-                    className="gap-0.5 border-blue-200 text-blue-600 bg-blue-50"
-                  >
-                    <Package className="h-3.5 w-3.5" /> Paket
-                  </Badge>
-                )}
-              </h1>
-              <p className="text-sm text-muted-foreground">Kode: {recipe.code}</p>
+        <PageHeader
+          action={{
+            label: isEditing ? "Batal" : "Edit Menu",
+            onClick: () => setIsEditing(!isEditing),
+          }}
+        />
+        {isEditing ? (
+          <form onSubmit={handleUpdate} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Kode</label>
+                <input
+                  name="code"
+                  defaultValue={recipe.code}
+                  required
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Nama</label>
+                <input
+                  name="name"
+                  defaultValue={recipe.name}
+                  required
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
             </div>
-          </div>
-          <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="h-9 px-4 rounded-md border text-sm font-medium"
-          >
-            {isEditing ? "Batal" : "Edit BOM"}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Deskripsi</label>
+              <input
+                name="description"
+                defaultValue={recipe.description || ""}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Kategori</label>
+                <select
+                  name="category"
+                  defaultValue={recipe.category}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="makanan">Makanan</option>
+                  <option value="minuman">Minuman</option>
+                  <option value="snack">Snack</option>
+                  <option value="add_ons">Add-on</option>
+                  <option value="paket_bundle">Paket Bundle</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Harga Dasar (Rp)</label>
+                <input
+                  name="basePrice"
+                  type="number"
+                  min={0}
+                  defaultValue={recipe.basePrice}
+                  required
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Brand</Label>
+              <div className="flex flex-wrap gap-2">
+                {allBrands?.map((b) => (
+                  <label key={b.id} className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm">
+                    <input
+                      type="checkbox"
+                      name="brandIds"
+                      value={b.id}
+                      defaultChecked={recipe.brands?.some((br) => br.brandId === b.id)}
+                      className="rounded border-gray-300"
+                    />
+                    {b.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <Label>Ketersediaan Cabang</Label>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="allBranches"
+                  checked={selectedBranchIds.length === 0 && allBranches?.length > 0}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedBranchIds([]);
+                    } else {
+                      setSelectedBranchIds(allBranches?.map((b) => b.id) || []);
+                    }
+                  }}
+                />
+                <label htmlFor="allBranches" className="text-sm font-medium">
+                  Tersedia di semua cabang (default)
+                </label>
+              </div>
+              {selectedBranchIds.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-sm font-medium">Pilih cabang spesifik:</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {allBranches?.map((b) => (
+                      <label key={b.id} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={selectedBranchIds.includes(b.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedBranchIds([...selectedBranchIds, b.id]);
+                            } else {
+                              setSelectedBranchIds(selectedBranchIds.filter((id) => id !== b.id));
+                            }
+                          }}
+                        />
+                        {b.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <Label>Opsi Tambahan</Label>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="isBOGO"
+                  checked={isBOGO}
+                  onCheckedChange={(checked) => setIsBOGO(checked as boolean)}
+                />
+                <label htmlFor="isBOGO" className="text-sm font-medium">
+                  BOGO (Beli 1 Gratis 1)
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Grup Modifier</Label>
+              <div className="space-y-1">
+                {allModifierGroups?.map((g) => {
+                  const checked = linkedModifierGroupIds.includes(g.id);
+                  return (
+                    <div key={g.id} className="flex items-center gap-2">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setLinkedModifierGroupIds([...linkedModifierGroupIds, g.id]);
+                          } else {
+                            setLinkedModifierGroupIds(
+                              linkedModifierGroupIds.filter((id) => id !== g.id),
+                            );
+                          }
+                        }}
+                      />
+                      <span className="text-sm font-medium">{g.name}</span>
+                      <Badge variant={g.minSelection > 0 ? "default" : "secondary"}>
+                        {g.minSelection > 0 ? "wajib" : "opsional"}
+                      </Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditing(false);
+                  setIsBundling(false);
+                  setChildRecipes([]);
+                  setIsBOGO(false);
+                  setLinkedModifierGroupIds([]);
+                  setSelectedBranchIds([]);
+                }}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={updateMutation.isPending}>
+                <Save className="h-4 w-4 mr-2" />
+                {updateMutation.isPending ? "Menyimpan..." : "Simpan"}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Kategori</p>
             <p className="font-medium mt-1 capitalize">{recipe.category}</p>
@@ -201,3 +458,39 @@ function RecipeDetailPage() {
     </RoleGuard>
   );
 }
+
+{/* Delete Confirmation Modal */}
+<Modal
+  open={showDeleteModal}
+  onClose={() => setShowDeleteModal(false)}
+  title="Delete Menu"
+  size="sm"
+>
+  <div className="space-y-4">
+    <div className="flex items-center gap-2 text-destructive">
+      <AlertTriangle className="h-5 w-5" />
+      <p className="font-medium">Are you sure you want to delete this recipe?</p>
+    </div>
+    <p className="text-sm text-muted-foreground">
+      This action will set the status to <code className="ml-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>.
+      The recipe cannot be recovered.
+    </p>
+    <div className="flex justify-end gap-2 pt-2">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setShowDeleteModal(false)}
+      >
+        Cancel
+      </Button>
+      <Button
+        type="button"
+        variant="destructive"
+        onClick={handleDelete}
+        disabled={deleteMutation.isPending}
+      >
+        {deleteMutation.isPending ? "Deleting..." : "Delete"}
+      </Button>
+    </div>
+  </div>
+</Modal>

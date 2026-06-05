@@ -57,6 +57,13 @@
       "when": 1779901417457,
       "tag": "0007_grey_synch",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780636381760,
+      "tag": "0008_lyrical_network",
+      "breakpoints": true
     }
   ]
 }

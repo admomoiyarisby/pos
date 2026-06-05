@@ -6,6 +6,7 @@ import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import { z } from "zod";
+import { sql } from "drizzle-orm";
 
 const ingredientInput = z.object({
   code: z.string().min(1).max(30),
@@ -130,4 +131,62 @@ export const updateIngredient = createServerFn({ method: "POST" })
     );
 
     return result;
+  });
+
+// =============================================================================
+// DELETE INGREDIENT (SOFT DELETE)
+// =============================================================================
+
+export const deleteIngredient = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) =>
+    z.object({ id: z.string().uuid(), hardDelete: z.boolean().default(false) }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat", "central_kitchen");
+
+    const { id, hardDelete } = data;
+
+    // Check if ingredient is referenced in any recipe
+    const [recipeRefCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(recipeIngredients)
+      .where(eq(recipeIngredients.ingredientId, id))
+      .limit(1);
+
+    const referencedInRecipes = recipeRefCount?.count ?? 0;
+
+    if (hardDelete && referencedInRecipes > 0) {
+      throw new Error(
+        `Cannot hard delete ingredient referenced in ${referencedInRecipes} recipe(s). Use soft delete or remove from recipes first.`,
+      );
+    }
+
+    const [old] = await db.select().from(ingredients).where(eq(ingredients.id, id)).limit(1);
+
+    if (!old) {
+      throw new Error("Ingredient not found");
+    }
+
+    // Soft delete by setting status to Inactive
+    const [result] = await db
+      .update(ingredients)
+      .set({ status: "Inactive", updatedAt: new Date() })
+      .where(eq(ingredients.id, id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Ingredient",
+      `Bahan baku "${old.name}" (${old.code}) dihapus oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "ingredients",
+      id,
+      "DELETE",
+      old as Record<string, unknown>,
+      result as Record<string, unknown>,
+    );
+
+    return { success: true, wasSoftDelete: true };
   });

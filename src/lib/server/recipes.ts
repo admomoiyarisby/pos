@@ -6,10 +6,12 @@ import {
   recipeIngredients,
   recipeChildRecipes,
   recipeModifierGroups,
+  recipeBranches,
   ingredients,
   brands,
   modifierGroups,
   modifiers,
+  branches,
 } from "#/db/schema";
 import { eq, ilike, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
@@ -40,12 +42,17 @@ const recipeInput = z.object({
   ingredients: z.array(recipeIngredientInput),
   childRecipes: z.array(recipeChildInput).optional(),
   modifierGroupIds: z.array(z.string().uuid()).optional(),
+  branchIds: z.array(z.string().uuid()).optional().nullable(),
 });
 
 export const getRecipes = createServerFn({ method: "GET" })
   .inputValidator((data: { search?: string; category?: string; brandId?: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
+
+    // Get current branch for filtering
+    const user = await requireRole();
+    const currentBranchId = user.branchId;
 
     let result = await db
       .select({
@@ -60,10 +67,26 @@ export const getRecipes = createServerFn({ method: "GET" })
         totalCogs: recipes.totalCogs,
         isBOGO: recipes.isBOGO,
         status: recipes.status,
+        branchId: recipeBranches.branchId,
       })
       .from(recipes)
+      .leftJoin(recipeBranches, eq(recipeBranches.recipeId, recipes.id))
       .where(data.search ? ilike(recipes.name, `%${data.search}%`) : undefined)
       .orderBy(recipes.name);
+
+    // Filter recipes based on branch visibility
+    if (currentBranchId) {
+      result = result
+        .where(
+          sql`
+            EXISTS (
+              SELECT 1 FROM recipe_branches WHERE recipe_branches.recipe_id = recipes.id AND recipe_branches.branch_id = ${currentBranchId}
+            )
+            OR recipe_branches.id IS NULL
+          `,
+        )
+        .orderBy(recipes.name);
+    }
 
     // Get brands for each recipe
     const recipeIds = result.map((r) => r.id);
@@ -234,6 +257,21 @@ export const createRecipe = createServerFn({ method: "POST" })
         );
     }
 
+    // Insert branch visibility
+    if (data.branchIds?.length && data.branchIds.length > 0) {
+      await db
+        .insert(recipeBranches)
+        .values(
+          data.branchIds.map((branchId) => ({
+            recipeId: recipe.id,
+            branchId,
+          })),
+        );
+    } else {
+      // Default: visible in all branches (no explicit records needed)
+      // The query logic handles this via NULL branch_id
+    }
+
     await logSystemAction(user, "Create Recipe", `Resep "${recipe.name}" dibuat oleh ${user.name}`);
     await logAudit(
       user,
@@ -260,6 +298,7 @@ export const updateRecipe = createServerFn({ method: "POST" })
       ingredients: recipeIngs,
       childRecipes,
       modifierGroupIds,
+      branchIds,
       ...recipeUpdates
     } = data;
 
@@ -313,6 +352,22 @@ export const updateRecipe = createServerFn({ method: "POST" })
       }
     }
 
+    // Update branch visibility
+    if (branchIds !== undefined) {
+      if (branchIds.length === 0) {
+        // Explicitly set to "all branches" by deleting all explicit records
+        await db.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
+      } else {
+        // Delete existing and insert new branch assignments
+        await db.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
+        if (branchIds.length > 0) {
+          await db
+            .insert(recipeBranches)
+            .values(branchIds.map((branchId) => ({ recipeId: id, branchId })));
+        }
+      }
+    }
+
     const [updated] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
 
     await logSystemAction(
@@ -345,3 +400,77 @@ export const recalculateAllRecipeCosts = createServerFn({ method: "POST" }).hand
 
   return { success: true };
 });
+
+// =============================================================================
+// DELETE RECIPE (SOFT DELETE)
+// =============================================================================
+
+export const deleteRecipe = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: unknown) =>
+      z.object({ id: z.string().uuid(), hardDelete: z.boolean().default(false) }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const { id, hardDelete } = data;
+
+    // Check if recipe is referenced in any orders
+    const [orderRefCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(orderItems)
+      .where(eq(orderItems.recipeId, id))
+      .limit(1);
+
+    const referencedInOrders = orderRefCount?.count ?? 0;
+
+    if (hardDelete && referencedInOrders > 0) {
+      throw new Error(
+        `Cannot hard delete recipe referenced in ${referencedInOrders} order(s). Use soft delete or remove from orders first.`,
+      );
+    }
+
+    // Check if recipe is used as child recipe in other bundles
+    const [childRefCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(recipeChildRecipes)
+      .where(eq(recipeChildRecipes.childRecipeId, id))
+      .limit(1);
+
+    const usedInBundles = childRefCount?.count ?? 0;
+
+    if (hardDelete && usedInBundles > 0) {
+      throw new Error(
+        `Cannot hard delete recipe used in ${usedInBundles} bundle recipe(s). Remove from bundles first or use soft delete.`,
+      );
+    }
+
+    const [old] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
+
+    if (!old) {
+      throw new Error("Recipe not found");
+    }
+
+    // Soft delete by setting status to Inactive
+    const [result] = await db
+      .update(recipes)
+      .set({ status: "Inactive", updatedAt: new Date() })
+      .where(eq(recipes.id, id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Recipe",
+      `Resep "${old.name}" dihapus oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "recipes",
+      id,
+      "DELETE",
+      old as Record<string, unknown>,
+      result as Record<string, unknown>,
+    );
+
+    return { success: true, wasSoftDelete: true };
+  });
