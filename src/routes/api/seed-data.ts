@@ -1,6 +1,7 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { eq, and } from "drizzle-orm";
-import { auth } from "#/lib/auth";
+import { and, eq } from "drizzle-orm";
 
 import {
   branches as branchesTable,
@@ -13,10 +14,12 @@ import {
   modifiers as modifiersTable,
   modifierIngredients as modifierIngredientsTable,
   recipes as recipesTable,
+  recipeBranches as recipeBranchesTable,
   recipeBrands as recipeBrandsTable,
   recipeIngredients as recipeIngredientsTable,
   recipeModifierGroups as recipeModifierGroupsTable,
   recipeChildRecipes as recipeChildRecipesTable,
+  recipeModifierExclusions as recipeModifierExclusionsTable,
   platformFees as platformFeesTable,
   vouchers as vouchersTable,
   inventory as inventoryTable,
@@ -29,13 +32,13 @@ import {
   wasteEntries as wasteEntriesTable,
   systemLogs as systemLogsTable,
   appSettings as appSettingsTable,
-  recipeModifierExclusions as recipeModifierExclusionsTable,
   purchaseRequisitions as purchaseRequisitionsTable,
   purchaseRequisitionItems as purchaseRequisitionItemsTable,
   purchaseOrders as purchaseOrdersTable,
   purchaseOrderItems as purchaseOrderItemsTable,
   deliveryNotes as deliveryNotesTable,
   deliveryNoteItems as deliveryNoteItemsTable,
+  inTransitInventory as inTransitInventoryTable,
   scmInvoices as scmInvoicesTable,
   stockOpnames as stockOpnamesTable,
   stockOpnameItems as stockOpnameItemsTable,
@@ -46,8 +49,8 @@ import {
   manualRevenues as manualRevenuesTable,
   channelRevenues as channelRevenuesTable,
   yieldConversions as yieldConversionsTable,
+  yieldConversionSources as yieldConversionSourcesTable,
   operationalExpenses as operationalExpensesTable,
-  inTransitInventory as inTransitInventoryTable,
 } from "#/db/schema";
 
 import {
@@ -59,7 +62,7 @@ import {
   INGREDIENTS,
   MODIFIER_GROUPS_DATA,
   RECIPES_DATA,
-  ORDERS_DATA,
+  RECIPE_BRANCHES_DATA,
   RECIPE_MODIFIER_EXCLUSIONS,
   PURCHASE_REQUISITIONS_DATA,
   PURCHASE_ORDERS_DATA,
@@ -73,19 +76,26 @@ import {
   MANUAL_REVENUES_DATA,
   CHANNEL_REVENUES_DATA,
   YIELD_CONVERSIONS_DATA,
+  YIELD_CONVERSION_SOURCES_DATA,
   WASTE_ENTRIES_DATA,
   OPERATIONAL_EXPENSES_DATA,
   STOCK_TRANSFERS_DATA,
   SUPPLIER_DELIVERIES_DATA,
   STOCK_LEDGER_DATA,
   SYSTEM_LOGS_DATA,
-} from "./seed-data";
-import type { IdMap } from "./index";
-import { createIdMap } from "./index";
+  ORDERS_DATA,
+} from "#/lib/seed/seed-data";
 
-// ──────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────
+type IdMap = {
+  user: Map<string, string>;
+  branch: Map<string, string>;
+  brand: Map<string, string>;
+  supplier: Map<string, string>;
+  ingredient: Map<string, string>;
+  modifierGroup: Map<string, string>;
+  modifier: Map<string, string>;
+  recipe: Map<string, string>;
+};
 
 async function findExisting<T extends { id: string }>(
   table: any,
@@ -102,44 +112,54 @@ async function createUserViaAuth(
   name: string,
   role: string,
   branchCode?: string,
-  branchIdMap?: IdMap["branch"],
+  branchIdMap?: Map<string, string>,
   pin?: string,
-) {
+): Promise<boolean> {
   try {
-    const body: any = { email, password, name, role, status: "Active" };
+    const body = { email, password, name, role, status: "Active" };
     if (branchCode && branchIdMap) {
-      body.branchId = branchIdMap.get(branchCode);
+      body.branchId = branchIdMap!.get(branchCode);
     }
     if (pin) {
       body.pin = pin;
     }
-    await auth.api.signUpEmail({ body: body as never });
+    await db.$transaction([db.insert(usersTable).values(body)]);
+    return true;
   } catch {
     const updateData: any = { name, role, status: "Active" };
     if (branchCode && branchIdMap) {
-      updateData.branchId = branchIdMap.get(branchCode);
+      updateData.branchId = branchIdMap!.get(branchCode);
     }
     if (pin) {
       updateData.pin = pin;
     }
     await db.update(usersTable).set(updateData).where(eq(usersTable.email, email));
+    return true;
   }
 }
 
-async function getUserIdByEmail(email: string): Promise<string> {
+async function getUserIdByEmail(email: string): Promise<string | null> {
   const user = await db
     .select({ id: usersTable.id })
     .from(usersTable)
     .where(eq(usersTable.email, email))
     .limit(1);
-  return user[0]!.id;
+  return user[0]?.id ?? null;
 }
 
-// ──────────────────────────────────────────
-// Seed: Branches
-// ──────────────────────────────────────────
+export async function seedDatabase() {
+  const idMap: IdMap = {
+    user: new Map(),
+    branch: new Map(),
+    brand: new Map(),
+    supplier: new Map(),
+    ingredient: new Map(),
+    modifierGroup: new Map(),
+    modifier: new Map(),
+    recipe: new Map(),
+  };
 
-export async function seedBranches(idMap: IdMap) {
+  console.log("[seed] Seeding branches...");
   for (const b of BRANCHES) {
     const existing = await findExisting<{ id: string }>(branchesTable, branchesTable.code, b.code);
     if (existing) {
@@ -159,13 +179,8 @@ export async function seedBranches(idMap: IdMap) {
       idMap.branch.set(b.protoId, inserted.id);
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Brands
-// ──────────────────────────────────────────
-
-export async function seedBrands(idMap: IdMap) {
+  console.log("[seed] Seeding brands...");
   for (const b of BRANDS) {
     const existing = await findExisting<{ id: string }>(brandsTable, brandsTable.code, b.code);
     if (existing) {
@@ -178,13 +193,8 @@ export async function seedBrands(idMap: IdMap) {
       idMap.brand.set(b.code, inserted.id);
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Suppliers
-// ──────────────────────────────────────────
-
-export async function seedSuppliers(idMap: IdMap) {
+  console.log("[seed] Seeding suppliers...");
   for (const s of SUPPLIERS) {
     const existing = await findExisting<{ id: string }>(
       suppliersTable,
@@ -196,55 +206,57 @@ export async function seedSuppliers(idMap: IdMap) {
     } else {
       const [inserted] = await db
         .insert(suppliersTable)
-        .values({ code: s.code, name: s.name, contactPerson: s.contactPerson, phone: s.phone })
+        .values({
+          code: s.code,
+          name: s.name,
+          contactPerson: s.contactPerson,
+          phone: s.phone,
+        })
         .returning({ id: suppliersTable.id });
       idMap.supplier.set(s.code, inserted.id);
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Users
-// ──────────────────────────────────────────
-
-export async function seedUsers(idMap: IdMap) {
+  console.log("[seed] Seeding users...");
   for (const u of USERS_TO_CREATE) {
-    await createUserViaAuth(u.email, u.password, u.name, u.role, u.branchCode, idMap.branch, u.pin);
-    const userId = await getUserIdByEmail(u.email);
-    idMap.user.set(u.email, userId);
+    const success = await createUserViaAuth(
+      u.email,
+      u.password,
+      u.name,
+      u.role,
+      u.branchCode,
+      idMap.branch,
+      u.pin,
+    );
+    if (success) {
+      const userId = await getUserIdByEmail(u.email);
+      if (userId) idMap.user.set(u.email, userId);
+    }
   }
 
-  const areaUser = await db
-    .select({ id: usersTable.id })
-    .from(usersTable)
-    .where(eq(usersTable.email, "manager.east@omoiyari.net"))
-    .limit(1);
-  if (areaUser[0]) {
-    for (const bc of AREA_MANAGER_BRANCHES) {
-      const branchId = idMap.branch.get(bc);
+  const areaManagerEmail = "manager.east@omoiyari.net";
+  const areaUserId = idMap.user.get(areaManagerEmail);
+  if (areaUserId) {
+    for (const branchCode of AREA_MANAGER_BRANCHES) {
+      const branchId = idMap.branch.get(branchCode);
       if (!branchId) continue;
       const existing = await db
         .select()
         .from(areaManagerBranchesTable)
         .where(
           and(
-            eq(areaManagerBranchesTable.userId, areaUser[0].id),
+            eq(areaManagerBranchesTable.userId, areaUserId),
             eq(areaManagerBranchesTable.branchId, branchId),
           ),
         )
         .limit(1);
       if (!existing[0]) {
-        await db.insert(areaManagerBranchesTable).values({ userId: areaUser[0].id, branchId });
+        await db.insert(areaManagerBranchesTable).values({ userId: areaUserId, branchId });
       }
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Ingredients
-// ──────────────────────────────────────────
-
-export async function seedIngredients(idMap: IdMap) {
+  console.log("[seed] Seeding ingredients...");
   for (const ing of INGREDIENTS) {
     const existing = await findExisting<{ id: string }>(
       ingredientsTable,
@@ -273,66 +285,59 @@ export async function seedIngredients(idMap: IdMap) {
       idMap.ingredient.set(ing.protoId, inserted.id);
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Modifier Groups + Modifiers + Modifier Ingredients
-// ──────────────────────────────────────────
-
-export async function seedModifiers(idMap: IdMap) {
+  console.log("[seed] Seeding modifier groups & modifiers...");
   for (const mg of MODIFIER_GROUPS_DATA) {
-    let mgId = idMap.modifierGroup.get(mg.protoId);
-    if (!mgId) {
-      const existing = await findExisting<{ id: string }>(
-        modifierGroupsTable,
-        modifierGroupsTable.code,
-        mg.code,
-      );
-      if (existing) {
-        mgId = existing.id;
-        idMap.modifierGroup.set(mg.protoId, mgId);
-      } else {
-        const [inserted] = await db
-          .insert(modifierGroupsTable)
-          .values({
-            code: mg.code,
-            name: mg.name,
-            minSelection: mg.minSelection,
-            maxSelection: mg.maxSelection,
-          })
-          .returning({ id: modifierGroupsTable.id });
-        mgId = inserted.id;
-        idMap.modifierGroup.set(mg.protoId, mgId!);
-      }
+    let mgId: string | undefined;
+    const existingMg = await findExisting<{ id: string }>(
+      modifierGroupsTable,
+      modifierGroupsTable.code,
+      mg.code,
+    );
+    if (existingMg) {
+      mgId = existingMg.id;
+      idMap.modifierGroup.set(mg.protoId, mgId);
+    } else {
+      const [inserted] = await db
+        .insert(modifierGroupsTable)
+        .values({
+          code: mg.code,
+          name: mg.name,
+          minSelection: mg.minSelection,
+          maxSelection: mg.maxSelection,
+        })
+        .returning({ id: modifierGroupsTable.id });
+      mgId = inserted.id;
+      idMap.modifierGroup.set(mg.protoId, mgId);
     }
+
     if (!mgId) continue;
 
     for (const mod of mg.modifiers) {
-      let modId = idMap.modifier.get(mod.protoId);
-      if (!modId) {
-        const existing = await findExisting<{ id: string }>(
-          modifiersTable,
-          modifiersTable.code,
-          mod.code,
-        );
-        if (existing) {
-          modId = existing.id;
-          idMap.modifier.set(mod.protoId, modId);
-        } else {
-          const [inserted] = await db
-            .insert(modifiersTable)
-            .values({
-              code: mod.code,
-              name: mod.name,
-              price: mod.price,
-              modifierGroupId: mgId,
-              isExclusion: mod.isExclusion,
-            })
-            .returning({ id: modifiersTable.id });
-          modId = inserted.id;
-          idMap.modifier.set(mod.protoId, modId!);
-        }
+      let modId: string | undefined;
+      const existingMod = await findExisting<{ id: string }>(
+        modifiersTable,
+        modifiersTable.code,
+        mod.code,
+      );
+      if (existingMod) {
+        modId = existingMod.id;
+        idMap.modifier.set(mod.protoId, modId);
+      } else {
+        const [inserted] = await db
+          .insert(modifiersTable)
+          .values({
+            code: mod.code,
+            name: mod.name,
+            price: mod.price,
+            modifierGroupId: mgId,
+            isExclusion: mod.isExclusion,
+          })
+          .returning({ id: modifiersTable.id });
+        modId = inserted.id;
+        idMap.modifier.set(mod.protoId, modId);
       }
+
       if (!modId) continue;
 
       if ("ingredients" in mod && mod.ingredients) {
@@ -344,7 +349,7 @@ export async function seedModifiers(idMap: IdMap) {
             .from(modifierIngredientsTable)
             .where(
               and(
-                eq(modifierIngredientsTable.modifierId, modId!),
+                eq(modifierIngredientsTable.modifierId, modId),
                 eq(modifierIngredientsTable.ingredientId, ingId),
               ),
             )
@@ -352,42 +357,36 @@ export async function seedModifiers(idMap: IdMap) {
           if (!existingMi[0]) {
             await db
               .insert(modifierIngredientsTable)
-              .values({ modifierId: modId!, ingredientId: ingId, quantity: mi.quantity });
+              .values({ modifierId: modId, ingredientId: ingId, quantity: mi.quantity });
           }
         }
       }
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Recipes (Pass 1)
-// ──────────────────────────────────────────
-
-export async function seedRecipesPass1(idMap: IdMap) {
+  console.log("[seed] Seeding recipes...");
   for (const r of RECIPES_DATA) {
-    let recId = idMap.recipe.get(r.protoId);
-    if (!recId) {
-      const existing = await findExisting<{ id: string }>(recipesTable, recipesTable.code, r.code);
-      if (existing) {
-        recId = existing.id;
-        idMap.recipe.set(r.protoId, recId);
-      } else {
-        const [inserted] = await db
-          .insert(recipesTable)
-          .values({
-            code: r.code,
-            name: r.name,
-            category: r.category,
-            isSubRecipe: r.isSubRecipe,
-            basePrice: r.basePrice,
-            isBOGO: r.isBOGO,
-          })
-          .returning({ id: recipesTable.id });
-        recId = inserted.id;
-        idMap.recipe.set(r.protoId, recId!);
-      }
+    let recId: string | undefined;
+    const existingRec = await findExisting<{ id: string }>(recipesTable, recipesTable.code, r.code);
+    if (existingRec) {
+      recId = existingRec.id;
+      idMap.recipe.set(r.protoId, recId);
+    } else {
+      const [inserted] = await db
+        .insert(recipesTable)
+        .values({
+          code: r.code,
+          name: r.name,
+          category: r.category,
+          isSubRecipe: r.isSubRecipe,
+          basePrice: r.basePrice,
+          isBOGO: r.isBOGO,
+        })
+        .returning({ id: recipesTable.id });
+      recId = inserted.id;
+      idMap.recipe.set(r.protoId, recId);
     }
+
     if (!recId) continue;
 
     for (const bpId of (r as any).brandProtoIds || []) {
@@ -396,10 +395,10 @@ export async function seedRecipesPass1(idMap: IdMap) {
       const existingRb = await db
         .select()
         .from(recipeBrandsTable)
-        .where(and(eq(recipeBrandsTable.recipeId, recId!), eq(recipeBrandsTable.brandId, brandId)))
+        .where(and(eq(recipeBrandsTable.recipeId, recId), eq(recipeBrandsTable.brandId, brandId)))
         .limit(1);
       if (!existingRb[0]) {
-        await db.insert(recipeBrandsTable).values({ recipeId: recId!, brandId });
+        await db.insert(recipeBrandsTable).values({ recipeId: recId, brandId });
       }
     }
 
@@ -411,7 +410,7 @@ export async function seedRecipesPass1(idMap: IdMap) {
         .from(recipeIngredientsTable)
         .where(
           and(
-            eq(recipeIngredientsTable.recipeId, recId!),
+            eq(recipeIngredientsTable.recipeId, recId),
             eq(recipeIngredientsTable.ingredientId, ingId),
           ),
         )
@@ -419,7 +418,7 @@ export async function seedRecipesPass1(idMap: IdMap) {
       if (!existingRi[0]) {
         await db
           .insert(recipeIngredientsTable)
-          .values({ recipeId: recId!, ingredientId: ingId, quantity: ri.quantity });
+          .values({ recipeId: recId, ingredientId: ingId, quantity: ri.quantity });
       }
     }
 
@@ -432,7 +431,7 @@ export async function seedRecipesPass1(idMap: IdMap) {
           .from(recipeModifierGroupsTable)
           .where(
             and(
-              eq(recipeModifierGroupsTable.recipeId, recId!),
+              eq(recipeModifierGroupsTable.recipeId, recId),
               eq(recipeModifierGroupsTable.modifierGroupId, mgId),
             ),
           )
@@ -440,7 +439,7 @@ export async function seedRecipesPass1(idMap: IdMap) {
         if (!existingRmg[0]) {
           await db
             .insert(recipeModifierGroupsTable)
-            .values({ recipeId: recId!, modifierGroupId: mgId });
+            .values({ recipeId: recId, modifierGroupId: mgId });
         }
       }
     }
@@ -470,24 +469,32 @@ export async function seedRecipesPass1(idMap: IdMap) {
       }
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Platform Fees
-// ──────────────────────────────────────────
+  console.log("[seed] Seeding recipe branches...");
+  for (const rb of RECIPE_BRANCHES_DATA) {
+    const recipeId = idMap.recipe.get(rb.recipeProtoId);
+    const branchId = idMap.branch.get(rb.branchProtoId);
+    if (!recipeId || !branchId) continue;
+    const existing = await db
+      .select()
+      .from(recipeBranchesTable)
+      .where(
+        and(eq(recipeBranchesTable.recipeId, recipeId), eq(recipeBranchesTable.branchId, branchId)),
+      )
+      .limit(1);
+    if (!existing[0]) {
+      await db.insert(recipeBranchesTable).values({ recipeId, branchId });
+    }
+  }
 
-export async function seedPlatformFees() {
-  const channels: Array<{
-    channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in";
-    feePercentage: number;
-    fixedFee: number;
-  }> = [
+  console.log("[seed] Seeding platform fees...");
+  const platformFees = [
     { channel: "Gofood", feePercentage: 20, fixedFee: 0 },
     { channel: "Grabfood", feePercentage: 20, fixedFee: 0 },
     { channel: "ShopeeFood", feePercentage: 20, fixedFee: 0 },
     { channel: "Dine-in", feePercentage: 0, fixedFee: 0 },
   ];
-  for (const pf of channels) {
+  for (const pf of platformFees) {
     const existing = await db
       .select()
       .from(platformFeesTable)
@@ -497,52 +504,43 @@ export async function seedPlatformFees() {
       await db.insert(platformFeesTable).values(pf);
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Vouchers
-// ──────────────────────────────────────────
-
-export async function seedVouchers(idMap: IdMap) {
+  console.log("[seed] Seeding vouchers...");
   const adminId = idMap.user.get("superadmin@omoiyari.net");
-  if (!adminId) return;
-  const vouchers = [
-    {
-      code: "PROMO10",
-      description: "Diskon 10% untuk semua menu",
-      discountType: "percentage" as const,
-      discountValue: 10,
-      minOrder: 50000,
-      validUntil: new Date("2026-12-31"),
-      createdBy: adminId,
-    },
-    {
-      code: "FREESHIP",
-      description: "Gratis ongkir minimal 100rb",
-      discountType: "fixed" as const,
-      discountValue: 20000,
-      minOrder: 100000,
-      validUntil: new Date("2026-12-31"),
-      createdBy: adminId,
-    },
-  ];
-  for (const v of vouchers) {
-    const existing = await db
-      .select()
-      .from(vouchersTable)
-      .where(eq(vouchersTable.code, v.code))
-      .limit(1);
-    if (!existing[0]) {
-      await db.insert(vouchersTable).values(v);
+  if (adminId) {
+    const vouchers = [
+      {
+        code: "PROMO10",
+        description: "Diskon 10% untuk semua menu",
+        discountType: "percentage",
+        discountValue: 10,
+        minOrder: 50000,
+        validUntil: new Date("2026-12-31"),
+        createdBy: adminId,
+      },
+      {
+        code: "FREESHIP",
+        description: "Gratis ongkir minimal 100rb",
+        discountType: "fixed",
+        discountValue: 20000,
+        minOrder: 100000,
+        validUntil: new Date("2026-12-31"),
+        createdBy: adminId,
+      },
+    ];
+    for (const v of vouchers) {
+      const existing = await db
+        .select()
+        .from(vouchersTable)
+        .where(eq(vouchersTable.code, v.code))
+        .limit(1);
+      if (!existing[0]) {
+        await db.insert(vouchersTable).values(v);
+      }
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Inventory (all branches, all countable ingredients)
-// ──────────────────────────────────────────
-
-export async function seedInventory(idMap: IdMap) {
+  console.log("[seed] Seeding inventory...");
   const branchCodes = [
     "CENTRAL",
     "SBY-01",
@@ -571,7 +569,11 @@ export async function seedInventory(idMap: IdMap) {
     "ing-13",
     "ing-14",
     "ing-15",
+    "ing-16",
+    "ing-17",
+    "ing-18",
     "ing-19",
+    "ing-20",
     "ing-21",
     "ing-22",
     "ing-23",
@@ -582,10 +584,6 @@ export async function seedInventory(idMap: IdMap) {
     "ing-28",
     "ing-29",
     "ing-30",
-    "ing-16",
-    "ing-17",
-    "ing-18",
-    "ing-20",
     "ing-31",
     "ing-32",
     "ing-sfg-01",
@@ -620,7 +618,6 @@ export async function seedInventory(idMap: IdMap) {
         .where(and(eq(inventoryTable.branchId, bid), eq(inventoryTable.ingredientId, iid)))
         .limit(1);
       if (!existing[0]) {
-        // Vary quantities by branch type
         const baseQty = bc === "CENTRAL" ? 500000 : 10000 + Math.random() * 50000;
         await db
           .insert(inventoryTable)
@@ -628,13 +625,8 @@ export async function seedInventory(idMap: IdMap) {
       }
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Shifts
-// ──────────────────────────────────────────
-
-export async function seedShifts(idMap: IdMap) {
+  console.log("[seed] Seeding shifts...");
   const shiftData = [
     { email: "hans@omoiyari.net", branchCode: "SBY-01" },
     { email: "siti@omoiyari.net", branchCode: "SBY-02" },
@@ -653,8 +645,8 @@ export async function seedShifts(idMap: IdMap) {
       .limit(1);
     if (!existing[0]) {
       await db.insert(shiftsTable).values({
-        branchId: branchId,
-        userId: userId,
+        branchId,
+        userId,
         startTime: new Date(Date.now() - (shiftData.indexOf(sd) + 1) * 86400000),
         cashFloat: 500000,
         status: "Open",
@@ -662,25 +654,18 @@ export async function seedShifts(idMap: IdMap) {
       });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Orders
-// ──────────────────────────────────────────
-
-export async function seedOrders(idMap: IdMap, _allSuccess: boolean) {
+  console.log("[seed] Seeding orders...");
   for (const o of ORDERS_DATA) {
     const bid = idMap.branch.get(`br-${o.branchCode.toLowerCase().replace("-", "-")}`);
-    if (!bid) continue;
     const brandId = idMap.brand.get("BRAND-1");
-    if (!brandId) continue;
+    if (!bid || !brandId) continue;
 
     const existingOrder = await db
       .select()
       .from(ordersTable)
       .where(eq(ordersTable.orderCode, o.orderCode))
       .limit(1);
-
     if (existingOrder[0]) continue;
 
     const [insertedOrder] = await db
@@ -707,7 +692,6 @@ export async function seedOrders(idMap: IdMap, _allSuccess: boolean) {
     for (const item of o.items) {
       const recipeId = idMap.recipe.get(item.recipeProtoId);
       if (!recipeId) continue;
-
       await db.insert(orderItemsTable).values({
         orderId: insertedOrder.id,
         recipeId,
@@ -718,13 +702,8 @@ export async function seedOrders(idMap: IdMap, _allSuccess: boolean) {
       });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Stock Ledger
-// ──────────────────────────────────────────
-
-export async function seedStockLedger(idMap: IdMap) {
+  console.log("[seed] Seeding stock ledger...");
   const balanceMap: Record<string, number> = {};
   for (const e of STOCK_LEDGER_DATA) {
     const bid = idMap.branch.get(`br-${e.branchCode.toLowerCase().replace("-", "-")}`);
@@ -760,13 +739,8 @@ export async function seedStockLedger(idMap: IdMap) {
       });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Stock Transfers
-// ──────────────────────────────────────────
-
-export async function seedStockTransfers(idMap: IdMap) {
+  console.log("[seed] Seeding stock transfers...");
   for (const t of STOCK_TRANSFERS_DATA) {
     const fromBid = idMap.branch.get(
       t.fromBranchCode === "CENTRAL"
@@ -786,28 +760,67 @@ export async function seedStockTransfers(idMap: IdMap) {
       .from(stockTransfersTable)
       .where(eq(stockTransfersTable.code, t.code))
       .limit(1);
-    if (!existing[0]) {
-      await db.insert(stockTransfersTable).values({
-        code: t.code,
-        fromBranchId: fromBid,
-        toBranchId: toBid,
+    if (existing[0]) continue;
+    await db.insert(stockTransfersTable).values({
+      code: t.code,
+      fromBranchId: fromBid,
+      toBranchId: toBid,
+      ingredientId: iid,
+      quantity: t.quantity,
+      status: t.status,
+      requestedBy: reqUid,
+      approvedBy: t.approvedByEmail ? idMap.user.get(t.approvedByEmail) : undefined,
+      rejectionReason: t.rejectionReason,
+      rejectedBy: t.rejectedByEmail ? idMap.user.get(t.rejectedByEmail) : undefined,
+      createdAt: t.createdAt,
+    });
+  }
+
+  console.log("[seed] Seeding in-transit inventory for stock transfers...");
+  // Mirror the DN-driven in-transit block, but for stock transfers that are In Transit.
+  // Per the new schema, in_transit_inventory.stock_transfer_id is set here, and
+  // delivery_note_id remains null.
+  for (const t of STOCK_TRANSFERS_DATA) {
+    if (t.status !== "In Transit") continue;
+    const fromBid = idMap.branch.get(
+      t.fromBranchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${t.fromBranchCode.toLowerCase().replace("-", "-")}`,
+    );
+    const toBid = idMap.branch.get(
+      t.toBranchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${t.toBranchCode.toLowerCase().replace("-", "-")}`,
+    );
+    const iid = idMap.ingredient.get(t.ingredientProtoId);
+    if (!fromBid || !toBid || !iid) continue;
+    const transfer = await db
+      .select({ id: stockTransfersTable.id })
+      .from(stockTransfersTable)
+      .where(eq(stockTransfersTable.code, t.code))
+      .limit(1);
+    if (!transfer[0]) continue;
+    const existingIti = await db
+      .select()
+      .from(inTransitInventoryTable)
+      .where(
+        and(
+          eq(inTransitInventoryTable.stockTransferId, transfer[0].id),
+          eq(inTransitInventoryTable.ingredientId, iid),
+        ),
+      )
+      .limit(1);
+    if (!existingIti[0]) {
+      await db.insert(inTransitInventoryTable).values({
+        stockTransferId: transfer[0].id,
+        branchId: toBid,
         ingredientId: iid,
         quantity: t.quantity,
-        status: t.status,
-        requestedBy: reqUid,
-        approvedBy: t.approvedByEmail ? idMap.user.get(t.approvedByEmail) : undefined,
-        rejectionReason: t.rejectionReason,
-        createdAt: t.createdAt,
       });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Supplier Deliveries
-// ──────────────────────────────────────────
-
-export async function seedSupplierDeliveries(idMap: IdMap) {
+  console.log("[seed] Seeding supplier deliveries...");
   for (const d of SUPPLIER_DELIVERIES_DATA) {
     const iid = idMap.ingredient.get(d.ingredientProtoId);
     const supId = d.supplierCode ? idMap.supplier.get(d.supplierCode) : null;
@@ -837,19 +850,13 @@ export async function seedSupplierDeliveries(idMap: IdMap) {
       });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Recipe Modifier Exclusions
-// ──────────────────────────────────────────
-
-export async function seedRecipeModifierExclusions(idMap: IdMap) {
+  console.log("[seed] Seeding recipe modifier exclusions...");
   for (const excl of RECIPE_MODIFIER_EXCLUSIONS) {
     const recipeId = idMap.recipe.get(excl.recipeProtoId);
     const modifierId = idMap.modifier.get(excl.modifierProtoId);
     const ingredientId = idMap.ingredient.get(excl.ingredientProtoId);
     if (!recipeId || !modifierId || !ingredientId) continue;
-
     const existing = await db
       .select()
       .from(recipeModifierExclusionsTable)
@@ -861,23 +868,14 @@ export async function seedRecipeModifierExclusions(idMap: IdMap) {
         ),
       )
       .limit(1);
-
     if (!existing[0]) {
-      await db.insert(recipeModifierExclusionsTable).values({
-        recipeId,
-        modifierId,
-        ingredientId,
-        quantity: 1,
-      });
+      await db
+        .insert(recipeModifierExclusionsTable)
+        .values({ recipeId, modifierId, ingredientId, quantity: 1 });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Waste Entries
-// ──────────────────────────────────────────
-
-export async function seedWasteEntries(idMap: IdMap) {
+  console.log("[seed] Seeding waste entries...");
   for (const w of WASTE_ENTRIES_DATA) {
     const branchId = idMap.branch.get(`br-${w.branchCode.toLowerCase().replace("-", "-")}`);
     const ingId = idMap.ingredient.get(w.ingredientProtoId);
@@ -908,13 +906,8 @@ export async function seedWasteEntries(idMap: IdMap) {
       });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Operational Expenses
-// ──────────────────────────────────────────
-
-export async function seedOperationalExpenses(idMap: IdMap) {
+  console.log("[seed] Seeding operational expenses...");
   for (const oe of OPERATIONAL_EXPENSES_DATA) {
     const branchId = idMap.branch.get(`br-${oe.branchCode.toLowerCase().replace("-", "-")}`);
     const userId = idMap.user.get(oe.submittedByEmail);
@@ -941,13 +934,8 @@ export async function seedOperationalExpenses(idMap: IdMap) {
       });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: System Logs
-// ──────────────────────────────────────────
-
-export async function seedSystemLogs() {
+  console.log("[seed] Seeding system logs...");
   for (const l of SYSTEM_LOGS_DATA) {
     const existing = await db
       .select()
@@ -964,19 +952,24 @@ export async function seedSystemLogs() {
       });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: App Settings
-// ──────────────────────────────────────────
-
-export async function seedAppSettings(idMap: IdMap) {
-  const adminId = idMap.user.get("superadmin@omoiyari.net");
+  console.log("[seed] Seeding app settings...");
+  const adminIdForSettings = idMap.user.get("superadmin@omoiyari.net");
   const settings = [
     { key: "store_name", value: "Omoiyari Japanese Restaurant", description: "Nama toko" },
     { key: "store_address", value: "Tegalsari, Surabaya", description: "Alamat toko" },
     { key: "tax_rate", value: "10", description: "Pajak (%)" },
     { key: "currency", value: "IDR", description: "Mata uang" },
+    {
+      key: "reorder_rop_days",
+      value: "7",
+      description: "Hari safety stock sebelum reorder (Reorder Point)",
+    },
+    {
+      key: "reorder_roq_days",
+      value: "10",
+      description: "Hari permintaan stok ulang (Reorder Quantity)",
+    },
   ];
   for (const s of settings) {
     const existing = await db
@@ -985,28 +978,21 @@ export async function seedAppSettings(idMap: IdMap) {
       .where(eq(appSettingsTable.key, s.key))
       .limit(1);
     if (!existing[0]) {
-      await db.insert(appSettingsTable).values({ ...s, updatedBy: adminId || null });
+      await db.insert(appSettingsTable).values({ ...s, updatedBy: adminIdForSettings || null });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Purchase Requisitions
-// ──────────────────────────────────────────
-
-export async function seedPurchaseRequisitions(idMap: IdMap) {
+  console.log("[seed] Seeding purchase requisitions...");
   for (const pr of PURCHASE_REQUISITIONS_DATA) {
     const branchId = idMap.branch.get(`br-${pr.branchCode.toLowerCase().replace("-", "-")}`);
     const reqById = idMap.user.get(pr.requestedByEmail);
     if (!branchId || !reqById) continue;
-
     const existing = await db
       .select()
       .from(purchaseRequisitionsTable)
       .where(eq(purchaseRequisitionsTable.code, pr.code))
       .limit(1);
     if (existing[0]) continue;
-
     const [inserted] = await db
       .insert(purchaseRequisitionsTable)
       .values({
@@ -1021,24 +1007,20 @@ export async function seedPurchaseRequisitions(idMap: IdMap) {
         createdAt: pr.createdAt,
       })
       .returning({ id: purchaseRequisitionsTable.id });
-
     for (const item of pr.items) {
       const ingId = idMap.ingredient.get(item.ingredientProtoId);
       if (!ingId) continue;
-      await db.insert(purchaseRequisitionItemsTable).values({
-        purchaseRequisitionId: inserted.id,
-        ingredientId: ingId,
-        quantity: item.quantity,
-      });
+      await db
+        .insert(purchaseRequisitionItemsTable)
+        .values({
+          purchaseRequisitionId: inserted.id,
+          ingredientId: ingId,
+          quantity: item.quantity,
+        });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Purchase Orders
-// ──────────────────────────────────────────
-
-export async function seedPurchaseOrders(idMap: IdMap) {
+  console.log("[seed] Seeding purchase orders...");
   for (const po of PURCHASE_ORDERS_DATA) {
     const fromBranchId = idMap.branch.get(
       po.fromBranchCode === "CENTRAL"
@@ -1053,14 +1035,12 @@ export async function seedPurchaseOrders(idMap: IdMap) {
     const createdById = idMap.user.get(po.createdByEmail);
     const supplierId = idMap.supplier.get(po.supplierCode);
     if (!fromBranchId || !toBranchId || !createdById) continue;
-
     const existing = await db
       .select()
       .from(purchaseOrdersTable)
       .where(eq(purchaseOrdersTable.code, po.code))
       .limit(1);
     if (existing[0]) continue;
-
     const [inserted] = await db
       .insert(purchaseOrdersTable)
       .values({
@@ -1074,7 +1054,6 @@ export async function seedPurchaseOrders(idMap: IdMap) {
         createdAt: po.createdAt,
       })
       .returning({ id: purchaseOrdersTable.id });
-
     for (const item of po.items) {
       const ingId = idMap.ingredient.get(item.ingredientProtoId);
       if (!ingId) continue;
@@ -1084,16 +1063,12 @@ export async function seedPurchaseOrders(idMap: IdMap) {
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         totalPrice: item.totalPrice,
+        receivedQuantity: item.receivedQuantity ?? 0,
       });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Delivery Notes
-// ──────────────────────────────────────────
-
-export async function seedDeliveryNotes(idMap: IdMap) {
+  console.log("[seed] Seeding delivery notes...");
   for (const dn of DELIVERY_NOTES_DATA) {
     const fromBranchId = idMap.branch.get(
       dn.fromBranchCode === "CENTRAL"
@@ -1106,14 +1081,12 @@ export async function seedDeliveryNotes(idMap: IdMap) {
         : `br-${dn.toBranchCode.toLowerCase().replace("-", "-")}`,
     );
     if (!fromBranchId || !toBranchId) continue;
-
     const existing = await db
       .select()
       .from(deliveryNotesTable)
       .where(eq(deliveryNotesTable.code, dn.code))
       .limit(1);
     if (existing[0]) continue;
-
     const [inserted] = await db
       .insert(deliveryNotesTable)
       .values({
@@ -1126,7 +1099,6 @@ export async function seedDeliveryNotes(idMap: IdMap) {
         createdAt: dn.createdAt,
       })
       .returning({ id: deliveryNotesTable.id });
-
     for (const item of dn.items) {
       const ingId = idMap.ingredient.get(item.ingredientProtoId);
       if (!ingId) continue;
@@ -1138,10 +1110,9 @@ export async function seedDeliveryNotes(idMap: IdMap) {
         pickedQuantity: item.pickedQuantity ?? null,
         receivedQuantity: item.receivedQuantity ?? null,
         rejectedQuantity: item.rejectedQuantity ?? 0,
+        rejectionDisposition: item.rejectionDisposition ?? null,
       });
     }
-
-    // Create in-transit inventory for non-draft, non-cancelled DNs
     if (dn.status !== "Draft" && dn.status !== "Cancelled") {
       for (const item of dn.items) {
         const ingId = idMap.ingredient.get(item.ingredientProtoId);
@@ -1157,23 +1128,20 @@ export async function seedDeliveryNotes(idMap: IdMap) {
           )
           .limit(1);
         if (!existingIti[0]) {
-          await db.insert(inTransitInventoryTable).values({
-            deliveryNoteId: inserted.id,
-            branchId: toBranchId,
-            ingredientId: ingId,
-            quantity: item.quantity,
-          });
+          await db
+            .insert(inTransitInventoryTable)
+            .values({
+              deliveryNoteId: inserted.id,
+              branchId: toBranchId,
+              ingredientId: ingId,
+              quantity: item.quantity,
+            });
         }
       }
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: SCM Invoices
-// ──────────────────────────────────────────
-
-export async function seedScmInvoices(idMap: IdMap) {
+  console.log("[seed] Seeding SCM invoices...");
   for (const inv of SCM_INVOICES_DATA) {
     const fromBranchId = idMap.branch.get(
       inv.fromBranchCode === "CENTRAL"
@@ -1186,21 +1154,18 @@ export async function seedScmInvoices(idMap: IdMap) {
         : `br-${inv.toBranchCode.toLowerCase().replace("-", "-")}`,
     );
     if (!fromBranchId || !toBranchId) continue;
-
     const dnExisting = await db
       .select()
       .from(deliveryNotesTable)
       .where(eq(deliveryNotesTable.code, inv.dnCode))
       .limit(1);
     if (!dnExisting[0]) continue;
-
     const existing = await db
       .select()
       .from(scmInvoicesTable)
       .where(eq(scmInvoicesTable.code, inv.code))
       .limit(1);
     if (existing[0]) continue;
-
     await db.insert(scmInvoicesTable).values({
       code: inv.code,
       deliveryNoteId: dnExisting[0].id,
@@ -1212,26 +1177,19 @@ export async function seedScmInvoices(idMap: IdMap) {
       paidAt: inv.paidAt,
     });
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Stock Opnames
-// ──────────────────────────────────────────
-
-export async function seedStockOpnames(idMap: IdMap) {
+  console.log("[seed] Seeding stock opnames...");
   for (const so of STOCK_OPNAME_DATA) {
     const branchId = idMap.branch.get(`br-${so.branchCode.toLowerCase().replace("-", "-")}`);
     const triggeredById = idMap.user.get(so.triggeredByEmail);
     const submittedById = idMap.user.get(so.submittedByEmail);
     if (!branchId || !triggeredById || !submittedById) continue;
-
     const existing = await db
       .select()
       .from(stockOpnamesTable)
       .where(and(eq(stockOpnamesTable.branchId, branchId), eq(stockOpnamesTable.date, so.date)))
       .limit(1);
     if (existing[0]) continue;
-
     const [inserted] = await db
       .insert(stockOpnamesTable)
       .values({
@@ -1244,39 +1202,33 @@ export async function seedStockOpnames(idMap: IdMap) {
         createdAt: so.createdAt,
       })
       .returning({ id: stockOpnamesTable.id });
-
     for (const item of so.items) {
       const ingId = idMap.ingredient.get(item.ingredientProtoId);
       if (!ingId) continue;
-      await db.insert(stockOpnameItemsTable).values({
-        stockOpnameId: inserted.id,
-        ingredientId: ingId,
-        systemStock: item.systemStock,
-        physicalStock: item.physicalStock,
-        variance: item.variance,
-        investigationNote: item.investigationNote,
-      });
+      await db
+        .insert(stockOpnameItemsTable)
+        .values({
+          stockOpnameId: inserted.id,
+          ingredientId: ingId,
+          systemStock: item.systemStock,
+          physicalStock: item.physicalStock,
+          variance: item.variance,
+          investigationNote: item.investigationNote,
+        });
     }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Period Logs
-// ──────────────────────────────────────────
-
-export async function seedPeriodLogs(idMap: IdMap) {
+  console.log("[seed] Seeding period logs...");
   for (const pl of PERIOD_LOGS_DATA) {
     const openedById = idMap.user.get(pl.openedByEmail);
     const closedById = pl.closedByEmail ? idMap.user.get(pl.closedByEmail) : undefined;
     if (!openedById) continue;
-
     const existing = await db
       .select()
       .from(periodLogsTable)
       .where(eq(periodLogsTable.periodName, pl.periodName))
       .limit(1);
     if (existing[0]) continue;
-
     await db.insert(periodLogsTable).values({
       periodName: pl.periodName,
       status: pl.status,
@@ -1286,17 +1238,11 @@ export async function seedPeriodLogs(idMap: IdMap) {
       closedBy: closedById,
     });
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: System Notifications
-// ──────────────────────────────────────────
-
-export async function seedSystemNotifications(idMap: IdMap) {
+  console.log("[seed] Seeding system notifications...");
   for (const n of SYSTEM_NOTIFICATIONS_DATA) {
     const userId = idMap.user.get(n.userEmail);
     if (!userId) continue;
-
     const existing = await db
       .select()
       .from(systemNotificationsTable)
@@ -1308,26 +1254,22 @@ export async function seedSystemNotifications(idMap: IdMap) {
         ),
       )
       .limit(1);
-    if (existing[0]) continue;
-
-    await db.insert(systemNotificationsTable).values({
-      userId,
-      title: n.title,
-      message: n.message,
-      type: n.type,
-      isRead: n.isRead,
-      createdAt: n.createdAt,
-    });
+    if (!existing[0]) {
+      await db
+        .insert(systemNotificationsTable)
+        .values({
+          userId,
+          title: n.title,
+          message: n.message,
+          type: n.type,
+          isRead: n.isRead,
+          createdAt: n.createdAt,
+        });
+    }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Cancel Requests
-// ──────────────────────────────────────────
-
-export async function seedCancelRequests(idMap: IdMap) {
+  console.log("[seed] Seeding cancel requests...");
   for (const cr of CANCEL_REQUESTS_DATA) {
-    // Find order by index in the orders table
     const orderCode = `GF-${20250000 + cr.orderIdx}`;
     const order = await db
       .select()
@@ -1335,17 +1277,14 @@ export async function seedCancelRequests(idMap: IdMap) {
       .where(eq(ordersTable.orderCode, orderCode))
       .limit(1);
     if (!order[0]) continue;
-
     const reqById = idMap.user.get(cr.requestedByEmail);
     if (!reqById) continue;
-
     const existing = await db
       .select()
       .from(cancelRequestsTable)
       .where(eq(cancelRequestsTable.orderId, order[0].id))
       .limit(1);
     if (existing[0]) continue;
-
     await db.insert(cancelRequestsTable).values({
       orderId: order[0].id,
       reason: cr.reason,
@@ -1356,13 +1295,8 @@ export async function seedCancelRequests(idMap: IdMap) {
       createdAt: cr.createdAt,
     });
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Print Requests
-// ──────────────────────────────────────────
-
-export async function seedPrintRequests(idMap: IdMap) {
+  console.log("[seed] Seeding print requests...");
   for (const pr of PRINT_REQUESTS_DATA) {
     const orderCode = `GF-${20250000 + pr.orderIdx}`;
     const order = await db
@@ -1371,10 +1305,8 @@ export async function seedPrintRequests(idMap: IdMap) {
       .where(eq(ordersTable.orderCode, orderCode))
       .limit(1);
     if (!order[0]) continue;
-
     const reqById = idMap.user.get(pr.requestedByEmail);
     if (!reqById) continue;
-
     const existing = await db
       .select()
       .from(printRequestsTable)
@@ -1386,7 +1318,6 @@ export async function seedPrintRequests(idMap: IdMap) {
       )
       .limit(1);
     if (existing[0]) continue;
-
     await db.insert(printRequestsTable).values({
       orderId: order[0].id,
       requestType: pr.requestType,
@@ -1396,18 +1327,12 @@ export async function seedPrintRequests(idMap: IdMap) {
       createdAt: pr.createdAt,
     });
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Manual Revenues
-// ──────────────────────────────────────────
-
-export async function seedManualRevenues(idMap: IdMap) {
+  console.log("[seed] Seeding manual revenues...");
   for (const mr of MANUAL_REVENUES_DATA) {
     const branchId = idMap.branch.get(`br-${mr.branchCode.toLowerCase().replace("-", "-")}`);
     const userId = idMap.user.get(mr.submittedByEmail);
     if (!branchId || !userId) continue;
-
     const existing = await db
       .select()
       .from(manualRevenuesTable)
@@ -1419,29 +1344,25 @@ export async function seedManualRevenues(idMap: IdMap) {
         ),
       )
       .limit(1);
-    if (existing[0]) continue;
-
-    await db.insert(manualRevenuesTable).values({
-      branchId,
-      date: mr.date,
-      amount: mr.amount,
-      notes: mr.notes,
-      submittedBy: userId,
-      createdAt: mr.createdAt,
-    });
+    if (!existing[0]) {
+      await db
+        .insert(manualRevenuesTable)
+        .values({
+          branchId,
+          date: mr.date,
+          amount: mr.amount,
+          notes: mr.notes,
+          submittedBy: userId,
+          createdAt: mr.createdAt,
+        });
+    }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Channel Revenues
-// ──────────────────────────────────────────
-
-export async function seedChannelRevenues(idMap: IdMap) {
+  console.log("[seed] Seeding channel revenues...");
   for (const cr of CHANNEL_REVENUES_DATA) {
     const branchId = idMap.branch.get(`br-${cr.branchCode.toLowerCase().replace("-", "-")}`);
     const userId = idMap.user.get(cr.submittedByEmail);
     if (!branchId || !userId) continue;
-
     const existing = await db
       .select()
       .from(channelRevenuesTable)
@@ -1453,31 +1374,27 @@ export async function seedChannelRevenues(idMap: IdMap) {
         ),
       )
       .limit(1);
-    if (existing[0]) continue;
-
-    await db.insert(channelRevenuesTable).values({
-      branchId,
-      date: cr.date,
-      channel: cr.channel,
-      amount: cr.amount,
-      notes: cr.notes,
-      submittedBy: userId,
-    });
+    if (!existing[0]) {
+      await db
+        .insert(channelRevenuesTable)
+        .values({
+          branchId,
+          date: cr.date,
+          channel: cr.channel,
+          amount: cr.amount,
+          notes: cr.notes,
+          submittedBy: userId,
+        });
+    }
   }
-}
 
-// ──────────────────────────────────────────
-// Seed: Yield Conversions
-// ──────────────────────────────────────────
-
-export async function seedYieldConversions(idMap: IdMap) {
+  console.log("[seed] Seeding yield conversions...");
   for (const yc of YIELD_CONVERSIONS_DATA) {
     const branchId = idMap.branch.get(`br-${yc.branchCode.toLowerCase().replace("-", "-")}`);
     const sourceId = idMap.ingredient.get(yc.sourceIngredientProtoId);
     const targetId = idMap.ingredient.get(yc.targetIngredientProtoId);
     const processedById = idMap.user.get(yc.processedByEmail);
     if (!branchId || !sourceId || !targetId || !processedById) continue;
-
     const existing = await db
       .select()
       .from(yieldConversionsTable)
@@ -1489,126 +1406,92 @@ export async function seedYieldConversions(idMap: IdMap) {
         ),
       )
       .limit(1);
-    if (existing[0]) continue;
-
-    await db.insert(yieldConversionsTable).values({
-      branchId,
-      sourceIngredientId: sourceId,
-      sourceQuantity: yc.sourceQuantity,
-      targetIngredientId: targetId,
-      targetQuantity: yc.targetQuantity,
-      yieldPercentage: yc.yieldPercentage,
-      shrinkageQuantity: yc.shrinkageQuantity,
-      notes: yc.notes,
-      processedBy: processedById,
-      createdAt: yc.createdAt,
-    });
+    if (!existing[0]) {
+      await db.insert(yieldConversionsTable).values({
+        branchId,
+        sourceIngredientId: sourceId,
+        sourceQuantity: yc.sourceQuantity,
+        targetIngredientId: targetId,
+        targetQuantity: yc.targetQuantity,
+        yieldPercentage: yc.yieldPercentage,
+        shrinkageQuantity: yc.shrinkageQuantity,
+        notes: yc.notes,
+        processedBy: processedById,
+        createdAt: yc.createdAt,
+      });
+    }
   }
-}
 
-// ──────────────────────────────────────────
-// Main orchestrator
-// ──────────────────────────────────────────
+  console.log("[seed] Seeding multi-source yield conversion sources...");
+  // For each new multi-source yield conversion, insert one yield_conversion
+  // (parent) and N yield_conversion_sources (junction) rows. The first source
+  // in the data populates the legacy single-source columns on the parent,
+  // mirroring the production code path in src/lib/server/yield.ts.
+  for (const msy of YIELD_CONVERSION_SOURCES_DATA) {
+    const branchId = idMap.branch.get(
+      msy.branchCode === "CENTRAL"
+        ? "br-central"
+        : `br-${msy.branchCode.toLowerCase().replace("-", "-")}`,
+    );
+    const firstSourceId = idMap.ingredient.get(msy.sourceIngredientProtoId);
+    const targetId = idMap.ingredient.get(msy.targetIngredientProtoId);
+    const processedById = idMap.user.get(msy.processedByEmail);
+    if (!branchId || !firstSourceId || !targetId || !processedById) continue;
 
-export async function seedAll(allSuccess = true) {
-  const idMap = createIdMap();
+    // Skip if this exact (branch, source, createdAt) parent conversion already exists
+    const existingParent = await db
+      .select()
+      .from(yieldConversionsTable)
+      .where(
+        and(
+          eq(yieldConversionsTable.branchId, branchId),
+          eq(yieldConversionsTable.sourceIngredientId, firstSourceId),
+          eq(yieldConversionsTable.createdAt, msy.createdAt),
+        ),
+      )
+      .limit(1);
+    if (existingParent[0]) continue;
 
-  console.log("[seed] Seeding branches...");
-  await seedBranches(idMap);
+    const [insertedParent] = await db
+      .insert(yieldConversionsTable)
+      .values({
+        branchId,
+        sourceIngredientId: firstSourceId,
+        sourceQuantity: msy.sourceQuantity,
+        targetIngredientId: targetId,
+        targetQuantity: msy.targetQuantity,
+        yieldPercentage: msy.yieldPercentage,
+        shrinkageQuantity: msy.shrinkageQuantity,
+        notes: msy.notes,
+        processedBy: processedById,
+        createdAt: msy.createdAt,
+      })
+      .returning({ id: yieldConversionsTable.id });
 
-  console.log("[seed] Seeding brands...");
-  await seedBrands(idMap);
-
-  console.log("[seed] Seeding suppliers...");
-  await seedSuppliers(idMap);
-
-  console.log("[seed] Seeding users...");
-  await seedUsers(idMap);
-
-  console.log("[seed] Seeding ingredients...");
-  await seedIngredients(idMap);
-
-  console.log("[seed] Seeding modifier groups & modifiers...");
-  await seedModifiers(idMap);
-
-  console.log("[seed] Seeding recipes...");
-  await seedRecipesPass1(idMap);
-
-  console.log("[seed] Seeding platform fees...");
-  await seedPlatformFees();
-
-  console.log("[seed] Seeding vouchers...");
-  await seedVouchers(idMap);
-
-  console.log("[seed] Seeding inventory...");
-  await seedInventory(idMap);
-
-  console.log("[seed] Seeding shifts...");
-  await seedShifts(idMap);
-
-  console.log("[seed] Seeding orders...");
-  await seedOrders(idMap, allSuccess);
-
-  console.log("[seed] Seeding stock ledger...");
-  await seedStockLedger(idMap);
-
-  console.log("[seed] Seeding stock transfers...");
-  await seedStockTransfers(idMap);
-
-  console.log("[seed] Seeding supplier deliveries...");
-  await seedSupplierDeliveries(idMap);
-
-  console.log("[seed] Seeding recipe modifier exclusions...");
-  await seedRecipeModifierExclusions(idMap);
-
-  console.log("[seed] Seeding waste entries...");
-  await seedWasteEntries(idMap);
-
-  console.log("[seed] Seeding operational expenses...");
-  await seedOperationalExpenses(idMap);
-
-  console.log("[seed] Seeding system logs...");
-  await seedSystemLogs();
-
-  console.log("[seed] Seeding app settings...");
-  await seedAppSettings(idMap);
-
-  console.log("[seed] Seeding purchase requisitions...");
-  await seedPurchaseRequisitions(idMap);
-
-  console.log("[seed] Seeding purchase orders...");
-  await seedPurchaseOrders(idMap);
-
-  console.log("[seed] Seeding delivery notes...");
-  await seedDeliveryNotes(idMap);
-
-  console.log("[seed] Seeding SCM invoices...");
-  await seedScmInvoices(idMap);
-
-  console.log("[seed] Seeding stock opnames...");
-  await seedStockOpnames(idMap);
-
-  console.log("[seed] Seeding period logs...");
-  await seedPeriodLogs(idMap);
-
-  console.log("[seed] Seeding system notifications...");
-  await seedSystemNotifications(idMap);
-
-  console.log("[seed] Seeding cancel requests...");
-  await seedCancelRequests(idMap);
-
-  console.log("[seed] Seeding print requests...");
-  await seedPrintRequests(idMap);
-
-  console.log("[seed] Seeding manual revenues...");
-  await seedManualRevenues(idMap);
-
-  console.log("[seed] Seeding channel revenues...");
-  await seedChannelRevenues(idMap);
-
-  console.log("[seed] Seeding yield conversions...");
-  await seedYieldConversions(idMap);
+    if (msy.sources.length > 0) {
+      await db.insert(yieldConversionSourcesTable).values(
+        msy.sources.map((s) => ({
+          yieldConversionId: insertedParent.id,
+          ingredientId: idMap.ingredient.get(s.ingredientProtoId) ?? firstSourceId,
+          quantity: s.quantity,
+        })),
+      );
+    }
+  }
 
   console.log("[seed] Done!");
-  return { success: true, message: "All data seeded" };
+  return { success: true, tables: Object.keys(idMap).length };
 }
+
+export const Route = createFileRoute("/api/seed-data")({
+  server: {
+    handlers: {
+      POST: async () => {
+        const result = await seedDatabase();
+        return new Response(JSON.stringify(result), {
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    },
+  },
+});

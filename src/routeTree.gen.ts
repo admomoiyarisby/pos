@@ -17,6 +17,7 @@ import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-qu
 import { Route as DemoTableRouteImport } from './routes/demo/table'
 import { Route as DemoBetterAuthRouteImport } from './routes/demo/better-auth'
 import { Route as ApiSetupRouteImport } from './routes/api/setup'
+import { Route as ApiSeedDataRouteImport } from './routes/api/seed-data'
 import { Route as ApiSeedRouteImport } from './routes/api/seed'
 import { Route as LayoutYieldTrackingRouteImport } from './routes/_layout/yield-tracking'
 import { Route as LayoutPrintRequestsRouteImport } from './routes/_layout/print-requests'
@@ -103,6 +104,11 @@ const DemoBetterAuthRoute = DemoBetterAuthRouteImport.update({
 const ApiSetupRoute = ApiSetupRouteImport.update({
   id: '/api/setup',
   path: '/api/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSeedDataRoute = ApiSeedDataRouteImport.update({
+  id: '/api/seed-data',
+  path: '/api/seed-data',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSeedRoute = ApiSeedRouteImport.update({
@@ -371,6 +377,7 @@ export interface FileRoutesByFullPath {
   '/print-requests': typeof LayoutPrintRequestsRoute
   '/yield-tracking': typeof LayoutYieldTrackingRoute
   '/api/seed': typeof ApiSeedRoute
+  '/api/seed-data': typeof ApiSeedDataRoute
   '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/table': typeof DemoTableRoute
@@ -427,6 +434,7 @@ export interface FileRoutesByTo {
   '/print-requests': typeof LayoutPrintRequestsRoute
   '/yield-tracking': typeof LayoutYieldTrackingRoute
   '/api/seed': typeof ApiSeedRoute
+  '/api/seed-data': typeof ApiSeedDataRoute
   '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/table': typeof DemoTableRoute
@@ -486,6 +494,7 @@ export interface FileRoutesById {
   '/_layout/print-requests': typeof LayoutPrintRequestsRoute
   '/_layout/yield-tracking': typeof LayoutYieldTrackingRoute
   '/api/seed': typeof ApiSeedRoute
+  '/api/seed-data': typeof ApiSeedDataRoute
   '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/table': typeof DemoTableRoute
@@ -546,6 +555,7 @@ export interface FileRouteTypes {
     | '/print-requests'
     | '/yield-tracking'
     | '/api/seed'
+    | '/api/seed-data'
     | '/api/setup'
     | '/demo/better-auth'
     | '/demo/table'
@@ -602,6 +612,7 @@ export interface FileRouteTypes {
     | '/print-requests'
     | '/yield-tracking'
     | '/api/seed'
+    | '/api/seed-data'
     | '/api/setup'
     | '/demo/better-auth'
     | '/demo/table'
@@ -660,6 +671,7 @@ export interface FileRouteTypes {
     | '/_layout/print-requests'
     | '/_layout/yield-tracking'
     | '/api/seed'
+    | '/api/seed-data'
     | '/api/setup'
     | '/demo/better-auth'
     | '/demo/table'
@@ -713,6 +725,7 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   LoginRoute: typeof LoginRoute
   ApiSeedRoute: typeof ApiSeedRoute
+  ApiSeedDataRoute: typeof ApiSeedDataRoute
   ApiSetupRoute: typeof ApiSetupRoute
   DemoBetterAuthRoute: typeof DemoBetterAuthRoute
   DemoTableRoute: typeof DemoTableRoute
@@ -778,6 +791,13 @@ declare module '@tanstack/react-router' {
       path: '/api/setup'
       fullPath: '/api/setup'
       preLoaderRoute: typeof ApiSetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/seed-data': {
+      id: '/api/seed-data'
+      path: '/api/seed-data'
+      fullPath: '/api/seed-data'
+      preLoaderRoute: typeof ApiSeedDataRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/seed': {
@@ -1223,6 +1243,7 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   LoginRoute: LoginRoute,
   ApiSeedRoute: ApiSeedRoute,
+  ApiSeedDataRoute: ApiSeedDataRoute,
   ApiSetupRoute: ApiSetupRoute,
   DemoBetterAuthRoute: DemoBetterAuthRoute,
   DemoTableRoute: DemoTableRoute,

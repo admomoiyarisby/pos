@@ -1575,7 +1575,13 @@ export const PURCHASE_ORDERS_DATA = (() => {
     notes?: string;
     createdByEmail: string;
     createdAt: Date;
-    items: { ingredientProtoId: string; quantity: number; unitPrice: number; totalPrice: number }[];
+    items: {
+      ingredientProtoId: string;
+      quantity: number;
+      unitPrice: number;
+      totalPrice: number;
+      receivedQuantity?: number;
+    }[];
   }[] = [];
   const statuses: Array<"Draft" | "Sent" | "Partial" | "Completed" | "Cancelled"> = [
     "Draft",
@@ -1586,16 +1592,25 @@ export const PURCHASE_ORDERS_DATA = (() => {
   ];
   const poIngredients = ["ing-01", "ing-02", "ing-03", "ing-04", "ing-05"];
   const suppliers = ["SUP-001", "SUP-002", "SUP-003", "SUP-004"];
+  // For Partial POs, the % of ordered qty that has actually arrived (varies deterministically)
+  const partialRatios = [0.6, 0.75, 0.8, 0.55];
   for (let i = 1; i <= 20; i++) {
     const qty = 1000 + i * 500;
     const unitPrice = 35000 + i * 2000;
+    const status = statuses[i % statuses.length];
+    const receivedQuantity =
+      status === "Completed"
+        ? qty
+        : status === "Partial"
+          ? Math.round(qty * partialRatios[i % partialRatios.length])
+          : 0;
     pos.push({
       code: `PO-${2025}${String(i).padStart(3, "0")}`,
       prCode: i <= 15 ? `PR-${2025}${String(i).padStart(3, "0")}` : undefined,
       supplierCode: suppliers[i % suppliers.length],
       fromBranchCode: "CENTRAL",
       toBranchCode: BRANCH_CODES[i % BRANCH_CODES.length],
-      status: statuses[i % statuses.length],
+      status,
       notes: `Purchase order untuk stok batch ${i}`,
       createdByEmail: "pusat@omoiyari.net",
       createdAt: nDaysAgo((i % 20) + 1),
@@ -1605,6 +1620,7 @@ export const PURCHASE_ORDERS_DATA = (() => {
           quantity: qty,
           unitPrice,
           totalPrice: qty * unitPrice,
+          receivedQuantity,
         },
       ],
     });
@@ -1634,6 +1650,7 @@ export const DELIVERY_NOTES_DATA = (() => {
       pickedQuantity?: number;
       receivedQuantity?: number;
       rejectedQuantity?: number;
+      rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
     }[];
   }[] = [];
   const statuses: Array<"Draft" | "Picking" | "In Transit" | "Received" | "Cancelled"> = [
@@ -1646,9 +1663,24 @@ export const DELIVERY_NOTES_DATA = (() => {
     "Cancelled",
   ];
   const dnIngredients = ["ing-01", "ing-02", "ing-03", "ing-04", "ing-05", "ing-07", "ing-12"];
+  // Per-DN rejection pattern: 7 of 18 DNs have rejections with varied quantity
+  // and a realistic disposition distribution (~57% Return to Source, ~29% Scrap, ~14% Quarantine)
+  const rejectionPattern: Record<
+    number,
+    { quantity: number; disposition: "Return to Source" | "Scrap" | "Quarantine" }
+  > = {
+    7: { quantity: 30, disposition: "Return to Source" },
+    10: { quantity: 50, disposition: "Scrap" },
+    11: { quantity: 75, disposition: "Return to Source" },
+    13: { quantity: 40, disposition: "Quarantine" },
+    14: { quantity: 100, disposition: "Return to Source" },
+    16: { quantity: 60, disposition: "Scrap" },
+    17: { quantity: 80, disposition: "Return to Source" },
+  };
   for (let i = 1; i <= 18; i++) {
     const status = statuses[i % statuses.length];
     const qty = 2000 + i * 400;
+    const rej = rejectionPattern[i];
     dns.push({
       code: `SJ-${2025}${String(i).padStart(3, "0")}`,
       prCode: i <= 12 ? `PR-${2025}${String(i).padStart(3, "0")}` : undefined,
@@ -1666,7 +1698,8 @@ export const DELIVERY_NOTES_DATA = (() => {
           readyQuantity: status !== "Draft" ? qty : undefined,
           pickedQuantity: status === "In Transit" || status === "Received" ? qty : undefined,
           receivedQuantity: status === "Received" ? qty : undefined,
-          rejectedQuantity: i % 7 === 0 ? 50 : 0,
+          rejectedQuantity: rej?.quantity ?? 0,
+          rejectionDisposition: rej?.disposition,
         },
       ],
     });
@@ -2150,6 +2183,7 @@ export const STOCK_TRANSFERS_DATA = (() => {
     requestedByEmail: string;
     approvedByEmail?: string;
     rejectionReason?: string;
+    rejectedByEmail?: string;
     createdAt: Date;
   }[] = [];
   const statuses: Array<
@@ -2191,6 +2225,7 @@ export const STOCK_TRANSFERS_DATA = (() => {
           ? "pusat@omoiyari.net"
           : undefined,
       rejectionReason: status === "Rejected" ? "Stok pusat tidak mencukupi" : undefined,
+      rejectedByEmail: status === "Rejected" ? "pusat@omoiyari.net" : undefined,
       createdAt: nDaysAgo((i % 20) + 1),
     });
   }
@@ -2534,3 +2569,190 @@ export const SYSTEM_LOGS_DATA = (() => {
   ];
   return logs;
 })();
+
+// ──────────────────────────────────────────
+// RECIPE BRANCHES (per-branch recipe visibility)
+// ──────────────────────────────────────────
+// Generated from the tier rules (Q3, option B):
+//   Core (rec-01..08):     all 9 outlets                       → 72 rows
+//   Mid  (rec-09..13):     7 outlets (skip MLG-01, GRS-01)     → 35 rows
+//   Premium (rec-14..17):  5 outlets (SBY-01, SBY-04, JKT-01, JKT-02, BDG-01) → 20 rows
+//   Snack (rec-18):        all 9 outlets                       →  9 rows
+//   Family Pack (rec-bundle-01): 3 large outlets               →  3 rows
+//   BOGO (rec-bogo-01):    4 SBY outlets                       →  4 rows
+//                                                             ───────
+//                                                              143 rows
+// Central (warehouse) intentionally has no rows — it's not a POS.
+
+const OUTLET_BRANCHES = [
+  "br-sub-01",
+  "br-sub-02",
+  "br-sub-03",
+  "br-sub-04",
+  "br-mlg-01",
+  "br-grs-01",
+  "br-jkt-01",
+  "br-jkt-02",
+  "br-bdg-01",
+];
+const MID_TIER_BRANCHES = OUTLET_BRANCHES.filter((b) => b !== "br-mlg-01" && b !== "br-grs-01");
+const PREMIUM_TIER_BRANCHES = ["br-sub-01", "br-sub-04", "br-jkt-01", "br-jkt-02", "br-bdg-01"];
+const FAMILY_PACK_BRANCHES = ["br-sub-01", "br-jkt-01", "br-bdg-01"];
+const BOGO_BRANCHES = ["br-sub-01", "br-sub-02", "br-sub-03", "br-sub-04"];
+
+export const RECIPE_BRANCHES_DATA: { recipeProtoId: string; branchProtoId: string }[] = (() => {
+  const rows: { recipeProtoId: string; branchProtoId: string }[] = [];
+  // Core
+  for (const r of [
+    "rec-01",
+    "rec-02",
+    "rec-03",
+    "rec-04",
+    "rec-05",
+    "rec-06",
+    "rec-07",
+    "rec-08",
+  ]) {
+    for (const b of OUTLET_BRANCHES) rows.push({ recipeProtoId: r, branchProtoId: b });
+  }
+  // Mid
+  for (const r of ["rec-09", "rec-10", "rec-11", "rec-12", "rec-13"]) {
+    for (const b of MID_TIER_BRANCHES) rows.push({ recipeProtoId: r, branchProtoId: b });
+  }
+  // Premium
+  for (const r of ["rec-14", "rec-15", "rec-16", "rec-17"]) {
+    for (const b of PREMIUM_TIER_BRANCHES) rows.push({ recipeProtoId: r, branchProtoId: b });
+  }
+  // Snack (universal)
+  for (const b of OUTLET_BRANCHES) rows.push({ recipeProtoId: "rec-18", branchProtoId: b });
+  // Family Pack
+  for (const b of FAMILY_PACK_BRANCHES)
+    rows.push({ recipeProtoId: "rec-bundle-01", branchProtoId: b });
+  // BOGO (Surabaya pilot)
+  for (const b of BOGO_BRANCHES) rows.push({ recipeProtoId: "rec-bogo-01", branchProtoId: b });
+  return rows;
+})();
+
+// ──────────────────────────────────────────
+// YIELD CONVERSION SOURCES (multi-source yield BOMs)
+// ──────────────────────────────────────────
+// 6 realistic multi-source yield cases (Q4, option A). The first source
+// in each `sources` array populates the legacy single-source columns
+// on `yield_conversions` (mirrors production behavior in yield.ts).
+// All sources populate the `yield_conversion_sources` junction.
+
+export const YIELD_CONVERSION_SOURCES_DATA: {
+  branchCode: string;
+  sourceIngredientProtoId: string;
+  sourceQuantity: number;
+  targetIngredientProtoId: string;
+  targetQuantity: number;
+  yieldPercentage: string;
+  shrinkageQuantity: number;
+  notes?: string;
+  processedByEmail: string;
+  createdAt: Date;
+  sources: { ingredientProtoId: string; quantity: number }[];
+}[] = [
+  {
+    branchCode: "CENTRAL",
+    sourceIngredientProtoId: "ing-08", // tulang ayam
+    sourceQuantity: 2000,
+    targetIngredientProtoId: "ing-sfg-12", // kaldu ayam
+    targetQuantity: 4800,
+    yieldPercentage: "80.00",
+    shrinkageQuantity: 1200,
+    notes: "Kaldu ayam: tulang + air + bawang merah (multi-source)",
+    processedByEmail: "ck@omoiyari.net",
+    createdAt: nDaysAgo(28),
+    sources: [
+      { ingredientProtoId: "ing-08", quantity: 2000 }, // tulang ayam
+      { ingredientProtoId: "ing-13", quantity: 4000 }, // air
+      { ingredientProtoId: "ing-23", quantity: 200 }, // bawang merah
+    ],
+  },
+  {
+    branchCode: "CENTRAL",
+    sourceIngredientProtoId: "ing-04", // kecap
+    sourceQuantity: 800,
+    targetIngredientProtoId: "ing-sfg-04", // teriyaki base
+    targetQuantity: 1900,
+    yieldPercentage: "79.17",
+    shrinkageQuantity: 500,
+    notes: "Teriyaki base: kecap + mirin + saus (multi-source)",
+    processedByEmail: "ck@omoiyari.net",
+    createdAt: nDaysAgo(21),
+    sources: [
+      { ingredientProtoId: "ing-04", quantity: 800 }, // kecap
+      { ingredientProtoId: "ing-06", quantity: 600 }, // mirin
+      { ingredientProtoId: "ing-05", quantity: 500 }, // saus
+    ],
+  },
+  {
+    branchCode: "CENTRAL",
+    sourceIngredientProtoId: "ing-28", // udang
+    sourceQuantity: 1000,
+    targetIngredientProtoId: "ing-sfg-15", // seafood mix
+    targetQuantity: 2400,
+    yieldPercentage: "80.00",
+    shrinkageQuantity: 600,
+    notes: "Mixed seafood: udang + cumi + ikan (multi-source)",
+    processedByEmail: "ck@omoiyari.net",
+    createdAt: nDaysAgo(14),
+    sources: [
+      { ingredientProtoId: "ing-28", quantity: 1000 }, // udang
+      { ingredientProtoId: "ing-29", quantity: 1000 }, // cumi
+      { ingredientProtoId: "ing-30", quantity: 1000 }, // ikan
+    ],
+  },
+  {
+    branchCode: "CENTRAL",
+    sourceIngredientProtoId: "ing-21", // bawang putih
+    sourceQuantity: 500,
+    targetIngredientProtoId: "ing-sfg-10", // bumbu halus
+    targetQuantity: 1000,
+    yieldPercentage: "83.33",
+    shrinkageQuantity: 200,
+    notes: "Bumbu halus: bawang putih + jahe + bawang merah (multi-source)",
+    processedByEmail: "ck@omoiyari.net",
+    createdAt: nDaysAgo(7),
+    sources: [
+      { ingredientProtoId: "ing-21", quantity: 500 }, // bawang putih
+      { ingredientProtoId: "ing-22", quantity: 300 }, // jahe
+      { ingredientProtoId: "ing-23", quantity: 400 }, // bawang merah
+    ],
+  },
+  {
+    branchCode: "SBY-01",
+    sourceIngredientProtoId: "ing-24", // wortel
+    sourceQuantity: 600,
+    targetIngredientProtoId: "ing-sfg-11", // slaw mix
+    targetQuantity: 1100,
+    yieldPercentage: "78.57",
+    shrinkageQuantity: 300,
+    notes: "Coleslaw mix: wortel + kol (multi-source)",
+    processedByEmail: "hans@omoiyari.net",
+    createdAt: nDaysAgo(5),
+    sources: [
+      { ingredientProtoId: "ing-24", quantity: 600 }, // wortel
+      { ingredientProtoId: "ing-25", quantity: 800 }, // kol
+    ],
+  },
+  {
+    branchCode: "SBY-01",
+    sourceIngredientProtoId: "ing-14", // garam
+    sourceQuantity: 200,
+    targetIngredientProtoId: "ing-sfg-13", // sachet bumbu
+    targetQuantity: 1500,
+    yieldPercentage: "83.33",
+    shrinkageQuantity: 300,
+    notes: "Seasoning sachet: garam + gula + kecap (multi-source)",
+    processedByEmail: "hans@omoiyari.net",
+    createdAt: nDaysAgo(2),
+    sources: [
+      { ingredientProtoId: "ing-14", quantity: 200 }, // garam
+      { ingredientProtoId: "ing-15", quantity: 800 }, // gula
+      { ingredientProtoId: "ing-04", quantity: 500 }, // kecap
+    ],
+  },
+];
