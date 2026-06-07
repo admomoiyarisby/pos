@@ -13,8 +13,8 @@ import {
   modifiers,
   branches,
 } from "#/db/schema";
-import { eq, ilike, inArray, sql } from "drizzle-orm";
-import { requireAuth, requireRole } from "./auth";
+import { eq, ilike, inArray, sql, and } from "drizzle-orm";
+import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateAllRecipeCosts as recalcAllCosts } from "./cost-rollup";
 import { z } from "zod";
@@ -51,10 +51,29 @@ export const getRecipes = createServerFn({ method: "GET" })
     await requireAuth();
 
     // Get current branch for filtering
-    const user = await requireRole();
-    const currentBranchId = user.branchId;
+    const user = await getCurrentUserRaw();
+    const currentBranchId = user?.branchId;
 
-    let result = await db
+    // Build conditions list, then apply all at once
+    const whereConditions: import("drizzle-orm").SQL[] = [];
+
+    if (data.search) {
+      whereConditions.push(ilike(recipes.name, `%${data.search}%`));
+    }
+
+    // Filter recipes based on branch visibility
+    if (currentBranchId) {
+      whereConditions.push(
+        sql`
+          EXISTS (
+            SELECT 1 FROM recipe_branches WHERE recipe_branches.recipe_id = recipes.id AND recipe_branches.branch_id = ${currentBranchId}
+          )
+          OR recipe_branches.id IS NULL
+        `,
+      );
+    }
+
+    const result = await db
       .select({
         id: recipes.id,
         code: recipes.code,
@@ -71,22 +90,8 @@ export const getRecipes = createServerFn({ method: "GET" })
       })
       .from(recipes)
       .leftJoin(recipeBranches, eq(recipeBranches.recipeId, recipes.id))
-      .where(data.search ? ilike(recipes.name, `%${data.search}%`) : undefined)
+      .where(and(...whereConditions))
       .orderBy(recipes.name);
-
-    // Filter recipes based on branch visibility
-    if (currentBranchId) {
-      result = result
-        .where(
-          sql`
-            EXISTS (
-              SELECT 1 FROM recipe_branches WHERE recipe_branches.recipe_id = recipes.id AND recipe_branches.branch_id = ${currentBranchId}
-            )
-            OR recipe_branches.id IS NULL
-          `,
-        )
-        .orderBy(recipes.name);
-    }
 
     // Get brands for each recipe
     const recipeIds = result.map((r) => r.id);
