@@ -6,12 +6,13 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
+import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import { getUsers, createUser, updateUser } from "#/lib/server/users";
 import { getBranches } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Trash2, Info } from "lucide-react";
 
 interface UserRow {
   id: string;
@@ -50,6 +51,7 @@ function UsersPage() {
   const [selectedRole, setSelectedRole] = useState("branch_admin");
   const [amBranches, setAmBranches] = useState<string[]>([]);
   const [mutationError, setMutationError] = useState("");
+  const [deleteInfoTarget, setDeleteInfoTarget] = useState<string | null>(null);
   const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
 
   const togglePin = useCallback((userId: string) => {
@@ -209,7 +211,27 @@ function UsersPage() {
       />
 
       <DataTable
-        columns={columns}
+        columns={[
+          ...columns,
+          {
+            key: "actions",
+            header: "",
+            width: "w-12",
+            render: (r) => (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteInfoTarget(r.name);
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/40 cursor-not-allowed"
+                title="Nonaktifkan melalui edit"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ),
+          },
+        ]}
         data={users}
         keyExtractor={(r) => r.id}
         onRowClick={(r) => {
@@ -384,6 +406,33 @@ function UsersPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Info modal for delete-not-available */}
+      <Modal
+        open={!!deleteInfoTarget}
+        onClose={() => setDeleteInfoTarget(null)}
+        title="Pengguna Tidak Dapat Dihapus"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">Nonaktifkan pengguna melalui edit.</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Pengguna "{deleteInfoTarget}" tidak dapat dihapus karena data mereka tertaut ke riwayat
+                pesanan dan aktivitas sistem. Untuk menonaktifkan akses, ubah status menjadi "Nonaktif"
+                melalui menu Edit.
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={() => setDeleteInfoTarget(null)}>
+              Tutup
+            </Button>
+          </div>
+        </div>
       </Modal>
     </RoleGuard>
   );

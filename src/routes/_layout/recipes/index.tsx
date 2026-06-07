@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
+import { toast } from "sonner";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
@@ -166,6 +167,10 @@ function RecipesPage() {
       void queryClient.invalidateQueries({ queryKey: ["recipes"] });
       setModalOpen(false);
       resetForm();
+      toast.success("Menu berhasil ditambahkan");
+    },
+    onError: (err) => {
+      toast.error("Gagal menambah menu", { description: err.message });
     },
   });
 

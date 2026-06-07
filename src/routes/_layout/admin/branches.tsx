@@ -6,9 +6,11 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getBranches, createBranch, updateBranch } from "#/lib/server/branches";
+import { Button } from "#/components/ui/button";
+import { getBranches, createBranch, updateBranch, deleteBranch } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
+import { Trash2, AlertTriangle } from "lucide-react";
 
 interface BranchRow {
   id: string;
@@ -58,6 +60,7 @@ function BranchesPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BranchRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BranchRow | null>(null);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -80,6 +83,14 @@ function BranchesPage() {
       void queryClient.invalidateQueries({ queryKey: ["branches"] });
       setModalOpen(false);
       setEditing(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteBranch,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["branches"] });
+      setDeleteTarget(null);
     },
   });
 
@@ -114,7 +125,27 @@ function BranchesPage() {
       />
 
       <DataTable
-        columns={columns}
+        columns={[
+          ...columns,
+          {
+            key: "actions",
+            header: "",
+            width: "w-12",
+            render: (r) => (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteTarget(r);
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                title="Nonaktifkan"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ),
+          },
+        ]}
         data={branches}
         keyExtractor={(r) => r.id}
         onRowClick={(r) => {
@@ -183,6 +214,42 @@ function BranchesPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete confirmation modal */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Nonaktifkan Cabang"
+        size="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Nonaktifkan cabang "{deleteTarget.name}"?</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Cabang yang dinonaktifkan tidak akan muncul di daftar aktif, tetapi data historis tetap tersimpan.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>
+                Batal
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() =>
+                  void deleteMutation.mutateAsync({ data: { id: deleteTarget.id } })
+                }
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </RoleGuard>
   );

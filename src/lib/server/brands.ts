@@ -75,3 +75,34 @@ export const updateBrand = createServerFn({ method: "POST" })
 
     return result;
   });
+
+export const deleteBrand = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [old] = await db.select().from(brands).where(eq(brands.id, data.id)).limit(1);
+    if (!old) throw new Error("Brand not found");
+
+    const [result] = await db
+      .update(brands)
+      .set({ status: "Inactive" })
+      .where(eq(brands.id, data.id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Brand",
+      `Brand "${result.name}" dinonaktifkan oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "brands",
+      data.id,
+      "DELETE",
+      old as Record<string, unknown>,
+      result as Record<string, unknown>,
+    );
+
+    return { success: true };
+  });

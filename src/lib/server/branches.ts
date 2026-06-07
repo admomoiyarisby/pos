@@ -106,3 +106,34 @@ export const updateBranch = createServerFn({ method: "POST" })
 
     return result;
   });
+
+export const deleteBranch = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [old] = await db.select().from(branches).where(eq(branches.id, data.id)).limit(1);
+    if (!old) throw new Error("Branch not found");
+
+    const [result] = await db
+      .update(branches)
+      .set({ active: false, updatedAt: new Date() })
+      .where(eq(branches.id, data.id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Branch",
+      `Cabang "${result.name}" dinonaktifkan oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "branches",
+      data.id,
+      "DELETE",
+      old as Record<string, unknown>,
+      result as Record<string, unknown>,
+    );
+
+    return { success: true };
+  });

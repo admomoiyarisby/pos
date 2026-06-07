@@ -188,6 +188,7 @@ export const brands = pgTable("brands", {
   code: text("code").notNull().unique(),
   name: text("name").notNull(),
   logo: text("logo"),
+  status: text("status").notNull().default("Active"),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
 

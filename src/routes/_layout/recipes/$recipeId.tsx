@@ -3,7 +3,6 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
 import { getRecipeDetail, updateRecipe, deleteRecipe } from "#/lib/server/recipes";
 import { getBrands } from "#/lib/server/brands";
 import { getModifierGroups } from "#/lib/server/modifier-groups";
@@ -141,12 +140,24 @@ function RecipeDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="space-y-6">
-        <PageHeader
-          action={{
-            label: isEditing ? "Batal" : "Edit Menu",
-            onClick: () => setIsEditing(!isEditing),
-          }}
-        />
+        <div className="mb-6 flex items-center justify-end gap-2">
+          <button
+            onClick={() => setIsEditing(!isEditing)}
+            className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            {!isEditing && <Plus className="h-4 w-4" />}
+            {isEditing ? "Batal" : "Edit Menu"}
+          </button>
+          {!isEditing && (
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-destructive px-4 py-2 text-sm font-medium text-destructive shadow-sm transition-colors hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" />
+              Hapus
+            </button>
+          )}
+        </div>
         {isEditing ? (
           <form onSubmit={handleUpdate} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -473,22 +484,24 @@ function RecipeDetailPage() {
       <Modal
         open={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
-        title="Delete Menu"
+        title="Nonaktifkan Menu"
         size="sm"
       >
         <div className="space-y-4">
-          <div className="flex items-center gap-2 text-destructive">
-            <AlertTriangle className="h-5 w-5" />
-            <p className="font-medium">Are you sure you want to delete this recipe?</p>
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">Nonaktifkan menu "{recipe?.name}"?</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Status menu akan diubah menjadi{" "}
+                <code className="mx-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>.
+                Menu tidak akan muncul di daftar aktif, tetapi data historis tetap tersimpan.
+              </p>
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            This action will set the status to{" "}
-            <code className="ml-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>. The recipe cannot
-            be recovered.
-          </p>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setShowDeleteModal(false)}>
-              Cancel
+              Batal
             </Button>
             <Button
               type="button"
@@ -496,7 +509,7 @@ function RecipeDetailPage() {
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
             </Button>
           </div>
         </div>

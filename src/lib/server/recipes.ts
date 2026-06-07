@@ -12,6 +12,7 @@ import {
   modifierGroups,
   modifiers,
   branches,
+  orderItems,
 } from "#/db/schema";
 import { eq, ilike, inArray, sql, and } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
@@ -124,7 +125,16 @@ export const getRecipes = createServerFn({ method: "GET" })
       }
     }
 
-    return result.map((r) => ({
+    // Deduplicate by recipe id — the LEFT JOIN with recipe_branches can produce
+    // multiple rows per recipe when a recipe is linked to multiple branches.
+    const seenIds = new Set<string>();
+    const dedupedResult = result.filter((r) => {
+      if (seenIds.has(r.id)) return false;
+      seenIds.add(r.id);
+      return true;
+    });
+
+    return dedupedResult.map((r) => ({
       ...r,
       brands: brandLinks
         .filter((b) => b.recipeId === r.id)

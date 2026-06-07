@@ -57,16 +57,27 @@ export default function DataTable<T>({
     return "";
   };
 
+  // Deduplicate by keyExtractor to prevent duplicate-key React warnings
+  const deduped = (() => {
+    const seen = new Set<string>();
+    return data.filter((row) => {
+      const key = keyExtractor(row);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  })();
+
   const filtered =
     searchable && search.trim()
-      ? data.filter((row) => {
+      ? deduped.filter((row) => {
           const keys = searchKeys ?? Object.keys(row as object);
           return keys.some((k) => {
             const val = (row as Record<string, unknown>)[k as string];
             return safeStr(val).toLowerCase().includes(search.toLowerCase());
           });
         })
-      : data;
+      : deduped;
 
   const sorted = sort
     ? [...filtered].sort((a, b) => {

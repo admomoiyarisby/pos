@@ -6,19 +6,35 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getBrands, createBrand, updateBrand } from "#/lib/server/brands";
+import { Button } from "#/components/ui/button";
+import { getBrands, createBrand, updateBrand, deleteBrand } from "#/lib/server/brands";
 import type { Column } from "#/components/ui/DataTable";
+import { Badge } from "#/components/ui/badge";
+import { Trash2, AlertTriangle } from "lucide-react";
 
 interface BrandRow {
   id: string;
   code: string;
   name: string;
   logo: string | null;
+  status: string;
 }
 
 const columns: Column<BrandRow>[] = [
   { key: "code", header: "Kode", width: "w-24", sortable: true },
   { key: "name", header: "Nama Brand", sortable: true },
+  {
+    key: "status",
+    header: "Status",
+    width: "w-20",
+    sortable: true,
+    render: (r) =>
+      r.status === "Active" ? (
+        <Badge variant="success">Aktif</Badge>
+      ) : (
+        <Badge variant="secondary">Nonaktif</Badge>
+      ),
+  },
 ];
 
 export const Route = createFileRoute("/_layout/admin/brands")({
@@ -34,6 +50,7 @@ function BrandsPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BrandRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BrandRow | null>(null);
 
   const { data: brands } = useQuery({
     queryKey: ["brands"],
@@ -56,6 +73,14 @@ function BrandsPage() {
       void queryClient.invalidateQueries({ queryKey: ["brands"] });
       setModalOpen(false);
       setEditing(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteBrand,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["brands"] });
+      setDeleteTarget(null);
     },
   });
 
@@ -87,7 +112,27 @@ function BrandsPage() {
       />
 
       <DataTable
-        columns={columns}
+        columns={[
+          ...columns,
+          {
+            key: "actions",
+            header: "",
+            width: "w-12",
+            render: (r) => (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteTarget(r);
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                title="Nonaktifkan"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ),
+          },
+        ]}
         data={brands}
         keyExtractor={(r) => r.id}
         onRowClick={(r) => {
@@ -136,6 +181,42 @@ function BrandsPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete confirmation modal */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Nonaktifkan Merek"
+        size="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Nonaktifkan merek "{deleteTarget.name}"?</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Merek yang dinonaktifkan tidak akan muncul di menu, tetapi data historis tetap tersimpan.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>
+                Batal
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() =>
+                  void deleteMutation.mutateAsync({ data: { id: deleteTarget.id } })
+                }
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </RoleGuard>
   );

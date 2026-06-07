@@ -5,8 +5,10 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
+import { Button } from "#/components/ui/button";
 import { getPlatformFees, updatePlatformFee } from "#/lib/server/platform-fees";
 import type { Column } from "#/components/ui/DataTable";
+import { Trash2, Info } from "lucide-react";
 
 interface FeeRow {
   id: string;
@@ -57,6 +59,7 @@ function PlatformFeesPage() {
   const { fees: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<FeeRow | null>(null);
+  const [deleteInfoTarget, setDeleteInfoTarget] = useState<string | null>(null);
 
   const { data: fees } = useQuery({
     queryKey: ["platform-fees"],
@@ -87,7 +90,27 @@ function PlatformFeesPage() {
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
       <DataTable
-        columns={columns}
+        columns={[
+          ...columns,
+          {
+            key: "actions",
+            header: "",
+            width: "w-12",
+            render: (r) => (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteInfoTarget(r.channel);
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/40 cursor-not-allowed"
+                title="Biaya platform tidak dapat dihapus"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ),
+          },
+        ]}
         data={fees}
         keyExtractor={(r) => r.id}
         onRowClick={(r) => setEditing(r)}
@@ -140,6 +163,31 @@ function PlatformFeesPage() {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* Info modal for delete-not-allowed */}
+      <Modal
+        open={!!deleteInfoTarget}
+        onClose={() => setDeleteInfoTarget(null)}
+        title="Tidak Dapat Dihapus"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">Biaya platform tidak dapat dihapus.</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Setiap channel ({deleteInfoTarget}) membutuhkan konfigurasi biaya platform agar perhitungan pendapatan berjalan dengan benar. Anda dapat mengubah nilai MDR dan biaya tetap melalui edit.
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={() => setDeleteInfoTarget(null)}>
+              Tutup
+            </Button>
+          </div>
+        </div>
       </Modal>
     </RoleGuard>
   );

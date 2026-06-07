@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -111,11 +111,21 @@ function OrderHistoryPage() {
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
   const [reprintStatus, setReprintStatus] = useState<ReprintStatus>("idle");
 
-  const { data: orders } = useQuery({
+  const { data: rawOrders } = useQuery({
     queryKey: ["orders"],
     queryFn: () => getOrders({ data: {} }),
     initialData: initial,
   });
+
+  // Deduplicate by id — safeguard against duplicate rows in DB
+  const orders = useMemo(() => {
+    const seen = new Set<string>();
+    return (rawOrders ?? []).filter((r) => {
+      if (seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    });
+  }, [rawOrders]);
 
   const reprintMutation = useMutation({
     mutationFn: requestReprint,

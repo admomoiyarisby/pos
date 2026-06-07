@@ -106,3 +106,34 @@ export const updateVoucher = createServerFn({ method: "POST" })
 
     return result;
   });
+
+export const deleteVoucher = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin");
+
+    const [old] = await db.select().from(vouchers).where(eq(vouchers.id, data.id)).limit(1);
+    if (!old) throw new Error("Voucher not found");
+
+    const [result] = await db
+      .update(vouchers)
+      .set({ isActive: false })
+      .where(eq(vouchers.id, data.id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Voucher",
+      `Voucher "${result.code}" dinonaktifkan oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "vouchers",
+      data.id,
+      "DELETE",
+      old as Record<string, unknown>,
+      result as Record<string, unknown>,
+    );
+
+    return { success: true };
+  });
