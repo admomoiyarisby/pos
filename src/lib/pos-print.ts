@@ -11,6 +11,10 @@ interface PrintBillParams {
   voucherDiscount: number;
   taxAmount: number;
   finalTotal: number;
+  /** Customer name for the pre-checkout bill (dine-in). Omit to show "-". */
+  customerName?: string;
+  /** External order code (delivery platforms). Omit to show "-". */
+  orderCode?: string;
 }
 
 interface PrintReceiptParams {
@@ -91,16 +95,12 @@ export function printReceipt({ order, cartItems, branchName }: PrintReceiptParam
     '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
     '<div class="divider"></div>',
     '<div class="row"><span>No. Order:</span><span>' + idStr + "</span></div>",
-    (order.orderCode
-      ? '<div class="row"><span>Kode Order:</span><span>' +
-        order.orderCode +
-        "</span></div>"
-      : ""),
-    (order.customerName
-      ? '<div class="row"><span>Pelanggan:</span><span>' +
-        order.customerName +
-        "</span></div>"
-      : ""),
+    '<div class="row"><span>Kode Order:</span><span>' +
+      (order.orderCode || idStr) +
+      "</span></div>",
+    '<div class="row"><span>Pelanggan:</span><span>' +
+      (order.customerName || "-") +
+      "</span></div>",
     '<div class="row"><span>Channel:</span><span>' + order.channel + "</span></div>",
     '<div class="row"><span>Pembayaran:</span><span>' +
       (order.paymentMethod || "-") +
@@ -149,6 +149,8 @@ export function printBill({
   voucherDiscount,
   taxAmount,
   finalTotal,
+  customerName,
+  orderCode,
 }: PrintBillParams) {
   let printWindow = window.open("", "_blank");
   if (!printWindow) return;
@@ -178,6 +180,12 @@ export function printBill({
     '<div class="center header">' + branchName + "</div>",
     '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
     '<div class="divider"></div>',
+    '<div class="row"><span>Kode Order:</span><span>' +
+      (orderCode || "-") +
+      "</span></div>",
+    '<div class="row"><span>Pelanggan:</span><span>' +
+      (customerName || "-") +
+      "</span></div>",
     itemsHtml,
     '<div class="divider"></div>',
     '<div class="row"><span>Subtotal</span><span>Rp ' +

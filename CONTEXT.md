@@ -6,7 +6,22 @@ A point-of-sale and supply-chain management system for a restaurant group with m
 
 **Order**:
 A customer transaction recorded at a branch, consisting of one or more order items, optionally with modifiers, exclusions, and voucher discounts.
-_Avoid_: Transaction, sale, receipt
+_Avoid_: Transaction, sale
+
+**Receipt (Struk)**:
+A printed document generated after an order is paid, confirming the transaction. Always shows Kode Order and Pelanggan.
+_Avoid_: Invoice (when referring to customer receipts; invoice is reserved for SCM B2B documents)
+
+**Bill (Tagihan)**:
+A pre-checkout printed document for dine-in orders, generated before payment. Shows Kode Order (from the external platform when applicable, otherwise "-") and Pelanggan (customer name or "-").
+_Avoid_: Invoice, receipt
+
+**Kode Order**:
+For delivery channels (Gofood/Grabfood/ShopeeFood): the external platform order code. For dine-in: fallback to the internal order ID (first 8 chars). Always displayed on receipts and bills.
+_Avoid_: Transaction ID, order number
+
+**Pelanggan**:
+The customer's name as entered at the POS. Always displayed on receipts and bills. Falls back to "-" when not provided.
 
 **Recipe**:
 A product that can be sold. Recipes may have a Bill of Materials (BOM) — a list of ingredients with quantities. Recipes may also reference child recipes (for bundles/packages) and optional modifiers.

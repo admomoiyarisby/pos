@@ -668,6 +668,33 @@ function PosPage() {
     }
   }
 
+  let consumePrintMutation = useMutation({
+    mutationFn: consumePrintRequest,
+    onMutate: async function (vars) {
+      await queryClient.cancelQueries({ queryKey: ["active-requests"] });
+      let prev = queryClient.getQueryData(["active-requests", orderIds]);
+      // Remove the consumed print request from cache by requestId
+      queryClient.setQueryData(["active-requests", orderIds], function (old: any) {
+        if (!old) return old;
+        return old.map(function (r: any) {
+          if (r.print?.requestId === vars.data.requestId) {
+            return { ...r, print: null };
+          }
+          return r;
+        });
+      });
+      return { prev };
+    },
+    onError: function (_err, _vars, context) {
+      if (context?.prev != null) {
+        queryClient.setQueryData(["active-requests", orderIds], context.prev);
+      }
+    },
+    onSettled: function () {
+      void queryClient.invalidateQueries({ queryKey: ["active-requests"] });
+    },
+  });
+
   let requestReprintMutation = useMutation({
     mutationFn: requestReprint,
     onSuccess: function () {
@@ -872,6 +899,8 @@ function PosPage() {
               voucherDiscount: voucherDiscount,
               taxAmount: taxAmount,
               finalTotal: finalTotal,
+              customerName: customerName || undefined,
+              orderCode: orderCode || undefined,
             });
           }}
           onClearError={function () {
@@ -897,9 +926,10 @@ function PosPage() {
               let printStatus = req?.print?.status;
               let printRequestId = req?.print?.requestId;
               if (printStatus === "Approved") {
-                // Consume on server first, then print
                 if (printRequestId) {
-                  void consumePrintRequest({ data: { requestId: printRequestId } });
+                  void consumePrintMutation.mutateAsync({
+                    data: { requestId: printRequestId },
+                  });
                 }
                 void printApprovedOrder(orderId);
               } else if (!printStatus || printStatus === "Rejected") {
