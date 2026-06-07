@@ -6,7 +6,9 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { getSalesAnalytics } from "#/lib/server/finance";
 import { formatRp } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, AlertCircle, RefreshCw, Calendar, PieChart as PieIcon } from "lucide-react";
+import { Button } from "#/components/ui/button";
+import { Skeleton } from "#/components/ui/skeleton";
 import {
   BarChart,
   Bar,
@@ -30,22 +32,43 @@ export const Route = createFileRoute("/_layout/analytics/")({
   },
 });
 
+function toDateInputValue(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
+function getDefaultRange() {
+  const d = new Date();
+  d.setDate(d.getDate() - 7);
+  return toDateInputValue(d);
+}
+
+function getThirtyDayRange() {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - 30);
+  return { from: toDateInputValue(from), to: toDateInputValue(to) };
+}
+
 function AnalyticsPage() {
   const { branches } = Route.useLoaderData();
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString().split("T")[0];
-  });
-  const [dateTo, setDateTo] = useState(() => new Date().toISOString().split("T")[0]);
+  const [dateFrom, setDateFrom] = useState(getDefaultRange);
+  const [dateTo, setDateTo] = useState(() => toDateInputValue(new Date()));
   const [selectedBranch, setSelectedBranch] = useState("");
 
-  const { data: analytics } = useQuery({
+  const {
+    data: analytics,
+    isPending,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ["analytics", dateFrom, dateTo, selectedBranch],
     queryFn: () =>
       getSalesAnalytics({ data: { dateFrom, dateTo, branchId: selectedBranch || undefined } }),
     enabled: !!dateFrom && !!dateTo,
   });
+
+  usePageTitle("Dashboard Analitik", "Analisis penjualan & performa");
 
   const channelData =
     analytics?.channelData.map((c) => ({
@@ -53,14 +76,19 @@ function AnalyticsPage() {
       value: c.total,
       count: c.count,
     })) ?? [];
+  const topSales = analytics?.topSales ?? [];
+  const topSalesChartData = topSales.map((t) => ({
+    name: t.name.length > 15 ? t.name.slice(0, 15) + "..." : t.name,
+    qty: t.totalQty,
+    revenue: t.totalRevenue,
+  }));
+  const isPageEmpty = !isPending && !isError && channelData.length === 0 && topSales.length === 0;
 
-  const topSalesData =
-    analytics?.topSales.map((t) => ({
-      name: t.name.length > 15 ? t.name.slice(0, 15) + "..." : t.name,
-      qty: t.totalQty,
-      revenue: t.totalRevenue,
-    })) ?? [];
-  usePageTitle("Dashboard Analitik", "Analisis penjualan & performa");
+  function handleResetRange() {
+    const next = getThirtyDayRange();
+    setDateFrom(next.from);
+    setDateTo(next.to);
+  }
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
@@ -95,69 +123,87 @@ function AnalyticsPage() {
           <span className="text-xs text-muted-foreground ml-auto">Maks 31 hari</span>
         </div>
 
-        {!analytics ? (
-          <div className="rounded-lg border border-dashed p-8 text-center">
-            <div className="mx-auto h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
-              <BarChart3 className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <h3 className="font-semibold text-foreground mb-1">Belum Ada Data Analitik</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Pilih rentang tanggal untuk melihat analitik penjualan.
-            </p>
-          </div>
+        {isPending ? (
+          <AnalyticsSkeleton />
+        ) : isError ? (
+          <ErrorState
+            message={error instanceof Error ? error.message : undefined}
+            onRetry={() => refetch()}
+          />
+        ) : isPageEmpty ? (
+          <EmptyState onResetRange={handleResetRange} />
         ) : (
           <>
             {/* Channel Distribution */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="rounded-lg border p-4">
                 <h3 className="text-sm font-semibold mb-4">Distribusi Channel</h3>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={channelData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {channelData.map((_, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => formatRp(value as number)} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex flex-wrap justify-center gap-3 mt-2">
-                  {channelData.map((c, i) => (
-                    <div key={c.name} className="flex items-center gap-1 text-xs">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: COLORS[i % COLORS.length] }}
-                      />
-                      {c.name} ({c.count})
+                {channelData.length === 0 ? (
+                  <ChartEmpty
+                    icon={<PieIcon className="h-5 w-5 text-muted-foreground" />}
+                    message="Belum ada data channel pada rentang ini"
+                  />
+                ) : (
+                  <>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={channelData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={80}
+                            paddingAngle={5}
+                            dataKey="value"
+                          >
+                            {channelData.map((c, index) => (
+                              <Cell
+                                key={`cell-${c.name}-${index}`}
+                                fill={COLORS[index % COLORS.length]}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(value) => formatRp(value as number)} />
+                        </PieChart>
+                      </ResponsiveContainer>
                     </div>
-                  ))}
-                </div>
+                    <div className="flex flex-wrap justify-center gap-3 mt-2">
+                      {channelData.map((c, i) => (
+                        <div key={c.name} className="flex items-center gap-1 text-xs">
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: COLORS[i % COLORS.length] }}
+                          />
+                          {c.name} ({c.count})
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Top Sales */}
               <div className="rounded-lg border p-4">
                 <h3 className="text-sm font-semibold mb-4">Top Sales (Qty)</h3>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topSalesData} layout="vertical" margin={{ left: 80 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" />
-                      <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Bar dataKey="qty" fill="#0088FE" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                {topSales.length === 0 ? (
+                  <ChartEmpty
+                    icon={<BarChart3 className="h-5 w-5 text-muted-foreground" />}
+                    message="Belum ada data menu pada rentang ini"
+                  />
+                ) : (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={topSalesChartData} layout="vertical" margin={{ left: 80 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" />
+                        <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="qty" fill="#0088FE" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -172,15 +218,26 @@ function AnalyticsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {analytics.topSales.map((item) => (
-                    <tr key={item.recipeId} className="border-b">
-                      <td className="px-4 py-3">{item.name}</td>
-                      <td className="px-4 py-3 text-right">
-                        {item.totalQty.toLocaleString("id-ID")}
+                  {topSales.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={3}
+                        className="px-4 py-8 text-center text-sm text-muted-foreground"
+                      >
+                        Belum ada data menu pada rentang ini
                       </td>
-                      <td className="px-4 py-3 text-right">{formatRp(item.totalRevenue)}</td>
                     </tr>
-                  ))}
+                  ) : (
+                    topSales.map((item) => (
+                      <tr key={item.recipeId} className="border-b">
+                        <td className="px-4 py-3">{item.name}</td>
+                        <td className="px-4 py-3 text-right">
+                          {item.totalQty.toLocaleString("id-ID")}
+                        </td>
+                        <td className="px-4 py-3 text-right">{formatRp(item.totalRevenue)}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -223,5 +280,75 @@ function AnalyticsPage() {
         )}
       </div>
     </RoleGuard>
+  );
+}
+
+function AnalyticsSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="rounded-lg border p-4 space-y-3">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+        <div className="rounded-lg border p-4 space-y-3">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </div>
+      <div className="rounded-md border p-4 space-y-3">
+        <Skeleton className="h-4 w-40" />
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ErrorState({ message, onRetry }: { message?: string; onRetry: () => void }) {
+  return (
+    <div className="rounded-lg border border-dashed p-8 text-center">
+      <div className="mx-auto h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
+        <AlertCircle className="h-6 w-6 text-muted-foreground" />
+      </div>
+      <h3 className="font-semibold text-foreground mb-1">Gagal memuat analitik</h3>
+      <p className="text-sm text-muted-foreground mb-4">
+        {message ?? "Periksa rentang tanggal dan koneksi, lalu coba lagi."}
+      </p>
+      <Button variant="outline" onClick={onRetry}>
+        <RefreshCw className="h-4 w-4" />
+        Coba lagi
+      </Button>
+    </div>
+  );
+}
+
+function EmptyState({ onResetRange }: { onResetRange: () => void }) {
+  return (
+    <div className="rounded-lg border border-dashed p-8 text-center">
+      <div className="mx-auto h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
+        <BarChart3 className="h-6 w-6 text-muted-foreground" />
+      </div>
+      <h3 className="font-semibold text-foreground mb-1">
+        Tidak ada penjualan pada rentang waktu ini
+      </h3>
+      <p className="text-sm text-muted-foreground mb-4">
+        Coba perluas rentang tanggal, pilih cabang lain, atau hapus filter cabang.
+      </p>
+      <Button variant="outline" onClick={onResetRange}>
+        <Calendar className="h-4 w-4" />
+        Reset rentang ke 30 hari terakhir
+      </Button>
+    </div>
+  );
+}
+
+function ChartEmpty({ icon, message }: { icon: React.ReactNode; message: string }) {
+  return (
+    <div className="h-64 flex flex-col items-center justify-center text-center gap-2">
+      {icon}
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
   );
 }

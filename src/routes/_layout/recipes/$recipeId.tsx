@@ -16,7 +16,13 @@ import { Button } from "#/components/ui/button";
 import { Modal } from "#/components/ui/Modal";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "#/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "#/components/ui/select";
 import { Separator } from "#/components/ui/separator";
 import { Checkbox } from "#/components/ui/checkbox";
 import { Plus, Trash2, X, Save, AlertTriangle } from "lucide-react";
@@ -202,7 +208,10 @@ function RecipeDetailPage() {
               <Label>Brand</Label>
               <div className="flex flex-wrap gap-2">
                 {allBrands?.map((b) => (
-                  <label key={b.id} className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm">
+                  <label
+                    key={b.id}
+                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm"
+                  >
                     <input
                       type="checkbox"
                       name="brandIds"
@@ -321,93 +330,99 @@ function RecipeDetailPage() {
             </div>
           </form>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          <div className="rounded-lg border p-4">
-            <p className="text-xs text-muted-foreground uppercase">Kategori</p>
-            <p className="font-medium mt-1 capitalize">{recipe.category}</p>
-          </div>
-          <div className="rounded-lg border p-4">
-            <p className="text-xs text-muted-foreground uppercase">Harga Dasar</p>
-            <p className="font-medium mt-1">Rp {recipe.basePrice.toLocaleString("id-ID")}</p>
-          </div>
-          <div className="rounded-lg border p-4">
-            <p className="text-xs text-muted-foreground uppercase">HPP Total</p>
-            <p className="font-medium mt-1 text-lg font-bold">
-              Rp {recipe.totalCogs.toLocaleString("id-ID")}
-            </p>
-            {recipe.totalCogs > 0 && recipe.basePrice > 0 && (
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Margin:{" "}
-                {(((recipe.basePrice - recipe.totalCogs) / recipe.basePrice) * 100).toFixed(1)}%
-                {recipe.totalCogs / recipe.basePrice > 0.4 && (
-                  <Badge variant="destructive" className="ml-1 text-[10px]">
-                    HPP &gt; 40%!
-                  </Badge>
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">Kategori</p>
+                <p className="font-medium mt-1 capitalize">{recipe.category}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">Harga Dasar</p>
+                <p className="font-medium mt-1">Rp {recipe.basePrice.toLocaleString("id-ID")}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">HPP Total</p>
+                <p className="font-medium mt-1 text-lg font-bold">
+                  Rp {recipe.totalCogs.toLocaleString("id-ID")}
+                </p>
+                {recipe.totalCogs > 0 && recipe.basePrice > 0 && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Margin:{" "}
+                    {(((recipe.basePrice - recipe.totalCogs) / recipe.basePrice) * 100).toFixed(1)}%
+                    {recipe.totalCogs / recipe.basePrice > 0.4 && (
+                      <Badge variant="destructive" className="ml-1 text-[10px]">
+                        HPP &gt; 40%!
+                      </Badge>
+                    )}
+                  </p>
                 )}
-              </p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">Sub-resep</p>
+                <p className="font-medium mt-1">{recipe.isSubRecipe ? "Ya" : "Tidak"}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">Status</p>
+                <Badge
+                  variant={recipe.status === "Active" ? "success" : "secondary"}
+                  className="mt-1"
+                >
+                  {recipe.status}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold">Bahan (BOM)</h2>
+              {recipe.ingredients.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada bahan</p>
+              ) : (
+                <div className="rounded-md border overflow-x-auto">
+                  <table className="w-full text-sm min-w-[480px]">
+                    <thead className="border-b bg-muted/50">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-medium">Bahan</th>
+                        <th className="px-4 py-2 text-right font-medium">Jumlah</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipe.ingredients.map((ing, i) => (
+                        <tr key={i} className="border-b">
+                          <td className="px-4 py-2">{ing.ingredientName ?? ing.ingredientId}</td>
+                          <td className="px-4 py-2 text-right">{ing.quantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {recipe.childRecipes?.length > 0 && (
+              <div className="space-y-4">
+                <h2 className="text-lg font-semibold">Komposisi Paket (Bundling)</h2>
+                <div className="rounded-md border overflow-x-auto">
+                  <table className="w-full text-sm min-w-[480px]">
+                    <thead className="border-b bg-muted/50">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-medium">Menu</th>
+                        <th className="px-4 py-2 text-right font-medium">Qty</th>
+                        <th className="px-4 py-2 text-right font-medium">Harga</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipe.childRecipes.map((cr, i) => (
+                        <tr key={i} className="border-b">
+                          <td className="px-4 py-2">{cr.childRecipeName ?? cr.childRecipeId}</td>
+                          <td className="px-4 py-2 text-right">{cr.quantity}</td>
+                          <td className="px-4 py-2 text-right text-muted-foreground">—</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
-          </div>
-          <div className="rounded-lg border p-4">
-            <p className="text-xs text-muted-foreground uppercase">Sub-resep</p>
-            <p className="font-medium mt-1">{recipe.isSubRecipe ? "Ya" : "Tidak"}</p>
-          </div>
-          <div className="rounded-lg border p-4">
-            <p className="text-xs text-muted-foreground uppercase">Status</p>
-            <Badge variant={recipe.status === "Active" ? "success" : "secondary"} className="mt-1">
-              {recipe.status}
-            </Badge>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold">Bahan (BOM)</h2>
-          {recipe.ingredients.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Belum ada bahan</p>
-          ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <table className="w-full text-sm min-w-[480px]">
-                <thead className="border-b bg-muted/50">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-medium">Bahan</th>
-                    <th className="px-4 py-2 text-right font-medium">Jumlah</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recipe.ingredients.map((ing, i) => (
-                    <tr key={i} className="border-b">
-                      <td className="px-4 py-2">{ing.ingredientName ?? ing.ingredientId}</td>
-                      <td className="px-4 py-2 text-right">{ing.quantity}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {recipe.childRecipes?.length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Komposisi Paket (Bundling)</h2>
-            <div className="rounded-md border overflow-x-auto">
-              <table className="w-full text-sm min-w-[480px]">
-                <thead className="border-b bg-muted/50">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-medium">Menu</th>
-                    <th className="px-4 py-2 text-right font-medium">Qty</th>
-                    <th className="px-4 py-2 text-right font-medium">Harga</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recipe.childRecipes.map((cr, i) => (
-                    <tr key={i} className="border-b">
-                      <td className="px-4 py-2">{cr.childRecipeName ?? cr.childRecipeId}</td>
-                      <td className="px-4 py-2 text-right">{cr.quantity}</td>
-                      <td className="px-4 py-2 text-right text-muted-foreground">—</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </div>
         )}
 
@@ -459,7 +474,9 @@ function RecipeDetailPage() {
   );
 }
 
-{/* Delete Confirmation Modal */}
+{
+  /* Delete Confirmation Modal */
+}
 <Modal
   open={showDeleteModal}
   onClose={() => setShowDeleteModal(false)}
@@ -472,15 +489,12 @@ function RecipeDetailPage() {
       <p className="font-medium">Are you sure you want to delete this recipe?</p>
     </div>
     <p className="text-sm text-muted-foreground">
-      This action will set the status to <code className="ml-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>.
-      The recipe cannot be recovered.
+      This action will set the status to{" "}
+      <code className="ml-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>. The recipe cannot be
+      recovered.
     </p>
     <div className="flex justify-end gap-2 pt-2">
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => setShowDeleteModal(false)}
-      >
+      <Button type="button" variant="outline" onClick={() => setShowDeleteModal(false)}>
         Cancel
       </Button>
       <Button
@@ -493,4 +507,4 @@ function RecipeDetailPage() {
       </Button>
     </div>
   </div>
-</Modal>
+</Modal>;
