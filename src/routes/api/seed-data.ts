@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
+import { auth } from "#/lib/auth";
 import { and, eq } from "drizzle-orm";
 
 import {
@@ -115,17 +116,21 @@ async function createUserViaAuth(
   branchIdMap?: Map<string, string>,
   pin?: string,
 ): Promise<boolean> {
+  // Build additionalFields body for Better Auth
+  const body: any = { email, password, name, role, status: "Active" };
+  if (branchCode && branchIdMap) {
+    body.branchId = branchIdMap!.get(branchCode);
+  }
+  if (pin) {
+    body.pin = pin;
+  }
   try {
-    const body = { email, password, name, role, status: "Active" };
-    if (branchCode && branchIdMap) {
-      body.branchId = branchIdMap!.get(branchCode);
-    }
-    if (pin) {
-      body.pin = pin;
-    }
-    await db.$transaction([db.insert(usersTable).values(body)]);
+    // Go through Better Auth so it creates the user AND a credential account row
+    // (account table stays empty otherwise because we bypassed the auth flow).
+    await auth.api.signUpEmail({ body: body as never });
     return true;
   } catch {
+    // User already exists — just sync the role/status/branchId/pin fields
     const updateData: any = { name, role, status: "Active" };
     if (branchCode && branchIdMap) {
       updateData.branchId = branchIdMap!.get(branchCode);

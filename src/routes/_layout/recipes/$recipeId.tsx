@@ -470,41 +470,37 @@ function RecipeDetailPage() {
           </div>
         )}
       </div>
+      <Modal
+        open={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        title="Delete Menu"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+            <p className="font-medium">Are you sure you want to delete this recipe?</p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            This action will set the status to{" "}
+            <code className="ml-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>. The recipe cannot
+            be recovered.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setShowDeleteModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </RoleGuard>
   );
 }
-
-{
-  /* Delete Confirmation Modal */
-}
-<Modal
-  open={showDeleteModal}
-  onClose={() => setShowDeleteModal(false)}
-  title="Delete Menu"
-  size="sm"
->
-  <div className="space-y-4">
-    <div className="flex items-center gap-2 text-destructive">
-      <AlertTriangle className="h-5 w-5" />
-      <p className="font-medium">Are you sure you want to delete this recipe?</p>
-    </div>
-    <p className="text-sm text-muted-foreground">
-      This action will set the status to{" "}
-      <code className="ml-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>. The recipe cannot be
-      recovered.
-    </p>
-    <div className="flex justify-end gap-2 pt-2">
-      <Button type="button" variant="outline" onClick={() => setShowDeleteModal(false)}>
-        Cancel
-      </Button>
-      <Button
-        type="button"
-        variant="destructive"
-        onClick={handleDelete}
-        disabled={deleteMutation.isPending}
-      >
-        {deleteMutation.isPending ? "Deleting..." : "Delete"}
-      </Button>
-    </div>
-  </div>
-</Modal>;
