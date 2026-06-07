@@ -131,12 +131,14 @@ export const cancelRequestStatusEnum = pgEnum("cancel_request_status", [
   "Pending",
   "Approved",
   "Rejected",
+  "Executed",
 ]);
 
 export const printRequestStatusEnum = pgEnum("print_request_status", [
   "Pending",
   "Approved",
   "Rejected",
+  "Consumed",
 ]);
 
 export const logStatusEnum = pgEnum("log_status", ["Success", "Warning", "Error"]);

@@ -2,25 +2,37 @@
 // Order History — Compact history list at bottom of cart
 // ============================================================
 
-import { Printer, X } from "lucide-react";
+import { Printer, X, Clock, CheckCircle2 } from "lucide-react";
 import type { OrderResult } from "#/lib/pos-types";
+
+interface RequestStatus {
+  status: string;
+  reason?: string;
+}
 
 interface OrderHistoryProps {
   recentOrders: OrderResult[];
   canVoid: boolean;
   canRequestCancel?: boolean;
-  onReprint: (orderId: string) => void;
-  onVoid: (orderId: string) => void;
-  onRequestCancel?: (orderId: string) => void;
+  canDirectPrint?: boolean;
+  activeRequests: Record<
+    string,
+    { print: RequestStatus | null; cancel: RequestStatus | null }
+  >;
+  onPrintClick: (orderId: string) => void;
+  onCancelClick: (orderId: string) => void;
+  onDirectVoid: (orderId: string) => void;
 }
 
 export default function OrderHistory({
   recentOrders,
   canVoid,
   canRequestCancel,
-  onReprint,
-  onVoid,
-  onRequestCancel,
+  canDirectPrint,
+  activeRequests,
+  onPrintClick,
+  onCancelClick,
+  onDirectVoid,
 }: OrderHistoryProps) {
   return (
     <div className="shrink-0 border-t h-40 flex flex-col">
@@ -32,6 +44,31 @@ export default function OrderHistory({
           <p className="text-[10px] text-muted-foreground text-center py-3">Belum ada pesanan</p>
         ) : (
           recentOrders.map(function (o: any) {
+            const isVoid = o.status === "Void";
+            const req = activeRequests[o.id];
+            const printStatus = req?.print?.status ?? null;
+            const cancelStatus = req?.cancel?.status ?? null;
+
+            // Print button: neutral | pending | active | direct
+            const printState = canDirectPrint
+              ? "direct"
+              : isVoid
+                ? "hidden"
+                : printStatus === "Approved"
+                    ? "active"
+                    : printStatus === "Pending"
+                      ? "pending"
+                      : "neutral";
+
+            // Cancel button: neutral | pending | active | hidden
+            const cancelState = isVoid
+              ? "hidden"
+              : cancelStatus === "Approved"
+                ? "active"
+                : cancelStatus === "Pending"
+                  ? "pending"
+                  : "neutral";
+
             return (
               <div
                 key={o.id}
@@ -47,38 +84,95 @@ export default function OrderHistory({
                       minute: "2-digit",
                     })}
                   </span>
+                  {isVoid && (
+                    <span className="text-[9px] px-1 py-0.5 rounded bg-destructive/10 text-destructive font-medium">
+                      VOID
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="font-semibold">Rp {o.totalAmount.toLocaleString("id-ID")}</span>
-                  <button
-                    onClick={function () {
-                      onReprint(o.id);
-                    }}
-                    className="h-5 w-5 inline-flex items-center justify-center rounded border text-muted-foreground hover:bg-accent"
-                    title="Cetak"
-                  >
-                    <Printer className="h-2.5 w-2.5" />
-                  </button>
-                  {canVoid && o.status !== "Void" && (
+                  <span className="font-semibold">
+                    Rp {o.totalAmount.toLocaleString("id-ID")}
+                  </span>
+
+                  {/* ── Print button ── */}
+                  {printState !== "hidden" && (
+                    <span
+                      title={
+                        printState === "direct"
+                          ? "Cetak"
+                          : printState === "pending"
+                            ? "Menunggu persetujuan..."
+                            : printState === "active"
+                              ? "Klik untuk cetak"
+                              : "Minta cetak ulang"
+                      }
+                    >
+                      <button
+                        onClick={function () {
+                          onPrintClick(o.id);
+                        }}
+                        disabled={printState === "pending"}
+                        className={
+                          "h-5 w-5 inline-flex items-center justify-center rounded border transition-colors " +
+                          (printState === "direct" || printState === "active"
+                            ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
+                            : printState === "pending"
+                              ? "bg-warning/10 text-warning border-warning/30 cursor-not-allowed"
+                              : "text-muted-foreground hover:bg-accent")
+                        }
+                      >
+                        <Printer className="h-2.5 w-2.5" />
+                      </button>
+                    </span>
+                  )}
+
+                  {/* ── Cancel button (state machine, branch_admin) ── */}
+                  {!canVoid && canRequestCancel && cancelState !== "hidden" && (
+                    <span
+                      title={
+                        cancelState === "pending"
+                          ? "Menunggu persetujuan..."
+                          : cancelState === "active"
+                            ? "Klik untuk batalkan"
+                            : "Minta pembatalan"
+                      }
+                    >
+                      <button
+                        onClick={function () {
+                          onCancelClick(o.id);
+                        }}
+                        disabled={cancelState === "pending"}
+                        className={
+                          "h-5 px-1.5 inline-flex items-center justify-center rounded border text-[10px] font-medium transition-colors " +
+                          (cancelState === "active"
+                            ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
+                            : cancelState === "pending"
+                              ? "bg-warning/10 text-warning border-warning/30 cursor-not-allowed"
+                              : "text-destructive hover:bg-destructive/10 border-destructive/30")
+                        }
+                      >
+                        {cancelState === "pending" ? (
+                          <Clock className="h-2.5 w-2.5" />
+                        ) : cancelState === "active" ? (
+                          <CheckCircle2 className="h-2.5 w-2.5" />
+                        ) : (
+                          "Btl"
+                        )}
+                      </button>
+                    </span>
+                  )}
+
+                  {/* ── Direct void button (admin only) ── */}
+                  {canVoid && !isVoid && (
                     <button
                       onClick={function () {
-                        onVoid(o.id);
+                        onDirectVoid(o.id);
                       }}
                       className="h-5 w-5 inline-flex items-center justify-center rounded border text-destructive hover:bg-destructive/10"
-                      title="Batalkan"
+                      title="Batalkan langsung"
                     >
                       <X className="h-2.5 w-2.5" />
-                    </button>
-                  )}
-                  {!canVoid && canRequestCancel && o.status !== "Void" && (
-                    <button
-                      onClick={function () {
-                        onRequestCancel?.(o.id);
-                      }}
-                      className="h-5 px-1.5 inline-flex items-center justify-center rounded border text-destructive hover:bg-destructive/10 text-[10px] font-medium"
-                      title="Minta Batalkan"
-                    >
-                      Minta Btl
                     </button>
                   )}
                 </div>

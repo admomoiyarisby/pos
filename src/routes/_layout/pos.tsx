@@ -13,9 +13,11 @@ import {
   getOrders,
   voidOrder,
   requestReprint,
-  getReprintRequestStatus,
   getOrderWithItems,
   createCancelRequest,
+  executeApprovedCancel,
+  consumePrintRequest,
+  getActiveRequestsForOrders,
 } from "#/lib/server/pos";
 import { getBrands } from "#/lib/server/brands";
 import { getBranches } from "#/lib/server/branches";
@@ -29,8 +31,6 @@ import {
   TicketPercent,
   Percent,
   AlertCircle,
-  CheckCircle2,
-  Clock,
 } from "lucide-react";
 import { usePageTitle } from "#/hooks/usePageTitle";
 
@@ -154,7 +154,7 @@ function PosPage() {
   let _t = useState("");
   let actualCash = _t[0];
   let setActualCash = _t[1];
-  let _u = useState<{ orderId: string; reason: string; mode?: "direct" | "request" } | null>(null);
+  let _u = useState<{ orderId: string; reason: string; mode?: "direct" | "request" | "execute"; requestId?: string } | null>(null);
   let voidModal = _u[0];
   let setVoidModal = _u[1];
   let _v = useState(false);
@@ -169,32 +169,36 @@ function PosPage() {
     pb1Rate = activeBranch.pb1Rate;
   }
 
-  // Reprint approval state
-  let _w = useState<string | null>(null);
-  let reprintRequestStatus = _w[0];
-  let setReprintRequestStatus = _w[1];
-  let _x = useState<string | null>(null);
-  let reprintOrderId = _x[0];
-  let setReprintOrderId = _x[1];
-
-  let reprintStatusQuery = useQuery({
-    queryKey: ["reprint-status", reprintOrderId],
-    queryFn: async function () {
-      if (!reprintOrderId) return null;
-      return await getReprintRequestStatus({ data: { orderId: reprintOrderId } });
+  let ordersResult = useQuery({
+    queryKey: ["pos-recent-orders", activeBranchId],
+    queryFn: function () {
+      return getOrders({ data: { branchId: activeBranchId, limit: 20 } });
     },
-    enabled:
-      !!reprintOrderId &&
-      (reprintRequestStatus === "pending" || reprintRequestStatus === "already_pending"),
+    enabled: !!activeBranchId,
+    retry: 1,
+  });
+  let recentOrders = ordersResult.data || [];
+
+  // ─── Active Requests (print / cancel) polling ───
+  let orderIds = recentOrders.map(function (o) { return o.id; });
+  let activeRequestsResult = useQuery({
+    queryKey: ["active-requests", orderIds],
+    queryFn: function () {
+      return getActiveRequestsForOrders({ data: { orderIds: orderIds } });
+    },
+    enabled: orderIds.length > 0,
     refetchInterval: 5000,
   });
+  let activeRequestsData = activeRequestsResult.data ?? [];
 
-  let resolvedReprintStatus =
-    reprintStatusQuery.data?.status === "Approved"
-      ? "approved"
-      : reprintStatusQuery.data?.status === "Rejected"
-        ? "rejected"
-        : reprintRequestStatus;
+  // Convert array to a record keyed by orderId for O(1) lookup
+  let activeRequestsMap: Record<string, { print: { requestId: string; status: string } | null; cancel: { requestId: string; status: string; reason: string } | null }> = {};
+  for (let i = 0; i < activeRequestsData.length; i++) {
+    let r = activeRequestsData[i];
+    activeRequestsMap[r.orderId] = r;
+  }
+
+  // Server tracks consumed approvals — no client-side state needed
 
   // Fetch and print an approved reprint order
   async function printApprovedOrder(orderId: string) {
@@ -244,15 +248,6 @@ function PosPage() {
     printReceipt({ order: printOrder, cartItems: cartItems, branchName: branchName });
   }
 
-  // Auto-print when reprint is approved
-  useEffect(() => {
-    if (resolvedReprintStatus !== "approved" || !reprintOrderId) return;
-
-    void (async () => {
-      await printApprovedOrder(reprintOrderId);
-    })();
-  }, [resolvedReprintStatus, reprintOrderId]);
-
   let menuResult = useQuery({
     queryKey: ["pos-menu", selectedBrandId, selectedCategory, searchQuery],
     queryFn: function () {
@@ -285,16 +280,6 @@ function PosPage() {
     enabled: !!activeBranchId,
   });
   let branchInventory = invResult.data?.data ?? [];
-
-  let ordersResult = useQuery({
-    queryKey: ["pos-recent-orders", activeBranchId],
-    queryFn: function () {
-      return getOrders({ data: { branchId: activeBranchId, limit: 20 } });
-    },
-    enabled: !!activeBranchId,
-    retry: 1,
-  });
-  let recentOrders = ordersResult.data || [];
 
   let createOrderMutation = useMutation({
     mutationFn: createOrder,
@@ -427,12 +412,28 @@ function PosPage() {
     mutationFn: createCancelRequest,
     onSuccess: function () {
       void queryClient.invalidateQueries({ queryKey: ["pos-recent-orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["active-requests"] });
       setVoidModal(null);
       setCheckoutError(null);
     },
     onError: function (err) {
       setCheckoutError(
         err instanceof Error ? err.message : "Gagal mengajukan permintaan pembatalan",
+      );
+    },
+  });
+
+  let executeCancelMutation = useMutation({
+    mutationFn: executeApprovedCancel,
+    onSuccess: function () {
+      void queryClient.invalidateQueries({ queryKey: ["pos-recent-orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["active-requests"] });
+      void queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      setVoidModal(null);
+    },
+    onError: function (err) {
+      setCheckoutError(
+        err instanceof Error ? err.message : "Gagal menjalankan pembatalan",
       );
     },
   });
@@ -669,21 +670,12 @@ function PosPage() {
 
   let requestReprintMutation = useMutation({
     mutationFn: requestReprint,
-    onSuccess: function (result: any) {
-      if (result.alreadyPending) {
-        setReprintRequestStatus("already_pending");
-      } else {
-        setReprintRequestStatus("pending");
-      }
-    },
-    onError: function () {
-      setReprintRequestStatus("error");
+    onSuccess: function () {
+      void queryClient.invalidateQueries({ queryKey: ["active-requests"] });
     },
   });
 
   function handleReprint(orderId: string) {
-    setReprintRequestStatus(null);
-    setReprintOrderId(orderId);
     void requestReprintMutation.mutateAsync({
       data: { orderId: orderId, requestType: "reprint" },
     });
@@ -691,7 +683,13 @@ function PosPage() {
 
   function handleVoid() {
     if (!voidModal) return;
-    if (voidModal.mode === "request") {
+    if (voidModal.mode === "execute" && voidModal.requestId) {
+      // Cashier executing an approved cancel request
+      void executeCancelMutation.mutateAsync({
+        data: { requestId: voidModal.requestId },
+      });
+    } else if (voidModal.mode === "request") {
+      // Cashier requesting cancel approval
       void cancelRequestMutation.mutateAsync({
         data: {
           orderId: voidModal.orderId,
@@ -699,6 +697,7 @@ function PosPage() {
         },
       });
     } else {
+      // Admin direct void (no approval needed)
       void voidOrderMutation.mutateAsync({
         data: { orderId: voidModal.orderId, reason: voidModal.reason },
       });
@@ -721,6 +720,7 @@ function PosPage() {
 
   let canVoid = user?.role === "super_admin" || user?.role === "admin_pusat";
   let canRequestCancel = user?.role === "branch_admin";
+  let canDirectPrint = !canRequestCancel; // super_admin, admin_pusat skip approval
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "branch_admin"]}>
@@ -882,67 +882,48 @@ function PosPage() {
           }}
           onPpnToggle={handlePpnToggle}
         >
-          {/* Reprint status — kept inside CartSidebar */}
-          {reprintRequestStatus && (
-            <div className="shrink-0 border-t px-3 py-1.5 text-[10px] flex items-center gap-1.5">
-              {resolvedReprintStatus === "approved" ? (
-                <CheckCircle2 className="h-3 w-3 text-primary shrink-0" />
-              ) : resolvedReprintStatus === "rejected" ? (
-                <AlertCircle className="h-3 w-3 text-destructive shrink-0" />
-              ) : (
-                <Clock className="h-3 w-3 text-warning shrink-0" />
-              )}
-              <span
-                className={
-                  resolvedReprintStatus === "error"
-                    ? "text-destructive"
-                    : resolvedReprintStatus === "approved"
-                      ? "text-primary"
-                      : resolvedReprintStatus === "rejected"
-                        ? "text-destructive"
-                        : "text-warning"
-                }
-              >
-                {resolvedReprintStatus === "pending"
-                  ? "Menunggu persetujuan Area Manager..."
-                  : resolvedReprintStatus === "already_pending"
-                    ? "Permintaan cetak ulang sudah diajukan sebelumnya"
-                    : resolvedReprintStatus === "approved"
-                      ? "Permintaan cetak ulang telah disetujui"
-                      : resolvedReprintStatus === "rejected"
-                        ? "Permintaan cetak ulang ditolak"
-                        : "Gagal mengajukan permintaan"}
-              </span>
-              {resolvedReprintStatus === "approved" && reprintOrderId && (
-                <button
-                  onClick={function () {
-                    void printApprovedOrder(reprintOrderId);
-                  }}
-                  className="ml-auto h-5 px-2 rounded text-[10px] font-medium bg-primary text-primary-foreground hover:bg-primary/90"
-                >
-                  Cetak
-                </button>
-              )}
-              <button
-                onClick={function () {
-                  setReprintRequestStatus(null);
-                }}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          )}
           <OrderHistory
             recentOrders={recentOrders}
             canVoid={canVoid}
             canRequestCancel={canRequestCancel}
-            onReprint={handleReprint}
-            onVoid={function (orderId) {
-              setVoidModal({ orderId: orderId, reason: "" });
+            canDirectPrint={canDirectPrint}
+            activeRequests={activeRequestsMap}
+            onPrintClick={function (orderId: string) {
+              if (canDirectPrint) {
+                void printApprovedOrder(orderId);
+                return;
+              }
+              let req = activeRequestsMap[orderId];
+              let printStatus = req?.print?.status;
+              let printRequestId = req?.print?.requestId;
+              if (printStatus === "Approved") {
+                // Consume on server first, then print
+                if (printRequestId) {
+                  void consumePrintRequest({ data: { requestId: printRequestId } });
+                }
+                void printApprovedOrder(orderId);
+              } else if (!printStatus || printStatus === "Rejected") {
+                handleReprint(orderId);
+              }
             }}
-            onRequestCancel={function (orderId) {
-              setVoidModal({ orderId: orderId, reason: "", mode: "request" });
+            onCancelClick={function (orderId: string) {
+              // State machine: null → open modal, Pending → no-op, Approved → open execute modal
+              let req = activeRequestsMap[orderId];
+              let cancelStatus = req?.cancel?.status;
+              if (cancelStatus === "Approved" && req?.cancel?.requestId) {
+                setVoidModal({
+                  orderId: orderId,
+                  reason: req?.cancel?.reason ?? "",
+                  mode: "execute",
+                  requestId: req.cancel.requestId,
+                });
+              } else if (!cancelStatus || cancelStatus === "Rejected") {
+                setVoidModal({ orderId: orderId, reason: "", mode: "request" });
+              }
+              // Pending → no-op
+            }}
+            onDirectVoid={function (orderId: string) {
+              setVoidModal({ orderId: orderId, reason: "" });
             }}
           />
         </CartSidebar>
@@ -1048,14 +1029,22 @@ function PosPage() {
         onClose={function () {
           setVoidModal(null);
         }}
-        title={voidModal?.mode === "request" ? "Minta Pembatalan" : "Batalkan Pesanan"}
+        title={
+          voidModal?.mode === "request"
+            ? "Minta Pembatalan"
+            : voidModal?.mode === "execute"
+              ? "Eksekusi Pembatalan"
+              : "Batalkan Pesanan"
+        }
         size="sm"
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
             {voidModal?.mode === "request"
               ? "Ajukan permintaan pembatalan pesanan ini. Area Manager akan menyetujui atau menolak permintaan Anda."
-              : "Apakah Anda yakin ingin membatalkan pesanan ini? Stok bahan baku akan dikembalikan."}
+              : voidModal?.mode === "execute"
+                ? "Apakah Anda yakin ingin membatalkan pesanan ini? Permintaan telah disetujui oleh Area Manager. Stok bahan baku akan dikembalikan."
+                : "Apakah Anda yakin ingin membatalkan pesanan ini? Stok bahan baku akan dikembalikan."}
           </p>
           <div className="space-y-2">
             <label className="text-sm font-medium">Alasan Pembatalan</label>
@@ -1088,6 +1077,7 @@ function PosPage() {
                 }}
                 placeholder="Alasan pembatalan..."
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                readOnly={voidModal?.mode === "execute"}
               />
             )}
           </div>
@@ -1107,11 +1097,12 @@ function PosPage() {
               disabled={
                 !voidModal?.reason ||
                 voidOrderMutation.isPending ||
-                cancelRequestMutation.isPending
+                cancelRequestMutation.isPending ||
+                executeCancelMutation.isPending
               }
               className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
             >
-              {voidOrderMutation.isPending || cancelRequestMutation.isPending
+              {voidOrderMutation.isPending || cancelRequestMutation.isPending || executeCancelMutation.isPending
                 ? "Memproses..."
                 : voidModal?.mode === "request"
                   ? "Ajukan Permintaan"

@@ -6,7 +6,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { Badge } from "#/components/ui/badge";
 import Modal from "#/components/ui/Modal";
 import { getCancelRequests, approveCancelRequest, rejectCancelRequest } from "#/lib/server/pos";
-import { useAuth } from "#/lib/auth-context";
+
 import { XCircle } from "lucide-react";
 
 interface CancelRequest {
@@ -16,7 +16,7 @@ interface CancelRequest {
   detail: string | null;
   requestedBy: string;
   requestedByName: string | null;
-  status: "Pending" | "Approved" | "Rejected";
+  status: "Pending" | "Approved" | "Rejected" | "Executed";
   createdAt: Date;
 }
 
@@ -32,10 +32,20 @@ const reasonLabels: Record<string, string> = {
 
 function StatusBadge({ status }: { status: string }) {
   const variant: "warning" | "success" | "destructive" | "secondary" =
-    status === "Pending" ? "warning" : status === "Approved" ? "success" : "secondary";
+    status === "Pending"
+      ? "warning"
+      : status === "Approved" || status === "Executed"
+        ? "success"
+        : "secondary";
   return (
     <Badge variant={variant}>
-      {status === "Pending" ? "Menunggu" : status === "Approved" ? "Disetujui" : "Ditolak"}
+      {status === "Pending"
+        ? "Menunggu"
+        : status === "Approved"
+          ? "Disetujui"
+          : status === "Executed"
+            ? "Dieksekusi"
+            : "Ditolak"}
     </Badge>
   );
 }
@@ -43,18 +53,15 @@ function StatusBadge({ status }: { status: string }) {
 function CancelRequestsPage() {
   usePageTitle("Permintaan Pembatalan", "Review dan approve permintaan cancel order dari kasir");
   const queryClient = useQueryClient();
-  const { user } = useAuth();
 
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<"approve" | "reject" | null>(null);
 
-  const isBranchAdmin = user?.role === "branch_admin";
-
   const { data, isLoading } = useQuery({
-    queryKey: ["cancel-requests", user?.branchId],
+    queryKey: ["cancel-requests"],
     queryFn: () =>
       getCancelRequests({
-        data: isBranchAdmin && user?.branchId ? { branchId: user.branchId } : {},
+        data: {},
       }),
   });
 
@@ -87,7 +94,7 @@ function CancelRequestsPage() {
   }
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
+    <RoleGuard allowedRoles={["super_admin", "area_manager"]}>
       {isLoading ? (
         <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
           Memuat...
@@ -96,11 +103,7 @@ function CancelRequestsPage() {
         <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
           <XCircle className="h-10 w-10 mb-2 opacity-30" />
           <p className="text-sm font-medium">Tidak ada permintaan pembatalan</p>
-          <p className="text-xs">
-            {isBranchAdmin
-              ? "Belum ada permintaan pembatalan untuk cabang ini"
-              : "Permintaan dari kasir akan muncul di sini"}
-          </p>
+          <p className="text-xs">Permintaan dari kasir akan muncul di sini</p>
         </div>
       ) : (
         <div className="rounded-md border overflow-x-auto">
@@ -141,7 +144,7 @@ function CancelRequestsPage() {
                     <StatusBadge status={r.status} />
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {!isBranchAdmin && r.status === "Pending" && (
+                    {r.status === "Pending" && (
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => {
@@ -171,8 +174,8 @@ function CancelRequestsPage() {
         </div>
       )}
 
-      {/* Confirm modal — only for non-kasir (approve/reject) */}
-      {!isBranchAdmin && confirmAction && (
+      {/* Confirm modal — approve/reject */}
+      {confirmAction && (
         <Modal
           open={!!confirmAction}
           onClose={() => setConfirmAction(null)}

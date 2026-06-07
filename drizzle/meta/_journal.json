@@ -64,6 +64,20 @@
       "when": 1780636381760,
       "tag": "0008_lyrical_network",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780851579177,
+      "tag": "0009_rare_nightmare",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780942000000,
+      "tag": "0010_zany_firestar",
+      "breakpoints": true
     }
   ]
 }

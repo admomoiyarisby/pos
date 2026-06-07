@@ -1,0 +1,1 @@
+ALTER TYPE "public"."cancel_request_status" ADD VALUE 'Executed';

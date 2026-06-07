@@ -715,10 +715,13 @@ export const requestReprint = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
+    // Return existing Pending request (don't create duplicates)
     const [existing] = await db
       .select()
       .from(printRequests)
-      .where(and(eq(printRequests.orderId, data.orderId), eq(printRequests.status, "Pending")))
+      .where(
+        and(eq(printRequests.orderId, data.orderId), eq(printRequests.status, "Pending")),
+      )
       .limit(1);
 
     if (existing) {
@@ -823,6 +826,14 @@ export const approveReprint = createServerFn({ method: "POST" })
       .where(eq(printRequests.id, data.requestId))
       .returning();
 
+    // Notify the requesting cashier
+    await db.insert(systemNotifications).values({
+      userId: old.requestedBy,
+      title: "Print Request Approved",
+      message: `Permintaan cetak ulang untuk order #${old.orderId.slice(0, 8)} telah disetujui. Klik tombol Cetak untuk mencetak.`,
+      type: "info",
+    });
+
     await logSystemAction(
       user,
       "Approve Reprint",
@@ -863,10 +874,57 @@ export const rejectReprint = createServerFn({ method: "POST" })
       .where(eq(printRequests.id, data.requestId))
       .returning();
 
+    // Notify the requesting cashier
+    await db.insert(systemNotifications).values({
+      userId: old.requestedBy,
+      title: "Print Request Rejected",
+      message: `Permintaan cetak ulang untuk order #${old.orderId.slice(0, 8)} ditolak`,
+      type: "warning",
+    });
+
     await logSystemAction(
       user,
       "Reject Reprint",
       `Print request #${data.requestId.slice(0, 8)} ditolak oleh ${user.name}`,
+    );
+
+    return req;
+  });
+
+export const consumePrintRequest = createServerFn({ method: "POST" })
+  .inputValidator((data: { requestId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    const [old] = await db
+      .select()
+      .from(printRequests)
+      .where(eq(printRequests.id, data.requestId))
+      .limit(1);
+
+    if (!old) throw new Error("Print request not found");
+    if (old.status !== "Approved") throw new Error("Hanya request dengan status Approved yang dapat dikonsumsi");
+
+    const [req] = await db
+      .update(printRequests)
+      .set({
+        status: "Consumed",
+      })
+      .where(eq(printRequests.id, data.requestId))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Consume Print Request",
+      `Print request #${data.requestId.slice(0, 8)} telah digunakan oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "printRequests",
+      data.requestId,
+      "STATUS_CHANGE",
+      old as Record<string, unknown>,
+      req as Record<string, unknown>,
     );
 
     return req;
@@ -960,17 +1018,11 @@ export const approveCancelRequest = createServerFn({ method: "POST" })
       .where(eq(cancelRequests.id, data.requestId))
       .returning();
 
-    // Also mark the order as Void
-    await db
-      .update(orders)
-      .set({ status: "Void", voidReason: `Cancel: ${old.reason}` })
-      .where(eq(orders.id, old.orderId));
-
     // Notify the requesting cashier
     await db.insert(systemNotifications).values({
       userId: old.requestedBy,
       title: "Cancel Request Approved",
-      message: `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} telah disetujui`,
+      message: `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} telah disetujui. Klik tombol Batal untuk menjalankan pembatalan.`,
       type: "info",
     });
 
@@ -1026,3 +1078,181 @@ export const rejectCancelRequest = createServerFn({ method: "POST" })
 
     return req;
   });
+
+// ─── Execute Approved Cancel (cashier-side) ───
+
+export const executeApprovedCancel = createServerFn({ method: "POST" })
+  .inputValidator((data: { requestId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    const [old] = await db
+      .select()
+      .from(cancelRequests)
+      .where(eq(cancelRequests.id, data.requestId))
+      .limit(1);
+
+    if (!old) throw new Error("Cancel request not found");
+    if (old.status !== "Approved") throw new Error("Request belum disetujui atau sudah dieksekusi");
+
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.id, old.orderId))
+      .limit(1);
+
+    if (!order) throw new Error("Order not found");
+    if (order.status === "Void") throw new Error("Order sudah dibatalkan");
+
+    // Mark the request as Executed
+    await db
+      .update(cancelRequests)
+      .set({ status: "Executed" })
+      .where(eq(cancelRequests.id, data.requestId));
+
+    // Void the order
+    const [voidedOrder] = await db
+      .update(orders)
+      .set({ status: "Void", voidReason: `Cancel: ${old.reason}` })
+      .where(eq(orders.id, old.orderId))
+      .returning();
+
+    // Restore inventory (same logic as voidOrder)
+    const orderItemsList = await db
+      .select()
+      .from(orderItems)
+      .where(eq(orderItems.orderId, old.orderId));
+
+    for (const oi of orderItemsList) {
+      const resolved = await resolvePersistedItemIngredients(oi.id);
+
+      for (const ing of resolved.ingredients) {
+        const [inv] = await db
+          .select()
+          .from(inventory)
+          .where(
+            and(eq(inventory.branchId, order.branchId), eq(inventory.ingredientId, ing.ingredientId)),
+          )
+          .limit(1);
+
+        if (inv) {
+          const newQty = inv.quantity + ing.quantity;
+          await db
+            .update(inventory)
+            .set({ quantity: newQty, lastUpdated: new Date() })
+            .where(eq(inventory.id, inv.id));
+
+          if (ing.quantity !== 0) {
+            await db.insert(stockLedger).values({
+              branchId: order.branchId,
+              ingredientId: ing.ingredientId,
+              type: ing.quantity > 0 ? "IN" : "OUT",
+              quantity: Math.abs(ing.quantity),
+              balance: newQty,
+              reference: old.orderId,
+              notes:
+                ing.quantity > 0
+                  ? `Void Order ${order.id.slice(0, 8)}: ${old.reason}`
+                  : `Void re-deduct exclusion: ${order.id.slice(0, 8)}`,
+            });
+          }
+        }
+      }
+    }
+
+    await logSystemAction(
+      user,
+      "Execute Cancel",
+      `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name} (cancel request #${data.requestId.slice(0, 8)}). Alasan: ${old.reason}`,
+    );
+    await logAudit(
+      user,
+      "orders",
+      old.orderId,
+      "STATUS_CHANGE",
+      order as Record<string, unknown>,
+      voidedOrder as Record<string, unknown>,
+    );
+
+    return voidedOrder;
+  });
+
+// ─── Active Requests for Orders (POS polling source) ───
+
+export const getActiveRequestsForOrders = createServerFn({ method: "GET" })
+  .inputValidator((data: { orderIds: string[] }) => data)
+  .handler(async ({ data }) => {
+    await requireAuth();
+
+    if (data.orderIds.length === 0) return [];
+
+    // Get latest print request per order (Pending or Approved)
+    const printReqs = await db
+      .select({
+        id: printRequests.id,
+        orderId: printRequests.orderId,
+        status: printRequests.status,
+        createdAt: printRequests.createdAt,
+      })
+      .from(printRequests)
+      .where(
+        and(
+          inArray(printRequests.orderId, data.orderIds),
+          inArray(printRequests.status, ["Pending", "Approved"]),
+        ),
+      )
+      .orderBy(desc(printRequests.createdAt));
+
+    // Get latest cancel request per order (Pending or Approved)
+    const cancelReqs = await db
+      .select({
+        id: cancelRequests.id,
+        orderId: cancelRequests.orderId,
+        status: cancelRequests.status,
+        reason: cancelRequests.reason,
+        createdAt: cancelRequests.createdAt,
+      })
+      .from(cancelRequests)
+      .where(
+        and(
+          inArray(cancelRequests.orderId, data.orderIds),
+          inArray(cancelRequests.status, ["Pending", "Approved"]),
+        ),
+      )
+      .orderBy(desc(cancelRequests.createdAt));
+
+    // Deduplicate to latest per orderId
+    const latestPrint = new Map<string, { id: string; status: string; createdAt: Date }>();
+    for (const r of printReqs) {
+      if (!latestPrint.has(r.orderId)) {
+        latestPrint.set(r.orderId, { id: r.id, status: r.status, createdAt: r.createdAt });
+      }
+    }
+
+    const latestCancel = new Map<string, { id: string; status: string; reason: string; createdAt: Date }>();
+    for (const r of cancelReqs) {
+      if (!latestCancel.has(r.orderId)) {
+        latestCancel.set(r.orderId, { id: r.id, status: r.status, reason: r.reason, createdAt: r.createdAt });
+      }
+    }
+
+    // Combine into a single result per order
+    const result: Array<{
+      orderId: string;
+      print: { requestId: string; status: string; createdAt: Date } | null;
+      cancel: { requestId: string; status: string; reason: string; createdAt: Date } | null;
+    }> = [];
+
+    for (const orderId of data.orderIds) {
+      const rawPrint = latestPrint.get(orderId) ?? null;
+      const rawCancel = latestCancel.get(orderId) ?? null;
+      const print = rawPrint ? { requestId: rawPrint.id, status: rawPrint.status, createdAt: rawPrint.createdAt } : null;
+      const cancel = rawCancel ? { requestId: rawCancel.id, status: rawCancel.status, reason: rawCancel.reason, createdAt: rawCancel.createdAt } : null;
+      if (print || cancel) {
+        result.push({ orderId, print, cancel });
+      }
+    }
+
+    return result;
+  });
+

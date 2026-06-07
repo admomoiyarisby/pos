@@ -6,7 +6,6 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { Badge } from "#/components/ui/badge";
 import Modal from "#/components/ui/Modal";
 import { getPendingPrintRequests, approveReprint, rejectReprint } from "#/lib/server/pos";
-import { useAuth } from "#/lib/auth-context";
 import { Printer } from "lucide-react";
 
 interface PrintRequest {
@@ -50,15 +49,10 @@ function PrintRequestsPage() {
   const confirmAction = _b[0];
   const setConfirmAction = _b[1];
 
-  const { user } = useAuth();
-  const isBranchAdmin = user?.role === "branch_admin";
-
   const { data, isLoading } = useQuery({
-    queryKey: ["print-requests", user?.branchId],
+    queryKey: ["print-requests"],
     queryFn: function () {
-      return getPendingPrintRequests({
-        data: isBranchAdmin && user?.branchId ? { branchId: user.branchId } : {},
-      });
+      return getPendingPrintRequests({ data: {} });
     },
   });
 
@@ -98,7 +92,7 @@ function PrintRequestsPage() {
   };
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
+    <RoleGuard allowedRoles={["super_admin", "area_manager"]}>
       {isLoading ? (
         <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
           Memuat...
@@ -107,11 +101,7 @@ function PrintRequestsPage() {
         <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
           <Printer className="h-10 w-10 mb-2 opacity-30" />
           <p className="text-sm font-medium">Tidak ada permintaan cetak ulang</p>
-          <p className="text-xs">
-            {isBranchAdmin
-              ? "Belum ada permintaan cetak ulang untuk cabang ini"
-              : "Permintaan dari kasir akan muncul di sini"}
-          </p>
+          <p className="text-xs">Permintaan dari kasir akan muncul di sini</p>
         </div>
       ) : (
         <div className="rounded-md border overflow-x-auto">

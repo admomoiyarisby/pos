@@ -1,0 +1,1 @@
+ALTER TYPE "public"."print_request_status" ADD VALUE 'Consumed';
