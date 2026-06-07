@@ -157,20 +157,11 @@ export function OrderHistoryTable({
                       </td>
                     )}
                     <td className="whitespace-nowrap px-4 py-4">
-                      <span
-                        className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase border-l-2 border-border ${
-                          order.channel === "Gofood"
-                            ? "border-l-rose-500 bg-rose-50 text-rose-700"
-                            : order.channel === "Grabfood"
-                              ? "border-l-emerald-500 bg-emerald-50 text-emerald-700"
-                              : order.channel === "ShopeeFood"
-                                ? "border-l-orange-500 bg-orange-50 text-orange-700"
-                                : order.channel === "Dine-in"
-                                  ? "border-l-blue-500 bg-blue-50 text-blue-700"
-                                  : "border-l-slate-400 bg-slate-50 text-slate-600"
-                        }`}
-                      >
-                        {order.channel}
+                      <span className="inline-flex items-center gap-1.5">
+                        <ChannelDot channel={order.channel} />
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {order.channel}
+                        </span>
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-4">
@@ -204,5 +195,22 @@ export function OrderHistoryTable({
       </div>
       <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
     </div>
+  );
+}
+
+// Small color dot beside the channel name — replaces the banned side-stripe border.
+// Keeps the channel distinguishable without decorative color blocks.
+function ChannelDot({ channel }: { channel: string }) {
+  const colorByChannel: Record<string, string> = {
+    Gofood: "bg-rose-500",
+    Grabfood: "bg-emerald-500",
+    ShopeeFood: "bg-orange-500",
+    "Dine-in": "bg-blue-500",
+  };
+  return (
+    <span
+      aria-hidden
+      className={`h-1.5 w-1.5 shrink-0 rounded-full ${colorByChannel[channel] ?? "bg-slate-400"}`}
+    />
   );
 }
