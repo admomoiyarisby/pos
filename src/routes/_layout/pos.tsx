@@ -751,9 +751,9 @@ function PosPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "branch_admin"]}>
-      <div className="flex flex-col md:flex-row h-[calc(100vh-3rem)] -m-4 md:-m-6">
+      <div className="flex flex-col md:flex-row h-[calc(100vh-3rem)] h-[calc(100dvh-3rem)] -m-4 md:-m-6">
         {/* Main Content */}
-        <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden">
+        <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden min-h-0">
           {/* Top Bar */}
           <div className="flex items-center gap-3 mb-4 shrink-0 flex-wrap">
             {isAdmin ? (
@@ -1251,7 +1251,7 @@ function PosPage() {
           </button>
 
           {mobileCartOpen && (
-            <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden">
+            <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden safe-inset">
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <div className="flex items-center gap-2">
                   <ShoppingCart className="h-5 w-5" />

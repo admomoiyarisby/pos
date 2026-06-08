@@ -156,8 +156,8 @@ export default function MenuGrid({
                 ) : (
                   <span className="text-2xl" />
                 )}
-                {/* + button overlay — visible on hover */}
-                <div className="absolute bottom-1.5 right-1.5 h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg pointer-events-none">
+                {/* + button overlay — visible on hover (desktop) and always (touch) */}
+                <div className="absolute bottom-1.5 right-1.5 h-7 w-7 sm:h-7 sm:w-7 md:h-8 md:w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity shadow-lg pointer-events-none md:opacity-0 md:group-hover:opacity-100 max-md:opacity-100">
                   <Plus className="h-4 w-4" />
                 </div>
               </div>

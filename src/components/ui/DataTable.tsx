@@ -193,7 +193,7 @@ export default function DataTable<T>({
                 <tr
                   key={keyExtractor(row)}
                   onClick={() => onRowClick?.(row)}
-                  className={`border-b transition-colors hover:bg-muted/50 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(row) ?? ""}`}
+                  className={`border-b transition-colors hover:bg-muted/50 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(row) ?? ""} max-md:min-h-[44px]`}
                 >
                   {columns.map((col, colIdx) => (
                     <td
