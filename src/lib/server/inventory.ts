@@ -10,7 +10,7 @@ import {
   systemNotifications,
   areaManagerBranches,
 } from "#/db/schema";
-import { eq, and, ilike, desc, asc, count, inArray } from "drizzle-orm";
+import { eq, and, ilike, desc, asc, count, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 
@@ -25,6 +25,7 @@ export const getInventory = createServerFn({ method: "GET" })
       limit?: number;
       sortBy?: string;
       sortOrder?: "asc" | "desc";
+      negative?: boolean;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -43,6 +44,7 @@ export const getInventory = createServerFn({ method: "GET" })
       data.search ? ilike(ingredients.name, `%${data.search}%`) : undefined,
       data.category ? eq(ingredients.category, data.category) : undefined,
       data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
+      data.negative ? sql`${inventory.quantity} <= 0` : undefined,
     ];
     const where = and(...conditions.filter(Boolean));
 

@@ -72,6 +72,11 @@ function DNPage() {
     initialData: initial,
   });
 
+  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const filteredDns = statusFilter
+    ? dns.filter((d) => d.status === statusFilter)
+    : dns;
+
   const createMutation = useMutation({
     mutationFn: createDeliveryNote,
     onSuccess: () => {
@@ -251,7 +256,7 @@ function DNPage() {
         </div>
       )}
 
-      <DataTable columns={columns} data={dns} keyExtractor={(r) => r.id} />
+      <DataTable columns={columns} data={filteredDns} keyExtractor={(r) => r.id} />
 
       {/* Review SJ Modal */}
       <Modal

@@ -134,6 +134,11 @@ function OrderHistoryPage() {
     });
   }, [rawOrders]);
 
+  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const filteredOrders = statusFilter
+    ? orders.filter((o) => o.status === statusFilter)
+    : orders;
+
   const updateStatusMutation = useMutation({
     mutationFn: updateOrderStatus,
     onSuccess: function () {
@@ -153,7 +158,7 @@ function OrderHistoryPage() {
     <RoleGuard allowedRoles={["super_admin"]}>
       <DataTable
         columns={columns}
-        data={orders}
+        data={filteredOrders}
         keyExtractor={(r) => r.id}
         onRowClick={(r) => setSelectedOrder(r)}
       />

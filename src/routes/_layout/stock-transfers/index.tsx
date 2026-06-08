@@ -73,6 +73,11 @@ function TransferPage() {
     initialData: initial,
   });
 
+  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const filteredTransfers = statusFilter
+    ? transfers.filter((t) => t.status === statusFilter)
+    : transfers;
+
   const createMutation = useMutation({
     mutationFn: createStockTransfer,
     onSuccess: () => {
@@ -318,7 +323,7 @@ function TransferPage() {
         </div>
       )}
 
-      <DataTable columns={columns} data={transfers} keyExtractor={(r) => r.id} />
+      <DataTable columns={columns} data={filteredTransfers} keyExtractor={(r) => r.id} />
 
       <Modal
         open={modalOpen}

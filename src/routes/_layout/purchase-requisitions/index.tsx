@@ -96,6 +96,11 @@ function PRPage() {
     initialData: initial,
   });
 
+  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const filteredPrs = statusFilter
+    ? prs.filter((p) => p.status === statusFilter)
+    : prs;
+
   const createMutation = useMutation({
     mutationFn: createPurchaseRequisition,
     onSuccess: () => {
@@ -300,7 +305,7 @@ function PRPage() {
         )}
       </div>
 
-      <DataTable columns={columns} data={prs} keyExtractor={(r) => r.id} />
+      <DataTable columns={columns} data={filteredPrs} keyExtractor={(r) => r.id} />
 
       {/* Create PR Modal */}
       <Modal

@@ -190,17 +190,25 @@ function PeriodControlPage() {
                     .map((check) => {
                       // Build link for failed checks when possible
                       const name = check.name.toLowerCase();
-                      let linkTo: { to: string; label: string } | null = null;
+                      let linkTo: { to: string; label: string; search?: Record<string, string> } | null = null;
                       if (name.includes("stock opname"))
-                        linkTo = { to: "/stock-opname", label: "Buka Stock Opname" };
+                        linkTo = { to: "/stock-opname", label: "Buka Stock Opname", search: { status: "Under Investigation" } };
+                      else if (name.includes("cancel request"))
+                        linkTo = { to: "/cancel-requests", label: "Buka Cancel Request", search: { status: "Pending" } };
+                      else if (name.includes("invoice scm") || (name.includes("invoice") && name.includes("scm")))
+                        linkTo = { to: "/scm-invoices", label: "Buka Invoice SCM", search: { status: "Unpaid" } };
                       else if (name.includes("delivery note") || name.includes("surat jalan"))
-                        linkTo = { to: "/delivery-notes", label: "Buka Surat Jalan" };
+                        linkTo = { to: "/delivery-notes", label: "Buka Surat Jalan", search: { status: "In Transit" } };
                       else if (name.includes("purchase requisition") || name.includes("pr"))
-                        linkTo = { to: "/purchase-requisitions", label: "Buka Purchase Requisition" };
+                        linkTo = { to: "/purchase-requisitions", label: "Buka Purchase Requisition", search: { status: "Pending" } };
                       else if (name.includes("pending order") || name.includes("pesanan"))
-                        linkTo = { to: "/order-history", label: "Buka Riwayat Pesanan" };
-                      else if (name.includes("inventory") || name.includes("stok"))
-                        linkTo = { to: "/inventory", label: "Buka Inventory" };
+                        linkTo = { to: "/order-history", label: "Buka Riwayat Pesanan", search: { status: "Cancel Requested" } };
+                      else if (name.includes("mutasi stok"))
+                        linkTo = { to: "/stock-transfers", label: "Buka Mutasi Stok", search: { status: "In Transit" } };
+                      else if (name.includes("waste investigation") || name.includes("waste"))
+                        linkTo = { to: "/waste", label: "Buka Waste", search: { noInvestigation: "true" } };
+                      else if (name.includes("inventory") || (name.includes("stok") && !name.includes("mutasi")))
+                        linkTo = { to: "/inventory", label: "Buka Inventory", search: { negative: "true" } };
                       return (
                         <div
                           key={check.name}
@@ -214,6 +222,7 @@ function PeriodControlPage() {
                           {linkTo && (
                             <Link
                               to={linkTo.to}
+                              search={linkTo.search as any}
                               className="shrink-0 h-7 px-2 rounded-md bg-primary/10 text-primary text-[10px] font-medium flex items-center gap-1 hover:bg-primary/20"
                             >
                               {linkTo.label} <ArrowRight className="h-3 w-3" />

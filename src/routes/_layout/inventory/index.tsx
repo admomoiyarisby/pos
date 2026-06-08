@@ -57,8 +57,11 @@ function InventoryPage() {
   const canFilterBranches =
     user?.role === "super_admin" || user?.role === "admin_pusat" || user?.role === "area_manager";
 
+  const { negative: negativeParam } = Route.useSearch() as { negative?: string };
+  const negativeFilter = negativeParam === "true";
+
   const { data: result } = useQuery({
-    queryKey: ["inventory", search, category, branchId, page],
+    queryKey: ["inventory", search, category, branchId, page, negativeFilter],
     queryFn: () =>
       getInventory({
         data: {
@@ -67,6 +70,7 @@ function InventoryPage() {
           branchId: branchId || undefined,
           page,
           limit: pageSize,
+          negative: negativeFilter || undefined,
         },
       }),
     initialData: { data: initialData, total: initialTotal },
@@ -155,6 +159,11 @@ function InventoryPage() {
               {cat || "Semua"}
             </button>
           ))}
+          {negativeFilter && (
+            <Badge variant="destructive" className="h-8 px-3 rounded-md text-xs">
+              Stok Negatif
+            </Badge>
+          )}
         </div>
         <div className="relative flex-1 max-w-xs ml-auto">
           <input

@@ -104,6 +104,14 @@ function WastePage() {
     initialData: initial,
   });
 
+  const { noInvestigation } = Route.useSearch() as { noInvestigation?: string };
+  const filteredEntries =
+    noInvestigation === "true"
+      ? entries.filter(
+          (e) => !e.investigationNote || e.investigationNote.trim() === "",
+        )
+      : entries;
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery);
@@ -277,8 +285,8 @@ function WastePage() {
   ];
 
   const totalValuation = useMemo(() => {
-    return entries.reduce((sum, e) => sum + (e.valuation ?? 0), 0);
-  }, [entries]);
+    return filteredEntries.reduce((sum, e) => sum + (e.valuation ?? 0), 0);
+  }, [filteredEntries]);
 
   return (
     <RoleGuard
@@ -333,7 +341,7 @@ function WastePage() {
       <DataTable
         searchable={false}
         columns={columns}
-        data={entries}
+        data={filteredEntries}
         keyExtractor={(r) => r.id}
         pageSize={15}
         rowClassName={(r) => {

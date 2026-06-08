@@ -56,6 +56,11 @@ function SCMInvoicePage() {
     initialData: initial,
   });
 
+  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const filteredInvoices = statusFilter
+    ? invoices.filter((inv) => inv.status === statusFilter)
+    : invoices;
+
   const generateMutation = useMutation({
     mutationFn: generateSCMInvoice,
     onSuccess: () => {
@@ -188,7 +193,7 @@ function SCMInvoicePage() {
         }
       />
 
-      <DataTable columns={columns} data={invoices} keyExtractor={(r) => r.id} />
+      <DataTable columns={columns} data={filteredInvoices} keyExtractor={(r) => r.id} />
 
       <div
         className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 ${generateModal ? "" : "hidden"}`}

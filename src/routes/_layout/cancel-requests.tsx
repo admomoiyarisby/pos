@@ -67,6 +67,11 @@ function CancelRequestsPage() {
 
   const requests: CancelRequest[] = data ?? [];
 
+  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const filteredRequests = statusFilter
+    ? requests.filter((r) => r.status === statusFilter)
+    : requests;
+
   const approveMutation = useMutation({
     mutationFn: approveCancelRequest,
     onSuccess: () => {
@@ -99,7 +104,7 @@ function CancelRequestsPage() {
         <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
           Memuat...
         </div>
-      ) : requests.length === 0 ? (
+      ) : filteredRequests.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
           <XCircle className="h-10 w-10 mb-2 opacity-30" />
           <p className="text-sm font-medium">Tidak ada permintaan pembatalan</p>
@@ -120,7 +125,7 @@ function CancelRequestsPage() {
               </tr>
             </thead>
             <tbody>
-              {requests.map((r) => (
+              {filteredRequests.map((r) => (
                 <tr key={r.id} className="border-b hover:bg-muted/30">
                   <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                     {new Date(r.createdAt).toLocaleString("id-ID", {

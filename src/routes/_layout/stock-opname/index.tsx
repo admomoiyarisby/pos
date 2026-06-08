@@ -128,6 +128,10 @@ function StockOpnamePage() {
       data: { branchId: selectedBranch, date: selectedDate },
     });
   };
+  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const filteredOpnames = statusFilter
+    ? opnames.filter((o) => o.status === statusFilter)
+    : opnames;
   usePageTitle("Opname Stok", "Verifikasi fisik stok per cabang");
 
   return (
@@ -146,9 +150,9 @@ function StockOpnamePage() {
         }
       />
 
-      <DataTable columns={columns} data={opnames} keyExtractor={(r) => r.id} />
+      <DataTable columns={columns} data={filteredOpnames} keyExtractor={(r) => r.id} />
 
-      {opnames.length === 0 && (
+      {filteredOpnames.length === 0 && (
         <div className="rounded-md border p-8 text-center">
           <p className="text-muted-foreground text-sm">
             Tidak ada Stock Opname yang aktif untuk cabang Anda.
