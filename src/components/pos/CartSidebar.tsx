@@ -113,6 +113,7 @@ export default function CartSidebar({
                     onClick={function () {
                       onRemoveItem(idx);
                     }}
+                    aria-label={`Hapus ${item.name}`}
                     className="text-muted-foreground hover:text-destructive shrink-0"
                   >
                     <X className="h-3 w-3" />
@@ -124,6 +125,7 @@ export default function CartSidebar({
                       onClick={function () {
                         onUpdateQty(idx, -1);
                       }}
+                      aria-label="Kurangi jumlah"
                       className="h-5 w-5 rounded border flex items-center justify-center"
                     >
                       <X className="h-2.5 w-2.5 rotate-45" />
@@ -133,6 +135,7 @@ export default function CartSidebar({
                       onClick={function () {
                         onUpdateQty(idx, 1);
                       }}
+                      aria-label="Tambah jumlah"
                       className="h-5 w-5 rounded border flex items-center justify-center"
                     >
                       <X className="h-2.5 w-2.5" />
@@ -276,6 +279,7 @@ export default function CartSidebar({
               onClick={function () {
                 onClearError();
               }}
+              aria-label="Tutup pesan error"
             >
               <X className="h-3 w-3" />
             </button>
@@ -289,6 +293,7 @@ export default function CartSidebar({
               onClick={function () {
                 onClearStockError();
               }}
+              aria-label="Tutup pesan stok"
             >
               <X className="h-3 w-3" />
             </button>

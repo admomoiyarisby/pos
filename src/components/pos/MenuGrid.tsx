@@ -51,6 +51,7 @@ export default function MenuGrid({
           onClick={function () {
             onBrandChange("");
           }}
+          aria-label="Tampilkan semua brand"
           className={
             "h-9 px-4 rounded-full text-sm font-medium whitespace-nowrap transition-colors " +
             (selectedBrandId === ""
@@ -67,6 +68,7 @@ export default function MenuGrid({
               onClick={function () {
                 onBrandChange(b.id);
               }}
+              aria-label={`Filter brand: ${b.name}`}
               className={
                 "h-9 px-4 rounded-full text-sm font-medium whitespace-nowrap transition-colors " +
                 (selectedBrandId === b.id
@@ -90,6 +92,7 @@ export default function MenuGrid({
                 onClick={function () {
                   onCategoryChange(cat.key);
                 }}
+                aria-label={`Kategori: ${cat.label}`}
                 className={
                   "h-8 px-3 rounded-md text-xs font-medium transition-colors " +
                   (selectedCategory === cat.key
@@ -111,6 +114,7 @@ export default function MenuGrid({
             onChange={function (e) {
               onSearchChange(e.target.value);
             }}
+            aria-label="Cari menu"
             className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm"
           />
         </div>

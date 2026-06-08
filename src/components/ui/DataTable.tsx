@@ -43,6 +43,8 @@ export default function DataTable<T>({
   onRowClick,
   defaultSort,
   rowClassName,
+  loading = false,
+  loadingRows = 5,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
@@ -117,6 +119,7 @@ export default function DataTable<T>({
                 setSearch(e.target.value);
                 setPage(0);
               }}
+              aria-label="Cari data"
               className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
@@ -163,7 +166,23 @@ export default function DataTable<T>({
             </tr>
           </thead>
           <tbody className="[&_tr:last-child]:border-0">
-            {paginated.length === 0 ? (
+            {loading ? (
+              Array.from({ length: loadingRows ?? 5 }).map((_, i) => (
+                <tr key={`skeleton-${i}`} className="border-b">
+                  {columns.map((col, colIdx) => (
+                    <td
+                      key={col.key}
+                      className={
+                        "p-3 align-middle " +
+                        (colIdx === 0 ? stickyClass : "")
+                      }
+                    >
+                      <div className="h-4 bg-muted rounded animate-pulse w-3/4" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : paginated.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="h-24 text-center text-muted-foreground">
                   {emptyMessage}
@@ -180,14 +199,16 @@ export default function DataTable<T>({
                     <td
                       key={col.key}
                       className={
-                        "p-3 align-middle whitespace-nowrap min-w-[80px] " +
+                        "p-3 align-middle whitespace-nowrap min-w-[80px] max-w-[300px] " +
                         (colIdx === 0 ? stickyClass : "")
                       }
                       style={{ textAlign: col.align ?? "left" }}
                     >
-                      {col.render
-                        ? col.render(row)
-                        : safeStr((row as Record<string, unknown>)[col.key]) || "-"}
+                      <div className="truncate min-w-0">
+                        {col.render
+                          ? col.render(row)
+                          : safeStr((row as Record<string, unknown>)[col.key]) || "-"}
+                      </div>
                     </td>
                   ))}
                 </tr>
@@ -206,6 +227,7 @@ export default function DataTable<T>({
             <button
               onClick={() => setPage(0)}
               disabled={currentPage === 0}
+              aria-label="Halaman pertama"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
             >
               <ChevronsLeft className="h-4 w-4" />
@@ -213,6 +235,7 @@ export default function DataTable<T>({
             <button
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={currentPage === 0}
+              aria-label="Halaman sebelumnya"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -220,6 +243,7 @@ export default function DataTable<T>({
             <button
               onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
               disabled={currentPage >= totalPages - 1}
+              aria-label="Halaman selanjutnya"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
             >
               <ChevronRight className="h-4 w-4" />
@@ -227,6 +251,7 @@ export default function DataTable<T>({
             <button
               onClick={() => setPage(totalPages - 1)}
               disabled={currentPage >= totalPages - 1}
+              aria-label="Halaman terakhir"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
             >
               <ChevronsRight className="h-4 w-4" />
