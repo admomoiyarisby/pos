@@ -254,7 +254,7 @@ function PRPage() {
                   e.stopPropagation();
                   handleRejectClick(r);
                 }}
-                className="h-7 px-2 rounded-md bg-red-600 text-white text-[10px] font-medium whitespace-nowrap"
+                className="h-7 px-2 rounded-md bg-destructive text-destructive-foreground text-[10px] font-medium whitespace-nowrap"
               >
                 Tolak
               </button>
@@ -319,7 +319,7 @@ function PRPage() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {submitError && (
-            <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+            <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{submitError}</span>
             </div>
@@ -505,7 +505,7 @@ function PRPage() {
         {processPr && (
           <div className="space-y-4">
             {submitError && (
-              <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                 <span>{submitError}</span>
               </div>
@@ -559,7 +559,7 @@ function PRPage() {
             className="space-y-4"
           >
             {submitError && (
-              <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                 <span>{submitError}</span>
               </div>
@@ -585,7 +585,7 @@ function PRPage() {
               >
                 Batal
               </button>
-              <button type="submit" className="h-9 px-4 rounded-md bg-red-600 text-white text-sm">
+              <button type="submit" className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm">
                 Tolak PR
               </button>
             </div>

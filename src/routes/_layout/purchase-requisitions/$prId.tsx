@@ -140,7 +140,7 @@ function PRDetailPage() {
             {canReject && (
               <button
                 onClick={() => setShowRejectModal(true)}
-                className="h-9 px-4 rounded-md bg-red-600 text-white text-sm"
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm"
               >
                 Tolak
               </button>
@@ -354,7 +354,7 @@ function PRDetailPage() {
             <button
               type="submit"
               disabled={rejectMutation.isPending}
-              className="h-9 px-4 rounded-md bg-red-600 text-white text-sm"
+              className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm"
             >
               Tolak PR
             </button>

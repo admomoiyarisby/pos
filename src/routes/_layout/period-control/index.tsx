@@ -133,7 +133,7 @@ function PeriodControlPage() {
         {/* Open Period Modal */}
         <Modal open={openModal} onClose={() => setOpenModal(false)} title="Buka Periode Baru">
           <div className="space-y-4">
-            <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800 space-y-1">
+            <div className="rounded-md bg-info/10 border border-info/20 p-3 text-sm text-info-foreground space-y-1">
               <p className="font-medium">Pre-Open Report</p>
               <p>Sistem akan menyalin saldo stok saat ini sebagai opening balance.</p>
             </div>
@@ -170,14 +170,14 @@ function PeriodControlPage() {
             size="lg"
           >
             <div className="space-y-4">
-              <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+              <div className="rounded-md bg-warning/10 border border-warning/20 p-3 text-sm text-warning-foreground">
                 <p className="font-medium">Exhaustive Verification</p>
                 <p>Verifikasi wajib harus lolos sebelum periode dapat ditutup.</p>
               </div>
 
               {closeResult && (
                 <div
-                  className={`rounded-md p-3 text-sm ${closeResult.success ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-800"}`}
+                  className={`rounded-md p-3 text-sm ${closeResult.success ? "bg-success/10 border border-success/20 text-success-foreground" : "bg-destructive/10 border border-destructive/20 text-destructive"}`}
                 >
                   <p className="font-medium">{closeResult.message}</p>
                 </div>
@@ -212,9 +212,9 @@ function PeriodControlPage() {
                       return (
                         <div
                           key={check.name}
-                          className="flex items-center gap-3 rounded-md border p-3 bg-red-50 border-red-200"
+                          className="flex items-center gap-3 rounded-md border p-3 bg-destructive/10 border-destructive/20"
                         >
-                          <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
+                          <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm">{check.name}</p>
                             <p className="text-xs text-muted-foreground">{check.message}</p>

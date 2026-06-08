@@ -253,7 +253,7 @@ function StockOpnameDetailPage() {
                 const hasVariance = !isBlind && variance !== 0;
 
                 return (
-                  <tr key={item.id} className={`border-b ${hasVariance ? "bg-amber-50" : ""}`}>
+                  <tr key={item.id} className={`border-b ${hasVariance ? "bg-warning/10" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground">{idx + 1}</td>
                     <td className="px-4 py-3 font-mono text-xs">{item.ingredientCode}</td>
                     <td className="px-4 py-3">{item.ingredientName}</td>
@@ -273,14 +273,14 @@ function StockOpnameDetailPage() {
                         className={cn(
                           "h-8 w-24 rounded-md border bg-background px-2 text-sm text-right disabled:opacity-50",
                           !touchedItems.has(item.id) && detail.status !== "Approved"
-                            ? "border-amber-300 bg-amber-50"
+                            ? "border-warning/40 bg-warning/10"
                             : "border-input",
                         )}
                       />
                     </td>
                     {!isBlind && (
                       <td
-                        className={`px-4 py-3 text-right font-medium ${variance > 0 ? "text-green-600" : variance < 0 ? "text-red-600" : ""}`}
+                        className={`px-4 py-3 text-right font-medium ${variance > 0 ? "text-success-foreground" : variance < 0 ? "text-destructive" : ""}`}
                       >
                         {variance > 0 ? "+" : ""}
                         {variance.toLocaleString("id-ID")}
@@ -302,9 +302,9 @@ function StockOpnameDetailPage() {
 
         {/* Investigation Note (if exists) */}
         {detail.investigationNote && (
-          <div className="rounded-md bg-amber-50 border border-amber-200 p-4">
-            <p className="text-sm font-medium text-amber-800 mb-1">Catatan Investigasi</p>
-            <p className="text-sm text-amber-700">{detail.investigationNote}</p>
+          <div className="rounded-md bg-warning/10 border border-warning/20 p-4">
+            <p className="text-sm font-medium text-warning-foreground mb-1">Catatan Investigasi</p>
+            <p className="text-sm text-warning-foreground/80">{detail.investigationNote}</p>
           </div>
         )}
 
@@ -323,7 +323,7 @@ function StockOpnameDetailPage() {
           {canMarkInvestigation && (
             <button
               onClick={() => setInvestigationModal(true)}
-              className="h-10 px-6 rounded-md bg-amber-600 text-white text-sm font-medium hover:bg-amber-700"
+              className="h-10 px-6 rounded-md bg-warning text-warning-foreground text-sm font-medium hover:bg-warning/90"
             >
               Tandai Investigasi
             </button>
@@ -333,7 +333,7 @@ function StockOpnameDetailPage() {
             <button
               onClick={handleUpdateCounts}
               disabled={updateCountsMutation.isPending}
-              className="h-10 px-6 rounded-md bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+              className="h-10 px-6 rounded-md bg-warning text-warning-foreground text-sm font-medium hover:bg-warning/90 disabled:opacity-50"
             >
               {updateCountsMutation.isPending ? "Memperbarui..." : "Perbarui Hitungan"}
             </button>
@@ -362,7 +362,7 @@ function StockOpnameDetailPage() {
 
       <Modal open={approveModal} onClose={() => setApproveModal(false)} title="Setujui Opname Stok">
         <div className="space-y-4">
-          <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+          <div className="rounded-md bg-warning/10 p-3 text-sm text-warning-foreground">
             <p className="font-medium">Perhatian</p>
             <p>Approval akan menyesuaikan stok sistem ke stok fisik dan membuat jurnal ledger.</p>
           </div>
@@ -395,7 +395,7 @@ function StockOpnameDetailPage() {
 
       <Modal open={investigationModal} onClose={() => setInvestigationModal(false)} title="Tandai Investigasi">
         <div className="space-y-4">
-          <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-800">
+          <div className="rounded-md bg-info/10 p-3 text-sm text-info-foreground">
             <p className="font-medium">Informasi</p>
             <p>SO akan ditandai sebagai Under Investigation. Branch Admin akan diminta untuk menghitung ulang.</p>
           </div>

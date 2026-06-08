@@ -203,7 +203,7 @@ function DNDetailPage() {
               <button
                 onClick={() => void generateInvoiceMutation.mutateAsync({ data: { dnId } })}
                 disabled={generateInvoiceMutation.isPending}
-                className="h-9 px-4 rounded-md bg-emerald-600 text-white text-sm font-medium disabled:opacity-50"
+                className="h-9 px-4 rounded-md bg-success text-success-foreground text-sm font-medium disabled:opacity-50"
               >
                 {generateInvoiceMutation.isPending ? "Memproses..." : "Buat Invoice"}
               </button>
@@ -211,7 +211,7 @@ function DNDetailPage() {
             {canCancel && (
               <button
                 onClick={() => setShowCancelModal(true)}
-                className="h-9 px-4 rounded-md bg-red-600 text-white text-sm font-medium"
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium"
               >
                 Batalkan SJ
               </button>
@@ -235,8 +235,8 @@ function DNDetailPage() {
         </div>
 
         {dn.reviewedByAdminPusat && (
-          <div className="rounded-md border p-3 bg-emerald-50">
-            <p className="text-xs text-emerald-700">
+          <div className="rounded-md border p-3 bg-success/10">
+            <p className="text-xs text-success-foreground">
               <CheckCircle className="inline h-3 w-3 mr-1" />
               Direview oleh Admin Pusat
             </p>
@@ -341,7 +341,7 @@ function DNDetailPage() {
                       <div>
                         <span>{item.discrepancyNote ?? "-"}</span>
                         {item.rejectionDisposition && (
-                          <span className="ml-2 text-xs text-amber-600">
+                          <span className="ml-2 text-xs text-warning-foreground">
                             ({item.rejectionDisposition})
                           </span>
                         )}
@@ -396,7 +396,7 @@ function DNDetailPage() {
                     })
                   }
                   disabled={cancelMutation.isPending || !cancelReason.trim()}
-                  className="h-9 px-4 rounded-md bg-red-600 text-white text-sm disabled:opacity-50"
+                  className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
                 >
                   {cancelMutation.isPending ? "Memproses..." : "Batalkan SJ"}
                 </button>

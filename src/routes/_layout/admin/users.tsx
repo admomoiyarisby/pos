@@ -335,7 +335,7 @@ function UsersPage() {
                 ))}
               </div>
               {amBranches.length === 0 && (
-                <p className="text-xs text-amber-600">
+                <p className="text-xs text-warning-foreground">
                   Area Manager harus memiliki minimal 1 cabang yang dikelola.
                 </p>
               )}
@@ -385,7 +385,7 @@ function UsersPage() {
 
           {/* If role is branch_admin and no branch selected, show warning */}
           {selectedRole === "branch_admin" && !editing?.branchId && (
-            <p className="text-xs text-amber-600">
+            <p className="text-xs text-warning-foreground">
               Branch Admin harus memiliki cabang. Pilih cabang sebelum menyimpan.
             </p>
           )}

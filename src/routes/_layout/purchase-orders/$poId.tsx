@@ -172,7 +172,7 @@ function PODetailPage() {
               <button
                 onClick={handleReceive}
                 disabled={receiveMutation.isPending}
-                className="h-9 px-4 rounded-md bg-emerald-600 text-white text-sm font-medium disabled:opacity-50"
+                className="h-9 px-4 rounded-md bg-success text-success-foreground text-sm font-medium disabled:opacity-50"
               >
                 <PackageCheck className="h-4 w-4 inline mr-1" />
                 {receiveMutation.isPending ? "Memproses..." : "Terima PO"}
@@ -186,7 +186,7 @@ function PODetailPage() {
                   }
                 }}
                 disabled={cancelMutation.isPending}
-                className="h-9 px-4 rounded-md bg-red-600 text-white text-sm font-medium disabled:opacity-50"
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium disabled:opacity-50"
               >
                 <Ban className="h-4 w-4 inline mr-1" />
                 Batal

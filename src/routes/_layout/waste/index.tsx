@@ -363,7 +363,7 @@ function WastePage() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {submitError && (
-            <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+            <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{submitError}</span>
             </div>
@@ -478,7 +478,7 @@ function WastePage() {
       >
         <form onSubmit={handleInvestigationSubmit} className="space-y-4">
           {investigationError && (
-            <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+            <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{investigationError}</span>
             </div>

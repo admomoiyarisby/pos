@@ -167,7 +167,7 @@ export default function MenuGrid({
                 {item.isBundle && (
                   <Badge
                     variant="outline"
-                    className="text-[9px] gap-0.5 px-1 py-0 border-blue-200 text-blue-600 bg-blue-50"
+                    className="text-[9px] gap-0.5 px-1 py-0 border-info text-info-foreground bg-info/10"
                   >
                     <Package className="h-2.5 w-2.5" /> Paket
                   </Badge>

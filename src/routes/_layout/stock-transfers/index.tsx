@@ -243,7 +243,7 @@ function TransferPage() {
                   e.stopPropagation();
                   void approveMutation.mutateAsync({ data: { transferId: r.id } });
                 }}
-                className="h-7 px-2 rounded-md bg-emerald-600 text-white text-[10px] font-medium"
+                className="h-7 px-2 rounded-md bg-success text-success-foreground text-[10px] font-medium"
               >
                 <Check className="h-3 w-3 inline mr-1" />
                 Approve
@@ -255,7 +255,7 @@ function TransferPage() {
                   e.stopPropagation();
                   setRejectModal({ id: r.id, code: r.code });
                 }}
-                className="h-7 px-2 rounded-md bg-red-600 text-white text-[10px] font-medium"
+                className="h-7 px-2 rounded-md bg-destructive text-destructive-foreground text-[10px] font-medium"
               >
                 <XCircle className="h-3 w-3 inline mr-1" />
                 Tolak
@@ -267,7 +267,7 @@ function TransferPage() {
                   e.stopPropagation();
                   void shipMutation.mutateAsync({ data: { transferId: r.id } });
                 }}
-                className="h-7 px-2 rounded-md bg-blue-600 text-white text-[10px] font-medium"
+                className="h-7 px-2 rounded-md bg-info text-info-foreground text-[10px] font-medium"
               >
                 <Truck className="h-3 w-3 inline mr-1" />
                 Kirim
@@ -279,7 +279,7 @@ function TransferPage() {
                   e.stopPropagation();
                   void receiveMutation.mutateAsync({ data: { transferId: r.id } });
                 }}
-                className="h-7 px-2 rounded-md bg-emerald-600 text-white text-[10px] font-medium"
+                className="h-7 px-2 rounded-md bg-success text-success-foreground text-[10px] font-medium"
               >
                 <PackageCheck className="h-3 w-3 inline mr-1" />
                 Terima
@@ -291,7 +291,7 @@ function TransferPage() {
                   e.stopPropagation();
                   setCancelModal({ id: r.id, code: r.code });
                 }}
-                className="h-7 px-2 rounded-md bg-slate-500 text-white text-[10px] font-medium"
+                className="h-7 px-2 rounded-md bg-secondary text-secondary-foreground text-[10px] font-medium"
               >
                 <Ban className="h-3 w-3 inline mr-1" />
                 Batal
@@ -462,7 +462,7 @@ function TransferPage() {
                   })
                 }
                 disabled={rejectMutation.isPending || !rejectReason.trim()}
-                className="h-9 px-4 rounded-md bg-red-600 text-white text-sm disabled:opacity-50"
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
               >
                 {rejectMutation.isPending ? "Memproses..." : "Tolak"}
               </button>
@@ -511,7 +511,7 @@ function TransferPage() {
                   })
                 }
                 disabled={cancelMutation.isPending || !cancelReason.trim()}
-                className="h-9 px-4 rounded-md bg-red-600 text-white text-sm disabled:opacity-50"
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
               >
                 {cancelMutation.isPending ? "Memproses..." : "Batalkan"}
               </button>

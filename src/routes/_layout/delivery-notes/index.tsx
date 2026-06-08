@@ -212,7 +212,7 @@ function DNPage() {
                     setInvoiceError(null);
                     void generateInvoiceMutation.mutateAsync({ data: { dnId: r.id } });
                   }}
-                  className="h-7 px-2 rounded-md bg-emerald-600 text-white text-[10px] font-medium flex items-center gap-1"
+                  className="h-7 px-2 rounded-md bg-success text-success-foreground text-[10px] font-medium flex items-center gap-1"
                 >
                   <DollarSign className="h-3 w-3" />
                   Buat Invoice
@@ -267,9 +267,9 @@ function DNPage() {
       >
         {reviewSJ && (
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg">
-              <p className="text-sm font-medium text-blue-900">Review Data Surat Jalan</p>
-              <p className="text-xs text-blue-700 mt-1">
+            <div className="bg-info/10 border border-info/20 p-3 rounded-lg">
+              <p className="text-sm font-medium text-info-foreground">Review Data Surat Jalan</p>
+              <p className="text-xs text-info-foreground/80 mt-1">
                 Pastikan semua data pengiriman dan penerimaan sudah benar. Setelah di-review, Anda
                 dapat membuat Invoice Internal.
               </p>
@@ -310,7 +310,7 @@ function DNPage() {
                   }
                 }}
                 disabled={reviewMutation.isPending}
-                className="flex-1 h-9 rounded-md bg-emerald-600 text-white text-sm font-medium disabled:opacity-50"
+                className="flex-1 h-9 rounded-md bg-success text-success-foreground text-sm font-medium disabled:opacity-50"
               >
                 {reviewMutation.isPending ? "Memproses..." : "Konfirmasi Review"}
               </button>
@@ -330,7 +330,7 @@ function DNPage() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {submitError && (
-            <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+            <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{submitError}</span>
             </div>

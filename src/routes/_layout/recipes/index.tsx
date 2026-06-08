@@ -72,7 +72,7 @@ const columns: Column<RecipeRow>[] = [
         {r.hasChildren && (
           <Badge
             variant="outline"
-            className="text-[10px] gap-0.5 border-blue-200 text-blue-600 bg-blue-50"
+            className="text-[10px] gap-0.5 border-info text-info-foreground bg-info/10"
           >
             <Package className="h-3 w-3" /> Paket
           </Badge>

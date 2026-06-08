@@ -139,7 +139,7 @@ function SCMInvoicePage() {
                     void cancelMutation.mutateAsync({ data: { id: r.id } });
                   }
                 }}
-                className="h-7 px-2 rounded-md bg-red-600 text-white text-[10px] font-medium"
+                className="h-7 px-2 rounded-md bg-destructive text-destructive-foreground text-[10px] font-medium"
               >
                 Batal
               </button>
