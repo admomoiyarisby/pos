@@ -708,6 +708,42 @@ export const voidOrder = createServerFn({ method: "POST" })
     return order;
   });
 
+export const updateOrderStatus = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      orderId: z.string(),
+      newStatus: z.enum(["New", "Processing", "In Delivery", "Completed"]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    const [old] = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.id, data.orderId))
+      .limit(1);
+
+    if (!old) throw new Error("Order not found");
+
+    const [updated] = await db
+      .update(orders)
+      .set({ status: data.newStatus as any })
+      .where(eq(orders.id, data.orderId))
+      .returning();
+
+    await logAudit(
+      user,
+      "orders",
+      data.orderId,
+      "STATUS_CHANGE",
+      old as Record<string, unknown>,
+      updated as Record<string, unknown>,
+    );
+
+    return updated;
+  });
+
 // ─── Print Request (Re-print Approval Flow) ───
 
 export const requestReprint = createServerFn({ method: "POST" })
