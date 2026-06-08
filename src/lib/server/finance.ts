@@ -389,7 +389,7 @@ export const closePeriod = createServerFn({ method: "POST" })
 
     // 1. Check all SO are approved
     const pendingSO = await db
-      .select({ count: sql<number>`COUNT(*)` })
+      .select({ count: sql<number>`COUNT(*)::int` })
       .from(stockOpnames)
       .where(
         and(
@@ -408,7 +408,7 @@ export const closePeriod = createServerFn({ method: "POST" })
 
     // 2. Check no pending cancel requests
     const pendingCancels = await db
-      .select({ count: sql<number>`COUNT(*)` })
+      .select({ count: sql<number>`COUNT(*)::int` })
       .from(cancelRequests)
       .where(eq(cancelRequests.status, "Pending"));
     const cancelPassed = (pendingCancels[0]?.count ?? 0) === 0;
@@ -422,7 +422,7 @@ export const closePeriod = createServerFn({ method: "POST" })
 
     // 3. Check no unpaid SCM invoices
     const unpaidInvoices = await db
-      .select({ count: sql<number>`COUNT(*)` })
+      .select({ count: sql<number>`COUNT(*)::int` })
       .from(scmInvoices)
       .where(eq(scmInvoices.status, "Unpaid"));
     const invoicePassed = (unpaidInvoices[0]?.count ?? 0) === 0;
@@ -436,7 +436,7 @@ export const closePeriod = createServerFn({ method: "POST" })
 
     // 4. Check no negative inventory
     const negativeInv = await db
-      .select({ count: sql<number>`COUNT(*)` })
+      .select({ count: sql<number>`COUNT(*)::int` })
       .from(inventory)
       .where(lte(inventory.quantity, 0));
     const negInvPassed = (negativeInv[0]?.count ?? 0) === 0;
@@ -450,7 +450,7 @@ export const closePeriod = createServerFn({ method: "POST" })
 
     // 5. Check waste >5% has investigation comments
     const highWasteNoComment = await db
-      .select({ count: sql<number>`COUNT(*)` })
+      .select({ count: sql<number>`COUNT(*)::int` })
       .from(wasteEntries)
       .leftJoin(
         inventory,
@@ -478,7 +478,7 @@ export const closePeriod = createServerFn({ method: "POST" })
 
     // 6. Check no pending stock transfers
     const pendingTransfers = await db
-      .select({ count: sql<number>`COUNT(*)` })
+      .select({ count: sql<number>`COUNT(*)::int` })
       .from(stockTransfers)
       .where(
         and(
@@ -497,7 +497,7 @@ export const closePeriod = createServerFn({ method: "POST" })
 
     // 7. Check no SJ still in In Transit
     const pendingSJs = await db
-      .select({ count: sql<number>`COUNT(*)` })
+      .select({ count: sql<number>`COUNT(*)::int` })
       .from(deliveryNotes)
       .where(
         and(gte(deliveryNotes.createdAt, period.openedAt), eq(deliveryNotes.status, "In Transit")),

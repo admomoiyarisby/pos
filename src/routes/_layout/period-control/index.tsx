@@ -10,7 +10,7 @@ import { getPeriods, openPeriod, closePeriod } from "#/lib/server/finance";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Lock, Unlock, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ArrowRight, Lock, Unlock, AlertTriangle } from "lucide-react";
 
 interface PeriodRow {
   id: string;
@@ -185,11 +185,12 @@ function PeriodControlPage() {
 
               {closeResult?.checks && (
                 <div className="space-y-2">
-                  {closeResult.checks.map((check) => {
-                    // Build link for failed checks when possible
-                    let linkTo: { to: string; label: string } | null = null;
-                    if (!check.passed) {
+                  {closeResult.checks
+                    .filter((check) => !check.passed)
+                    .map((check) => {
+                      // Build link for failed checks when possible
                       const name = check.name.toLowerCase();
+                      let linkTo: { to: string; label: string } | null = null;
                       if (name.includes("stock opname"))
                         linkTo = { to: "/stock-opname", label: "Buka Stock Opname" };
                       else if (name.includes("delivery note") || name.includes("surat jalan"))
@@ -200,32 +201,27 @@ function PeriodControlPage() {
                         linkTo = { to: "/order-history", label: "Buka Riwayat Pesanan" };
                       else if (name.includes("inventory") || name.includes("stok"))
                         linkTo = { to: "/inventory", label: "Buka Inventory" };
-                    }
-                    return (
-                      <div
-                        key={check.name}
-                        className={`flex items-center gap-3 rounded-md border p-3 ${check.passed ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}
-                      >
-                        {check.passed ? (
-                          <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                        ) : (
+                      return (
+                        <div
+                          key={check.name}
+                          className="flex items-center gap-3 rounded-md border p-3 bg-red-50 border-red-200"
+                        >
                           <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm">{check.name}</p>
-                          <p className="text-xs text-muted-foreground">{check.message}</p>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">{check.name}</p>
+                            <p className="text-xs text-muted-foreground">{check.message}</p>
+                          </div>
+                          {linkTo && (
+                            <Link
+                              to={linkTo.to}
+                              className="shrink-0 h-7 px-2 rounded-md bg-primary/10 text-primary text-[10px] font-medium flex items-center gap-1 hover:bg-primary/20"
+                            >
+                              {linkTo.label} <ArrowRight className="h-3 w-3" />
+                            </Link>
+                          )}
                         </div>
-                        {linkTo && (
-                          <Link
-                            to={linkTo.to}
-                            className="shrink-0 h-7 px-2 rounded-md bg-primary/10 text-primary text-[10px] font-medium flex items-center gap-1 hover:bg-primary/20"
-                          >
-                            {linkTo.label} <ArrowRight className="h-3 w-3" />
-                          </Link>
-                        )}
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               )}
 
