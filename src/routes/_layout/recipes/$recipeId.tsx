@@ -120,7 +120,7 @@ function RecipeDetailPage() {
       ingredients: [],
       childRecipes: isBundling && childRecipes.length > 0 ? childRecipes : undefined,
       modifierGroupIds: linkedModifierGroupIds.length > 0 ? linkedModifierGroupIds : undefined,
-      branchIds: selectedBranchIds.length > 0 ? selectedBranchIds : undefined,
+      branchIds: selectedBranchIds,
     };
     void updateMutation.mutateAsync({ data });
   };
@@ -142,7 +142,29 @@ function RecipeDetailPage() {
       <div className="space-y-6">
         <div className="mb-6 flex items-center justify-end gap-2">
           <button
-            onClick={() => setIsEditing(!isEditing)}
+            onClick={() => {
+              if (!isEditing && recipe) {
+                // Populate form state from current recipe data
+                setSelectedBranchIds(recipe.branchIds ?? []);
+                setIsBOGO(recipe.isBOGO);
+                setLinkedModifierGroupIds(
+                  recipe.modifierGroups?.map((mg: any) => mg.modifierGroupId) ?? [],
+                );
+                if (recipe.childRecipes?.length > 0) {
+                  setIsBundling(true);
+                  setChildRecipes(
+                    recipe.childRecipes.map((cr: any) => ({
+                      recipeId: cr.childRecipeId,
+                      quantity: cr.quantity,
+                    })),
+                  );
+                } else {
+                  setIsBundling(false);
+                  setChildRecipes([]);
+                }
+              }
+              setIsEditing(!isEditing);
+            }}
             className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             {!isEditing && <Plus className="h-4 w-4" />}

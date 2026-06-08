@@ -155,7 +155,7 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
 
     if (!recipe) return null;
 
-    const [brandLinks, ingredientLinks, childLinks, modifierLinks] = await Promise.all([
+    const [brandLinks, ingredientLinks, childLinks, modifierLinks, branchLinks] = await Promise.all([
       db
         .select({
           brandId: recipeBrands.brandId,
@@ -192,6 +192,10 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
         .from(recipeModifierGroups)
         .leftJoin(modifierGroups, eq(recipeModifierGroups.modifierGroupId, modifierGroups.id))
         .where(eq(recipeModifierGroups.recipeId, data.id)),
+      db
+        .select({ branchId: recipeBranches.branchId })
+        .from(recipeBranches)
+        .where(eq(recipeBranches.recipeId, data.id)),
     ]);
 
     // Fetch full modifier data for each group
@@ -215,6 +219,7 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
       ingredients: ingredientLinks,
       childRecipes: childLinks,
       modifierGroups: modGroupsWithModifiers,
+      branchIds: branchLinks.map((b) => b.branchId),
     };
   });
 

@@ -10,6 +10,7 @@ import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getRecipes, createRecipe, recalculateAllRecipeCosts } from "#/lib/server/recipes";
 import { getBrands } from "#/lib/server/brands";
+import { getBranches } from "#/lib/server/branches";
 import { getModifierGroups } from "#/lib/server/modifier-groups";
 import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
@@ -136,18 +137,20 @@ export const Route = createFileRoute("/_layout/recipes/")({
   loader: async () => {
     const recipes = await getRecipes({ data: {} });
     const brands = await getBrands({ data: {} });
-    return { recipes, brands };
+    const branches = await getBranches({ data: {} });
+    return { recipes, brands, branches };
   },
 });
 
 function RecipesPage() {
-  const { recipes: initial, brands } = Route.useLoaderData();
+  const { recipes: initial, brands, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [isBundling, setIsBundling] = useState(false);
   const [childRecipes, setChildRecipes] = useState<ChildRecipeInput[]>([]);
   const [isBOGO, setIsBOGO] = useState(false);
   const [linkedModifierGroupIds, setLinkedModifierGroupIds] = useState<string[]>([]);
+  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
   const user = useAuth().user;
 
   const { data: recipes } = useQuery({
@@ -186,6 +189,7 @@ function RecipesPage() {
     setChildRecipes([]);
     setIsBOGO(false);
     setLinkedModifierGroupIds([]);
+    setSelectedBranchIds([]);
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -202,6 +206,7 @@ function RecipesPage() {
       ingredients: [],
       childRecipes: isBundling && childRecipes.length > 0 ? childRecipes : undefined,
       modifierGroupIds: linkedModifierGroupIds.length > 0 ? linkedModifierGroupIds : undefined,
+      branchIds: selectedBranchIds,
     };
     void createMutation.mutateAsync({ data });
   };
@@ -290,6 +295,54 @@ function RecipesPage() {
                 </label>
               ))}
             </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <Label>Ketersediaan Cabang</Label>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="createAllBranches"
+                checked={selectedBranchIds.length === 0}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedBranchIds([]);
+                  } else {
+                    setSelectedBranchIds(branches.map((b) => b.id));
+                  }
+                }}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <label htmlFor="createAllBranches" className="text-sm font-medium">
+                Tersedia di semua cabang (default)
+              </label>
+            </div>
+            {selectedBranchIds.length > 0 && (
+              <div className="mt-2 space-y-1">
+                <p className="text-sm font-medium">Pilih cabang spesifik:</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {branches.map((b) => (
+                    <label key={b.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedBranchIds.includes(b.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedBranchIds([...selectedBranchIds, b.id]);
+                          } else {
+                            setSelectedBranchIds(selectedBranchIds.filter((id) => id !== b.id));
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      {b.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <Separator />
