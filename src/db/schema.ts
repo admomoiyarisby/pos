@@ -145,6 +145,25 @@ export const logStatusEnum = pgEnum("log_status", ["Success", "Warning", "Error"
 
 export const notificationTypeEnum = pgEnum("notification_type", ["info", "warning", "alert"]);
 
+// --- SCM (new FSM, ADR 0002) ---
+
+export const scmProcurementStatusEnum = pgEnum("scm_procurement_status", [
+  "Draft",
+  "Pending",
+  "UnderReview",
+  "Rejected",
+  "InTransit",
+  "Delivered",
+  "ReviewingSJ",
+  "WaitingForPayment",
+  "Finished",
+  "Cancelled",
+]);
+
+export const caDecisionEnum = pgEnum("ca_decision", ["pending", "approved", "rejected"]);
+
+export const baDecisionEnum = pgEnum("ba_decision", ["pending", "accepted", "rejected"]);
+
 // =============================================================================
 // MODULE 1 — MASTER DATA
 // =============================================================================
@@ -973,6 +992,150 @@ export const stockTransfers = pgTable(
   ],
 );
 
+// -----------------------------------------------------------------------------
+// SCM (new FSM, ADR 0002) — unified procurement lifecycle
+// -----------------------------------------------------------------------------
+
+export const scmProcurements = pgTable(
+  "scm_procurements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    code: text("code").notNull().unique(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    status: scmProcurementStatusEnum("status").notNull().default("Draft"),
+    requestedById: uuid("requested_by_id")
+      .notNull()
+      .references(() => users.id),
+    reviewingById: uuid("reviewing_by_id").references(() => users.id),
+    receivingById: uuid("receiving_by_id").references(() => users.id),
+    lastEvent: text("last_event"),
+    lastEventAt: timestamp("last_event_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    submittedAt: timestamp("submitted_at", { mode: "date" }),
+    shippedAt: timestamp("shipped_at", { mode: "date" }),
+    receivedAt: timestamp("received_at", { mode: "date" }),
+    paidAt: timestamp("paid_at", { mode: "date" }),
+    rejectedAt: timestamp("rejected_at", { mode: "date" }),
+    rejectionReason: text("rejection_reason"),
+    cancelledAt: timestamp("cancelled_at", { mode: "date" }),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id),
+    cancellationReason: text("cancellation_reason"),
+    notes: text("notes"),
+  },
+  (t) => [
+    index("sp_branch_idx").on(t.branchId),
+    index("sp_status_idx").on(t.status),
+    index("sp_requested_by_idx").on(t.requestedById),
+    index("sp_created_at_idx").on(t.createdAt),
+    index("sp_branch_status_idx").on(t.branchId, t.status),
+  ],
+);
+
+export const scmProcurementItems = pgTable(
+  "scm_procurement_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scmProcurementId: uuid("scm_procurement_id")
+      .notNull()
+      .references(() => scmProcurements.id, { onDelete: "cascade" }),
+    ingredientId: uuid("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id),
+    sortOrder: integer("sort_order").notNull().default(0),
+    quantity: integer("quantity").notNull(),
+    readyQuantity: integer("ready_quantity"),
+    pickedQuantity: integer("picked_quantity"),
+    receivedQuantity: integer("received_quantity"),
+    rejectedQuantity: integer("rejected_quantity"),
+    caDecision: caDecisionEnum("ca_decision").notNull().default("pending"),
+    baDecision: baDecisionEnum("ba_decision").notNull().default("pending"),
+    unitPrice: integer("unit_price"),
+    reason: text("reason"),
+    rejectionNote: text("rejection_note"),
+  },
+  (t) => [
+    index("spi_procurement_idx").on(t.scmProcurementId),
+    index("spi_ingredient_idx").on(t.ingredientId),
+  ],
+);
+
+export const scmProcurementAuditLog = pgTable(
+  "scm_procurement_audit_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scmProcurementId: uuid("scm_procurement_id")
+      .notNull()
+      .references(() => scmProcurements.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    fromState: scmProcurementStatusEnum("from_state"),
+    toState: scmProcurementStatusEnum("to_state"),
+    itemId: uuid("item_id").references(() => scmProcurementItems.id),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => users.id),
+    actorRole: text("actor_role").notNull(),
+    timestamp: timestamp("timestamp", { mode: "date" }).defaultNow().notNull(),
+    note: text("note"),
+  },
+  (t) => [
+    index("spal_procurement_idx").on(t.scmProcurementId),
+    index("spal_procurement_time_idx").on(t.scmProcurementId, t.timestamp),
+  ],
+);
+
+export const scmProcurementInvoices = pgTable(
+  "scm_procurement_invoices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scmProcurementId: uuid("scm_procurement_id")
+      .notNull()
+      .unique()
+      .references(() => scmProcurements.id, { onDelete: "cascade" }),
+    generatedAt: timestamp("generated_at", { mode: "date" }).notNull(),
+    generatedById: uuid("generated_by_id")
+      .notNull()
+      .references(() => users.id),
+    totalAmount: integer("total_amount").notNull(),
+    lineItems: jsonb("line_items").notNull(),
+    paidAt: timestamp("paid_at", { mode: "date" }),
+    paidById: uuid("paid_by_id").references(() => users.id),
+  },
+  (t) => [index("spin_procurement_idx").on(t.scmProcurementId)],
+);
+
+export const pendingReviewInventory = pgTable(
+  "pending_review_inventory",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scmProcurementId: uuid("scm_procurement_id")
+      .notNull()
+      .references(() => scmProcurements.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    ingredientId: uuid("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id),
+    quantity: integer("quantity").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    createdById: uuid("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    clearedAt: timestamp("cleared_at", { mode: "date" }),
+  },
+  (t) => [
+    index("pri_procurement_idx").on(t.scmProcurementId),
+    index("pri_branch_ingredient_idx").on(t.branchId, t.ingredientId),
+    index("pri_cleared_idx").on(t.clearedAt),
+  ],
+);
+
 // =============================================================================
 // MODULE 5 — WASTE & SHRINKAGE
 // =============================================================================
@@ -1366,6 +1529,18 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   purchaseOrders: many(purchaseOrders),
   yieldConversions: many(yieldConversions),
   stockTransfers: many(stockTransfers, { relationName: "requestedBy" }),
+  scmProcurementsRequested: many(scmProcurements, { relationName: "scmProcRequestedBy" }),
+  scmProcurementsReviewing: many(scmProcurements, { relationName: "scmProcReviewingBy" }),
+  scmProcurementsReceiving: many(scmProcurements, { relationName: "scmProcReceivingBy" }),
+  scmProcurementsCancelled: many(scmProcurements, { relationName: "scmProcCancelledBy" }),
+  scmProcurementAuditLog: many(scmProcurementAuditLog),
+  scmProcurementInvoicesGenerated: many(scmProcurementInvoices, {
+    relationName: "scmProcInvoiceGeneratedBy",
+  }),
+  scmProcurementInvoicesPaid: many(scmProcurementInvoices, {
+    relationName: "scmProcInvoicePaidBy",
+  }),
+  pendingReviewInventoryCreated: many(pendingReviewInventory),
 }));
 
 export const branchesRelations = relations(branches, ({ many }) => ({
@@ -1392,6 +1567,8 @@ export const branchesRelations = relations(branches, ({ many }) => ({
   shifts: many(shifts),
   periodBalances: many(periodBalances),
   recipesVisible: many(recipeBranches),
+  scmProcurements: many(scmProcurements),
+  pendingReviewInventory: many(pendingReviewInventory),
 }));
 
 export const brandsRelations = relations(brands, ({ many }) => ({
@@ -1840,6 +2017,95 @@ export const stockTransfersRelations = relations(stockTransfers, ({ one }) => ({
     fields: [stockTransfers.approvedBy],
     references: [users.id],
     relationName: "approvedBy",
+  }),
+}));
+
+// ─── SCM new FSM (ADR 0002) ───
+
+export const scmProcurementsRelations = relations(scmProcurements, ({ one, many }) => ({
+  branch: one(branches, { fields: [scmProcurements.branchId], references: [branches.id] }),
+  requestedBy: one(users, {
+    fields: [scmProcurements.requestedById],
+    references: [users.id],
+    relationName: "scmProcRequestedBy",
+  }),
+  reviewingBy: one(users, {
+    fields: [scmProcurements.reviewingById],
+    references: [users.id],
+    relationName: "scmProcReviewingBy",
+  }),
+  receivingBy: one(users, {
+    fields: [scmProcurements.receivingById],
+    references: [users.id],
+    relationName: "scmProcReceivingBy",
+  }),
+  cancelledBy: one(users, {
+    fields: [scmProcurements.cancelledById],
+    references: [users.id],
+    relationName: "scmProcCancelledBy",
+  }),
+  items: many(scmProcurementItems),
+  auditLog: many(scmProcurementAuditLog),
+  invoice: one(scmProcurementInvoices, {
+    fields: [scmProcurements.id],
+    references: [scmProcurementInvoices.scmProcurementId],
+  }),
+  pendingReviewInventory: many(pendingReviewInventory),
+}));
+
+export const scmProcurementItemsRelations = relations(scmProcurementItems, ({ one }) => ({
+  procurement: one(scmProcurements, {
+    fields: [scmProcurementItems.scmProcurementId],
+    references: [scmProcurements.id],
+  }),
+  ingredient: one(ingredients, {
+    fields: [scmProcurementItems.ingredientId],
+    references: [ingredients.id],
+  }),
+}));
+
+export const scmProcurementAuditLogRelations = relations(scmProcurementAuditLog, ({ one }) => ({
+  procurement: one(scmProcurements, {
+    fields: [scmProcurementAuditLog.scmProcurementId],
+    references: [scmProcurements.id],
+  }),
+  item: one(scmProcurementItems, {
+    fields: [scmProcurementAuditLog.itemId],
+    references: [scmProcurementItems.id],
+  }),
+  actor: one(users, { fields: [scmProcurementAuditLog.actorId], references: [users.id] }),
+}));
+
+export const scmProcurementInvoicesRelations = relations(scmProcurementInvoices, ({ one }) => ({
+  procurement: one(scmProcurements, {
+    fields: [scmProcurementInvoices.scmProcurementId],
+    references: [scmProcurements.id],
+  }),
+  generatedBy: one(users, {
+    fields: [scmProcurementInvoices.generatedById],
+    references: [users.id],
+    relationName: "scmProcInvoiceGeneratedBy",
+  }),
+  paidBy: one(users, {
+    fields: [scmProcurementInvoices.paidById],
+    references: [users.id],
+    relationName: "scmProcInvoicePaidBy",
+  }),
+}));
+
+export const pendingReviewInventoryRelations = relations(pendingReviewInventory, ({ one }) => ({
+  procurement: one(scmProcurements, {
+    fields: [pendingReviewInventory.scmProcurementId],
+    references: [scmProcurements.id],
+  }),
+  branch: one(branches, { fields: [pendingReviewInventory.branchId], references: [branches.id] }),
+  ingredient: one(ingredients, {
+    fields: [pendingReviewInventory.ingredientId],
+    references: [ingredients.id],
+  }),
+  createdBy: one(users, {
+    fields: [pendingReviewInventory.createdById],
+    references: [users.id],
   }),
 }));
 
