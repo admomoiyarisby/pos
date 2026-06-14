@@ -124,48 +124,52 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
               <th className="px-3 py-2 text-left">Bahan</th>
               <th className="px-3 py-2 text-right">Dikirim</th>
               <th className="px-3 py-2 text-right">Diterima</th>
-              <th className="px-3 py-2 text-right">Ditolak</th>
+              <th className="px-3 py-2 text-right">Ditolak (auto)</th>
               <th className="px-3 py-2 text-left">Alasan</th>
             </tr>
           </thead>
           <tbody>
-            {items.map((it) => (
-              <tr key={it.id} className="border-b">
-                <td className="px-3 py-2">{it.ingredientName}</td>
-                <td className="px-3 py-2 text-right font-mono">{it.pickedQuantity ?? "-"}</td>
-                <td className="px-3 py-2 text-right">
-                  <Input
-                    type="number"
-                    min={0}
-                    max={it.pickedQuantity ?? undefined}
-                    defaultValue={it.receivedQuantity ?? it.pickedQuantity ?? 0}
-                    disabled={disabled}
-                    onChange={(e) => onItemChange?.(it.id, { receivedQuantity: Number(e.target.value) })}
-                    className="h-8 w-24 text-right"
-                  />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <Input
-                    type="number"
-                    min={0}
-                    defaultValue={it.rejectedQuantity ?? 0}
-                    disabled={disabled}
-                    onChange={(e) => onItemChange?.(it.id, { rejectedQuantity: Number(e.target.value) })}
-                    className="h-8 w-24 text-right"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <Input
-                    type="text"
-                    placeholder="(opsional)"
-                    defaultValue={it.reason ?? ""}
-                    disabled={disabled}
-                    onChange={(e) => onItemChange?.(it.id, { reason: e.target.value })}
-                    className="h-8 w-full"
-                  />
-                </td>
-              </tr>
-            ))}
+            {items.map((it) => {
+              const picked = it.pickedQuantity ?? 0;
+              const received = it.receivedQuantity ?? picked;
+              const rejected = picked - received;
+              return (
+                <tr key={it.id} className="border-b">
+                  <td className="px-3 py-2">{it.ingredientName}</td>
+                  <td className="px-3 py-2 text-right font-mono">{picked || "-"}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={picked}
+                      value={received}
+                      disabled={disabled}
+                      onChange={(e) => {
+                        const newReceived = Number(e.target.value);
+                        onItemChange?.(it.id, {
+                          receivedQuantity: newReceived,
+                          rejectedQuantity: picked - newReceived,
+                        });
+                      }}
+                      className="h-8 w-24 text-right"
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                    {rejected}
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      type="text"
+                      placeholder="(opsional)"
+                      value={it.reason ?? ""}
+                      disabled={disabled}
+                      onChange={(e) => onItemChange?.(it.id, { reason: e.target.value })}
+                      className="h-8 w-full"
+                    />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

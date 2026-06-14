@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
@@ -266,6 +266,33 @@ export function UnderReviewCaReview({ procurement, items, auditLog }: StateViewP
   const updateM = useUpdateItemMutation();
   const transitionM = useTransitionMutation();
   const [rejectionReason, setRejectionReason] = useState("");
+  const [editableItems, setEditableItems] = useState<ScmItemRow[]>(() => rowsToItems(items));
+
+  useEffect(() => {
+    setEditableItems(rowsToItems(items));
+  }, [items]);
+
+  const handleItemChange = (itemId: string, patch: Partial<ScmItemRow>) => {
+    setEditableItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it)));
+  };
+
+  const handleAcceptAndShip = async () => {
+    // Save all item-level changes via updateItem, then transition.
+    for (const it of editableItems) {
+      await updateM.mutateAsync({
+        procurementId: procurement.id as string,
+        itemId: it.id,
+        patch: {
+          caDecision: it.caDecision,
+          readyQuantity: it.readyQuantity,
+        } as Record<string, unknown>,
+      });
+    }
+    await transitionM.mutateAsync({
+      procurementId: procurement.id as string,
+      event: "accept-and-ship",
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -276,12 +303,13 @@ export function UnderReviewCaReview({ procurement, items, auditLog }: StateViewP
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
             Setujui per item atau tolak seluruh pengadaan. Item yang disetujui akan dikirim; yang ditolak diabaikan.
+            Pengeditan tersimpan saat Anda klik <strong>Setujui & Buat SJ</strong>.
           </p>
           <ScmItemTable
             mode="ca-review"
-            items={rowsToItems(items)}
-            onItemChange={(itemId, patch) => updateM.mutate({ procurementId: procurement.id as string, itemId, patch: patch as Record<string, unknown> })}
-            disabled={updateM.isPending}
+            items={editableItems}
+            onItemChange={handleItemChange}
+            disabled={updateM.isPending || transitionM.isPending}
           />
         </CardContent>
       </Card>
@@ -298,7 +326,7 @@ export function UnderReviewCaReview({ procurement, items, auditLog }: StateViewP
         <div className="flex gap-2">
           <Button
             variant="destructive"
-            disabled={!rejectionReason || transitionM.isPending}
+            disabled={!rejectionReason || transitionM.isPending || updateM.isPending}
             onClick={() =>
               transitionM.mutate({
                 procurementId: procurement.id as string,
@@ -310,12 +338,10 @@ export function UnderReviewCaReview({ procurement, items, auditLog }: StateViewP
             Tolak Semua
           </Button>
           <Button
-            disabled={transitionM.isPending}
-            onClick={() =>
-              transitionM.mutate({ procurementId: procurement.id as string, event: "accept-and-ship" })
-            }
+            disabled={transitionM.isPending || updateM.isPending}
+            onClick={handleAcceptAndShip}
           >
-            Setujui & Buat SJ
+            {updateM.isPending ? "Menyimpan..." : transitionM.isPending ? "Memproses..." : "Setujui & Buat SJ"}
           </Button>
         </div>
       </div>
@@ -457,6 +483,35 @@ export function InTransitCaDetail({ procurement, items, auditLog }: StateViewPro
 export function DeliveredBaForm({ procurement, items, auditLog }: StateViewProps) {
   const updateM = useUpdateItemMutation();
   const transitionM = useTransitionMutation();
+  const [editableItems, setEditableItems] = useState<ScmItemRow[]>(() => rowsToItems(items));
+
+  useEffect(() => {
+    setEditableItems(rowsToItems(items));
+  }, [items]);
+
+  const handleItemChange = (itemId: string, patch: Partial<ScmItemRow>) => {
+    setEditableItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it)));
+  };
+
+  const handleOpenReceive = async () => {
+    // Save all item-level changes via updateItem, then transition.
+    for (const it of editableItems) {
+      await updateM.mutateAsync({
+        procurementId: procurement.id as string,
+        itemId: it.id,
+        patch: {
+          receivedQuantity: it.receivedQuantity,
+          rejectedQuantity: it.rejectedQuantity,
+          reason: it.reason,
+        } as Record<string, unknown>,
+      });
+    }
+    await transitionM.mutateAsync({
+      procurementId: procurement.id as string,
+      event: "open-receive",
+    });
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -465,24 +520,23 @@ export function DeliveredBaForm({ procurement, items, auditLog }: StateViewProps
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
-            Periksa barang. Isi jumlah yang diterima, yang ditolak, dan alasan penolakan (jika ada).
+            Periksa barang. Isi jumlah yang diterima (Ditolak dihitung otomatis dari selisih).
+            Pengeditan tersimpan saat Anda klik <strong>Lanjut ke Review</strong>.
           </p>
           <ScmItemTable
             mode="ba-receive"
-            items={rowsToItems(items)}
-            onItemChange={(itemId, patch) => updateM.mutate({ procurementId: procurement.id as string, itemId, patch: patch as Record<string, unknown> })}
-            disabled={updateM.isPending}
+            items={editableItems}
+            onItemChange={handleItemChange}
+            disabled={updateM.isPending || transitionM.isPending}
           />
         </CardContent>
       </Card>
       <div className="flex justify-end">
         <Button
-          disabled={transitionM.isPending}
-          onClick={() =>
-            transitionM.mutate({ procurementId: procurement.id as string, event: "open-receive" })
-          }
+          disabled={transitionM.isPending || updateM.isPending}
+          onClick={handleOpenReceive}
         >
-          Lanjut ke Review
+          {updateM.isPending ? "Menyimpan..." : transitionM.isPending ? "Memproses..." : "Lanjut ke Review"}
         </Button>
       </div>
       <Card>
@@ -527,9 +581,34 @@ export function DeliveredCaWaiting({ items, auditLog }: StateViewProps) {
 // ReviewingSJ — BA: interactive (can split qty); CA: live
 // =============================================================================
 export function ReviewingSjBaInteractive({ procurement, items, auditLog }: StateViewProps) {
-  const updateM = useUpdateItemMutation();
   const transitionM = useTransitionMutation();
+  const [editableItems, setEditableItems] = useState<ScmItemRow[]>(() => rowsToItems(items));
   const [cancellationReason, setCancellationReason] = useState("");
+
+  useEffect(() => {
+    setEditableItems(rowsToItems(items));
+  }, [items]);
+
+  const handleItemChange = (itemId: string, patch: Partial<ScmItemRow>) => {
+    setEditableItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it)));
+  };
+
+  const handleFinishReceive = async () => {
+    // Use local state in the transition payload — no separate save step
+    // (the FSM's finish-receive effect reads the values from the payload).
+    await transitionM.mutateAsync({
+      procurementId: procurement.id as string,
+      event: "finish-receive",
+      payload: {
+        items: editableItems.map((it) => ({
+          id: it.id,
+          receivedQuantity: it.receivedQuantity ?? 0,
+          rejectedQuantity: it.rejectedQuantity ?? 0,
+          reason: it.reason ?? undefined,
+        })),
+      },
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -539,13 +618,13 @@ export function ReviewingSjBaInteractive({ procurement, items, auditLog }: State
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
-            Konfirmasi jumlah yang diterima dan yang ditolak. Total harus sama dengan jumlah dikirim.
+            Konfirmasi jumlah yang diterima (Ditolak dihitung otomatis). Klik <strong>Selesai Review</strong> untuk konfirmasi.
           </p>
           <ScmItemTable
             mode="ba-receive"
-            items={rowsToItems(items)}
-            onItemChange={(itemId, patch) => updateM.mutate({ procurementId: procurement.id as string, itemId, patch: patch as Record<string, unknown> })}
-            disabled={updateM.isPending}
+            items={editableItems}
+            onItemChange={handleItemChange}
+            disabled={transitionM.isPending}
           />
         </CardContent>
       </Card>
@@ -575,20 +654,7 @@ export function ReviewingSjBaInteractive({ procurement, items, auditLog }: State
           </Button>
           <Button
             disabled={transitionM.isPending}
-            onClick={() =>
-              transitionM.mutate({
-                procurementId: procurement.id as string,
-                event: "finish-receive",
-                payload: {
-                  items: rowsToItems(items).map((it) => ({
-                    id: it.id,
-                    receivedQuantity: it.receivedQuantity ?? 0,
-                    rejectedQuantity: it.rejectedQuantity ?? 0,
-                    reason: it.reason,
-                  })),
-                },
-              })
-            }
+            onClick={handleFinishReceive}
           >
             Selesai Review
           </Button>
