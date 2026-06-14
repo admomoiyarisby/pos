@@ -1,0 +1,3 @@
+ALTER TABLE "in_transit_inventory" ADD COLUMN "scm_procurement_id" uuid;--> statement-breakpoint
+ALTER TABLE "in_transit_inventory" ADD CONSTRAINT "in_transit_inventory_scm_procurement_id_scm_procurements_id_fk" FOREIGN KEY ("scm_procurement_id") REFERENCES "public"."scm_procurements"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "iti_proc_idx" ON "in_transit_inventory" USING btree ("scm_procurement_id");

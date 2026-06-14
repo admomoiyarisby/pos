@@ -659,6 +659,9 @@ export const inTransitInventory = pgTable(
     stockTransferId: uuid("stock_transfer_id").references(() => stockTransfers.id, {
       onDelete: "cascade",
     }),
+    scmProcurementId: uuid("scm_procurement_id").references(() => scmProcurements.id, {
+      onDelete: "cascade",
+    }),
     branchId: uuid("branch_id")
       .notNull()
       .references(() => branches.id),
@@ -673,6 +676,7 @@ export const inTransitInventory = pgTable(
     index("iti_ingredient_idx").on(t.ingredientId),
     index("iti_dn_idx").on(t.deliveryNoteId),
     index("iti_st_idx").on(t.stockTransferId),
+    index("iti_proc_idx").on(t.scmProcurementId),
   ],
 );
 
