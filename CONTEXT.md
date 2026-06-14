@@ -58,3 +58,28 @@ _Avoid_: Discrepancy, difference, selisih (when used as a technical term)
 **System Stock (SO context)**:
 The quantity the system believed was on hand at the moment the SO was triggered. Frozen at trigger time, used only for display/investigation purposes. NOT used for inventory adjustment calculations — physical stock is the source of truth upon approval.
 _Avoid_: Expected stock, digital stock
+
+**Procurement (Pengadaan)**:
+A formal supply-chain restocking process, modeled as a single document (`scm_procurements`) with a 10-state Finite State Machine. Replaces the older 3-document model of separate PR, SJ (Surat Jalan / delivery note), and SCM Invoice. A procurement walks through Draft → Pending → UnderReview → InTransit → Delivered → ReviewingSJ → WaitingForPayment → Finished, with terminal states Rejected and Cancelled. See ADR 0002.
+_Avoid_: PR, purchase requisition, restock request, supply order (the older terms referred to individual documents within the old 3-document model)
+
+**Procurement Transition**:
+A state change on a procurement, triggered by an event from a specific actor. Defined in the FSM transition table (`scm-fsm.ts`). Each transition has a target state, an allowed-actor list, and a list of effect handlers. Transitions are atomic — the state update, all effects, and the audit log row commit in a single transaction. In contrast, **item-level updates** (e.g., CA editing `readyQuantity` during UnderReview) are NOT transitions; they are in-state mutations recorded as `item-update` events.
+_Avoid_: state change, status update
+
+**Admin Pusat (CA / Central Admin)**:
+The central warehouse's administrator role. Has authority over SCM procurement: reviews PRs, ships stock, marks delivered, generates invoices, marks paid. The shorthand "CA" appears in lesson 0002 and ADR 0002 for brevity; the canonical term in the codebase, CONTEXT.md, and the sidebar is "Admin Pusat". The DB role is `admin_pusat`.
+_Avoid_: Central admin, central kitchen admin (different role), warehouse manager
+
+**Branch Admin (BA)**:
+The destination branch's administrator role. Owns the procurement lifecycle from the branch side: creates PRs, fills receiving forms, views invoice preview, can withdraw a Pending procurement.
+_Avoid_: store manager, outlet admin (when referring to the role)
+
+**Pending Review Inventory**:
+A ledger bucket (`pending_review_inventory`) for stock that has been delivered to a branch but not yet received by the branch admin. Distinct from `in_transit_inventory` (stock in transit) and the branch's main `inventory` (stock available for use). When BA completes the receiving review, the qty moves into branch main inventory (received) or `waste_entries` (rejected). Introduced in ADR 0002 §sub-decision.
+_Avoid_: receiving inventory, dock stock, in-branch staging
+
+**In-Transit Inventory**:
+The shared `in_transit_inventory` ledger used by both the legacy delivery-note flow (with `deliveryNoteId` set) and the new procurement flow (with `scmProcurementId` set, per ADR 0002). Stock that has left the source branch but not yet reached the destination.
+_Avoid_: transit stock, in-transit ledger
+
