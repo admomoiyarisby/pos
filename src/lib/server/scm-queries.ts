@@ -195,19 +195,45 @@ export const getProcurementItems = createServerFn({ method: "GET" })
   });
 
 // =============================================================================
-// getProcurementAuditLog
+// getProcurementAuditLog (paginated)
 // =============================================================================
 
 export const getProcurementAuditLog = createServerFn({ method: "GET" })
-  .inputValidator((data: { procurementId: string }) => data)
+  .inputValidator(
+    (data: { procurementId: string; limit?: number; offset?: number }) => data,
+  )
   .handler(async ({ data }) => {
     await requireAuth();
+    const limit = Math.max(1, Math.min(100, data.limit ?? 10));
+    const offset = Math.max(0, data.offset ?? 0);
     const rows = await db
       .select()
       .from(scmProcurementAuditLog)
       .where(eq(scmProcurementAuditLog.scmProcurementId, data.procurementId))
-      .orderBy(desc(scmProcurementAuditLog.timestamp));
-    return rows;
+      .orderBy(desc(scmProcurementAuditLog.timestamp))
+      .limit(limit)
+      .offset(offset);
+    const [{ count: total }] = await db
+      .select({ count: sql<number>`cast(count(*) as integer)` })
+      .from(scmProcurementAuditLog)
+      .where(eq(scmProcurementAuditLog.scmProcurementId, data.procurementId));
+    return {
+      entries: rows as Array<{
+        id: string;
+        scmProcurementId: string;
+        event: string;
+        fromState: string | null;
+        toState: string | null;
+        itemId: string | null;
+        actorId: string;
+        actorRole: string;
+        timestamp: Date | string;
+        note: string | null;
+      }>,
+      total: Number(total),
+      limit,
+      offset,
+    };
   });
 
 export interface ScmProcurementInvoiceLineItem {

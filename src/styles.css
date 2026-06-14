@@ -193,3 +193,21 @@
     }
   }
 }
+
+/* Print-only mode: hides everything except the .print-only div. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-only,
+  .print-only * {
+    visibility: visible;
+  }
+  .print-only {
+    position: absolute;
+    inset: 0;
+    background: white;
+    padding: 0;
+    margin: 0;
+  }
+}

@@ -8,7 +8,6 @@ import { ArrowLeft } from "lucide-react";
 import {
   getProcurement,
   getProcurementItems,
-  getProcurementAuditLog,
   getProcurementInvoice,
   getPendingReviewInventory,
 } from "#/lib/server/scm-queries";
@@ -81,12 +80,6 @@ function ProcurementDetailPage() {
     enabled: !!procurementQ.data,
   });
 
-  const auditLogQ = useQuery({
-    queryKey: ["scm-procurement-audit", procurementId],
-    queryFn: () => getProcurementAuditLog({ data: { procurementId } }),
-    enabled: !!procurementQ.data,
-  });
-
   const invoiceQ = useQuery({
     queryKey: ["scm-procurement-invoice", procurementId],
     queryFn: () => getProcurementInvoice({ data: { procurementId } }),
@@ -106,7 +99,6 @@ function ProcurementDetailPage() {
 
   const proc = procurementQ.data;
   const items = (itemsQ.data ?? []) as Array<Record<string, unknown>>;
-  const auditLog = (auditLogQ.data ?? []) as Array<Record<string, unknown>>;
   const invoice = (invoiceQ.data ?? null) as Record<string, unknown> | null;
   const pendingReview = (pendingQ.data ?? []) as Array<Record<string, unknown>>;
 
@@ -140,7 +132,6 @@ function ProcurementDetailPage() {
           actorRole={user.role}
           procurement={proc as unknown as Record<string, unknown>}
           items={items}
-          auditLog={auditLog}
           invoice={invoice}
           pendingReview={pendingReview}
         />

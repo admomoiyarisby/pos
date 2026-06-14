@@ -4,7 +4,7 @@ import { useNavigate, Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
 import { ScmItemTable, type ScmItemRow } from "./ScmItemTable";
-import { AuditLogTimeline, type AuditLogEntry } from "./AuditLogTimeline";
+import { AuditLogCard } from "./AuditLogCard";
 import { transitionProcurement, updateProcurementItem, listProcurements } from "#/lib/server/scm-queries";
 
 interface ProcurementRow extends Record<string, unknown> {
@@ -17,23 +17,70 @@ interface ProcurementRow extends Record<string, unknown> {
 
 /**
  * Shared props for all state views. The detail page passes the procurement
- * row, items, audit log, and (optionally) the invoice. Each view renders
- * a portion of the data and provides the actions the current actor can take.
+ * row and items. Audit log is fetched by the view itself via AuditLogCard
+ * (paginated), so it's not in the props.
  */
 export interface StateViewProps {
   procurement: Record<string, unknown>;
   items: Array<Record<string, unknown>>;
-  auditLog: Array<Record<string, unknown>>;
-  invoice: Record<string, unknown> | null;
-  pendingReview: Array<Record<string, unknown>>;
+  auditLog?: never; // no longer passed; use AuditLogCard
+  invoice?: Record<string, unknown> | null;
+  pendingReview?: Array<Record<string, unknown>>;
 }
 
 function rowsToItems(items: Array<Record<string, unknown>>): ScmItemRow[] {
   return items as unknown as ScmItemRow[];
 }
 
-function entriesToAuditLog(log: Array<Record<string, unknown>>): AuditLogEntry[] {
-  return log as unknown as AuditLogEntry[];
+/**
+ * AuditLogSection — wraps AuditLogCard in a Card with the "Riwayat" title.
+ * Each view renders this instead of inlining the Card markup.
+ */
+function AuditLogSection({ procurementId }: { procurementId: string }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Riwayat</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <AuditLogCard procurementId={procurementId} />
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * SuratJalanLink — small button linking to the printable SJ.
+ */
+function SuratJalanLink({ procurementId, label = "Lihat Surat Jalan" }: { procurementId: string; label?: string }) {
+  return (
+    <Link
+      to="/scm-procurements/$procurementId/print-sj"
+      params={{ procurementId }}
+      target="_blank"
+    >
+      <Button variant="outline" size="sm">
+        {label}
+      </Button>
+    </Link>
+  );
+}
+
+/**
+ * InvoiceLink — small button linking to the printable Invoice.
+ */
+function InvoiceLink({ procurementId, label = "Lihat Invoice" }: { procurementId: string; label?: string }) {
+  return (
+    <Link
+      to="/scm-procurements/$procurementId/print-invoice"
+      params={{ procurementId }}
+      target="_blank"
+    >
+      <Button variant="outline" size="sm">
+        {label}
+      </Button>
+    </Link>
+  );
 }
 
 function useTransitionMutation() {
@@ -78,7 +125,7 @@ function useUpdateItemMutation() {
 // =============================================================================
 // Draft — BA: editable form with Submit button
 // =============================================================================
-export function DraftForm({ procurement, items, auditLog }: StateViewProps) {
+export function DraftForm({ procurement, items }: StateViewProps) {
   const transitionM = useTransitionMutation();
   return (
     <div className="space-y-4">
@@ -109,14 +156,7 @@ export function DraftForm({ procurement, items, auditLog }: StateViewProps) {
           Submit Pengadaan
         </Button>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
@@ -124,7 +164,7 @@ export function DraftForm({ procurement, items, auditLog }: StateViewProps) {
 // =============================================================================
 // Pending — BA: read-only + Withdraw button; CA: review queue (placeholder)
 // =============================================================================
-export function PendingBaView({ procurement, items, auditLog }: StateViewProps) {
+export function PendingBaView({ procurement, items }: StateViewProps) {
   const transitionM = useTransitionMutation();
   return (
     <div className="space-y-4">
@@ -159,14 +199,7 @@ export function PendingBaView({ procurement, items, auditLog }: StateViewProps) 
           Batalkan
         </Button>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
@@ -262,7 +295,7 @@ export function PendingCaQueue(_props: StateViewProps) {
 // =============================================================================
 // UnderReview — CA: interactive table; BA: live read-only
 // =============================================================================
-export function UnderReviewCaReview({ procurement, items, auditLog }: StateViewProps) {
+export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
   const updateM = useUpdateItemMutation();
   const transitionM = useTransitionMutation();
   const [rejectionReason, setRejectionReason] = useState("");
@@ -345,19 +378,12 @@ export function UnderReviewCaReview({ procurement, items, auditLog }: StateViewP
           </Button>
         </div>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
 
-export function UnderReviewBaLive({ items, auditLog }: StateViewProps) {
+export function UnderReviewBaLive({ procurement, items }: StateViewProps) {
   return (
     <div className="space-y-4">
       <Card>
@@ -371,14 +397,7 @@ export function UnderReviewBaLive({ items, auditLog }: StateViewProps) {
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
@@ -386,7 +405,7 @@ export function UnderReviewBaLive({ items, auditLog }: StateViewProps) {
 // =============================================================================
 // Rejected — read-only
 // =============================================================================
-export function RejectedView({ procurement, auditLog }: StateViewProps) {
+export function RejectedView({ procurement }: StateViewProps) {
   return (
     <div className="space-y-4">
       <Card>
@@ -399,14 +418,7 @@ export function RejectedView({ procurement, auditLog }: StateViewProps) {
           </p>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
@@ -414,7 +426,7 @@ export function RejectedView({ procurement, auditLog }: StateViewProps) {
 // =============================================================================
 // InTransit — BA: tracking; CA: detail + Mark Delivered
 // =============================================================================
-export function InTransitBaTracking({ items, auditLog }: StateViewProps) {
+export function InTransitBaTracking({ procurement, items }: StateViewProps) {
   return (
     <div className="space-y-4">
       <Card>
@@ -428,19 +440,15 @@ export function InTransitBaTracking({ items, auditLog }: StateViewProps) {
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <div className="flex justify-end">
+        <SuratJalanLink procurementId={procurement.id as string} />
+      </div>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
 
-export function InTransitCaDetail({ procurement, items, auditLog }: StateViewProps) {
+export function InTransitCaDetail({ procurement, items }: StateViewProps) {
   const transitionM = useTransitionMutation();
   return (
     <div className="space-y-4">
@@ -455,7 +463,8 @@ export function InTransitCaDetail({ procurement, items, auditLog }: StateViewPro
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <SuratJalanLink procurementId={procurement.id as string} label="Cetak Surat Jalan" />
         <Button
           disabled={transitionM.isPending}
           onClick={() =>
@@ -465,14 +474,7 @@ export function InTransitCaDetail({ procurement, items, auditLog }: StateViewPro
           Tandai Sudah Dikirim
         </Button>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
@@ -480,7 +482,7 @@ export function InTransitCaDetail({ procurement, items, auditLog }: StateViewPro
 // =============================================================================
 // Delivered — BA: receiving form; CA: waiting
 // =============================================================================
-export function DeliveredBaForm({ procurement, items, auditLog }: StateViewProps) {
+export function DeliveredBaForm({ procurement, items }: StateViewProps) {
   const updateM = useUpdateItemMutation();
   const transitionM = useTransitionMutation();
   const [editableItems, setEditableItems] = useState<ScmItemRow[]>(() => rowsToItems(items));
@@ -531,7 +533,8 @@ export function DeliveredBaForm({ procurement, items, auditLog }: StateViewProps
           />
         </CardContent>
       </Card>
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <SuratJalanLink procurementId={procurement.id as string} />
         <Button
           disabled={transitionM.isPending || updateM.isPending}
           onClick={handleOpenReceive}
@@ -539,19 +542,12 @@ export function DeliveredBaForm({ procurement, items, auditLog }: StateViewProps
           {updateM.isPending ? "Menyimpan..." : transitionM.isPending ? "Memproses..." : "Lanjut ke Review"}
         </Button>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
 
-export function DeliveredCaWaiting({ items, auditLog }: StateViewProps) {
+export function DeliveredCaWaiting({ procurement, items }: StateViewProps) {
   return (
     <div className="space-y-4">
       <Card>
@@ -565,14 +561,10 @@ export function DeliveredCaWaiting({ items, auditLog }: StateViewProps) {
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <div className="flex justify-end">
+        <SuratJalanLink procurementId={procurement.id as string} />
+      </div>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
@@ -580,7 +572,7 @@ export function DeliveredCaWaiting({ items, auditLog }: StateViewProps) {
 // =============================================================================
 // ReviewingSJ — BA: interactive (can split qty); CA: live
 // =============================================================================
-export function ReviewingSjBaInteractive({ procurement, items, auditLog }: StateViewProps) {
+export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps) {
   const transitionM = useTransitionMutation();
   const [editableItems, setEditableItems] = useState<ScmItemRow[]>(() => rowsToItems(items));
   const [cancellationReason, setCancellationReason] = useState("");
@@ -660,19 +652,12 @@ export function ReviewingSjBaInteractive({ procurement, items, auditLog }: State
           </Button>
         </div>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
 
-export function ReviewingSjCaLive({ items, auditLog }: StateViewProps) {
+export function ReviewingSjCaLive({ procurement, items }: StateViewProps) {
   return (
     <div className="space-y-4">
       <Card>
@@ -686,14 +671,10 @@ export function ReviewingSjCaLive({ items, auditLog }: StateViewProps) {
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <div className="flex justify-end">
+        <SuratJalanLink procurementId={procurement.id as string} />
+      </div>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
@@ -701,7 +682,7 @@ export function ReviewingSjCaLive({ items, auditLog }: StateViewProps) {
 // =============================================================================
 // WaitingForPayment — BA: invoice preview; CA: invoice + Mark Paid
 // =============================================================================
-export function WaitingForPaymentBaInvoice({ items, auditLog, invoice }: StateViewProps) {
+export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: StateViewProps) {
   const total = (invoice?.totalAmount as number) ?? 0;
   return (
     <div className="space-y-4">
@@ -719,19 +700,15 @@ export function WaitingForPaymentBaInvoice({ items, auditLog, invoice }: StateVi
           </p>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <div className="flex justify-end">
+        <InvoiceLink procurementId={procurement.id as string} />
+      </div>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
 
-export function WaitingForPaymentCaInvoice({ procurement, items, auditLog, invoice }: StateViewProps) {
+export function WaitingForPaymentCaInvoice({ procurement, items, invoice }: StateViewProps) {
   const transitionM = useTransitionMutation();
   const total = (invoice?.totalAmount as number) ?? 0;
   return (
@@ -747,7 +724,8 @@ export function WaitingForPaymentCaInvoice({ procurement, items, auditLog, invoi
           </p>
         </CardContent>
       </Card>
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <InvoiceLink procurementId={procurement.id as string} label="Cetak Invoice" />
         <Button
           disabled={transitionM.isPending}
           onClick={() =>
@@ -757,14 +735,7 @@ export function WaitingForPaymentCaInvoice({ procurement, items, auditLog, invoi
           Tandai Telah Dibayar
         </Button>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
@@ -772,7 +743,7 @@ export function WaitingForPaymentCaInvoice({ procurement, items, auditLog, invoi
 // =============================================================================
 // Finished — read-only "Lunas"
 // =============================================================================
-export function FinishedView({ items, auditLog, invoice }: StateViewProps) {
+export function FinishedView({ procurement, items, invoice }: StateViewProps) {
   const total = (invoice?.totalAmount as number) ?? 0;
   return (
     <div className="space-y-4">
@@ -788,14 +759,10 @@ export function FinishedView({ items, auditLog, invoice }: StateViewProps) {
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <div className="flex justify-end">
+        <InvoiceLink procurementId={procurement.id as string} />
+      </div>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
@@ -803,7 +770,7 @@ export function FinishedView({ items, auditLog, invoice }: StateViewProps) {
 // =============================================================================
 // Cancelled — read-only
 // =============================================================================
-export function CancelledView({ procurement, auditLog }: StateViewProps) {
+export function CancelledView({ procurement }: StateViewProps) {
   return (
     <div className="space-y-4">
       <Card>
@@ -816,14 +783,7 @@ export function CancelledView({ procurement, auditLog }: StateViewProps) {
           </p>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Riwayat</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AuditLogTimeline entries={entriesToAuditLog(auditLog)} />
-        </CardContent>
-      </Card>
+      <AuditLogSection procurementId={procurement.id as string} />
     </div>
   );
 }
