@@ -202,7 +202,7 @@ export class InvalidStateForEditError extends Error {
 
 export type TransitionResult =
   | { success: true; status: ScmProcurementStatus }
-  | { success: false; error: Error };
+  | { success: false; error: { name: string; message: string } };
 
 /**
  * Move a procurement from its current state to the next state by event.
@@ -312,7 +312,7 @@ export async function transition(
       err instanceof UnauthorizedError ||
       err instanceof ProcurementNotFoundError
     ) {
-      return { success: false, error: err };
+      return { success: false, error: { name: err.name, message: err.message } };
     }
     throw err;
   }
@@ -333,7 +333,7 @@ export type UpdateItemPatch = {
 
 export type UpdateItemResult =
   | { success: true }
-  | { success: false; error: Error };
+  | { success: false; error: { name: string; message: string } };
 
 /**
  * Per-item mutations within a state. Does NOT change the procurement's state.
@@ -417,7 +417,7 @@ export async function updateItem(
     return { success: true };
   } catch (err) {
     if (err instanceof InvalidStateForEditError || err instanceof ProcurementNotFoundError) {
-      return { success: false, error: err };
+      return { success: false, error: { name: err.name, message: err.message } };
     }
     throw err;
   }

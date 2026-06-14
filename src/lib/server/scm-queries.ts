@@ -11,7 +11,7 @@ import {
   scmProcurements,
 } from "#/db/schema";
 import type { ScmProcurementStatus } from "./scm-fsm";
-import { availableEvents } from "./scm-fsm";
+import { availableEvents, transition, updateItem } from "./scm-fsm";
 
 // =============================================================================
 // createProcurement
@@ -222,6 +222,53 @@ export interface ScmProcurementInvoiceLineItem {
   baDecision: "pending" | "accepted" | "rejected";
   reason: string | null;
 }
+
+// =============================================================================
+// FSM server functions (wrappers over scm-fsm.ts)
+// =============================================================================
+
+/**
+ * Call the FSM transition function. This is the only public way the client
+ * can change a procurement's state. The wrapper does input validation and
+ * returns either { success: true, status } or { success: false, error }.
+ */
+export const transitionProcurement = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      procurementId: string;
+      event: string;
+      payload?: Record<string, unknown>;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    const result = await transition(
+      data.procurementId,
+      data.event as never,
+      (data.payload ?? {}) as never,
+      { id: user.id, role: user.role },
+    );
+    return result;
+  });
+
+export const updateProcurementItem = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: {
+      procurementId: string;
+      itemId: string;
+      patch: Record<string, unknown>;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    const result = await updateItem(
+      data.procurementId,
+      data.itemId,
+      data.patch as never,
+      { id: user.id, role: user.role },
+    );
+    return result;
+  });
 
 // =============================================================================
 // getProcurementInvoice (header + line items)

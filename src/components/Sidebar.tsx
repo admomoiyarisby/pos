@@ -135,20 +135,8 @@ const navGroups: NavGroup[] = [
     roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
     items: [
       {
-        label: "Permintaan Pembelian",
-        to: "/purchase-requisitions",
-        icon: FileText,
-        roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
-      },
-      {
-        label: "Surat Jalan",
-        to: "/delivery-notes",
-        icon: Truck,
-        roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
-      },
-      {
-        label: "Invoice SCM",
-        to: "/scm-invoices",
+        label: "Pengadaan",
+        to: "/scm-procurements",
         icon: FileText,
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
       },
