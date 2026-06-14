@@ -83,3 +83,7 @@ _Avoid_: receiving inventory, dock stock, in-branch staging
 The shared `in_transit_inventory` ledger used by both the legacy delivery-note flow (with `deliveryNoteId` set) and the new procurement flow (with `scmProcurementId` set, per ADR 0002). Stock that has left the source branch but not yet reached the destination.
 _Avoid_: transit stock, in-transit ledger
 
+**Procurement Unit Price**:
+The price per unit (in IDR) that the destination branch pays the central warehouse for an ingredient in a specific procurement. Snapshotted from `ingredients.averageCost` at procurement-item-creation time (in `createProcurement`). The price is frozen on the item row — subsequent changes to `averageCost` do not affect existing procurements. The CA review form shows the price + per-line subtotal + grand subtotal (read-only); the BA's request form shows the price as a transparency aid (also read-only); the invoice is generated as `receivedQuantity * unitPrice`. The CA cannot override the price in the current flow — if a different price is needed, CA adjusts `ingredients.averageCost` first. See ADR 0003.
+_Avoid_: cost, harga, procurement cost (reserved for the per-recipe manufacturing cost tracked in COGS)
+

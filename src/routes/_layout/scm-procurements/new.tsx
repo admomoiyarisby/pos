@@ -20,7 +20,10 @@ interface DraftItem {
   ingredientId: string;
   ingredientName: string;
   quantity: number;
+  unitPrice: number;
 }
+
+type IngredientRow = { id: string; name: string; averageCost: number };
 
 function NewProcurementPage() {
   const navigate = useNavigate();
@@ -67,10 +70,18 @@ function NewProcurementPage() {
 
   function addItem() {
     if (!selectedIngredient || quantity <= 0) return;
-    const ing = (ingredients as Array<{ id: string; name: string }>).find((i) => i.id === selectedIngredient);
+    const ing = (ingredients as IngredientRow[]).find((i) => i.id === selectedIngredient);
     if (!ing) return;
     if (items.some((it) => it.ingredientId === ing.id)) return;
-    setItems([...items, { ingredientId: ing.id, ingredientName: ing.name, quantity }]);
+    setItems([
+      ...items,
+      {
+        ingredientId: ing.id,
+        ingredientName: ing.name,
+        quantity,
+        unitPrice: ing.averageCost,
+      },
+    ]);
     setSelectedIngredient("");
     setQuantity(1);
   }
@@ -135,6 +146,8 @@ function NewProcurementPage() {
                     <tr>
                       <th className="px-3 py-2 text-left">Bahan</th>
                       <th className="px-3 py-2 text-right">Jumlah</th>
+                      <th className="px-3 py-2 text-right">Harga</th>
+                      <th className="px-3 py-2 text-right">Subtotal</th>
                       <th className="w-12"></th>
                     </tr>
                   </thead>
@@ -143,6 +156,12 @@ function NewProcurementPage() {
                       <tr key={it.ingredientId} className="border-b">
                         <td className="px-3 py-2">{it.ingredientName}</td>
                         <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
+                        <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                          Rp {it.unitPrice.toLocaleString("id-ID")}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          Rp {(it.quantity * it.unitPrice).toLocaleString("id-ID")}
+                        </td>
                         <td className="px-3 py-2">
                           <Button size="sm" variant="ghost" onClick={() => removeItem(it.ingredientId)}>
                             <Trash2 className="h-4 w-4 text-destructive" />
@@ -151,6 +170,17 @@ function NewProcurementPage() {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 bg-muted/30 font-semibold">
+                      <td colSpan={3} className="px-3 py-2 text-right">Total:</td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        Rp {items
+                          .reduce((sum, it) => sum + it.quantity * it.unitPrice, 0)
+                          .toLocaleString("id-ID")}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             ) : null}

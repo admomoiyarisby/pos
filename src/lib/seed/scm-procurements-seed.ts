@@ -80,6 +80,7 @@ async function main() {
       ingredientId: it.id,
       quantity: 10 + idx * 5,
       sortOrder: idx,
+      unitPrice: it.averageCost,
     })),
   );
   console.log(`  -> ${draft.code} (status: ${draft.status})`);
@@ -105,6 +106,7 @@ async function main() {
       ingredientId: it.id,
       quantity: 5 + idx * 3,
       sortOrder: idx,
+      unitPrice: it.averageCost,
     })),
   );
   await transition(
@@ -142,6 +144,7 @@ async function main() {
       ingredientId: it.id,
       quantity: 20 + idx * 5,
       sortOrder: idx,
+      unitPrice: it.averageCost,
     })),
   );
   await transition(finished.id, "submit", {}, actor(ba));

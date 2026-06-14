@@ -61,12 +61,25 @@ export const createProcurement = createServerFn({ method: "POST" })
     if (!proc) throw new Error("Failed to create procurement");
 
     if (data.items.length > 0) {
+      // Snapshot unitPrice from ingredients.averageCost for each item
+      // (ADR 0003). One query for all items, then a Map lookup in the
+      // insert below. If an ingredient somehow doesn't exist (FK
+      // guarantees it does at insert time, but defensively), unitPrice
+      // is null and the invoice will show Rp 0 for that line.
+      const ingredientIds = data.items.map((it) => it.ingredientId);
+      const priceRows = await db
+        .select({ id: ingredients.id, averageCost: ingredients.averageCost })
+        .from(ingredients)
+        .where(inArray(ingredients.id, ingredientIds));
+      const priceById = new Map(priceRows.map((p) => [p.id, p.averageCost]));
+
       await db.insert(scmProcurementItems).values(
         data.items.map((it, idx) => ({
           scmProcurementId: proc.id,
           ingredientId: it.ingredientId,
           quantity: it.quantity,
           sortOrder: it.sortOrder ?? idx,
+          unitPrice: priceById.get(it.ingredientId) ?? null,
         })),
       );
     }

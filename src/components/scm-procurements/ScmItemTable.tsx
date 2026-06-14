@@ -61,55 +61,82 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
               <th className="px-3 py-2 text-left">Bahan</th>
               <th className="px-3 py-2 text-right">Diminta</th>
               <th className="px-3 py-2 text-right">Disetujui</th>
+              <th className="px-3 py-2 text-right">Harga</th>
+              <th className="px-3 py-2 text-right">Subtotal</th>
               <th className="px-3 py-2 text-center">Keputusan CA</th>
             </tr>
           </thead>
           <tbody>
-            {items.map((it) => (
-              <tr key={it.id} className="border-b">
-                <td className="px-3 py-2">{it.ingredientName}</td>
-                <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
-                <td className="px-3 py-2 text-right">
-                  <Input
-                    type="number"
-                    min={0}
-                    defaultValue={it.readyQuantity ?? it.quantity}
-                    disabled={disabled}
-                    onChange={(e) => onItemChange?.(it.id, { readyQuantity: Number(e.target.value) })}
-                    className="h-8 w-24 text-right"
-                  />
-                </td>
-                <td className="px-3 py-2 text-center">
-                  <div className="inline-flex gap-1">
-                    <button
-                      type="button"
+            {items.map((it) => {
+              const ready = it.readyQuantity ?? it.quantity;
+              const lineTotal = ready * (it.unitPrice ?? 0);
+              return (
+                <tr key={it.id} className="border-b">
+                  <td className="px-3 py-2">{it.ingredientName}</td>
+                  <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Input
+                      type="number"
+                      min={0}
+                      defaultValue={ready}
                       disabled={disabled}
-                      onClick={() => onItemChange?.(it.id, { caDecision: "approved" })}
-                      className={`rounded px-2 py-1 text-xs ${
-                        it.caDecision === "approved"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-muted hover:bg-green-50"
-                      }`}
-                    >
-                      Setujui
-                    </button>
-                    <button
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => onItemChange?.(it.id, { caDecision: "rejected" })}
-                      className={`rounded px-2 py-1 text-xs ${
-                        it.caDecision === "rejected"
-                          ? "bg-red-100 text-red-700"
-                          : "bg-muted hover:bg-red-50"
-                      }`}
-                    >
-                      Tolak
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                      onChange={(e) => onItemChange?.(it.id, { readyQuantity: Number(e.target.value) })}
+                      className="h-8 w-24 text-right"
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                    Rp {(it.unitPrice ?? 0).toLocaleString("id-ID")}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    Rp {lineTotal.toLocaleString("id-ID")}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <div className="inline-flex gap-1">
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onItemChange?.(it.id, { caDecision: "approved" })}
+                        className={`rounded px-2 py-1 text-xs ${
+                          it.caDecision === "approved"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-muted hover:bg-green-50"
+                        }`}
+                      >
+                        Setujui
+                      </button>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onItemChange?.(it.id, { caDecision: "rejected" })}
+                        className={`rounded px-2 py-1 text-xs ${
+                          it.caDecision === "rejected"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-muted hover:bg-red-50"
+                        }`}
+                      >
+                        Tolak
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
+          <tfoot>
+            <tr className="border-t-2 bg-muted/30 font-semibold">
+              <td colSpan={4} className="px-3 py-2 text-right">Subtotal:</td>
+              <td className="px-3 py-2 text-right font-mono">
+                Rp {items
+                  .reduce(
+                    (sum, it) =>
+                      sum + (it.readyQuantity ?? it.quantity) * (it.unitPrice ?? 0),
+                    0,
+                  )
+                  .toLocaleString("id-ID")}
+              </td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     );
