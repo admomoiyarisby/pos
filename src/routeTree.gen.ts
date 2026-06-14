@@ -69,8 +69,6 @@ import { Route as LayoutAdminPlatformFeesRouteImport } from './routes/_layout/ad
 import { Route as LayoutAdminBrandsRouteImport } from './routes/_layout/admin/brands'
 import { Route as LayoutAdminBranchesRouteImport } from './routes/_layout/admin/branches'
 import { Route as LayoutAdminAuditLogsRouteImport } from './routes/_layout/admin/audit-logs'
-import { Route as LayoutScmProcurementsProcurementIdPrintSjRouteImport } from './routes/_layout/scm-procurements/$procurementId.print-sj'
-import { Route as LayoutScmProcurementsProcurementIdPrintInvoiceRouteImport } from './routes/_layout/scm-procurements/$procurementId.print-invoice'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -388,18 +386,6 @@ const LayoutAdminAuditLogsRoute = LayoutAdminAuditLogsRouteImport.update({
   path: '/admin/audit-logs',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutScmProcurementsProcurementIdPrintSjRoute =
-  LayoutScmProcurementsProcurementIdPrintSjRouteImport.update({
-    id: '/print-sj',
-    path: '/print-sj',
-    getParentRoute: () => LayoutScmProcurementsProcurementIdRoute,
-  } as any)
-const LayoutScmProcurementsProcurementIdPrintInvoiceRoute =
-  LayoutScmProcurementsProcurementIdPrintInvoiceRouteImport.update({
-    id: '/print-invoice',
-    path: '/print-invoice',
-    getParentRoute: () => LayoutScmProcurementsProcurementIdRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
@@ -436,7 +422,7 @@ export interface FileRoutesByFullPath {
   '/purchase-requisitions/$prId': typeof LayoutPurchaseRequisitionsPrIdRoute
   '/recipes/$recipeId': typeof LayoutRecipesRecipeIdRoute
   '/scm-invoices/$invId': typeof LayoutScmInvoicesInvIdRoute
-  '/scm-procurements/$procurementId': typeof LayoutScmProcurementsProcurementIdRouteWithChildren
+  '/scm-procurements/$procurementId': typeof LayoutScmProcurementsProcurementIdRoute
   '/scm-procurements/new': typeof LayoutScmProcurementsNewRoute
   '/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
@@ -461,8 +447,6 @@ export interface FileRoutesByFullPath {
   '/stock-transfers/': typeof LayoutStockTransfersIndexRoute
   '/supplier-deliveries/': typeof LayoutSupplierDeliveriesIndexRoute
   '/waste/': typeof LayoutWasteIndexRoute
-  '/scm-procurements/$procurementId/print-invoice': typeof LayoutScmProcurementsProcurementIdPrintInvoiceRoute
-  '/scm-procurements/$procurementId/print-sj': typeof LayoutScmProcurementsProcurementIdPrintSjRoute
 }
 export interface FileRoutesByTo {
   '/about': typeof AboutRoute
@@ -499,7 +483,7 @@ export interface FileRoutesByTo {
   '/purchase-requisitions/$prId': typeof LayoutPurchaseRequisitionsPrIdRoute
   '/recipes/$recipeId': typeof LayoutRecipesRecipeIdRoute
   '/scm-invoices/$invId': typeof LayoutScmInvoicesInvIdRoute
-  '/scm-procurements/$procurementId': typeof LayoutScmProcurementsProcurementIdRouteWithChildren
+  '/scm-procurements/$procurementId': typeof LayoutScmProcurementsProcurementIdRoute
   '/scm-procurements/new': typeof LayoutScmProcurementsNewRoute
   '/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
@@ -524,8 +508,6 @@ export interface FileRoutesByTo {
   '/stock-transfers': typeof LayoutStockTransfersIndexRoute
   '/supplier-deliveries': typeof LayoutSupplierDeliveriesIndexRoute
   '/waste': typeof LayoutWasteIndexRoute
-  '/scm-procurements/$procurementId/print-invoice': typeof LayoutScmProcurementsProcurementIdPrintInvoiceRoute
-  '/scm-procurements/$procurementId/print-sj': typeof LayoutScmProcurementsProcurementIdPrintSjRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -564,7 +546,7 @@ export interface FileRoutesById {
   '/_layout/purchase-requisitions/$prId': typeof LayoutPurchaseRequisitionsPrIdRoute
   '/_layout/recipes/$recipeId': typeof LayoutRecipesRecipeIdRoute
   '/_layout/scm-invoices/$invId': typeof LayoutScmInvoicesInvIdRoute
-  '/_layout/scm-procurements/$procurementId': typeof LayoutScmProcurementsProcurementIdRouteWithChildren
+  '/_layout/scm-procurements/$procurementId': typeof LayoutScmProcurementsProcurementIdRoute
   '/_layout/scm-procurements/new': typeof LayoutScmProcurementsNewRoute
   '/_layout/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/_layout/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
@@ -589,8 +571,6 @@ export interface FileRoutesById {
   '/_layout/stock-transfers/': typeof LayoutStockTransfersIndexRoute
   '/_layout/supplier-deliveries/': typeof LayoutSupplierDeliveriesIndexRoute
   '/_layout/waste/': typeof LayoutWasteIndexRoute
-  '/_layout/scm-procurements/$procurementId/print-invoice': typeof LayoutScmProcurementsProcurementIdPrintInvoiceRoute
-  '/_layout/scm-procurements/$procurementId/print-sj': typeof LayoutScmProcurementsProcurementIdPrintSjRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -654,8 +634,6 @@ export interface FileRouteTypes {
     | '/stock-transfers/'
     | '/supplier-deliveries/'
     | '/waste/'
-    | '/scm-procurements/$procurementId/print-invoice'
-    | '/scm-procurements/$procurementId/print-sj'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/about'
@@ -717,8 +695,6 @@ export interface FileRouteTypes {
     | '/stock-transfers'
     | '/supplier-deliveries'
     | '/waste'
-    | '/scm-procurements/$procurementId/print-invoice'
-    | '/scm-procurements/$procurementId/print-sj'
   id:
     | '__root__'
     | '/_layout'
@@ -781,8 +757,6 @@ export interface FileRouteTypes {
     | '/_layout/stock-transfers/'
     | '/_layout/supplier-deliveries/'
     | '/_layout/waste/'
-    | '/_layout/scm-procurements/$procurementId/print-invoice'
-    | '/_layout/scm-procurements/$procurementId/print-sj'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1222,40 +1196,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminAuditLogsRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/scm-procurements/$procurementId/print-sj': {
-      id: '/_layout/scm-procurements/$procurementId/print-sj'
-      path: '/print-sj'
-      fullPath: '/scm-procurements/$procurementId/print-sj'
-      preLoaderRoute: typeof LayoutScmProcurementsProcurementIdPrintSjRouteImport
-      parentRoute: typeof LayoutScmProcurementsProcurementIdRoute
-    }
-    '/_layout/scm-procurements/$procurementId/print-invoice': {
-      id: '/_layout/scm-procurements/$procurementId/print-invoice'
-      path: '/print-invoice'
-      fullPath: '/scm-procurements/$procurementId/print-invoice'
-      preLoaderRoute: typeof LayoutScmProcurementsProcurementIdPrintInvoiceRouteImport
-      parentRoute: typeof LayoutScmProcurementsProcurementIdRoute
-    }
   }
 }
-
-interface LayoutScmProcurementsProcurementIdRouteChildren {
-  LayoutScmProcurementsProcurementIdPrintInvoiceRoute: typeof LayoutScmProcurementsProcurementIdPrintInvoiceRoute
-  LayoutScmProcurementsProcurementIdPrintSjRoute: typeof LayoutScmProcurementsProcurementIdPrintSjRoute
-}
-
-const LayoutScmProcurementsProcurementIdRouteChildren: LayoutScmProcurementsProcurementIdRouteChildren =
-  {
-    LayoutScmProcurementsProcurementIdPrintInvoiceRoute:
-      LayoutScmProcurementsProcurementIdPrintInvoiceRoute,
-    LayoutScmProcurementsProcurementIdPrintSjRoute:
-      LayoutScmProcurementsProcurementIdPrintSjRoute,
-  }
-
-const LayoutScmProcurementsProcurementIdRouteWithChildren =
-  LayoutScmProcurementsProcurementIdRoute._addFileChildren(
-    LayoutScmProcurementsProcurementIdRouteChildren,
-  )
 
 interface LayoutRouteChildren {
   LayoutCancelRequestsRoute: typeof LayoutCancelRequestsRoute
@@ -1284,7 +1226,7 @@ interface LayoutRouteChildren {
   LayoutPurchaseRequisitionsPrIdRoute: typeof LayoutPurchaseRequisitionsPrIdRoute
   LayoutRecipesRecipeIdRoute: typeof LayoutRecipesRecipeIdRoute
   LayoutScmInvoicesInvIdRoute: typeof LayoutScmInvoicesInvIdRoute
-  LayoutScmProcurementsProcurementIdRoute: typeof LayoutScmProcurementsProcurementIdRouteWithChildren
+  LayoutScmProcurementsProcurementIdRoute: typeof LayoutScmProcurementsProcurementIdRoute
   LayoutScmProcurementsNewRoute: typeof LayoutScmProcurementsNewRoute
   LayoutStockOpnameSoIdRoute: typeof LayoutStockOpnameSoIdRoute
   LayoutStockTransfersTrIdRoute: typeof LayoutStockTransfersTrIdRoute
@@ -1336,7 +1278,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutRecipesRecipeIdRoute: LayoutRecipesRecipeIdRoute,
   LayoutScmInvoicesInvIdRoute: LayoutScmInvoicesInvIdRoute,
   LayoutScmProcurementsProcurementIdRoute:
-    LayoutScmProcurementsProcurementIdRouteWithChildren,
+    LayoutScmProcurementsProcurementIdRoute,
   LayoutScmProcurementsNewRoute: LayoutScmProcurementsNewRoute,
   LayoutStockOpnameSoIdRoute: LayoutStockOpnameSoIdRoute,
   LayoutStockTransfersTrIdRoute: LayoutStockTransfersTrIdRoute,

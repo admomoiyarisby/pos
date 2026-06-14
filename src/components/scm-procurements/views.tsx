@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
 import { ScmItemTable, type ScmItemRow } from "./ScmItemTable";
 import { AuditLogCard } from "./AuditLogCard";
 import { transitionProcurement, updateProcurementItem, listProcurements } from "#/lib/server/scm-queries";
+import { printSuratJalan, printInvoice } from "#/lib/server/scm-print";
+import { openPrintWindow } from "#/lib/print-window";
 
 interface ProcurementRow extends Record<string, unknown> {
   id: string;
@@ -50,36 +52,49 @@ function AuditLogSection({ procurementId }: { procurementId: string }) {
 }
 
 /**
- * SuratJalanLink — small button linking to the printable SJ.
+ * SuratJalanButton — opens a print window with the SJ document.
+ * Mirrors the POS receipt pattern: window.open + auto-print + auto-close.
  */
-function SuratJalanLink({ procurementId, label = "Lihat Surat Jalan" }: { procurementId: string; label?: string }) {
+function SuratJalanButton({ procurementId, label = "Lihat Surat Jalan" }: { procurementId: string; label?: string }) {
+  const [loading, setLoading] = useState(false);
+  async function handleClick() {
+    try {
+      setLoading(true);
+      const html = await printSuratJalan({ data: { procurementId } });
+      openPrintWindow(html);
+    } catch (err) {
+      alert(`Gagal mencetak: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
   return (
-    <Link
-      to="/scm-procurements/$procurementId/print-sj"
-      params={{ procurementId }}
-      target="_blank"
-    >
-      <Button variant="outline" size="sm">
-        {label}
-      </Button>
-    </Link>
+    <Button variant="outline" size="sm" onClick={handleClick} disabled={loading}>
+      {loading ? "Menyiapkan..." : label}
+    </Button>
   );
 }
 
 /**
- * InvoiceLink — small button linking to the printable Invoice.
+ * InvoiceButton — opens a print window with the Invoice document.
  */
-function InvoiceLink({ procurementId, label = "Lihat Invoice" }: { procurementId: string; label?: string }) {
+function InvoiceButton({ procurementId, label = "Lihat Invoice" }: { procurementId: string; label?: string }) {
+  const [loading, setLoading] = useState(false);
+  async function handleClick() {
+    try {
+      setLoading(true);
+      const html = await printInvoice({ data: { procurementId } });
+      openPrintWindow(html);
+    } catch (err) {
+      alert(`Gagal mencetak: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
   return (
-    <Link
-      to="/scm-procurements/$procurementId/print-invoice"
-      params={{ procurementId }}
-      target="_blank"
-    >
-      <Button variant="outline" size="sm">
-        {label}
-      </Button>
-    </Link>
+    <Button variant="outline" size="sm" onClick={handleClick} disabled={loading}>
+      {loading ? "Menyiapkan..." : label}
+    </Button>
   );
 }
 
@@ -441,7 +456,7 @@ export function InTransitBaTracking({ procurement, items }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end">
-        <SuratJalanLink procurementId={procurement.id as string} />
+        <SuratJalanButton procurementId={procurement.id as string} />
       </div>
       <AuditLogSection procurementId={procurement.id as string} />
     </div>
@@ -464,7 +479,7 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end gap-2">
-        <SuratJalanLink procurementId={procurement.id as string} label="Cetak Surat Jalan" />
+        <SuratJalanButton procurementId={procurement.id as string} label="Cetak Surat Jalan" />
         <Button
           disabled={transitionM.isPending}
           onClick={() =>
@@ -534,7 +549,7 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end gap-2">
-        <SuratJalanLink procurementId={procurement.id as string} />
+        <SuratJalanButton procurementId={procurement.id as string} />
         <Button
           disabled={transitionM.isPending || updateM.isPending}
           onClick={handleOpenReceive}
@@ -562,7 +577,7 @@ export function DeliveredCaWaiting({ procurement, items }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end">
-        <SuratJalanLink procurementId={procurement.id as string} />
+        <SuratJalanButton procurementId={procurement.id as string} />
       </div>
       <AuditLogSection procurementId={procurement.id as string} />
     </div>
@@ -672,7 +687,7 @@ export function ReviewingSjCaLive({ procurement, items }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end">
-        <SuratJalanLink procurementId={procurement.id as string} />
+        <SuratJalanButton procurementId={procurement.id as string} />
       </div>
       <AuditLogSection procurementId={procurement.id as string} />
     </div>
@@ -701,7 +716,7 @@ export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: Stat
         </CardContent>
       </Card>
       <div className="flex justify-end">
-        <InvoiceLink procurementId={procurement.id as string} />
+        <InvoiceButton procurementId={procurement.id as string} />
       </div>
       <AuditLogSection procurementId={procurement.id as string} />
     </div>
@@ -725,7 +740,7 @@ export function WaitingForPaymentCaInvoice({ procurement, items, invoice }: Stat
         </CardContent>
       </Card>
       <div className="flex justify-end gap-2">
-        <InvoiceLink procurementId={procurement.id as string} label="Cetak Invoice" />
+        <InvoiceButton procurementId={procurement.id as string} label="Cetak Invoice" />
         <Button
           disabled={transitionM.isPending}
           onClick={() =>
@@ -760,7 +775,7 @@ export function FinishedView({ procurement, items, invoice }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end">
-        <InvoiceLink procurementId={procurement.id as string} />
+        <InvoiceButton procurementId={procurement.id as string} />
       </div>
       <AuditLogSection procurementId={procurement.id as string} />
     </div>
