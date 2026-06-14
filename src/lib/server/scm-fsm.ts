@@ -50,7 +50,7 @@ export type ScmProcurementEvent =
   | "mark-paid"
   | "cancel";
 
-export type FsmActorRole = "branch_admin" | "admin_pusat" | "super_admin";
+export type FsmActorRole = "branch_admin" | "admin_pusat" | "super_admin" | "area_manager";
 
 export type FsmEffect = (
   procurementId: string,
