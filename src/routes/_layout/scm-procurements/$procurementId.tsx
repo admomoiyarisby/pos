@@ -119,7 +119,7 @@ function ProcurementDetailPage() {
           <div>
             <h1 className="text-2xl font-semibold">{proc.code as string}</h1>
             <p className="text-sm text-muted-foreground">
-              Pengadaan ke cabang • dibuat {new Date(proc.createdAt as string).toLocaleString("id-ID")}
+              Pengadaan ke cabang • dibuat {new Date(proc.createdAt as unknown as string | Date).toLocaleString("id-ID")}
             </p>
           </div>
           <div className="flex items-center gap-2">
