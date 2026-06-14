@@ -31,7 +31,27 @@ export interface StateViewProps {
 }
 
 function rowsToItems(items: Array<Record<string, unknown>>): ScmItemRow[] {
-  return items as unknown as ScmItemRow[];
+  return (items as unknown as ScmItemRow[]).map((it) => ({
+    ...it,
+    // CA's caDecision: default 'pending' to 'approved' so accepting-as-is
+    // just clicks the primary button. The CA only needs to click 'Tolak'
+    // for items they want to reject. Without this, a 'pending' decision
+    // is treated as 'not approved' by copyReadyToPicked, silently zeroing
+    // out pickedQuantity (and thus everything downstream: SJ, BA's
+    // receivedQuantity default, invoice line items, branch inventory).
+    caDecision: it.caDecision === "pending" ? "approved" : it.caDecision,
+    // CA's readyQuantity: default to the requested quantity. The input
+    // shows this as defaultValue (uncontrolled), but the underlying state
+    // is null until typed. Defaulting ensures the payload sends the right
+    // value when the CA accepts-as-is.
+    readyQuantity: it.readyQuantity ?? it.quantity ?? null,
+    // BA's receivedQuantity: default to the picked quantity. The input
+    // shows pickedQuantity as the visual default (controlled, value =
+    // received = it.receivedQuantity ?? pickedQuantity), but the state
+    // is null until typed. Defaulting ensures accepting-as-is works
+    // without the user having to type each row.
+    receivedQuantity: it.receivedQuantity ?? it.pickedQuantity ?? null,
+  }));
 }
 
 /**
