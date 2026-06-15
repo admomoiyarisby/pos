@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -129,17 +130,15 @@ function NewProcurementPage() {
     });
   }
 
+  usePageTitle(
+    "Buat Pengadaan",
+    "Isi item yang diminta. Simpan sebagai Draft untuk melanjutkan nanti, atau langsung Submit untuk masuk antrian review Admin Pusat.",
+  );
+
   return (
     <RoleGuard allowedRoles={["branch_admin", "super_admin"]}>
       <div className="space-y-4 p-4 md:p-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Buat Pengadaan</h1>
-            <p className="text-sm text-muted-foreground">
-              Isi item yang diminta. Simpan sebagai Draft untuk melanjutkan nanti, atau langsung
-              Submit untuk masuk antrian review Admin Pusat.
-            </p>
-          </div>
+        <div className="flex justify-end">
           <Link to="/scm-procurements" search={() => ({ status: undefined })}>
             <Button variant="ghost">
               <ArrowLeft className="h-4 w-4" />

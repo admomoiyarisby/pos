@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
 import DataTable from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
@@ -150,26 +151,24 @@ function ProcurementsListPage() {
 
   const activeTab: FilterKey = (statusFilter as FilterKey | undefined) ?? "all";
 
+  usePageTitle(
+    "Pengadaan",
+    "Restock dari Central ke Cabang. Satu dokumen mengikuti seluruh siklus dari Draft sampai Lunas.",
+  );
+
   return (
     <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
       <div className="space-y-4 p-4 md:p-6">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold">Pengadaan</h1>
-            <p className="text-sm text-muted-foreground">
-              Restock dari Central ke Cabang. Satu dokumen mengikuti seluruh siklus dari Draft
-              sampai Lunas.
-            </p>
-          </div>
-          {user?.role === "branch_admin" || user?.role === "super_admin" ? (
+        {user?.role === "branch_admin" || user?.role === "super_admin" ? (
+          <div className="flex justify-end">
             <Link to="/scm-procurements/new">
               <Button>
                 <Plus className="h-4 w-4" />
                 Buat Pengadaan
               </Button>
             </Link>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         {/* Status filter tabs. URL-driven so the filter is shareable and
             deep-linkable. (ADR 0004 §2) */}

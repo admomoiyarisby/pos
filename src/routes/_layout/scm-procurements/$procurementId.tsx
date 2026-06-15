@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
 import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
@@ -114,28 +115,29 @@ function ProcurementDetailPage() {
   const items = (itemsQ.data ?? []) as Array<Record<string, unknown>>;
   const invoice = (invoiceQ.data ?? null) as Record<string, unknown> | null;
 
+  // Top bar title: the procurement code (e.g. "PROC-2026-0001").
+  // Falls back to the previous title until the query resolves; the
+  // hook fires on every render with the latest proc data.
+  usePageTitle(
+    proc ? (proc.code as string) : "Pengadaan",
+    proc
+      ? `Pengadaan ke cabang • dibuat ${new Date(proc.createdAt as unknown as string | Date).toLocaleString("id-ID")}`
+      : undefined,
+  );
+
   return (
     <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
       <div className="space-y-4 p-4 md:p-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">{proc.code as string}</h1>
-            <p className="text-sm text-muted-foreground">
-              Pengadaan ke cabang • dibuat{" "}
-              {new Date(proc.createdAt as unknown as string | Date).toLocaleString("id-ID")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={statusColors[proc.status as ScmProcurementStatus]}>
-              {statusLabels[proc.status as ScmProcurementStatus]}
-            </Badge>
-            <Link to="/scm-procurements" search={() => ({ status: undefined })}>
-              <Button variant="ghost">
-                <ArrowLeft className="h-4 w-4" />
-                Kembali
-              </Button>
-            </Link>
-          </div>
+        <div className="flex items-center justify-end gap-2">
+          <Badge variant={statusColors[proc.status as ScmProcurementStatus]}>
+            {statusLabels[proc.status as ScmProcurementStatus]}
+          </Badge>
+          <Link to="/scm-procurements" search={() => ({ status: undefined })}>
+            <Button variant="ghost">
+              <ArrowLeft className="h-4 w-4" />
+              Kembali
+            </Button>
+          </Link>
         </div>
 
         <Stepper currentStatus={proc.status as ScmProcurementStatus} />
