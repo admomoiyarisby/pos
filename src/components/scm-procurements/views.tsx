@@ -3,11 +3,27 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
+import { Input } from "#/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "#/components/ui/select";
 import { ScmItemTable, type ScmItemRow } from "./ScmItemTable";
 import { AuditLogCard } from "./AuditLogCard";
-import { transitionProcurement, updateProcurementItem, listProcurements } from "#/lib/server/scm-queries";
+import {
+  transitionProcurement,
+  updateProcurementItem,
+  addProcurementItem,
+  removeProcurementItem,
+  listProcurements,
+} from "#/lib/server/scm-queries";
+import { getIngredients } from "#/lib/server/ingredients";
 import { printSuratJalan, printInvoice } from "#/lib/server/scm-print";
 import { openPrintWindow } from "#/lib/print-window";
+import { Plus, Trash2 } from "lucide-react";
 
 interface ProcurementRow extends Record<string, unknown> {
   id: string;
@@ -27,28 +43,24 @@ export interface StateViewProps {
   items: Array<Record<string, unknown>>;
   auditLog?: never; // no longer passed; use AuditLogCard
   invoice?: Record<string, unknown> | null;
-  pendingReview?: Array<Record<string, unknown>>;
 }
 
 function rowsToItems(items: Array<Record<string, unknown>>): ScmItemRow[] {
   return (items as unknown as ScmItemRow[]).map((it) => ({
     ...it,
-    // CA's caDecision: default 'pending' to 'approved' so accepting-as-is
-    // just clicks the primary button. The CA only needs to click 'Tolak'
-    // for items they want to reject. Without this, a 'pending' decision
-    // is treated as 'not approved' by copyReadyToPicked, silently zeroing
-    // out pickedQuantity (and thus everything downstream: SJ, BA's
-    // receivedQuantity default, invoice line items, branch inventory).
-    caDecision: it.caDecision === "pending" ? "approved" : it.caDecision,
+    // CA's caDecision: leave as-is. The DB starts every item at "pending"
+    // and the CA must explicitly click Setujui/Tolak on each row before
+    // the primary "Setujui & Buat SJ" button activates. (ADR 0004 §1)
+    // The earlier "default pending to approved" override silently flipped
+    // decisions the CA never made — fixed in the layout phase.
     // CA's readyQuantity: default to the requested quantity. The input
-    // shows this as defaultValue (uncontrolled), but the underlying state
-    // is null until typed. Defaulting ensures the payload sends the right
-    // value when the CA accepts-as-is.
+    // shows this as the visual default (controlled), but the underlying
+    // state is null until typed. Defaulting ensures the payload sends
+    // the right value when the CA accepts-as-is.
     readyQuantity: it.readyQuantity ?? it.quantity ?? null,
     // BA's receivedQuantity: default to the picked quantity. The input
-    // shows pickedQuantity as the visual default (controlled, value =
-    // received = it.receivedQuantity ?? pickedQuantity), but the state
-    // is null until typed. Defaulting ensures accepting-as-is works
+    // shows pickedQuantity as the visual default (controlled), but the
+    // state is null until typed. Defaulting ensures accepting-as-is works
     // without the user having to type each row.
     receivedQuantity: it.receivedQuantity ?? it.pickedQuantity ?? null,
   }));
@@ -75,7 +87,13 @@ function AuditLogSection({ procurementId }: { procurementId: string }) {
  * SuratJalanButton — opens a print window with the SJ document.
  * Mirrors the POS receipt pattern: window.open + auto-print + auto-close.
  */
-function SuratJalanButton({ procurementId, label = "Lihat Surat Jalan" }: { procurementId: string; label?: string }) {
+function SuratJalanButton({
+  procurementId,
+  label = "Lihat Surat Jalan",
+}: {
+  procurementId: string;
+  label?: string;
+}) {
   const [loading, setLoading] = useState(false);
   async function handleClick() {
     try {
@@ -98,7 +116,13 @@ function SuratJalanButton({ procurementId, label = "Lihat Surat Jalan" }: { proc
 /**
  * InvoiceButton — opens a print window with the Invoice document.
  */
-function InvoiceButton({ procurementId, label = "Lihat Invoice" }: { procurementId: string; label?: string }) {
+function InvoiceButton({
+  procurementId,
+  label = "Lihat Invoice",
+}: {
+  procurementId: string;
+  label?: string;
+}) {
   const [loading, setLoading] = useState(false);
   async function handleClick() {
     try {
@@ -134,8 +158,8 @@ function useTransitionMutation() {
         },
       }),
     onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["scm-procurement", vars.procurementId] });
-      queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurement", vars.procurementId] });
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
     },
   });
 }
@@ -152,26 +176,188 @@ function useUpdateItemMutation() {
         data: { procurementId: vars.procurementId, itemId: vars.itemId, patch: vars.patch },
       }),
     onSuccess: (_d, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["scm-procurement-items", vars.procurementId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["scm-procurement-items", vars.procurementId],
+      });
     },
   });
 }
 
 // =============================================================================
-// Draft — BA: editable form with Submit button
+// Draft — BA: editable form with Submit / Cancel
 // =============================================================================
+//
+// Editable per ADR 0004 §3. BA can change quantities, add items, and
+// remove items before submitting. Each change goes through the server
+// immediately (no separate "save" step) so the audit log records every
+// mutation.
+
 export function DraftForm({ procurement, items }: StateViewProps) {
   const transitionM = useTransitionMutation();
+  const updateM = useUpdateItemMutation();
+  const queryClient = useQueryClient();
+  const [editableItems, setEditableItems] = useState<ScmItemRow[]>(() => rowsToItems(items));
+
+  useEffect(() => {
+    setEditableItems(rowsToItems(items));
+  }, [items]);
+
+  const handleItemChange = (itemId: string, patch: Partial<ScmItemRow>) => {
+    setEditableItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it)));
+  };
+
+  const persistQuantity = async (itemId: string, quantity: number | null | undefined) => {
+    if (quantity === null || quantity === undefined) return;
+    await updateM.mutateAsync({
+      procurementId: procurement.id as string,
+      itemId,
+      patch: { quantity },
+    });
+  };
+
+  const addM = useMutation({
+    mutationFn: async (vars: { ingredientId: string; quantity: number }) =>
+      addProcurementItem({
+        data: {
+          procurementId: procurement.id as string,
+          ingredientId: vars.ingredientId,
+          quantity: vars.quantity,
+        },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurement-items", procurement.id] });
+    },
+  });
+
+  const removeM = useMutation({
+    mutationFn: async (itemId: string) =>
+      removeProcurementItem({
+        data: { procurementId: procurement.id as string, itemId },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurement-items", procurement.id] });
+    },
+  });
+
+  const [newIngredientId, setNewIngredientId] = useState("");
+  const [newQuantity, setNewQuantity] = useState(1);
+
+  const { data: allIngredients = [] } = useQuery({
+    queryKey: ["ingredients"],
+    queryFn: () => getIngredients({ data: {} }),
+  });
+
+  const availableToAdd = (allIngredients as Array<{ id: string; name: string }>).filter(
+    (ing) => !editableItems.some((it) => it.ingredientId === ing.id),
+  );
+
+  function handleAdd() {
+    if (!newIngredientId || newQuantity <= 0) return;
+    addM.mutate(
+      { ingredientId: newIngredientId, quantity: newQuantity },
+      {
+        onSuccess: () => {
+          setNewIngredientId("");
+          setNewQuantity(1);
+        },
+      },
+    );
+  }
+
+  function handleRemove(itemId: string) {
+    removeM.mutate(itemId);
+  }
+
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Item Pengadaan</CardTitle>
+          <CardTitle>Item Pengadaan (Draft)</CardTitle>
         </CardHeader>
-        <CardContent>
-          <ScmItemTable mode="read-only" items={rowsToItems(items)} />
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Ubah jumlah, tambah bahan, atau hapus bahan. Setiap perubahan langsung tersimpan dan
+            tercatat di audit log.
+          </p>
+          <ScmItemTable
+            mode="draft-edit"
+            items={editableItems}
+            onItemChange={(id, patch) => {
+              handleItemChange(id, patch);
+              if (patch.readyQuantity !== undefined) {
+                void persistQuantity(id, patch.readyQuantity);
+              }
+            }}
+            disabled={updateM.isPending}
+          />
+          {editableItems.length > 0 ? (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  editableItems.forEach((it) => handleRemove(it.id));
+                }}
+                disabled={removeM.isPending}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+                Bersihkan Semua
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Tambah Bahan</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Select value={newIngredientId} onValueChange={setNewIngredientId}>
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder="Pilih bahan..." />
+              </SelectTrigger>
+              <SelectContent>
+                {availableToAdd.length === 0 ? (
+                  <SelectItem value="__none__" disabled>
+                    Semua bahan sudah ditambahkan
+                  </SelectItem>
+                ) : (
+                  availableToAdd.map((ing) => (
+                    <SelectItem key={ing.id} value={ing.id}>
+                      {ing.name}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <Input
+              type="number"
+              min={1}
+              value={newQuantity}
+              onChange={(e) => setNewQuantity(Number(e.target.value))}
+              className="w-32"
+            />
+            <Button
+              onClick={handleAdd}
+              disabled={
+                !newIngredientId ||
+                newQuantity <= 0 ||
+                addM.isPending ||
+                availableToAdd.length === 0
+              }
+            >
+              <Plus className="h-4 w-4" />
+              Tambah
+            </Button>
+          </div>
+          {addM.isError ? (
+            <p className="mt-2 text-sm text-destructive">{(addM.error as Error).message}</p>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <div className="flex justify-end gap-2">
         <Button
           onClick={() =>
@@ -186,9 +372,9 @@ export function DraftForm({ procurement, items }: StateViewProps) {
           onClick={() =>
             transitionM.mutate({ procurementId: procurement.id as string, event: "submit" })
           }
-          disabled={transitionM.isPending}
+          disabled={transitionM.isPending || editableItems.length === 0}
         >
-          Submit Pengadaan
+          {transitionM.isPending ? "Menyimpan..." : "Submit Pengadaan"}
         </Button>
       </div>
       <AuditLogSection procurementId={procurement.id as string} />
@@ -209,7 +395,8 @@ export function PendingBaView({ procurement, items }: StateViewProps) {
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
-            Pengadaan sudah disubmit. Admin Pusat akan membuka review. Anda masih bisa menariknya kembali.
+            Pengadaan sudah disubmit. Admin Pusat akan membuka review. Anda masih bisa menariknya
+            kembali.
           </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
@@ -254,8 +441,8 @@ export function PendingCaQueue(_props: StateViewProps) {
       { procurementId, event: "open-review" },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
-          navigate({
+          void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
+          void navigate({
             to: "/scm-procurements/$procurementId",
             params: { procurementId },
           });
@@ -346,6 +533,8 @@ export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
 
   const handleAcceptAndShip = async () => {
     // Save all item-level changes via updateItem, then transition.
+    // Gated by `allDecided` below — the button is disabled while any
+    // row is still "pending", so this loop only runs explicit decisions.
     for (const it of editableItems) {
       await updateM.mutateAsync({
         procurementId: procurement.id as string,
@@ -362,6 +551,13 @@ export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
     });
   };
 
+  // Every row must be explicitly approved or rejected before the primary
+  // button activates. (ADR 0004 §1)
+  const allDecided = editableItems.every(
+    (it) => it.caDecision === "approved" || it.caDecision === "rejected",
+  );
+  const pendingCount = editableItems.filter((it) => it.caDecision === "pending").length;
+
   return (
     <div className="space-y-4">
       <Card>
@@ -370,8 +566,9 @@ export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
-            Setujui per item atau tolak seluruh pengadaan. Item yang disetujui akan dikirim; yang ditolak diabaikan.
-            Pengeditan tersimpan saat Anda klik <strong>Setujui & Buat SJ</strong>.
+            Setujui per item atau tolak seluruh pengadaan. Item yang disetujui akan dikirim; yang
+            ditolak diabaikan. Pengeditan tersimpan saat Anda klik{" "}
+            <strong>Setujui & Buat SJ</strong>.
           </p>
           <ScmItemTable
             mode="ca-review"
@@ -406,10 +603,21 @@ export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
             Tolak Semua
           </Button>
           <Button
-            disabled={transitionM.isPending || updateM.isPending}
+            disabled={!allDecided || transitionM.isPending || updateM.isPending}
             onClick={handleAcceptAndShip}
+            title={
+              allDecided
+                ? undefined
+                : pendingCount === 1
+                  ? "1 item belum diputuskan"
+                  : `${pendingCount} item belum diputuskan`
+            }
           >
-            {updateM.isPending ? "Menyimpan..." : transitionM.isPending ? "Memproses..." : "Setujui & Buat SJ"}
+            {updateM.isPending
+              ? "Menyimpan..."
+              : transitionM.isPending
+                ? "Memproses..."
+                : "Setujui & Buat SJ"}
           </Button>
         </div>
       </div>
@@ -427,7 +635,8 @@ export function UnderReviewBaLive({ procurement, items }: StateViewProps) {
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
-            Admin Pusat sedang memutuskan item mana yang akan dikirim. Anda hanya bisa melihat progresnya.
+            Admin Pusat sedang memutuskan item mana yang akan dikirim. Anda hanya bisa melihat
+            progresnya.
           </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
@@ -440,7 +649,7 @@ export function UnderReviewBaLive({ procurement, items }: StateViewProps) {
 // =============================================================================
 // Rejected — read-only
 // =============================================================================
-export function RejectedView({ procurement }: StateViewProps) {
+export function RejectedView({ procurement, items }: StateViewProps) {
   return (
     <div className="space-y-4">
       <Card>
@@ -448,9 +657,10 @@ export function RejectedView({ procurement }: StateViewProps) {
           <CardTitle>Pengadaan Ditolak</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm">
+          <p className="mb-3 text-sm">
             <strong>Alasan:</strong> {(procurement.rejectionReason as string) || "-"}
           </p>
+          <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
       <AuditLogSection procurementId={procurement.id as string} />
@@ -493,7 +703,8 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
-            Stock sudah keluar dari gudang. Tandai "Sudah Dikirim" setelah branch konfirmasi barang tiba.
+            Stock sudah keluar dari gudang. Tandai "Sudah Dikirim" setelah branch konfirmasi barang
+            tiba.
           </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
@@ -570,11 +781,12 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
       </Card>
       <div className="flex justify-end gap-2">
         <SuratJalanButton procurementId={procurement.id as string} />
-        <Button
-          disabled={transitionM.isPending || updateM.isPending}
-          onClick={handleOpenReceive}
-        >
-          {updateM.isPending ? "Menyimpan..." : transitionM.isPending ? "Memproses..." : "Lanjut ke Review"}
+        <Button disabled={transitionM.isPending || updateM.isPending} onClick={handleOpenReceive}>
+          {updateM.isPending
+            ? "Menyimpan..."
+            : transitionM.isPending
+              ? "Memproses..."
+              : "Lanjut ke Review"}
         </Button>
       </div>
       <AuditLogSection procurementId={procurement.id as string} />
@@ -645,7 +857,8 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
-            Konfirmasi jumlah yang diterima (Ditolak dihitung otomatis). Klik <strong>Selesai Review</strong> untuk konfirmasi.
+            Konfirmasi jumlah yang diterima (Ditolak dihitung otomatis). Klik{" "}
+            <strong>Selesai Review</strong> untuk konfirmasi.
           </p>
           <ScmItemTable
             mode="ba-receive"
@@ -679,10 +892,7 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
           >
             Batalkan
           </Button>
-          <Button
-            disabled={transitionM.isPending}
-            onClick={handleFinishReceive}
-          >
+          <Button disabled={transitionM.isPending} onClick={handleFinishReceive}>
             Selesai Review
           </Button>
         </div>
@@ -805,7 +1015,7 @@ export function FinishedView({ procurement, items, invoice }: StateViewProps) {
 // =============================================================================
 // Cancelled — read-only
 // =============================================================================
-export function CancelledView({ procurement }: StateViewProps) {
+export function CancelledView({ procurement, items }: StateViewProps) {
   return (
     <div className="space-y-4">
       <Card>
@@ -813,9 +1023,10 @@ export function CancelledView({ procurement }: StateViewProps) {
           <CardTitle>Pengadaan Dibatalkan</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm">
+          <p className="mb-3 text-sm">
             <strong>Alasan:</strong> {(procurement.cancellationReason as string) || "-"}
           </p>
+          <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
       <AuditLogSection procurementId={procurement.id as string} />

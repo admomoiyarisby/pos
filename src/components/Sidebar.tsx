@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import type { UserRole } from "#/lib/auth-context";
 import { Badge } from "#/components/ui/badge";
 import {
@@ -32,6 +33,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { authClient } from "#/lib/auth-client";
+import { listProcurements } from "#/lib/server/scm-queries";
 
 interface SidebarProps {
   userRole: UserRole;
@@ -227,8 +229,35 @@ function SidebarItem({ item, active }: { item: NavItem; active: boolean }) {
       }
     >
       <Icon className="h-4 w-4 shrink-0" />
-      <span className="truncate">{item.label}</span>
+      <span className="truncate flex-1">{item.label}</span>
+      {item.to === "/scm-procurements" ? <PengadaanCountBadge active={active} /> : null}
     </Link>
+  );
+}
+
+/**
+ * PengadaanCountBadge — shows the count of "Pending" procurements next to
+ * the Pengadaan sidebar item. Only renders for non-branch-admin roles
+ * (the queue is the primary work surface for Admin Pusat). Cache-shared
+ * with the /scm-procurements?status=Pending list page query. (ADR 0004 §2)
+ */
+function PengadaanCountBadge({ active }: { active: boolean }) {
+  const { data } = useQuery({
+    queryKey: ["scm-procurements", "Pending"],
+    queryFn: () => listProcurements({ data: { status: "Pending" } }),
+    staleTime: 30_000,
+  });
+  const count = data?.length ?? 0;
+  if (count === 0) return null;
+  return (
+    <span
+      className={
+        "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold " +
+        (active ? "bg-primary-foreground text-primary" : "bg-primary text-primary-foreground")
+      }
+    >
+      {count}
+    </span>
   );
 }
 
@@ -308,7 +337,9 @@ export default function Sidebar({ userRole, userName, mobileOpen, onClose }: Sid
 
         {/* User info */}
         <div className="border-b border-sidebar-border px-4 py-3">
-          <p className="text-sm font-medium text-sidebar-foreground truncate">{userName || "User"}</p>
+          <p className="text-sm font-medium text-sidebar-foreground truncate">
+            {userName || "User"}
+          </p>
           <Badge variant="outline" className="mt-1 text-xs">
             {roleLabels[userRole] || userRole}
           </Badge>
@@ -345,7 +376,9 @@ export default function Sidebar({ userRole, userName, mobileOpen, onClose }: Sid
 
         {/* User info */}
         <div className="border-b border-sidebar-border px-4 py-3">
-          <p className="text-sm font-medium text-sidebar-foreground truncate">{userName || "User"}</p>
+          <p className="text-sm font-medium text-sidebar-foreground truncate">
+            {userName || "User"}
+          </p>
           <Badge variant="outline" className="mt-1 text-xs">
             {roleLabels[userRole] || userRole}
           </Badge>

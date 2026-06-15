@@ -28,7 +28,8 @@ export type ScmItemTableMode =
   | "ca-review"
   | "ba-receive"
   | "ba-receive-confirm"
-  | "invoice-preview";
+  | "invoice-preview"
+  | "draft-edit";
 
 export interface ScmItemTableProps {
   mode: ScmItemTableMode;
@@ -44,15 +45,19 @@ const decisionLabels: Record<string, string> = {
   accepted: "Diterima",
 };
 
-const decisionColors: Record<string, "default" | "warning" | "success" | "destructive" | "secondary"> = {
-  pending: "secondary",
+const decisionColors: Record<
+  string,
+  "default" | "warning" | "success" | "destructive" | "secondary"
+> = {
+  pending: "warning",
   approved: "success",
   accepted: "success",
   rejected: "destructive",
 };
 
 export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTableProps) {
-  if (mode === "ca-review") {
+  if (mode === "ca-review" || mode === "draft-edit") {
+    const isDraft = mode === "draft-edit";
     return (
       <div className="rounded-md border">
         <table className="w-full text-sm">
@@ -60,10 +65,10 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
             <tr>
               <th className="px-3 py-2 text-left">Bahan</th>
               <th className="px-3 py-2 text-right">Diminta</th>
-              <th className="px-3 py-2 text-right">Disetujui</th>
+              <th className="px-3 py-2 text-right">{isDraft ? "Jumlah" : "Disetujui"}</th>
               <th className="px-3 py-2 text-right">Harga</th>
               <th className="px-3 py-2 text-right">Subtotal</th>
-              <th className="px-3 py-2 text-center">Keputusan CA</th>
+              {!isDraft ? <th className="px-3 py-2 text-center">Keputusan CA</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -78,9 +83,11 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
                     <Input
                       type="number"
                       min={0}
-                      defaultValue={ready}
+                      value={ready}
                       disabled={disabled}
-                      onChange={(e) => onItemChange?.(it.id, { readyQuantity: Number(e.target.value) })}
+                      onChange={(e) =>
+                        onItemChange?.(it.id, { readyQuantity: Number(e.target.value) })
+                      }
                       className="h-8 w-24 text-right"
                     />
                   </td>
@@ -90,51 +97,55 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
                   <td className="px-3 py-2 text-right font-mono">
                     Rp {lineTotal.toLocaleString("id-ID")}
                   </td>
-                  <td className="px-3 py-2 text-center">
-                    <div className="inline-flex gap-1">
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => onItemChange?.(it.id, { caDecision: "approved" })}
-                        className={`rounded px-2 py-1 text-xs ${
-                          it.caDecision === "approved"
-                            ? "bg-green-100 text-green-700"
-                            : "bg-muted hover:bg-green-50"
-                        }`}
-                      >
-                        Setujui
-                      </button>
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => onItemChange?.(it.id, { caDecision: "rejected" })}
-                        className={`rounded px-2 py-1 text-xs ${
-                          it.caDecision === "rejected"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-muted hover:bg-red-50"
-                        }`}
-                      >
-                        Tolak
-                      </button>
-                    </div>
-                  </td>
+                  {!isDraft ? (
+                    <td className="px-3 py-2 text-center">
+                      <div className="inline-flex gap-1">
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => onItemChange?.(it.id, { caDecision: "approved" })}
+                          className={`rounded px-2 py-1 text-xs ${
+                            it.caDecision === "approved"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-muted hover:bg-green-50"
+                          }`}
+                        >
+                          Setujui
+                        </button>
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => onItemChange?.(it.id, { caDecision: "rejected" })}
+                          className={`rounded px-2 py-1 text-xs ${
+                            it.caDecision === "rejected"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-muted hover:bg-red-50"
+                          }`}
+                        >
+                          Tolak
+                        </button>
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
               );
             })}
           </tbody>
           <tfoot>
             <tr className="border-t-2 bg-muted/30 font-semibold">
-              <td colSpan={4} className="px-3 py-2 text-right">Subtotal:</td>
+              <td colSpan={4} className="px-3 py-2 text-right">
+                Subtotal:
+              </td>
               <td className="px-3 py-2 text-right font-mono">
-                Rp {items
+                Rp{" "}
+                {items
                   .reduce(
-                    (sum, it) =>
-                      sum + (it.readyQuantity ?? it.quantity) * (it.unitPrice ?? 0),
+                    (sum, it) => sum + (it.readyQuantity ?? it.quantity) * (it.unitPrice ?? 0),
                     0,
                   )
                   .toLocaleString("id-ID")}
               </td>
-              <td></td>
+              {!isDraft ? <td></td> : null}
             </tr>
           </tfoot>
         </table>
@@ -172,7 +183,14 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
                       value={received}
                       disabled={disabled}
                       onChange={(e) => {
-                        const newReceived = Number(e.target.value);
+                        const raw = Number(e.target.value);
+                        // Enforce max=picked in code, not just HTML, so a
+                        // pasted or typed-over-max value can't produce a
+                        // negative rejectedQuantity downstream.
+                        const newReceived = Math.min(
+                          Math.max(0, Number.isNaN(raw) ? 0 : raw),
+                          picked,
+                        );
                         onItemChange?.(it.id, {
                           receivedQuantity: newReceived,
                           rejectedQuantity: picked - newReceived,
@@ -236,10 +254,13 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
               .map((it) => (
                 <tr key={`r-${it.id}`} className="border-b bg-red-50">
                   <td className="px-3 py-2">
-                    {it.ingredientName} <span className="text-xs text-muted-foreground">(Ditolak: {it.reason ?? "-"})</span>
+                    {it.ingredientName}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      (Ditolak: {it.reason ?? "-"})
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                    {(it.rejectedQuantity ?? 0)} ditolak
+                    {it.rejectedQuantity ?? 0} ditolak
                   </td>
                   <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>
                   <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>

@@ -8,6 +8,13 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Textarea } from "#/components/ui/textarea";
 import { Card, CardContent } from "#/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "#/components/ui/select";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import { createProcurement, transitionProcurement } from "#/lib/server/scm-queries";
 import { getIngredients } from "#/lib/server/ingredients";
@@ -15,13 +22,6 @@ import { getIngredients } from "#/lib/server/ingredients";
 export const Route = createFileRoute("/_layout/scm-procurements/new")({
   component: NewProcurementPage,
 });
-
-interface DraftItem {
-  ingredientId: string;
-  ingredientName: string;
-  quantity: number;
-  unitPrice: number;
-}
 
 type IngredientRow = { id: string; name: string; averageCost: number };
 
@@ -35,17 +35,28 @@ function NewProcurementPage() {
     queryFn: () => getIngredients({ data: {} }),
   });
 
-  const [items, setItems] = useState<DraftItem[]>([]);
+  // Local draft state. Persisted to server on first "Simpan sebagai Draft"
+  // (which creates a Draft procurement); subsequent edits go to the
+  // /scm-procurements/$id detail page's DraftForm. (ADR 0004 §3)
+  const [procurementId, setProcurementId] = useState<string | null>(null);
+  const [items, setItems] = useState<
+    Array<{
+      ingredientId: string;
+      ingredientName: string;
+      quantity: number;
+      unitPrice: number;
+    }>
+  >([]);
   const [notes, setNotes] = useState("");
   const [selectedIngredient, setSelectedIngredient] = useState("");
   const [quantity, setQuantity] = useState(1);
 
-  const createMutation = useMutation({
+  const createDraftM = useMutation({
     mutationFn: async () => {
       if (items.length === 0) throw new Error("Tambahkan minimal 1 item");
       const branchId = user?.branchId;
       if (!branchId) throw new Error("User tidak terhubung ke cabang");
-      const result = await createProcurement({
+      return await createProcurement({
         data: {
           branchId,
           items: items.map((it, idx) => ({
@@ -56,15 +67,22 @@ function NewProcurementPage() {
           notes: notes || undefined,
         },
       });
-      // Auto-submit so the procurement moves from Draft -> Pending.
-      await transitionProcurement({
-        data: { procurementId: result.id, event: "submit", payload: {} },
-      });
-      return result;
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
-      navigate({ to: "/scm-procurements/$procurementId", params: { procurementId: result.id } });
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
+      setProcurementId(result.id);
+    },
+  });
+
+  const submitM = useMutation({
+    mutationFn: async (id: string) => {
+      await transitionProcurement({
+        data: { procurementId: id, event: "submit", payload: {} },
+      });
+    },
+    onSuccess: (_d, id) => {
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
+      void navigate({ to: "/scm-procurements/$procurementId", params: { procurementId: id } });
     },
   });
 
@@ -90,6 +108,27 @@ function NewProcurementPage() {
     setItems(items.filter((it) => it.ingredientId !== ingredientId));
   }
 
+  function handleSimpanDraft() {
+    if (procurementId) {
+      // Already created on a prior click; just stay put.
+      return;
+    }
+    createDraftM.mutate();
+  }
+
+  function handleSubmit() {
+    if (procurementId) {
+      submitM.mutate(procurementId);
+    } else {
+      // Create + submit in one step (legacy behaviour preserved for fast path).
+      createDraftM.mutate(undefined, {
+        onSuccess: (result) => {
+          submitM.mutate(result.id);
+        },
+      });
+    }
+  }
+
   return (
     <RoleGuard allowedRoles={["branch_admin", "super_admin"]}>
       <div className="space-y-4 p-4 md:p-6">
@@ -97,10 +136,11 @@ function NewProcurementPage() {
           <div>
             <h1 className="text-2xl font-semibold">Buat Pengadaan</h1>
             <p className="text-sm text-muted-foreground">
-              Isi item yang diminta, lalu submit. Pengadaan akan masuk ke antrian review Admin Pusat.
+              Isi item yang diminta. Simpan sebagai Draft untuk melanjutkan nanti, atau langsung
+              submit untuk masuk antrian review Admin Pusat.
             </p>
           </div>
-          <Link to="/scm-procurements">
+          <Link to="/scm-procurements" search={() => ({ status: undefined })}>
             <Button variant="ghost">
               <ArrowLeft className="h-4 w-4" />
               Kembali
@@ -113,18 +153,18 @@ function NewProcurementPage() {
             <div className="space-y-2">
               <Label>Item</Label>
               <div className="flex gap-2">
-                <select
-                  className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm"
-                  value={selectedIngredient}
-                  onChange={(e) => setSelectedIngredient(e.target.value)}
-                >
-                  <option value="">Pilih bahan...</option>
-                  {(ingredients as Array<{ id: string; name: string }>).map((ing) => (
-                    <option key={ing.id} value={ing.id}>
-                      {ing.name}
-                    </option>
-                  ))}
-                </select>
+                <Select value={selectedIngredient} onValueChange={setSelectedIngredient}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Pilih bahan..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(ingredients as Array<{ id: string; name: string }>).map((ing) => (
+                      <SelectItem key={ing.id} value={ing.id}>
+                        {ing.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Input
                   type="number"
                   min={1}
@@ -163,7 +203,11 @@ function NewProcurementPage() {
                           Rp {(it.quantity * it.unitPrice).toLocaleString("id-ID")}
                         </td>
                         <td className="px-3 py-2">
-                          <Button size="sm" variant="ghost" onClick={() => removeItem(it.ingredientId)}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => removeItem(it.ingredientId)}
+                          >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </td>
@@ -172,9 +216,12 @@ function NewProcurementPage() {
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 bg-muted/30 font-semibold">
-                      <td colSpan={3} className="px-3 py-2 text-right">Total:</td>
+                      <td colSpan={3} className="px-3 py-2 text-right">
+                        Total:
+                      </td>
                       <td className="px-3 py-2 text-right font-mono">
-                        Rp {items
+                        Rp{" "}
+                        {items
                           .reduce((sum, it) => sum + it.quantity * it.unitPrice, 0)
                           .toLocaleString("id-ID")}
                       </td>
@@ -190,20 +237,34 @@ function NewProcurementPage() {
               <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
             </div>
 
-            <div className="flex justify-end gap-2">
-              <Link to="/scm-procurements">
+            <div className="flex flex-wrap justify-end gap-2">
+              <Link to="/scm-procurements" search={() => ({ status: undefined })}>
                 <Button variant="ghost">Batal</Button>
               </Link>
               <Button
-                onClick={() => createMutation.mutate()}
-                disabled={items.length === 0 || createMutation.isPending}
+                variant="outline"
+                onClick={handleSimpanDraft}
+                disabled={items.length === 0 || createDraftM.isPending || createDraftM.isSuccess}
               >
-                {createMutation.isPending ? "Menyimpan..." : "Submit Pengadaan"}
+                {createDraftM.isPending
+                  ? "Menyimpan..."
+                  : createDraftM.isSuccess
+                    ? "Tersimpan sebagai Draft"
+                    : "Simpan sebagai Draft"}
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={items.length === 0 || createDraftM.isPending || submitM.isPending}
+              >
+                {submitM.isPending ? "Mengirim..." : "Submit Pengadaan"}
               </Button>
             </div>
 
-            {createMutation.isError ? (
-              <p className="text-sm text-destructive">{(createMutation.error as Error).message}</p>
+            {createDraftM.isError ? (
+              <p className="text-sm text-destructive">{(createDraftM.error as Error).message}</p>
+            ) : null}
+            {submitM.isError ? (
+              <p className="text-sm text-destructive">{(submitM.error as Error).message}</p>
             ) : null}
           </CardContent>
         </Card>

@@ -1,10 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "./db";
-import {
-  scmProcurementAuditLog,
-  scmProcurementItems,
-  scmProcurements,
-} from "#/db/schema";
+import { scmProcurementAuditLog, scmProcurementItems, scmProcurements } from "#/db/schema";
 import {
   copyReadyToPicked,
   generateInvoiceSnapshot,
@@ -94,7 +90,11 @@ export type FsmTransitionTable = {
 export const transitions: FsmTransitionTable = {
   Draft: {
     submit: { to: "Pending", actors: ["branch_admin", "super_admin"], effects: [] },
-    cancel: { to: "Cancelled", actors: ["branch_admin", "admin_pusat", "super_admin"], effects: [noopOnCancel] },
+    cancel: {
+      to: "Cancelled",
+      actors: ["branch_admin", "admin_pusat", "super_admin"],
+      effects: [noopOnCancel],
+    },
   },
   Pending: {
     "open-review": {
@@ -103,7 +103,11 @@ export const transitions: FsmTransitionTable = {
       effects: [],
     },
     withdraw: { to: "Draft", actors: ["branch_admin", "super_admin"], effects: [] },
-    cancel: { to: "Cancelled", actors: ["branch_admin", "admin_pusat", "super_admin"], effects: [noopOnCancel] },
+    cancel: {
+      to: "Cancelled",
+      actors: ["branch_admin", "admin_pusat", "super_admin"],
+      effects: [noopOnCancel],
+    },
   },
   UnderReview: {
     reject: { to: "Rejected", actors: ["admin_pusat", "super_admin"], effects: [] },
@@ -112,7 +116,11 @@ export const transitions: FsmTransitionTable = {
       actors: ["admin_pusat", "super_admin"],
       effects: [copyReadyToPicked, writeInTransitInventory],
     },
-    cancel: { to: "Cancelled", actors: ["branch_admin", "admin_pusat", "super_admin"], effects: [noopOnCancel] },
+    cancel: {
+      to: "Cancelled",
+      actors: ["branch_admin", "admin_pusat", "super_admin"],
+      effects: [noopOnCancel],
+    },
   },
   InTransit: {
     "mark-delivered": {
@@ -138,7 +146,12 @@ export const transitions: FsmTransitionTable = {
     "finish-receive": {
       to: "WaitingForPayment",
       actors: ["branch_admin", "super_admin"],
-      effects: [setReceivedQuantities, writeReceivedStock, writeRejectedWaste, generateInvoiceSnapshot],
+      effects: [
+        setReceivedQuantities,
+        writeReceivedStock,
+        writeRejectedWaste,
+        generateInvoiceSnapshot,
+      ],
     },
     cancel: {
       to: "Cancelled",
@@ -176,21 +189,30 @@ export class ProcurementNotFoundError extends Error {
 }
 
 export class InvalidTransitionError extends Error {
-  constructor(public readonly fromState: string, public readonly event: string) {
+  constructor(
+    public readonly fromState: string,
+    public readonly event: string,
+  ) {
     super(`Cannot ${event} from ${fromState}`);
     this.name = "InvalidTransitionError";
   }
 }
 
 export class UnauthorizedError extends Error {
-  constructor(public readonly actorRole: string, public readonly event: string) {
+  constructor(
+    public readonly actorRole: string,
+    public readonly event: string,
+  ) {
     super(`${actorRole} is not authorized to perform ${event}`);
     this.name = "UnauthorizedError";
   }
 }
 
 export class InvalidStateForEditError extends Error {
-  constructor(public readonly state: string, public readonly editType: string) {
+  constructor(
+    public readonly state: string,
+    public readonly editType: string,
+  ) {
     super(`Cannot ${editType} in state ${state}`);
     this.name = "InvalidStateForEditError";
   }
@@ -329,6 +351,9 @@ export type UpdateItemPatch = {
   rejectedQuantity?: number;
   reason?: string;
   rejectionNote?: string;
+  // Draft-only: BA can edit the requested quantity before submit.
+  // (ADR 0004 §3)
+  quantity?: number;
 };
 
 export type UpdateItemResult =
@@ -359,32 +384,34 @@ export async function updateItem(
 
       if (!proc) throw new ProcurementNotFoundError(procurementId);
 
-      const isCAEdit =
-        patch.caDecision !== undefined || patch.readyQuantity !== undefined;
+      const isCAEdit = patch.caDecision !== undefined || patch.readyQuantity !== undefined;
       const isBAEdit =
         patch.receivedQuantity !== undefined ||
         patch.rejectedQuantity !== undefined ||
         patch.reason !== undefined;
+      const isDraftEdit = patch.quantity !== undefined;
 
       if (isCAEdit && proc.status !== "UnderReview") {
         throw new InvalidStateForEditError(proc.status, "edit CA fields");
       }
-      if (
-        isBAEdit &&
-        proc.status !== "Delivered" &&
-        proc.status !== "ReviewingSJ"
-      ) {
+      if (isBAEdit && proc.status !== "Delivered" && proc.status !== "ReviewingSJ") {
         throw new InvalidStateForEditError(proc.status, "edit BA fields");
+      }
+      if (isDraftEdit && proc.status !== "Draft") {
+        throw new InvalidStateForEditError(proc.status, "edit quantity in Draft");
       }
 
       // Apply the patch
       const updateFields: Record<string, unknown> = {};
       if (patch.caDecision !== undefined) updateFields.caDecision = patch.caDecision;
       if (patch.readyQuantity !== undefined) updateFields.readyQuantity = patch.readyQuantity;
-      if (patch.receivedQuantity !== undefined) updateFields.receivedQuantity = patch.receivedQuantity;
-      if (patch.rejectedQuantity !== undefined) updateFields.rejectedQuantity = patch.rejectedQuantity;
+      if (patch.receivedQuantity !== undefined)
+        updateFields.receivedQuantity = patch.receivedQuantity;
+      if (patch.rejectedQuantity !== undefined)
+        updateFields.rejectedQuantity = patch.rejectedQuantity;
       if (patch.reason !== undefined) updateFields.reason = patch.reason;
       if (patch.rejectionNote !== undefined) updateFields.rejectionNote = patch.rejectionNote;
+      if (patch.quantity !== undefined) updateFields.quantity = patch.quantity;
 
       const updated = await tx
         .update(scmProcurementItems)

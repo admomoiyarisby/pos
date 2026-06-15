@@ -4,18 +4,18 @@ import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
+import { Skeleton } from "#/components/ui/skeleton";
 import { ArrowLeft } from "lucide-react";
 import {
   getProcurement,
   getProcurementItems,
   getProcurementInvoice,
-  getPendingReviewInventory,
 } from "#/lib/server/scm-queries";
 import type { ScmProcurementStatus } from "#/lib/server/scm-fsm";
+import { Stepper } from "#/components/scm-procurements/Stepper";
 import {
   DraftForm,
   PendingBaView,
-  PendingCaQueue,
   UnderReviewBaLive,
   UnderReviewCaReview,
   RejectedView,
@@ -87,38 +87,48 @@ function ProcurementDetailPage() {
     retry: false,
   });
 
-  const pendingQ = useQuery({
-    queryKey: ["scm-pending-review", procurementId],
-    queryFn: () => getPendingReviewInventory({ data: {} }),
-    enabled: !!procurementQ.data,
-  });
-
-  if (procurementQ.isLoading) return <div className="p-6">Loading...</div>;
-  if (procurementQ.error) return <div className="p-6 text-destructive">{(procurementQ.error as Error).message}</div>;
-  if (!procurementQ.data || !user) return <div className="p-6">Procurement tidak ditemukan</div>;
+  if (procurementQ.isLoading) {
+    return (
+      <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
+        <div className="space-y-4 p-4 md:p-6">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </RoleGuard>
+    );
+  }
+  if (procurementQ.error) {
+    return (
+      <div className="p-6 text-destructive">
+        Gagal memuat pengadaan: {(procurementQ.error as Error).message}
+      </div>
+    );
+  }
+  if (!procurementQ.data || !user) {
+    return <div className="p-6">Procurement tidak ditemukan</div>;
+  }
 
   const proc = procurementQ.data;
   const items = (itemsQ.data ?? []) as Array<Record<string, unknown>>;
   const invoice = (invoiceQ.data ?? null) as Record<string, unknown> | null;
-  const pendingReview = (pendingQ.data ?? []) as Array<Record<string, unknown>>;
 
   return (
-    <RoleGuard
-      allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}
-    >
+    <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
       <div className="space-y-4 p-4 md:p-6">
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-semibold">{proc.code as string}</h1>
             <p className="text-sm text-muted-foreground">
-              Pengadaan ke cabang • dibuat {new Date(proc.createdAt as unknown as string | Date).toLocaleString("id-ID")}
+              Pengadaan ke cabang • dibuat{" "}
+              {new Date(proc.createdAt as unknown as string | Date).toLocaleString("id-ID")}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={statusColors[proc.status as ScmProcurementStatus]}>
               {statusLabels[proc.status as ScmProcurementStatus]}
             </Badge>
-            <Link to="/scm-procurements">
+            <Link to="/scm-procurements" search={() => ({ status: undefined })}>
               <Button variant="ghost">
                 <ArrowLeft className="h-4 w-4" />
                 Kembali
@@ -127,13 +137,14 @@ function ProcurementDetailPage() {
           </div>
         </div>
 
+        <Stepper currentStatus={proc.status as ScmProcurementStatus} />
+
         <DispatchView
           status={proc.status as ScmProcurementStatus}
           actorRole={user.role}
           procurement={proc as unknown as Record<string, unknown>}
           items={items}
           invoice={invoice}
-          pendingReview={pendingReview}
         />
       </div>
     </RoleGuard>
@@ -156,7 +167,10 @@ function DispatchView(props: DispatchViewProps) {
   }
   if (status === "Pending") {
     if (isBA) return <PendingBaView {...props} />;
-    if (isCA) return <PendingCaQueue {...props} />;
+    // PendingCaQueue removed: the queue is now a status filter on the
+    // list page (/scm-procurements?status=Pending). CA's empty-state
+    // in the detail view shows the current procurement read-only.
+    if (isCA) return <UnderReviewBaLive {...props} />;
   }
   if (status === "UnderReview") {
     if (isCA) return <UnderReviewCaReview {...props} />;

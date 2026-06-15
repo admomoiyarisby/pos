@@ -30,6 +30,8 @@ const eventLabels: Record<string, string> = {
   "mark-paid": "Pembayaran Diterima",
   cancel: "Dibatalkan",
   "item-update": "Item Diperbarui",
+  "item-add": "Item Ditambahkan",
+  "item-remove": "Item Dihapus",
 };
 
 export interface AuditLogTimelineProps {
@@ -39,7 +41,12 @@ export interface AuditLogTimelineProps {
   isLoadingMore?: boolean;
 }
 
-export function AuditLogTimeline({ entries, hasMore, onLoadMore, isLoadingMore }: AuditLogTimelineProps) {
+export function AuditLogTimeline({
+  entries,
+  hasMore,
+  onLoadMore,
+  isLoadingMore,
+}: AuditLogTimelineProps) {
   if (entries.length === 0) {
     return <p className="text-sm text-muted-foreground">Belum ada aktivitas.</p>;
   }

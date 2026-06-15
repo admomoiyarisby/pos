@@ -212,9 +212,7 @@ export const getProcurementItems = createServerFn({ method: "GET" })
 // =============================================================================
 
 export const getProcurementAuditLog = createServerFn({ method: "GET" })
-  .inputValidator(
-    (data: { procurementId: string; limit?: number; offset?: number }) => data,
-  )
+  .inputValidator((data: { procurementId: string; limit?: number; offset?: number }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
     const limit = Math.max(1, Math.min(100, data.limit ?? 10));
@@ -273,11 +271,7 @@ export interface ScmProcurementInvoiceLineItem {
  */
 export const transitionProcurement = createServerFn({ method: "POST" })
   .inputValidator(
-    (data: {
-      procurementId: string;
-      event: string;
-      payload?: Record<string, unknown>;
-    }) => data,
+    (data: { procurementId: string; event: string; payload?: Record<string, unknown> }) => data,
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
@@ -292,21 +286,143 @@ export const transitionProcurement = createServerFn({ method: "POST" })
 
 export const updateProcurementItem = createServerFn({ method: "POST" })
   .inputValidator(
-    (data: {
-      procurementId: string;
-      itemId: string;
-      patch: Record<string, unknown>;
-    }) => data,
+    (data: { procurementId: string; itemId: string; patch: Record<string, unknown> }) => data,
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
-    const result = await updateItem(
-      data.procurementId,
-      data.itemId,
-      data.patch as never,
-      { id: user.id, role: user.role },
-    );
+    const result = await updateItem(data.procurementId, data.itemId, data.patch as never, {
+      id: user.id,
+      role: user.role,
+    });
     return result;
+  });
+
+// =============================================================================
+// addProcurementItem (Draft-only)
+// =============================================================================
+//
+// Adds an item to a Draft procurement. Gated on Draft status. Snapshots
+// the current ingredients.averageCost as unitPrice, mirroring createProcurement.
+// Audit event: 'item-add'. (ADR 0004 §3)
+
+export const addProcurementItem = createServerFn({ method: "POST" })
+  .inputValidator((data: { procurementId: string; ingredientId: string; quantity: number }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("branch_admin", "super_admin");
+    return await db.transaction(async (tx) => {
+      const [proc] = await tx
+        .select({
+          id: scmProcurements.id,
+          status: scmProcurements.status,
+          branchId: scmProcurements.branchId,
+        })
+        .from(scmProcurements)
+        .where(eq(scmProcurements.id, data.procurementId))
+        .for("update");
+      if (!proc) throw new Error("Procurement not found");
+      if (proc.status !== "Draft") {
+        throw new Error("Items can only be added while the procurement is in Draft");
+      }
+      if (user.role === "branch_admin" && user.branchId && proc.branchId !== user.branchId) {
+        throw new Error("Forbidden");
+      }
+
+      // Determine next sortOrder
+      const [{ next }] = await tx
+        .select({
+          next: sql<number>`cast(coalesce(max(${scmProcurementItems.sortOrder}), -1) + 1 as integer)`,
+        })
+        .from(scmProcurementItems)
+        .where(eq(scmProcurementItems.scmProcurementId, data.procurementId));
+
+      // Snapshot unitPrice (ADR 0003)
+      const [ing] = await tx
+        .select({ averageCost: ingredients.averageCost })
+        .from(ingredients)
+        .where(eq(ingredients.id, data.ingredientId))
+        .limit(1);
+      if (!ing) throw new Error("Ingredient not found");
+
+      const [row] = await tx
+        .insert(scmProcurementItems)
+        .values({
+          scmProcurementId: data.procurementId,
+          ingredientId: data.ingredientId,
+          quantity: data.quantity,
+          sortOrder: next,
+          unitPrice: ing.averageCost ?? null,
+        })
+        .returning({ id: scmProcurementItems.id });
+
+      await tx.insert(scmProcurementAuditLog).values({
+        scmProcurementId: data.procurementId,
+        event: "item-add",
+        fromState: "Draft",
+        toState: "Draft",
+        itemId: row?.id ?? null,
+        actorId: user.id,
+        actorRole: user.role,
+        note: JSON.stringify({ ingredientId: data.ingredientId, quantity: data.quantity }),
+      });
+
+      return { id: row?.id };
+    });
+  });
+
+// =============================================================================
+// removeProcurementItem (Draft-only)
+// =============================================================================
+//
+// Removes an item from a Draft procurement. Gated on Draft status.
+// Audit event: 'item-remove'. (ADR 0004 §3)
+
+export const removeProcurementItem = createServerFn({ method: "POST" })
+  .inputValidator((data: { procurementId: string; itemId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("branch_admin", "super_admin");
+    return await db.transaction(async (tx) => {
+      const [proc] = await tx
+        .select({
+          id: scmProcurements.id,
+          status: scmProcurements.status,
+          branchId: scmProcurements.branchId,
+        })
+        .from(scmProcurements)
+        .where(eq(scmProcurements.id, data.procurementId))
+        .for("update");
+      if (!proc) throw new Error("Procurement not found");
+      if (proc.status !== "Draft") {
+        throw new Error("Items can only be removed while the procurement is in Draft");
+      }
+      if (user.role === "branch_admin" && user.branchId && proc.branchId !== user.branchId) {
+        throw new Error("Forbidden");
+      }
+
+      const deleted = await tx
+        .delete(scmProcurementItems)
+        .where(
+          and(
+            eq(scmProcurementItems.id, data.itemId),
+            eq(scmProcurementItems.scmProcurementId, data.procurementId),
+          ),
+        )
+        .returning({ id: scmProcurementItems.id });
+
+      if (deleted.length === 0) throw new Error("Item not found");
+
+      await tx.insert(scmProcurementAuditLog).values({
+        scmProcurementId: data.procurementId,
+        event: "item-remove",
+        fromState: "Draft",
+        toState: "Draft",
+        itemId: data.itemId,
+        actorId: user.id,
+        actorRole: user.role,
+        note: null,
+      });
+
+      return { ok: true };
+    });
   });
 
 // =============================================================================
@@ -328,9 +444,7 @@ export const getProcurementInvoice = createServerFn({ method: "GET" })
         // (defined above) and is enforced by generateInvoiceSnapshot() in
         // scm-effects.ts. We use a properly-typed array (not unknown) so that
         // ServerFn's serializability check passes.
-        lineItems: sql<
-          Array<ScmProcurementInvoiceLineItem>
-        >`${scmProcurementInvoices.lineItems}`,
+        lineItems: sql<Array<ScmProcurementInvoiceLineItem>>`${scmProcurementInvoices.lineItems}`,
         paidAt: scmProcurementInvoices.paidAt,
         paidById: scmProcurementInvoices.paidById,
       })
@@ -373,4 +487,3 @@ export const getPendingReviewInventory = createServerFn({ method: "GET" })
 
     return rows;
   });
-
