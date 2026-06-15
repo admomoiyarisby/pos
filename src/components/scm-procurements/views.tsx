@@ -57,6 +57,34 @@ function rowsToItems(items: Array<Record<string, unknown>>): ScmItemRow[] {
 }
 
 /**
+ * Map the invoice's frozen lineItems to ScmItemRow so the ScmItemTable
+ * invoice-preview mode can render them. The invoice snapshot is the
+ * source of truth for the invoice (frozen at finish-receive time); the
+ * procurement items might have been touched since (eg a cancelled
+ * procurement reverses the rejection quantities, but the invoice stays
+ * frozen). Using the snapshot here keeps the detail page in sync with
+ * the print window, which also reads from lineItems.
+ */
+function invoiceLineItemsToRows(
+  lineItems: Array<Record<string, unknown>>,
+): ScmItemRow[] {
+  return lineItems.map((li) => ({
+    id: (li.itemId as string) ?? "",
+    ingredientId: (li.ingredientId as string) ?? "",
+    ingredientName: (li.ingredientName as string) ?? "",
+    quantity: 0,
+    readyQuantity: null,
+    pickedQuantity: null,
+    receivedQuantity: (li.receivedQuantity as number) ?? null,
+    rejectedQuantity: (li.rejectedQuantity as number) ?? null,
+    caDecision: ((li.caDecision as "pending" | "approved" | "rejected") ?? "pending"),
+    baDecision: ((li.baDecision as "pending" | "accepted" | "rejected") ?? "pending"),
+    unitPrice: (li.unitPrice as number) ?? null,
+    reason: (li.reason as string) ?? null,
+  }));
+}
+
+/**
  * AuditLogSection — wraps AuditLogCard in a Card with the "Riwayat" title.
  * Each view renders this instead of inlining the Card markup.
  */
@@ -895,6 +923,14 @@ export function ReviewingSjCaLive({ procurement, items }: StateViewProps) {
 // =============================================================================
 export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: StateViewProps) {
   const total = (invoice?.totalAmount as number) ?? 0;
+  // Prefer the invoice's frozen lineItems over the live procurement items
+  // so the detail page matches the print window. The procurement items
+  // can drift (eg reject reversals on cancel) after the invoice snapshot
+  // is taken at finish-receive time.
+  const invoiceLineItems = (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
+  const previewItems = invoiceLineItems
+    ? invoiceLineItemsToRows(invoiceLineItems)
+    : rowsToItems(items);
   return (
     <div className="space-y-4">
       <Card>
@@ -905,7 +941,7 @@ export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: Stat
           <p className="mb-3 text-sm text-muted-foreground">
             Invoice berikut sudah diterbitkan. Silakan transfer sesuai total di bawah.
           </p>
-          <ScmItemTable mode="invoice-preview" items={rowsToItems(items)} />
+          <ScmItemTable mode="invoice-preview" items={previewItems} />
           <p className="mt-4 text-right text-lg font-semibold">
             Total: Rp {total.toLocaleString("id-ID")}
           </p>
@@ -922,6 +958,10 @@ export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: Stat
 export function WaitingForPaymentCaInvoice({ procurement, items, invoice }: StateViewProps) {
   const transitionM = useTransitionMutation();
   const total = (invoice?.totalAmount as number) ?? 0;
+  const invoiceLineItems = (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
+  const previewItems = invoiceLineItems
+    ? invoiceLineItemsToRows(invoiceLineItems)
+    : rowsToItems(items);
   return (
     <div className="space-y-4">
       <Card>
@@ -929,7 +969,7 @@ export function WaitingForPaymentCaInvoice({ procurement, items, invoice }: Stat
           <CardTitle>Invoice: Tandai Pembayaran</CardTitle>
         </CardHeader>
         <CardContent>
-          <ScmItemTable mode="invoice-preview" items={rowsToItems(items)} />
+          <ScmItemTable mode="invoice-preview" items={previewItems} />
           <p className="mt-4 text-right text-lg font-semibold">
             Total: Rp {total.toLocaleString("id-ID")}
           </p>
@@ -956,6 +996,10 @@ export function WaitingForPaymentCaInvoice({ procurement, items, invoice }: Stat
 // =============================================================================
 export function FinishedView({ procurement, items, invoice }: StateViewProps) {
   const total = (invoice?.totalAmount as number) ?? 0;
+  const invoiceLineItems = (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
+  const previewItems = invoiceLineItems
+    ? invoiceLineItemsToRows(invoiceLineItems)
+    : rowsToItems(items);
   return (
     <div className="space-y-4">
       <Card>
@@ -967,7 +1011,7 @@ export function FinishedView({ procurement, items, invoice }: StateViewProps) {
             Pengadaan ini sudah dibayar lunas. Total dibayar:{" "}
             <strong>Rp {total.toLocaleString("id-ID")}</strong>
           </p>
-          <ScmItemTable mode="read-only" items={rowsToItems(items)} />
+          <ScmItemTable mode="read-only" items={previewItems} />
         </CardContent>
       </Card>
       <div className="flex justify-end">
