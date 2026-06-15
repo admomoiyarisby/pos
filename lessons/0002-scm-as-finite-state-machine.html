@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0002: SCM as a Finite State Machine</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+  <style>
+    :root { --ink:#172026; --muted:#5e6b75; --bg:#f6f8f9; --panel:#ffffff; --line:#d7dee3; --accent:#0f766e; --accent2:#7c3aed; --bad:#b42318; --good:#067647; --warn:#a16207; }
+    body { margin:0; font:16px/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--ink); }
+    main { max-width:1000px; margin:0 auto; padding:42px 24px 64px; }
+    h1 { font-size:34px; line-height:1.1; margin:0; }
+    h2 { font-size:21px; margin:36px 0 12px; border-bottom:2px solid var(--line); padding-bottom:6px; }
+    h3 { font-size:17px; margin:22px 0 10px; color:var(--accent); }
+    h4 { font-size:15px; margin:16px 0 8px; }
+    p { margin:9px 0; }
+    a { color:var(--accent); }
+    .lede { color:var(--muted); font-size:18px; margin:10px 0 24px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 22px; margin:14px 0; }
+    code { background:#eef2f4; padding:1px 5px; border-radius:4px; font:13px/1.4 ui-monospace, "Source Code Pro", Menlo, monospace; }
+    pre { background:#eef2f4; padding:8px 12px; border-radius:6px; overflow-x:auto; font:13px/1.45 ui-monospace, "Source Code Pro", Menlo, monospace; }
+    .mermaid { background:white; border-radius:8px; padding:14px; overflow-x:auto; text-align:center; }
+    .mermaid svg { max-width:100%; height:auto; }
+    .small { color:var(--muted); font-size:14px; }
+    .legend { display:flex; flex-wrap:wrap; gap:14px; margin:10px 0 16px; font-size:13px; color:var(--muted); }
+    .legend span { display:inline-flex; align-items:center; gap:6px; }
+    .swatch { display:inline-block; width:14px; height:14px; border-radius:3px; border:1px solid var(--line); }
+    .callout-warn { border-left:4px solid var(--warn); padding:10px 14px; background:#fffbe6; border-radius:4px; margin:12px 0; }
+    .callout-good { border-left:4px solid var(--good); padding:10px 14px; background:#ecfdf5; border-radius:4px; margin:12px 0; }
+    .callout-bad { border-left:4px solid var(--bad); padding:10px 14px; background:#fef2f2; border-radius:4px; margin:12px 0; }
+    .callout-accent { border-left:4px solid var(--accent); padding:10px 14px; background:#ecfdf5; border-radius:4px; margin:12px 0; }
+
+    /* Actor grid */
+    .actor-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin:14px 0; }
+    .actor-col { border:1px solid var(--line); border-radius:8px; padding:14px; background:#fbfcfd; min-height:120px; }
+    .actor-col h4 { margin:0 0 8px; padding-bottom:6px; border-bottom:2px solid var(--line); text-align:center; }
+    .actor-col.ba h4 { color:var(--good); border-color:var(--good); }
+    .actor-col.ca h4 { color:var(--accent); border-color:var(--accent); }
+    .actor-col.sa h4 { color:var(--accent2); border-color:var(--accent2); content:"Superadmin"; }
+    .actor-col ul { margin:4px 0 0; padding-left:18px; }
+    .actor-col li { margin:3px 0; font-size:14px; }
+
+    /* State cards */
+    .state-row { display:grid; grid-template-columns:120px 1fr 1.2fr; gap:10px; margin:6px 0; padding:8px 10px; border-radius:6px; background:#fbfcfd; border:1px solid var(--line); align-items:start; }
+    .state-row .sname { font-weight:600; font-size:14px; padding-top:2px; }
+    .state-row .strigger { font-size:13px; color:var(--muted); }
+    .state-row .sactor { font-size:13px; }
+    .sba { color:var(--good); } .sca { color:var(--accent); } .ssa { color:var(--accent2); } .sboth { color:var(--ink); }
+    .badge { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:600; }
+    .badge-ba { background:#d1fae5; color:#065f46; }
+    .badge-ca { background:#dbeafe; color:#1e3a8a; }
+    .badge-both { background:#eef2f4; color:#374151; }
+    .badge-sa { background:#ede9fe; color:#5b21b6; }
+
+    /* Quiz */
+    .quiz { margin-top:14px; }
+    .q { margin:12px 0; padding:12px; border:1px solid var(--line); border-radius:8px; background:#fbfcfd; }
+    .q p { margin:0 0 8px; font-weight:600; }
+    .opts { display:flex; flex-wrap:wrap; gap:6px; }
+    .opts button { border:1px solid var(--line); background:white; border-radius:8px; padding:7px 12px; font:14px/1.4 inherit; cursor:pointer; }
+    .opts button:hover { border-color:var(--accent); }
+    .opts button.correct { background:#d1fae5; border-color:var(--good); color:var(--good); }
+    .opts button.wrong { background:#fef2f2; border-color:var(--bad); color:var(--bad); }
+    .fb { margin-top:6px; min-height:22px; font-size:14px; }
+    .fb.ok { color:var(--good); }
+    .fb.no { color:var(--bad); }
+
+    table { width:100%; border-collapse:collapse; margin:12px 0; }
+    th, td { text-align:left; vertical-align:top; border:1px solid var(--line); padding:8px 10px; font-size:14px; }
+    th { background:#eef2f4; font-weight:600; }
+
+    @media (max-width:760px) { .actor-grid { grid-template-columns:1fr; } .state-row { grid-template-columns:1fr; gap:2px; } h1 { font-size:28px; } }
+  </style>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "base",
+        themeVariables: {
+          fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+          fontSize: '14px',
+          primaryColor: '#fbfcfd',
+          primaryBorderColor: '#d7dee3',
+          primaryTextColor: '#172026',
+          lineColor: '#5e6b75',
+          tertiaryColor: '#f6f8f9',
+          activeFill: '#0f766e',
+          activeBorder: '#0f766e',
+        },
+        stateDiagram: { htmlLabels: true },
+        flowchart: { curve: 'basis', htmlLabels: true },
+      });
+    });
+
+    function qanswer(id, correct, msg) {
+      const fb = document.getElementById('q' + id);
+      const btns = fb.parentElement.querySelectorAll('.opts button');
+      btns.forEach(b => { b.disabled = true; if (b.dataset.val === String(correct)) b.className = 'correct'; else if (b.dataset.val !== undefined) b.className = 'wrong'; });
+      fb.className = 'fb ' + (correct ? 'ok' : 'no');
+      fb.textContent = msg;
+    }
+  </script>
+</head>
+<body>
+<main>
+  <h1>SCM as a Finite State Machine</h1>
+  <p class="lede">Your win in this lesson: you can draw the full PR→SJ→Invoice lifecycle as a state diagram, name which actor triggers each transition, and explain why a formal FSM is the tool that keeps this process from turning into spaghetti.</p>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 1: What's an FSM                                     -->
+  <!-- ============================================================ -->
+  <section class="card">
+    <h2>1. What Is a Finite State Machine?</h2>
+    <p>A <strong>finite state machine</strong> (FSM) is a model of computation where a system can be in exactly <em>one</em> of a finite set of states at any time. It can only move from one state to another through a defined <strong>transition</strong>, and each transition is triggered by an <strong>event</strong> (an action by a user or the system).</p>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:12px 0;">
+      <div style="border:1px solid var(--line); border-radius:8px; padding:12px; background:#fbfcfd;">
+        <strong>Three elements</strong>
+        <ul style="margin:4px 0 0; padding-left:18px; font-size:14px;">
+          <li><strong>States</strong> — the "modes" the system can be in (e.g., <code>Pending</code>, <code>In Transit</code>)</li>
+          <li><strong>Transitions</strong> — arrows from one state to another, labelled with the event</li>
+          <li><strong>Events</strong> — what causes a transition (a button click, a timer, a webhook)</li>
+        </ul>
+      </div>
+      <div style="border:1px solid var(--line); border-radius:8px; padding:12px; background:#fbfcfd;">
+        <strong>Why FSMs belong in your SCM</strong>
+        <ul style="margin:4px 0 0; padding-left:18px; font-size:14px;">
+          <li>Prevents <em>illegal</em> transitions (e.g., invoicing before receiving)</li>
+          <li>Each state tells the UI <em>exactly</em> which buttons to show and which actor can press them</li>
+          <li>Audit trail: every state change becomes an event log entry</li>
+          <li>Your code becomes a <code>switch(state)</code> instead of a forest of <code>if</code>/<code>else</code></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout-accent">
+      <strong>Real talk:</strong> the current Omoiyari codebase <em>has</em> state machines (PR status enum, SJ status enum, invoice status enum), but they are not enforced uniformly. The PR can go from <code>Draft</code> directly to <code>Processed</code> without an <code>Approved</code> intermediate — because the code doesn't model the <em>review</em> step as a separate state. What you're proposing in your redesigned process <strong>adds that missing state</strong> — and that's exactly the right call.
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 2: Your flow as one big FSM                          -->
+  <!-- ============================================================ -->
+  <section class="card">
+    <h2>2. Your Redesigned SCM Flow, Drawn as an FSM</h2>
+
+    <div class="mermaid">
+stateDiagram-v2
+  [*] --> Draft: BA creates PR
+  Draft --> Pending: BA submits
+  Pending --> UnderReview: CA opens review
+  UnderReview --> Rejected: CA rejects
+  UnderReview --> InTransit: CA accepts → creates SJ
+  InTransit --> Delivered: CA marks "barang sudah dikirim"
+  Delivered --> ReviewingSJ: BA opens receiving review
+  ReviewingSJ --> WaitingForPayment: BA confirms review done
+  WaitingForPayment --> Finished: CA sees invoice → marks "Telah Dibayar"
+  Rejected --> [*]
+  Finished --> [*]
+    </div>
+    <p class="small">This is a classic <strong>linear FSM with a reject branch</strong>. Each arrow is one actor clicking one button. No state can be skipped. No actor can act outside their turn.</p>
+
+    <h3>The same flow, annotated with actors</h3>
+    <p>Every transition belongs to exactly one actor. This is the key insight for building the UI: <em>the current state tells you whose turn it is, and what that actor can do.</em></p>
+
+    <table>
+      <thead><tr><th>From</th><th>Event</th><th>To</th><th>Actor</th></tr></thead>
+      <tbody>
+        <tr><td><code>[*]</code></td><td>Create PR</td><td><code>Draft</code></td><td><span class="badge badge-ba">BA</span></td></tr>
+        <tr><td><code>Draft</code></td><td>Submit</td><td><code>Pending</code></td><td><span class="badge badge-ba">BA</span></td></tr>
+        <tr><td><code>Pending</code></td><td>Open review</td><td><code>Under Review</code></td><td><span class="badge badge-ca">CA</span></td></tr>
+        <tr><td><code>Under Review</code></td><td>Reject</td><td><code>Rejected</code> (terminal)</td><td><span class="badge badge-ca">CA</span></td></tr>
+        <tr><td><code>Under Review</code></td><td>Accept + create SJ</td><td><code>In Transit</code></td><td><span class="badge badge-ca">CA</span></td></tr>
+        <tr><td><code>In Transit</code></td><td>Mark delivered</td><td><code>Delivered</code></td><td><span class="badge badge-ca">CA</span></td></tr>
+        <tr><td><code>Delivered</code></td><td>Open receiving review</td><td><code>Reviewing SJ</code></td><td><span class="badge badge-ba">BA</span></td></tr>
+        <tr><td><code>Reviewing SJ</code></td><td>Confirm review done</td><td><code>Waiting for Payment</code></td><td><span class="badge badge-ba">BA</span></td></tr>
+        <tr><td><code>Waiting for Payment</code></td><td>Mark "Telah Dibayar"</td><td><code>Finished</code> (terminal)</td><td><span class="badge badge-ca">CA</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 3: Actor columns — what each role sees                -->
+  <!-- ============================================================ -->
+  <section class="card">
+    <h2>3. Actor Columns — Same FSM, Different UI</h2>
+    <p>The FSM tells you the <em>state</em>. The actor tells you the <em>view</em>. At every state, each actor sees a different page layout — because they have different jobs at that step. Below is what BA, CA, and Superadmin see at each state.</p>
+
+    <div class="state-row" style="grid-template-columns:120px 1fr 1fr 1fr;">
+      <div class="sname">State</div>
+      <div class="sactor" style="font-weight:600; color:var(--good);">Branch Admin (BA)</div>
+      <div class="sactor" style="font-weight:600; color:var(--accent);">Central Admin (CA)</div>
+      <div class="sactor" style="font-weight:600; color:var(--accent2);">Superadmin</div>
+    </div>
+
+    <!-- Draft -->
+    <div class="state-row">
+      <div class="sname">Draft</div>
+      <div class="sactor"><span class="badge badge-ba">Editable form</span> — BA fills items, quantities, notes</div>
+      <div class="sactor small">Not visible yet</div>
+      <div class="sactor small">Can see &amp; edit any PR</div>
+    </div>
+
+    <!-- Pending -->
+    <div class="state-row">
+      <div class="sname">Pending</div>
+      <div class="sactor"><span class="badge badge-ba">Read-only</span> — waiting for CA action; can still withdraw</div>
+      <div class="sactor"><span class="badge badge-ca">Review queue</span> — shows PRs needing review</div>
+      <div class="sactor">Same as CA</div>
+    </div>
+
+    <!-- Under Review -->
+    <div class="state-row">
+      <div class="sname">Under Review</div>
+      <div class="sactor"><span class="badge badge-ba">Live view</span> — BA sees CA's changes in realtime (qty adjustments per item, per-item accept/reject)</div>
+      <div class="sactor"><span class="badge badge-ca">Interactive table</span> — CA sees requested items, edits qty, approves or rejects each line</div>
+      <div class="sactor">Same as CA</div>
+    </div>
+
+    <!-- Rejected -->
+    <div class="state-row">
+      <div class="sname">Rejected</div>
+      <div class="sactor"><span class="badge badge-ba">Status + reason</span> — BA sees rejected status and CA's notes</div>
+      <div class="sactor small">Archive view</div>
+      <div class="sactor small">Same</div>
+    </div>
+
+    <!-- In Transit -->
+    <div class="state-row">
+      <div class="sname">In Transit</div>
+      <div class="sactor"><span class="badge badge-ba">Tracking view</span> — BA sees SJ number, items, expected qty, estimated arrival</div>
+      <div class="sactor"><span class="badge badge-ca">SJ detail</span> — CA sees the SJ they created; button to mark "Delivered"</div>
+      <div class="sactor">Same as CA</div>
+    </div>
+
+    <!-- Delivered -->
+    <div class="state-row">
+      <div class="sname">Delivered</div>
+      <div class="sactor"><span class="badge badge-ba">Receiving form</span> — BA sees items with fields for received qty, rejected qty, keterangan per item</div>
+      <div class="sactor"><span class="badge badge-ca">Waiting view</span> — CA sees "Menunggu review cabang"</div>
+      <div class="sactor">Both</div>
+    </div>
+
+    <!-- Reviewing SJ -->
+    <div class="state-row">
+      <div class="sname">Reviewing SJ</div>
+      <div class="sactor"><span class="badge badge-ba">Interactive table</span> — BA checks each item: accept / reject (with reason per item); can split qty</div>
+      <div class="sactor"><span class="badge badge-ca">Live view</span> — CA sees BA's progress in realtime</div>
+      <div class="sactor">Both views</div>
+    </div>
+
+    <!-- Waiting for Payment -->
+    <div class="state-row">
+      <div class="sname">Waiting for Payment</div>
+      <div class="sactor"><span class="badge badge-ba">Invoice preview</span> — BA sees the final invoice: accepted items with prices, rejected items with prices, grand total; instructions to transfer</div>
+      <div class="sactor"><span class="badge badge-ca">Invoice + "Telah Dibayar" button</span> — CA sees same invoice plus a button to confirm payment received</div>
+      <div class="sactor">Same as CA</div>
+    </div>
+
+    <!-- Finished -->
+    <div class="state-row">
+      <div class="sname">Finished</div>
+      <div class="sactor"><span class="badge badge-ba">Read-only invoice</span> — BA sees "Lunas"</div>
+      <div class="sactor"><span class="badge badge-ca">Read-only invoice</span> — CA sees "Lunas"</div>
+      <div class="sactor">Read-only</div>
+    </div>
+
+    <div class="callout-warn">
+      <strong>Key insight:</strong> "But I see the same page!" — never happens. At every state, each actor's page is different. The page component should be <code>if (state === 'UnderReview' &amp;&amp; actor === 'CA') -> &lt;CaReviewTable /&gt;</code>. This is what makes the codebase maintainable: <strong>one state × one actor = one component</strong>.
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 4: Why a Formal FSM Matters in Code                   -->
+  <!-- ============================================================ -->
+  <section class="card">
+    <h2>4. Why This Matters in the Code</h2>
+
+    <p>Without a formal FSM, your SCM server functions look like this:</p>
+    <pre>
+// 🚫 Without FSM discipline
+async function handleAction(prId, action, user) {
+  const pr = await getPR(prId);
+  if (action === 'review') {
+    if (pr.status !== 'Pending') throw Error('wrong state');
+    // ... lots of logic
+    if (someCondition) pr.status = 'UnderReview';
+    else pr.status = 'Rejected';
+  }
+  if (action === 'accept') {
+    if (pr.status !== 'UnderReview') throw Error('wrong state');
+    // ... even more logic, also creates SJ
+  }
+  // ... every action has its own state guard
+}</pre>
+
+    <p>With a formal FSM, it becomes:</p>
+    <pre>
+// ✅ With FSM — states, actors, and transitions are explicit
+const transitions = {
+  Pending: {
+    'open-review':      { to: 'UnderReview',  actor: ['admin_pusat', 'super_admin'] },
+  },
+  UnderReview: {
+    'reject':           { to: 'Rejected',      actor: ['admin_pusat', 'super_admin'] },
+    'accept-and-ship':  { to: 'InTransit',     actor: ['admin_pusat', 'super_admin'],
+                          effects: ['createSJ', 'createInTransit'] },
+  },
+  // ...
+};
+
+async function transition(prId, event, user) {
+  const pr = await getPR(prId);
+  const rule = transitions[pr.status]?.[event];
+  if (!rule)                     throw new Error(`Cannot ${event} from ${pr.status}`);
+  if (!rule.actor.includes(user.role)) throw new Error('Not authorized');
+  for (const effect of (rule.effects ?? [])) {
+    await applyEffect(effect, pr, user);
+  }
+  await updatePR(prId, { status: rule.to, lastEvent: event, updatedBy: user.id });
+  await logAudit({ action: event, from: pr.status, to: rule.to, userId: user.id });
+}</pre>
+
+    <div class="callout-good">
+      <strong>This is the pattern you want.</strong> A lookup table of <code>{ currentState: { event: { to, actor, effects } } }</code> is the most readable, testable, and auditable way to enforce your process. Every possible transition is visible at a glance. No hidden branches. No forgotten state guards.
+    </div>
+
+    <h3>Benefits for your specific flow</h3>
+    <ol>
+      <li><strong>No more "can I do this?" bugs.</strong> The FSM table defines exactly what each actor can do at each state. The code will <em>never</em> let a BA see a "Mark Delivered" button.</li>
+      <li><strong>Each state has a single owner.</strong> "Under Review" means "CA is working". BA can watch but can't interfere. The FSM enforces this turn-taking.</li>
+      <li><strong>Real-time view becomes trivial.</strong> BA seeing "Under Review" is just reading the PR's <code>{ status, lastEvent, updatedBy }</code> fields and rendering a different component.</li>
+      <li><strong>Audit trail is automatic.</strong> Every transition is logged: who did what, from what state to what, at what time.</li>
+      <li><strong>Adding new states is safe.</strong> Want to add a "Partially Received" state? Add it to the FSM table, wire the transition, and the rest of the code doesn't change.</li>
+    </ol>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 5: The "Giant Interactive Table" pattern              -->
+  <!-- ============================================================ -->
+  <section class="card">
+    <h2>5. The "Giant Interactive Table" — Reused Across States</h2>
+    <p>You mentioned a "giant interactive table" appearing twice: once for CA reviewing the PR items, once for BA receiving/signing the SJ items. This is a smart pattern — it means you can build <strong>one reusable table component</strong> that adapts based on <code>(state, actor)</code>.</p>
+
+    <div class="mermaid">
+flowchart LR
+  subgraph OneTable[One Interactive Table Component]
+    direction TB
+    Item1["item: qty accepted/rejected<br>reason: text<br>unit_price: number"]
+    Item2["item: qty accepted/rejected<br>reason: text<br>unit_price: number"]
+    Item3["item: qty accepted/rejected<br>reason: text<br>unit_price: number"]
+  end
+
+  subgraph CA[CA Review]
+    CAin["Input: requested qty<br>Editable: qty per item<br>Actions: Accept Item / Reject Item<br>Buttons: Tolak Semua / Setujui & Buat SJ"]
+  end
+
+  subgraph BA[BA Receive]
+    BAin["Input: shipped qty<br>Editable: received qty, rejected qty<br>Actions: edit reason per item<br>Buttons: Selesai Review"]
+  end
+
+  CA -->|mode='review'| OneTable
+  BA -->|mode='receive'| OneTable
+    </div>
+
+    <p class="small">The table's columns, editability, and action buttons are driven by the <code>mode</code> prop. The data schema is the same — items with quantities — but the columns shown and the allowed edits differ by actor and state.</p>
+
+    <p>This is exactly the right approach. The component takes a <code>mode</code> prop:</p>
+    <pre>
+&lt;ScmItemTable
+  mode={state === 'UnderReview' &amp;&amp; actor === 'CA' ? 'ca-review'
+       : state === 'ReviewingSJ' &amp;&amp; actor === 'BA' ? 'ba-receive'
+       : 'read-only'}
+  items={items}
+  onItemChange={handler}
+/&gt;</pre>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 6: Interactive Quiz                                  -->
+  <!-- ============================================================ -->
+  <section class="card">
+    <h2>6. Check Your Understanding</h2>
+
+    <div class="quiz">
+      <div class="q">
+        <p>Q1: A PR is in <code>Pending</code> state. Who can change it to <code>Under Review</code>?</p>
+        <div class="opts">
+          <button data-val="ba" onclick="qanswer(1, false, 'Not quite — BA already submitted. The ball is now with CA.')">Branch Admin</button>
+          <button data-val="ca" onclick="qanswer(1, true, 'Correct! Only CA (or Superadmin) can open a review from Pending → Under Review.')">Central Admin</button>
+          <button data-val="both" onclick="qanswer(1, false, 'BA cannot — they already submitted. Only CA or Superadmin acts at this stage.')">Both BA and CA</button>
+          <button data-val="none" onclick="qanswer(1, false, 'Somebody has to review it! Only CA or Superadmin can open the review.')">No one, the system does it automatically</button>
+        </div>
+        <div id="q1" class="fb"></div>
+      </div>
+
+      <div class="q">
+        <p>Q2: An SJ is in <code>Delivered</code> state. What does the Branch Admin see?</p>
+        <div class="opts">
+          <button data-val="tracking" onclick="qanswer(2, false, 'Tracking was for In Transit. Now the items are physically at the branch.')">A tracking view showing expected arrival</button>
+          <button data-val="receive" onclick="qanswer(2, true, 'Correct! BA sees the receiving form with fields to record received qty and rejected qty per item.')">A receiving form where they inspect each item</button>
+          <button data-val="invoice" onclick="qanswer(2, false, 'Not yet — BA needs to review and confirm first before the invoice is generated.')">An invoice preview with payment button</button>
+          <button data-val="nothing" onclick="qanswer(2, false, 'BA definitely sees something — the items are there and need to be checked.')">Nothing, waiting for CA to act</button>
+        </div>
+        <div id="q2" class="fb"></div>
+      </div>
+
+      <div class="q">
+        <p>Q3: While CA is reviewing (state = <code>Under Review</code>), what can BA see?</p>
+        <div class="opts">
+          <button data-val="nothing" onclick="qanswer(3, false, 'The process is designed to be transparent — BA can see the review in realtime.')">Nothing, BA waits until review is done</button>
+          <button data-val="edit" onclick="qanswer(3, false, 'BA can watch but cannot edit. The CA has the pen at this stage.')">The same edit form as CA, so BA can help adjust quantities</button>
+          <button data-val="live" onclick="qanswer(3, true, 'Correct! BA sees a live read-only view of CA\'s edits — which items are accepted/rejected and what qty adjustments CA is making.')">A live read-only view of the CA's review progress</button>
+          <button data-val="reject" onclick="qanswer(3, false, 'BA can\'t reject — only CA can reject. BA can see the review but not intervene.')">Only a reject button in case BA disagrees</button>
+        </div>
+        <div id="q3" class="fb"></div>
+      </div>
+
+      <div class="q">
+        <p>Q4: An item was shipped as 25 kg but 3 kg arrived damaged. The BA rejects those 3 kg with reason "bocor". Which of these is correct about the invoice?</p>
+        <div class="opts">
+          <button data-val="q25" onclick="qanswer(4, false, 'Invoice uses received quantity (what BA accepted into usable stock), not shipped quantity.')">The invoice charges 25 kg (shipped quantity). The 3 kg is handled separately.</button>
+          <button data-val="q22" onclick="qanswer(4, true, 'Correct! The invoice is based on received quantity (22 kg accepted). The 3 kg rejected is listed separately in the invoice as a deduction line.')">The invoice shows 22 kg accepted at full price and 3 kg rejected at Rp 0, with a note "bocor".</button>
+          <button data-val="q3" onclick="qanswer(4, false, 'The rejection doesn\'t change the invoice total. The rejected items are listed with Rp 0.')">The invoice charges the full 25 kg; the 3 kg rejection is a separate credit note.</button>
+          <button data-val="q0" onclick="qanswer(4, false, 'The invoice must show both sides: what was accepted (chargable) and what was rejected (not charged).')">The invoice charges 0 until BA and CA agree on the rejection.</button>
+        </div>
+        <div id="q4" class="fb"></div>
+      </div>
+
+      <div class="q">
+        <p>Q5: The FSM transition table says only <code>admin_pusat</code> and <code>super_admin</code> can do <code>UnderReview → accept-and-ship</code>. What happens if an <code>area_manager</code> tries to call this API?</p>
+        <div class="opts">
+          <button data-val="allow" onclick="qanswer(5, false, 'The FSM should reject it. Area Manager can review PRs but not create SJs.')">It works — area_manager is senior enough</button>
+          <button data-val="reject" onclick="qanswer(5, true, 'Correct! The FSM guard checks the actor list: area_manager is not in [admin_pusat, super_admin], so the transition is rejected with a 403.')">It throws "Not authorized for this transition" — the guard blocks it</button>
+          <button data-val="silent" onclick="qanswer(5, false, 'A silent fail would be a disaster. The FSM must always give a clear error.')">It silently fails — the state doesn't change but the function returns 200</button>
+          <button data-val="skip" onclick="qanswer(5, false, 'The FSM is a hard gate — it cannot be skipped. If area_manager needs this power, add the role to the FSM table explicitly.')">It bypasses the FSM for senior roles</button>
+        </div>
+        <div id="q5" class="fb"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 7: Summary                                           -->
+  <!-- ============================================================ -->
+  <section class="card">
+    <h2>7. Summary — What to Take Forward</h2>
+
+    <div class="callout-good">
+      <strong>The FSM table is your single source of truth.</strong> Build it early. It replaces a hundred <code>if (status === X &amp;&amp; role === Y)</code> checks with one function.
+    </div>
+
+    <ol>
+      <li><strong>Every state has one owner.</strong> <code>Under Review</code> = CA's turn. <code>Reviewing SJ</code> = BA's turn. Never ambiguous.</li>
+      <li><strong>Every transition has a guard.</strong> Actor + current state. No exceptions.</li>
+      <li><strong>UI is derived from the FSM.</strong> <code>actor × state → component</code>. Not the other way around.</li>
+      <li><strong>The interactive table is a reusable primitive.</strong> Different modes for different states, same component.</li>
+      <li><strong>Real-time visibility is free.</strong> BA seeing CA's review = client polls the PR status and renders the read-only version of the same table.</li>
+      <li><strong>Invoice shows both sides.</strong> Accepted items (chargeable) + rejected items (Rp 0 with reason) in one document. No separate credit notes.</li>
+    </ol>
+
+    <p class="small" style="margin-top:16px;">Ask the agent follow-up questions. For example: "Walk me through adding a 'Partially Shipped' state between In Transit and Delivered." Or: "How would I model the case where CA can edit individual item quantities during review?"</p>
+  </section>
+</main>
+</body>
+</html>

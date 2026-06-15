@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SCM Finite State Machine — Quick Reference</title>
+  <style>
+    :root { color-scheme: light; --ink:#1d252c; --muted:#63707a; --line:#d8dee4; --bg:#f7f8fa; --accent:#0f766e; --accent2:#7c3aed; --good:#067647; --bad:#b42318; --warn:#a16207; }
+    body { margin:0; font:14px/1.55 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; color:var(--ink); background:white; }
+    main { max-width:960px; margin:0 auto; padding:36px 24px 56px; }
+    h1 { font-size:26px; line-height:1.1; margin:0 0 6px; }
+    h2 { font-size:17px; margin:24px 0 10px; border-bottom:1px solid var(--line); padding-bottom:5px; }
+    p { margin:6px 0; }
+    .subtitle { color:var(--muted); margin-bottom:20px; }
+    table { width:100%; border-collapse:collapse; margin:8px 0 16px; font-size:13px; }
+    th, td { text-align:left; vertical-align:top; border:1px solid var(--line); padding:7px 9px; }
+    th { background:var(--bg); font-weight:600; }
+    code { background:#eef2f4; padding:1px 4px; border-radius:4px; font-size:12px; }
+    pre { background:#eef2f4; padding:6px 10px; border-radius:6px; overflow-x:auto; font:12px/1.4 ui-monospace, "Source Code Pro", Menlo, monospace; }
+    .badge { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:600; }
+    .ba { background:#d1fae5; color:#065f46; }
+    .ca { background:#dbeafe; color:#1e3a8a; }
+    .sa { background:#ede9fe; color:#5b21b6; }
+    .both { background:#eef2f4; color:#374151; }
+    .note { border-left:4px solid var(--warn); padding:8px 12px; background:#fffbe6; margin:10px 0; font-size:13px; }
+    @media print { main { padding:16px; } table { break-inside:avoid; page-break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>SCM Finite State Machine — Quick Reference</h1>
+  <p class="subtitle">The redesigned PR→SJ→Invoice lifecycle as a formal FSM. Each transition is (current state → event → next state), owned by one actor.</p>
+
+  <h2>State Diagram</h2>
+  <pre>[*] → Draft          (BA creates PR)
+Draft → Pending          (BA submits)
+Pending → UnderReview    (CA opens review)
+
+UnderReview → Rejected                    (CA rejects)
+UnderReview → InTransit                   (CA accepts + creates SJ)
+
+InTransit → Delivered                      (CA marks dispatched)
+Delivered → ReviewingSJ                    (BA opens receiving)
+ReviewingSJ → WaitingForPayment            (BA confirms review)
+WaitingForPayment → Finished               (CA marks "Telah Dibayar")
+
+Rejected → [*]
+Finished → [*]</pre>
+
+  <h2>Transition Table</h2>
+  <table>
+    <thead><tr><th>#</th><th>From</th><th>Event</th><th>To</th><th>Actor</th><th>Effects</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>[*]</code></td><td>create PR</td><td><code>Draft</code></td><td><span class="badge ba">BA</span></td><td>Insert PR row with status Draft</td></tr>
+      <tr><td>2</td><td><code>Draft</code></td><td>submit</td><td><code>Pending</code></td><td><span class="badge ba">BA</span></td><td>Validate MOQ, lock edit to BA</td></tr>
+      <tr><td>3</td><td><code>Pending</code></td><td>open-review</td><td><code>Under Review</code></td><td><span class="badge ca">CA</span> <span class="badge sa">SA</span></td><td>Lock PR from BA edit, notify BA</td></tr>
+      <tr><td>4</td><td><code>Under Review</code></td><td>reject</td><td><code>Rejected</code></td><td><span class="badge ca">CA</span> <span class="badge sa">SA</span></td><td>Write rejection reason, notify BA</td></tr>
+      <tr><td>5</td><td><code>Under Review</code></td><td>accept-and-ship</td><td><code>In Transit</code></td><td><span class="badge ca">CA</span> <span class="badge sa">SA</span></td><td>Create SJ in Picking, create in-transit rows, deduct source inventory</td></tr>
+      <tr><td>6</td><td><code>In Transit</code></td><td>mark-delivered</td><td><code>Delivered</code></td><td><span class="badge ca">CA</span> <span class="badge sa">SA</span></td><td>Set SJ status to Delivered, notify BA</td></tr>
+      <tr><td>7</td><td><code>Delivered</code></td><td>start-receive</td><td><code>Reviewing SJ</code></td><td><span class="badge ba">BA</span></td><td>Open interactive table for receiving</td></tr>
+      <tr><td>8</td><td><code>Reviewing SJ</code></td><td>confirm-receive</td><td><code>Waiting for Payment</code></td><td><span class="badge ba">BA</span></td><td>Write received/rejected qty per item, generate invoice preview, add destination inventory for accepted items, handle rejected disposition</td></tr>
+      <tr><td>9</td><td><code>Waiting for Payment</code></td><td>mark-paid</td><td><code>Finished</code></td><td><span class="badge ca">CA</span> <span class="badge sa">SA</span></td><td>Stamp paidAt, set status Finished</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Actor × State → UI Component</h2>
+  <table>
+    <thead><tr><th>State</th><th>BA sees</th><th>CA sees</th><th>SA sees</th></tr></thead>
+    <tbody>
+      <tr><td><code>Draft</code></td><td>Editable PR form</td><td>—</td><td>Can edit any PR</td></tr>
+      <tr><td><code>Pending</code></td><td>Read-only, waiting</td><td>Review queue</td><td>Same as CA</td></tr>
+      <tr><td><code>Under Review</code></td><td>Live read-only table</td><td>Interactive review table</td><td>Same as CA</td></tr>
+      <tr><td><code>Rejected</code></td><td>Status + reason</td><td>Archive view</td><td>Same as CA</td></tr>
+      <tr><td><code>In Transit</code></td><td>Tracking view</td><td>SJ detail + "Delivered" button</td><td>Same as CA</td></tr>
+      <tr><td><code>Delivered</code></td><td>Receiving form</td><td>"Menunggu review cabang"</td><td>Both</td></tr>
+      <tr><td><code>Reviewing SJ</code></td><td>Interactive receive table</td><td>Live read-only view</td><td>Same as CA</td></tr>
+      <tr><td><code>Waiting for Payment</code></td><td>Invoice preview + transfer info</td><td>Invoice + "Telah Dibayar" button</td><td>Same as CA</td></tr>
+      <tr><td><code>Finished</code></td><td>Read-only "Lunas"</td><td>Read-only "Lunas"</td><td>Read-only</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Code Pattern: FSM Transition Table</h2>
+  <pre>const transitions = {
+  Pending: {
+    'open-review': {
+      to: 'UnderReview',
+      actor: ['admin_pusat', 'super_admin'],
+    },
+  },
+  UnderReview: {
+    reject: {
+      to: 'Rejected',
+      actor: ['admin_pusat', 'super_admin'],
+      effects: ['writeRejectionReason'],
+    },
+    'accept-and-ship': {
+      to: 'InTransit',
+      actor: ['admin_pusat', 'super_admin'],
+      effects: ['createSJ', 'createInTransit', 'deductSourceInventory'],
+    },
+  },
+  // ... every state and event
+}
+
+async function transition(prId, event, user) {
+  const pr = await getPR(prId)
+  const rule = transitions[pr.status]?.[event]
+  if (!rule)                           throw new FsmError('Cannot event from state')
+  if (!rule.actor.includes(user.role)) throw new FsmError('Not authorized')
+  for (const fx of (rule.effects ?? [])) await applyEffect(fx, pr, user)
+  await updatePR(prId, { status: rule.to, lastEvent: event, updatedBy: user.id })
+  await logAudit({ ... })
+}</pre>
+
+  <div class="note">
+    <strong>Key principle:</strong> One <code>transition()</code> function replaces all ad-hoc <code>if (status === X &amp;&amp; role === Y)</code> checks. Build the FSM table first — UI and permissions follow automatically.
+  </div>
+
+  <h2>Invoice Structure</h2>
+  <table>
+    <thead><tr><th>Section</th><th>Content</th></tr></thead>
+    <tbody>
+      <tr><td>Accepted items</td><td>Item name, received qty, unit price, subtotal</td></tr>
+      <tr><td>Rejected items</td><td>Item name, rejected qty, unit price (Rp 0), reason</td></tr>
+      <tr><td>Grand total</td><td>Sum of accepted subtotals only</td></tr>
+      <tr><td>Status</td><td><code>Unpaid</code> → <code>Paid</code> (after CA marks "Telah Dibayar")</td></tr>
+    </tbody>
+  </table>
+</main>
+</body>
+</html>

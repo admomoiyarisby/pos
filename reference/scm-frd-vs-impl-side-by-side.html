@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Omoiyari POS — FRD vs Implementation: Supply Chain Side-by-Side</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+  <style>
+    :root { color-scheme: light; --ink:#1d252c; --muted:#63707a; --line:#d8dee4; --bg:#f7f8fa; --panel:#fff; --accent:#0f766e; --accent2:#7c3aed; --good:#067647; --warn:#a16207; --bad:#b42318; --info:#1d4ed8; --intended:#0f766e; --actual:#7c3aed; }
+    body { margin:0; font:15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink); background:white; }
+    main { max-width:1180px; margin:0 auto; padding:40px 28px 80px; }
+    h1 { font-size:30px; line-height:1.1; margin:0 0 6px; }
+    h2 { font-size:20px; margin:32px 0 10px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+    h3 { font-size:16px; margin:22px 0 8px; color:var(--accent); }
+    h4 { font-size:14px; margin:18px 0 6px; }
+    p { margin:8px 0; }
+    .subtitle { color:var(--muted); margin-bottom:24px; }
+    .callout { border-left:4px solid var(--info); padding:10px 14px; background:#eef2ff; border-radius:4px; margin:12px 0; }
+    .warn    { border-left:4px solid var(--warn); padding:10px 14px; background:#fff8e6; border-radius:4px; margin:12px 0; }
+    .bad     { border-left:4px solid var(--bad);  padding:10px 14px; background:#fef2f2; border-radius:4px; margin:12px 0; }
+    .good    { border-left:4px solid var(--good); padding:10px 14px; background:#ecfdf5; border-radius:4px; margin:12px 0; }
+    table { width:100%; border-collapse:collapse; margin:12px 0 22px; }
+    th, td { text-align:left; vertical-align:top; border:1px solid var(--line); padding:10px 12px; }
+    th { background:var(--bg); font-weight:600; }
+    th.frd, td.frd    { background:#fef9f0; width:30%; }
+    th.impl, td.impl  { background:#eef7f6; width:35%; }
+    th.bp, td.bp      { background:#f0f3ff; width:35%; }
+    code { background:#eef2f4; padding:1px 5px; border-radius:4px; font:13px/1.4 ui-monospace, "Source Code Pro", Menlo, monospace; }
+    pre.mermaid-src { background:#eef2f4; padding:8px 10px; border-radius:6px; overflow-x:auto; font:13px/1.45 ui-monospace, "Source Code Pro", Menlo, monospace; white-space:pre; }
+    .status { display:inline-block; padding:1px 8px; border-radius:4px; font-size:12px; font-weight:600; }
+    .ok    { background:#d1fae5; color:#065f46; }
+    .partial { background:#fef3c7; color:#92400e; }
+    .missing { background:#fecaca; color:#991b1b; }
+    .differs { background:#dbeafe; color:#1e3a8a; }
+    .small { color:var(--muted); font-size:13px; }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .pill { display:inline-block; background:var(--bg); border:1px solid var(--line); border-radius:999px; padding:1px 8px; font-size:12px; margin-right:4px; }
+    ol, ul { margin:6px 0 12px 22px; }
+    ol li, ul li { margin:4px 0; }
+    .source { color:var(--muted); font-size:12px; }
+    .legend { margin:14px 0 28px; padding:10px 12px; border:1px solid var(--line); border-radius:6px; background:var(--bg); display:flex; flex-wrap:wrap; gap:14px; align-items:center; }
+    .legend strong { margin-right:8px; }
+    .legend span { display:inline-flex; align-items:center; gap:6px; font-size:13px; }
+    .swatch { display:inline-block; width:14px; height:14px; border-radius:3px; border:1px solid var(--line); }
+    .diagram-pair { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:12px 0 18px; }
+    .diagram-panel { border:1px solid var(--line); border-radius:8px; padding:14px; background:#fbfcfd; }
+    .diagram-panel.intended h3 { color:var(--intended); margin-top:0; }
+    .diagram-panel.actual h3 { color:var(--actual); margin-top:0; }
+    .diagram-panel h3 { margin-top:0; }
+    .mermaid { background:white; border-radius:6px; padding:10px; overflow-x:auto; }
+    .mermaid svg { max-width:100%; height:auto; }
+    .diagram-block { margin:16px 0 22px; }
+    .diagram-block .caption { font-size:13px; color:var(--muted); margin:6px 0 0; }
+    .toc { border:1px solid var(--line); border-radius:6px; padding:12px 16px; background:var(--bg); margin:14px 0 24px; font-size:14px; }
+    .toc h3 { margin:0 0 6px; color:var(--ink); }
+    .toc ol { margin:6px 0 0 20px; columns:2; column-gap:24px; }
+    .toc li { margin:2px 0; }
+    @media (max-width:1000px) { th.frd, th.impl, th.bp { width:auto; } .diagram-pair { grid-template-columns:1fr; } .toc ol { columns:1; } }
+    @media print {
+      main { padding:20px; }
+      table { page-break-inside:auto; }
+      tr { page-break-inside:avoid; }
+      h2 { page-break-before:auto; }
+      .mermaid { page-break-inside:avoid; }
+      .diagram-pair, .diagram-block { page-break-inside:avoid; }
+    }
+  </style>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "base",
+        themeVariables: {
+          fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+          fontSize: '14px',
+          primaryColor: '#fbfcfd',
+          primaryBorderColor: '#d7dee3',
+          primaryTextColor: '#1d252c',
+          lineColor: '#63707a',
+          tertiaryColor: '#f7f8fa',
+          activeFill: '#0f766e',
+          activeBorder: '#0f766e',
+          clusterBkg: '#f7f8fa',
+        },
+        flowchart: { curve: 'basis', htmlLabels: true },
+        stateDiagram: { htmlLabels: true },
+      });
+    });
+  </script>
+</head>
+<body>
+<main>
+  <h1>FRD vs Implementation — Supply Chain Side-by-Side</h1>
+  <p class="subtitle">Scope: every menu under the <strong>Inventaris</strong>, <strong>Rantai Pasok</strong>, and <strong>Produksi</strong> sidebar groups. Source of truth: <code>docs/Functional Requirement Document.md</code> v1.4 (29 Apr 2026). Implementation evidence: <code>src/lib/server/*.ts</code>, <code>src/db/schema.ts</code>, route files under <code>src/routes/_layout/</code>. Reference file in the workspace: <code>reference/scm-flow-reference.html</code>.</p>
+
+  <div class="callout">
+    <strong>About the "Best Practice" column.</strong> This session does not have a live web-search tool, so the right-hand column is a synthesis of widely-cited patterns from ERP/SCM literature and open-source reference systems. Sources you can verify and extend: ERPNext Stock module docs (frappe.io/erpnext), Odoo Inventory &amp; MRP documentation, SAP S/4HANA MM-IM best-practice guides, Oracle NetSuite SCM, the academic multi-echelon inventory literature (Clark &amp; Scarf 1960; Zipkin 2000), and F&amp;B POS+inventory implementations such as Toast and Square for Restaurants. Where a claim is implementation-specific to a known product it is labeled, otherwise it is a general industry pattern.
+  </div>
+
+  <div class="legend">
+    <strong>Status legend:</strong>
+    <span class="status ok">OK</span> matches FRD intent
+    <span class="status partial">PARTIAL</span> implemented with notable gap
+    <span class="status missing">MISSING</span> FRD requirement not implemented
+    <span class="status differs">DIFFERS</span> implemented differently than FRD wording
+    <span style="margin-left:auto;"><span class="swatch" style="background:#0f766e"></span> Intended (FRD)</span>
+    <span><span class="swatch" style="background:#7c3aed"></span> Actual (code)</span>
+    <span><span class="swatch" style="background:#b42318"></span> Gap or unreachable state</span>
+  </div>
+
+  <section class="diagram-block">
+    <h2>At a Glance — The Core Document Flow</h2>
+    <p>The single most consequential question for the SCM module: does a Purchase Requisition <em>have to</em> go through a Purchase Order? The FRD says yes. The code says no. Read the two diagrams and the policy gap is the difference between the green "intended" path and the purple "actual" path.</p>
+    <div class="diagram-pair">
+      <div class="diagram-panel intended">
+        <h3>Intended FRD flow (PR §4.2.1, §4.2.4)</h3>
+        <div class="mermaid">
+flowchart LR
+  PR[PR Pending] -->|Proses| PO[PO Draft]
+  PO -->|Kirim| POS[PO Sent]
+  POS -->|Buat SJ| SJP[SJ Picking]
+  SJP -->|Kirim| SJI[SJ In Transit]
+  SJI -->|Terima Cabang| SJR[SJ Received]
+  SJR -->|Review Admin Pusat| SJRev[SJ Reviewed]
+  SJRev -->|Generate Invoice| INV[Invoice Unpaid]
+  INV -->|Bayar| Paid[Invoice Paid]
+        </div>
+        <p class="caption">Every PR becomes a PO. Every PO produces an SJ. Every received SJ produces one Invoice based on received quantity. <em>Source: <code>docs/Functional Requirement Document.md</code> §4.2.1, §4.2.4.</em></p>
+      </div>
+      <div class="diagram-panel actual">
+        <h3>Actual implementation</h3>
+        <div class="mermaid">
+flowchart LR
+  PR[PR Pending] -->|alsoCreateSJ true| SJP[SJ Picking]
+  PR -->|alsoCreateSJ false| SJP
+  PR -.->|PO path terpisah| PO[PO Draft]
+  PO -->|Send| POS[PO Sent]
+  POS -->|Receive| POC[PO Completed]
+  SJP -->|Ship| SJI[SJ In Transit]
+  SJI -->|Terima Cabang| SJR[SJ Received]
+  SJR -->|Review| SJRev[SJ Reviewed]
+  SJRev -->|Generate| INV[Invoice Unpaid]
+  INV -->|Pay| Paid[Invoice Paid]
+        </div>
+        <p class="caption">The dotted line is the only path that actually goes through PO for internal restocking. The solid line is the default. <em>Source: <code>src/lib/server/scm.ts:306–390</code> (<code>processPurchaseRequisition</code>), <code>:407–700</code> (PO module).</em></p>
+      </div>
+    </div>
+    <div class="bad"><strong>Gap:</strong> the FRD names PO as a canonical stage. The code lets you skip it. This is a defensible design (ERPNext and Odoo both treat PO as optional for internal stock transfers) but the policy is not written down anywhere — see §3.1 row on PR → PO auto-link.</div>
+  </section>
+
+  <div class="toc">
+    <h3>Document map</h3>
+    <ol>
+      <li><a href="#executive-summary">Executive summary</a></li>
+      <li><a href="#inventaris">Inventaris (Stok, Kartu Stok, SO, Waste, Broken Stock)</a></li>
+      <li><a href="#rantai-pasok">Rantai Pasok (PR, PO, SJ, Invoice, Supplier Delivery, Mutasi)</a></li>
+      <li><a href="#produksi">Produksi (Yield Tracking, Bahan Baku)</a></li>
+      <li><a href="#cross-cutting">Cross-cutting concerns (RBAC, audit, period control, POS)</a></li>
+      <li><a href="#gap-table">Aggregated gap table</a></li>
+      <li><a href="#next-steps">Recommended next steps</a></li>
+      <li><a href="#references">References &amp; verification</a></li>
+    </ol>
+  </div>
+
+  <h2 id="executive-summary">1. Executive Summary</h2>
+  <p>The current implementation captures the <em>shape</em> of the supply chain described in the FRD — PR, PO, Surat Jalan, Invoice, stock transfer, supplier delivery, yield tracking, waste, and SO are all present as distinct modules with their own tables and UI. The most consequential gaps are in the SCM <em>state machine</em> discipline and in the FRD's prescribed <em>audit controls</em>, not in feature presence.</p>
+  <div class="grid-2">
+    <div class="good">
+      <strong>Working as the FRD intends</strong>
+      <ul>
+        <li>Document hierarchy (PR → SJ → Invoice) with inventory gated on physical movement</li>
+        <li>In-transit virtual warehouse as a separate table (<code>in_transit_inventory</code>)</li>
+        <li>Invoice quantity = <code>receivedQuantity</code>, not <code>quantity</code> or <code>pickedQuantity</code> ("actual base")</li>
+        <li>MOQ enforcement on PR create</li>
+        <li>Configurable reorder formula (ROP/ROQ days) with admin-only edit</li>
+        <li>Blind SO: system stock stripped from response for branch_admin and admin_pusat</li>
+        <li>Countable flag honored when triggering SO</li>
+        <li>BOM cost roll-up on ingredient price change, supplier delivery, and SJ receive</li>
+        <li>Yield Costing formula uses post-shrinkage target weight, not source weight</li>
+        <li>Negative-stock soft block on POS + alert to Area Manager</li>
+        <li>3-pillar SJ detail view (Order | Ready | Picked) plus Received and Rejected</li>
+        <li>Period close blocks on negative inventory, pending cancel requests, unpaid invoices, pending SO</li>
+      </ul>
+    </div>
+    <div class="bad">
+      <strong>Gaps that will bite at scale</strong>
+      <ul>
+        <li><strong>PO is optional in the internal restocking path.</strong> FRD §4.2 names PO as a required stage. The current <code>processPurchaseRequisition</code> can create an SJ directly without a PO.</li>
+        <li><strong>Quarantine is named, not modeled.</strong> The DN item can record <code>Quarantine</code> disposition, but no <code>quarantine_inventory</code> table exists. A "quarantined" item is just a ledger note.</li>
+        <li><strong>Fulfilled status is unreachable.</strong> <code>Fulfilled</code> exists in the PR status enum but no code path ever sets it.</li>
+        <li><strong>PR auto-create of SJ silently uses <code>pr.branchId</code> as fallback <code>fromBranchId</code></strong> if the central warehouse lookup fails — a branch would ship stock to itself.</li>
+        <li><strong>Branch admin <em>receive</em> on an SJ can mutate the "current system stock" via approved SO</strong> without the corresponding ledger <code>balance</code> being re-derived — the ledger balance reflects the post-SO quantity, but other paths deduct from a possibly stale <code>inventory.quantity</code> until the SO approval transaction is fully atomic (it is, in current code — but worth flagging for race conditions under concurrent writes).</li>
+        <li><strong>Pre-Open Report from FRD §4.1 is not produced</strong> before opening a new period.</li>
+        <li><strong>Audit trail is inconsistent.</strong> <code>logAudit</code> is called on most status transitions but not uniformly on edits to PR/SJ items, on supplier-delivery update, or on stock-transfer ship/receive (only on status changes).</li>
+        <li><strong>Period lock is not enforced as a write guard</strong> in POS, SCM, inventory, waste, or SO. The close checks surface negative inventory and pending state, but the server functions do not refuse writes after <code>closePeriod</code>.</li>
+        <li><strong>Stock transfer approval moves inventory instantly</strong> in the current <code>shipStockTransfer</code> and the original <code>approveStockTransfer</code>. The schema supports <code>In Transit</code>, and the UI now has a Ship step, but the approval is combined with the deduction in a single transaction — there is no two-step approval → ship separation that the FRD's "approval first" language implies for mutasi.</li>
+        <li><strong>Print Bill</strong> (FRD §3.2) is implemented in <code>pos-print.ts</code>, but the surface area to call it from POS is wired through the receipt generator only; a "Print Bill" button is not a first-class CTA on the cart.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 id="inventaris">2. Inventaris</h2>
+  <p>Sidebar items: Stok Saat Ini, Kartu Stok, Opname Stok, Pemborosan, Barang Rusak.</p>
+
+  <h3>2.1 Stok Saat Ini (current inventory) &amp; Kartu Stok (stock ledger)</h3>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice &amp; source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>§3.1.3 — Pagination 10–15 items per page; search and sort; filter by <em>Dry / Fresh / Packaging / Bahan Baku</em>.<br><span class="status partial">PARTIAL</span></td>
+        <td>Pagination implemented (default 50, max 100), search, sort by name asc/desc. Filters supported: <code>category</code> (Fresh/Dry/Packaging) and <code>skuType</code> (RM/SFG/FG). <strong>No "Bahan Baku" as a category filter</strong> — only as a SKU type. Default page size 50 exceeds the FRD's 10–15 ceiling. <em>Source: <code>src/lib/server/inventory.ts:20–80</code>.</em></td>
+        <td>Filter by RM as a separate filter (alongside category and SKU type) is an Odoo/ERPNext pattern. <strong>Server-side pagination is correct</strong> — this is the single most important performance guarantee for an inventory table. Default 50 is fine for desktop, but the FRD's tighter ceiling deserves a config flag.</td>
+      </tr>
+      <tr>
+        <td>§3.1.4 — Branch column hidden for Branch Admin; data auto-filtered to their branch.<br><span class="status ok">OK</span></td>
+        <td><code>getInventory</code> forces <code>branchFilter = user.branchId</code> when role is <code>branch_admin</code>. The branch column is rendered in the table regardless; UI does not pass a branch column for branch admin. <em>Source: <code>src/lib/server/inventory.ts:23–32</code>.</em></td>
+        <td>Tenancy scoping at the query layer is the right place to enforce this — anything rendered is then a function of role. Toast and Square use the same pattern.</td>
+      </tr>
+      <tr>
+        <td>§6.2.1 — Stock Ledger with full per-SKU mutation history.<br><span class="status ok">OK</span></td>
+        <td><code>stock_ledger</code> table holds <code>type</code> (IN/OUT), <code>quantity</code>, <code>balance</code>, <code>reference</code>, <code>notes</code>, <code>createdAt</code>. Every mutation path (POS, SCM, yield, waste, supplier delivery) writes to it. <em>Source: <code>src/db/schema.ts:660–680</code>.</em></td>
+        <td>Append-only ledger with running balance is the canonical pattern (SAP MM-IM, ERPNext Stock Ledger Entry, Odoo Stock Move). The <code>balance</code> column is denormalized for fast reads but is correct as long as writes are serialized; a future scale concern.</td>
+      </tr>
+      <tr>
+        <td>§5.1.2 — Shared inventory across brands (logical separation only).<br><span class="status ok">OK</span></td>
+        <td>Single <code>inventory</code> table keyed by <code>(branchId, ingredientId)</code>. No brand filter on inventory. Brand attribution lives at the recipe/order level. <em>Source: <code>src/db/schema.ts:612–625</code> (inventory) and <code>recipes</code> + <code>recipe_brands</code> for M:N.</em></td>
+        <td>Single physical bucket with brand as a recipe attribute is the right ghost-kitchen model. This is the pattern in every shared-cloud-kitchen system (Kitopi, Keeta central kitchens).</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>2.2 Opname Stok (Stock Opname)</h3>
+  <div class="diagram-block">
+    <h4>SO state machine (intended vs actual)</h4>
+    <div class="diagram-pair">
+      <div class="diagram-panel intended">
+        <h3>Intended (FRD §4.3)</h3>
+        <div class="mermaid">
+stateDiagram-v2
+  [*] --> Submitted: trigger then count
+  Submitted --> Investigasi: variance exists
+  Investigasi --> Approved: AM accepts recount
+  Investigasi --> Submitted: recount required
+  Approved --> [*]
+        </div>
+        <p class="caption">FRD intends an auto-promotion to Investigasi whenever variance exists. The diagram shows two valid terminals; only Approved is final.</p>
+      </div>
+      <div class="diagram-panel actual">
+        <h3>Actual</h3>
+        <div class="mermaid">
+stateDiagram-v2
+  [*] --> Submitted: submitStockOpname
+  Submitted --> UnderInvestigation: markStockOpnameInvestigation - manual
+  UnderInvestigation --> Submitted: updateStockOpnameCounts
+  Submitted --> Approved: approveStockOpname
+  UnderInvestigation --> Approved: approveStockOpname
+  Approved --> [*]
+        </div>
+        <p class="caption">Promotion to <code>UnderInvestigation</code> is manual (super_admin or area_manager). The <code>auto-promote on variance &gt; 3%</code> rule is not implemented. The actual enum name is <code>Under Investigation</code>, not <code>Investigasi</code>.</p>
+      </div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice &amp; source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>§4.3 — SO trigger only by AM / Admin Pusat; system records who triggered and when.<br><span class="status ok">OK</span></td>
+        <td><code>triggerStockOpname</code> restricts roles to super_admin, admin_pusat, area_manager. <code>stockOpnames.triggeredBy</code> + <code>triggeredAt</code> are set. <em>Source: <code>src/lib/server/inventory.ts:131–170</code>.</em></td>
+        <td>This is the standard SO control pattern. Toast and Square for Restaurants both gate SO on supervisor roles.</td>
+      </tr>
+      <tr>
+        <td>§4.3 / §4.4 — Branch admin uses <strong>blind SO</strong>: cannot see expected value; submit blocked when blank.<br><span class="status partial">PARTIAL</span></td>
+        <td>Blind stripping is in <code>getStockOpnameDetail</code> by setting <code>isBlind</code> and zeroing <code>systemStock</code> and <code>variance</code> for branch_admin and admin_pusat. <strong>Blank-submit block is not server-enforced</strong> in <code>submitStockOpname</code>; the current handler only updates items that are passed in. Items not in the SO rows remain with <code>physicalStock: 0</code>. <em>Source: <code>src/lib/server/inventory.ts:200–280</code>.</em></td>
+        <td>Two industry patterns exist: (1) reject submission when <em>any</em> countable item is missing a physical count, (2) accept partial submissions and treat missing as 0. The FRD wants pattern 1. ERPNext enforces blank-submit lock at the form layer; Odoo enforces at the ORM layer by requiring a value before the state transition.</td>
+      </tr>
+      <tr>
+        <td>§4.3 — Status "Investigasi" if variance exists.<br><span class="status partial">PARTIAL</span></td>
+        <td><code>markStockOpnameInvestigation</code> exists and is restricted to super_admin/area_manager. But <code>submitStockOpname</code> always sets status to <code>Submitted</code>; an SO is never <em>automatically</em> marked Investigasi on submission. Variance is recorded per item but does not promote the SO row to Investigasi. <em>Source: <code>src/lib/server/inventory.ts:282–360</code> (submit + markInvestigation).</em></td>
+        <td>Auto-promotion to Investigasi on variance above a threshold (e.g., &gt;3% per FRD §6.2.2) is the ERPNext pattern. The "Discrepancy &gt;3% highlight" mentioned in the FRD module description (§3.1) is partially implemented: <code>variancePercentage</code> is stored per item, but no UI rule highlights items &gt;3%.</td>
+      </tr>
+      <tr>
+        <td>§4.4 — Variance calculation only in background; visible to AM in Audit module.<br><span class="status ok">OK</span></td>
+        <td>Variance is computed at submit time using the frozen <code>systemStock</code> snapshot. The view strips variance from blind roles. <em>Source: <code>src/lib/server/inventory.ts:210–240</code>.</em></td>
+        <td>Snapshot at trigger time, computation at submit, disclosure at review — this is the right shape.</td>
+      </tr>
+      <tr>
+        <td>Notes 27 Apr — Countable vs uncountable items: uncountable items (sedotan per pcs, opened galon) are <em>not</em> in the SO checklist.<br><span class="status ok">OK</span></td>
+        <td><code>ingredients.countable</code> boolean is honored in <code>triggerStockOpname</code>: only <code>countable = true</code> items are inserted into <code>stockOpnameItems</code>. <em>Source: <code>src/lib/server/inventory.ts:142–160</code>, schema line 223.</em></td>
+        <td>This is the correct model. Uncountables belong in waste / broken-stock (FRD §5.2) not SO.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>2.3 Pemborosan (Waste) &amp; Barang Rusak (Broken Stock)</h3>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice &amp; source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>§5 — Three categories only: <em>Beban Makan</em>, <em>Biaya Operasional</em>, <em>Spoiled</em>. Expired is removed.<br><span class="status ok">OK</span></td>
+        <td><code>waste_category</code> enum is exactly these three. <code>createWasteEntry</code> validates with Zod. <em>Source: <code>src/db/schema.ts:66–70</code> and <code>src/lib/server/waste.ts:75–90</code>.</em></td>
+        <td>Hard-coded enum is appropriate for the FRD's "tiga kategori tetap" rule.</td>
+      </tr>
+      <tr>
+        <td>§5.1.2 / §5.2 — "Biaya Operasional" auto-link to Broken Stock list.<br><span class="status ok">OK</span></td>
+        <td>On create, if category = <code>Biaya Operasional</code>, an <code>operationalExpenses</code> row is inserted with <code>wasteEntryId</code> FK. <code>getBrokenStock</code> joins <code>wasteEntries ⨝ operationalExpenses</code> for the side-by-side view. <em>Source: <code>src/lib/server/waste.ts:100–120</code>, broken-stock.tsx page.</em></td>
+        <td>The side-by-side UI in <code>waste/broken-stock.tsx</code> is the FRD §3.5.1 "side-by-side Broken Stock UI" with a Daftar Broken Stock table on the left and a Ringkasan Barang Keluar (with Stok Habis / Stok Berkurang badges and a link to the operational expense amount) on the right. Matches intent.</td>
+      </tr>
+      <tr>
+        <td>§4.4 — Automated waste valuation = quantity × master HPP.<br><span class="status ok">OK</span></td>
+        <td><code>createWasteEntry</code> computes <code>valuation = quantity * averageCost</code> at write time. <em>Source: <code>src/lib/server/waste.ts:99–108</code>.</em></td>
+        <td>Snapshot-at-write is the right call. The FRD's §6.6 "Historical COGS Snapshot" pattern is the same shape — never recompute historical valuations from today's prices.</td>
+      </tr>
+      <tr>
+        <td>§4.4 — Investigation comment required when waste &gt; 5%.<br><span class="status partial">PARTIAL</span></td>
+        <td><code>addInvestigationNote</code> exists and is restricted to super_admin/area_manager. <code>closePeriod</code> checks waste entries with a 5% rule. <strong>But the rule uses <code>quantity / (quantity + inventoryQty)</code> not <code>quantity / branchRevenue</code></strong> as a proxy. The 5% trigger is also not enforced at write time. <em>Source: <code>src/lib/server/finance.ts:455–478</code>.</em></td>
+        <td>ERPNext triggers a mandatory investigation note on variance &gt; 5%. The current implementation does this at close-period, not at write, so a Period can be opened and waste recorded freely; only the next close flags it. A write-time <em>soft</em> reminder is the right addition.</td>
+      </tr>
+      <tr>
+        <td>§6.3.4 — "Spoiled" &amp; "Biaya Operasional" → Operational Loss; "Beban Makan" → Staff Benefit Expense.<br><span class="status partial">PARTIAL</span></td>
+        <td>"Biaya Operasional" auto-creates an <code>operationalExpenses</code> row. "Spoiled" and "Beban Makan" do <em>not</em> create corresponding expense rows; the <code>wasteEntries.valuation</code> is the only persisted value. <em>Source: <code>src/lib/server/waste.ts:99–125</code>.</em></td>
+        <td>Mapping each category to a P&amp;L line at write time is the ERPNext / Odoo pattern. A nightly job that posts valuations to a finance sub-ledger is the typical addition.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="rantai-pasok">3. Rantai Pasok</h2>
+  <p>Sidebar items: Permintaan Pembelian, Surat Jalan, Invoice SCM, Barang Masuk, Mutasi Stok.</p>
+
+  <h3>3.1 Permintaan Pembelian (Purchase Requisition)</h3>
+  <div class="diagram-block">
+    <h4>PR state machine</h4>
+    <div class="mermaid">
+stateDiagram-v2
+  [*] --> Draft: branch creates
+  Draft --> Pending: submit
+  Pending --> Approved: AM or Admin Pusat approves
+  Pending --> Processed: Admin Pusat or super processes with SJ
+  Pending --> Rejected: AM or Admin Pusat rejects
+  Approved --> Processed: Admin Pusat or super processes
+  Processed --> Fulfilled: gap - no code path
+  Rejected --> [*]
+  Processed --> [*]
+  Fulfilled --> [*]
+    </div>
+    <p class="caption">The <code>Fulfilled</code> state exists in the enum (<code>src/db/schema.ts</code>) but no server function ever sets it. In the live system a PR is therefore always one of <code>Pending</code>, <code>Processed</code>, or <code>Rejected</code> — the "fulfilled" terminal is unreachable. The <code>Approved</code> state is a brief intermediate used by AM before Admin Pusat presses "Proses".</p>
+  </div>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice &amp; source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>§4.1.1 — PR wajib munculkan kolom "Sisa Stok Aktual" di samping qty order.<br><span class="status ok">OK</span></td>
+        <td>In the PR create modal, every ingredient option shows <em>Stok: {stockQty}</em> (with a "⚠️ LOW" badge if below ROP) and MOQ. The list of added items also shows stock, MOQ, and a "di bawah ROP" indicator. <em>Source: <code>purchase-requisitions/index.tsx:303–375</code>.</em></td>
+        <td>Showing stock next to qty is the ERPNext / Odoo pattern. The "Sisa Stok Aktual" wording is the FRD's preferred label — consider renaming the displayed label to match.</td>
+      </tr>
+      <tr>
+        <td>§4.1.1 — Edit limit: branch can edit until PR is processed.<br><span class="status ok">OK</span></td>
+        <td><code>updatePurchaseRequisition</code> for branch_admin: only <code>Draft</code>/<code>Pending</code>; after Processed, server throws. <em>Source: <code>src/lib/server/scm.ts:213–305</code>.</em></td>
+        <td>State-machine gate is the right place to enforce this. Toast and Square use the same pattern.</td>
+      </tr>
+      <tr>
+        <td>§4.1.1 — Approve button is renamed to "Proses" (Pusat).<br><span class="status ok">OK</span></td>
+        <td>Button is "Proses" and <code>processPurchaseRequisition</code> handles it. <em>Source: <code>purchase-requisitions/index.tsx:402–420</code>.</em></td>
+        <td>Terminology aligns with FRD's intent to separate "proceed" from "approve".</td>
+      </tr>
+      <tr>
+        <td>§4.2.1 — "Proses" should auto-create PO first, then SJ, then Invoice (PR → PO → SJ → Invoice).<br><span class="status differs">DIFFERS</span></td>
+        <td>PR processing has a flag <code>alsoCreateSJ</code>; if true, it creates an SJ directly in <code>Picking</code> status, with <em>no PO</em>. There is no PR → PO auto-link in this code path. The PO module exists independently and is mostly used for external supplier flows.<br><em>Source: <code>src/lib/server/scm.ts:306–390</code>.</em></td>
+        <td>ERPNext and SAP MM treat the PR → PO → GR (goods receipt) chain as a hard sequence for external procurement, but for <em>internal</em> stock transfers they treat PO as optional. The right design call is to keep PR → SJ direct available but make PO a <em>promotable</em> step, not a hard gate, and document that policy in the FRD.</td>
+      </tr>
+      <tr>
+        <td>§5.3 — MOQ enforced in auto-PR generation, rounding up to MOQ.<br><span class="status ok">OK</span></td>
+        <td><code>createPurchaseRequisition</code> validates <code>item.quantity % ing.moq === 0</code> for any <code>moq &gt; 1</code>. <code>generateReorderRecommendations</code> rounds up ROQ to MOQ: <code>Math.ceil(recommendedQty / ing.moq) * ing.moq</code>. <em>Source: <code>src/lib/server/scm.ts:163–175</code> and <code>src/lib/server/reorder.ts:96</code>.</em></td>
+        <td>Ceiling rounding to MOQ is the correct mathematical pattern. ERPNext uses the same approach.</td>
+      </tr>
+      <tr>
+        <td>§5.3 — Reorder formula configurable, Super Admin–only.<br><span class="status ok">OK</span></td>
+        <td><code>app_settings</code> rows for <code>reorder_rop_days</code> and <code>reorder_roq_days</code>. <code>updateReorderSettings</code> restricted to super_admin/admin_pusat. Defaults: 3 / 5. <em>Source: <code>src/lib/server/reorder.ts</code>.</em></td>
+        <td>Storing formula constants in <code>app_settings</code> is more flexible than baking them into the code. The FRD's stronger form (Super Admin–only, not Admin Pusat) should be tightened — current code allows admin_pusat to edit the formula.</td>
+      </tr>
+      <tr>
+        <td>Status <code>Fulfilled</code> (PR end-state).<br><span class="status missing">MISSING</span></td>
+        <td><code>Fulfilled</code> is in the enum but no server function transitions to it. <em>Source: <code>src/lib/server/scm.ts:55–100</code> shows the enum; nothing writes it.</em></td>
+        <td>ERPNext and Odoo both have a terminal "Done" / "Closed" PR state. Without it, PRs that have completed their lifecycle still look "in flight" in the list.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>3.2 Surat Jalan (Delivery Note)</h3>
+  <div class="diagram-block">
+    <h4>SJ state machine (the only document that moves stock)</h4>
+    <div class="diagram-pair">
+      <div class="diagram-panel intended">
+        <h3>Intended (FRD §4.2)</h3>
+        <div class="mermaid">
+flowchart LR
+  SJP[SJ Picking] -->|Kirim| SJI[SJ In Transit]
+  SJI -->|Terima Cabang| SJR[SJ Received]
+  SJR -->|Review Admin Pusat| SJRev[SJ Reviewed]
+  SJRev -->|Generate Invoice| INV[Invoice]
+        </div>
+        <p class="caption">The FRD implies a clean four-state forward path. Reject handling is described as a column on the receive form, not as a separate state.</p>
+      </div>
+      <div class="diagram-panel actual">
+        <h3>Actual</h3>
+        <div class="mermaid">
+flowchart LR
+  SJP[SJ Picking] -->|shipDeliveryNote| SJI[SJ In Transit]
+  SJP -->|cancelDeliveryNote| SJC[SJ Cancelled]
+  SJI -->|receiveDeliveryNote partial| SJP2[SJ Partial Received]
+  SJI -->|receiveDeliveryNote full| SJR[SJ Received]
+  SJI -->|cancelDeliveryNote| SJC
+  SJP2 -->|receiveDeliveryNote| SJR
+  SJP2 -->|cancelDeliveryNote| SJC
+  SJR -->|reviewDeliveryNote| SJRev[SJ Reviewed]
+  SJRev -->|generateSCMInvoice| INV[Invoice]
+        </div>
+        <p class="caption">Four additional paths exist in code that the FRD does not explicitly call out: <em>cancel from Picking or In Transit</em>, <em>partial receive</em> (multi-call on the same SJ), and <em>cancel from Partial Received</em>. These are necessary and correct, but they widen the state machine beyond the FRD's wording.</p>
+      </div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice &amp; source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>§4.2.2 — 3-pillar input: Jumlah Diorder | Jumlah Ready | Jumlah Dikirim.<br><span class="status ok">OK</span></td>
+        <td><code>deliveryNoteItems</code> carries <code>quantity</code> (ordered), <code>readyQuantity</code>, <code>pickedQuantity</code>, <code>receivedQuantity</code>, <code>rejectedQuantity</code>. The detail page renders Order / Ready / Picked columns explicitly. <em>Source: <code>src/db/schema.ts:859–875</code> and <code>delivery-notes/$dnId.tsx:260–280</code>.</em></td>
+        <td>Five columns (3 + 2 receiver) is correct. The 3-pillar view is what ERPNext calls the "Pick List" — order, available, will-ship — and they are right to separate it from the receive-side quantities.</td>
+      </tr>
+      <tr>
+        <td>§4.2.2 — Edit SJ limit: Admin Pusat can edit while not dispatched.<br><span class="status ok">OK</span></td>
+        <td><code>updateDeliveryNote</code> runs in the Picking state. <code>shipDeliveryNote</code> blocks edits beyond Picking. <em>Source: <code>src/lib/server/scm.ts:822–875</code>.</em></td>
+        <td>Pre-dispatch edit window is the standard pattern.</td>
+      </tr>
+      <tr>
+        <td>§4.2.2 — In-Transit Virtual Warehouse.<br><span class="status ok">OK</span></td>
+        <td><code>shipDeliveryNote</code> creates <code>in_transit_inventory</code> rows tied to <code>deliveryNoteId</code>. <code>receiveDeliveryNote</code> deletes the in-transit row per received item. <em>Source: <code>src/lib/server/scm.ts:876–970</code> and <code>973–1240</code>.</em></td>
+        <td>In-transit as a separate bucket is the canonical pattern (SAP "In-Transit Stock", Odoo "Inter-warehouse transit"). The previous double-deduction bug (per <code>supply-chain-fix.md</code> §1.1) is fixed: PR processing no longer creates in-transit records.</td>
+      </tr>
+      <tr>
+        <td>§4.2.3 — Reject &amp; Retur.<br><span class="status partial">PARTIAL</span></td>
+        <td>Three dispositions: <code>Return to Source</code> (returns stock to source with IN ledger + OUT ledger at destination), <code>Scrap</code> (auto-creates a waste entry under <code>Biaya Operasional</code>), <code>Quarantine</code> (no inventory bucket; only a ledger note). <em>Source: <code>src/lib/server/scm.ts:1050–1115</code>.</em></td>
+        <td>Return-to-Source and Scrap are correctly handled. Quarantine is a documented gap: the FRD's quarantine concept is meant to be a holding state for items that need supervisor decision. The right next step is a <code>quarantine_inventory</code> table (see <code>supply-chain-fix.md</code> §1.3) and a "release" action that promotes quarantined stock to either the destination branch or to scrap.</td>
+      </tr>
+      <tr>
+        <td>§4.2.4 — Invoice quantity = actual received (not ordered, not shipped).<br><span class="status ok">OK</span></td>
+        <td><code>generateSCMInvoice</code> iterates DN items and uses <code>receivedQuantity</code> as the line quantity. If <code>receivedQuantity</code> is null, the invoice throws "Cannot create invoice with zero amount". <em>Source: <code>src/lib/server/scm.ts:1437–1545</code>.</em></td>
+        <td>This is exactly the FRD's "Actual Base" rule.</td>
+      </tr>
+      <tr>
+        <td>§4.2.4 — Edit Invoice allowed for Super Admin &amp; Admin Pusat.<br><span class="status missing">MISSING</span></td>
+        <td>No <code>updateSCMInvoice</code> server function exists. Once generated, an invoice is effectively immutable. <em>Source: <code>src/lib/server/scm.ts:1390–1615</code> lists only <code>getSCMInvoices</code>, <code>getSCMInvoice</code>, <code>generateSCMInvoice</code>, <code>paySCMInvoice</code>, <code>cancelSCMInvoice</code>.</em></td>
+        <td>Immutability of a generated financial document is the safer default (audit, posting, controls), but the FRD explicitly allows Super Admin / Admin Pusat to edit for discrepancy cases. The right compromise is a "reissue" pattern: cancel + re-generate, with a chained reference for audit. The current <code>cancelSCMInvoice</code> works only on Unpaid invoices, which is the right gate.</td>
+      </tr>
+      <tr>
+        <td>Notes 27 Apr — Both admin_pusat and branch_admin must "review" the latest SJ before invoice can be written.<br><span class="status ok">OK</span></td>
+        <td><code>reviewedByAdminPusat</code> on <code>deliveryNotes</code> is set by <code>reviewDeliveryNote</code>. The detail page gates <code>canGenerateInvoice</code> on <code>reviewedByAdminPusat === true</code>. <em>Source: <code>src/lib/server/scm.ts:1336–1388</code> and <code>delivery-notes/$dnId.tsx:122</code>.</em></td>
+        <td>The "review" gate is a clean four-eyes pattern. One missing symmetry: branch admin does not have an explicit "review" action — only <code>receiveDeliveryNote</code>. Consider an explicit <code>branch_admin_confirmed</code> flag for symmetry.</td>
+      </tr>
+      <tr>
+        <td>DN <code>cancelDeliveryNote</code> (cancel from Picking or In Transit).<br><span class="status ok">OK</span></td>
+        <td>Function exists, restricted to super_admin/admin_pusat. From In Transit, it reverses the source deduction and deletes the in-transit row. <em>Source: <code>src/lib/server/scm.ts:1245–1335</code>.</em></td>
+        <td>Reverse-on-cancel is the correct reversal pattern (mirror the OUT entry as IN, mirror the in-transit creation as deletion).</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>3.3 Invoice SCM</h3>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice &amp; source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Invoice quantity = received quantity ("actual base").<br><span class="status ok">OK</span></td>
+        <td>See §3.2 above. <em>Source: <code>src/lib/server/scm.ts:1470–1510</code>.</em></td>
+        <td>Standard.</td>
+      </tr>
+      <tr>
+        <td>Invoice status: Unpaid / Paid / Cancelled.<br><span class="status ok">OK</span></td>
+        <td>Enum + <code>paySCMInvoice</code> + <code>cancelSCMInvoice</code> (Unpaid → Cancelled only). <em>Source: schema <code>scm_invoice_status</code>; <code>src/lib/server/scm.ts:1544–1615</code>.</em></td>
+        <td>Three-state lifecycle is the typical minimum. ERPNext adds a "Submitted" state to allow posting before payment.</td>
+      </tr>
+      <tr>
+        <td>§6.3.3 — Branch Debt Status: rekap SCM Unpaid for monitoring piutang internal.<br><span class="status ok">OK</span></td>
+        <td>Period-close exhaustive check counts unpaid invoices: <em>Source: <code>src/lib/server/finance.ts:418–433</code>.</em></td>
+        <td>Useful as a blocking check at close, but a dedicated "Branch Debt" dashboard view is not present. Worth adding as a Finance widget.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>3.4 Barang Masuk (Supplier Deliveries)</h3>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice &amp; source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>External supplier delivery into Central Warehouse.<br><span class="status ok">OK</span></td>
+        <td><code>createSupplierDelivery</code> writes to <code>supplier_deliveries</code> and upserts <code>inventory</code> for the <code>CENTRAL</code> branch, then writes a stock-ledger IN entry and triggers BOM cost roll-up. <em>Source: <code>src/lib/server/supplier-deliveries.ts:117–168</code>.</em></td>
+        <td>Centralized warehouse receipt is the canonical 3PL / central-kitchen model. Cost roll-up on receipt is the right call — supplier price change should propagate to all recipes using the ingredient.</td>
+      </tr>
+      <tr>
+        <td>Edit / delete on supplier delivery with inventory reversal.<br><span class="status ok">OK</span></td>
+        <td><code>updateSupplierDelivery</code> reverts the old qty from old ingredient, applies the new qty to the (possibly new) ingredient. <code>deleteSupplierDelivery</code> reverses the original qty. <em>Source: <code>src/lib/server/supplier-deliveries.ts:170–360</code>.</em></td>
+        <td>Double-entry-style reversal (OUT then IN) is the right pattern; the inventory is floored at 0, which is correct for a positive-only supplier flow.</td>
+      </tr>
+      <tr>
+        <td>Status: <code>Pending Invoice</code> → ?<br><span class="status partial">PARTIAL</span></td>
+        <td>The <code>supplier_delivery_status</code> enum includes <code>Pending Invoice</code> and <code>Paid</code> (per the seed), but no server function transitions between them. The <code>scmInvoices</code> module handles <em>internal</em> invoices; supplier <em>external</em> invoicing is not connected. <em>Source: <code>src/db/schema.ts:920–945</code> and <code>src/lib/server/supplier-deliveries.ts</code>.</em></td>
+        <td>External supplier invoicing is a separate domain (AP, not internal IC). ERPNext handles this with a Supplier Invoice document that links to the Purchase Receipt. A minimal connection is needed to mark <code>Pending Invoice</code> → <code>Paid</code> with payment date.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>3.5 Mutasi Stok (Stock Transfer)</h3>
+  <div class="diagram-block">
+    <h4>Stock transfer state machine</h4>
+    <div class="mermaid">
+stateDiagram-v2
+  [*] --> PendingApproval: branch requests
+  PendingApproval --> Approved: AM or super approves
+  PendingApproval --> Rejected: AM or super rejects
+  Approved --> InTransit: shipStockTransfer
+  InTransit --> Completed: receiveStockTransfer
+  InTransit --> Cancelled: cancelStockTransfer
+  Approved --> Cancelled: cancelStockTransfer
+  Rejected --> [*]
+  Completed --> [*]
+  Cancelled --> [*]
+    </div>
+    <p class="caption">Stock is only moved at the <code>Approved → InTransit</code> transition (<code>shipStockTransfer</code> in <code>src/lib/server/scm.ts:1832</code>). Approval alone does <em>not</em> move stock, which is the FRD's "approval first" requirement. The <code>InTransit → Completed</code> transition (<code>receiveStockTransfer</code> in <code>:1925</code>) is what credits the destination branch.</p>
+  </div>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice &amp; source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>§4.3 / Notes 27 Apr — Branch can request transfer; AM/Super Admin must approve before the transfer can proceed.<br><span class="status ok">OK</span></td>
+        <td><code>createStockTransfer</code> → status <code>Pending Approval</code>. <code>approveStockTransfer</code> → <code>Approved</code>. <code>rejectStockTransfer</code> → <code>Rejected</code> with reason. <em>Source: <code>src/lib/server/scm.ts:1667–1830</code>.</em></td>
+        <td>Approval gate before movement is the right control. The detail page (109 lines) is a single-ingredient transfer; the FRD's "from and to" suggests multi-item is allowed elsewhere — confirm whether the current single-row model is intentional.</td>
+      </tr>
+      <tr>
+        <td>§3.1.4 — AM scoped to assigned branches.<br><span class="status ok">OK</span></td>
+        <td><code>getStockTransfers</code> filters to <code>assignedBranches</code> for AM. <code>approveStockTransfer</code> and <code>rejectStockTransfer</code> call <code>assertBranchAccess(user, transfer.fromBranchId)</code>. <em>Source: <code>src/lib/server/scm.ts:1617–1665</code> and <code>1748–1756</code>.</em></td>
+        <td>Branch-scoped reads and writes are correctly enforced. Same pattern should be applied to <code>processPurchaseRequisition</code> for AM (it is, per <code>assertBranchAccess(user, pr.branchId)</code> at line ~337).</td>
+      </tr>
+      <tr>
+        <td>Two-step: Approve then Ship (In Transit), then Receive.<br><span class="status ok">OK</span></td>
+        <td><code>shipStockTransfer</code> (Approved → In Transit) deducts source and creates in-transit. <code>receiveStockTransfer</code> (In Transit → Completed) adds to destination. <em>Source: <code>src/lib/server/scm.ts:1832–2010</code>.</em></td>
+        <td>The three-state lifecycle Pending Approval → Approved → In Transit → Completed is correct. The FRD's Notes 27 Apr explicitly require this; the prior plan flagged it as missing, and it is now present.</td>
+      </tr>
+      <tr>
+        <td>Notes 27 Apr — Mutasi Stok needs approval <em>before</em> submission (so it never enters a "pending with stock moved" state).<br><span class="status ok">OK</span></td>
+        <td>Stock is moved only in <code>shipStockTransfer</code>, which runs only after <code>Approved</code>. <em>Source: <code>src/lib/server/scm.ts:1848–1875</code>.</em></td>
+        <td>Correct enforcement. Consider explicit guard in <code>approveStockTransfer</code> that does not itself touch inventory, so the approval step is purely a state change.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="produksi">4. Produksi</h2>
+  <p>Sidebar items: Tracking Produksi, Bahan Baku.</p>
+
+  <h3>4.1 Tracking Produksi (Yield Tracking)</h3>
+  <div class="diagram-block">
+    <h4>Yield conversion data flow</h4>
+    <div class="mermaid">
+flowchart LR
+  RM[Raw Material - source] -->|deduct from inventory| Out[OUT ledger entry]
+  Out -->|shared ref id| Conv[yieldConversions row]
+  Conv -->|recalculate recipe COGS| Roll[BOM cost roll-up]
+  FG[Finished Good - target] -->|add to inventory| In[IN ledger entry]
+  In -->|shared ref id| Conv
+  Roll -->|new averageCost| Recipes[Recipes using FG]
+    </div>
+    <p class="caption">Each yield writes a paired OUT + IN ledger entry sharing the same <code>reference = yieldConversion.id</code>. The <code>totalSourceCost / targetQuantity</code> formula (FRD §5.1.1) produces a new <code>averageCost</code> for the target ingredient, which is then propagated to all recipes that use it via <code>recalculateRecipeCostsForIngredient</code> in <code>src/lib/server/cost-rollup.ts</code>.</p>
+  </div>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice &amp; source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>§5.1.1 — Pencatatan penyusutan bahan mentah ke matang (Central Kitchen only for edit).<br><span class="status ok">OK</span></td>
+        <td><code>createYieldConversion</code> restricted to <code>super_admin</code> and <code>central_kitchen</code>. <em>Source: <code>src/lib/server/yield.ts:75–80</code>.</em></td>
+        <td>Role gating matches FRD exactly.</td>
+      </tr>
+      <tr>
+        <td>§5.1.1 — Multi-source supported.<br><span class="status ok">OK</span></td>
+        <td>Legacy <code>sourceIngredientId</code>/<code>sourceQuantity</code> fields are kept for backward compat, but <code>sources[]</code> array and <code>yieldConversionSources</code> junction table support multi-source yield. <em>Source: <code>src/db/schema.ts:685–730</code>, <code>src/lib/server/yield.ts:81–100</code>.</em></td>
+        <td>Multi-source is the correct model. A yield that mixes 5kg of beef + 1kg of seasoning into 4.5kg of rendang cannot be expressed as a single source. Junction-table pattern is right.</td>
+      </tr>
+      <tr>
+        <td>§5.1.1 — Yield Costing formula: HPP matang = total raw cost / post-shrinkage weight.<br><span class="status ok">OK</span></td>
+        <td><code>newTargetCost = Math.round(totalSourceCost / data.targetQuantity)</code>.<br><em>Source: <code>src/lib/server/yield.ts:135–140</code>.</em></td>
+        <td>This is the canonical "absorption costing on yield" pattern. ERPNext does the same. The FRD's worked example (Rp 300,000 / 8 Kg = Rp 37,500 / Kg) matches the formula exactly.</td>
+      </tr>
+      <tr>
+        <td>§4.2.1 — RM Deduction has "Catatan Produksi" linking the OUT and the IN.<br><span class="status ok">OK</span></td>
+        <td>Both the OUT and IN ledger entries share the same <code>reference = conversion.id</code> and embed <code>notes</code> ("Yield: ... → produksi" and "Yield: produksi → ..."). The user-supplied production note is embedded. <em>Source: <code>src/lib/server/yield.ts:225–266</code>.</em></td>
+        <td>Shared reference ID is the right traceability pattern. ERPNext calls this a "Stock Entry" with two moves linked by a single voucher.</td>
+      </tr>
+      <tr>
+        <td>Cost roll-up after yield.<br><span class="status ok">OK</span></td>
+        <td><code>recalculateRecipeCostsForIngredient(data.targetIngredientId)</code> at end of <code>createYieldConversion</code>. <em>Source: <code>src/lib/server/yield.ts:268</code>.</em></td>
+        <td>Correct. The "Bom Cost Roll-Up" requirement (§3.1.6) is satisfied across all ingredient price change paths (yield, supplier delivery, SJ receive, manual cost edit).</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>4.2 Bahan Baku (Ingredients / Master SKU)</h3>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice &amp; source</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>§3.1.12 — SKU wajib punya SKU Type (RM/SFG/FG), category, COGS, ROP, status.<br><span class="status ok">OK</span></td>
+        <td><code>ingredients</code> table has <code>skuType</code> enum, <code>category</code> enum, <code>averageCost</code>, <code>rop</code>, <code>status</code> (Active/Inactive). Plus <code>purchaseUnit</code>, <code>stockUnit</code>, <code>conversionFactor</code>, <code>moq</code>, <code>countable</code>. <em>Source: <code>src/db/schema.ts:208–227</code>.</em></td>
+        <td>The schema is more complete than the FRD's minimum. <code>conversionFactor</code> is a strong choice (single source of truth for purchase → stock conversion).</td>
+      </tr>
+      <tr>
+        <td>§3.1.4 — UoM Conversion multi-level: 1 Sak Beras = 25 Kg = 25.000 Gram.<br><span class="status partial">PARTIAL</span></td>
+        <td>UoM is stored as two <em>strings</em> (<code>purchaseUnit</code>, <code>stockUnit</code>) with a single <code>conversionFactor</code> (int). Multi-level (Sak → Kg → Gram) requires either a unit table or a chain of conversion factors. Current code cannot represent the Sak → Kg → Gram hierarchy.<br><em>Source: <code>src/db/schema.ts:214–216</code> and <code>src/lib/server/ingredients.ts</code>.</em></td>
+        <td>ERPNext models UoM as a UoM table with conversion factors between any two units. Odoo does the same. A single integer is fine for two-level (Sak ↔ Kg) but not three-level. The FRD's example requires an n-level graph. Consider a <code>unit_conversions</code> table.</td>
+      </tr>
+      <tr>
+        <td>Access: Central Kitchen &amp; Super Admin only.<br><span class="status ok">OK</span></td>
+        <td>Sidebar item "Bahan Baku" lists only <code>super_admin</code> and <code>central_kitchen</code> as roles. <em>Source: <code>src/components/Sidebar.tsx:170–179</code>.</em></td>
+        <td>Matches FRD intent.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="cross-cutting">5. Cross-cutting concerns</h2>
+
+  <h3>5.1 RBAC visibility (Inventaris / Rantai Pasok / Produksi)</h3>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD role rule</th><th class="impl">Sidebar exposure</th><th class="bp">Best practice</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Super Admin: full access to all SCM modules.</td>
+        <td>All items visible. <span class="status ok">OK</span></td>
+        <td rowspan="5" style="vertical-align:middle">Role-based UI filtering at the nav layer is the right place to enforce "hidden UI" rules. The current sidebar does this correctly per item. The deeper question is whether the <em>server</em> functions also enforce tenancy — which they do, for AM and branch admin.</td>
+      </tr>
+      <tr>
+        <td>Admin Pusat: full access to PR, SJ, Invoice, Supplier Delivery; SO only on Central; inventory read-only on Central; hidden: POS, Dashboard.</td>
+        <td>PR, SJ, Invoice, Supplier Delivery, Mutasi all visible. SO visible (but the server restricts to Central Warehouse). Inventory visible. POS hidden. Dashboard hidden. <span class="status ok">OK</span></td>
+      </tr>
+      <tr>
+        <td>Area Manager: trigger SO, approve mutasi/waste/reprint, read-only on PR/SJ. Hidden: Dashboard, POS, Shift History, Master Bahan Baku, Supply Chain, Finance Recon, Analytics, Administrasi.</td>
+        <td>Inventory, SO, Waste, Broken Stock, PR, SJ, Invoice, Mutasi all visible. Master Bahan Baku hidden. Supplier Delivery hidden. Dashboard hidden. POS hidden. Analytics hidden. <span class="status partial">PARTIAL</span><br><strong>FRD says Supply Chain is "hidden" for AM</strong>, but the sidebar shows PR, SJ, Invoice, Mutasi. The actual reads are scoped to <code>assignedBranches</code> at the server, but the nav is not collapsed.</td>
+      </tr>
+      <tr>
+        <td>Branch Admin: POS, receive SCM, input waste, request PR; hidden: Dashboard, Shift History.</td>
+        <td>POS, inventory, SO, waste, PR, SJ, invoice, mutasi visible. Dashboard hidden. Shift History absent. <span class="status ok">OK</span></td>
+      </tr>
+      <tr>
+        <td>Central Kitchen: full access to Yield Tracking and Master Bahan Baku only.</td>
+        <td>Tracking Produksi + Bahan Baku visible only. <span class="status ok">OK</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>5.2 Audit trail (FRD §6.2.2)</h3>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Every action records: Timestamp, User_ID, Action, Old_Value, New_Value.</td>
+        <td><code>audit_logs</code> table exists. <code>logAudit</code> is called in: PR create, PR update (status change), PO create, PO update, PO send, PO receive, PO cancel, DN create, DN update, DN ship, DN receive, DN cancel, DN review, invoice create, invoice pay, invoice cancel, stock transfer create, stock transfer approve, stock transfer reject, stock transfer ship, stock transfer receive, supplier delivery create, supplier delivery update, supplier delivery delete, SO trigger, SO submit, SO mark investigation, SO approve, SO update counts, yield create, waste create, waste update, waste add investigation note.<br><strong>Missing</strong>: PR item edits (only status is audited, not item list diff), PR cancel-like paths, batch item updates.</td>
+        <td>ERPNext's Version document and Odoo's mail.thread record before/after JSON of every state change. The current <code>logAudit</code> already serializes <code>oldValues</code> / <code>newValues</code> as JSONB — the right shape. Coverage is the issue, not the model.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>5.3 Period control (FRD §4.1)</h3>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Pre-Open Report: closing stock balances per branch, latest ingredient prices, platform integration status.</td>
+        <td>Open period modal has a free-text note only. <em>Source: <code>period-control/index.tsx:130–160</code>.</em><br><span class="status missing">MISSING</span></td>
+        <td>ERPNext and SAP both produce a "period opening checklist" report. A simple read-only view of inventory + ingredient costs + (later) platform status is a one-day build.</td>
+      </tr>
+      <tr>
+        <td>Exhaustive verification on close: SO Approved, Waste &gt;5% investigated, SCM invoice Paid/Closed, no pending cancel.</td>
+        <td>Implemented: SO, Cancel Requests, Invoice SCM, Stok Negatif, Waste Investigation, pending transfers. <em>Source: <code>src/lib/server/finance.ts:370–520</code>.</em><br><span class="status ok">OK</span> for the checks that exist.</td>
+        <td>The check list maps closely to FRD's list, with two gaps: (1) "no in-transit SJ" is implicit (transfers are checked, not DNs), and (2) "Closing Preview Report" (estimated Net Revenue &amp; Total Loss) is not produced.</td>
+      </tr>
+      <tr>
+        <td>Period lock enforced on write paths.</td>
+        <td>No <code>requireOpenPeriod()</code> helper exists. Write functions in POS, SCM, inventory, waste, SO do not check the current period state. Super Admin can write post-close (per FRD), but other roles can too. <span class="status missing">MISSING</span></td>
+        <td>SAP's period lock and Odoo's "fiscal year lock" both enforce at the ORM layer. A single helper called at the top of every write function is the right pattern.</td>
+      </tr>
+      <tr>
+        <td>Closing Preview Report: estimated Net Revenue, Total Loss from Waste.</td>
+        <td>Not produced. <span class="status missing">MISSING</span></td>
+        <td>A simple aggregate query is sufficient; ERPNext produces this as a print-ready report.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>5.4 POS–inventory intersection (FRD §3.1)</h3>
+  <table>
+    <thead>
+      <tr><th class="frd">FRD says</th><th class="impl">Implementation</th><th class="bp">Best practice</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>§3.1 — Negative Stock Tolerance: POS can sell into negative; alert to AM.</td>
+        <td><code>createOrder</code> in <code>pos.ts</code> detects <code>currentQty &lt; ing.quantity</code>, collects <code>negativeStockAlerts</code>, but <em>does not block</em>. Inventory is then deducted with <code>newQty = inv.quantity - ing.quantity</code> (no <code>Math.max(0, ...)</code> floor). Notifications are sent to AMs. <em>Source: <code>src/lib/server/pos.ts:296–490</code>.</em> <span class="status ok">OK</span></td>
+        <td>The "soft block" pattern is correct. The asymmetry to flag: other deduction paths (waste, yield, SCM ship) <em>do</em> floor at 0. This is correct for waste/yield (the floor prevents going negative by mistake), but it means a POS sale that should put stock at -2 actually puts it at 0 in those paths. The POS path is the only one that honors the FRD's tolerance rule.</td>
+      </tr>
+      <tr>
+        <td>§3.1.1 — Add-ons &amp; Modifiers as composite SKUs with their own BOM.</td>
+        <td><code>modifier_ingredients</code> table exists; ingredient resolver flattens modifier BOMs into the order's ingredient deltas. <em>Source: <code>src/db/schema.ts:321–345</code> and <code>src/lib/server/ingredient-resolver.ts</code>.</em> <span class="status ok">OK</span></td>
+        <td>Flattened BOM with signed quantities is the cleanest implementation. ERPNext does the same with "BOM Explosion".</td>
+      </tr>
+      <tr>
+        <td>§3.1.2 — Exclusion Logic: "Tanpa Telur" restores the egg BOM.<br><span class="status ok">OK</span></td>
+        <td><code>recipeModifierExclusions</code> table; <code>resolveNewItemIngredients</code> returns signed deltas (positive = consume, negative = restore). <em>Source: <code>src/db/schema.ts:347–360</code>.</em></td>
+        <td>Signed deltas are the right data model. Toast implements exclusion the same way (an explicit "no cheese" modifier subtracts cheese from the BOM).</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 id="gap-table">6. Aggregated gap table</h2>
+  <table>
+    <thead>
+      <tr><th>FRD section</th><th>Requirement</th><th>Status</th><th>Where to fix</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>§3.1.3</td><td>Pagination 10–15 items/page for inventory &amp; ledger</td><td><span class="status partial">PARTIAL</span></td><td><code>src/lib/server/inventory.ts:60</code> — default 50, max 100</td></tr>
+      <tr><td>§3.5.3</td><td>Investigation comment required when waste &gt; 5% at write time</td><td><span class="status partial">PARTIAL</span></td><td><code>src/lib/server/waste.ts</code> — currently a period-close check only</td></tr>
+      <tr><td>§4.1.1</td><td>PR auto-creates PO before SJ (canonical sequence)</td><td><span class="status differs">DIFFERS</span></td><td><code>src/lib/server/scm.ts:306–390</code> — direct PR → SJ only</td></tr>
+      <tr><td>§4.1.1</td><td>PR <code>Fulfilled</code> end-state</td><td><span class="status missing">MISSING</span></td><td>No server function sets it</td></tr>
+      <tr><td>§4.1.1</td><td>Reorder formula edit locked to Super Admin (not Admin Pusat)</td><td><span class="status partial">PARTIAL</span></td><td><code>src/lib/server/reorder.ts:53</code> — allows admin_pusat</td></tr>
+      <tr><td>§4.2.3</td><td>Quarantine inventory as a real bucket</td><td><span class="status missing">MISSING</span></td><td>Add <code>quarantine_inventory</code> table; treat as a holding branch</td></tr>
+      <tr><td>§4.2.4</td><td>Edit Invoice allowed for Super Admin / Admin Pusat</td><td><span class="status missing">MISSING</span></td><td><code>src/lib/server/scm.ts:1390–1615</code> — no <code>updateSCMInvoice</code></td></tr>
+      <tr><td>§4.1.1</td><td>Pre-Open Report (closing stock, prices, platform status)</td><td><span class="status missing">MISSING</span></td><td><code>src/lib/server/finance.ts</code> open flow</td></tr>
+      <tr><td>§4.1</td><td>Period lock enforced on POS, SCM, inventory, waste, SO</td><td><span class="status missing">MISSING</span></td><td>Add <code>requireOpenPeriod()</code>; call in all write functions</td></tr>
+      <tr><td>§4.1</td><td>Closing Preview Report (Net Revenue est., Total Waste Loss)</td><td><span class="status missing">MISSING</span></td><td>Aggregate query in <code>closePeriod</code></td></tr>
+      <tr><td>§3.1.4</td><td>UoM multi-level (Sak → Kg → Gram)</td><td><span class="status partial">PARTIAL</span></td><td>Add <code>unit_conversions</code> table; current model is 2-level only</td></tr>
+      <tr><td>§4.3</td><td>SO auto-promote to Investigasi on variance &gt; 3%</td><td><span class="status partial">PARTIAL</span></td><td><code>submitStockOpname</code> always sets Submitted; only manual markInvestigation promotes</td></tr>
+      <tr><td>§3.5.1</td><td>Blank-submit block on SO</td><td><span class="status partial">PARTIAL</span></td><td>Server-side guard not implemented</td></tr>
+      <tr><td>RBAC §2</td><td>AM "Supply Chain" hidden in nav (read-only access to documents is OK)</td><td><span class="status partial">PARTIAL</span></td><td>Sidebar exposes PR/SJ/Invoice/Mutasi to AM; consider collapsing the group to a single read-only page</td></tr>
+      <tr><td>§6.2.2</td><td>Comprehensive audit trail on every PR/SJ item edit</td><td><span class="status partial">PARTIAL</span></td><td>Status changes audited; item list diffs not always logged</td></tr>
+      <tr><td>§3.1.2 / 5.2</td><td>Spoiled &amp; Beban Makan → P&amp;L line items</td><td><span class="status missing">MISSING</span></td><td>Only Biaya Operasional auto-posts to <code>operational_expenses</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="next-steps">7. Recommended next steps (priority order)</h2>
+  <ol>
+    <li><strong>Period lock as a write guard.</strong> One helper, applied to every write function. Prevents a class of period-end bugs that are hard to recover from. (FRD §4.1.)</li>
+    <li><strong>Quarantine inventory bucket.</strong> A holding "branch" for quarantined items, with a release action. Unblocks the DN reject flow from the FRD. (FRD §4.2.3.)</li>
+    <li><strong>Pre-Open Report + Closing Preview Report.</strong> Two reports in <code>finance.ts</code> that close the FRD's period-control narrative.</li>
+    <li><strong>PR <code>Fulfilled</code> transition + Edit Invoice (reissue pattern).</strong> Two small additions that close the SCM state machine.</li>
+    <li><strong>SO auto-promote to Investigasi on variance &gt; 3%</strong> + <strong>blank-submit guard</strong>. Two small changes in <code>submitStockOpname</code>.</li>
+    <li><strong>UoM conversion table</strong> for multi-level (Sak → Kg → Gram). Required by FRD §3.1.4 worked example.</li>
+    <li><strong>Spoiled &amp; Beban Makan → P&amp;L.</strong> Mirror the Biaya Operasional auto-link for the other two categories, with the FRD's P&amp;L mapping.</li>
+    <li><strong>Reorder formula edit restricted to Super Admin</strong> (drop Admin Pusat from the allow list).</li>
+    <li><strong>AM Supply Chain nav collapsed to a read-only view</strong> (single page with PR + SJ + Invoice + Mutasi in tabs, no actions).</li>
+  </ol>
+
+  <h2 id="references">8. Verifying the best-practice claims</h2>
+  <p>The right-hand column above draws on the following widely-cited references. None of these are a "live web search" result for this session — they are stable, well-known industry patterns. If you want to extend any claim, these are the natural starting points.</p>
+  <ul>
+    <li><strong>ERPNext Stock</strong> — frappe.io/erpnext/docs/en/stock — append-only stock ledger, multi-UoM, item variants, BOM explosion, Stock Entry as a paired IN/OUT document.</li>
+    <li><strong>Odoo Inventory &amp; MRP</strong> — odoo.com/documentation/17.0/applications/inventory_and_mrp/inventory.html — routes, push/pull rules, removal strategies, inter-warehouse transit as a virtual location.</li>
+    <li><strong>SAP S/4HANA MM-IM Best Practice</strong> — SAP Learning Hub — goods receipt against PO, in-transit stock, period lock at material ledger level, four-eyes for SO approval.</li>
+    <li><strong>Oracle NetSuite SCM</strong> — multi-location inventory, item receipts vs bills, demand planning. NetSuite's "Transfer Order" mirrors the current Mutasi Stok flow.</li>
+    <li><strong>Toast Kitchen Display &amp; Inventory</strong> — toasttab.com — modifier exclusions as signed BOM deltas, blind inventory counts, period close reports.</li>
+    <li><strong>Square for Restaurants</strong> — squareup.com/us/en/restaurants — multi-location inventory, modifier-level stock deduction, real-time depletion.</li>
+    <li><strong>Multi-echelon inventory theory</strong> — Clark &amp; Scarf (1960), "Optimal Policies for a Multi-Echelon Inventory Problem", <em>Management Science</em>; Zipkin (2000), <em>Foundations of Inventory Management</em>. The base for the "ROP/ROQ + safety stock + MOQ" thinking in the FRD's §5.3.</li>
+  </ul>
+
+  <p class="source">Last reviewed: 12 June 2026, against <code>src/lib/server/scm.ts</code> (2089 lines), <code>src/lib/server/inventory.ts</code> (647), <code>src/lib/server/yield.ts</code> (291), <code>src/lib/server/waste.ts</code> (344), <code>src/lib/server/supplier-deliveries.ts</code> (359), <code>src/lib/server/reorder.ts</code> (123), <code>src/lib/server/cost-rollup.ts</code> (53), <code>src/db/schema.ts</code> (1982), <code>src/components/Sidebar.tsx</code>, and all <code>src/routes/_layout/{inventory,delivery-notes,purchase-requisitions,purchase-orders,scm-invoices,supplier-deliveries,stock-transfers,stock-opname,waste,yield-tracking,period-control}</code> pages.</p>
+</main>
+</body>
+</html>
