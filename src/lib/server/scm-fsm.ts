@@ -125,7 +125,7 @@ export const transitions: FsmTransitionTable = {
   InTransit: {
     "mark-delivered": {
       to: "Delivered",
-      actors: ["admin_pusat", "super_admin"],
+      actors: ["branch_admin", "super_admin"],
       effects: [moveStockToPendingReview],
     },
     cancel: {

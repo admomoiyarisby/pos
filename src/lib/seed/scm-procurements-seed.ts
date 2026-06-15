@@ -164,8 +164,8 @@ async function main() {
   }
   // Accept and ship (decrements Central inventory, writes in_transit)
   await transition(finished.id, "accept-and-ship", {}, actor(ca));
-  // Mark delivered (moves to pending_review)
-  await transition(finished.id, "mark-delivered", {}, actor(ca));
+  // Mark delivered (moves to pending_review) — BA confirms receipt at the branch
+  await transition(finished.id, "mark-delivered", {}, actor(ba));
   // BA opens receive
   await transition(finished.id, "open-receive", {}, actor(ba));
   // BA fills received/rejected qty

@@ -607,31 +607,14 @@ export function RejectedView({ procurement, items }: StateViewProps) {
 }
 
 // =============================================================================
-// InTransit — BA: tracking; CA: detail + Mark Delivered
-// =============================================================================
+// InTransit — BA: tracking + Mark Delivered; CA: tracking + Cancel
+//
+// The "mark-delivered" actor moved from CA to BA in the FSM: BA is the
+// one who physically receives the goods at the branch, so they're
+// the one who confirms "Sudah Dikirim". CA keeps the cancel
+// permission (e.g. goods lost in transit before BA can mark them
+// delivered) — a destructive action paired with a reason input.
 export function InTransitBaTracking({ procurement, items }: StateViewProps) {
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Dalam Pengiriman</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-3 text-sm text-muted-foreground">
-            Stock sedang dalam perjalanan. Tunggu sampai Admin Pusat menandai sudah dikirim.
-          </p>
-          <ScmItemTable mode="read-only" items={rowsToItems(items)} />
-        </CardContent>
-      </Card>
-      <div className="flex justify-end">
-        <SuratJalanButton procurementId={procurement.id as string} />
-      </div>
-      <AuditLogSection procurementId={procurement.id as string} />
-    </div>
-  );
-}
-
-export function InTransitCaDetail({ procurement, items }: StateViewProps) {
   const transitionM = useTransitionMutation();
   return (
     <div className="space-y-4">
@@ -641,14 +624,13 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
-            Stock sudah keluar dari gudang. Tandai "Sudah Dikirim" setelah branch konfirmasi barang
-            tiba.
+            Stock sedang dalam perjalanan. Tandai "Sudah Dikirim" setelah barang tiba di cabang.
           </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
       <div className="flex justify-end gap-2">
-        <SuratJalanButton procurementId={procurement.id as string} label="Cetak Surat Jalan" />
+        <SuratJalanButton procurementId={procurement.id as string} />
         <Button
           disabled={transitionM.isPending}
           onClick={() =>
@@ -657,6 +639,53 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
         >
           Tandai Sudah Dikirim
         </Button>
+      </div>
+      <AuditLogSection procurementId={procurement.id as string} />
+    </div>
+  );
+}
+
+export function InTransitCaDetail({ procurement, items }: StateViewProps) {
+  const transitionM = useTransitionMutation();
+  const [cancellationReason, setCancellationReason] = useState("");
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Dalam Pengiriman</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Stock sudah keluar dari gudang. Cabang akan menandai "Sudah Dikirim" setelah barang tiba.
+          </p>
+          <ScmItemTable mode="read-only" items={rowsToItems(items)} />
+        </CardContent>
+      </Card>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex-1">
+          <Input
+            type="text"
+            placeholder="Alasan pembatalan (wajib untuk Batalkan)"
+            value={cancellationReason}
+            onChange={(e) => setCancellationReason(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="destructive"
+            disabled={!cancellationReason || transitionM.isPending}
+            onClick={() =>
+              transitionM.mutate({
+                procurementId: procurement.id as string,
+                event: "cancel",
+                payload: { reason: cancellationReason },
+              })
+            }
+          >
+            Batalkan
+          </Button>
+          <SuratJalanButton procurementId={procurement.id as string} label="Cetak Surat Jalan" />
+        </div>
       </div>
       <AuditLogSection procurementId={procurement.id as string} />
     </div>
