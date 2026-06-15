@@ -17,7 +17,7 @@ function IndexComponent() {
     case "super_admin":
       return <Navigate to="/dashboard" />;
     case "admin_pusat":
-      return <Navigate to="/purchase-requisitions" />;
+      return <Navigate to="/scm-procurements" search={{ status: undefined }} />;
     case "area_manager":
       return <Navigate to="/inventory" />;
     case "central_kitchen":

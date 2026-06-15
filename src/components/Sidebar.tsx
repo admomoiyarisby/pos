@@ -119,7 +119,7 @@ const navGroups: NavGroup[] = [
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
       },
       {
-        label: "Pemborosan",
+        label: "Waste",
         to: "/waste",
         icon: Trash2,
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
@@ -133,7 +133,7 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Rantai Pasok",
+    label: "Supply Chain",
     roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
     items: [
       {
