@@ -176,8 +176,23 @@ function useTransitionMutation() {
         },
       }),
     onSuccess: (_data, vars) => {
+      // Invalidate all four detail-page queries, not just the
+      // procurement header. A transition can change:
+      //   - the procurement row (status, lastEventAt, etc.)
+      //   - the items (e.g. setReceivedQuantities during finish-receive)
+      //   - the invoice (createInvoiceSnapshot during finish-receive)
+      // Skipping the items or invoice invalidation leaves stale
+      // caches: the detail page shows "Total: Rp 0" right after
+      // finish-receive because invoiceQ still has the old null data,
+      // and only corrects itself after a hard reload. (Bug repro:
+      // BA clicks "Selesai Review" -> total stays Rp 0 -> reload ->
+      // total appears.) Invalidation is cheap (same-origin GET, the
+      // server returns the same data for events that don't touch a
+      // given query), so we just blanket-invalidate all four.
       void queryClient.invalidateQueries({ queryKey: ["scm-procurement", vars.procurementId] });
       void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurement-items", vars.procurementId] });
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurement-invoice", vars.procurementId] });
     },
   });
 }
@@ -194,8 +209,15 @@ function useUpdateItemMutation() {
         data: { procurementId: vars.procurementId, itemId: vars.itemId, patch: vars.patch },
       }),
     onSuccess: (_d, vars) => {
+      // Invalidate items + the procurement header. An item-update
+      // doesn't create an invoice, so invoiceQ doesn't need to be
+      // re-fetched here. (The header changes too because the
+      // server updates lastEventAt.)
       void queryClient.invalidateQueries({
         queryKey: ["scm-procurement-items", vars.procurementId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["scm-procurement", vars.procurementId],
       });
     },
   });
