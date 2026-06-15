@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation, useRouter } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { UserRole } from "#/lib/auth-context";
 import { Badge } from "#/components/ui/badge";
@@ -292,7 +292,6 @@ function SidebarGroup({ group, userRole }: { group: NavGroup; userRole: UserRole
 }
 
 export default function Sidebar({ userRole, userName, mobileOpen, onClose }: SidebarProps) {
-  const router = useRouter();
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -305,19 +304,33 @@ export default function Sidebar({ userRole, userName, mobileOpen, onClose }: Sid
     return () => observer.disconnect();
   }, []);
 
-  // Sign out, then re-run the root loader via fetch (not a hard
-  // navigation). A window.location.href jump races with the signOut
-  // response's Set-Cookie header -- the next page's loader still
-  // sees the old session cookie, the login page's 'if (user)
-  // Navigate to="/"' guard fires, and the user lands on the role's
-  // home page (eg /purchase-requisitions for admin_pusat) instead
-  // of /login. router.invalidate() fires a fetch re-run with the
-  // already-cleared cookie, so the layout's '<Navigate to="/login"
-  // />' path actually fires.
+  // Sign out, then hard-navigate to /login after a short delay.
+  //
+  // The previous two attempts both ended up at /purchase-requisitions
+  // (admin_pusat's role-home) instead of /login:
+  //
+  // 1. window.location.href = "/login" right after await signOut()
+  //    -- the new page's request races the Set-Cookie clear from
+  //    signOut, the root loader still sees the old session cookie,
+  //    the login page's 'if (user) Navigate to="/"' guard fires.
+  //
+  // 2. router.invalidate() + router.navigate() -- the root loader
+  //    re-runs via fetch (so the cookie is correctly absent), but
+  //    the navigate-to-/login still reads from the AuthProvider
+  //    context that was populated before the invalidate, and the
+  //    login page's 'if (user)' guard sees the cached admin_pusat
+  //    user, redirects to /, which redirects to /purchase-requisitions.
+  //
+  // The fix: a hard navigation bypasses both problems. The signOut
+  // response sets the session cookies to Max-Age=0. The 50ms delay
+  // gives the browser's network stack time to process those
+  // Set-Cookie headers before the new request goes out. The fresh
+  // page load re-runs the root loader with no session cookie, the
+  // AuthProvider receives user=null, and the login form renders.
   async function handleSignOut() {
     await authClient.signOut();
-    await router.invalidate();
-    void router.navigate({ to: "/login" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    window.location.href = "/login";
   }
 
   const logoSrc = dark ? "/logo-for-dark-mode.png" : "/logo-for-light-mode.png";
