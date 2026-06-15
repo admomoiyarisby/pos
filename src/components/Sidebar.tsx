@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useLocation, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { UserRole } from "#/lib/auth-context";
 import { Badge } from "#/components/ui/badge";
@@ -292,6 +292,7 @@ function SidebarGroup({ group, userRole }: { group: NavGroup; userRole: UserRole
 }
 
 export default function Sidebar({ userRole, userName, mobileOpen, onClose }: SidebarProps) {
+  const router = useRouter();
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -303,6 +304,21 @@ export default function Sidebar({ userRole, userName, mobileOpen, onClose }: Sid
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => observer.disconnect();
   }, []);
+
+  // Sign out, then re-run the root loader via fetch (not a hard
+  // navigation). A window.location.href jump races with the signOut
+  // response's Set-Cookie header -- the next page's loader still
+  // sees the old session cookie, the login page's 'if (user)
+  // Navigate to="/"' guard fires, and the user lands on the role's
+  // home page (eg /purchase-requisitions for admin_pusat) instead
+  // of /login. router.invalidate() fires a fetch re-run with the
+  // already-cleared cookie, so the layout's '<Navigate to="/login"
+  // />' path actually fires.
+  async function handleSignOut() {
+    await authClient.signOut();
+    await router.invalidate();
+    void router.navigate({ to: "/login" });
+  }
 
   const logoSrc = dark ? "/logo-for-dark-mode.png" : "/logo-for-light-mode.png";
 
@@ -353,10 +369,7 @@ export default function Sidebar({ userRole, userName, mobileOpen, onClose }: Sid
 
         <div className="border-t border-sidebar-border p-3">
           <button
-            onClick={async () => {
-              await authClient.signOut();
-              window.location.href = "/login";
-            }}
+            onClick={() => { void handleSignOut(); }}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <LogOut className="h-4 w-4" />
@@ -392,10 +405,7 @@ export default function Sidebar({ userRole, userName, mobileOpen, onClose }: Sid
 
         <div className="border-t border-sidebar-border p-3">
           <button
-            onClick={async () => {
-              await authClient.signOut();
-              window.location.href = "/login";
-            }}
+            onClick={() => { void handleSignOut(); }}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <LogOut className="h-4 w-4" />
