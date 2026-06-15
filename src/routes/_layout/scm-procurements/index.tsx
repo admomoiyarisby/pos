@@ -199,8 +199,16 @@ function ProcurementsListPage() {
             <FileText className="mb-2 h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
               {statusFilter
-                ? `Tidak ada pengadaan dengan status ${statusFilter}.`
-                : "Belum ada pengadaan. Buat pengadaan pertama untuk branch ini."}
+                ? "Tidak ada pengadaan dengan status ini. Coba tab status lain, atau "
+                : "Belum ada pengadaan. Buat pengadaan pertama untuk branch ini. "}
+              <Link
+                to="/scm-procurements/new"
+                search={() => ({ status: undefined })}
+                className="text-primary hover:underline"
+              >
+                buat pengadaan baru
+              </Link>
+              .
             </p>
           </div>
         ) : (

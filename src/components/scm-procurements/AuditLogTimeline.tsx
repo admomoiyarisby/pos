@@ -48,7 +48,11 @@ export function AuditLogTimeline({
   isLoadingMore,
 }: AuditLogTimelineProps) {
   if (entries.length === 0) {
-    return <p className="text-sm text-muted-foreground">Belum ada aktivitas.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        Belum ada aktivitas. Riwayat state dan perubahan item akan muncul di sini.
+      </p>
+    );
   }
 
   return (
@@ -93,7 +97,27 @@ export function AuditLogTimeline({
   );
 }
 
+const STATE_LABELS: Record<string, string> = {
+  Draft: "Draft",
+  Pending: "Menunggu Review",
+  UnderReview: "Sedang Direview",
+  Rejected: "Ditolak",
+  InTransit: "Dalam Pengiriman",
+  Delivered: "Sudah Dikirim",
+  ReviewingSJ: "Sedang Direview Cabang",
+  WaitingForPayment: "Menunggu Pembayaran",
+  Finished: "Lunas",
+  Cancelled: "Dibatalkan",
+};
+
+/**
+ * Map an FSM state name to its user-facing Indonesian label. Falls back
+ * to a best-effort humanised form for unknown states (e.g. a future
+ * state added in the FSM but not yet here). Mirrors the badge labels
+ * in routes/_layout/scm-procurements/{index,$procurementId}.tsx. (ADR 0004)
+ */
 function stateLabel(s: string): string {
+  if (STATE_LABELS[s]) return STATE_LABELS[s];
   return s
     .replace(/([A-Z])/g, " $1")
     .trim()

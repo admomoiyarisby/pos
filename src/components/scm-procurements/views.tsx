@@ -301,7 +301,7 @@ export function DraftForm({ procurement, items }: StateViewProps) {
                 disabled={removeM.isPending}
               >
                 <Trash2 className="h-4 w-4 text-destructive" />
-                Bersihkan Semua
+                Hapus Semua Bahan
               </Button>
             </div>
           ) : null}
@@ -349,7 +349,7 @@ export function DraftForm({ procurement, items }: StateViewProps) {
               }
             >
               <Plus className="h-4 w-4" />
-              Tambah
+              Tambah Bahan
             </Button>
           </div>
           {addM.isError ? (
@@ -582,7 +582,7 @@ export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
         <div className="flex-1">
           <input
             type="text"
-            placeholder="Alasan penolakan (wajib jika menolak semua)"
+            placeholder="Alasan penolakan (wajib untuk Tolak Semua)"
             value={rejectionReason}
             onChange={(e) => setRejectionReason(e.target.value)}
             className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm"
@@ -658,7 +658,8 @@ export function RejectedView({ procurement, items }: StateViewProps) {
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm">
-            <strong>Alasan:</strong> {(procurement.rejectionReason as string) || "-"}
+            Pengadaan ini ditolak saat review. <strong>Alasan:</strong>{" "}
+            {(procurement.rejectionReason as string) || "-"}
           </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
@@ -764,7 +765,7 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Sudah Dikirim — Mulai Penerimaan</CardTitle>
+          <CardTitle>Sudah Dikirim: Mulai Penerimaan</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
@@ -872,7 +873,7 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
         <div className="flex-1">
           <input
             type="text"
-            placeholder="Alasan pembatalan (wajib jika batal)"
+            placeholder="Alasan pembatalan (wajib untuk Batalkan)"
             value={cancellationReason}
             onChange={(e) => setCancellationReason(e.target.value)}
             className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm"
@@ -933,7 +934,7 @@ export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: Stat
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Invoice — Menunggu Pembayaran</CardTitle>
+          <CardTitle>Invoice: Menunggu Pembayaran</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
@@ -960,7 +961,7 @@ export function WaitingForPaymentCaInvoice({ procurement, items, invoice }: Stat
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Invoice — Tandai Pembayaran</CardTitle>
+          <CardTitle>Invoice: Tandai Pembayaran</CardTitle>
         </CardHeader>
         <CardContent>
           <ScmItemTable mode="invoice-preview" items={rowsToItems(items)} />
@@ -998,7 +999,7 @@ export function FinishedView({ procurement, items, invoice }: StateViewProps) {
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm">
-            Pengadaan sudah lunas. Total dibayar:{" "}
+            Pengadaan ini sudah dibayar lunas. Total dibayar:{" "}
             <strong>Rp {total.toLocaleString("id-ID")}</strong>
           </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
@@ -1024,7 +1025,8 @@ export function CancelledView({ procurement, items }: StateViewProps) {
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm">
-            <strong>Alasan:</strong> {(procurement.cancellationReason as string) || "-"}
+            Pengadaan ini dibatalkan. <strong>Alasan:</strong>{" "}
+            {(procurement.cancellationReason as string) || "-"}
           </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>

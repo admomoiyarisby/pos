@@ -35,10 +35,9 @@ function NewProcurementPage() {
     queryFn: () => getIngredients({ data: {} }),
   });
 
-  // Local draft state. Persisted to server on first "Simpan sebagai Draft"
-  // (which creates a Draft procurement); subsequent edits go to the
-  // /scm-procurements/$id detail page's DraftForm. (ADR 0004 §3)
-  const [procurementId, setProcurementId] = useState<string | null>(null);
+  // Local draft state. Persisted to the server on "Simpan sebagai Draft"
+  // (which creates a Draft procurement and navigates to the detail page);
+  // subsequent edits happen on the detail page's DraftForm. (ADR 0004 §3)
   const [items, setItems] = useState<
     Array<{
       ingredientId: string;
@@ -70,7 +69,14 @@ function NewProcurementPage() {
     },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
-      setProcurementId(result.id);
+      // After a successful save, jump straight to the detail page so any
+      // further edits (add/remove items, change quantities) go through
+      // the DraftForm server functions rather than getting stranded in
+      // local state. (ADR 0004 §3)
+      void navigate({
+        to: "/scm-procurements/$procurementId",
+        params: { procurementId: result.id },
+      });
     },
   });
 
@@ -109,24 +115,18 @@ function NewProcurementPage() {
   }
 
   function handleSimpanDraft() {
-    if (procurementId) {
-      // Already created on a prior click; just stay put.
-      return;
-    }
     createDraftM.mutate();
   }
 
   function handleSubmit() {
-    if (procurementId) {
-      submitM.mutate(procurementId);
-    } else {
-      // Create + submit in one step (legacy behaviour preserved for fast path).
-      createDraftM.mutate(undefined, {
-        onSuccess: (result) => {
-          submitM.mutate(result.id);
-        },
-      });
-    }
+    // Create + submit in one step. "Simpan sebagai Draft" is the path
+    // for stopping mid-form; the user can submit the procurement
+    // immediately if they have all the items. (ADR 0004 §3)
+    createDraftM.mutate(undefined, {
+      onSuccess: (result) => {
+        submitM.mutate(result.id);
+      },
+    });
   }
 
   return (
@@ -137,7 +137,7 @@ function NewProcurementPage() {
             <h1 className="text-2xl font-semibold">Buat Pengadaan</h1>
             <p className="text-sm text-muted-foreground">
               Isi item yang diminta. Simpan sebagai Draft untuk melanjutkan nanti, atau langsung
-              submit untuk masuk antrian review Admin Pusat.
+              Submit untuk masuk antrian review Admin Pusat.
             </p>
           </div>
           <Link to="/scm-procurements" search={() => ({ status: undefined })}>
@@ -174,7 +174,7 @@ function NewProcurementPage() {
                 />
                 <Button onClick={addItem} variant="secondary">
                   <Plus className="h-4 w-4" />
-                  Tambah
+                  Tambah Bahan
                 </Button>
               </div>
             </div>
@@ -239,7 +239,7 @@ function NewProcurementPage() {
 
             <div className="flex flex-wrap justify-end gap-2">
               <Link to="/scm-procurements" search={() => ({ status: undefined })}>
-                <Button variant="ghost">Batal</Button>
+                <Button variant="ghost">Batalkan</Button>
               </Link>
               <Button
                 variant="outline"
@@ -249,7 +249,7 @@ function NewProcurementPage() {
                 {createDraftM.isPending
                   ? "Menyimpan..."
                   : createDraftM.isSuccess
-                    ? "Tersimpan sebagai Draft"
+                    ? "Tersimpan sebagai Draft. Klik Submit untuk mengirim."
                     : "Simpan sebagai Draft"}
               </Button>
               <Button
