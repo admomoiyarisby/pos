@@ -60,8 +60,8 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
   if (mode === "ca-review" || mode === "draft-edit") {
     const isDraft = mode === "draft-edit";
     return (
-      <div className="rounded-md border">
-        <table className="w-full text-sm">
+      <div className="rounded-md border overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
           <thead className="border-b bg-muted/50">
             <tr>
               <th className="px-3 py-2 text-left">Bahan</th>
@@ -152,8 +152,8 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
 
   if (mode === "ba-receive") {
     return (
-      <div className="rounded-md border">
-        <table className="w-full text-sm">
+      <div className="rounded-md border overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
           <thead className="border-b bg-muted/50">
             <tr>
               <th className="px-3 py-2 text-left">Bahan</th>
@@ -220,8 +220,8 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
 
   if (mode === "invoice-preview") {
     return (
-      <div className="rounded-md border">
-        <table className="w-full text-sm">
+      <div className="rounded-md border overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
           <thead className="border-b bg-muted/50">
             <tr>
               <th className="px-3 py-2 text-left">Bahan</th>
@@ -271,18 +271,18 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
 
   // read-only (default)
   return (
-    <div className="rounded-md border">
-      <table className="w-full text-sm">
+    <div className="rounded-md border overflow-x-auto">
+      <table className="w-full text-sm min-w-[640px]">
         <thead className="border-b bg-muted/50">
           <tr>
             <th className="px-3 py-2 text-left">Bahan</th>
             <th className="px-3 py-2 text-right">Diminta</th>
-            <th className="px-3 py-2 text-right">Disetujui</th>
-            <th className="px-3 py-2 text-right">Dikirim</th>
+            <th className="hidden md:table-cell px-3 py-2 text-right">Disetujui</th>
+            <th className="hidden md:table-cell px-3 py-2 text-right">Dikirim</th>
             <th className="px-3 py-2 text-right">Diterima</th>
-            <th className="px-3 py-2 text-right">Ditolak</th>
+            <th className="hidden md:table-cell px-3 py-2 text-right">Ditolak</th>
             <th className="px-3 py-2 text-center">CA</th>
-            <th className="px-3 py-2 text-center">BA</th>
+            <th className="hidden md:table-cell px-3 py-2 text-center">BA</th>
           </tr>
         </thead>
         <tbody>
@@ -290,16 +290,22 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
             <tr key={it.id} className="border-b">
               <td className="px-3 py-2">{it.ingredientName}</td>
               <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
-              <td className="px-3 py-2 text-right font-mono">{it.readyQuantity ?? "-"}</td>
-              <td className="px-3 py-2 text-right font-mono">{it.pickedQuantity ?? "-"}</td>
+              <td className="hidden md:table-cell px-3 py-2 text-right font-mono">
+                {it.readyQuantity ?? "-"}
+              </td>
+              <td className="hidden md:table-cell px-3 py-2 text-right font-mono">
+                {it.pickedQuantity ?? "-"}
+              </td>
               <td className="px-3 py-2 text-right font-mono">{it.receivedQuantity ?? "-"}</td>
-              <td className="px-3 py-2 text-right font-mono">{it.rejectedQuantity ?? "-"}</td>
+              <td className="hidden md:table-cell px-3 py-2 text-right font-mono">
+                {it.rejectedQuantity ?? "-"}
+              </td>
               <td className="px-3 py-2 text-center">
                 <Badge variant={decisionColors[it.caDecision] ?? "secondary"} className="text-xs">
                   {decisionLabels[it.caDecision] ?? it.caDecision}
                 </Badge>
               </td>
-              <td className="px-3 py-2 text-center">
+              <td className="hidden md:table-cell px-3 py-2 text-center">
                 <Badge variant={decisionColors[it.baDecision] ?? "secondary"} className="text-xs">
                   {decisionLabels[it.baDecision] ?? it.baDecision}
                 </Badge>

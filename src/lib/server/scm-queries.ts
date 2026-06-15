@@ -1,10 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
 import {
   ingredients,
-  pendingReviewInventory,
   scmProcurementAuditLog,
   scmProcurementInvoices,
   scmProcurementItems,
@@ -453,37 +452,4 @@ export const getProcurementInvoice = createServerFn({ method: "GET" })
       .limit(1);
     if (!inv) throw new Error("Invoice not found for this procurement");
     return inv;
-  });
-
-// =============================================================================
-// getPendingReviewInventory (for branch "stock pending review" tile)
-// =============================================================================
-
-export const getPendingReviewInventory = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    const branchId = data.branchId ?? user.branchId;
-    if (!branchId) return [];
-
-    const rows = await db
-      .select({
-        id: pendingReviewInventory.id,
-        scmProcurementId: pendingReviewInventory.scmProcurementId,
-        ingredientId: pendingReviewInventory.ingredientId,
-        ingredientName: ingredients.name,
-        quantity: pendingReviewInventory.quantity,
-        createdAt: pendingReviewInventory.createdAt,
-      })
-      .from(pendingReviewInventory)
-      .innerJoin(ingredients, eq(ingredients.id, pendingReviewInventory.ingredientId))
-      .where(
-        and(
-          eq(pendingReviewInventory.branchId, branchId),
-          isNull(pendingReviewInventory.clearedAt),
-        ),
-      )
-      .orderBy(desc(pendingReviewInventory.createdAt));
-
-    return rows;
   });

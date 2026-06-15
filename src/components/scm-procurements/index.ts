@@ -14,7 +14,7 @@ export { Stepper } from "./Stepper";
 export {
   DraftForm,
   PendingBaView,
-  PendingCaQueue,
+  PendingCaView,
   UnderReviewBaLive,
   UnderReviewCaReview,
   RejectedView,

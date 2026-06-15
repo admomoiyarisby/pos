@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -18,20 +17,11 @@ import {
   updateProcurementItem,
   addProcurementItem,
   removeProcurementItem,
-  listProcurements,
 } from "#/lib/server/scm-queries";
 import { getIngredients } from "#/lib/server/ingredients";
 import { printSuratJalan, printInvoice } from "#/lib/server/scm-print";
 import { openPrintWindow } from "#/lib/print-window";
 import { Plus, Trash2 } from "lucide-react";
-
-interface ProcurementRow extends Record<string, unknown> {
-  id: string;
-  code: string;
-  branchId: string;
-  submittedAt: string | Date | null;
-  createdAt: string | Date;
-}
 
 /**
  * Shared props for all state views. The detail page passes the procurement
@@ -383,7 +373,7 @@ export function DraftForm({ procurement, items }: StateViewProps) {
 }
 
 // =============================================================================
-// Pending — BA: read-only + Withdraw button; CA: review queue (placeholder)
+// Pending — BA: read-only + Withdraw / Cancel; CA: Buka Review
 // =============================================================================
 export function PendingBaView({ procurement, items }: StateViewProps) {
   const transitionM = useTransitionMutation();
@@ -426,91 +416,39 @@ export function PendingBaView({ procurement, items }: StateViewProps) {
   );
 }
 
-export function PendingCaQueue(_props: StateViewProps) {
+// CA's view of a Pending procurement. Read-only content with a single
+// "Buka Review" action that transitions Pending -> UnderReview. The queue
+// itself lives on the list page (/scm-procurements?status=Pending) per
+// ADR 0004 §2; this view is for when a CA lands here from a deep link
+// or the sidebar badge.
+export function PendingCaView({ procurement, items }: StateViewProps) {
   const transitionM = useTransitionMutation();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-
-  const { data: pending = [], isLoading } = useQuery({
-    queryKey: ["scm-procurements", "Pending"],
-    queryFn: () => listProcurements({ data: { status: "Pending" } }),
-  });
-
-  function openReview(procurementId: string) {
-    transitionM.mutate(
-      { procurementId, event: "open-review" },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
-          void navigate({
-            to: "/scm-procurements/$procurementId",
-            params: { procurementId },
-          });
-        },
-      },
-    );
-  }
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Antrian Review</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">Memuat...</p>
-        ) : (pending as ProcurementRow[]).length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Tidak ada pengadaan yang menunggu review saat ini.
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Menunggu Review</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Pengadaan ini menunggu review. Buka review untuk mulai memutuskan item yang akan
+            dikirim.
           </p>
-        ) : (
-          <div className="rounded-md border">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/50">
-                <tr>
-                  <th className="px-3 py-2 text-left">Kode</th>
-                  <th className="px-3 py-2 text-left">Cabang</th>
-                  <th className="px-3 py-2 text-left">Tanggal Submit</th>
-                  <th className="w-32"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {(pending as ProcurementRow[]).map((p) => (
-                  <tr key={p.id} className="border-b">
-                    <td className="px-3 py-2">
-                      <Link
-                        to="/scm-procurements/$procurementId"
-                        params={{ procurementId: p.id }}
-                        className="font-mono text-sm font-medium text-primary hover:underline"
-                      >
-                        {p.code}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {p.branchId.slice(0, 8)}…
-                    </td>
-                    <td className="px-3 py-2">
-                      {p.submittedAt
-                        ? new Date(p.submittedAt as string).toLocaleString("id-ID")
-                        : "-"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <Button
-                        size="sm"
-                        onClick={() => openReview(p.id)}
-                        disabled={transitionM.isPending}
-                      >
-                        Buka Review
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          <ScmItemTable mode="read-only" items={rowsToItems(items)} />
+        </CardContent>
+      </Card>
+      <div className="flex justify-end">
+        <Button
+          disabled={transitionM.isPending}
+          onClick={() =>
+            transitionM.mutate({ procurementId: procurement.id as string, event: "open-review" })
+          }
+        >
+          {transitionM.isPending ? "Membuka Review..." : "Buka Review"}
+        </Button>
+      </div>
+      <AuditLogSection procurementId={procurement.id as string} />
+    </div>
   );
 }
 

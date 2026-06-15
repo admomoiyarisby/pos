@@ -16,6 +16,7 @@ import { Stepper } from "#/components/scm-procurements/Stepper";
 import {
   DraftForm,
   PendingBaView,
+  PendingCaView,
   UnderReviewBaLive,
   UnderReviewCaReview,
   RejectedView,
@@ -167,10 +168,11 @@ function DispatchView(props: DispatchViewProps) {
   }
   if (status === "Pending") {
     if (isBA) return <PendingBaView {...props} />;
-    // PendingCaQueue removed: the queue is now a status filter on the
-    // list page (/scm-procurements?status=Pending). CA's empty-state
-    // in the detail view shows the current procurement read-only.
-    if (isCA) return <UnderReviewBaLive {...props} />;
+    // The CA's review queue lives on the list page
+    // (/scm-procurements?status=Pending). This detail view shows a
+    // single 'Buka Review' action for when a CA lands here from a
+    // deep link or the sidebar badge. (ADR 0004 §2)
+    if (isCA) return <PendingCaView {...props} />;
   }
   if (status === "UnderReview") {
     if (isCA) return <UnderReviewCaReview {...props} />;
