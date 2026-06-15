@@ -69,7 +69,8 @@ export function Stepper({ currentStatus }: StepperProps) {
                     !isCompleted &&
                       !isCurrent &&
                       "border-border bg-background text-muted-foreground",
-                    isOffRampStep && "border-destructive bg-destructive text-white",
+                    isOffRampStep &&
+                      "border-destructive bg-destructive text-destructive-foreground",
                   )}
                   aria-current={isCurrent ? "step" : undefined}
                 >

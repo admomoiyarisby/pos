@@ -1,5 +1,6 @@
 import { Input } from "#/components/ui/input";
 import { Badge } from "#/components/ui/badge";
+import { Button } from "#/components/ui/button";
 
 /**
  * ScmItemTable — the "giant interactive table" from lesson 0002 §5.
@@ -100,30 +101,26 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
                   {!isDraft ? (
                     <td className="px-3 py-2 text-center">
                       <div className="inline-flex gap-1">
-                        <button
+                        <Button
                           type="button"
+                          size="sm"
+                          variant={it.caDecision === "approved" ? "default" : "outline"}
                           disabled={disabled}
+                          aria-pressed={it.caDecision === "approved"}
                           onClick={() => onItemChange?.(it.id, { caDecision: "approved" })}
-                          className={`rounded px-2 py-1 text-xs ${
-                            it.caDecision === "approved"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-muted hover:bg-green-50"
-                          }`}
                         >
                           Setujui
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
+                          size="sm"
+                          variant={it.caDecision === "rejected" ? "destructive" : "outline"}
                           disabled={disabled}
+                          aria-pressed={it.caDecision === "rejected"}
                           onClick={() => onItemChange?.(it.id, { caDecision: "rejected" })}
-                          className={`rounded px-2 py-1 text-xs ${
-                            it.caDecision === "rejected"
-                              ? "bg-red-100 text-red-700"
-                              : "bg-muted hover:bg-red-50"
-                          }`}
                         >
                           Tolak
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   ) : null}
@@ -252,7 +249,7 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
             {items
               .filter((it) => (it.rejectedQuantity ?? 0) > 0)
               .map((it) => (
-                <tr key={`r-${it.id}`} className="border-b bg-red-50">
+                <tr key={`r-${it.id}`} className="border-b bg-destructive/5">
                   <td className="px-3 py-2">
                     {it.ingredientName}{" "}
                     <span className="text-xs text-muted-foreground">

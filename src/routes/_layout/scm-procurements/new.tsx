@@ -204,8 +204,9 @@ function NewProcurementPage() {
                         </td>
                         <td className="px-3 py-2">
                           <Button
-                            size="sm"
+                            size="icon-sm"
                             variant="ghost"
+                            aria-label={`Hapus ${it.ingredientName} dari daftar`}
                             onClick={() => removeItem(it.ingredientId)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />

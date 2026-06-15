@@ -580,12 +580,11 @@ export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
       </Card>
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1">
-          <input
+          <Input
             type="text"
             placeholder="Alasan penolakan (wajib untuk Tolak Semua)"
             value={rejectionReason}
             onChange={(e) => setRejectionReason(e.target.value)}
-            className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm"
           />
         </div>
         <div className="flex gap-2">
@@ -871,12 +870,11 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
       </Card>
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1">
-          <input
+          <Input
             type="text"
             placeholder="Alasan pembatalan (wajib untuk Batalkan)"
             value={cancellationReason}
             onChange={(e) => setCancellationReason(e.target.value)}
-            className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm"
           />
         </div>
         <div className="flex gap-2">
