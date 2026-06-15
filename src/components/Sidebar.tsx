@@ -304,32 +304,18 @@ export default function Sidebar({ userRole, userName, mobileOpen, onClose }: Sid
     return () => observer.disconnect();
   }, []);
 
-  // Sign out, then hard-navigate to /login after a short delay.
-  //
-  // The previous two attempts both ended up at /purchase-requisitions
-  // (admin_pusat's role-home) instead of /login:
-  //
-  // 1. window.location.href = "/login" right after await signOut()
-  //    -- the new page's request races the Set-Cookie clear from
-  //    signOut, the root loader still sees the old session cookie,
-  //    the login page's 'if (user) Navigate to="/"' guard fires.
-  //
-  // 2. router.invalidate() + router.navigate() -- the root loader
-  //    re-runs via fetch (so the cookie is correctly absent), but
-  //    the navigate-to-/login still reads from the AuthProvider
-  //    context that was populated before the invalidate, and the
-  //    login page's 'if (user)' guard sees the cached admin_pusat
-  //    user, redirects to /, which redirects to /purchase-requisitions.
-  //
-  // The fix: a hard navigation bypasses both problems. The signOut
-  // response sets the session cookies to Max-Age=0. The 50ms delay
-  // gives the browser's network stack time to process those
-  // Set-Cookie headers before the new request goes out. The fresh
-  // page load re-runs the root loader with no session cookie, the
-  // AuthProvider receives user=null, and the login form renders.
+  // Hard navigation to /login after signOut. A hard navigation
+  // (window.location.href) is used instead of router.invalidate() +
+  // router.navigate() so the fresh page load re-runs the root loader
+  // with a clean React tree: the login page's 'if (user) Navigate
+  // to="/"' guard reads from a freshly-initialised AuthProvider, not
+  // the one populated by the previous page's loader. This is the
+  // same approach used in the original code; the earlier attempted
+  // fix (router.invalidate + navigate) failed because the navigate
+  // raced the AuthProvider context update. See the auth.ts commit
+  // for the BETTER_AUTH_URL origin-trust fix that unblocks signOut.
   async function handleSignOut() {
     await authClient.signOut();
-    await new Promise((resolve) => setTimeout(resolve, 50));
     window.location.href = "/login";
   }
 
