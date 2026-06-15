@@ -89,6 +89,20 @@ function ProcurementDetailPage() {
     retry: false,
   });
 
+  // usePageTitle must be called on every render (Rules of Hooks).
+  // It was previously called after the early returns below, so the
+  // loading/error/empty renders called 5 hooks and the loaded
+  // render called 6, triggering 'Rendered more hooks than during
+  // the previous render.' The fallback title 'Pengadaan' shows on
+  // the loading skeleton; the real code arrives once procurementQ
+  // resolves.
+  usePageTitle(
+    procurementQ.data ? (procurementQ.data.code as string) : "Pengadaan",
+    procurementQ.data
+      ? `Pengadaan ke cabang • dibuat ${new Date(procurementQ.data.createdAt as unknown as string | Date).toLocaleString("id-ID")}`
+      : undefined,
+  );
+
   if (procurementQ.isLoading) {
     return (
       <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
@@ -114,16 +128,6 @@ function ProcurementDetailPage() {
   const proc = procurementQ.data;
   const items = (itemsQ.data ?? []) as Array<Record<string, unknown>>;
   const invoice = (invoiceQ.data ?? null) as Record<string, unknown> | null;
-
-  // Top bar title: the procurement code (e.g. "PROC-2026-0001").
-  // Falls back to the previous title until the query resolves; the
-  // hook fires on every render with the latest proc data.
-  usePageTitle(
-    proc ? (proc.code as string) : "Pengadaan",
-    proc
-      ? `Pengadaan ke cabang • dibuat ${new Date(proc.createdAt as unknown as string | Date).toLocaleString("id-ID")}`
-      : undefined,
-  );
 
   return (
     <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
