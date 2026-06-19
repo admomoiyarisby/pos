@@ -15,6 +15,7 @@
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
     "db:studio": "drizzle-kit studio",
+    "migrate-csv": "tsx scripts/migrate-csv/index.ts",
     "prepare": "vp config"
   },
   "dependencies": {

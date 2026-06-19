@@ -198,6 +198,8 @@ export const branches = pgTable("branches", {
   isOnline: boolean("is_online").notNull().default(true),
   type: branchTypeEnum("type").notNull().default("Outlet"),
   pb1Rate: integer("pb1_rate").notNull().default(11),
+  phone: text("phone"),
+  complaintPhone: text("complaint_phone"),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
@@ -713,8 +715,7 @@ export const yieldConversions = pgTable(
       .notNull()
       .references(() => branches.id),
     // Single source — kept for backward compat; use yieldConversionSources for multi-source
-    sourceIngredientId: uuid("source_ingredient_id")
-      .references(() => ingredients.id),
+    sourceIngredientId: uuid("source_ingredient_id").references(() => ingredients.id),
     sourceQuantity: integer("source_quantity"),
     targetIngredientId: uuid("target_ingredient_id")
       .notNull()
