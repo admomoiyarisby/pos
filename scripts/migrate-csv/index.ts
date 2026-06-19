@@ -23,6 +23,7 @@ import { Client } from "pg";
 import { migrateBranches } from "./branches";
 import { migrateIngredientsCentral } from "./ingredients-central";
 import { migrateIngredientsTenant } from "./ingredients-tenant";
+import { migrateRecipesRincian } from "./recipes-rincian";
 
 config({ path: [".env.local", ".env"] });
 
@@ -47,7 +48,10 @@ const migrations: Record<string, MigrationSpec> = {
   "ingredients-tenant": {
     fn: migrateIngredientsTenant,
   },
-  // "recipes-rincian":      { fn: migrateRecipesRincian,      truncateTables: ["recipes", "recipe_ingredients", "recipe_brands"] },
+  "recipes-rincian": {
+    fn: migrateRecipesRincian,
+    truncateTables: ["recipes"],
+  },
   // "menu-kasir":           { fn: migrateMenuKasir,           truncateTables: ["recipes"] },
   // "staff-menu":           { fn: migrateStaffMenu,           truncateTables: ["recipes"] },
   // "harga-invoice":        { fn: migrateHargaInvoice,        truncateTables: ["recipes"] },

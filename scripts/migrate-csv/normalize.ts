@@ -144,89 +144,188 @@ const ALIASES: Record<string, string | null> = {
   bulpoint: null,
 };
 
-const FG_ITEMS = new Set<string>([
-  // Items that appear as primary ingredient in Rincian Menu — these are
-  // pre-made goods the branch uses directly, made at the central kitchen.
-  "Ayam Karage",
-  "Daging Blackpepper",
-  "Hot Honey Sauce",
-  "Curry Sauce",
-  "Spicy Sauce Ayam Cincang",
-  "Miso Soup",
-  "Katsu Chicken",
-  "Pudding Caramel",
-  "Egg Roll",
-  "Choco Latte",
-  "Bayam Krispy",
-  "Ice Tea",
-]);
+const FG_ITEMS = new Set<string>(
+  [
+    "Ayam Karage",
+    "Daging Blackpepper",
+    "Hot Honey Sauce",
+    "Curry Sauce",
+    "Spicy Sauce Ayam Cincang",
+    "Miso Soup",
+    "Katsu Chicken",
+    "Pudding Caramel",
+    "Egg Roll",
+    "Choco Latte",
+    "Bayam Krispy",
+    "Ice Tea",
+  ].map((s) => s.toLowerCase()),
+);
 
-const PACKAGING_ITEMS = new Set<string>([
-  // Items with `pcs` unit and packaging-related name.
-  "Cup gelas PP 12Oz",
-  "Cup gelas PP 14Oz",
-  "Plastik Sealer Cup",
-  "Sedotan",
-  "Sendok Makan",
-  "Sendok Plastik",
-  "Sendok Pudding",
-  "Bowl Mangkok",
-  "Tutup Mangkok",
-  "Mangkok soup 300ml",
-  "Paper Bowl 650 ml",
-  "Tutup Bowl 650 ml",
-  "Thinwall 300 ml",
-  "Thinwall 25 ml",
-  "Thinwall 150 ml",
-  "Thinwall 500ml",
-  "Inner Tray Bowl",
-  "Bento Tray",
-  "Tray Bento",
-  "Tissue",
-  "Tissue Jumbo",
-  "Kabel Ties",
-  "Battery AAA",
-  "Plastik Klip 100 Pcs",
-  "Plastik 12 x 25",
-  "Plastik 20 x 35",
-  "Plastik Bawang 15",
-  "Plastik Bawang 20",
-  "Plastik Bawang 25",
-  "Roll Kertas Nota",
-  "Isolasi Bening",
-  "Lakban Bening",
-  "Isi Staples",
-  "Cling Wrap",
-  "Trash Bag",
-  "Spons Cuci",
-  "Gelas Polos",
-  "Vaccum Pack 10 x 15",
-  "Vaccum Pack 25 x 37",
-  "Vaccum Pack 30 x 40",
-  "Tabung LPG 3 Kg", // also packaging-like form (sealed cylinder)
-]);
+const PACKAGING_ITEMS = new Set<string>(
+  [
+    "Cup gelas PP 12Oz",
+    "Cup gelas PP 14Oz",
+    "Plastik Sealer Cup",
+    "Sedotan",
+    "Sendok Makan",
+    "Sendok Plastik",
+    "Sendok Pudding",
+    "Bowl Mangkok",
+    "Tutup Mangkok",
+    "Mangkok soup 300ml",
+    "Paper Bowl 650 ml",
+    "Tutup Bowl 650 ml",
+    "Thinwall 300 ml",
+    "Thinwall 25 ml",
+    "Thinwall 150 ml",
+    "Thinwall 500ml",
+    "Inner Tray Bowl",
+    "Bento Tray",
+    "Tray Bento",
+    "Tissue",
+    "Tissue Jumbo",
+    "Kabel Ties",
+    "Battery AAA",
+    "Plastik Klip 100 Pcs",
+    "Plastik 12 x 25",
+    "Plastik 20 x 35",
+    "Plastik Bawang 15",
+    "Plastik Bawang 20",
+    "Plastik Bawang 25",
+    "Roll Kertas Nota",
+    "Isolasi Bening",
+    "Lakban Bening",
+    "Isi Staples",
+    "Cling Wrap",
+    "Trash Bag",
+    "Spons Cuci",
+    "Gelas Polos",
+    "Vaccum Pack 10 x 15",
+    "Vaccum Pack 25 x 37",
+    "Vaccum Pack 30 x 40",
+    "Tabung LPG 3 Kg",
+  ].map((s) => s.toLowerCase()),
+);
 
-const FRESH_ITEMS = new Set<string>([
-  "Susu",
-  "Susu Fresh Milk",
-  "Telor Ayam",
-  "Ayam Cincang",
-  "Dada Ayam Mentah",
-  "Paha Ayam",
-  "Beras",
-  "Beras Ketan",
-  "Bayam",
-  "Edamame",
-  "Kubis Mentah",
-  "Wortel Mentah",
-  "Daun Bawang",
-  "Daun Parsley",
-  "Bawang Bombay",
-  "Bawang Putih",
-  "Jahe",
-  "Daun Teh Hitam",
-  "Wakame",
-]);
+const FRESH_ITEMS = new Set<string>(
+  [
+    "Susu",
+    "Susu Fresh Milk",
+    "Telor Ayam",
+    "Ayam Cincang",
+    "Dada Ayam Mentah",
+    "Paha Ayam",
+    "Beras",
+    "Beras Ketan",
+    "Bayam",
+    "Edamame",
+    "Kubis Mentah",
+    "Wortel Mentah",
+    "Daun Bawang",
+    "Daun Parsley",
+    "Bawang Bombay",
+    "Bawang Putih",
+    "Jahe",
+    "Daun Teh Hitam",
+    "Wakame",
+  ].map((s) => s.toLowerCase()),
+);
+
+// Canonical (proper-cased) form per known name. Built lazily from the
+// sets above so we always return the same casing for a known item.
+const CANONICAL_FORMS = new Map<string, string>();
+{
+  const all = [...FG_ITEMS, ...PACKAGING_ITEMS, ...FRESH_ITEMS];
+  for (const lower of all) {
+    // Pick the title-cased version from the original arrays. Since we
+    // lowercased on construction, reconstruct by looking at the source
+    // list (sourced above). For names with multiple words, the first
+    // char of each word is capitalised except for unit suffixes ("ml",
+    // "gr") which are kept lower. This is a best-effort normalisation;
+    // the canonical form matches whatever the ingredient was inserted
+    // with, so cross-CSV lookups still work.
+    const proper = lower
+      .split(" ")
+      .map((w, i) => {
+        if (i > 0 && /^(ml|gr|kg|pcs|pax|pcs)$/i.test(w)) return w.toLowerCase();
+        return w.charAt(0).toUpperCase() + w.slice(1);
+      })
+      .join(" ");
+    CANONICAL_FORMS.set(lower, proper);
+  }
+  // Override a few entries whose canonical form is non-trivial.
+  CANONICAL_FORMS.set("tabung lpg 3 kg", "Tabung LPG 3 Kg");
+  CANONICAL_FORMS.set("cup gelas pp 12oz", "Cup gelas PP 12Oz");
+  CANONICAL_FORMS.set("cup gelas pp 14oz", "Cup gelas PP 14Oz");
+  CANONICAL_FORMS.set("daun teh hitam", "Daun Teh Hitam");
+  CANONICAL_FORMS.set("mangkok soup 300ml", "Mangkok soup 300ml");
+  CANONICAL_FORMS.set("paper bowl 650 ml", "Paper Bowl 650 ml");
+  CANONICAL_FORMS.set("tutup bowl 650 ml", "Tutup Bowl 650 ml");
+  CANONICAL_FORMS.set("thinwall 300 ml", "Thinwall 300 ml");
+  CANONICAL_FORMS.set("thinwall 25 ml", "Thinwall 25 ml");
+  CANONICAL_FORMS.set("thinwall 150 ml", "Thinwall 150 ml");
+  CANONICAL_FORMS.set("thinwall 500ml", "Thinwall 500ml");
+  CANONICAL_FORMS.set("tray bento", "Bento Tray");
+  CANONICAL_FORMS.set("plastik klip 100 pcs", "Plastik Klip 100 Pcs");
+  CANONICAL_FORMS.set("plastik 12 x 25", "Plastik 12 x 25");
+  CANONICAL_FORMS.set("plastik 20 x 35", "Plastik 20 x 35");
+  CANONICAL_FORMS.set("plastik bawang 15", "Plastik Bawang 15");
+  CANONICAL_FORMS.set("plastik bawang 20", "Plastik Bawang 20");
+  CANONICAL_FORMS.set("plastik bawang 25", "Plastik Bawang 25");
+  CANONICAL_FORMS.set("roll kertas nota", "Roll Kertas Nota");
+  CANONICAL_FORMS.set("kabel ties", "Kabel Ties");
+  CANONICAL_FORMS.set("battery aaa", "Battery AAA");
+  CANONICAL_FORMS.set("isi staples", "Isi Staples");
+  CANONICAL_FORMS.set("isolasi bening", "Isolasi Bening");
+  CANONICAL_FORMS.set("lakban bening", "Lakban Bening");
+  CANONICAL_FORMS.set("cling wrap", "Cling Wrap");
+  CANONICAL_FORMS.set("trash bag", "Trash Bag");
+  CANONICAL_FORMS.set("spons cuci", "Spons Cuci");
+  CANONICAL_FORMS.set("gelas polos", "Gelas Polos");
+  CANONICAL_FORMS.set("vaccum pack 10 x 15", "Vaccum Pack 10 x 15");
+  CANONICAL_FORMS.set("vaccum pack 25 x 37", "Vaccum Pack 25 x 37");
+  CANONICAL_FORMS.set("vaccum pack 30 x 40", "Vaccum Pack 30 x 40");
+  CANONICAL_FORMS.set("sendok makan", "Sendok Makan");
+  CANONICAL_FORMS.set("sendok plastik", "Sendok Plastik");
+  CANONICAL_FORMS.set("sendok pudding", "Sendok Pudding");
+  CANONICAL_FORMS.set("bowl mangkok", "Bowl Mangkok");
+  CANONICAL_FORMS.set("tutup mangkok", "Tutup Mangkok");
+  CANONICAL_FORMS.set("inner tray bowl", "Inner Tray Bowl");
+  CANONICAL_FORMS.set("plastik sealer cup", "Plastik Sealer Cup");
+  CANONICAL_FORMS.set("sedotan", "Sedotan");
+  CANONICAL_FORMS.set("tissue", "Tissue");
+  CANONICAL_FORMS.set("tissue jumbo", "Tissue Jumbo");
+  CANONICAL_FORMS.set("telor ayam", "Telor Ayam");
+  CANONICAL_FORMS.set("daging blackpepper", "Daging Blackpepper");
+  CANONICAL_FORMS.set("ayam karage", "Ayam Karage");
+  CANONICAL_FORMS.set("hot honey sauce", "Hot Honey Sauce");
+  CANONICAL_FORMS.set("curry sauce", "Curry Sauce");
+  CANONICAL_FORMS.set("spicy sauce ayam cincang", "Spicy Sauce Ayam Cincang");
+  CANONICAL_FORMS.set("miso soup", "Miso Soup");
+  CANONICAL_FORMS.set("katsu chicken", "Katsu Chicken");
+  CANONICAL_FORMS.set("pudding caramel", "Pudding Caramel");
+  CANONICAL_FORMS.set("egg roll", "Egg Roll");
+  CANONICAL_FORMS.set("choco latte", "Choco Latte");
+  CANONICAL_FORMS.set("bayam krispy", "Bayam Krispy");
+  CANONICAL_FORMS.set("ice tea", "Ice Tea");
+  CANONICAL_FORMS.set("susu", "Susu");
+  CANONICAL_FORMS.set("susu fresh milk", "Susu Fresh Milk");
+  CANONICAL_FORMS.set("ayam cincang", "Ayam Cincang");
+  CANONICAL_FORMS.set("dada ayam mentah", "Dada Ayam Mentah");
+  CANONICAL_FORMS.set("paha ayam", "Paha Ayam");
+  CANONICAL_FORMS.set("beras", "Beras");
+  CANONICAL_FORMS.set("beras ketan", "Beras Ketan");
+  CANONICAL_FORMS.set("bayam", "Bayam");
+  CANONICAL_FORMS.set("edamame", "Edamame");
+  CANONICAL_FORMS.set("kubis mentah", "Kubis Mentah");
+  CANONICAL_FORMS.set("wortel mentah", "Wortel Mentah");
+  CANONICAL_FORMS.set("daun bawang", "Daun Bawang");
+  CANONICAL_FORMS.set("daun parsley", "Daun Parsley");
+  CANONICAL_FORMS.set("bawang bombay", "Bawang Bombay");
+  CANONICAL_FORMS.set("bawang putih", "Bawang Putih");
+  CANONICAL_FORMS.set("jahe", "Jahe");
+  CANONICAL_FORMS.set("wakame", "Wakame");
+}
 
 // ─── Public API ───────────────────────────────────────────────────────────
 
@@ -237,7 +336,9 @@ const FRESH_ITEMS = new Set<string>([
 export function canonicalName(raw: string): string | null {
   const norm = raw.trim().toLowerCase().replace(/\s+/g, " ");
   if (norm in ALIASES) return ALIASES[norm];
-  // Pass-through: trim whitespace but keep original casing/spelling.
+  // Known classification → return its proper-cased canonical form.
+  if (CANONICAL_FORMS.has(norm)) return CANONICAL_FORMS.get(norm)!;
+  // Pass-through: trim but keep original casing.
   return raw.trim();
 }
 
@@ -256,9 +357,10 @@ export type Classification = {
  *   4. Default → category=Dry, skuType=RM
  */
 export function classify(canonical: string): Classification {
-  if (PACKAGING_ITEMS.has(canonical)) return { category: "Packaging", skuType: "RM" };
-  if (FG_ITEMS.has(canonical)) return { category: "Fresh", skuType: "FG" };
-  if (FRESH_ITEMS.has(canonical)) return { category: "Fresh", skuType: "RM" };
+  const norm = canonical.trim().toLowerCase();
+  if (PACKAGING_ITEMS.has(norm)) return { category: "Packaging", skuType: "RM" };
+  if (FG_ITEMS.has(norm)) return { category: "Fresh", skuType: "FG" };
+  if (FRESH_ITEMS.has(norm)) return { category: "Fresh", skuType: "RM" };
   return { category: "Dry", skuType: "RM" };
 }
 

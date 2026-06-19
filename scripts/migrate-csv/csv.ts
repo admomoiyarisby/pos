@@ -96,6 +96,10 @@ export function findColumn(header: string[], name: string): number {
  *
  * Falls back to `table.header` if no row matches (i.e., the parser's
  * own header row already has the columns — the common case).
+ *
+ * Some CSVs split a single logical header across two rows
+ * (e.g. `Menu,No,,` then `,,Bahan,Berat,Satuan`). For those, `findColumns`
+ * below handles the lookup column-by-column.
  */
 export function findHeader(
   table: CsvTable,
@@ -130,4 +134,48 @@ export function findHeader(
     }
   }
   return null;
+}
+
+/**
+ * Like `findHeader` but tolerates a multi-row header (where different
+ * column names appear on different consecutive rows). Scans all rows
+ * for each expected column independently; data starts after the last
+ * header row detected.
+ */
+export function findColumns(
+  table: CsvTable,
+  expectedColumns: string[],
+): { indices: Record<string, number>; data: CsvRow[] } | null {
+  const normalised = (s: string) => s.replace(/^\*/, "").trim().toLowerCase();
+  const wanted = expectedColumns.map((c) => c.trim().toLowerCase());
+
+  const indices: Record<string, number> = {};
+  let dataStart = 0;
+
+  for (const col of wanted) {
+    let found = false;
+    const probe = (row: CsvRow, rowIdx: number) => {
+      const lower = row.map(normalised);
+      const idx = lower.indexOf(col);
+      if (idx !== -1) {
+        indices[col] = idx;
+        dataStart = Math.max(dataStart, rowIdx + 1);
+        return true;
+      }
+      return false;
+    };
+    if (probe(table.header, -1)) {
+      found = true;
+    } else {
+      for (let i = 0; i < table.rows.length; i++) {
+        if (probe(table.rows[i]!, i)) {
+          found = true;
+          break;
+        }
+      }
+    }
+    if (!found) return null;
+  }
+
+  return { indices, data: table.rows.slice(dataStart) };
 }
