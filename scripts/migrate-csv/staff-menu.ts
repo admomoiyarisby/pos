@@ -176,12 +176,9 @@ export async function migrateStaffMenu(options: StaffMenuOptions = {}): Promise<
     : await loadIngredientCodesByName(client);
   let seq = options.dryRun ? 0 : await nextCodeSeq(client);
 
-  const inserts: RecipeInsert[] = [];
+  const inserts: { recipe: RecipeInsert; baseName: string | null }[] = [];
   const recipeIngredients: RecipeIngredientInsert[] = [];
   const warnings: string[] = [];
-
-  // Track staff recipe id by name so we can attach BOM later.
-  const newRecipeIdByName = new Map<string, string>();
 
   for (const p of prices) {
     if (recipeByName.has(p.name.toLowerCase())) {
@@ -201,60 +198,17 @@ export async function migrateStaffMenu(options: StaffMenuOptions = {}): Promise<
       isBOGO: false,
       status: "Active",
     };
-    inserts.push(recipe);
-    newRecipeIdByName.set(p.name, options.dryRun ? `dry-${code}` : "");
-  }
-
-  // Build recipe_ingredients: for each staff recipe, copy BOM from base.
-  if (!options.dryRun) {
-    // Need the inserted recipes' IDs from the DB. Insert first, then query.
-  }
-  for (const p of prices) {
-    const baseName = STAFF_TO_BASE[p.name];
-    if (!baseName) continue;
-    const bomLines = bom.get(baseName);
-    if (!bomLines || bomLines.length === 0) {
-      warnings.push(`${p.name}: no BOM for base "${baseName}"`);
-      continue;
-    }
-    const staffId = options.dryRun
-      ? newRecipeIdByName.get(p.name)!
-      : (
-          await client.query<{ id: string }>(`SELECT id FROM recipes WHERE name = $1 LIMIT 1`, [
-            p.name,
-          ])
-        ).rows[0]?.id;
-    if (!staffId) {
-      warnings.push(`${p.name}: staff recipe id not found`);
-      continue;
-    }
-    for (const line of bomLines) {
-      if (line.canonical === null) {
-        warnings.push(`${p.name}: skip "${line.rawName}" (non-ingredient)`);
-        continue;
-      }
-      const ing = ingByName.get(line.canonical.toLowerCase());
-      if (!ing) {
-        warnings.push(`${p.name}: skip "${line.rawName}" (no ingredient "${line.canonical}")`);
-        continue;
-      }
-      recipeIngredients.push({
-        recipeId: staffId,
-        ingredientId: ing.id,
-        quantity: line.qty,
-      });
-    }
+    inserts.push({ recipe, baseName: STAFF_TO_BASE[p.name] ?? null });
   }
 
   if (options.dryRun) {
     console.log(
       `[staff-menu] dry-run: would insert ${inserts.length} recipes, ${recipeIngredients.length} recipe_ingredients`,
     );
-    for (const r of inserts) {
-      const base = STAFF_TO_BASE[r.name] ?? "(none)";
-      const lines = bom.get(base)?.length ?? 0;
+    for (const { recipe: r, baseName } of inserts) {
+      const lines = bom.get(baseName ?? "")?.length ?? 0;
       console.log(
-        `  + ${r.code}  ${r.name}  basePrice=${r.basePrice}  (BOM from ${base}: ${lines} lines)`,
+        `  + ${r.code}  ${r.name}  basePrice=${r.basePrice}  (BOM from ${baseName ?? "(none)"}: ${lines} lines)`,
       );
     }
     for (const w of warnings) console.log(`  ! ${w}`);
@@ -262,10 +216,48 @@ export async function migrateStaffMenu(options: StaffMenuOptions = {}): Promise<
     return;
   }
 
+  // Insert staff recipes first; capture their UUIDs for BOM copy.
+  let insertedRecipes: { id: string; name: string }[];
   try {
     await client.query("BEGIN");
     const db = drizzle(client, { schema });
-    if (inserts.length > 0) await db.insert(schema.recipes).values(inserts);
+    insertedRecipes = await db
+      .insert(schema.recipes)
+      .values(inserts.map((i) => i.recipe))
+      .returning({ id: schema.recipes.id, name: schema.recipes.name });
+    const idByName = new Map(insertedRecipes.map((r) => [r.name, r.id]));
+
+    for (const { recipe, baseName } of inserts) {
+      if (!baseName) continue;
+      const bomLines = bom.get(baseName);
+      if (!bomLines || bomLines.length === 0) {
+        warnings.push(`${recipe.name}: no BOM for base "${baseName}"`);
+        continue;
+      }
+      const staffId = idByName.get(recipe.name);
+      if (!staffId) {
+        warnings.push(`${recipe.name}: staff recipe id not found after insert`);
+        continue;
+      }
+      for (const line of bomLines) {
+        if (line.canonical === null) {
+          warnings.push(`${recipe.name}: skip "${line.rawName}" (non-ingredient)`);
+          continue;
+        }
+        const ing = ingByName.get(line.canonical.toLowerCase());
+        if (!ing) {
+          warnings.push(
+            `${recipe.name}: skip "${line.rawName}" (no ingredient "${line.canonical}")`,
+          );
+          continue;
+        }
+        recipeIngredients.push({
+          recipeId: staffId,
+          ingredientId: ing.id,
+          quantity: line.qty,
+        });
+      }
+    }
     if (recipeIngredients.length > 0) {
       await db.insert(schema.recipeIngredients).values(recipeIngredients);
     }
