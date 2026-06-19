@@ -25,6 +25,7 @@ import { migrateIngredientsCentral } from "./ingredients-central";
 import { migrateIngredientsTenant } from "./ingredients-tenant";
 import { migrateRecipesRincian } from "./recipes-rincian";
 import { migrateMenuKasir } from "./menu-kasir";
+import { migrateStaffMenu } from "./staff-menu";
 
 config({ path: [".env.local", ".env"] });
 
@@ -56,7 +57,9 @@ const migrations: Record<string, MigrationSpec> = {
   "menu-kasir": {
     fn: migrateMenuKasir,
   },
-  // "staff-menu":           { fn: migrateStaffMenu,           truncateTables: ["recipes"] },
+  "staff-menu": {
+    fn: migrateStaffMenu,
+  },
   // "harga-invoice":        { fn: migrateHargaInvoice,        truncateTables: ["recipes"] },
 };
 
