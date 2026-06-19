@@ -5,129 +5,121 @@
  *
  *   1. `canonicalName(raw)` — collapse variant spellings of the same
  *      ingredient (e.g., "Bubuk Matcha" vs "Bubuk Matcha latte") to a
- *      single canonical name. Without this, Rincian Menu's `Bubuk Matcha
- *      latte` wouldn't match List Item Central's `Bubuk Hojicha`... wait,
- *      different item. Let me restate: without this, the recipe BOM
- *      "Bubuk Matcha latte" wouldn't FK into the ingredient inserted
- *      from Invoice's "Bubuk Matcha".
+ *      single canonical name. Without this, the recipe BOM in Rincian
+ *      Menu couldn't FK into the ingredient inserted from Invoice.
  *
- *   2. `classify(canonical, unit)` — derive `category` and `skuType`
+ *   2. `classify(canonical)` — derive `category` and `skuType`
  *      (RM / SFG / FG, Fresh / Dry / Packaging) using hard-coded
- *      knowledge gained by reading all 7 CSVs (see `docs/csv/`).
+ *      knowledge gained by reading all 7 CSVs.
  *
  * Hard-coded rather than re-parsing the CSVs at runtime because:
  *   - the CSVs are frozen starter data (won't be edited post-migration)
  *   - the cross-reference signal is best computed once and committed
  *
- * Add to ALIASES / FG_ITEMS / PACKAGING_ITEMS / FRESH_ITEMS / SKIP_ITEMS
- * when a future migration uncovers a new variant or a wrong classification.
+ * Add to ALIASES / FG_ITEMS / PACKAGING_ITEMS / FRESH_ITEMS when a
+ * future migration uncovers a new variant or wrong classification.
  */
 
 // ─── Aliases: variant → canonical ─────────────────────────────────────────
 // Keyed by lowercased, single-spaced input. Value is the canonical name.
 // Returning null means "this is not an ingredient" (operational supply).
 const ALIASES: Record<string, string | null> = {
-  // "Bubuk Matcha" (Invoice) vs "Bubuk Matcha latte" (Tenant/Rincian)
+  // ─── Drink / powder / sauce variants ────────────────────────────────────
   "bubuk matcha": "Bubuk Matcha latte",
   "bubuk matcha latte": "Bubuk Matcha latte",
-
-  // "SKM" / "Susu Kental Manis" → same item
   skm: "Susu Kental Manis",
   "susu kental manis": "Susu Kental Manis",
-
-  // Sauce casing / packaging-form vs bottled
   "saus manis jepang": "Saus Manis Jepang",
+  "saus strawberry": "Strawberry Sauce",
+  "saus katsu": "Saus Manis Jepang",
   "saus sambal": "Saus Sambal Sachet",
   "saus tomat": "Saus Tomat Sachet",
-  "saus strawberry": "Strawberry Sauce",
-  "saus katsu": "Saus Katsu",
 
-  // Sealer cup spelling variants
-  "plastik sealer gelas": "Plastik Sealer Cup",
-  "plastik sealer cup": "Plastik Sealer Cup",
-  "plastik sealer cup ": "Plastik Sealer Cup",
-  sealercup: "Plastik Sealer Cup",
-  "sealer cup": "Plastik Sealer Cup",
+  // ─── Spicy / minced chicken ─────────────────────────────────────────────
+  "spicy minced chicken sauce": "Spicy Sauce Ayam Cincang",
+  "saus tiram": "Saus Tiram",
 
-  // Miso forms
+  // ─── Miso forms ─────────────────────────────────────────────────────────
   "biang miso": "Miso Soup",
   "miso pasta": "Miso Pasta",
   "miso soup": "Miso Soup",
+  "bubuk dashi": "Dashi Halal",
 
-  // Katsu forms
+  // ─── Katsu / beef ───────────────────────────────────────────────────────
   katsu: "Katsu Chicken",
-
-  // Beef slice = blackpepper cut (per Rincian Menu context)
   "daging beef slice": "Daging Blackpepper",
   "daging blackpepper": "Daging Blackpepper",
 
-  // Vinegar
+  // ─── Vinegar ────────────────────────────────────────────────────────────
   cuka: "Cuka Nasi",
   "rice vinegar": "Cuka Nasi",
 
-  // Klip variants
+  // ─── Klip variants ──────────────────────────────────────────────────────
   "plastik klip": "Plastik Klip 100 Pcs",
   "plastik klip 100 pcs": "Plastik Klip 100 Pcs",
   "plastik klip 100pcs": "Plastik Klip 100 Pcs",
 
-  // LPG
+  // ─── LPG ────────────────────────────────────────────────────────────────
   lpg: null,
   "tabung lpg 3 kg": null,
+  "tabung lpg": null,
 
-  // Nota paper
+  // ─── Nota paper ─────────────────────────────────────────────────────────
   "kertas nota": "Roll Kertas Nota",
   "roll kertas nota": "Roll Kertas Nota",
 
-  // Trash bag
+  // ─── Trash bag ──────────────────────────────────────────────────────────
   "plastik kresek": "Trash Bag",
   "kresek sampah": "Trash Bag",
   "kresek 35": "Trash Bag",
 
-  // Cleansing supplies — not ingredients
+  // ─── Cleansing supplies (operational) ───────────────────────────────────
   sunlight: null,
   "cairan cuci piring": null,
   "super pel": null,
 
-  // Tissue variants
+  // ─── Tissue / Battery / Kabel ──────────────────────────────────────────
   tissue: "Tissue",
   "tissue jumbo": "Tissue Jumbo",
-
-  // Battery
   "battery aaa": "Battery AAA",
   battery: "Battery AAA",
   batterai: "Battery AAA",
-
-  // Kabel ties
   "kabel ties": "Kabel Ties",
   "kabel ties 2.5*100mm putih": "Kabel Ties",
   "kable ties": "Kabel Ties",
 
-  // Cups / gelas variants
+  // ─── Cups / gelas ───────────────────────────────────────────────────────
   "cup gelas pp 12 oz": "Cup gelas PP 12Oz",
   "cup gelas pp 12oz": "Cup gelas PP 12Oz",
   "cup gelas pp 14 oz": "Cup gelas PP 14Oz",
   "cup gelas pp 14oz": "Cup gelas PP 14Oz",
 
-  // Thinwall
+  // ─── Sealer cup ─────────────────────────────────────────────────────────
+  "plastik sealer gelas": "Plastik Sealer Cup",
+  "plastik sealer cup": "Plastik Sealer Cup",
+  sealercup: "Plastik Sealer Cup",
+  "sealer cup": "Plastik Sealer Cup",
+
+  // ─── Thinwall ───────────────────────────────────────────────────────────
   "thinwall 500ml": "Thinwall 500ml",
   "thinwall 500 ml": "Thinwall 500ml",
   "thinwall 300 ml": "Thinwall 300 ml",
   "thinwall 25 ml": "Thinwall 25 ml",
   "thinwall 150 ml": "Thinwall 150 ml",
 
-  // Sendok
+  // ─── Sendok ─────────────────────────────────────────────────────────────
   "sendok plastik": "Sendok Plastik",
   "sendok puding": "Sendok Pudding",
   "sendok makan": "Sendok Makan",
 
-  // Egg
+  // ─── Egg ────────────────────────────────────────────────────────────────
   eggroll: "Egg Roll",
   "egg roll": "Egg Roll",
 
-  // Ice tea (drink as ingredient? no, it's a recipe. But Menu Kasir lists it.)
+  // ─── Ice tea (alias between Rincian and Menu Kasir) ───────────────────
   "ice tea": "Ice Tea",
 
-  // Operational extras in Menu Kasir (not ingredients)
+  // ─── Operational extras in Menu Kasir / Invoice ────────────────────────
   galon: null,
   "minyak 1 liter": null,
   "minyak 2 liter": null,
@@ -139,9 +131,28 @@ const ALIASES: Record<string, string | null> = {
   "wijen 100 gr": "Wijen",
   "daun parsley (gram)": "Daun Parsley",
   "tepung ketan (pack)": "Tepung Ketan",
-  "isi staples": "Isi Staples",
   "isi steples": "Isi Staples",
+  "isi staples": "Isi Staples",
   bulpoint: null,
+  "ongkos kirim": null,
+  "sunlight 1500": null,
+
+  // ─── Aliases from Harga Invoice (per-unit cost CSV) ────────────────────
+  parsley: "Daun Parsley",
+  "bubuk cabe": "Cabe bubuk",
+  "thin wall 300 ml": "Thinwall 300 ml",
+  "thin wall 25 ml": "Thinwall 25 ml",
+  "thin wall 150 ml": "Thinwall 150 ml",
+  "tray paper bowl": "Paper Bowl 650 ml",
+  "bubuk choco latte": "Choco Latte",
+  "plastik bawang 15": "Plastik Bawang 15",
+  "plastik bawang 20": "Plastik Bawang 20",
+  "plastik bawang 25": "Plastik Bawang 25",
+  "plastik 12 x 25": "Plastik 12 x 25",
+  "plastik 20 x 35": "Plastik 20 x 35",
+  "tutup bowl 650 ml": "Tutup Bowl 650 ml",
+  "paper bowl 650 ml": "Paper Bowl 650 ml",
+  "tray bento": "Bento Tray",
 };
 
 const FG_ITEMS = new Set<string>(
@@ -181,7 +192,6 @@ const PACKAGING_ITEMS = new Set<string>(
     "Thinwall 500ml",
     "Inner Tray Bowl",
     "Bento Tray",
-    "Tray Bento",
     "Tissue",
     "Tissue Jumbo",
     "Kabel Ties",
@@ -199,11 +209,9 @@ const PACKAGING_ITEMS = new Set<string>(
     "Cling Wrap",
     "Trash Bag",
     "Spons Cuci",
-    "Gelas Polos",
     "Vaccum Pack 10 x 15",
     "Vaccum Pack 25 x 37",
     "Vaccum Pack 30 x 40",
-    "Tabung LPG 3 Kg",
   ].map((s) => s.toLowerCase()),
 );
 
@@ -231,30 +239,22 @@ const FRESH_ITEMS = new Set<string>(
   ].map((s) => s.toLowerCase()),
 );
 
-// Canonical (proper-cased) form per known name. Built lazily from the
-// sets above so we always return the same casing for a known item.
+// Canonical (proper-cased) form per known name. Built from the sets
+// above so we always return the same casing for a known item.
 const CANONICAL_FORMS = new Map<string, string>();
 {
   const all = [...FG_ITEMS, ...PACKAGING_ITEMS, ...FRESH_ITEMS];
   for (const lower of all) {
-    // Pick the title-cased version from the original arrays. Since we
-    // lowercased on construction, reconstruct by looking at the source
-    // list (sourced above). For names with multiple words, the first
-    // char of each word is capitalised except for unit suffixes ("ml",
-    // "gr") which are kept lower. This is a best-effort normalisation;
-    // the canonical form matches whatever the ingredient was inserted
-    // with, so cross-CSV lookups still work.
     const proper = lower
       .split(" ")
       .map((w, i) => {
-        if (i > 0 && /^(ml|gr|kg|pcs|pax|pcs)$/i.test(w)) return w.toLowerCase();
+        if (i > 0 && /^(ml|gr|kg|pcs|pax)$/i.test(w)) return w.toLowerCase();
         return w.charAt(0).toUpperCase() + w.slice(1);
       })
       .join(" ");
     CANONICAL_FORMS.set(lower, proper);
   }
-  // Override a few entries whose canonical form is non-trivial.
-  CANONICAL_FORMS.set("tabung lpg 3 kg", "Tabung LPG 3 Kg");
+  // Override entries whose canonical form needs non-default casing.
   CANONICAL_FORMS.set("cup gelas pp 12oz", "Cup gelas PP 12Oz");
   CANONICAL_FORMS.set("cup gelas pp 14oz", "Cup gelas PP 14Oz");
   CANONICAL_FORMS.set("daun teh hitam", "Daun Teh Hitam");
@@ -281,7 +281,6 @@ const CANONICAL_FORMS = new Map<string, string>();
   CANONICAL_FORMS.set("cling wrap", "Cling Wrap");
   CANONICAL_FORMS.set("trash bag", "Trash Bag");
   CANONICAL_FORMS.set("spons cuci", "Spons Cuci");
-  CANONICAL_FORMS.set("gelas polos", "Gelas Polos");
   CANONICAL_FORMS.set("vaccum pack 10 x 15", "Vaccum Pack 10 x 15");
   CANONICAL_FORMS.set("vaccum pack 25 x 37", "Vaccum Pack 25 x 37");
   CANONICAL_FORMS.set("vaccum pack 30 x 40", "Vaccum Pack 30 x 40");
