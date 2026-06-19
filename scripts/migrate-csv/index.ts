@@ -4,22 +4,53 @@
  * Runs every registered migration in declaration order. Pass `--only
  * <name>` to run a single one (useful when iterating on a single CSV).
  *
- * Convention: each migration module exports an async function with the
- * same name as the source CSV (without the `.csv` extension and without
- * "Detail POS - " prefix).
+ * Convention:
+ *   - Each migration module exports an async function `(opts) => void`
+ *     where `opts.dryRun` lets the caller preview without touching the DB.
+ *   - Migrations may declare `truncateTables`; the orchestrator TRUNCATEs
+ *     those tables (CASCADE) before the migration runs, but only once per
+ *     table per run (so a downstream migration on the same table can
+ *     rely on a clean state without re-truncating).
+ *   - Migrations should declare dependencies via position: declare them
+ *     in the order they must run. The orchestrator does NOT auto-resolve
+ *     dependencies from a graph; the file's `migrations` map is the
+ *     declaration order.
  */
 
+import { config } from "dotenv";
+import { Client } from "pg";
+
 import { migrateBranches } from "./branches";
+import { migrateIngredientsCentral } from "./ingredients-central";
+import { migrateIngredientsTenant } from "./ingredients-tenant";
 
-type MigrationFn = (options: { dryRun?: boolean }) => Promise<void>;
+config({ path: [".env.local", ".env"] });
 
-const migrations: Record<string, MigrationFn> = {
-  branches: migrateBranches,
-  // menu: migrateMenu,              // upcoming CSVs
-  // ingredients-central: ...,
-  // ingredients-tenant: ...,
-  // staff-menu: ...,
-  // invoice-prices: ...,
+type MigrationOptions = { dryRun?: boolean };
+type MigrationFn = (options: MigrationOptions) => Promise<void>;
+
+type MigrationSpec = {
+  fn: MigrationFn;
+  /** Tables to TRUNCATE CASCADE before this migration runs (only once per run). */
+  truncateTables?: string[];
+};
+
+const migrations: Record<string, MigrationSpec> = {
+  branches: {
+    fn: migrateBranches,
+    truncateTables: ["branches"],
+  },
+  "ingredients-central": {
+    fn: migrateIngredientsCentral,
+    truncateTables: ["ingredients"],
+  },
+  "ingredients-tenant": {
+    fn: migrateIngredientsTenant,
+  },
+  // "recipes-rincian":      { fn: migrateRecipesRincian,      truncateTables: ["recipes", "recipe_ingredients", "recipe_brands"] },
+  // "menu-kasir":           { fn: migrateMenuKasir,           truncateTables: ["recipes"] },
+  // "staff-menu":           { fn: migrateStaffMenu,           truncateTables: ["recipes"] },
+  // "harga-invoice":        { fn: migrateHargaInvoice,        truncateTables: ["recipes"] },
 };
 
 function parseArgs(argv: string[]): { only: string | null; dryRun: boolean; help: boolean } {
@@ -38,9 +69,29 @@ function printHelp(): void {
   console.log("  --only <name>  Run only the named migration");
   console.log("  --dry-run      Parse the CSV and print rows without touching the DB");
   console.log("");
-  console.log("Registered migrations:");
+  console.log("Registered migrations (in declared order):");
   for (const n of names) console.log(`  - ${n}`);
   if (names.length === 0) console.log("  (none yet)");
+}
+
+async function truncateTablesOnce(
+  url: string,
+  tables: string[],
+  alreadyTruncated: Set<string>,
+): Promise<void> {
+  const toTruncate = tables.filter((t) => !alreadyTruncated.has(t));
+  if (toTruncate.length === 0) return;
+
+  const client = new Client({ connectionString: url });
+  await client.connect();
+  try {
+    // Quote each identifier to defend against reserved words.
+    const list = toTruncate.map((t) => `"${t}"`).join(", ");
+    await client.query(`TRUNCATE TABLE ${list} CASCADE`);
+  } finally {
+    await client.end();
+  }
+  for (const t of toTruncate) alreadyTruncated.add(t);
 }
 
 async function main(): Promise<void> {
@@ -60,9 +111,21 @@ async function main(): Promise<void> {
   }
 
   console.log(`[migrate-csv] running ${targets.length} migration(s)${dryRun ? " (dry-run)" : ""}`);
+
+  const url = dryRun ? null : (process.env.DATABASE_URL ?? null);
+  if (!dryRun && !url) {
+    console.error("DATABASE_URL is not set (required for non-dry-run).");
+    process.exit(1);
+  }
+
+  const alreadyTruncated = new Set<string>();
   for (const name of targets) {
     console.log(`[migrate-csv] → ${name}`);
-    await migrations[name]!({ dryRun });
+    const spec = migrations[name]!;
+    if (!dryRun && spec.truncateTables && url) {
+      await truncateTablesOnce(url, spec.truncateTables, alreadyTruncated);
+    }
+    await spec.fn({ dryRun });
   }
   console.log("[migrate-csv] done.");
 }

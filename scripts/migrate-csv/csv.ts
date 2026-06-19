@@ -85,3 +85,49 @@ export function findColumn(header: string[], name: string): number {
   const target = name.trim().toLowerCase();
   return header.findIndex((h) => h.replace(/^\*/, "").trim().toLowerCase() === target);
 }
+
+/**
+ * Some CSVs have a title row before the actual header row
+ * (e.g. `List Item Central Kitchen,,` followed by `No.,Nama Bahan,Satuan`).
+ * The simple `parseCsv` treats the first row as the header. This helper
+ * scans the rows for the one that contains all `expectedColumns`, then
+ * returns the indices of those columns in that row. Rows above the
+ * detected header are dropped.
+ *
+ * Falls back to `table.header` if no row matches (i.e., the parser's
+ * own header row already has the columns — the common case).
+ */
+export function findHeader(
+  table: CsvTable,
+  expectedColumns: string[],
+): { header: CsvRow; data: CsvRow[]; indices: Record<string, number> } | null {
+  const normalised = (s: string) => s.replace(/^\*/, "").trim().toLowerCase();
+  const wanted = expectedColumns.map((c) => c.trim().toLowerCase());
+
+  const scoreRow = (row: CsvRow): Record<string, number> | null => {
+    const lower = row.map(normalised);
+    const indices: Record<string, number> = {};
+    for (const col of wanted) {
+      const idx = lower.indexOf(col);
+      if (idx === -1) return null;
+      indices[col] = idx;
+    }
+    return indices;
+  };
+
+  // First try table.header (parser's own first row).
+  const headerMatch = scoreRow(table.header);
+  if (headerMatch) {
+    return { header: table.header, data: table.rows, indices: headerMatch };
+  }
+
+  // Otherwise scan table.rows for a row that has all expected columns.
+  for (let i = 0; i < table.rows.length; i++) {
+    const row = table.rows[i]!;
+    const indices = scoreRow(row);
+    if (indices) {
+      return { header: row, data: table.rows.slice(i + 1), indices };
+    }
+  }
+  return null;
+}

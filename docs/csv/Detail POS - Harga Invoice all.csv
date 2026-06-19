@@ -1,0 +1,73 @@
+Harga Invoice All Tenant (per Item),,,,,,,,,Harga Invoice Pucang (per Item),,,,,,,
+,,,,,,,,,,,,,,,,
+No,Item,Quantity,,Harga,Harga + 5%,Harga per item,Satuan,,No,Item,Quantity,,,,Harga per item,Satuan
+1,Ayam Karage,2400,gr,"Rp 117,600.00","Rp 123,480.00",Rp 49.00,gr,,1,Ayam Karage,2400,gr,"Rp 117,600.00","Rp 123,480.00",Rp 51.45,gr
+2,Daging blackpepper,1800,gr,"Rp 228,600.00","Rp 240,030.00",Rp 127.00,gr,,2,Daging blackpepper,1800,gr,"Rp 228,600.00","Rp 240,030.00",Rp 133.35,gr
+4,Hot Honey Sauce,500,gr,"Rp 16,000.00","Rp 16,800.00",Rp 32.00,gr,,4,Hot Honey Sauce,500,gr,"Rp 16,000.00","Rp 16,800.00",Rp 33.60,gr
+5,Curry Sauce,10,pcs,"Rp 22,000.00","Rp 23,100.00","Rp 2,200.00",pcs,,5,Curry Sauce,10,pcs,"Rp 22,000.00","Rp 23,100.00","Rp 2,310.00",pcs
+6,Spicy Minced Chicken Sauce,10,pcs,"Rp 16,500.00","Rp 17,325.00","Rp 1,650.00",pcs,,6,Spicy Minced Chicken Sauce,10,pcs,"Rp 16,500.00","Rp 17,325.00","Rp 1,732.50",pcs
+7,Biang Miso,10,pcs,"Rp 10,000.00","Rp 10,500.00","Rp 1,000.00",pcs,,7,Biang Miso,10,pcs,"Rp 10,000.00","Rp 10,500.00","Rp 1,050.00",pcs
+9,Saus Katsu,100,gr,"Rp 2,875.00","Rp 3,018.75",Rp 28.75,gr,,9,Saus Katsu,100,gr,"Rp 2,875.00","Rp 3,018.75",Rp 30.19,gr
+10,Mirin Halal,100,gr,"Rp 4,400.00","Rp 4,620.00",Rp 44.00,gr,,10,Mirin Halal,100,gr,"Rp 4,400.00","Rp 4,620.00",Rp 46.20,gr
+11,Bubuk Dashi,60,gr,"Rp 12,600.00","Rp 13,230.00",Rp 210.00,gr,,11,Bubuk Dashi,60,gr,"Rp 12,600.00","Rp 13,230.00",Rp 220.50,gr
+12,Gula Pasir,60,gr,"Rp 1,122.00","Rp 1,178.10",Rp 18.70,gr,,12,Gula Pasir,60,gr,"Rp 1,122.00","Rp 1,178.10",Rp 19.64,gr
+13,Wijen,100,gr,"Rp 4,750.00","Rp 4,987.50",Rp 47.50,gr,,13,Wijen,100,gr,"Rp 4,750.00","Rp 4,987.50",Rp 49.88,gr
+14,Parsley,100,gr,"Rp 8,400.00","Rp 8,820.00",Rp 84.00,gr,,14,Parsley,100,gr,"Rp 8,400.00","Rp 8,820.00",Rp 88.20,gr
+15,Bubuk Cabe,1000,gr,"Rp 49,900.00","Rp 52,395.00",Rp 49.90,gr,,15,Bubuk Cabe,1000,gr,"Rp 49,900.00","Rp 52,395.00",Rp 52.40,gr
+16,Saus Sambal,24,pcs,"Rp 4,416.00","Rp 4,636.80",Rp 184.00,pcs,,16,Saus Sambal,24,pcs,"Rp 4,416.00","Rp 4,636.80",Rp 193.20,pcs
+17,Saus Tomat,24,pcs,"Rp 3,912.00","Rp 4,107.60",Rp 163.00,pcs,,17,Saus Tomat,24,pcs,"Rp 3,912.00","Rp 4,107.60",Rp 171.15,pcs
+24,Saus Strawberry,2000,gr,"Rp 109,250.00","Rp 114,712.50",Rp 54.63,gr,,24,Saus Strawberry,2000,gr,"Rp 109,250.00","Rp 114,712.50",Rp 57.36,gr
+27,Thin Wall 300 ml,25,pcs,"Rp 13,700.00","Rp 14,385.00",Rp 548.00,pcs,,27,Thin Wall 300 ml,25,pcs,"Rp 13,700.00","Rp 14,385.00",Rp 575.40,pcs
+28,Sedotan,1,pcs,"Rp 10,000.00","Rp 10,500.00","Rp 10,000.00",pack,,28,Sedotan,1,pcs,"Rp 10,000.00","Rp 10,500.00","Rp 10,500.00",pack
+29,Thousand Island,1000,gr,"Rp 30,500.00","Rp 32,025.00",Rp 30.50,gr,,29,Thousand Island,1000,gr,"Rp 30,500.00","Rp 32,025.00",Rp 32.03,gr
+30,Thin Wall 25 ml ,50,pcs,"Rp 14,000.00","Rp 14,700.00",Rp 280.00,pcs,,30,Thin Wall 25 ml ,50,pcs,"Rp 14,000.00","Rp 14,700.00",Rp 294.00,pcs
+32,Tray Paper Bowl,25,pcs,"Rp 12,500.00","Rp 13,125.00",Rp 500.00,pcs,,32,Tray Paper Bowl,25,pcs,"Rp 12,500.00","Rp 13,125.00",Rp 525.00,pcs
+33,Susu Kental Manis,1000,gr,"Rp 24,500.00","Rp 25,725.00",Rp 24.50,gr,,33,Susu Kental Manis,1000,gr,"Rp 24,500.00","Rp 25,725.00",Rp 25.73,gr
+34,Bubuk Matcha,1000,gr,"Rp 1,350,000.00","Rp 1,417,500.00","Rp 1,350.00",gr,,34,Bubuk Matcha,1000,gr,"Rp 1,350,000.00","Rp 1,417,500.00","Rp 1,417.50",gr
+36,Bubuk Choco latte,480,gr,"Rp 58,080.00","Rp 60,984.00",Rp 121.00,gr,,36,Bubuk Choco latte,480,gr,"Rp 58,080.00","Rp 60,984.00",Rp 127.05,gr
+37,Plastik Bawang 20,1,pack,"Rp 9,500.00","Rp 9,975.00","Rp 9,500.00",pack,,37,Plastik Bawang 20,1,pack,"Rp 9,500.00","Rp 9,975.00","Rp 9,975.00",pack
+38,Plastik Bawang 25,1,pack,"Rp 9,500.00","Rp 9,975.00","Rp 9,500.00",pack,,38,Plastik Bawang 25,1,pack,"Rp 9,500.00","Rp 9,975.00","Rp 9,975.00",pack
+41,Gula Halus,500,gr,"Rp 10,500.00","Rp 11,025.00",Rp 21.00,gr,,41,Gula Halus,500,gr,"Rp 10,500.00","Rp 11,025.00",Rp 22.05,gr
+42,Thinwall 500ml,25,pcs,"Rp 22,000.00","Rp 23,100.00",Rp 880.00,pcs,,42,Thinwall 500ml,25,pcs,"Rp 22,000.00","Rp 23,100.00",Rp 924.00,pcs
+45,Beras,5000,gr,"Rp 80,000.00","Rp 84,000.00",Rp 16.00,gr,,45,Beras,5000,gr,"Rp 80,000.00","Rp 84,000.00",Rp 16.80,gr
+46,Telor Ayam,1,pcs,"Rp 1,800.00","Rp 1,890.00","Rp 1,800.00",pcs,,46,Telor Ayam,1,pcs,"Rp 1,800.00","Rp 1,890.00","Rp 1,890.00",pcs
+48,Kabel Ties,1,pcs,Rp 25.00,Rp 26.25,Rp 25.00,pcs,,48,Kabel Ties,1,pcs,Rp 25.00,Rp 26.25,Rp 26.25,pcs
+49,Susu Fresh Milk,1,pcs,"Rp 18,000.00","Rp 18,900.00","Rp 18,000.00",pcs,,49,Susu Fresh Milk,1,pcs,"Rp 18,000.00","Rp 18,900.00","Rp 18,900.00",pcs
+50,Simple Syrup ,5000,gr,"Rp 78,000.00","Rp 81,900.00",Rp 15.60,gr,,50,Simple Syrup ,5000,gr,"Rp 78,000.00","Rp 81,900.00",Rp 16.38,gr
+51,Minyak Goreng,1,pcs,"Rp 17,000.00","Rp 17,850.00","Rp 17,000.00",pcs,,51,Minyak Goreng,1,pcs,"Rp 17,000.00","Rp 17,850.00","Rp 17,850.00",pcs
+55,Plastik klip 100pcs,1,pack,"Rp 1,120.00","Rp 1,176.00","Rp 1,120.00",pack,,55,Plastik klip 100pcs,1,pack,"Rp 1,120.00","Rp 1,176.00","Rp 1,176.00",pack
+56,Plastik sealer gelas,1,pcs,"Rp 30,000.00","Rp 31,500.00","Rp 30,000.00",pcs,,56,Plastik sealer gelas,1,pcs,"Rp 30,000.00","Rp 31,500.00","Rp 31,500.00",pcs
+57,Kresek sampah,1,pack,"Rp 8,000.00","Rp 8,400.00","Rp 8,000.00",pack,,57,Kresek sampah,1,pack,"Rp 8,000.00","Rp 8,400.00","Rp 8,400.00",pack
+58,plastik 12 x 25,1,Pack,"Rp 9,000.00","Rp 9,450.00","Rp 9,000.00",pack,,58,plastik 12 x 25,1,Pack,"Rp 9,000.00","Rp 9,450.00","Rp 9,450.00",pack
+60,Tutup Bowl 650 ml,1,pcs,Rp 375.00,Rp 393.75,Rp 375.00,pcs,,60,Tutup Bowl 650 ml,1,pcs,Rp 375.00,Rp 393.75,Rp 392.00,pcs
+61,sunlight 1500,1,pcs,"Rp 22,900.00","Rp 24,045.00","Rp 22,900.00",pcs,,61,sunlight 1500,1,pcs,"Rp 22,900.00","Rp 24,045.00","Rp 24,045.00",pcs
+62,tissue,1,pcs,"Rp 7,200.00","Rp 7,560.00","Rp 7,200.00",pcs,,62,tissue,1,pcs,"Rp 7,200.00","Rp 7,560.00","Rp 7,560.00",pcs
+63,Battery AAA,12,pcs,"Rp 29,900.00","Rp 31,395.00","Rp 2,491.67",pcs,,63,Battery AAA,12,pcs,"Rp 29,900.00","Rp 31,395.00","Rp 2,616.25",pcs
+64,plastik 20 x 35,1,pack,"Rp9,000","Rp 9,450.00","Rp 9,000.00",pack,,64,plastik 20 x 35,1,pack,"Rp9,000","Rp 9,450.00","Rp 9,450.00",pack
+65,Spons cuci,1,pcs,"Rp4,600","Rp 4,830.00","Rp 4,600.00",pcs,,65,Spons cuci,1,pcs,"Rp4,600","Rp 4,830.00","Rp 4,830.00",pcs
+67,tusuk sate,1,pack,"Rp6,500","Rp 6,825.00","Rp6,500.00",pack,,67,tusuk sate,1,pack,"Rp6,500","Rp 6,825.00","Rp 6,825.00",pack
+68,Paper Bowl 650 ml,1,pcs,"Rp1,065","Rp 1,118.25","Rp1,065.00",pcs,,68,Paper Bowl 650 ml,1,pcs,"Rp1,065","Rp 1,118.25","Rp 1,120.00",pcs
+69,Wakame,1,gr,Rp 336.00,Rp 352.80,Rp336.00,gr,,69,Wakame,1,gr,Rp 336.00,Rp 352.80,Rp 352.80,gr
+70,Katsu,1,pcs,"Rp 4,095.00","Rp 4,299.75","Rp4,095.00",pcs,,70,Katsu,1,pcs,"Rp 4,095.00","Rp 4,299.75","Rp 4,299.75",pcs
+71,Tepung ketan,1,pack,"Rp 11,000.00","Rp 11,550.00","Rp11,000.00",pack,,71,Tepung ketan,1,pack,"Rp 11,000.00","Rp 11,550.00","Rp 11,550.00",pack
+74,Ongkos Kirim,1,,"Rp30,000.00","Rp 31,500.00","Rp30,000.00",,,74,Ongkos Kirim,1,,"Rp30,000.00","Rp 31,500.00","Rp 31,500.00",
+76,Bulpoint,12,pcs,"Rp7,200","Rp 7,560.00",Rp600.00,pcs,,76,Bulpoint,12,pcs,"Rp7,200","Rp 7,560.00",Rp 630.00,pcs
+77,Plastik bawang 15,1,Pack,"Rp9,000.00","Rp 9,450.00","Rp9,000.00",pack,,77,Plastik bawang 15,1,Pack,"Rp9,000.00","Rp 9,450.00","Rp 9,450.00",pack
+79,Teh Wayang,10,Pack,"Rp18,900.00","Rp 19,845.00","Rp1,890.00",pcs,,79,Teh Wayang,10,Pack,"Rp18,900.00","Rp 19,845.00","Rp 1,984.50",pcs
+80,Kertas Nota,10,pcs,"Rp27,500","Rp 28,875.00","Rp2,750.00",pcs,,80,Kertas Nota,10,pcs,"Rp27,500","Rp 28,875.00","Rp 2,887.50",pcs
+82,Isi Staples,1,Pcs,1400,"Rp 1,470.00","Rp1,400.00",pcs,,82,Isi Staples,1,Pcs,1400,"Rp 1,470.00","Rp 1,470.00",pcs
+83,Tissue Jumbo,1,Pcs,30000,"Rp 31,500.00","Rp30,000.00",pcs,,83,Tissue Jumbo,1,Pcs,30000,"Rp 31,500.00","Rp 31,500.00",pcs
+84,Gelas Polos,50,pcs,"Rp 14,100.00","Rp 14,805.00",Rp282.00,pcs,,84,Gelas Polos,50,pcs,"Rp 14,100.00","Rp 14,805.00",Rp 296.10,pcs
+85,Pudding Caramel,1,pcs,"Rp2,064.84","Rp 2,168.08","Rp2,064.84",pcs,,85,Pudding Caramel,1,pcs,"Rp2,064.84","Rp 2,168.08","Rp 2,168.08",pcs
+87,Kresek 35,1,Pack,14200,"Rp 14,910.00","Rp14,200.00",Pack,,87,Kresek 35,1,Pack,14200,"Rp 14,910.00","Rp 14,910.00",Pack
+88,Sendok Pudding,1,Pack,6300,"Rp 6,615.00","Rp6,300.00",Pack,,88,Sendok Pudding,1,Pack,6300,"Rp 6,615.00","Rp 6,615.00",Pack
+90,Beras Ketan,1,Gr,31,Rp 32.55,Rp31.00,Gr,,90,Beras Ketan,1,Gr,31,Rp 32.55,Rp 32.55,Gr
+91,Cuka,1,Gr,40,Rp 42.00,Rp40.00,Gr,,91,Cuka,1,Gr,40,Rp 42.00,Rp 42.00,Gr
+92,Sendok Plastik,1,pcs,160,Rp 168.00,Rp160.00,pcs,,92,Sendok Plastik,1,pcs,160,Rp 168.00,Rp 168.00,pcs
+93,Eggroll,1,pcs,440,Rp 462.00,Rp440.00,pcs,,93,Eggroll,1,pcs,440,Rp 462.00,Rp 462.00,pcs
+94,Edamame,1,gr,40,Rp 42.00,Rp40.00,gr,,94,Edamame,1,gr,40,Rp 42.00,Rp 42.00,gr
+95,Tray Bento,1,pcs,2530,"Rp 2,656.50","Rp2,530.00",pcs,,95,Tray Bento,1,pcs,2530,"Rp 2,656.50","Rp 2,656.50",pcs
+96,White Coin,1,gr,130,Rp 136.50,Rp130.00,gr,,96,White Coin,1,gr,130,Rp 136.50,Rp 136.50,gr
+97,Garam,1,gr,7.9,Rp 8.30,Rp7.90,gr,,97,Garam,1,gr,7.9,Rp 8.30,Rp 8.30,gr
+98,Cup gelas PP 12Oz,1,pcs,480,Rp 504.00,Rp480.00,pcs,,98,Cup gelas PP 12Oz,1,pcs,480,Rp 504.00,Rp 504.00,pcs
+99,Bayam krispy,1,gr,60,Rp 63.00,Rp60.00,gr,,99,Bayam krispy,1,gr,60,Rp 63.00,Rp 63.00,gr

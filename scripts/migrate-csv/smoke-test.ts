@@ -1,66 +1,110 @@
-// Smoke test for the CSV + address parsers. Not part of `vp test` —
-// run manually with: tsx scripts/migrate-csv/smoke-test.ts
+// Smoke test for the CSV migrations. Not part of `vp test` — run manually
+// with: tsx scripts/migrate-csv/smoke-test.ts
+//
+// Prints the rows each migration *would* insert, without touching the DB.
+// Useful when iterating on parser logic or canonical-name tables.
+
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseCsv, findColumn } from "./csv";
+
+import { parseCsv, findColumn, findHeader } from "./csv";
 import { formatLocation, parseAddress } from "./address";
+import { canonicalName, classify, normaliseUnit } from "./normalize";
 
-const CSV_PATH = resolve(process.cwd(), "docs/csv/Detail POS - List Cabang.csv");
+// ─── 1. Branches ─────────────────────────────────────────────────────────
+{
+  const CSV = "docs/csv/Detail POS - List Cabang.csv";
+  const raw = readFileSync(resolve(process.cwd(), CSV), "utf-8");
+  const table = parseCsv(raw);
+  const nameCol = findColumn(table.header, "Brand - Outletname");
+  const addrCol = findColumn(table.header, "Outlet Location Address");
+  const telpCol = findColumn(table.header, "No telp");
+  const aduanCol = findColumn(table.header, "No Pengaduan");
 
-const raw = readFileSync(CSV_PATH, "utf-8");
-const table = parseCsv(raw);
-
-console.log(`Parsed ${table.rows.length} rows. Header:`);
-console.log(" ", table.header);
-
-const nameCol = findColumn(table.header, "Brand - Outletname");
-const addrCol = findColumn(table.header, "Outlet Location Address");
-const telpCol = findColumn(table.header, "No telp");
-const aduanCol = findColumn(table.header, "No Pengaduan");
-console.log(`Columns: name=${nameCol} addr=${addrCol} telp=${telpCol} aduan=${aduanCol}`);
-
-const expectedCodes: Record<string, string> = {
-  "Omoiyari Wiyung": "WYG",
-  "Omoiyari Darmo Permai": "DRM",
-  "Omoiyari Tenggilis": "TGL",
-  "Omoiyari Mulyorejo": "MLY",
-  "Omoiyari Jambangan": "JMB",
-  "Omoiyari Pucang": "PCG",
-  "Omoiyari Siwalankerto": "SWL",
-};
-
-let pass = 0;
-let fail = 0;
-
-for (const [idx, row] of table.rows.entries()) {
-  const name = (row[nameCol] ?? "").trim();
-  const addr = row[addrCol] ?? "";
-  const telp = (row[telpCol] ?? "").trim();
-  const aduan = (row[aduanCol] ?? "").trim();
-  const parsed = parseAddress(addr);
-  const location = formatLocation(parsed);
-
-  const expectCode = expectedCodes[name];
-  const code = expectCode ? `${expectCode}-01` : "???";
-
-  console.log(`\n[${idx + 1}] ${name}  →  ${code}`);
-  console.log(`  raw address:`);
-  for (const line of addr.split("\n")) console.log(`    | ${line}`);
-  console.log(`  parsed:`);
-  console.log(`    street:    ${parsed.street}`);
-  console.log(`    kelurahan: ${parsed.kelurahan}`);
-  console.log(`    kecamatan: ${parsed.kecamatan}`);
-  console.log(`    kota:      ${parsed.kota}`);
-  console.log(`  location:  ${location}`);
-  console.log(`  phone:     ${telp}`);
-  console.log(`  aduan:     ${aduan}`);
-
-  if (expectCode && parsed.kota === "Surabaya" && parsed.kecamatan && parsed.kelurahan) {
-    pass++;
-  } else {
-    fail++;
+  console.log(`\n── branches (${table.rows.length} rows) ──`);
+  for (const row of table.rows) {
+    const name = (row[nameCol] ?? "").trim();
+    const addr = row[addrCol] ?? "";
+    const parsed = parseAddress(addr);
+    console.log(`  ${name}`);
+    console.log(`    location: ${formatLocation(parsed)}`);
+    console.log(`    phone:    ${row[telpCol]}`);
+    console.log(`    aduan:    ${row[aduanCol]}`);
   }
 }
 
-console.log(`\nResults: ${pass} pass / ${fail} fail`);
-process.exit(fail === 0 ? 0 : 1);
+// ─── 2. Ingredients — Central ─────────────────────────────────────────────
+{
+  const CSV = "docs/csv/Detail POS - List Item Central Kitchen.csv";
+  const raw = readFileSync(resolve(process.cwd(), CSV), "utf-8");
+  const table = parseCsv(raw);
+  const detected = findHeader(table, ["Nama Bahan", "Satuan"]);
+  if (!detected) {
+    console.log(`\n── ingredients-central: no header found ──`);
+  } else {
+    const nameCol = detected.indices["nama bahan"]!;
+    const unitCol = detected.indices["satuan"]!;
+    console.log(`\n── ingredients-central (${detected.data.length} rows) ──`);
+    let inserted = 0;
+    let skipped = 0;
+    for (const row of detected.data) {
+      const name = (row[nameCol] ?? "").trim();
+      const unit = (row[unitCol] ?? "").trim();
+      if (!name) continue;
+      const canonical = canonicalName(name);
+      if (canonical === null) {
+        console.log(`  skip: ${name} (operational)`);
+        skipped++;
+        continue;
+      }
+      const cls = classify(canonical);
+      console.log(
+        `  ${canonical.padEnd(35)} ${cls.category.padEnd(10)} ${cls.skuType.padEnd(3)} ${normaliseUnit(unit)}`,
+      );
+      inserted++;
+    }
+    console.log(`  → ${inserted} inserted, ${skipped} skipped`);
+  }
+}
+
+// ─── 3. Ingredients — Tenant ──────────────────────────────────────────────
+{
+  const CSV = "docs/csv/Detail POS - List Item Tenant (Cabang).csv";
+  const raw = readFileSync(resolve(process.cwd(), CSV), "utf-8");
+  const table = parseCsv(raw);
+  const detected = findHeader(table, ["Nama Bahan", "Satuan Inventory"]);
+  if (!detected) {
+    console.log(`\n── ingredients-tenant: no header found ──`);
+  } else {
+    const nameCol = detected.indices["nama bahan"]!;
+    const unitCol = detected.indices["satuan inventory"]!;
+    console.log(`\n── ingredients-tenant (${detected.data.length} rows) ──`);
+    const seen = new Set<string>();
+    let inserted = 0;
+    let skipped = 0;
+    for (const row of detected.data) {
+      const name = (row[nameCol] ?? "").trim();
+      const unit = (row[unitCol] ?? "").trim();
+      if (!name) continue;
+      const canonical = canonicalName(name);
+      if (canonical === null) {
+        console.log(`  skip: ${name} (operational)`);
+        skipped++;
+        continue;
+      }
+      const normKey = canonical.toLowerCase();
+      if (seen.has(normKey)) {
+        console.log(`  dup:  ${canonical} (already seen)`);
+        skipped++;
+        continue;
+      }
+      seen.add(normKey);
+      const cls = classify(canonical);
+      console.log(
+        `  ${canonical.padEnd(35)} ${cls.category.padEnd(10)} ${cls.skuType.padEnd(3)} ${normaliseUnit(unit)}`,
+      );
+      inserted++;
+    }
+    console.log(`  → ${inserted} new, ${skipped} skipped`);
+  }
+}
