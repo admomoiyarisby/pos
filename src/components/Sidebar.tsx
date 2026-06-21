@@ -150,7 +150,7 @@ const navGroups: NavGroup[] = [
       },
       {
         label: "Mutasi Stok",
-        to: "/stock-transfers",
+        to: "/scm-transfers",
         icon: ArrowRightLeft,
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
       },
@@ -368,7 +368,9 @@ export default function Sidebar({ userRole, userName, mobileOpen, onClose }: Sid
 
         <div className="border-t border-sidebar-border p-3">
           <button
-            onClick={() => { void handleSignOut(); }}
+            onClick={() => {
+              void handleSignOut();
+            }}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <LogOut className="h-4 w-4" />
@@ -404,7 +406,9 @@ export default function Sidebar({ userRole, userName, mobileOpen, onClose }: Sid
 
         <div className="border-t border-sidebar-border p-3">
           <button
-            onClick={() => { void handleSignOut(); }}
+            onClick={() => {
+              void handleSignOut();
+            }}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <LogOut className="h-4 w-4" />
