@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -20,8 +20,7 @@ import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
-import { Link } from "@tanstack/react-router";
-import { AlertCircle, ArrowRight, Check, Truck, PackageCheck, XCircle, Ban } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowRight, Check, Truck, PackageCheck, XCircle, Ban } from "lucide-react";
 
 interface TRRow {
   id: string;
@@ -313,13 +312,33 @@ function TransferPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
-      <PageHeader action={{ label: "Ajukan Mutasi", onClick: () => setModalOpen(true) }} />
+      <div className="mb-4 flex items-start gap-2 rounded-md bg-warning/10 border border-warning/30 px-4 py-3 text-sm">
+        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-warning" />
+        <div className="flex-1">
+          <p className="font-medium text-warning">Alur Mutasi Stok lawas</p>
+          <p className="text-warning/80 mt-1">
+            Halaman ini sudah dibekukan. Alur baru menggunakan model Surat Jalan
+            dengan 10-state FSM (mirip Pengadaan). Buat mutasi baru di{" "}
+            <Link to="/scm-transfers" className="underline font-medium">
+              /scm-transfers
+            </Link>
+            . Data lawas tetap dapat dibaca di sini untuk referensi historis.
+            Lihat ADR 0006 untuk detailnya.
+          </p>
+        </div>
+      </div>
+      <PageHeader action={{ label: "Ajukan Mutasi (lawas)", onClick: () => setModalOpen(true) }} />
 
       {submitError && (
         <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <span className="flex-1">{submitError}</span>
-          <button onClick={() => setSubmitError(null)} className="text-destructive/70 hover:text-destructive">✕</button>
+          <button
+            onClick={() => setSubmitError(null)}
+            className="text-destructive/70 hover:text-destructive"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -427,7 +446,14 @@ function TransferPage() {
 
       {/* Reject Modal */}
       {rejectModal && (
-        <Modal open onClose={() => { setRejectModal(null); setSubmitError(null); }} title="Tolak Mutasi Stok">
+        <Modal
+          open
+          onClose={() => {
+            setRejectModal(null);
+            setSubmitError(null);
+          }}
+          title="Tolak Mutasi Stok"
+        >
           <div className="space-y-4">
             {submitError && (
               <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
@@ -450,7 +476,10 @@ function TransferPage() {
             </div>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setRejectModal(null); setSubmitError(null); }}
+                onClick={() => {
+                  setRejectModal(null);
+                  setSubmitError(null);
+                }}
                 className="h-9 px-4 rounded-md border text-sm"
               >
                 Batal
@@ -473,7 +502,14 @@ function TransferPage() {
 
       {/* Cancel Modal */}
       {cancelModal && (
-        <Modal open onClose={() => { setCancelModal(null); setSubmitError(null); }} title="Batalkan Mutasi Stok">
+        <Modal
+          open
+          onClose={() => {
+            setCancelModal(null);
+            setSubmitError(null);
+          }}
+          title="Batalkan Mutasi Stok"
+        >
           <div className="space-y-4">
             {submitError && (
               <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
@@ -499,7 +535,10 @@ function TransferPage() {
             </div>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setCancelModal(null); setSubmitError(null); }}
+                onClick={() => {
+                  setCancelModal(null);
+                  setSubmitError(null);
+                }}
                 className="h-9 px-4 rounded-md border text-sm"
               >
                 Tutup

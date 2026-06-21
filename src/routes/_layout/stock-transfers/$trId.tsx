@@ -46,6 +46,9 @@ function TransferDetailPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
+      <div className="mb-4 rounded-md bg-warning/10 border border-warning/30 px-4 py-2 text-xs text-warning">
+        Halaman detail lawas. Mutasi baru menggunakan alur FSM di <code className="bg-warning/20 px-1 rounded">/scm-transfers</code> (ADR 0006).
+      </div>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
