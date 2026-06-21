@@ -10,8 +10,9 @@ import {
   index,
   jsonb,
   unique,
+  check,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // =============================================================================
 // ENUMS
@@ -163,6 +164,23 @@ export const scmProcurementStatusEnum = pgEnum("scm_procurement_status", [
 export const caDecisionEnum = pgEnum("ca_decision", ["pending", "approved", "rejected"]);
 
 export const baDecisionEnum = pgEnum("ba_decision", ["pending", "accepted", "rejected"]);
+
+// -----------------------------------------------------------------------------
+// SCM (new FSM, ADR 0006) — Mutasi Stok: Branch→Branch transfers
+// -----------------------------------------------------------------------------
+
+export const scmTransferStatusEnum = pgEnum("scm_transfer_status", [
+  "SuratJalanDraft",
+  "PendingAMReview",
+  "Approved",
+  "InTransit",
+  "Delivered",
+  "ReviewingSJ",
+  "WaitingForPayment",
+  "Finished",
+  "Rejected",
+  "Cancelled",
+]);
 
 // =============================================================================
 // MODULE 1 — MASTER DATA
@@ -664,6 +682,9 @@ export const inTransitInventory = pgTable(
     scmProcurementId: uuid("scm_procurement_id").references(() => scmProcurements.id, {
       onDelete: "cascade",
     }),
+    scmTransferId: uuid("scm_transfer_id").references(() => scmTransfers.id, {
+      onDelete: "cascade",
+    }),
     branchId: uuid("branch_id")
       .notNull()
       .references(() => branches.id),
@@ -679,6 +700,19 @@ export const inTransitInventory = pgTable(
     index("iti_dn_idx").on(t.deliveryNoteId),
     index("iti_st_idx").on(t.stockTransferId),
     index("iti_proc_idx").on(t.scmProcurementId),
+    index("iti_transfer_idx").on(t.scmTransferId),
+    // Exactly one of deliveryNoteId / stockTransferId / scmProcurementId /
+    // scmTransferId must be set. The legacy `stock_transfer_id` column is
+    // frozen but its rows remain valid (no new rows are written to it).
+    check(
+      "iti_exactly_one_flow_fk",
+      sql`(
+        (CASE WHEN ${t.deliveryNoteId} IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN ${t.stockTransferId} IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN ${t.scmProcurementId} IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN ${t.scmTransferId} IS NOT NULL THEN 1 ELSE 0 END)
+      ) = 1`,
+    ),
   ],
 );
 
@@ -1118,9 +1152,12 @@ export const pendingReviewInventory = pgTable(
   "pending_review_inventory",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    scmProcurementId: uuid("scm_procurement_id")
-      .notNull()
-      .references(() => scmProcurements.id, { onDelete: "cascade" }),
+    scmProcurementId: uuid("scm_procurement_id").references(() => scmProcurements.id, {
+      onDelete: "cascade",
+    }),
+    scmTransferId: uuid("scm_transfer_id").references(() => scmTransfers.id, {
+      onDelete: "cascade",
+    }),
     branchId: uuid("branch_id")
       .notNull()
       .references(() => branches.id),
@@ -1136,8 +1173,169 @@ export const pendingReviewInventory = pgTable(
   },
   (t) => [
     index("pri_procurement_idx").on(t.scmProcurementId),
+    index("pri_transfer_idx").on(t.scmTransferId),
     index("pri_branch_ingredient_idx").on(t.branchId, t.ingredientId),
     index("pri_cleared_idx").on(t.clearedAt),
+    // Exactly one of scmProcurementId / scmTransferId must be set.
+    check(
+      "pri_exactly_one_flow_fk",
+      sql`(
+        (CASE WHEN ${t.scmProcurementId} IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN ${t.scmTransferId} IS NOT NULL THEN 1 ELSE 0 END)
+      ) = 1`,
+    ),
+  ],
+);
+
+// -----------------------------------------------------------------------------
+// Mutasi Stok (new FSM, ADR 0006) — Branch→Branch Surat Jalan transfers
+// -----------------------------------------------------------------------------
+
+export const scmTransfers = pgTable(
+  "scm_transfers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    code: text("code").notNull().unique(),
+    fromBranchId: uuid("from_branch_id")
+      .notNull()
+      .references(() => branches.id),
+    toBranchId: uuid("to_branch_id")
+      .notNull()
+      .references(() => branches.id),
+    status: scmTransferStatusEnum("status").notNull().default("SuratJalanDraft"),
+    requestedById: uuid("requested_by_id")
+      .notNull()
+      .references(() => users.id),
+    reviewingById: uuid("reviewing_by_id").references(() => users.id),
+    receivingById: uuid("receiving_by_id").references(() => users.id),
+    paidById: uuid("paid_by_id").references(() => users.id),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id),
+    lastEvent: text("last_event"),
+    lastEventAt: timestamp("last_event_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    submittedAt: timestamp("submitted_at", { mode: "date" }),
+    approvedAt: timestamp("approved_at", { mode: "date" }),
+    shippedAt: timestamp("shipped_at", { mode: "date" }),
+    deliveredAt: timestamp("delivered_at", { mode: "date" }),
+    receivedAt: timestamp("received_at", { mode: "date" }),
+    paidAt: timestamp("paid_at", { mode: "date" }),
+    rejectedAt: timestamp("rejected_at", { mode: "date" }),
+    rejectionReason: text("rejection_reason"),
+    cancelledAt: timestamp("cancelled_at", { mode: "date" }),
+    cancellationReason: text("cancellation_reason"),
+    notes: text("notes"),
+  },
+  (t) => [
+    index("stx_from_branch_idx").on(t.fromBranchId),
+    index("stx_to_branch_idx").on(t.toBranchId),
+    index("stx_status_idx").on(t.status),
+    index("stx_requested_by_idx").on(t.requestedById),
+    index("stx_created_at_idx").on(t.createdAt),
+    index("stx_branches_status_idx").on(t.fromBranchId, t.toBranchId, t.status),
+    // Sender and receiver must be different branches.
+    check("stx_branches_differ", sql`${t.fromBranchId} <> ${t.toBranchId}`),
+  ],
+);
+
+export const scmTransferItems = pgTable(
+  "scm_transfer_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scmTransferId: uuid("scm_transfer_id")
+      .notNull()
+      .references(() => scmTransfers.id, { onDelete: "cascade" }),
+    ingredientId: uuid("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id),
+    sortOrder: integer("sort_order").notNull().default(0),
+    // Sender BA's promise at item-creation time. Editable only in SuratJalanDraft.
+    quantity: integer("quantity").notNull(),
+    // Receiver BA's actual count, set in finish-receive.
+    receivedQuantity: integer("received_quantity"),
+    rejectedQuantity: integer("rejected_quantity"),
+    // Snapshot of ingredients.averageCost at item-creation time (global, matching
+    // Pengadaan's pricing model in ADR 0003). Per-branch cost tracking is a
+    // future migration; for now the sender's quoted price equals the global avg.
+    unitPrice: integer("unit_price").notNull(),
+    // Per-line rejection reason. Required iff rejectedQuantity > 0 — enforced
+    // in the finish-receive handler, not the schema (since it's conditional).
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [
+    index("stxi_transfer_idx").on(t.scmTransferId),
+    index("stxi_ingredient_idx").on(t.ingredientId),
+    check("stxi_qty_positive", sql`${t.quantity} > 0`),
+    check(
+      "stxi_received_nonneg",
+      sql`${t.receivedQuantity} IS NULL OR ${t.receivedQuantity} >= 0`,
+    ),
+    check(
+      "stxi_rejected_nonneg",
+      sql`${t.rejectedQuantity} IS NULL OR ${t.rejectedQuantity} >= 0`,
+    ),
+    check(
+      "stxi_received_plus_rejected_le_qty",
+      sql`(${t.receivedQuantity} IS NULL AND ${t.rejectedQuantity} IS NULL)
+          OR (${t.receivedQuantity} IS NOT NULL AND ${t.rejectedQuantity} IS NOT NULL
+              AND ${t.receivedQuantity} + ${t.rejectedQuantity} <= ${t.quantity})
+          OR (${t.receivedQuantity} IS NOT NULL AND ${t.rejectedQuantity} IS NULL)
+          OR (${t.receivedQuantity} IS NULL AND ${t.rejectedQuantity} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export const scmTransferInvoices = pgTable(
+  "scm_transfer_invoices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scmTransferId: uuid("scm_transfer_id")
+      .notNull()
+      .unique()
+      .references(() => scmTransfers.id, { onDelete: "cascade" }),
+    code: text("code").notNull().unique(),
+    totalAmount: integer("total_amount").notNull(), // IDR
+    lineItems: jsonb("line_items").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    createdById: uuid("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    paidAt: timestamp("paid_at", { mode: "date" }),
+    paidById: uuid("paid_by_id").references(() => users.id),
+    cancelledAt: timestamp("cancelled_at", { mode: "date" }),
+  },
+  (t) => [index("stxinv_transfer_idx").on(t.scmTransferId)],
+);
+
+export const scmTransferAuditLog = pgTable(
+  "scm_transfer_audit_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scmTransferId: uuid("scm_transfer_id")
+      .notNull()
+      .references(() => scmTransfers.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    fromState: scmTransferStatusEnum("from_state"),
+    toState: scmTransferStatusEnum("to_state"),
+    itemId: uuid("item_id").references(() => scmTransferItems.id),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => users.id),
+    actorRole: text("actor_role").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("stxal_transfer_idx").on(t.scmTransferId),
+    index("stxal_transfer_time_idx").on(t.scmTransferId, t.createdAt),
   ],
 );
 
@@ -1826,6 +2024,14 @@ export const inTransitInventoryRelations = relations(inTransitInventory, ({ one 
     fields: [inTransitInventory.deliveryNoteId],
     references: [deliveryNotes.id],
   }),
+  procurement: one(scmProcurements, {
+    fields: [inTransitInventory.scmProcurementId],
+    references: [scmProcurements.id],
+  }),
+  transfer: one(scmTransfers, {
+    fields: [inTransitInventory.scmTransferId],
+    references: [scmTransfers.id],
+  }),
 }));
 
 export const stockLedgerRelations = relations(stockLedger, ({ one }) => ({
@@ -2103,6 +2309,10 @@ export const pendingReviewInventoryRelations = relations(pendingReviewInventory,
     fields: [pendingReviewInventory.scmProcurementId],
     references: [scmProcurements.id],
   }),
+  transfer: one(scmTransfers, {
+    fields: [pendingReviewInventory.scmTransferId],
+    references: [scmTransfers.id],
+  }),
   branch: one(branches, { fields: [pendingReviewInventory.branchId], references: [branches.id] }),
   ingredient: one(ingredients, {
     fields: [pendingReviewInventory.ingredientId],
@@ -2112,6 +2322,94 @@ export const pendingReviewInventoryRelations = relations(pendingReviewInventory,
     fields: [pendingReviewInventory.createdById],
     references: [users.id],
   }),
+}));
+
+// ─── Mutasi Stok (ADR 0006) ───
+
+export const scmTransfersRelations = relations(scmTransfers, ({ one, many }) => ({
+  fromBranch: one(branches, {
+    fields: [scmTransfers.fromBranchId],
+    references: [branches.id],
+    relationName: "scmTransferFromBranch",
+  }),
+  toBranch: one(branches, {
+    fields: [scmTransfers.toBranchId],
+    references: [branches.id],
+    relationName: "scmTransferToBranch",
+  }),
+  requestedBy: one(users, {
+    fields: [scmTransfers.requestedById],
+    references: [users.id],
+    relationName: "scmTransferRequestedBy",
+  }),
+  reviewingBy: one(users, {
+    fields: [scmTransfers.reviewingById],
+    references: [users.id],
+    relationName: "scmTransferReviewingBy",
+  }),
+  receivingBy: one(users, {
+    fields: [scmTransfers.receivingById],
+    references: [users.id],
+    relationName: "scmTransferReceivingBy",
+  }),
+  paidBy: one(users, {
+    fields: [scmTransfers.paidById],
+    references: [users.id],
+    relationName: "scmTransferPaidBy",
+  }),
+  cancelledBy: one(users, {
+    fields: [scmTransfers.cancelledById],
+    references: [users.id],
+    relationName: "scmTransferCancelledBy",
+  }),
+  items: many(scmTransferItems),
+  auditLog: many(scmTransferAuditLog),
+  invoice: one(scmTransferInvoices, {
+    fields: [scmTransfers.id],
+    references: [scmTransferInvoices.scmTransferId],
+  }),
+  inTransitInventory: many(inTransitInventory),
+  pendingReviewInventory: many(pendingReviewInventory),
+}));
+
+export const scmTransferItemsRelations = relations(scmTransferItems, ({ one }) => ({
+  transfer: one(scmTransfers, {
+    fields: [scmTransferItems.scmTransferId],
+    references: [scmTransfers.id],
+  }),
+  ingredient: one(ingredients, {
+    fields: [scmTransferItems.ingredientId],
+    references: [ingredients.id],
+  }),
+}));
+
+export const scmTransferInvoicesRelations = relations(scmTransferInvoices, ({ one }) => ({
+  transfer: one(scmTransfers, {
+    fields: [scmTransferInvoices.scmTransferId],
+    references: [scmTransfers.id],
+  }),
+  createdBy: one(users, {
+    fields: [scmTransferInvoices.createdById],
+    references: [users.id],
+    relationName: "scmTransferInvoiceCreatedBy",
+  }),
+  paidBy: one(users, {
+    fields: [scmTransferInvoices.paidById],
+    references: [users.id],
+    relationName: "scmTransferInvoicePaidBy",
+  }),
+}));
+
+export const scmTransferAuditLogRelations = relations(scmTransferAuditLog, ({ one }) => ({
+  transfer: one(scmTransfers, {
+    fields: [scmTransferAuditLog.scmTransferId],
+    references: [scmTransfers.id],
+  }),
+  item: one(scmTransferItems, {
+    fields: [scmTransferAuditLog.itemId],
+    references: [scmTransferItems.id],
+  }),
+  actor: one(users, { fields: [scmTransferAuditLog.actorId], references: [users.id] }),
 }));
 
 // ─── Waste ───

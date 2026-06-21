@@ -113,6 +113,13 @@
       "when": 1781948400000,
       "tag": "0015_add_branch_phones",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1782055490324,
+      "tag": "0016_mutasi_stok_fsm",
+      "breakpoints": true
     }
   ]
 }
