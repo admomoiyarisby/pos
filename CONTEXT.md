@@ -60,7 +60,7 @@ The quantity the system believed was on hand at the moment the SO was triggered.
 _Avoid_: Expected stock, digital stock
 
 **Procurement (Pengadaan)**:
-A formal supply-chain restocking process, modeled as a single document (`scm_procurements`) with a 10-state Finite State Machine. Replaces the older 3-document model of separate PR, SJ (Surat Jalan / delivery note), and SCM Invoice. A procurement walks through Draft → Pending → UnderReview → InTransit → Delivered → ReviewingSJ → WaitingForPayment → Finished, with terminal states Rejected and Cancelled. See ADR 0002.
+A **Central→Branch** restocking process — a subtype of **Stock Transfer** — modeled as a single document (`scm_procurements`) with a 10-state Finite State Machine. Replaces the older 3-document model of separate PR, SJ (Surat Jalan / delivery note), and SCM Invoice. A procurement walks through Draft → Pending → UnderReview → InTransit → Delivered → ReviewingSJ → WaitingForPayment → Finished, with terminal states Rejected and Cancelled. See ADR 0002. The Central→Branch subtype is why the source side is owned by `admin_pusat` and the destination side by `branch_admin`.
 _Avoid_: PR, purchase requisition, restock request, supply order (the older terms referred to individual documents within the old 3-document model)
 
 **Procurement Transition**:
@@ -75,15 +75,26 @@ _Avoid_: Central admin, central kitchen admin (different role), warehouse manage
 The destination branch's administrator role. Owns the procurement lifecycle from the branch side: creates PRs, fills receiving forms, views invoice preview, can withdraw a Pending procurement.
 _Avoid_: store manager, outlet admin (when referring to the role)
 
+**Stock Transfer (Transfer Stok)**:
+The parent concept for any movement of stock from one branch to another. Has two concrete subtypes: **Procurement (Pengadaan)** (Central→Branch) and **Mutasi Stok** (Branch→Branch). Both subtypes share the same FSM *shape* — one root document, item-level review, an invoice snapshot at the end, and an audit log — but they differ in actors (Admin Pusat vs Sender Branch on the source side), state semantics (which states exist and who owns each transition), and pricing. Two parallel root tables (`scm_procurements`, `scm_transfers`) — see Q1 decision.
+_Avoid_: stock movement, transfer (alone), perpindahan stok
+
+**Mutasi Stok (Stock Transfer, Branch→Branch)**:
+A **Branch→Branch** restocking process — a subtype of **Stock Transfer**. The **Sender Branch** (the branch that agreed to give up stock) creates the Surat Jalan; the **Area Manager** of the Sender+Receiver pair approves; the **Receiver Branch** confirms delivery, reviews items per line, and the Invoice is generated from what was actually received. Each item carries a `unitPrice` snapshotted from the sender's `averageCost` at SJ creation; the Receiver pays the Sender. Sender Branch physically ships (marks InTransit); the Receiver Branch marks Delivered when goods physically arrive. Area Manager is bounded to transfers where both endpoints fall in their `assignedBranches`. 10-state FSM: `SuratJalanDraft → PendingAMReview → Approved → InTransit → Delivered → ReviewingSJ → WaitingForPayment → Finished`, terminals `Rejected` and `Cancelled`.
+_Avoid_: transfer antar cabang (use as the colloquial Indonesian term only, not in canonical docs), mutasi barang
+
 **Pending Review Inventory**:
 A ledger bucket (`pending_review_inventory`) for stock that has been delivered to a branch but not yet received by the branch admin. Distinct from `in_transit_inventory` (stock in transit) and the branch's main `inventory` (stock available for use). When BA completes the receiving review, the qty moves into branch main inventory (received) or `waste_entries` (rejected). Introduced in ADR 0002 §sub-decision.
 _Avoid_: receiving inventory, dock stock, in-branch staging
 
 **In-Transit Inventory**:
-The shared `in_transit_inventory` ledger used by both the legacy delivery-note flow (with `deliveryNoteId` set) and the new procurement flow (with `scmProcurementId` set, per ADR 0002). Stock that has left the source branch but not yet reached the destination.
+The shared `in_transit_inventory` ledger used by three flows: (1) legacy delivery-note flow (with `deliveryNoteId` set), (2) Pengadaan (with `scmProcurementId` set, per ADR 0002), and (3) Mutasi Stok (with `scmTransferId` set). Stock that has left the source branch but not yet reached the destination. Exactly one of the three FK columns is set per row (a check constraint enforces this).
 _Avoid_: transit stock, in-transit ledger
+
+**Mutasi Unit Price**:
+The price per unit (in IDR) that the **Receiver Branch** pays the **Sender Branch** for an ingredient in a specific Mutasi transfer. Snapshotted from `ingredients.averageCost` at the **sender's** branch (i.e., the `inventory.averageCost` at the `fromBranchId` location) at item-creation time. Frozen on the item row — subsequent changes to `averageCost` do not affect existing transfers. The Mutasi invoice is generated as `receivedQuantity * unitPrice`, summing to a `totalAmount` paid by the receiver to the sender. Mirrors Pengadaan's pricing model (ADR 0003) but the snapshot source is the *sender* branch's inventory, not a Central warehouse.
+_Avoid_: transfer cost, mutasi cost
 
 **Procurement Unit Price**:
 The price per unit (in IDR) that the destination branch pays the central warehouse for an ingredient in a specific procurement. Snapshotted from `ingredients.averageCost` at procurement-item-creation time (in `createProcurement`). The price is frozen on the item row — subsequent changes to `averageCost` do not affect existing procurements. The CA review form shows the price + per-line subtotal + grand subtotal (read-only); the BA's request form shows the price as a transparency aid (also read-only); the invoice is generated as `receivedQuantity * unitPrice`. The CA cannot override the price in the current flow — if a different price is needed, CA adjusts `ingredients.averageCost` first. See ADR 0003.
 _Avoid_: cost, harga, procurement cost (reserved for the per-recipe manufacturing cost tracked in COGS)
-
