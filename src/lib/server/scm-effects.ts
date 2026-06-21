@@ -28,6 +28,13 @@ export type FsmActor = { id: string; role: string };
 export interface FsmPayload {
   reason?: string;
   notes?: string;
+  /**
+   * Auto-generated invoice code, passed by the `finish-receive` server
+   * function so the `generateTransferInvoiceSnapshot` effect can write it on
+   * the `scm_transfer_invoices` row. Only meaningful for the `finish-receive`
+   * event on Mutasi transfers. Not used by Pengadaan.
+   */
+  invoiceCode?: string;
   items?: Array<{
     id: string;
     receivedQuantity?: number;
@@ -62,8 +69,7 @@ export async function copyReadyToPicked(
     .where(eq(scmProcurementItems.scmProcurementId, procurementId));
 
   for (const item of items) {
-    const picked =
-      item.caDecision === "approved" ? (item.readyQuantity ?? item.quantity) : 0;
+    const picked = item.caDecision === "approved" ? (item.readyQuantity ?? item.quantity) : 0;
     await tx
       .update(scmProcurementItems)
       .set({ pickedQuantity: picked })
@@ -89,11 +95,7 @@ export async function writeInTransitInventory(
     .where(eq(scmProcurements.id, procurementId));
   if (!proc) throw new Error(`Procurement ${procurementId} not found`);
 
-  const [central] = await tx
-    .select()
-    .from(branches)
-    .where(eq(branches.type, "Central"))
-    .limit(1);
+  const [central] = await tx.select().from(branches).where(eq(branches.type, "Central")).limit(1);
   if (!central) throw new Error("No Central branch configured");
 
   const items = await tx
@@ -110,9 +112,7 @@ export async function writeInTransitInventory(
     const [inv] = await tx
       .select()
       .from(inventory)
-      .where(
-        and(eq(inventory.branchId, central.id), eq(inventory.ingredientId, item.ingredientId)),
-      )
+      .where(and(eq(inventory.branchId, central.id), eq(inventory.ingredientId, item.ingredientId)))
       .limit(1);
 
     if (inv) {
@@ -456,11 +456,7 @@ export async function reverseInTransitOnCancel(
   actor: FsmActor,
   tx: FsmTx,
 ): Promise<void> {
-  const [central] = await tx
-    .select()
-    .from(branches)
-    .where(eq(branches.type, "Central"))
-    .limit(1);
+  const [central] = await tx.select().from(branches).where(eq(branches.type, "Central")).limit(1);
   if (!central) return;
 
   const rows = await tx
@@ -472,9 +468,7 @@ export async function reverseInTransitOnCancel(
     const [inv] = await tx
       .select()
       .from(inventory)
-      .where(
-        and(eq(inventory.branchId, central.id), eq(inventory.ingredientId, row.ingredientId)),
-      )
+      .where(and(eq(inventory.branchId, central.id), eq(inventory.ingredientId, row.ingredientId)))
       .limit(1);
 
     if (inv) {
@@ -519,11 +513,7 @@ export async function reversePendingReviewOnCancel(
   actor: FsmActor,
   tx: FsmTx,
 ): Promise<void> {
-  const [central] = await tx
-    .select()
-    .from(branches)
-    .where(eq(branches.type, "Central"))
-    .limit(1);
+  const [central] = await tx.select().from(branches).where(eq(branches.type, "Central")).limit(1);
   if (!central) return;
 
   const rows = await tx
@@ -535,9 +525,7 @@ export async function reversePendingReviewOnCancel(
     const [inv] = await tx
       .select()
       .from(inventory)
-      .where(
-        and(eq(inventory.branchId, central.id), eq(inventory.ingredientId, row.ingredientId)),
-      )
+      .where(and(eq(inventory.branchId, central.id), eq(inventory.ingredientId, row.ingredientId)))
       .limit(1);
 
     if (inv) {
