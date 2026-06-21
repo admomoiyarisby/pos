@@ -13,12 +13,15 @@ export const Route = createFileRoute("/login")({
 const demoUsers = [
   { name: "Super Admin", email: "superadmin@omoiyari.net", role: "super_admin", pin: "1111" },
   { name: "Admin Pusat", email: "pusat@omoiyari.net", role: "admin_pusat", pin: "2222" },
-  { name: "Area Mgr East", email: "manager.east@omoiyari.net", role: "area_manager", pin: "3333" },
-  { name: "Hans (Kasir)", email: "hans@omoiyari.net", role: "branch_admin", pin: "1234" },
-  { name: "Siti (Kasir)", email: "siti@omoiyari.net", role: "branch_admin", pin: "2345" },
-  { name: "Budi (Kasir)", email: "budi@omoiyari.net", role: "branch_admin", pin: "3456" },
-  { name: "Rina (Kasir)", email: "rina@omoiyari.net", role: "branch_admin", pin: "4567" },
-  { name: "Dewi (Kasir)", email: "dewi@omoiyari.net", role: "branch_admin", pin: "5678" },
+  { name: "Area Mgr East Java", email: "manager.east@omoiyari.net", role: "area_manager", pin: "3333" },
+  { name: "Andi (Wiyung)", email: "andi.wiyung@omoiyari.net", role: "branch_admin", pin: "1234" },
+  { name: "Budi (Darmo Permai)", email: "budi.darmo@omoiyari.net", role: "branch_admin", pin: "2345" },
+  { name: "Citra (Tenggilis)", email: "citra.tenggilis@omoiyari.net", role: "branch_admin", pin: "3456" },
+  { name: "Dewi (Mulyorejo)", email: "dewi.mulyorejo@omoiyari.net", role: "branch_admin", pin: "4567" },
+  { name: "Eko (Jambangan)", email: "eko.jambangan@omoiyari.net", role: "branch_admin", pin: "5678" },
+  { name: "Fitri (Pucang)", email: "fitri.pucang@omoiyari.net", role: "branch_admin", pin: "6789" },
+  { name: "Gilang (Siwalankerto)", email: "gilang.siwalankerto@omoiyari.net", role: "branch_admin", pin: "7890" },
+  { name: "Central Kitchen", email: "ck@omoiyari.net", role: "central_kitchen", pin: "0000" },
 ];
 
 function LoginPage() {
