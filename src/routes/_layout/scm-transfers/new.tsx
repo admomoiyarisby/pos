@@ -1,14 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
 import { Button } from "#/components/ui/button";
 import { AlertCircle, ArrowLeft, Plus, Trash2 } from "lucide-react";
-import { createMutasiTransfer, getMutasiTransfer } from "#/lib/server/scm-transfers";
+import { createMutasiTransfer } from "#/lib/server/scm-transfers";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
-import { useQueryClient } from "@tanstack/react-query";
+import { getInventory } from "#/lib/server/inventory";
 import { useServerFn } from "@tanstack/react-start";
 
 export const Route = createFileRoute("/_layout/scm-transfers/new")({
@@ -38,12 +39,47 @@ function NewMutasiPage() {
   const [items, setItems] = useState<ItemRow[]>([]);
   const [notes, setNotes] = useState<string>("");
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<
-    Array<{ ingredientId: string; requested: number; available: number }>
-  >([]);
 
   const createMut = useServerFn(createMutasiTransfer);
   const queryClient = useQueryClient();
+
+  // Fetch inventory for the sender branch so we can show available qty.
+  // Runs once when fromBranchId is set; refetches if it changes (super_admin case).
+  const { data: inventoryRows } = useQuery({
+    queryKey: ["inventory-branch", fromBranchId],
+    queryFn: () => getInventory({ data: { branchId: fromBranchId } }),
+    enabled: !!fromBranchId,
+  });
+
+  const ingredientById = useMemo(
+    () => new Map(ingredients.map((i) => [i.id, i])),
+    [ingredients],
+  );
+
+  // Map ingredientId → available qty in the sender's inventory
+  const stockByIngredient = useMemo(() => {
+    const m = new Map<string, number>();
+    const rows = inventoryRows?.data;
+    if (rows) {
+      for (const inv of rows) {
+        m.set(inv.ingredientId, inv.quantity);
+      }
+    }
+    return m;
+  }, [inventoryRows]);
+
+  // Compute which items exceed available stock
+  const itemsOverStock = useMemo(() => {
+    const over: Array<{ ingredientId: string; requested: number; available: number }> = [];
+    for (const it of items) {
+      if (!it.ingredientId || it.quantity <= 0) continue;
+      const available = stockByIngredient.get(it.ingredientId) ?? 0;
+      if (it.quantity > available) {
+        over.push({ ingredientId: it.ingredientId, requested: it.quantity, available });
+      }
+    }
+    return over;
+  }, [items, stockByIngredient]);
 
   const addItem = () => {
     setItems((prev) => [
@@ -63,7 +99,6 @@ function NewMutasiPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
-    setWarnings([]);
 
     if (fromBranchId === toBranchId) {
       setSubmitError("Cabang pengirim dan penerima harus berbeda");
@@ -75,6 +110,10 @@ function NewMutasiPage() {
     }
     if (items.some((it) => it.quantity <= 0)) {
       setSubmitError("Jumlah item harus lebih dari 0");
+      return;
+    }
+    if (itemsOverStock.length > 0) {
+      setSubmitError("Ada item yang melebihi stok tersedia. Periksa kembali jumlahnya.");
       return;
     }
 
@@ -90,12 +129,10 @@ function NewMutasiPage() {
           notes: notes || undefined,
         },
       });
-      setWarnings(result.warnings);
 
-      // Invalidate the list cache so the new transfer shows up
+      // Invalidate caches
       void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
-      // Refresh the source data so warnings show
-      void getMutasiTransfer({ data: { transferId: result.transfer.id } });
+      void queryClient.invalidateQueries({ queryKey: ["inventory-branch"] });
 
       navigate({ to: "/scm-transfers/$transferId", params: { transferId: result.transfer.id } });
     } catch (err) {
@@ -104,6 +141,8 @@ function NewMutasiPage() {
   };
 
   usePageTitle("Buat Mutasi Stok", "Surat Jalan baru antar cabang");
+
+  const senderBranch = branches.find((b) => b.id === fromBranchId);
 
   return (
     <RoleGuard allowedRoles={["super_admin", "branch_admin"]}>
@@ -131,15 +170,16 @@ function NewMutasiPage() {
           </div>
         )}
 
-        {warnings.length > 0 && (
-          <div className="rounded-md bg-warning/10 border border-warning/20 px-4 py-3 text-sm">
-            <p className="font-medium text-warning">Peringatan stok</p>
-            <ul className="mt-1 text-warning/80 list-disc list-inside">
-              {warnings.map((w) => {
-                const ing = ingredients.find((i) => i.id === w.ingredientId);
+        {itemsOverStock.length > 0 && (
+          <div className="rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm">
+            <p className="font-medium text-destructive">Stok tidak mencukupi</p>
+            <ul className="mt-1 text-destructive/80 list-disc list-inside">
+              {itemsOverStock.map((w) => {
+                const ing = ingredientById.get(w.ingredientId);
                 return (
                   <li key={w.ingredientId}>
-                    {ing?.name ?? w.ingredientId}: diminta {w.requested}, tersedia {w.available}
+                    {ing?.name ?? w.ingredientId}: diminta <strong>{w.requested}</strong>,
+                    tersedia hanya <strong>{w.available}</strong>
                   </li>
                 );
               })}
@@ -153,8 +193,8 @@ function NewMutasiPage() {
             {user?.role === "branch_admin" ? (
               <>
                 {(() => {
-                  const senderBranch = branches.find((b) => b.id === user?.branchId);
-                  if (!senderBranch || !user?.branchId) {
+                  const sb = senderBranch;
+                  if (!sb || !user?.branchId) {
                     return (
                       <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
                         Akun Anda tidak memiliki cabang terdaftar. Hubungi Super Admin.
@@ -163,8 +203,8 @@ function NewMutasiPage() {
                   }
                   return (
                     <div className="h-9 flex items-center gap-2 rounded-md border bg-muted px-3 text-sm">
-                      <span className="font-medium">{senderBranch.name}</span>
-                      <span className="text-xs text-muted-foreground">({senderBranch.code})</span>
+                      <span className="font-medium">{sb.name}</span>
+                      <span className="text-xs text-muted-foreground">({sb.code})</span>
                     </div>
                   );
                 })()}
@@ -205,6 +245,19 @@ function NewMutasiPage() {
           </div>
         </div>
 
+        {/* Stock info bar */}
+        {fromBranchId && inventoryRows?.data && (
+          <div className="rounded-md bg-muted/30 border px-4 py-2 text-xs text-muted-foreground">
+            Tersedia di <strong>{senderBranch?.name ?? "cabang pengirim"}</strong>:{" "}
+            {inventoryRows.data.length} jenis bahan tercatat
+            {itemsOverStock.length > 0 && (
+              <span className="text-destructive font-medium">
+                {" — "}{itemsOverStock.length} item melebihi stok
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium">Item</label>
@@ -217,40 +270,74 @@ function NewMutasiPage() {
             <p className="text-sm text-muted-foreground italic">Belum ada item.</p>
           ) : (
             <div className="space-y-2">
-              {items.map((it) => (
-                <div key={it.id} className="flex items-center gap-2">
-                  <select
-                    value={it.ingredientId}
-                    onChange={(e) => updateItem(it.id, { ingredientId: e.target.value })}
-                    className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    {ingredients.map((ing) => (
-                      <option key={ing.id} value={ing.id}>
-                        {ing.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    value={it.quantity}
-                    onChange={(e) =>
-                      updateItem(it.id, { quantity: Number(e.target.value) })
-                    }
-                    className="h-9 w-24 rounded-md border border-input bg-background px-3 text-sm text-right"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeItem(it.id)}
-                    className="h-9 w-9 inline-flex items-center justify-center rounded-md text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
+              {items.map((it) => {
+                const available = stockByIngredient.get(it.ingredientId);
+                const over = available != null && it.quantity > available;
+                return (
+                  <div key={it.id} className="flex items-center gap-2">
+                    <select
+                      value={it.ingredientId}
+                      onChange={(e) => updateItem(it.id, { ingredientId: e.target.value })}
+                      className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      {ingredients.map((ing) => (
+                        <option key={ing.id} value={ing.id}>
+                          {ing.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={1}
+                        value={it.quantity}
+                        onChange={(e) =>
+                          updateItem(it.id, { quantity: Number(e.target.value) })
+                        }
+                        className={`h-9 w-20 rounded-md border px-2 text-sm text-right ${
+                          over
+                            ? "border-destructive bg-destructive/5 text-destructive"
+                            : "border-input bg-background"
+                        }`}
+                      />
+                      {available != null && (
+                        <span className={`absolute -bottom-4 left-0 text-[10px] ${
+                          over ? "text-destructive font-medium" : "text-muted-foreground"
+                        }`}>
+                          stok: {available}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeItem(it.id)}
+                      className="h-9 w-9 inline-flex items-center justify-center rounded-md text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
+
+        {/* Submit button row — show stock warning inline */}
+        {items.length > 0 && fromBranchId && (
+          <div className="rounded-md border px-4 py-3 text-xs text-muted-foreground space-y-1">
+            <p>
+              Total item: <strong>{items.length}</strong>
+              {" · "}
+              Total diminta:{" "}
+              <strong>{items.reduce((s, it) => s + it.quantity, 0)}</strong>
+            </p>
+            {itemsOverStock.length > 0 && (
+              <p className="text-destructive">
+                ⚠ {itemsOverStock.length} item melebihi stok — perbaiki sebelum submit.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="space-y-2">
           <label className="text-sm font-medium">Catatan (opsional)</label>
@@ -272,7 +359,8 @@ function NewMutasiPage() {
           </button>
           <button
             type="submit"
-            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
+            disabled={itemsOverStock.length > 0}
+            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-40"
           >
             Buat Draft SJ
           </button>

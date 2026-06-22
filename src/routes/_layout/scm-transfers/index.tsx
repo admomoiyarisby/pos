@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -11,12 +12,16 @@ import { getMutasiTransfers } from "#/lib/server/scm-transfers";
 import { canAmAct } from "#/lib/server/scm-transfer-queries";
 import type { Column } from "#/components/ui/DataTable";
 import type { ScmTransferStatus as _ScmTransferStatus } from "#/lib/server/scm-transfer-fsm";
+import { getBranches } from "#/lib/server/branches";
 
 export const Route = createFileRoute("/_layout/scm-transfers/")({
   component: TransfersListPage,
   loader: async () => {
-    const rows = await getMutasiTransfers({ data: {} });
-    return { initialRows: rows };
+    const [rows, branches] = await Promise.all([
+      getMutasiTransfers({ data: {} }),
+      getBranches({ data: {} }),
+    ]);
+    return { initialRows: rows, initialBranches: branches };
   },
 });
 
@@ -62,7 +67,12 @@ const statusColors: Record<
 
 function TransfersListPage() {
   const { user } = useAuth();
-  const { initialRows } = Route.useLoaderData();
+  const { initialRows, initialBranches } = Route.useLoaderData();
+
+  const branchById = useMemo(
+    () => new Map(initialBranches.map((b) => [b.id, b])),
+    [initialBranches],
+  );
 
   const { data: rows } = useQuery({
     queryKey: ["scm-transfers"],
@@ -78,13 +88,13 @@ function TransfersListPage() {
       key: "fromBranchId",
       header: "Dari",
       sortable: true,
-      render: (r) => r.fromBranchId.slice(0, 8) + "…",
+      render: (r) => branchById.get(r.fromBranchId)?.name ?? r.fromBranchId.slice(0, 8) + "…",
     },
     {
       key: "toBranchId",
       header: "Ke",
       sortable: true,
-      render: (r) => r.toBranchId.slice(0, 8) + "…",
+      render: (r) => branchById.get(r.toBranchId)?.name ?? r.toBranchId.slice(0, 8) + "…",
     },
     {
       key: "status",

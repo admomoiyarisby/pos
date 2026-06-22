@@ -56,6 +56,31 @@ async function softStockCheck(
   return warnings;
 }
 
+// -----------------------------------------------------------------------------
+// Hard stock check (guardrail — throws if insufficient)
+// -----------------------------------------------------------------------------
+
+async function hardStockCheck(
+  fromBranchId: string,
+  items: { ingredientId: string; quantity: number }[],
+): Promise<void> {
+  for (const item of items) {
+    const [inv] = await db
+      .select({ qty: inventory.quantity })
+      .from(inventory)
+      .where(
+        and(eq(inventory.branchId, fromBranchId), eq(inventory.ingredientId, item.ingredientId)),
+      )
+      .limit(1);
+    const available = inv?.qty ?? 0;
+    if (item.quantity > available) {
+      throw new Error(
+        `Stok tidak mencukupi untuk bahan yang dipilih: tersedia ${available}, diminta ${item.quantity}`,
+      );
+    }
+  }
+}
+
 // =============================================================================
 // READ: list
 // =============================================================================
@@ -180,6 +205,12 @@ export const createMutasiTransfer = createServerFn({ method: "POST" })
       throw new Error("At least one item is required");
     }
 
+    // Hard stock guardrail: block submit if any item exceeds available stock.
+    await hardStockCheck(data.fromBranchId, data.items);
+
+    // Soft stock check (kept for UX feedback — returns warnings alongside the result)
+    const warnings = await softStockCheck(data.fromBranchId, data.items);
+
     // Snapshot the unitPrice from the global ingredients.averageCost at this
     // moment. (Q11 / ADR 0006 sub-decision: matches Pengadaan's pattern in
     // ADR 0003. Per-branch inventory.averageCost is a future migration.)
@@ -187,9 +218,6 @@ export const createMutasiTransfer = createServerFn({ method: "POST" })
       .select({ id: ingredients.id, averageCost: ingredients.averageCost })
       .from(ingredients);
     const avgById = new Map(ingredientRows.map((i) => [i.id, i.averageCost]));
-
-    // Soft stock check (Q9 / Phase 3.3.1) — non-blocking
-    const warnings = await softStockCheck(data.fromBranchId, data.items);
 
     const code = await nextTransferCode();
 
@@ -242,6 +270,13 @@ export const updateMutasiTransferDraftItems = createServerFn({ method: "POST" })
     if (user.branchId !== result.transfer.fromBranchId) {
       throw new Error("Only the sender branch can edit the draft");
     }
+
+    // Hard stock guardrail: block save if any item exceeds available stock.
+    const candidateItems = data.items.map((it) => {
+      const orig = result.items.find((i) => i.id === it.id);
+      return { ingredientId: orig!.ingredientId, quantity: it.quantity };
+    });
+    await hardStockCheck(result.transfer.fromBranchId, candidateItems);
 
     for (const item of data.items) {
       await db
