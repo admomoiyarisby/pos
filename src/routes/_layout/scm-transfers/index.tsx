@@ -153,7 +153,7 @@ function TransfersListPage() {
           <p className="text-sm text-muted-foreground">
             Total: {rows.length} mutasi
           </p>
-          {user?.role === "branch_admin" && user.branchId && (
+          {(user?.role === "branch_admin" || user?.role === "super_admin") && (
             <Link to="/scm-transfers/new">
               <Button>
                 <Plus className="h-4 w-4 mr-1" />
