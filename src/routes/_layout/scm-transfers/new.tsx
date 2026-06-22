@@ -150,19 +150,40 @@ function NewMutasiPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Dari Cabang (Pengirim)</label>
-            <select
-              value={fromBranchId}
-              onChange={(e) => setFromBranchId(e.target.value)}
-              required
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="">Pilih cabang…</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+            {user?.role === "branch_admin" ? (
+              <>
+                {(() => {
+                  const senderBranch = branches.find((b) => b.id === user?.branchId);
+                  if (!senderBranch || !user?.branchId) {
+                    return (
+                      <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
+                        Akun Anda tidak memiliki cabang terdaftar. Hubungi Super Admin.
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="h-9 flex items-center gap-2 rounded-md border bg-muted px-3 text-sm">
+                      <span className="font-medium">{senderBranch.name}</span>
+                      <span className="text-xs text-muted-foreground">({senderBranch.code})</span>
+                    </div>
+                  );
+                })()}
+              </>
+            ) : (
+              <select
+                value={fromBranchId}
+                onChange={(e) => setFromBranchId(e.target.value)}
+                required
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Pilih cabang…</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Ke Cabang (Penerima)</label>

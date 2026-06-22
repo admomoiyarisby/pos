@@ -166,9 +166,12 @@ export const createMutasiTransfer = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<CreateMutasiTransferResult> => {
     const user = await requireAuth();
 
-    // Branch-level guard: only branch_admin at the sender can create.
-    if (user.role !== "branch_admin" || user.branchId !== data.fromBranchId) {
-      throw new Error("Only the Branch Admin at the sender branch can create a Mutasi transfer");
+    // Branch-level guard: only branch_admin (at their own branch) or
+    // super_admin (on behalf of any branch) can create.
+    if (user.role !== "super_admin") {
+      if (user.role !== "branch_admin" || user.branchId !== data.fromBranchId) {
+        throw new Error("Only the Branch Admin at the sender branch can create a Mutasi transfer");
+      }
     }
     if (data.fromBranchId === data.toBranchId) {
       throw new Error("Sender and receiver must be different branches");
