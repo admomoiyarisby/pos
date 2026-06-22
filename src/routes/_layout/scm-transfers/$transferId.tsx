@@ -38,6 +38,8 @@ import { canAmAct } from "#/lib/server/scm-transfer-queries";
 import { useServerFn } from "@tanstack/react-start";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
+import { printMutasiSuratJalan, printMutasiInvoice } from "#/lib/server/scm-transfer-print";
+import { openPrintWindow } from "#/lib/print-window";
 
 export const Route = createFileRoute("/_layout/scm-transfers/$transferId")({
   component: TransferDetailPage,
@@ -91,7 +93,8 @@ function TransferDetailPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
-  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewEdits, setReviewEdits] = useState<Record<string, { received: number; rejected: number; reason: string }>>({});
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const branchById = useMemo(
     () => new Map(initialBranches.map((b: { id: string; name: string }) => [b.id, b])),
@@ -127,6 +130,26 @@ function TransferDetailPage() {
   const finishReceiveMut = useServerFn(finishReceiveMutasiTransfer);
   const markPaidMut = useServerFn(markPaidMutasiTransfer);
   const cancelMut = useServerFn(cancelMutasiTransfer);
+  const printSJ = useServerFn(printMutasiSuratJalan);
+  const printInv = useServerFn(printMutasiInvoice);
+
+  async function handlePrintSJ() {
+    try {
+      const html = await printSJ({ data: { transferId } });
+      openPrintWindow(html);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal mencetak SJ");
+    }
+  }
+
+  async function handlePrintInvoice() {
+    try {
+      const html = await printInv({ data: { transferId } });
+      openPrintWindow(html);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal mencetak Invoice");
+    }
+  }
 
   if (!result) {
     return (
@@ -219,35 +242,158 @@ function TransferDetailPage() {
         </div>
 
         {/* Items */}
-        <div className="rounded-lg border">
-          <div className="p-4 border-b">
-            <h2 className="font-semibold">Item</h2>
-          </div>
-          <div className="divide-y">
-            {items.map((it) => {
-              const ing = ingredientById.get(it.ingredientId);
-              return (
-                <div key={it.id} className="p-4 flex items-center gap-4">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{ing?.name ?? it.ingredientId.slice(0, 8) + "…"}</p>
-                    <p className="text-xs text-muted-foreground">Qty janji: {it.quantity} {ing?.stockUnit ?? ""}</p>
+        {transfer.status === "ReviewingSJ" && isReceiverBa ? (
+          <div className="rounded-lg border">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h2 className="font-semibold">Item — Review Penerimaan</h2>
+              {reviewError && (
+                <span className="text-xs text-destructive">{reviewError}</span>
+              )}
+            </div>
+            <div className="divide-y">
+              {items.map((it) => {
+                const ing = ingredientById.get(it.ingredientId);
+                const edit = reviewEdits[it.id] ?? {
+                  received: it.receivedQuantity ?? it.quantity,
+                  rejected: it.rejectedQuantity ?? 0,
+                  reason: it.reason ?? "",
+                };
+                const sumOk = edit.received + edit.rejected === it.quantity;
+                return (
+                  <div key={it.id} className="p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium flex-1">{ing?.name ?? it.ingredientId.slice(0, 8) + "…"}</p>
+                      <span className="text-xs text-muted-foreground">Janji: {it.quantity} {ing?.stockUnit ?? ""}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-1">
+                        <label className="text-xs text-muted-foreground">Diterima</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={edit.received}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setReviewEdits((prev) => ({
+                              ...prev,
+                              [it.id]: { ...(prev[it.id] ?? edit), received: val },
+                            }));
+                          }}
+                          className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-right"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <label className="text-xs text-muted-foreground">Ditolak</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={edit.rejected}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setReviewEdits((prev) => ({
+                              ...prev,
+                              [it.id]: { ...(prev[it.id] ?? edit), rejected: val },
+                            }));
+                          }}
+                          className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-right"
+                        />
+                      </div>
+                      {edit.rejected > 0 && (
+                        <div className="flex items-center gap-1">
+                          <label className="text-xs text-muted-foreground">Alasan</label>
+                          <input
+                            value={edit.reason}
+                            onChange={(e) =>
+                              setReviewEdits((prev) => ({
+                                ...prev,
+                                [it.id]: { ...(prev[it.id] ?? edit), reason: e.target.value },
+                              }))
+                            }
+                            placeholder="Wajib"
+                            className="h-8 w-40 rounded-md border border-input bg-background px-2 text-sm"
+                          />
+                        </div>
+                      )}
+                      {!sumOk && (
+                        <span className="text-xs text-destructive">
+                          {edit.received + edit.rejected} ≠ {it.quantity}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm">
-                      Diterima: <strong>{it.receivedQuantity ?? "—"}</strong>
-                    </p>
-                    <p className="text-sm">
-                      Ditolak: <strong>{it.rejectedQuantity ?? "—"}</strong>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      @ Rp {it.unitPrice.toLocaleString("id-ID")}/{ing?.stockUnit ?? "unit"}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+            <div className="p-4 border-t flex justify-end gap-2">
+              <Button
+                onClick={() => setReviewEdits({})}
+                variant="outline"
+              >
+                Batal
+              </Button>
+              <Button
+                onClick={async () => {
+                  setReviewError(null);
+                  const payload: Array<{ id: string; receivedQuantity: number; rejectedQuantity: number; reason?: string }> = [];
+                  for (const it of items) {
+                    const edit = reviewEdits[it.id] ?? {
+                      received: it.receivedQuantity ?? it.quantity,
+                      rejected: it.rejectedQuantity ?? 0,
+                      reason: it.reason ?? "",
+                    };
+                    if (edit.received + edit.rejected !== it.quantity) {
+                      const ing = ingredientById.get(it.ingredientId);
+                      setReviewError(`${ing?.name ?? it.ingredientId.slice(0, 8)}: diterima + ditolak harus = ${it.quantity}`);
+                      return;
+                    }
+                    if (edit.rejected > 0 && !edit.reason.trim()) {
+                      const ing = ingredientById.get(it.ingredientId);
+                      setReviewError(`${ing?.name ?? it.ingredientId.slice(0, 8)}: alasan penolakan wajib diisi`);
+                      return;
+                    }
+                    payload.push({ id: it.id, receivedQuantity: edit.received, rejectedQuantity: edit.rejected, reason: edit.reason || undefined });
+                  }
+                  await runAction(() => finishReceiveMut({ data: { transferId, items: payload } }));
+                  setReviewEdits({});
+                  setReviewError(null);
+                }}
+              >
+                <Check className="h-4 w-4 mr-1" />
+                Simpan Review
+              </Button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-lg border">
+            <div className="p-4 border-b">
+              <h2 className="font-semibold">Item</h2>
+            </div>
+            <div className="divide-y">
+              {items.map((it) => {
+                const ing = ingredientById.get(it.ingredientId);
+                return (
+                  <div key={it.id} className="p-4 flex items-center gap-4">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{ing?.name ?? it.ingredientId.slice(0, 8) + "…"}</p>
+                      <p className="text-xs text-muted-foreground">Qty janji: {it.quantity} {ing?.stockUnit ?? ""}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm">
+                        Diterima: <strong>{it.receivedQuantity ?? "—"}</strong>
+                      </p>
+                      <p className="text-sm">
+                        Ditolak: <strong>{it.rejectedQuantity ?? "—"}</strong>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        @ Rp {it.unitPrice.toLocaleString("id-ID")}/{ing?.stockUnit ?? "unit"}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Invoice (if any) */}
         {invoice && (
@@ -400,12 +546,11 @@ function TransferDetailPage() {
               </>
             )}
 
-            {/* ReviewingSJ */}
+            {/* ReviewingSJ — receiver BA edits inline in the items section */}
             {transfer.status === "ReviewingSJ" && isReceiverBa && (
-              <Button onClick={() => setReviewOpen(true)}>
-                <Check className="h-4 w-4 mr-1" />
-                Selesaikan Review
-              </Button>
+              <p className="text-sm text-muted-foreground w-full">
+                Review penerimaan dilakukan langsung di daftar item di atas. Isi jumlah diterima/ditolak, lalu klik <strong>Simpan Review</strong>.
+              </p>
             )}
             {transfer.status === "ReviewingSJ" && amInJurisdiction && (
               <Button variant="destructive" onClick={() => setCancelOpen(true)}>
@@ -432,26 +577,16 @@ function TransferDetailPage() {
 
             {/* Print buttons (any state from InTransit onwards) */}
             {(transfer.status === "Approved" || transfer.status === "InTransit" || transfer.status === "Delivered" || transfer.status === "ReviewingSJ" || transfer.status === "WaitingForPayment" || transfer.status === "Finished") && (
-              <a
-                href={`/api/scm-transfer/print-sj?transferId=${transferId}`}
-                target="_blank"
-                rel="noopener"
-                className="inline-flex h-9 items-center gap-1 rounded-md border px-3 text-sm hover:bg-accent"
-              >
-                <Printer className="h-4 w-4" />
+              <Button variant="outline" onClick={handlePrintSJ}>
+                <Printer className="h-4 w-4 mr-1" />
                 Cetak SJ
-              </a>
+              </Button>
             )}
             {invoice && (
-              <a
-                href={`/api/scm-transfer/print-invoice?transferId=${transferId}`}
-                target="_blank"
-                rel="noopener"
-                className="inline-flex h-9 items-center gap-1 rounded-md border px-3 text-sm hover:bg-accent"
-              >
-                <Printer className="h-4 w-4" />
+              <Button variant="outline" onClick={handlePrintInvoice}>
+                <Printer className="h-4 w-4 mr-1" />
                 Cetak Invoice
-              </a>
+              </Button>
             )}
           </div>
         </div>
@@ -567,151 +702,7 @@ function TransferDetailPage() {
             </div>
           </div>
         </Modal>
-
-        {/* Finish-review modal */}
-        <Modal
-          open={reviewOpen}
-          onClose={() => setReviewOpen(false)}
-          title="Selesaikan Review"
-          size="lg"
-        >
-          <FinishReviewForm
-            items={items}
-            ingredientById={ingredientById}
-            onClose={() => setReviewOpen(false)}
-            onSubmit={async (payload) => {
-              await runAction(() => finishReceiveMut({ data: { transferId, items: payload } }));
-              setReviewOpen(false);
-            }}
-          />
-        </Modal>
       </div>
     </RoleGuard>
-  );
-}
-
-function FinishReviewForm({
-  items,
-  onClose,
-  onSubmit,
-  ingredientById,
-}: {
-  items: Array<{
-    id: string;
-    ingredientId: string;
-    quantity: number;
-    receivedQuantity?: number | null;
-    rejectedQuantity?: number | null;
-    reason?: string | null;
-  }>;
-  onClose: () => void;
-  onSubmit: (payload: Array<{ id: string; receivedQuantity: number; rejectedQuantity: number; reason?: string }>) => Promise<void>;
-  ingredientById: Map<string, { id: string; name: string; stockUnit: string }>;
-}) {
-  const [rows, setRows] = useState(() =>
-    items.map((it) => ({
-      id: it.id,
-      ingredientId: it.ingredientId,
-      qty: it.quantity,
-      received: it.receivedQuantity ?? it.quantity,
-      rejected: it.rejectedQuantity ?? 0,
-      reason: it.reason ?? "",
-    })),
-  );
-  const [error, setError] = useState<string | null>(null);
-
-  const update = (id: string, patch: Partial<(typeof rows)[number]>) => {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  };
-
-  const handleSubmit = async () => {
-    setError(null);
-    for (const r of rows) {
-      if (r.received + r.rejected !== r.qty) {
-        const ing = ingredientById.get(r.ingredientId);
-        setError(`"${ing?.name ?? r.ingredientId.slice(0, 8)}": diterima + ditolak harus = ${r.qty}`);
-        return;
-      }
-      if (r.rejected > 0 && !r.reason.trim()) {
-        const ing = ingredientById.get(r.ingredientId);
-        setError(`"${ing?.name ?? r.ingredientId.slice(0, 8)}": alasan penolakan wajib diisi`);
-        return;
-      }
-    }
-    await onSubmit(
-      rows.map((r) => ({
-        id: r.id,
-        receivedQuantity: r.received,
-        rejectedQuantity: r.rejected,
-        reason: r.reason || undefined,
-      })),
-    );
-  };
-
-  return (
-    <div className="space-y-3">
-      {error && <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">{error}</div>}
-      <p className="text-sm text-muted-foreground">
-        Isi jumlah yang diterima dan ditolak per item. Total (diterima + ditolak) harus sama dengan jumlah janji.
-      </p>
-      <div className="space-y-3">
-        {rows.map((r) => {
-          const ing = ingredientById.get(r.ingredientId);
-          return (
-            <div key={r.id} className="grid grid-cols-12 gap-2 items-center">
-              <div className="col-span-4 text-sm font-medium">{ing?.name ?? r.ingredientId.slice(0, 8) + "…"}</div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">Janji</label>
-                <div className="h-8 w-full rounded-md border bg-muted px-2 text-sm text-right flex items-center justify-end gap-1">
-                  <span>{r.qty}</span>
-                  <span className="text-xs text-muted-foreground">{ing?.stockUnit ?? ""}</span>
-                </div>
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">Diterima</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={r.received}
-                  onChange={(e) => update(r.id, { received: Number(e.target.value) })}
-                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-right"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">Ditolak</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={r.rejected}
-                  onChange={(e) => update(r.id, { rejected: Number(e.target.value) })}
-                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-right"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">Alasan</label>
-                <input
-                  value={r.reason}
-                  onChange={(e) => update(r.id, { reason: e.target.value })}
-                  disabled={r.rejected === 0}
-                  placeholder={r.rejected > 0 ? "Wajib" : "—"}
-                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex justify-end gap-2 pt-2">
-        <button onClick={onClose} className="h-9 px-4 rounded-md border text-sm">
-          Batal
-        </button>
-        <button
-          onClick={handleSubmit}
-          className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
-        >
-          Selesaikan Review
-        </button>
-      </div>
-    </div>
   );
 }
