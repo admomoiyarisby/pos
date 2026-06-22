@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -36,12 +36,18 @@ import {
 } from "#/lib/server/scm-transfers";
 import { canAmAct } from "#/lib/server/scm-transfer-queries";
 import { useServerFn } from "@tanstack/react-start";
+import { getBranches } from "#/lib/server/branches";
+import { getIngredients } from "#/lib/server/ingredients";
 
 export const Route = createFileRoute("/_layout/scm-transfers/$transferId")({
   component: TransferDetailPage,
   loader: async ({ params }) => {
-    const data = await getMutasiTransfer({ data: { transferId: params.transferId } });
-    return { initial: data };
+    const [data, branches, ingredients] = await Promise.all([
+      getMutasiTransfer({ data: { transferId: params.transferId } }),
+      getBranches({ data: {} }),
+      getIngredients({ data: {} }),
+    ]);
+    return { initial: data, initialBranches: branches, initialIngredients: ingredients };
   },
 });
 
@@ -77,7 +83,7 @@ const statusColors: Record<
 function TransferDetailPage() {
   const { user } = useAuth();
   const { transferId } = Route.useParams();
-  const { initial } = Route.useLoaderData();
+  const { initial, initialBranches, initialIngredients } = Route.useLoaderData();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +92,19 @@ function TransferDetailPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
+
+  const branchById = useMemo(
+    () => new Map(initialBranches.map((b: { id: string; name: string }) => [b.id, b])),
+    [initialBranches],
+  );
+
+  const ingredientById = useMemo(
+    () =>
+      new Map(
+        initialIngredients.map((i: { id: string; name: string; stockUnit: string }) => [i.id, i]),
+      ),
+    [initialIngredients],
+  );
 
   const { data: result } = useQuery({
     queryKey: ["scm-transfer", transferId],
@@ -181,11 +200,11 @@ function TransferDetailPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Dari Cabang</p>
-            <p className="font-medium mt-1">{transfer.fromBranchId.slice(0, 8)}…</p>
+            <p className="font-medium mt-1">{branchById.get(transfer.fromBranchId)?.name ?? transfer.fromBranchId.slice(0, 8) + "…"}</p>
           </div>
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Ke Cabang</p>
-            <p className="font-medium mt-1">{transfer.toBranchId.slice(0, 8)}…</p>
+            <p className="font-medium mt-1">{branchById.get(transfer.toBranchId)?.name ?? transfer.toBranchId.slice(0, 8) + "…"}</p>
           </div>
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Jumlah Item</p>
@@ -205,25 +224,28 @@ function TransferDetailPage() {
             <h2 className="font-semibold">Item</h2>
           </div>
           <div className="divide-y">
-            {items.map((it) => (
-              <div key={it.id} className="p-4 flex items-center gap-4">
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{it.ingredientId.slice(0, 8)}…</p>
-                  <p className="text-xs text-muted-foreground">Qty janji: {it.quantity}</p>
+            {items.map((it) => {
+              const ing = ingredientById.get(it.ingredientId);
+              return (
+                <div key={it.id} className="p-4 flex items-center gap-4">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{ing?.name ?? it.ingredientId.slice(0, 8) + "…"}</p>
+                    <p className="text-xs text-muted-foreground">Qty janji: {it.quantity} {ing?.stockUnit ?? ""}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm">
+                      Diterima: <strong>{it.receivedQuantity ?? "—"}</strong>
+                    </p>
+                    <p className="text-sm">
+                      Ditolak: <strong>{it.rejectedQuantity ?? "—"}</strong>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      @ Rp {it.unitPrice.toLocaleString("id-ID")}/{ing?.stockUnit ?? "unit"}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm">
-                    Diterima: <strong>{it.receivedQuantity ?? "—"}</strong>
-                  </p>
-                  <p className="text-sm">
-                    Ditolak: <strong>{it.rejectedQuantity ?? "—"}</strong>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    @ Rp {it.unitPrice.toLocaleString("id-ID")}
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -555,6 +577,7 @@ function TransferDetailPage() {
         >
           <FinishReviewForm
             items={items}
+            ingredientById={ingredientById}
             onClose={() => setReviewOpen(false)}
             onSubmit={async (payload) => {
               await runAction(() => finishReceiveMut({ data: { transferId, items: payload } }));
@@ -571,9 +594,11 @@ function FinishReviewForm({
   items,
   onClose,
   onSubmit,
+  ingredientById,
 }: {
   items: Array<{
     id: string;
+    ingredientId: string;
     quantity: number;
     receivedQuantity?: number | null;
     rejectedQuantity?: number | null;
@@ -581,10 +606,12 @@ function FinishReviewForm({
   }>;
   onClose: () => void;
   onSubmit: (payload: Array<{ id: string; receivedQuantity: number; rejectedQuantity: number; reason?: string }>) => Promise<void>;
+  ingredientById: Map<string, { id: string; name: string; stockUnit: string }>;
 }) {
   const [rows, setRows] = useState(() =>
     items.map((it) => ({
       id: it.id,
+      ingredientId: it.ingredientId,
       qty: it.quantity,
       received: it.receivedQuantity ?? it.quantity,
       rejected: it.rejectedQuantity ?? 0,
@@ -601,11 +628,13 @@ function FinishReviewForm({
     setError(null);
     for (const r of rows) {
       if (r.received + r.rejected !== r.qty) {
-        setError(`Baris ${r.id.slice(0, 8)}: diterima + ditolak harus = ${r.qty}`);
+        const ing = ingredientById.get(r.ingredientId);
+        setError(`"${ing?.name ?? r.ingredientId.slice(0, 8)}": diterima + ditolak harus = ${r.qty}`);
         return;
       }
       if (r.rejected > 0 && !r.reason.trim()) {
-        setError(`Baris ${r.id.slice(0, 8)}: alasan penolakan wajib diisi`);
+        const ing = ingredientById.get(r.ingredientId);
+        setError(`"${ing?.name ?? r.ingredientId.slice(0, 8)}": alasan penolakan wajib diisi`);
         return;
       }
     }
@@ -626,45 +655,51 @@ function FinishReviewForm({
         Isi jumlah yang diterima dan ditolak per item. Total (diterima + ditolak) harus sama dengan jumlah janji.
       </p>
       <div className="space-y-3">
-        {rows.map((r) => (
-          <div key={r.id} className="grid grid-cols-12 gap-2 items-center">
-            <div className="col-span-4 text-sm font-medium">{r.id.slice(0, 8)}…</div>
-            <div className="col-span-2">
-              <label className="text-xs text-muted-foreground">Janji</label>
-              <input value={r.qty} disabled className="h-8 w-full rounded-md border bg-muted px-2 text-sm text-right" />
+        {rows.map((r) => {
+          const ing = ingredientById.get(r.ingredientId);
+          return (
+            <div key={r.id} className="grid grid-cols-12 gap-2 items-center">
+              <div className="col-span-4 text-sm font-medium">{ing?.name ?? r.ingredientId.slice(0, 8) + "…"}</div>
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground">Janji</label>
+                <div className="h-8 w-full rounded-md border bg-muted px-2 text-sm text-right flex items-center justify-end gap-1">
+                  <span>{r.qty}</span>
+                  <span className="text-xs text-muted-foreground">{ing?.stockUnit ?? ""}</span>
+                </div>
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground">Diterima</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={r.received}
+                  onChange={(e) => update(r.id, { received: Number(e.target.value) })}
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-right"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground">Ditolak</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={r.rejected}
+                  onChange={(e) => update(r.id, { rejected: Number(e.target.value) })}
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-right"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground">Alasan</label>
+                <input
+                  value={r.reason}
+                  onChange={(e) => update(r.id, { reason: e.target.value })}
+                  disabled={r.rejected === 0}
+                  placeholder={r.rejected > 0 ? "Wajib" : "—"}
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
+                />
+              </div>
             </div>
-            <div className="col-span-2">
-              <label className="text-xs text-muted-foreground">Diterima</label>
-              <input
-                type="number"
-                min={0}
-                value={r.received}
-                onChange={(e) => update(r.id, { received: Number(e.target.value) })}
-                className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-right"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="text-xs text-muted-foreground">Ditolak</label>
-              <input
-                type="number"
-                min={0}
-                value={r.rejected}
-                onChange={(e) => update(r.id, { rejected: Number(e.target.value) })}
-                className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-right"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="text-xs text-muted-foreground">Alasan</label>
-              <input
-                value={r.reason}
-                onChange={(e) => update(r.id, { reason: e.target.value })}
-                disabled={r.rejected === 0}
-                placeholder={r.rejected > 0 ? "Wajib" : "—"}
-                className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-              />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div className="flex justify-end gap-2 pt-2">
         <button onClick={onClose} className="h-9 px-4 rounded-md border text-sm">
