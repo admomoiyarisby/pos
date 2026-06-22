@@ -6,6 +6,14 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
 import { Button } from "#/components/ui/button";
 import { AlertCircle, ArrowLeft, Plus, Trash2 } from "lucide-react";
+import {
+  Combobox,
+  ComboboxInput,
+  ComboboxContent,
+  ComboboxList,
+  ComboboxItem,
+  ComboboxEmpty,
+} from "#/components/ui/combobox";
 import { createMutasiTransfer } from "#/lib/server/scm-transfers";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
@@ -23,10 +31,18 @@ export const Route = createFileRoute("/_layout/scm-transfers/new")({
   },
 });
 
+interface IngredientOption {
+  id: string;
+  name: string;
+  stockUnit: string;
+  stockQty: number;
+}
+
 interface ItemRow {
   id: string;
   ingredientId: string;
   quantity: number;
+  inputValue: string;
 }
 
 function NewMutasiPage() {
@@ -44,8 +60,7 @@ function NewMutasiPage() {
   const queryClient = useQueryClient();
 
   // Fetch inventory for the sender branch so we can show available qty.
-  // Runs once when fromBranchId is set; refetches if it changes (super_admin case).
-  const { data: inventoryRows } = useQuery({
+  const { data: inventoryResult } = useQuery({
     queryKey: ["inventory-branch", fromBranchId],
     queryFn: () => getInventory({ data: { branchId: fromBranchId } }),
     enabled: !!fromBranchId,
@@ -59,14 +74,26 @@ function NewMutasiPage() {
   // Map ingredientId → available qty in the sender's inventory
   const stockByIngredient = useMemo(() => {
     const m = new Map<string, number>();
-    const rows = inventoryRows?.data;
+    const rows = inventoryResult?.data;
     if (rows) {
       for (const inv of rows) {
         m.set(inv.ingredientId, inv.quantity);
       }
     }
     return m;
-  }, [inventoryRows]);
+  }, [inventoryResult]);
+
+  // Options for the combobox: ingredient + stock info
+  const ingredientOptions: IngredientOption[] = useMemo(
+    () =>
+      ingredients.map((ing) => ({
+        id: ing.id,
+        name: ing.name,
+        stockUnit: ing.stockUnit,
+        stockQty: stockByIngredient.get(ing.id) ?? 0,
+      })),
+    [ingredients, stockByIngredient],
+  );
 
   // Compute which items exceed available stock
   const itemsOverStock = useMemo(() => {
@@ -84,7 +111,7 @@ function NewMutasiPage() {
   const addItem = () => {
     setItems((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), ingredientId: ingredients[0]?.id ?? "", quantity: 1 },
+      { id: crypto.randomUUID(), ingredientId: "", quantity: 1, inputValue: "" },
     ]);
   };
 
@@ -112,6 +139,10 @@ function NewMutasiPage() {
       setSubmitError("Jumlah item harus lebih dari 0");
       return;
     }
+    if (items.some((it) => !it.ingredientId)) {
+      setSubmitError("Semua item harus memiliki bahan yang dipilih");
+      return;
+    }
     if (itemsOverStock.length > 0) {
       setSubmitError("Ada item yang melebihi stok tersedia. Periksa kembali jumlahnya.");
       return;
@@ -130,7 +161,6 @@ function NewMutasiPage() {
         },
       });
 
-      // Invalidate caches
       void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
       void queryClient.invalidateQueries({ queryKey: ["inventory-branch"] });
 
@@ -246,10 +276,10 @@ function NewMutasiPage() {
         </div>
 
         {/* Stock info bar */}
-        {fromBranchId && inventoryRows?.data && (
+        {fromBranchId && inventoryResult?.data && (
           <div className="rounded-md bg-muted/30 border px-4 py-2 text-xs text-muted-foreground">
             Tersedia di <strong>{senderBranch?.name ?? "cabang pengirim"}</strong>:{" "}
-            {inventoryRows.data.length} jenis bahan tercatat
+            {inventoryResult.data.length} jenis bahan tercatat
             {itemsOverStock.length > 0 && (
               <span className="text-destructive font-medium">
                 {" — "}{itemsOverStock.length} item melebihi stok
@@ -269,28 +299,77 @@ function NewMutasiPage() {
           {items.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">Belum ada item.</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {items.map((it) => {
+                const selected = ingredientOptions.find((o) => o.id === it.ingredientId);
                 const available = stockByIngredient.get(it.ingredientId);
                 const over = available != null && it.quantity > available;
+                const isNewRow = !it.ingredientId;
+
                 return (
-                  <div key={it.id} className="flex items-center gap-2">
-                    <select
-                      value={it.ingredientId}
-                      onChange={(e) => updateItem(it.id, { ingredientId: e.target.value })}
-                      className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                  <div key={it.id} className="flex items-start gap-2">
+                    <Combobox
+                      value={selected ?? null}
+                      onValueChange={(val) => {
+                        const o = val as IngredientOption | null;
+                        updateItem(it.id, {
+                          ingredientId: o?.id ?? "",
+                          inputValue: o?.name ?? "",
+                        });
+                      }}
+                      inputValue={it.inputValue}
+                      onInputValueChange={(val) => updateItem(it.id, { inputValue: val })}
+                      items={
+                        isNewRow
+                          ? ingredientOptions
+                          : // once a row is committed, reuse the same options (all)
+                            ingredientOptions
+                      }
+                      itemToStringValue={(item: IngredientOption) => item.id}
+                      itemToStringLabel={(item: IngredientOption) => item.name}
+                      isItemEqualToValue={(a: IngredientOption | null, b: IngredientOption | null) =>
+                        a?.id === b?.id
+                      }
                     >
-                      {ingredients.map((ing) => (
-                        <option key={ing.id} value={ing.id}>
-                          {ing.name}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="relative">
+                      <ComboboxInput
+                        showTrigger
+                        showClear={!!selected}
+                        placeholder="Cari bahan…"
+                        className="flex-1 min-w-0"
+                      />
+                      <ComboboxContent>
+                        <ComboboxList>
+                          {(item: IngredientOption) => (
+                            <ComboboxItem key={item.id} value={item}>
+                              <div className="flex items-center justify-between w-full">
+                                <span>
+                                  {item.name}{" "}
+                                  <span className="text-muted-foreground">({item.stockUnit})</span>
+                                </span>
+                                <span
+                                  className={
+                                    "text-xs " +
+                                    (item.stockQty <= 0
+                                      ? "text-destructive font-medium"
+                                      : "text-muted-foreground")
+                                  }
+                                >
+                                  Stok: {item.stockQty}
+                                  {item.stockQty <= 0 && " ⛔ habis"}
+                                </span>
+                              </div>
+                            </ComboboxItem>
+                          )}
+                        </ComboboxList>
+                        <ComboboxEmpty>Tidak ada bahan yang cocok</ComboboxEmpty>
+                      </ComboboxContent>
+                    </Combobox>
+                    <div className="relative pt-0">
                       <input
                         type="number"
                         min={1}
                         value={it.quantity}
+                        disabled={!it.ingredientId}
                         onChange={(e) =>
                           updateItem(it.id, { quantity: Number(e.target.value) })
                         }
@@ -298,12 +377,14 @@ function NewMutasiPage() {
                           over
                             ? "border-destructive bg-destructive/5 text-destructive"
                             : "border-input bg-background"
-                        }`}
+                        } disabled:opacity-40`}
                       />
-                      {available != null && (
-                        <span className={`absolute -bottom-4 left-0 text-[10px] ${
-                          over ? "text-destructive font-medium" : "text-muted-foreground"
-                        }`}>
+                      {available != null && it.ingredientId && (
+                        <span
+                          className={`absolute -bottom-4 left-0 text-[10px] ${
+                            over ? "text-destructive font-medium" : "text-muted-foreground"
+                          }`}
+                        >
                           stok: {available}
                         </span>
                       )}
@@ -311,7 +392,7 @@ function NewMutasiPage() {
                     <button
                       type="button"
                       onClick={() => removeItem(it.id)}
-                      className="h-9 w-9 inline-flex items-center justify-center rounded-md text-destructive hover:bg-destructive/10"
+                      className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-md text-destructive hover:bg-destructive/10"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -322,14 +403,11 @@ function NewMutasiPage() {
           )}
         </div>
 
-        {/* Submit button row — show stock warning inline */}
         {items.length > 0 && fromBranchId && (
           <div className="rounded-md border px-4 py-3 text-xs text-muted-foreground space-y-1">
             <p>
-              Total item: <strong>{items.length}</strong>
-              {" · "}
-              Total diminta:{" "}
-              <strong>{items.reduce((s, it) => s + it.quantity, 0)}</strong>
+              Total item: <strong>{items.length}</strong>{" · "}
+              Total diminta: <strong>{items.reduce((s, it) => s + it.quantity, 0)}</strong>
             </p>
             {itemsOverStock.length > 0 && (
               <p className="text-destructive">
@@ -359,7 +437,7 @@ function NewMutasiPage() {
           </button>
           <button
             type="submit"
-            disabled={itemsOverStock.length > 0}
+            disabled={itemsOverStock.length > 0 || items.some((it) => !it.ingredientId)}
             className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-40"
           >
             Buat Draft SJ
