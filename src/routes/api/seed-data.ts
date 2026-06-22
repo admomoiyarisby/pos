@@ -407,23 +407,25 @@ export async function seedDatabase() {
       }
     }
 
-    for (const ri of r.ingredients) {
-      const ingId = idMap.ingredient.get(ri.ingredientProtoId);
-      if (!ingId) continue;
-      const existingRi = await db
-        .select()
-        .from(recipeIngredientsTable)
-        .where(
-          and(
-            eq(recipeIngredientsTable.recipeId, recId),
-            eq(recipeIngredientsTable.ingredientId, ingId),
-          ),
-        )
-        .limit(1);
-      if (!existingRi[0]) {
-        await db
-          .insert(recipeIngredientsTable)
-          .values({ recipeId: recId, ingredientId: ingId, quantity: ri.quantity });
+    if (r.ingredients) {
+      for (const ri of r.ingredients) {
+        const ingId = idMap.ingredient.get(ri.ingredientProtoId);
+        if (!ingId) continue;
+        const existingRi = await db
+          .select()
+          .from(recipeIngredientsTable)
+          .where(
+            and(
+              eq(recipeIngredientsTable.recipeId, recId),
+              eq(recipeIngredientsTable.ingredientId, ingId),
+            ),
+          )
+          .limit(1);
+        if (!existingRi[0]) {
+          await db
+            .insert(recipeIngredientsTable)
+            .values({ recipeId: recId, ingredientId: ingId, quantity: ri.quantity });
+        }
       }
     }
 
@@ -546,69 +548,10 @@ export async function seedDatabase() {
   }
 
   console.log("[seed] Seeding inventory...");
-  const branchCodes = [
-    "CENTRAL",
-    "SBY-01",
-    "SBY-02",
-    "SBY-03",
-    "SBY-04",
-    "MLG-01",
-    "GRS-01",
-    "JKT-01",
-    "JKT-02",
-    "BDG-01",
-  ];
-  const ingredientProtoIds = [
-    "ing-01",
-    "ing-02",
-    "ing-03",
-    "ing-04",
-    "ing-05",
-    "ing-06",
-    "ing-07",
-    "ing-08",
-    "ing-09",
-    "ing-10",
-    "ing-11",
-    "ing-12",
-    "ing-13",
-    "ing-14",
-    "ing-15",
-    "ing-16",
-    "ing-17",
-    "ing-18",
-    "ing-19",
-    "ing-20",
-    "ing-21",
-    "ing-22",
-    "ing-23",
-    "ing-24",
-    "ing-25",
-    "ing-26",
-    "ing-27",
-    "ing-28",
-    "ing-29",
-    "ing-30",
-    "ing-31",
-    "ing-32",
-    "ing-sfg-01",
-    "ing-sfg-02",
-    "ing-sfg-03",
-    "ing-sfg-04",
-    "ing-sfg-05",
-    "ing-sfg-06",
-    "ing-sfg-07",
-    "ing-sfg-08",
-    "ing-sfg-09",
-    "ing-sfg-10",
-    "ing-sfg-11",
-    "ing-sfg-12",
-    "ing-sfg-13",
-    "ing-sfg-14",
-    "ing-sfg-15",
-    "ing-sfg-16",
-    "ing-sfg-17",
-  ];
+  const branchCodes = ["CENTRAL", "WYG-01", "DRM-01", "TGL-01", "MLY-01", "JMB-01", "PCG-01", "SWL-01"];
+
+  // Derive ingredient protoIds from the seed data so the array stays in sync.
+  const ingredientProtoIds = INGREDIENTS.map((ing) => ing.protoId);
   for (const bc of branchCodes) {
     const bid = idMap.branch.get(
       bc === "CENTRAL" ? "br-central" : `br-${bc.toLowerCase().replace("-", "-")}`,
@@ -1015,13 +958,11 @@ export async function seedDatabase() {
     for (const item of pr.items) {
       const ingId = idMap.ingredient.get(item.ingredientProtoId);
       if (!ingId) continue;
-      await db
-        .insert(purchaseRequisitionItemsTable)
-        .values({
-          purchaseRequisitionId: inserted.id,
-          ingredientId: ingId,
-          quantity: item.quantity,
-        });
+      await db.insert(purchaseRequisitionItemsTable).values({
+        purchaseRequisitionId: inserted.id,
+        ingredientId: ingId,
+        quantity: item.quantity,
+      });
     }
   }
 
@@ -1133,14 +1074,12 @@ export async function seedDatabase() {
           )
           .limit(1);
         if (!existingIti[0]) {
-          await db
-            .insert(inTransitInventoryTable)
-            .values({
-              deliveryNoteId: inserted.id,
-              branchId: toBranchId,
-              ingredientId: ingId,
-              quantity: item.quantity,
-            });
+          await db.insert(inTransitInventoryTable).values({
+            deliveryNoteId: inserted.id,
+            branchId: toBranchId,
+            ingredientId: ingId,
+            quantity: item.quantity,
+          });
         }
       }
     }
@@ -1210,16 +1149,14 @@ export async function seedDatabase() {
     for (const item of so.items) {
       const ingId = idMap.ingredient.get(item.ingredientProtoId);
       if (!ingId) continue;
-      await db
-        .insert(stockOpnameItemsTable)
-        .values({
-          stockOpnameId: inserted.id,
-          ingredientId: ingId,
-          systemStock: item.systemStock,
-          physicalStock: item.physicalStock,
-          variance: item.variance,
-          investigationNote: item.investigationNote,
-        });
+      await db.insert(stockOpnameItemsTable).values({
+        stockOpnameId: inserted.id,
+        ingredientId: ingId,
+        systemStock: item.systemStock,
+        physicalStock: item.physicalStock,
+        variance: item.variance,
+        investigationNote: item.investigationNote,
+      });
     }
   }
 
@@ -1260,16 +1197,14 @@ export async function seedDatabase() {
       )
       .limit(1);
     if (!existing[0]) {
-      await db
-        .insert(systemNotificationsTable)
-        .values({
-          userId,
-          title: n.title,
-          message: n.message,
-          type: n.type,
-          isRead: n.isRead,
-          createdAt: n.createdAt,
-        });
+      await db.insert(systemNotificationsTable).values({
+        userId,
+        title: n.title,
+        message: n.message,
+        type: n.type,
+        isRead: n.isRead,
+        createdAt: n.createdAt,
+      });
     }
   }
 
@@ -1350,16 +1285,14 @@ export async function seedDatabase() {
       )
       .limit(1);
     if (!existing[0]) {
-      await db
-        .insert(manualRevenuesTable)
-        .values({
-          branchId,
-          date: mr.date,
-          amount: mr.amount,
-          notes: mr.notes,
-          submittedBy: userId,
-          createdAt: mr.createdAt,
-        });
+      await db.insert(manualRevenuesTable).values({
+        branchId,
+        date: mr.date,
+        amount: mr.amount,
+        notes: mr.notes,
+        submittedBy: userId,
+        createdAt: mr.createdAt,
+      });
     }
   }
 
@@ -1380,16 +1313,14 @@ export async function seedDatabase() {
       )
       .limit(1);
     if (!existing[0]) {
-      await db
-        .insert(channelRevenuesTable)
-        .values({
-          branchId,
-          date: cr.date,
-          channel: cr.channel,
-          amount: cr.amount,
-          notes: cr.notes,
-          submittedBy: userId,
-        });
+      await db.insert(channelRevenuesTable).values({
+        branchId,
+        date: cr.date,
+        channel: cr.channel,
+        amount: cr.amount,
+        notes: cr.notes,
+        submittedBy: userId,
+      });
     }
   }
 

@@ -29,6 +29,7 @@ import { Route as LayoutWasteIndexRouteImport } from './routes/_layout/waste/ind
 import { Route as LayoutSupplierDeliveriesIndexRouteImport } from './routes/_layout/supplier-deliveries/index'
 import { Route as LayoutStockTransfersIndexRouteImport } from './routes/_layout/stock-transfers/index'
 import { Route as LayoutStockOpnameIndexRouteImport } from './routes/_layout/stock-opname/index'
+import { Route as LayoutScmTransfersIndexRouteImport } from './routes/_layout/scm-transfers/index'
 import { Route as LayoutScmProcurementsIndexRouteImport } from './routes/_layout/scm-procurements/index'
 import { Route as LayoutScmInvoicesIndexRouteImport } from './routes/_layout/scm-invoices/index'
 import { Route as LayoutRecipesIndexRouteImport } from './routes/_layout/recipes/index'
@@ -48,6 +49,8 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as LayoutWasteBrokenStockRouteImport } from './routes/_layout/waste/broken-stock'
 import { Route as LayoutStockTransfersTrIdRouteImport } from './routes/_layout/stock-transfers/$trId'
 import { Route as LayoutStockOpnameSoIdRouteImport } from './routes/_layout/stock-opname/$soId'
+import { Route as LayoutScmTransfersNewRouteImport } from './routes/_layout/scm-transfers/new'
+import { Route as LayoutScmTransfersTransferIdRouteImport } from './routes/_layout/scm-transfers/$transferId'
 import { Route as LayoutScmProcurementsNewRouteImport } from './routes/_layout/scm-procurements/new'
 import { Route as LayoutScmProcurementsProcurementIdRouteImport } from './routes/_layout/scm-procurements/$procurementId'
 import { Route as LayoutScmInvoicesInvIdRouteImport } from './routes/_layout/scm-invoices/$invId'
@@ -171,6 +174,11 @@ const LayoutStockOpnameIndexRoute = LayoutStockOpnameIndexRouteImport.update({
   path: '/stock-opname/',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutScmTransfersIndexRoute = LayoutScmTransfersIndexRouteImport.update({
+  id: '/scm-transfers/',
+  path: '/scm-transfers/',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutScmProcurementsIndexRoute =
   LayoutScmProcurementsIndexRouteImport.update({
     id: '/scm-procurements/',
@@ -273,6 +281,17 @@ const LayoutStockOpnameSoIdRoute = LayoutStockOpnameSoIdRouteImport.update({
   path: '/stock-opname/$soId',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutScmTransfersNewRoute = LayoutScmTransfersNewRouteImport.update({
+  id: '/scm-transfers/new',
+  path: '/scm-transfers/new',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutScmTransfersTransferIdRoute =
+  LayoutScmTransfersTransferIdRouteImport.update({
+    id: '/scm-transfers/$transferId',
+    path: '/scm-transfers/$transferId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
 const LayoutScmProcurementsNewRoute =
   LayoutScmProcurementsNewRouteImport.update({
     id: '/scm-procurements/new',
@@ -424,6 +443,8 @@ export interface FileRoutesByFullPath {
   '/scm-invoices/$invId': typeof LayoutScmInvoicesInvIdRoute
   '/scm-procurements/$procurementId': typeof LayoutScmProcurementsProcurementIdRoute
   '/scm-procurements/new': typeof LayoutScmProcurementsNewRoute
+  '/scm-transfers/$transferId': typeof LayoutScmTransfersTransferIdRoute
+  '/scm-transfers/new': typeof LayoutScmTransfersNewRoute
   '/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
   '/waste/broken-stock': typeof LayoutWasteBrokenStockRoute
@@ -443,6 +464,7 @@ export interface FileRoutesByFullPath {
   '/recipes/': typeof LayoutRecipesIndexRoute
   '/scm-invoices/': typeof LayoutScmInvoicesIndexRoute
   '/scm-procurements/': typeof LayoutScmProcurementsIndexRoute
+  '/scm-transfers/': typeof LayoutScmTransfersIndexRoute
   '/stock-opname/': typeof LayoutStockOpnameIndexRoute
   '/stock-transfers/': typeof LayoutStockTransfersIndexRoute
   '/supplier-deliveries/': typeof LayoutSupplierDeliveriesIndexRoute
@@ -485,6 +507,8 @@ export interface FileRoutesByTo {
   '/scm-invoices/$invId': typeof LayoutScmInvoicesInvIdRoute
   '/scm-procurements/$procurementId': typeof LayoutScmProcurementsProcurementIdRoute
   '/scm-procurements/new': typeof LayoutScmProcurementsNewRoute
+  '/scm-transfers/$transferId': typeof LayoutScmTransfersTransferIdRoute
+  '/scm-transfers/new': typeof LayoutScmTransfersNewRoute
   '/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
   '/waste/broken-stock': typeof LayoutWasteBrokenStockRoute
@@ -504,6 +528,7 @@ export interface FileRoutesByTo {
   '/recipes': typeof LayoutRecipesIndexRoute
   '/scm-invoices': typeof LayoutScmInvoicesIndexRoute
   '/scm-procurements': typeof LayoutScmProcurementsIndexRoute
+  '/scm-transfers': typeof LayoutScmTransfersIndexRoute
   '/stock-opname': typeof LayoutStockOpnameIndexRoute
   '/stock-transfers': typeof LayoutStockTransfersIndexRoute
   '/supplier-deliveries': typeof LayoutSupplierDeliveriesIndexRoute
@@ -548,6 +573,8 @@ export interface FileRoutesById {
   '/_layout/scm-invoices/$invId': typeof LayoutScmInvoicesInvIdRoute
   '/_layout/scm-procurements/$procurementId': typeof LayoutScmProcurementsProcurementIdRoute
   '/_layout/scm-procurements/new': typeof LayoutScmProcurementsNewRoute
+  '/_layout/scm-transfers/$transferId': typeof LayoutScmTransfersTransferIdRoute
+  '/_layout/scm-transfers/new': typeof LayoutScmTransfersNewRoute
   '/_layout/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/_layout/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
   '/_layout/waste/broken-stock': typeof LayoutWasteBrokenStockRoute
@@ -567,6 +594,7 @@ export interface FileRoutesById {
   '/_layout/recipes/': typeof LayoutRecipesIndexRoute
   '/_layout/scm-invoices/': typeof LayoutScmInvoicesIndexRoute
   '/_layout/scm-procurements/': typeof LayoutScmProcurementsIndexRoute
+  '/_layout/scm-transfers/': typeof LayoutScmTransfersIndexRoute
   '/_layout/stock-opname/': typeof LayoutStockOpnameIndexRoute
   '/_layout/stock-transfers/': typeof LayoutStockTransfersIndexRoute
   '/_layout/supplier-deliveries/': typeof LayoutSupplierDeliveriesIndexRoute
@@ -611,6 +639,8 @@ export interface FileRouteTypes {
     | '/scm-invoices/$invId'
     | '/scm-procurements/$procurementId'
     | '/scm-procurements/new'
+    | '/scm-transfers/$transferId'
+    | '/scm-transfers/new'
     | '/stock-opname/$soId'
     | '/stock-transfers/$trId'
     | '/waste/broken-stock'
@@ -630,6 +660,7 @@ export interface FileRouteTypes {
     | '/recipes/'
     | '/scm-invoices/'
     | '/scm-procurements/'
+    | '/scm-transfers/'
     | '/stock-opname/'
     | '/stock-transfers/'
     | '/supplier-deliveries/'
@@ -672,6 +703,8 @@ export interface FileRouteTypes {
     | '/scm-invoices/$invId'
     | '/scm-procurements/$procurementId'
     | '/scm-procurements/new'
+    | '/scm-transfers/$transferId'
+    | '/scm-transfers/new'
     | '/stock-opname/$soId'
     | '/stock-transfers/$trId'
     | '/waste/broken-stock'
@@ -691,6 +724,7 @@ export interface FileRouteTypes {
     | '/recipes'
     | '/scm-invoices'
     | '/scm-procurements'
+    | '/scm-transfers'
     | '/stock-opname'
     | '/stock-transfers'
     | '/supplier-deliveries'
@@ -734,6 +768,8 @@ export interface FileRouteTypes {
     | '/_layout/scm-invoices/$invId'
     | '/_layout/scm-procurements/$procurementId'
     | '/_layout/scm-procurements/new'
+    | '/_layout/scm-transfers/$transferId'
+    | '/_layout/scm-transfers/new'
     | '/_layout/stock-opname/$soId'
     | '/_layout/stock-transfers/$trId'
     | '/_layout/waste/broken-stock'
@@ -753,6 +789,7 @@ export interface FileRouteTypes {
     | '/_layout/recipes/'
     | '/_layout/scm-invoices/'
     | '/_layout/scm-procurements/'
+    | '/_layout/scm-transfers/'
     | '/_layout/stock-opname/'
     | '/_layout/stock-transfers/'
     | '/_layout/supplier-deliveries/'
@@ -916,6 +953,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutStockOpnameIndexRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/scm-transfers/': {
+      id: '/_layout/scm-transfers/'
+      path: '/scm-transfers'
+      fullPath: '/scm-transfers/'
+      preLoaderRoute: typeof LayoutScmTransfersIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/scm-procurements/': {
       id: '/_layout/scm-procurements/'
       path: '/scm-procurements'
@@ -1047,6 +1091,20 @@ declare module '@tanstack/react-router' {
       path: '/stock-opname/$soId'
       fullPath: '/stock-opname/$soId'
       preLoaderRoute: typeof LayoutStockOpnameSoIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-transfers/new': {
+      id: '/_layout/scm-transfers/new'
+      path: '/scm-transfers/new'
+      fullPath: '/scm-transfers/new'
+      preLoaderRoute: typeof LayoutScmTransfersNewRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-transfers/$transferId': {
+      id: '/_layout/scm-transfers/$transferId'
+      path: '/scm-transfers/$transferId'
+      fullPath: '/scm-transfers/$transferId'
+      preLoaderRoute: typeof LayoutScmTransfersTransferIdRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/scm-procurements/new': {
@@ -1228,6 +1286,8 @@ interface LayoutRouteChildren {
   LayoutScmInvoicesInvIdRoute: typeof LayoutScmInvoicesInvIdRoute
   LayoutScmProcurementsProcurementIdRoute: typeof LayoutScmProcurementsProcurementIdRoute
   LayoutScmProcurementsNewRoute: typeof LayoutScmProcurementsNewRoute
+  LayoutScmTransfersTransferIdRoute: typeof LayoutScmTransfersTransferIdRoute
+  LayoutScmTransfersNewRoute: typeof LayoutScmTransfersNewRoute
   LayoutStockOpnameSoIdRoute: typeof LayoutStockOpnameSoIdRoute
   LayoutStockTransfersTrIdRoute: typeof LayoutStockTransfersTrIdRoute
   LayoutWasteBrokenStockRoute: typeof LayoutWasteBrokenStockRoute
@@ -1244,6 +1304,7 @@ interface LayoutRouteChildren {
   LayoutRecipesIndexRoute: typeof LayoutRecipesIndexRoute
   LayoutScmInvoicesIndexRoute: typeof LayoutScmInvoicesIndexRoute
   LayoutScmProcurementsIndexRoute: typeof LayoutScmProcurementsIndexRoute
+  LayoutScmTransfersIndexRoute: typeof LayoutScmTransfersIndexRoute
   LayoutStockOpnameIndexRoute: typeof LayoutStockOpnameIndexRoute
   LayoutStockTransfersIndexRoute: typeof LayoutStockTransfersIndexRoute
   LayoutSupplierDeliveriesIndexRoute: typeof LayoutSupplierDeliveriesIndexRoute
@@ -1280,6 +1341,8 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutScmProcurementsProcurementIdRoute:
     LayoutScmProcurementsProcurementIdRoute,
   LayoutScmProcurementsNewRoute: LayoutScmProcurementsNewRoute,
+  LayoutScmTransfersTransferIdRoute: LayoutScmTransfersTransferIdRoute,
+  LayoutScmTransfersNewRoute: LayoutScmTransfersNewRoute,
   LayoutStockOpnameSoIdRoute: LayoutStockOpnameSoIdRoute,
   LayoutStockTransfersTrIdRoute: LayoutStockTransfersTrIdRoute,
   LayoutWasteBrokenStockRoute: LayoutWasteBrokenStockRoute,
@@ -1296,6 +1359,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutRecipesIndexRoute: LayoutRecipesIndexRoute,
   LayoutScmInvoicesIndexRoute: LayoutScmInvoicesIndexRoute,
   LayoutScmProcurementsIndexRoute: LayoutScmProcurementsIndexRoute,
+  LayoutScmTransfersIndexRoute: LayoutScmTransfersIndexRoute,
   LayoutStockOpnameIndexRoute: LayoutStockOpnameIndexRoute,
   LayoutStockTransfersIndexRoute: LayoutStockTransfersIndexRoute,
   LayoutSupplierDeliveriesIndexRoute: LayoutSupplierDeliveriesIndexRoute,
