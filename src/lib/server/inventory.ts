@@ -112,6 +112,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
         notes: stockLedger.notes,
         createdAt: stockLedger.createdAt,
         ingredientName: ingredients.name,
+        stockUnit: ingredients.stockUnit,
         branchName: branches.name,
       })
       .from(stockLedger)
@@ -144,9 +145,7 @@ export const triggerStockOpname = createServerFn({ method: "POST" })
       })
       .from(inventory)
       .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
-      .where(
-        and(eq(inventory.branchId, data.branchId), eq(ingredients.countable, true)),
-      );
+      .where(and(eq(inventory.branchId, data.branchId), eq(ingredients.countable, true)));
 
     // Create stock opname
     const [so] = await db
@@ -425,7 +424,11 @@ export const markStockOpnameInvestigation = createServerFn({ method: "POST" })
       data.soId,
       "STATUS_CHANGE",
       oldSo as Record<string, unknown>,
-      { ...oldSo, status: "Under Investigation", investigationNote: data.investigationNote } as Record<string, unknown>,
+      {
+        ...oldSo,
+        status: "Under Investigation",
+        investigationNote: data.investigationNote,
+      } as Record<string, unknown>,
     );
 
     // Notify branch admin
@@ -631,17 +634,16 @@ export const updateStockOpnameCounts = createServerFn({ method: "POST" })
     return { success: true };
   });
 
-export const getAssignedBranchIds = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await requireAuth();
+export const getAssignedBranchIds = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await requireAuth();
 
-    if (user.role === "area_manager") {
-      const assigned = await db
-        .select({ branchId: areaManagerBranches.branchId })
-        .from(areaManagerBranches)
-        .where(eq(areaManagerBranches.userId, user.id));
-      return assigned.map((a) => a.branchId);
-    }
+  if (user.role === "area_manager") {
+    const assigned = await db
+      .select({ branchId: areaManagerBranches.branchId })
+      .from(areaManagerBranches)
+      .where(eq(areaManagerBranches.userId, user.id));
+    return assigned.map((a) => a.branchId);
+  }
 
-    return [];
-  });
+  return [];
+});

@@ -35,6 +35,7 @@ interface WasteRow {
   valuation: number;
   branchName: string | null;
   currentInventoryQty: number | null;
+  stockUnit: string | null;
 }
 
 const catColors: Record<string, "default" | "warning" | "destructive"> = {
@@ -107,9 +108,7 @@ function WastePage() {
   const { noInvestigation } = Route.useSearch() as { noInvestigation?: string };
   const filteredEntries =
     noInvestigation === "true"
-      ? entries.filter(
-          (e) => !e.investigationNote || e.investigationNote.trim() === "",
-        )
+      ? entries.filter((e) => !e.investigationNote || e.investigationNote.trim() === "")
       : entries;
 
   useEffect(() => {
@@ -221,6 +220,7 @@ function WastePage() {
         return (
           <div className={isAnomaly ? "text-rose-600 font-medium" : ""}>
             {r.quantity.toLocaleString("id-ID")}
+            {r.stockUnit && <span className="text-muted-foreground ml-0.5">{r.stockUnit}</span>}
             {isAnomaly && (
               <div className="text-[10px] text-rose-500">({wastePercentage.toFixed(1)}%)</div>
             )}

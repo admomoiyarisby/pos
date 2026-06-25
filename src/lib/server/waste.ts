@@ -47,6 +47,7 @@ export const getWasteEntries = createServerFn({ method: "GET" })
         createdAt: wasteEntries.createdAt,
         ingredientName: ingredients.name,
         ingredientCode: ingredients.code,
+        stockUnit: ingredients.stockUnit,
         branchName: branches.name,
         currentInventoryQty: inventory.quantity,
       })
@@ -309,6 +310,7 @@ export const getBrokenStock = createServerFn({ method: "GET" })
         createdAt: wasteEntries.createdAt,
         ingredientName: ingredients.name,
         ingredientCode: ingredients.code,
+        stockUnit: ingredients.stockUnit,
         branchName: branches.name,
         currentInventoryQty: inventory.quantity,
         operationalExpenseId: operationalExpenses.id,

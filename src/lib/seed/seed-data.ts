@@ -2947,8 +2947,16 @@ export const PERIOD_LOGS_DATA = [
   },
   {
     periodName: "Mei 2026",
-    status: "Open" as const,
+    status: "Closed" as const,
     openedAt: new Date("2026-05-01T00:00:00Z"),
+    closedAt: new Date("2026-05-31T23:59:59Z"),
+    openedByEmail: "superadmin@omoiyari.net",
+    closedByEmail: "superadmin@omoiyari.net",
+  },
+  {
+    periodName: "Juni 2026",
+    status: "Open" as const,
+    openedAt: new Date("2026-06-01T00:00:00Z"),
     openedByEmail: "superadmin@omoiyari.net",
   },
 ];

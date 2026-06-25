@@ -18,6 +18,7 @@ interface LedgerRow {
   reference: string;
   notes: string | null;
   branchName: string | null;
+  stockUnit: string | null;
 }
 
 export const Route = createFileRoute("/_layout/inventory/ledger")({
@@ -66,7 +67,12 @@ function LedgerPage() {
       align: "right",
       width: "w-20",
       sortable: true,
-      render: (r) => r.quantity.toLocaleString("id-ID"),
+      render: (r) => (
+        <span>
+          {r.quantity.toLocaleString("id-ID")}
+          {r.stockUnit && <span className="text-muted-foreground ml-0.5">{r.stockUnit}</span>}
+        </span>
+      ),
     },
     {
       key: "balance",
@@ -74,7 +80,12 @@ function LedgerPage() {
       align: "right",
       width: "w-20",
       sortable: true,
-      render: (r) => r.balance.toLocaleString("id-ID"),
+      render: (r) => (
+        <span>
+          {r.balance.toLocaleString("id-ID")}
+          {r.stockUnit && <span className="text-muted-foreground ml-0.5">{r.stockUnit}</span>}
+        </span>
+      ),
     },
     {
       key: "reference",

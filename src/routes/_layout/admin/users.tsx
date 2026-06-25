@@ -412,7 +412,7 @@ function UsersPage() {
       <Modal
         open={!!deleteInfoTarget}
         onClose={() => setDeleteInfoTarget(null)}
-        title="Pengguna Tidak Dapat Dihapus"
+        title="Nonaktifkan via Edit"
         size="sm"
       >
         <div className="space-y-4">
@@ -421,9 +421,9 @@ function UsersPage() {
             <div>
               <p className="font-medium">Nonaktifkan pengguna melalui edit.</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Pengguna "{deleteInfoTarget}" tidak dapat dihapus karena data mereka tertaut ke riwayat
-                pesanan dan aktivitas sistem. Untuk menonaktifkan akses, ubah status menjadi "Nonaktif"
-                melalui menu Edit.
+                Pengguna "{deleteInfoTarget}" tidak dapat dihapus karena data mereka tertaut ke
+                riwayat pesanan dan aktivitas sistem. Untuk menonaktifkan akses, ubah status menjadi
+                "Nonaktif" melalui menu Edit.
               </p>
             </div>
           </div>
