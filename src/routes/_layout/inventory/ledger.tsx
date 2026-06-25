@@ -5,6 +5,8 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getStockLedger } from "#/lib/server/inventory";
+import { getBranches } from "#/lib/server/branches";
+import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 
@@ -31,11 +33,21 @@ export const Route = createFileRoute("/_layout/inventory/ledger")({
 
 function LedgerPage() {
   const { ledger: initial } = Route.useLoaderData();
+  const user = useAuth().user;
   const [page, setPage] = useState(0);
+  const [branchId, setBranchId] = useState("");
+
+  const { data: branches } = useQuery({
+    queryKey: ["branches"],
+    queryFn: () => getBranches({ data: {} }),
+  });
+
+  const canFilterBranches =
+    user?.role === "super_admin" || user?.role === "area_manager" || user?.role === "admin_pusat";
 
   const { data: ledger } = useQuery({
-    queryKey: ["stock-ledger", page],
-    queryFn: () => getStockLedger({ data: { page, limit: 15 } }),
+    queryKey: ["stock-ledger", page, branchId],
+    queryFn: () => getStockLedger({ data: { page, limit: 15, branchId: branchId || undefined } }),
     initialData: initial,
   });
 
@@ -107,6 +119,26 @@ function LedgerPage() {
         "central_kitchen",
       ]}
     >
+      <div className="flex items-center gap-3 mb-4">
+        {canFilterBranches && branches && (
+          <select
+            value={branchId}
+            onChange={(e) => {
+              setBranchId(e.target.value);
+              setPage(0);
+            }}
+            className="h-8 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="">Semua Cabang</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
       <DataTable columns={columns} data={ledger} keyExtractor={(r) => r.id} pageSize={15} />
 
       <div className="flex items-center justify-between mt-4">
