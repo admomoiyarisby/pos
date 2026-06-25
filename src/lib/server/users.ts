@@ -5,7 +5,7 @@ import { eq, ilike, and, ne, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
-import { auth } from "#/lib/auth";
+import { hashPassword } from "better-auth/crypto";
 
 const userRoleEnum = z.enum([
   "super_admin",
@@ -101,47 +101,30 @@ export const createUser = createServerFn({ method: "POST" })
       }
     }
 
-    // Create via better-auth
-    const baResult = await auth.api.signUpEmail({
-      body: {
-        email: data.email,
-        password: data.password,
-        name: data.name,
-        role: data.role,
-        branchId: data.branchId,
-        pin: data.pin,
-        status: data.status ?? "Active",
-      },
+    // Create user + credential account directly (bypass auth.api.signUpEmail
+    // which auto-signs-in the new user, overwriting the admin's session).
+    const userId = crypto.randomUUID();
+    const hashedPassword = await hashPassword(data.password);
+
+    await db.insert(usersTable).values({
+      id: userId,
+      email: data.email,
+      name: data.name,
+      role: data.role as typeof usersTable.$inferSelect.role,
+      branchId: data.branchId,
+      pin: data.pin,
+      status: (data.status ?? "Active") as typeof usersTable.$inferSelect.status,
     });
 
-    if (!baResult?.user?.id) {
-      throw new Error("Failed to create user in auth system");
-    }
-
-    const userId = baResult.user.id;
-
-    // Insert into our users table
-    await db
-      .insert(usersTable)
-      .values({
-        id: userId,
-        email: data.email,
-        name: data.name,
-        role: data.role as typeof usersTable.$inferSelect.role,
-        branchId: data.branchId,
-        pin: data.pin,
-        status: (data.status ?? "Active") as typeof usersTable.$inferSelect.status,
-      })
-      .onConflictDoUpdate({
-        target: usersTable.id,
-        set: {
-          name: data.name,
-          role: data.role as typeof usersTable.$inferSelect.role,
-          branchId: data.branchId,
-          pin: data.pin,
-          status: (data.status ?? "Active") as typeof usersTable.$inferSelect.status,
-        },
-      });
+    // Create credential account (better-auth stores passwords in the account table)
+    const { account: accountTable } = await import("#/db/schema");
+    await db.insert(accountTable).values({
+      id: crypto.randomUUID(),
+      accountId: userId,
+      providerId: "credential",
+      userId,
+      password: hashedPassword,
+    });
 
     // Handle area manager branches
     if (data.role === "area_manager" && data.assignedBranches?.length) {
