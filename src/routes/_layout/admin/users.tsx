@@ -352,6 +352,8 @@ function UsersPage() {
                 <input
                   name="pin"
                   defaultValue={editing?.pin ?? ""}
+                  required
+                  minLength={4}
                   maxLength={4}
                   pattern="\d{4}"
                   inputMode="numeric"
