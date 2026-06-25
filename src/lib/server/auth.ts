@@ -34,19 +34,28 @@ function parseUser(baUser: {
   id: string;
   email: string;
   name: string;
-  role: string;
+  role: string | undefined;
   branchId?: string;
   pin?: string;
   status: string;
 }): AppUser {
-  const role = validRoles.includes(baUser.role as UserRole)
-    ? (baUser.role as UserRole)
-    : "branch_admin";
+  if (!baUser.role || !validRoles.includes(baUser.role as UserRole)) {
+    // Fail loudly instead of silently downgrading to branch_admin.
+    // A missing role means the session is corrupt or the user row is broken.
+    console.error(
+      `[auth] User ${baUser.id} (${baUser.email}) has invalid role: "${baUser.role}". ` +
+        `Session may be stale or the user row is missing the role column.`,
+    );
+    throw new Error(
+      `Auth integrity error: user ${baUser.id} has no valid role (got "${baUser.role ?? "<missing>"}"). ` +
+        `Please re-login. If this persists, check that the users table has a role column.`,
+    );
+  }
   return {
     id: baUser.id,
     email: baUser.email,
     name: baUser.name,
-    role,
+    role: baUser.role as UserRole,
     branchId: baUser.branchId,
     pin: baUser.pin,
     status: baUser.status === "Inactive" ? "Inactive" : "Active",
@@ -70,7 +79,7 @@ export const getCurrentUserRaw = createServerOnlyFn(async (): Promise<AppUser | 
     id: string;
     email: string | null;
     name: string | null;
-    role: string;
+    role: string | undefined;
     branchId?: string;
     pin?: string;
     status: string;
@@ -80,7 +89,7 @@ export const getCurrentUserRaw = createServerOnlyFn(async (): Promise<AppUser | 
     id: baUser.id,
     email: baUser.email ?? "",
     name: baUser.name ?? "",
-    role: baUser.role ?? "branch_admin",
+    role: baUser.role,
     branchId: baUser.branchId ?? undefined,
     pin: baUser.pin ?? undefined,
     status: baUser.status ?? "Active",
@@ -113,7 +122,9 @@ export const requireRole = createServerOnlyFn(
     const user = await getCurrentUserRaw();
     if (!user) throw new Error("Unauthorized");
     if (!allowedRoles.includes(user.role)) {
-      throw new Error("Forbidden: insufficient role");
+      throw new Error(
+        `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: ${allowedRoles.join(" | ")})`,
+      );
     }
     return user;
   },
