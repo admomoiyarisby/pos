@@ -61,9 +61,13 @@ export function computeSalesTrend(orders: Order[]) {
   const days: { name: string; sales: number }[] = [];
   const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
   for (let i = 6; i >= 0; i--) {
+    // Use UTC date strings to avoid TZ mismatch between server (UTC)
+    // and client (any TZ). toDateString() uses local timezone, which
+    // can include/exclude orders depending on the viewer's locale.
     const d = new Date(Date.now() - i * 86400000);
+    const dStr = d.toISOString().slice(0, 10);
     const dayOrders = orders.filter(
-      (o) => new Date(o.createdAt).toDateString() === d.toDateString(),
+      (o) => new Date(o.createdAt).toISOString().slice(0, 10) === dStr,
     );
     days.push({
       name: dayNames[d.getDay()],
@@ -139,7 +143,7 @@ export function SalesTrendChart({ data }: { data: { name: string; sales: number 
         <h3 className="text-base font-bold text-foreground">Tren Penjualan (7 Hari Terakhir)</h3>
         <p className="text-sm text-muted-foreground">Dalam ribuan Rupiah</p>
       </div>
-      <div style={{ width: "100%", height: 320 }}>
+      <div style={{ width: "100%", height: 320 }} className="min-w-0">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data}>
             <defs>
@@ -191,7 +195,7 @@ export function ChannelPieChart({ data }: { data: { name: string; value: number 
         <h3 className="text-base font-bold text-foreground">Distribusi Channel</h3>
         <p className="text-sm text-muted-foreground">Berdasarkan volume pesanan</p>
       </div>
-      <div className="flex items-center justify-center" style={{ width: "100%", height: 320 }}>
+      <div className="flex items-center justify-center min-w-0" style={{ width: "100%", height: 320 }}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -246,7 +250,7 @@ export function SalesByBranchChart({
         <h3 className="text-base font-bold text-foreground">Penjualan per Cabang</h3>
         <p className="text-sm text-muted-foreground">Total pendapatan kotor per outlet</p>
       </div>
-      <div style={{ width: "100%", height: 256 }}>
+      <div style={{ width: "100%", height: 256 }} className="min-w-0">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -279,7 +283,7 @@ export function BrandPerformanceChart({
           Kontribusi pendapatan per Brand (Inc. Manual)
         </p>
       </div>
-      <div style={{ width: "100%", height: 256 }}>
+      <div style={{ width: "100%", height: 256 }} className="min-w-0">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
