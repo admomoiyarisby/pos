@@ -111,7 +111,14 @@ function VouchersPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const validUntil = fd.get("validUntil") as string;
+    let validUntilStr = fd.get("validUntil") as string;
+    if (!validUntilStr) {
+      // datetime-local field requires a value — set default to end of current year
+      const endOfYear = new Date(new Date().getFullYear(), 11, 31, 23, 59, 0);
+      validUntilStr = endOfYear.toISOString().slice(0, 16);
+      const input = e.currentTarget.elements.namedItem("validUntil") as HTMLInputElement;
+      if (input) input.value = validUntilStr;
+    }
     const rawCode = fd.get("code");
     const data = {
       code: rawCode ? (rawCode as string).toUpperCase() : (editing?.code ?? ""),
@@ -119,7 +126,7 @@ function VouchersPage() {
       discountType: fd.get("discountType") as "percentage" | "fixed",
       discountValue: Number(fd.get("discountValue")),
       minOrder: Number(fd.get("minOrder")),
-      validUntil: new Date(validUntil).toISOString(),
+      validUntil: new Date(validUntilStr).toISOString(),
     };
     if (editing) {
       void updateMutation.mutateAsync({ data: { id: editing.id, ...data } });
@@ -231,8 +238,14 @@ function VouchersPage() {
               <input
                 name="validUntil"
                 type="datetime-local"
-                defaultValue={editing ? new Date(editing.validUntil).toISOString().slice(0, 16) : ""}
                 required
+                defaultValue={
+                  editing
+                    ? new Date(editing.validUntil).toISOString().slice(0, 16)
+                    : new Date(new Date().getFullYear(), 11, 31, 23, 59, 0)
+                        .toISOString()
+                        .slice(0, 16)
+                }
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
@@ -272,7 +285,8 @@ function VouchersPage() {
               <div>
                 <p className="font-medium">Nonaktifkan voucher "{deleteTarget.code}"?</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Voucher yang dinonaktifkan tidak dapat digunakan pada pesanan baru, tetapi data historis tetap tersimpan.
+                  Voucher yang dinonaktifkan tidak dapat digunakan pada pesanan baru, tetapi data
+                  historis tetap tersimpan.
                 </p>
               </div>
             </div>
@@ -282,9 +296,7 @@ function VouchersPage() {
               </Button>
               <Button
                 variant="destructive"
-                onClick={() =>
-                  void deleteMutation.mutateAsync({ data: { id: deleteTarget.id } })
-                }
+                onClick={() => void deleteMutation.mutateAsync({ data: { id: deleteTarget.id } })}
                 disabled={deleteMutation.isPending}
               >
                 {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
