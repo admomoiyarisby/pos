@@ -155,48 +155,51 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
 
     if (!recipe) return null;
 
-    const [brandLinks, ingredientLinks, childLinks, modifierLinks, branchLinks] = await Promise.all([
-      db
-        .select({
-          brandId: recipeBrands.brandId,
-          brandName: brands.name,
-        })
-        .from(recipeBrands)
-        .leftJoin(brands, eq(recipeBrands.brandId, brands.id))
-        .where(eq(recipeBrands.recipeId, data.id)),
-      db
-        .select({
-          ingredientId: recipeIngredients.ingredientId,
-          ingredientName: ingredients.name,
-          quantity: recipeIngredients.quantity,
-        })
-        .from(recipeIngredients)
-        .leftJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
-        .where(eq(recipeIngredients.recipeId, data.id)),
-      db
-        .select({
-          childRecipeId: recipeChildRecipes.childRecipeId,
-          childRecipeName: recipes.name,
-          quantity: recipeChildRecipes.quantity,
-        })
-        .from(recipeChildRecipes)
-        .leftJoin(recipes, eq(recipeChildRecipes.childRecipeId, recipes.id))
-        .where(eq(recipeChildRecipes.parentRecipeId, data.id)),
-      db
-        .select({
-          modifierGroupId: recipeModifierGroups.modifierGroupId,
-          modifierGroupName: modifierGroups.name,
-          minSelection: modifierGroups.minSelection,
-          maxSelection: modifierGroups.maxSelection,
-        })
-        .from(recipeModifierGroups)
-        .leftJoin(modifierGroups, eq(recipeModifierGroups.modifierGroupId, modifierGroups.id))
-        .where(eq(recipeModifierGroups.recipeId, data.id)),
-      db
-        .select({ branchId: recipeBranches.branchId })
-        .from(recipeBranches)
-        .where(eq(recipeBranches.recipeId, data.id)),
-    ]);
+    const [brandLinks, ingredientLinks, childLinks, modifierLinks, branchLinks] = await Promise.all(
+      [
+        db
+          .select({
+            brandId: recipeBrands.brandId,
+            brandName: brands.name,
+          })
+          .from(recipeBrands)
+          .leftJoin(brands, eq(recipeBrands.brandId, brands.id))
+          .where(eq(recipeBrands.recipeId, data.id)),
+        db
+          .select({
+            ingredientId: recipeIngredients.ingredientId,
+            ingredientName: ingredients.name,
+            quantity: recipeIngredients.quantity,
+            stockUnit: ingredients.stockUnit,
+          })
+          .from(recipeIngredients)
+          .leftJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
+          .where(eq(recipeIngredients.recipeId, data.id)),
+        db
+          .select({
+            childRecipeId: recipeChildRecipes.childRecipeId,
+            childRecipeName: recipes.name,
+            quantity: recipeChildRecipes.quantity,
+          })
+          .from(recipeChildRecipes)
+          .leftJoin(recipes, eq(recipeChildRecipes.childRecipeId, recipes.id))
+          .where(eq(recipeChildRecipes.parentRecipeId, data.id)),
+        db
+          .select({
+            modifierGroupId: recipeModifierGroups.modifierGroupId,
+            modifierGroupName: modifierGroups.name,
+            minSelection: modifierGroups.minSelection,
+            maxSelection: modifierGroups.maxSelection,
+          })
+          .from(recipeModifierGroups)
+          .leftJoin(modifierGroups, eq(recipeModifierGroups.modifierGroupId, modifierGroups.id))
+          .where(eq(recipeModifierGroups.recipeId, data.id)),
+        db
+          .select({ branchId: recipeBranches.branchId })
+          .from(recipeBranches)
+          .where(eq(recipeBranches.recipeId, data.id)),
+      ],
+    );
 
     // Fetch full modifier data for each group
     const modifierGroupIds = modifierLinks.map((m) => m.modifierGroupId);
@@ -279,14 +282,12 @@ export const createRecipe = createServerFn({ method: "POST" })
 
     // Insert branch visibility
     if (data.branchIds?.length && data.branchIds.length > 0) {
-      await db
-        .insert(recipeBranches)
-        .values(
-          data.branchIds.map((branchId) => ({
-            recipeId: recipe.id,
-            branchId,
-          })),
-        );
+      await db.insert(recipeBranches).values(
+        data.branchIds.map((branchId) => ({
+          recipeId: recipe.id,
+          branchId,
+        })),
+      );
     } else {
       // Default: visible in all branches (no explicit records needed)
       // The query logic handles this via NULL branch_id
@@ -426,9 +427,8 @@ export const recalculateAllRecipeCosts = createServerFn({ method: "POST" }).hand
 // =============================================================================
 
 export const deleteRecipe = createServerFn({ method: "POST" })
-  .inputValidator(
-    (data: unknown) =>
-      z.object({ id: z.string().uuid(), hardDelete: z.boolean().default(false) }).parse(data),
+  .inputValidator((data: unknown) =>
+    z.object({ id: z.string().uuid(), hardDelete: z.boolean().default(false) }).parse(data),
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
@@ -478,11 +478,7 @@ export const deleteRecipe = createServerFn({ method: "POST" })
       .where(eq(recipes.id, id))
       .returning();
 
-    await logSystemAction(
-      user,
-      "Delete Recipe",
-      `Resep "${old.name}" dihapus oleh ${user.name}`,
-    );
+    await logSystemAction(user, "Delete Recipe", `Resep "${old.name}" dihapus oleh ${user.name}`);
     await logAudit(
       user,
       "recipes",

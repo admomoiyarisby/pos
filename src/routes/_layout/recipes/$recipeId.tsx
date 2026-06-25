@@ -24,6 +24,7 @@ import {
 } from "#/components/ui/select";
 import { Separator } from "#/components/ui/separator";
 import { Checkbox } from "#/components/ui/checkbox";
+import { usePageTitle } from "#/hooks/usePageTitle";
 import { Plus, Trash2, X, Save, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/recipes/$recipeId")({
@@ -55,6 +56,8 @@ function RecipeDetailPage() {
     queryFn: () => getRecipeDetail({ data: { id: recipeId } }),
     initialData: initial,
   });
+
+  usePageTitle(recipe?.name ?? "Detail Resep", "Bill of Materials & HPP");
 
   const { data: allModifierGroups } = useQuery({
     queryKey: ["modifier-groups"],
@@ -416,6 +419,7 @@ function RecipeDetailPage() {
                       <tr>
                         <th className="px-4 py-2 text-left font-medium">Bahan</th>
                         <th className="px-4 py-2 text-right font-medium">Jumlah</th>
+                        <th className="px-4 py-2 text-right font-medium">Satuan</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -423,6 +427,7 @@ function RecipeDetailPage() {
                         <tr key={i} className="border-b">
                           <td className="px-4 py-2">{ing.ingredientName ?? ing.ingredientId}</td>
                           <td className="px-4 py-2 text-right">{ing.quantity}</td>
+                          <td className="px-4 py-2 text-right text-muted-foreground">{ing.stockUnit ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -516,8 +521,8 @@ function RecipeDetailPage() {
               <p className="font-medium">Nonaktifkan menu "{recipe?.name}"?</p>
               <p className="text-sm text-muted-foreground mt-1">
                 Status menu akan diubah menjadi{" "}
-                <code className="mx-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>.
-                Menu tidak akan muncul di daftar aktif, tetapi data historis tetap tersimpan.
+                <code className="mx-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>. Menu tidak
+                akan muncul di daftar aktif, tetapi data historis tetap tersimpan.
               </p>
             </div>
           </div>
