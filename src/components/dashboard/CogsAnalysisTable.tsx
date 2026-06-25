@@ -12,7 +12,6 @@ interface Recipe {
 interface Ingredient {
   id: string;
   averageCost: number;
-  conversionFactor: number;
 }
 
 interface CogsItem {
@@ -33,7 +32,7 @@ export function computeCogsData(recipes: Recipe[], ingredients: Ingredient[]): C
     const cogs = r.ingredients.reduce((acc, ri) => {
       const ing = ingredients.find((i) => i.id === ri.ingredientId);
       if (!ing) return acc;
-      const costPerStockUnit = ing.averageCost / ing.conversionFactor;
+      const costPerStockUnit = ing.averageCost;
       return acc + ri.quantity * costPerStockUnit;
     }, 0);
 

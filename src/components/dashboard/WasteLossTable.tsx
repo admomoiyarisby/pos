@@ -11,7 +11,6 @@ interface Ingredient {
   id: string;
   name: string;
   averageCost: number;
-  conversionFactor: number;
 }
 
 const PAGE_SIZE = 15;
@@ -20,7 +19,7 @@ export function computeWasteLoss(wasteEntries: WasteEntry[], ingredients: Ingred
   return wasteEntries
     .map((w) => {
       const ing = ingredients.find((i) => i.id === w.ingredientId);
-      const costPerUnit = ing ? ing.averageCost / ing.conversionFactor : 0;
+      const costPerUnit = ing ? ing.averageCost : 0;
       const lossAmount = w.quantity * costPerUnit;
       return {
         ...w,

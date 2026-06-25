@@ -10,7 +10,6 @@ interface Recipe {
 interface Ingredient {
   id: string;
   averageCost: number;
-  conversionFactor: number;
 }
 
 export function computeHppAlerts(recipes: Recipe[], ingredients: Ingredient[]) {
@@ -19,7 +18,7 @@ export function computeHppAlerts(recipes: Recipe[], ingredients: Ingredient[]) {
       const cogs = r.ingredients.reduce((acc, ri) => {
         const ing = ingredients.find((i) => i.id === ri.ingredientId);
         if (!ing) return acc;
-        return acc + ri.quantity * (ing.averageCost / ing.conversionFactor);
+        return acc + ri.quantity * ing.averageCost;
       }, 0);
       const hppPercentage = r.basePrice > 0 ? (cogs / r.basePrice) * 100 : 0;
       return { ...r, cogs, hppPercentage };
