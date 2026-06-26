@@ -34,6 +34,8 @@ function DashboardPage() {
   const { user } = useAuth();
   usePageTitle("Dashboard", "Analitik & ikhtisar");
 
+  const isSuperAdmin = user?.role === "super_admin";
+
   const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ["dashboard-data"],
     queryFn: async () => {
@@ -42,6 +44,24 @@ function DashboardPage() {
     },
     refetchInterval: 60000,
   });
+
+  const [activeTab, setActiveTab] = React.useState(() => {
+    try {
+      const stored = localStorage.getItem("dashboard-tab");
+      if (stored && ["ringkasan", "operasional", "keuangan", "inventaris"].includes(stored)) {
+        if ((stored === "keuangan" || stored === "inventaris") && !isSuperAdmin) return "ringkasan";
+        return stored;
+      }
+    } catch {}
+    return "ringkasan";
+  });
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    try {
+      localStorage.setItem("dashboard-tab", value);
+    } catch {}
+  };
 
   if (isLoading || !data) {
     return (
@@ -70,8 +90,6 @@ function DashboardPage() {
     ...o,
     items: orderItems.filter((oi) => oi.orderId === o.id),
   }));
-
-  const isSuperAdmin = user?.role === "super_admin";
 
   // ─── Stats ───
   const today = new Date();
@@ -141,24 +159,6 @@ function DashboardPage() {
 
   // ─── Waste Loss ───
   const wasteLoss = computeWasteLoss(wasteEntries, ingredients);
-
-  const [activeTab, setActiveTab] = React.useState(() => {
-    try {
-      const stored = localStorage.getItem("dashboard-tab");
-      if (stored && ["ringkasan", "operasional", "keuangan", "inventaris"].includes(stored)) {
-        if ((stored === "keuangan" || stored === "inventaris") && !isSuperAdmin) return "ringkasan";
-        return stored;
-      }
-    } catch {}
-    return "ringkasan";
-  });
-
-  const handleTabChange = (value: string) => {
-    setActiveTab(value);
-    try {
-      localStorage.setItem("dashboard-tab", value);
-    } catch {}
-  };
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
