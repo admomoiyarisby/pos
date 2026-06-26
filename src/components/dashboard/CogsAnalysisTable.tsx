@@ -31,28 +31,28 @@ export function computeCogsData(recipes: Recipe[], ingredients: Ingredient[]): C
   return recipes
     .filter((r) => r.basePrice > 0)
     .map((r) => {
-    const cogs = r.ingredients.reduce((acc, ri) => {
-      const ing = ingredients.find((i) => i.id === ri.ingredientId);
-      if (!ing) return acc;
-      const costPerStockUnit = ing.averageCost;
-      return acc + ri.quantity * costPerStockUnit;
-    }, 0);
+      const cogs = r.ingredients.reduce((acc, ri) => {
+        const ing = ingredients.find((i) => i.id === ri.ingredientId);
+        if (!ing) return acc;
+        const costPerStockUnit = ing.averageCost;
+        return acc + ri.quantity * costPerStockUnit;
+      }, 0);
 
-    const margin = r.basePrice - cogs;
-    const marginPercentage = r.basePrice > 0 ? (margin / r.basePrice) * 100 : 0;
-    const cogsPercentage = r.basePrice > 0 ? (cogs / r.basePrice) * 100 : 0;
+      const margin = r.basePrice - cogs;
+      const marginPercentage = r.basePrice > 0 ? (margin / r.basePrice) * 100 : 0;
+      const cogsPercentage = r.basePrice > 0 ? (cogs / r.basePrice) * 100 : 0;
 
-    return {
-      id: r.id,
-      name: r.name,
-      basePrice: r.basePrice,
-      cogs,
-      margin,
-      marginPercentage,
-      cogsPercentage,
-      alert: cogsPercentage > 70,
-    };
-  });
+      return {
+        id: r.id,
+        name: r.name,
+        basePrice: r.basePrice,
+        cogs,
+        margin,
+        marginPercentage,
+        cogsPercentage,
+        alert: cogsPercentage > 70,
+      };
+    });
 }
 
 export function CogsAnalysisTable({ data }: { data: CogsItem[] }) {
@@ -100,7 +100,7 @@ export function CogsAnalysisTable({ data }: { data: CogsItem[] }) {
                   colSpan={6}
                   className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap py-8 text-center italic text-muted-foreground"
                 >
-                  Tidak ada data.
+                  Belum ada resep terdaftar. Tambahkan resep untuk melihat analisis COGS.
                 </td>
               </tr>
             ) : (

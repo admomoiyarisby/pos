@@ -118,7 +118,9 @@ export function OrderHistoryTable({
                   colSpan={7}
                   className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap py-8 text-center italic text-muted-foreground"
                 >
-                  Tidak ada data.
+                  {search.trim()
+                    ? "Tidak ada pesanan yang cocok dengan pencarian."
+                    : "Belum ada pesanan hari ini. Buka POS untuk memulai."}
                 </td>
               </tr>
             ) : (

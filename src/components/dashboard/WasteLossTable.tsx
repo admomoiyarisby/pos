@@ -70,7 +70,7 @@ export function WasteLossTable({
                   colSpan={3}
                   className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap py-8 text-center italic text-muted-foreground"
                 >
-                  Belum ada data waste.
+                  Belum ada pencatatan waste. Catat waste bahan baku untuk melihat laporan kerugian.
                 </td>
               </tr>
             ) : (
