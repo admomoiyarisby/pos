@@ -28,7 +28,12 @@ const sizeClasses: Record<string, string> = {
  */
 export default function Modal({ open, onClose, title, children, size = "md" }: ModalProps) {
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+    <DialogPrimitive.Root
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onClose();
+      }}
+    >
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
           className={cn(
@@ -50,9 +55,8 @@ export default function Modal({ open, onClose, title, children, size = "md" }: M
           )}
         >
           <div className="flex items-center justify-between mb-4">
-            <DialogPrimitive.Title className="text-lg font-semibold">
-              {title}
-            </DialogPrimitive.Title>
+            <DialogPrimitive.Title className="text-lg font-semibold">{title}</DialogPrimitive.Title>
+            <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
             <DialogPrimitive.Close className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
               <X className="h-4 w-4" />
               <span className="sr-only">Tutup</span>
