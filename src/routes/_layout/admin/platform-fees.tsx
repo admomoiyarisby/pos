@@ -178,7 +178,9 @@ function PlatformFeesPage() {
             <div>
               <p className="font-medium">Biaya platform tidak dapat dihapus.</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Setiap channel ({deleteInfoTarget}) membutuhkan konfigurasi biaya platform agar perhitungan pendapatan berjalan dengan benar. Anda dapat mengubah nilai MDR dan biaya tetap melalui edit.
+                Setiap channel ({deleteInfoTarget}) membutuhkan konfigurasi biaya platform agar
+                perhitungan pendapatan berjalan dengan benar. Anda dapat mengubah nilai MDR dan
+                biaya tetap melalui edit.
               </p>
             </div>
           </div>

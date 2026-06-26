@@ -1,0 +1,24 @@
+// Runs the full seed-data.ts pipeline against the live DB.
+// Equivalent to POSTing /api/seed-data, but as a standalone tsx script
+// so it doesn't need the dev server running.
+//
+// Run:  vp run seed-full
+/**
+ * Run when SSR=false (e.g. tsx script): we patch import.meta.env to expose
+ * SSR=true so the lazy DB init in lib/server/db.ts can run outside Vite.
+ * MUST happen before importing anything that transitively pulls in db.ts.
+ */
+if (typeof (import.meta as any).env === "undefined") {
+  (import.meta as any).env = { SSR: true };
+} else if (!(import.meta as any).env.SSR) {
+  (import.meta as any).env.SSR = true;
+}
+
+import { config } from "dotenv";
+config({ path: [".env.local", ".env"] });
+
+console.log("[seed-full] running seedDatabase()...");
+// Dynamic import so the env-patch above runs first.
+const { seedDatabase } = await import("../src/routes/api/seed-data.js");
+const result = await seedDatabase();
+console.log("[seed-full] result:", JSON.stringify(result, null, 2));

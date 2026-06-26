@@ -230,7 +230,8 @@ function BranchesPage() {
               <div>
                 <p className="font-medium">Nonaktifkan cabang "{deleteTarget.name}"?</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Cabang yang dinonaktifkan tidak akan muncul di daftar aktif, tetapi data historis tetap tersimpan.
+                  Cabang yang dinonaktifkan tidak akan muncul di daftar aktif, tetapi data historis
+                  tetap tersimpan.
                 </p>
               </div>
             </div>
@@ -240,9 +241,7 @@ function BranchesPage() {
               </Button>
               <Button
                 variant="destructive"
-                onClick={() =>
-                  void deleteMutation.mutateAsync({ data: { id: deleteTarget.id } })
-                }
+                onClick={() => void deleteMutation.mutateAsync({ data: { id: deleteTarget.id } })}
                 disabled={deleteMutation.isPending}
               >
                 {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}

@@ -50,9 +50,7 @@ function YieldTrackingPage() {
     yieldPercentage: number;
     shrinkageQuantity: number;
   } | null>(null);
-  const [sourceItems, setSourceItems] = useState<SourceItem[]>([
-    { ingredientId: "", quantity: 0 },
-  ]);
+  const [sourceItems, setSourceItems] = useState<SourceItem[]>([{ ingredientId: "", quantity: 0 }]);
 
   const { data: rawConversions } = useQuery({
     queryKey: ["yield-conversions"],
@@ -101,9 +99,7 @@ function YieldTrackingPage() {
     const fd = new FormData(e.currentTarget);
 
     // Build multi-source payload
-    const validSources = sourceItems.filter(
-      (s) => s.ingredientId && s.quantity > 0,
-    );
+    const validSources = sourceItems.filter((s) => s.ingredientId && s.quantity > 0);
 
     void createMutation.mutateAsync({
       data: {
@@ -265,7 +261,9 @@ function YieldTrackingPage() {
               <span className="text-xs text-muted-foreground uppercase">Total Shrinkage</span>
             </div>
             <p className="text-2xl font-bold mt-2">
-              {conversions.reduce((sum, c) => sum + Math.max(0, c.shrinkageQuantity ?? 0), 0).toLocaleString("id-ID")}
+              {conversions
+                .reduce((sum, c) => sum + Math.max(0, c.shrinkageQuantity ?? 0), 0)
+                .toLocaleString("id-ID")}
             </p>
           </div>
         </div>
@@ -333,9 +331,7 @@ function YieldTrackingPage() {
                     {idx === 0 && <label className="text-xs text-muted-foreground">Jumlah</label>}
                     <input
                       value={item.quantity > 0 ? item.quantity : ""}
-                      onChange={(e) =>
-                        updateSourceItem(idx, "quantity", Number(e.target.value))
-                      }
+                      onChange={(e) => updateSourceItem(idx, "quantity", Number(e.target.value))}
                       type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"

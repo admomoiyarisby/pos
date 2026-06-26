@@ -197,7 +197,8 @@ function BrandsPage() {
               <div>
                 <p className="font-medium">Nonaktifkan merek "{deleteTarget.name}"?</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Merek yang dinonaktifkan tidak akan muncul di menu, tetapi data historis tetap tersimpan.
+                  Merek yang dinonaktifkan tidak akan muncul di menu, tetapi data historis tetap
+                  tersimpan.
                 </p>
               </div>
             </div>
@@ -207,9 +208,7 @@ function BrandsPage() {
               </Button>
               <Button
                 variant="destructive"
-                onClick={() =>
-                  void deleteMutation.mutateAsync({ data: { id: deleteTarget.id } })
-                }
+                onClick={() => void deleteMutation.mutateAsync({ data: { id: deleteTarget.id } })}
                 disabled={deleteMutation.isPending}
               >
                 {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}

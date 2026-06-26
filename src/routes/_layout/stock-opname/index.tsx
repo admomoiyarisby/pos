@@ -129,9 +129,7 @@ function StockOpnamePage() {
     });
   };
   const { status: statusFilter } = Route.useSearch() as { status?: string };
-  const filteredOpnames = statusFilter
-    ? opnames.filter((o) => o.status === statusFilter)
-    : opnames;
+  const filteredOpnames = statusFilter ? opnames.filter((o) => o.status === statusFilter) : opnames;
   usePageTitle("Opname Stok", "Verifikasi fisik stok per cabang");
 
   return (

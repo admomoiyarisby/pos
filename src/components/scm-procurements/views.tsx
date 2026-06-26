@@ -65,9 +65,7 @@ function rowsToItems(items: Array<Record<string, unknown>>): ScmItemRow[] {
  * frozen). Using the snapshot here keeps the detail page in sync with
  * the print window, which also reads from lineItems.
  */
-function invoiceLineItemsToRows(
-  lineItems: Array<Record<string, unknown>>,
-): ScmItemRow[] {
+function invoiceLineItemsToRows(lineItems: Array<Record<string, unknown>>): ScmItemRow[] {
   return lineItems.map((li) => ({
     id: (li.itemId as string) ?? "",
     ingredientId: (li.ingredientId as string) ?? "",
@@ -77,8 +75,8 @@ function invoiceLineItemsToRows(
     pickedQuantity: null,
     receivedQuantity: (li.receivedQuantity as number) ?? null,
     rejectedQuantity: (li.rejectedQuantity as number) ?? null,
-    caDecision: ((li.caDecision as "pending" | "approved" | "rejected") ?? "pending"),
-    baDecision: ((li.baDecision as "pending" | "accepted" | "rejected") ?? "pending"),
+    caDecision: (li.caDecision as "pending" | "approved" | "rejected") ?? "pending",
+    baDecision: (li.baDecision as "pending" | "accepted" | "rejected") ?? "pending",
     unitPrice: (li.unitPrice as number) ?? null,
     reason: (li.reason as string) ?? null,
   }));
@@ -191,8 +189,12 @@ function useTransitionMutation() {
       // given query), so we just blanket-invalidate all four.
       void queryClient.invalidateQueries({ queryKey: ["scm-procurement", vars.procurementId] });
       void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
-      void queryClient.invalidateQueries({ queryKey: ["scm-procurement-items", vars.procurementId] });
-      void queryClient.invalidateQueries({ queryKey: ["scm-procurement-invoice", vars.procurementId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["scm-procurement-items", vars.procurementId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["scm-procurement-invoice", vars.procurementId],
+      });
     },
   });
 }
@@ -706,7 +708,8 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
         </CardHeader>
         <CardContent>
           <p className="mb-3 text-sm text-muted-foreground">
-            Stock sudah keluar dari gudang. Cabang akan menandai "Sudah Dikirim" setelah barang tiba.
+            Stock sudah keluar dari gudang. Cabang akan menandai "Sudah Dikirim" setelah barang
+            tiba.
           </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
@@ -949,7 +952,8 @@ export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: Stat
   // so the detail page matches the print window. The procurement items
   // can drift (eg reject reversals on cancel) after the invoice snapshot
   // is taken at finish-receive time.
-  const invoiceLineItems = (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
+  const invoiceLineItems =
+    (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
   const previewItems = invoiceLineItems
     ? invoiceLineItemsToRows(invoiceLineItems)
     : rowsToItems(items);
@@ -980,7 +984,8 @@ export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: Stat
 export function WaitingForPaymentCaInvoice({ procurement, items, invoice }: StateViewProps) {
   const transitionM = useTransitionMutation();
   const total = (invoice?.totalAmount as number) ?? 0;
-  const invoiceLineItems = (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
+  const invoiceLineItems =
+    (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
   const previewItems = invoiceLineItems
     ? invoiceLineItemsToRows(invoiceLineItems)
     : rowsToItems(items);
@@ -1018,7 +1023,8 @@ export function WaitingForPaymentCaInvoice({ procurement, items, invoice }: Stat
 // =============================================================================
 export function FinishedView({ procurement, items, invoice }: StateViewProps) {
   const total = (invoice?.totalAmount as number) ?? 0;
-  const invoiceLineItems = (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
+  const invoiceLineItems =
+    (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
   const previewItems = invoiceLineItems
     ? invoiceLineItemsToRows(invoiceLineItems)
     : rowsToItems(items);

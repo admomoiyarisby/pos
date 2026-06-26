@@ -15,10 +15,7 @@ interface OrderHistoryProps {
   canVoid: boolean;
   canRequestCancel?: boolean;
   canDirectPrint?: boolean;
-  activeRequests: Record<
-    string,
-    { print: RequestStatus | null; cancel: RequestStatus | null }
-  >;
+  activeRequests: Record<string, { print: RequestStatus | null; cancel: RequestStatus | null }>;
   onPrintClick: (orderId: string) => void;
   onCancelClick: (orderId: string) => void;
   onDirectVoid: (orderId: string) => void;
@@ -55,10 +52,10 @@ export default function OrderHistory({
               : isVoid
                 ? "hidden"
                 : printStatus === "Approved"
-                    ? "active"
-                    : printStatus === "Pending"
-                      ? "pending"
-                      : "neutral";
+                  ? "active"
+                  : printStatus === "Pending"
+                    ? "pending"
+                    : "neutral";
 
             // Cancel button: neutral | pending | active | hidden
             const cancelState = isVoid
@@ -91,9 +88,7 @@ export default function OrderHistory({
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="font-semibold">
-                    Rp {o.totalAmount.toLocaleString("id-ID")}
-                  </span>
+                  <span className="font-semibold">Rp {o.totalAmount.toLocaleString("id-ID")}</span>
 
                   {/* ── Print button ── */}
                   {printState !== "hidden" && (

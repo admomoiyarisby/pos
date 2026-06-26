@@ -23,15 +23,7 @@ import { getBrands } from "#/lib/server/brands";
 import { getBranches } from "#/lib/server/branches";
 import { getVouchers } from "#/lib/server/vouchers";
 import { getInventory } from "#/lib/server/inventory";
-import {
-  ShoppingCart,
-  Plus,
-  Minus,
-  X,
-  TicketPercent,
-  Percent,
-  AlertCircle,
-} from "lucide-react";
+import { ShoppingCart, Plus, Minus, X, TicketPercent, Percent, AlertCircle } from "lucide-react";
 import { usePageTitle } from "#/hooks/usePageTitle";
 
 import type { CartModifier, CartItem, MenuItem, Voucher, OrderResult } from "#/lib/pos-types";
@@ -154,7 +146,12 @@ function PosPage() {
   let _t = useState("");
   let actualCash = _t[0];
   let setActualCash = _t[1];
-  let _u = useState<{ orderId: string; reason: string; mode?: "direct" | "request" | "execute"; requestId?: string } | null>(null);
+  let _u = useState<{
+    orderId: string;
+    reason: string;
+    mode?: "direct" | "request" | "execute";
+    requestId?: string;
+  } | null>(null);
   let voidModal = _u[0];
   let setVoidModal = _u[1];
   let _v = useState(false);
@@ -180,7 +177,9 @@ function PosPage() {
   let recentOrders = ordersResult.data || [];
 
   // ─── Active Requests (print / cancel) polling ───
-  let orderIds = recentOrders.map(function (o) { return o.id; });
+  let orderIds = recentOrders.map(function (o) {
+    return o.id;
+  });
   let activeRequestsResult = useQuery({
     queryKey: ["active-requests", orderIds],
     queryFn: function () {
@@ -192,7 +191,13 @@ function PosPage() {
   let activeRequestsData = activeRequestsResult.data ?? [];
 
   // Convert array to a record keyed by orderId for O(1) lookup
-  let activeRequestsMap: Record<string, { print: { requestId: string; status: string } | null; cancel: { requestId: string; status: string; reason: string } | null }> = {};
+  let activeRequestsMap: Record<
+    string,
+    {
+      print: { requestId: string; status: string } | null;
+      cancel: { requestId: string; status: string; reason: string } | null;
+    }
+  > = {};
   for (let i = 0; i < activeRequestsData.length; i++) {
     let r = activeRequestsData[i];
     activeRequestsMap[r.orderId] = r;
@@ -432,9 +437,7 @@ function PosPage() {
       setVoidModal(null);
     },
     onError: function (err) {
-      setCheckoutError(
-        err instanceof Error ? err.message : "Gagal menjalankan pembatalan",
-      );
+      setCheckoutError(err instanceof Error ? err.message : "Gagal menjalankan pembatalan");
     },
   });
 
@@ -1006,8 +1009,8 @@ function PosPage() {
             <div className="rounded-md bg-primary/5 border border-primary/10 px-4 py-2 text-sm flex items-center gap-2">
               <TicketPercent className="h-4 w-4 text-primary" />
               <span>
-                Diskon <strong>{selectedVoucher?.code}</strong>: -
-                Rp {voucherDiscount.toLocaleString("id-ID")}
+                Diskon <strong>{selectedVoucher?.code}</strong>: - Rp{" "}
+                {voucherDiscount.toLocaleString("id-ID")}
               </span>
             </div>
           )}
@@ -1132,7 +1135,9 @@ function PosPage() {
               }
               className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
             >
-              {voidOrderMutation.isPending || cancelRequestMutation.isPending || executeCancelMutation.isPending
+              {voidOrderMutation.isPending ||
+              cancelRequestMutation.isPending ||
+              executeCancelMutation.isPending
                 ? "Memproses..."
                 : voidModal?.mode === "request"
                   ? "Ajukan Permintaan"

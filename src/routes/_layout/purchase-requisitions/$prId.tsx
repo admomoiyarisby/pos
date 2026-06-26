@@ -72,7 +72,7 @@ function PRDetailPage() {
       setEditError(null);
     },
     onError: (err) => {
-      setEditError(err instanceof Error ? err.message : 'Gagal menyimpan perubahan');
+      setEditError(err instanceof Error ? err.message : "Gagal menyimpan perubahan");
     },
   });
 
@@ -155,9 +155,7 @@ function PRDetailPage() {
             )}
             {isEditing && (
               <>
-                {editError && (
-                  <span className="text-xs text-destructive">{editError}</span>
-                )}
+                {editError && <span className="text-xs text-destructive">{editError}</span>}
                 <button
                   onClick={() => {
                     setIsEditing(false);

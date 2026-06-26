@@ -18,7 +18,10 @@ interface UnsafeStockTableProps {
 
 const PAGE_SIZE = 10;
 
-export function UnsafeStockTable({ data, prBasePath = "/purchase-requisitions" }: UnsafeStockTableProps) {
+export function UnsafeStockTable({
+  data,
+  prBasePath = "/purchase-requisitions",
+}: UnsafeStockTableProps) {
   // Always render exactly 10 rows; pad with placeholders if fewer.
   const rows = data.slice(0, PAGE_SIZE);
   const placeholders = Math.max(0, PAGE_SIZE - rows.length);
@@ -32,7 +35,10 @@ export function UnsafeStockTable({ data, prBasePath = "/purchase-requisitions" }
   };
 
   return (
-    <section className="rounded-lg border bg-card p-6 shadow-sm" aria-labelledby="unsafe-stock-title">
+    <section
+      className="rounded-lg border bg-card p-6 shadow-sm"
+      aria-labelledby="unsafe-stock-title"
+    >
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">

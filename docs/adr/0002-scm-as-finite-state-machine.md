@@ -18,7 +18,7 @@ The lifecycle is **implicit**: a PR is created, "processed" (which may or may no
 
 This leads to several problems:
 
-1. **Skippable states.** A PR can go from `Draft` directly to `Processed` without going through `Approved`, because the code doesn't enforce the review step. Lesson 0002 §1 calls this out: "the PR can go from `Draft` directly to `Processed` without an `Approved` intermediate — because the code doesn't model the *review* step as a separate state."
+1. **Skippable states.** A PR can go from `Draft` directly to `Processed` without going through `Approved`, because the code doesn't enforce the review step. Lesson 0002 §1 calls this out: "the PR can go from `Draft` directly to `Processed` without an `Approved` intermediate — because the code doesn't model the _review_ step as a separate state."
 
 2. **Inconsistent enum coverage.** The `prStatusEnum` includes a `Fulfilled` state, but no code path ever sets it, making it unreachable. Lesson 0001 §2 documents this gap.
 
@@ -55,20 +55,20 @@ Model the SCM restocking lifecycle as a **single unified document** (`scm_procur
 
 ### The transition table
 
-| #  | From | Event | To | Primary actor | Effects |
-|----|------|-------|----|--------------|---------|
-| 1  | `[*]` | `create` | `Draft` | `branch_admin` | Insert procurement + items |
-| 2  | `Draft` | `submit` | `Pending` | `branch_admin` | Set `submittedAt` |
-| 3  | `Pending` | `open-review` | `UnderReview` | `admin_pusat` | Set `reviewingBy`, `reviewingAt` |
-| 4  | `Pending` | `withdraw` | `Draft` | `branch_admin` | Audit log + reason |
-| 5  | `UnderReview` | `reject` | `Rejected` | `admin_pusat` | Set `rejectedAt`, `rejectionReason` |
-| 6  | `UnderReview` | `accept-and-ship` | `InTransit` | `admin_pusat` | Copy `readyQuantity` → `pickedQuantity`; write `in_transit_inventory`; set `shippedAt` |
-| 7  | `InTransit` | `mark-delivered` | `Delivered` | `admin_pusat` | Move stock `in_transit_inventory` → `pending_review_inventory` |
-| 8  | `Delivered` | `open-receive` | `ReviewingSJ` | `branch_admin` | Set `receivingBy`, `receivingAt` |
-| 9  | `ReviewingSJ` | `finish-receive` | `WaitingForPayment` | `branch_admin` | Set `receivedQuantity`, `rejectedQuantity`, `reason`; generate invoice snapshot; set `receivedAt` |
-| 10 | `WaitingForPayment` | `mark-paid` | `Finished` | `admin_pusat` | Set `invoice.paidAt`, `invoice.paidBy`; set `procurement.paidAt` |
-| 11 | `InTransit` / `Delivered` / `ReviewingSJ` / `WaitingForPayment` | `cancel` | `Cancelled` | `admin_pusat` | Reverse stock per stage |
-| 12 | `Draft` / `Pending` / `UnderReview` | `cancel` | `Cancelled` | `branch_admin` OR `admin_pusat` | Audit log; no stock reversal |
+| #   | From                                                            | Event             | To                  | Primary actor                   | Effects                                                                                           |
+| --- | --------------------------------------------------------------- | ----------------- | ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 1   | `[*]`                                                           | `create`          | `Draft`             | `branch_admin`                  | Insert procurement + items                                                                        |
+| 2   | `Draft`                                                         | `submit`          | `Pending`           | `branch_admin`                  | Set `submittedAt`                                                                                 |
+| 3   | `Pending`                                                       | `open-review`     | `UnderReview`       | `admin_pusat`                   | Set `reviewingBy`, `reviewingAt`                                                                  |
+| 4   | `Pending`                                                       | `withdraw`        | `Draft`             | `branch_admin`                  | Audit log + reason                                                                                |
+| 5   | `UnderReview`                                                   | `reject`          | `Rejected`          | `admin_pusat`                   | Set `rejectedAt`, `rejectionReason`                                                               |
+| 6   | `UnderReview`                                                   | `accept-and-ship` | `InTransit`         | `admin_pusat`                   | Copy `readyQuantity` → `pickedQuantity`; write `in_transit_inventory`; set `shippedAt`            |
+| 7   | `InTransit`                                                     | `mark-delivered`  | `Delivered`         | `admin_pusat`                   | Move stock `in_transit_inventory` → `pending_review_inventory`                                    |
+| 8   | `Delivered`                                                     | `open-receive`    | `ReviewingSJ`       | `branch_admin`                  | Set `receivingBy`, `receivingAt`                                                                  |
+| 9   | `ReviewingSJ`                                                   | `finish-receive`  | `WaitingForPayment` | `branch_admin`                  | Set `receivedQuantity`, `rejectedQuantity`, `reason`; generate invoice snapshot; set `receivedAt` |
+| 10  | `WaitingForPayment`                                             | `mark-paid`       | `Finished`          | `admin_pusat`                   | Set `invoice.paidAt`, `invoice.paidBy`; set `procurement.paidAt`                                  |
+| 11  | `InTransit` / `Delivered` / `ReviewingSJ` / `WaitingForPayment` | `cancel`          | `Cancelled`         | `admin_pusat`                   | Reverse stock per stage                                                                           |
+| 12  | `Draft` / `Pending` / `UnderReview`                             | `cancel`          | `Cancelled`         | `branch_admin` OR `admin_pusat` | Audit log; no stock reversal                                                                      |
 
 `super_admin` is allowed on every transition (emergency override). The `create` event (transition #1) is implemented as a separate `createProcurement()` server function that inserts a row in `Draft` state, not via `transition()`.
 

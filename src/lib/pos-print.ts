@@ -180,12 +180,8 @@ export function printBill({
     '<div class="center header">' + branchName + "</div>",
     '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
     '<div class="divider"></div>',
-    '<div class="row"><span>Kode Order:</span><span>' +
-      (orderCode || "-") +
-      "</span></div>",
-    '<div class="row"><span>Pelanggan:</span><span>' +
-      (customerName || "-") +
-      "</span></div>",
+    '<div class="row"><span>Kode Order:</span><span>' + (orderCode || "-") + "</span></div>",
+    '<div class="row"><span>Pelanggan:</span><span>' + (customerName || "-") + "</span></div>",
     itemsHtml,
     '<div class="divider"></div>',
     '<div class="row"><span>Subtotal</span><span>Rp ' +
@@ -261,7 +257,9 @@ export function printSuratJalan(dn: {
     '<div class="info-block"><strong>Dari:</strong><br>' + dn.fromBranchName + "</div>",
     '<div class="info-block"><strong>Ke:</strong><br>' + dn.toBranchName + "</div>",
     '<div class="info-block"><strong>Driver:</strong><br>' + (dn.driverName || "-") + "</div>",
-    '<div class="info-block"><strong>Kendaraan:</strong><br>' + (dn.vehicleNumber || "-") + "</div>",
+    '<div class="info-block"><strong>Kendaraan:</strong><br>' +
+      (dn.vehicleNumber || "-") +
+      "</div>",
     "</div>",
     '<div class="divider"></div>',
     "<table>",

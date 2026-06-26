@@ -1,6 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { yieldConversions, yieldConversionSources, ingredients, stockLedger, inventory } from "#/db/schema";
+import {
+  yieldConversions,
+  yieldConversionSources,
+  ingredients,
+  stockLedger,
+  inventory,
+} from "#/db/schema";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import { eq, and, inArray } from "drizzle-orm";
 import { requireRole } from "./auth";
@@ -96,11 +102,12 @@ export const createYieldConversion = createServerFn({ method: "POST" })
     const user = await requireRole("super_admin", "central_kitchen");
 
     // Determine source items: prefer multi-source, fall back to single source
-    const sourceItems = data.sources && data.sources.length > 0
-      ? data.sources
-      : data.sourceIngredientId && data.sourceQuantity
-        ? [{ ingredientId: data.sourceIngredientId, quantity: data.sourceQuantity }]
-        : [];
+    const sourceItems =
+      data.sources && data.sources.length > 0
+        ? data.sources
+        : data.sourceIngredientId && data.sourceQuantity
+          ? [{ ingredientId: data.sourceIngredientId, quantity: data.sourceQuantity }]
+          : [];
 
     if (sourceItems.length === 0) {
       throw new Error("Setidaknya satu bahan mentah diperlukan");
@@ -198,10 +205,7 @@ export const createYieldConversion = createServerFn({ method: "POST" })
         .select()
         .from(inventory)
         .where(
-          and(
-            eq(inventory.branchId, data.branchId),
-            eq(inventory.ingredientId, item.ingredientId),
-          ),
+          and(eq(inventory.branchId, data.branchId), eq(inventory.ingredientId, item.ingredientId)),
         )
         .limit(1);
 

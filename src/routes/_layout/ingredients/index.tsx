@@ -139,7 +139,8 @@ function IngredientsPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: ({ data }: { data: { id: string; hardDelete: boolean } }) => deleteIngredient({ data }),
+    mutationFn: ({ data }: { data: { id: string; hardDelete: boolean } }) =>
+      deleteIngredient({ data }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
       setDeleteModalOpen(false);

@@ -172,10 +172,7 @@ export default function DataTable<T>({
                   {columns.map((col, colIdx) => (
                     <td
                       key={col.key}
-                      className={
-                        "p-3 align-middle " +
-                        (colIdx === 0 ? stickyClass : "")
-                      }
+                      className={"p-3 align-middle " + (colIdx === 0 ? stickyClass : "")}
                     >
                       <div className="h-4 bg-muted rounded animate-pulse w-3/4" />
                     </td>

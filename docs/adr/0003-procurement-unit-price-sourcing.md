@@ -37,6 +37,7 @@ writes `unitPrice: priceById.get(ingredientId) ?? null` into each
 `scm_procurement_items` row.
 
 **UI visibility** (per design discussion, recorded for traceability):
+
 - **CA review form** (`ScmItemTable` `ca-review` mode): price shown
   read-only in a `Harga` column, with a per-line `Subtotal`
   (`readyQuantity * unitPrice`) and a tfoot `Subtotal` row showing the

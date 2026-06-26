@@ -7,6 +7,7 @@ p2_count: 3
 timestamp: 2026-06-07T16-21-41Z
 slug: src-routes-layout-dashboard-tsx
 ---
+
 # Critique: Dashboard Page
 
 **Target**: `src/routes/_layout/dashboard.tsx` + 7 component files under `src/components/dashboard/`
@@ -23,19 +24,19 @@ You called out three concrete things. All three are real and ranked P1. I've wov
 
 ## Design Health Score
 
-| #         | Heuristic                       | Score | Key Issue                                                                                                                              |
-| --------- | ------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| 1         | Visibility of System Status     | 3     | "Terakhir diperbarui" exists in the duplicate header that should be removed; relocate it to the top bar                                |
-| 2         | Match System / Real World       | 4     | Indonesian throughout, domain language accurate                                                                                        |
-| 3         | User Control and Freedom        | 2     | No way to clear filters, collapse sections, or pin a section; long page forces a linear top-to-bottom scan                             |
-| 4         | Consistency and Standards       | 1     | **Double header (P1)**, mixed card padding (p-3 / p-4 / p-6), six different grid column counts, one dead-cell in WasteLoss row         |
-| 5         | Error Prevention                | 4     | Read-only surface, safe defaults, no destructive paths                                                                                 |
-| 6         | Recognition Rather Than Recall  | 4     | Every section is labeled, tables have clear headers, no icon-only controls                                                            |
-| 7         | Flexibility and Efficiency      | 2     | Order History has search, but no date range, no channel filter, no export; no section collapse; no "jump to"                           |
-| 8         | Aesthetic and Minimalist Design | 2     | Double header is visual noise; the bento inconsistency creates the "I am looking at someone's stream of cards" feeling                   |
-| 9         | Error Recovery                  | 3     | Skeleton states, empty states, no destructive actions to recover from                                                                 |
-| 10        | Help and Documentation          | 2     | No tooltips on COGS/ROP/Variance thresholds; ROP/ROQ has the only explainer card                                                       |
-| **Total** |                                 | **27/40** | **Acceptable — significant improvements needed before the dashboard feels intentional**                                              |
+| #         | Heuristic                       | Score     | Key Issue                                                                                                                      |
+| --------- | ------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 1         | Visibility of System Status     | 3         | "Terakhir diperbarui" exists in the duplicate header that should be removed; relocate it to the top bar                        |
+| 2         | Match System / Real World       | 4         | Indonesian throughout, domain language accurate                                                                                |
+| 3         | User Control and Freedom        | 2         | No way to clear filters, collapse sections, or pin a section; long page forces a linear top-to-bottom scan                     |
+| 4         | Consistency and Standards       | 1         | **Double header (P1)**, mixed card padding (p-3 / p-4 / p-6), six different grid column counts, one dead-cell in WasteLoss row |
+| 5         | Error Prevention                | 4         | Read-only surface, safe defaults, no destructive paths                                                                         |
+| 6         | Recognition Rather Than Recall  | 4         | Every section is labeled, tables have clear headers, no icon-only controls                                                     |
+| 7         | Flexibility and Efficiency      | 2         | Order History has search, but no date range, no channel filter, no export; no section collapse; no "jump to"                   |
+| 8         | Aesthetic and Minimalist Design | 2         | Double header is visual noise; the bento inconsistency creates the "I am looking at someone's stream of cards" feeling         |
+| 9         | Error Recovery                  | 3         | Skeleton states, empty states, no destructive actions to recover from                                                          |
+| 10        | Help and Documentation          | 2         | No tooltips on COGS/ROP/Variance thresholds; ROP/ROQ has the only explainer card                                               |
+| **Total** |                                 | **27/40** | **Acceptable — significant improvements needed before the dashboard feels intentional**                                        |
 
 The score dropped from 29 to 27 because the layout inconsistencies (your #2) and the structural duplication (your #1) are exactly the things the design system was built to prevent, and they were already there in the prior run. The functional gap on stock alerts (your #3) prevents a score lift.
 
@@ -74,6 +75,7 @@ The dashboard knows what data it wants to show. It just doesn't know what order 
 **Why it matters**: WCAG 2.1 expects a single `<h1>` per page. Screen readers announce both. Visually the page reads as broken. The "Terakhir diperbarui" timestamp is also stranded — the user has to scan past it to find the real content.
 
 **Fix**:
+
 - Delete the `<div className="flex items-center justify-between">…</div>` block at `dashboard.tsx` lines 166–179.
 - Promote the "Terakhir diperbarui" timestamp into the AppShell header bar (or a thin sub-header strip directly under it). Easiest: pass `dataUpdatedAt` through a small `useDataFreshness` context, or render the timestamp as a slot inside the AppShell alongside the theme/notification controls.
 - Verify the resulting page still has exactly one `<h1>` ("Dashboard").
@@ -85,6 +87,7 @@ The dashboard knows what data it wants to show. It just doesn't know what order 
 ### P1: Redesign the section bento — pick a single column grammar and stick to it
 
 **What**: The current `dashboard.tsx` body uses six different grid configurations stacked vertically:
+
 - StatsCards: `md:grid-cols-3`
 - Anomaly alerts: `md:grid-cols-2`
 - COGS Analysis: full width
@@ -128,6 +131,7 @@ Either way, the **HPP + Discrepancy 1+2 split is wrong** — go to 1+1 or 2+1, o
 **Why it matters**: "X bahan baku di bawah batas aman" with a 10-line truncated list is un-actionable. The user has to mentally parse "Tepung: 50 (ROP: 80)" to know whether to reorder. A proper table with columns for ingredient, current qty, ROP, gap (`rop - quantity`), unit, and a status badge (KRITIS / PERHATIAN / AMAN) is the difference between a passive alert and a working tool. From this table the area manager can decide which items to put on a purchase requisition — the dashboard should make that one click away.
 
 **Fix**:
+
 - Create a new component `src/components/dashboard/UnsafeStockTable.tsx` that takes `lowStockItems` and renders the existing 10 rows in a table with: `Bahan Baku`, `Stok Saat Ini`, `ROP`, `Selisih (ROP − Stok)`, `Satuan`, `Status`, and an inline "Buat PR" button (link to `/purchase-requisitions/new?ingredientId=…`).
 - Reuse the same `rounded-lg border bg-card p-6 shadow-sm` container pattern as the other tables for visual consistency.
 - Wire it into `dashboard.tsx` so it renders **directly after** the Anomaly Detection block (the Stock Alert card), and only when `lowStock.length > 0`. If there are zero unsafe items, skip the section entirely (don't render an empty card).
@@ -217,16 +221,16 @@ Either way, the **HPP + Discrepancy 1+2 split is wrong** — go to 1+1 or 2+1, o
 
 ## Cognitive Load Assessment
 
-| Check                  | Result                                                                                                |
-| ---------------------- | ----------------------------------------------------------------------------------------------------- |
-| Single focus           | ❌ Eight stacked sections, no jump-to, no collapse                                                    |
-| Chunking               | ✅ Each section is a self-contained card                                                              |
-| Grouping               | ❌ HPP+Discrepancy split is `1+2` (off-balance); WasteLoss row has a dead cell                        |
-| Visual hierarchy       | ❌ Stats, alerts, charts, COGS, HPP, discrepancies, waste, history — no narrative order                |
-| One thing at a time    | ❌ Everything is always visible                                                                       |
-| Minimal choices        | ✅ Read-only                                                                                          |
+| Check                  | Result                                                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Single focus           | ❌ Eight stacked sections, no jump-to, no collapse                                                                     |
+| Chunking               | ✅ Each section is a self-contained card                                                                               |
+| Grouping               | ❌ HPP+Discrepancy split is `1+2` (off-balance); WasteLoss row has a dead cell                                         |
+| Visual hierarchy       | ❌ Stats, alerts, charts, COGS, HPP, discrepancies, waste, history — no narrative order                                |
+| One thing at a time    | ❌ Everything is always visible                                                                                        |
+| Minimal choices        | ✅ Read-only                                                                                                           |
 | Working memory         | ⚠️ COGS table shows 4+ numbers per row (price, COGS, margin, food cost %); no working memory issue if labels are clear |
-| Progressive disclosure | ❌ No section collapse, no "details" expansion                                                         |
+| Progressive disclosure | ❌ No section collapse, no "details" expansion                                                                         |
 
 **3 failures** — moderate-to-high cognitive load. The redesign in P1 (P1 bento fix) should also resolve chunking and grouping.
 
@@ -235,11 +239,13 @@ Either way, the **HPP + Discrepancy 1+2 split is wrong** — go to 1+1 or 2+1, o
 ## What's specifically different from the prior critique (29 → 27)
 
 Improvements made since the May 27 run that **did not** show up in your feedback:
+
 - Emerald hero card removed; StatsCards now uses standard cards.
 - `animate-pulse` removed from COGS alerts.
 - OrderHistoryTable got a search input.
 
 New regressions / not-yet-addressed from the prior run:
+
 - Card padding inconsistency (p-3 / p-4 / p-6) is still present in chart cards.
 - Channel pill side-stripe (P3 in prior) still present, now also flagged by the detector.
 - "Last updated" timestamp exists but is in the duplicate header that needs to go.

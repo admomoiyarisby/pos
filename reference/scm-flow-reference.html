@@ -1,70 +1,245 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Omoiyari SCM Flow Reference</title>
-  <style>
-    :root { color-scheme: light; --ink:#1d252c; --muted:#63707a; --line:#d8dee4; --bg:#f7f8fa; --accent:#0f766e; --warn:#a16207; }
-    body { margin:0; font:15px/1.55 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; color:var(--ink); background:white; }
-    main { max-width:980px; margin:0 auto; padding:40px 28px 56px; }
-    h1 { font-size:30px; line-height:1.1; margin:0 0 8px; }
-    h2 { font-size:18px; margin:28px 0 10px; border-bottom:1px solid var(--line); padding-bottom:6px; }
-    p { margin:8px 0; }
-    .subtitle { color:var(--muted); margin-bottom:24px; }
-    .flow { display:grid; grid-template-columns:repeat(5, 1fr); gap:10px; margin:18px 0; }
-    .step { border:1px solid var(--line); border-radius:8px; padding:12px; background:var(--bg); min-height:116px; }
-    .step strong { display:block; color:var(--accent); margin-bottom:6px; }
-    table { width:100%; border-collapse:collapse; margin:12px 0 20px; }
-    th, td { text-align:left; vertical-align:top; border:1px solid var(--line); padding:9px 10px; }
-    th { background:var(--bg); }
-    code { background:#eef2f4; padding:1px 4px; border-radius:4px; }
-    .note { border-left:4px solid var(--warn); padding:10px 12px; background:#fff8e6; }
-    @media print { main { padding:20px; } .flow { break-inside:avoid; } }
-  </style>
-</head>
-<body>
-<main>
-  <h1>Omoiyari SCM Flow Reference</h1>
-  <p class="subtitle">The shortest useful map of how supply-chain documents move stock and money in the current app.</p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Omoiyari SCM Flow Reference</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1d252c;
+        --muted: #63707a;
+        --line: #d8dee4;
+        --bg: #f7f8fa;
+        --accent: #0f766e;
+        --warn: #a16207;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.55 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+        color: var(--ink);
+        background: white;
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 40px 28px 56px;
+      }
+      h1 {
+        font-size: 30px;
+        line-height: 1.1;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 28px 0 10px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 6px;
+      }
+      p {
+        margin: 8px 0;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin-bottom: 24px;
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+        margin: 18px 0;
+      }
+      .step {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        background: var(--bg);
+        min-height: 116px;
+      }
+      .step strong {
+        display: block;
+        color: var(--accent);
+        margin-bottom: 6px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12px 0 20px;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        border: 1px solid var(--line);
+        padding: 9px 10px;
+      }
+      th {
+        background: var(--bg);
+      }
+      code {
+        background: #eef2f4;
+        padding: 1px 4px;
+        border-radius: 4px;
+      }
+      .note {
+        border-left: 4px solid var(--warn);
+        padding: 10px 12px;
+        background: #fff8e6;
+      }
+      @media print {
+        main {
+          padding: 20px;
+        }
+        .flow {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Omoiyari SCM Flow Reference</h1>
+      <p class="subtitle">
+        The shortest useful map of how supply-chain documents move stock and money in the current
+        app.
+      </p>
 
-  <h2>Core Internal Restocking Flow</h2>
-  <div class="flow">
-    <div class="step"><strong>1. PR</strong>Branch asks Central for ingredients. Status starts <code>Pending</code>. Branch may edit while not processed.</div>
-    <div class="step"><strong>2. Process</strong>Admin/AM/Super Admin marks PR <code>Processed</code>. Branch edit is effectively locked.</div>
-    <div class="step"><strong>3. SJ Picking</strong>Delivery Note stores ordered/ready/picked quantities. No stock moves yet.</div>
-    <div class="step"><strong>4. In Transit</strong>Shipping deducts Central stock, writes OUT ledger, creates in-transit rows.</div>
-    <div class="step"><strong>5. Receive + Invoice</strong>Branch receives actual quantity, rejects damaged quantity, then invoice is generated from received quantity only.</div>
-  </div>
+      <h2>Core Internal Restocking Flow</h2>
+      <div class="flow">
+        <div class="step">
+          <strong>1. PR</strong>Branch asks Central for ingredients. Status starts
+          <code>Pending</code>. Branch may edit while not processed.
+        </div>
+        <div class="step">
+          <strong>2. Process</strong>Admin/AM/Super Admin marks PR <code>Processed</code>. Branch
+          edit is effectively locked.
+        </div>
+        <div class="step">
+          <strong>3. SJ Picking</strong>Delivery Note stores ordered/ready/picked quantities. No
+          stock moves yet.
+        </div>
+        <div class="step">
+          <strong>4. In Transit</strong>Shipping deducts Central stock, writes OUT ledger, creates
+          in-transit rows.
+        </div>
+        <div class="step">
+          <strong>5. Receive + Invoice</strong>Branch receives actual quantity, rejects damaged
+          quantity, then invoice is generated from received quantity only.
+        </div>
+      </div>
 
-  <h2>Quantity Vocabulary</h2>
-  <table>
-    <thead><tr><th>Quantity</th><th>Meaning</th><th>Where It Lives</th></tr></thead>
-    <tbody>
-      <tr><td><code>quantity</code></td><td>Requested/order baseline.</td><td>PR items, PO items, delivery note items.</td></tr>
-      <tr><td><code>readyQuantity</code></td><td>How much Central says is available to prepare.</td><td>Delivery note item.</td></tr>
-      <tr><td><code>pickedQuantity</code></td><td>How much is actually loaded and shipped.</td><td>Delivery note item.</td></tr>
-      <tr><td><code>receivedQuantity</code></td><td>How much branch accepts into usable stock.</td><td>Delivery note item, invoice item quantity.</td></tr>
-      <tr><td><code>rejectedQuantity</code></td><td>How much branch rejects because it is broken, wrong, or not SOP.</td><td>Delivery note item, reject handling.</td></tr>
-    </tbody>
-  </table>
+      <h2>Quantity Vocabulary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Quantity</th>
+            <th>Meaning</th>
+            <th>Where It Lives</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>quantity</code></td>
+            <td>Requested/order baseline.</td>
+            <td>PR items, PO items, delivery note items.</td>
+          </tr>
+          <tr>
+            <td><code>readyQuantity</code></td>
+            <td>How much Central says is available to prepare.</td>
+            <td>Delivery note item.</td>
+          </tr>
+          <tr>
+            <td><code>pickedQuantity</code></td>
+            <td>How much is actually loaded and shipped.</td>
+            <td>Delivery note item.</td>
+          </tr>
+          <tr>
+            <td><code>receivedQuantity</code></td>
+            <td>How much branch accepts into usable stock.</td>
+            <td>Delivery note item, invoice item quantity.</td>
+          </tr>
+          <tr>
+            <td><code>rejectedQuantity</code></td>
+            <td>How much branch rejects because it is broken, wrong, or not SOP.</td>
+            <td>Delivery note item, reject handling.</td>
+          </tr>
+        </tbody>
+      </table>
 
-  <h2>Stock Movement Rules</h2>
-  <table>
-    <thead><tr><th>Action</th><th>Source Inventory</th><th>In Transit</th><th>Destination Inventory</th><th>Ledger</th></tr></thead>
-    <tbody>
-      <tr><td>Create/Process PR</td><td>No change</td><td>No change</td><td>No change</td><td>Audit/system log only</td></tr>
-      <tr><td>Ship SJ</td><td>Deduct picked/shipped qty</td><td>Create row</td><td>No change</td><td>OUT at source</td></tr>
-      <tr><td>Receive SJ</td><td>No ordinary change</td><td>Delete row per received item</td><td>Add received qty</td><td>IN at destination</td></tr>
-      <tr><td>Reject Return</td><td>Add rejected qty back to source</td><td>Delete row</td><td>No usable stock added for reject</td><td>IN source and OUT reject note</td></tr>
-      <tr><td>Reject Scrap</td><td>No return</td><td>Delete row</td><td>No usable stock added for reject</td><td>Waste entry and OUT reject note</td></tr>
-      <tr><td>Generate Invoice</td><td>No stock change</td><td>No stock change</td><td>No stock change</td><td>Money document from received qty</td></tr>
-    </tbody>
-  </table>
+      <h2>Stock Movement Rules</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Source Inventory</th>
+            <th>In Transit</th>
+            <th>Destination Inventory</th>
+            <th>Ledger</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Create/Process PR</td>
+            <td>No change</td>
+            <td>No change</td>
+            <td>No change</td>
+            <td>Audit/system log only</td>
+          </tr>
+          <tr>
+            <td>Ship SJ</td>
+            <td>Deduct picked/shipped qty</td>
+            <td>Create row</td>
+            <td>No change</td>
+            <td>OUT at source</td>
+          </tr>
+          <tr>
+            <td>Receive SJ</td>
+            <td>No ordinary change</td>
+            <td>Delete row per received item</td>
+            <td>Add received qty</td>
+            <td>IN at destination</td>
+          </tr>
+          <tr>
+            <td>Reject Return</td>
+            <td>Add rejected qty back to source</td>
+            <td>Delete row</td>
+            <td>No usable stock added for reject</td>
+            <td>IN source and OUT reject note</td>
+          </tr>
+          <tr>
+            <td>Reject Scrap</td>
+            <td>No return</td>
+            <td>Delete row</td>
+            <td>No usable stock added for reject</td>
+            <td>Waste entry and OUT reject note</td>
+          </tr>
+          <tr>
+            <td>Generate Invoice</td>
+            <td>No stock change</td>
+            <td>No stock change</td>
+            <td>No stock change</td>
+            <td>Money document from received qty</td>
+          </tr>
+        </tbody>
+      </table>
 
-  <h2>Deductions For Ambiguity</h2>
-  <p class="note">PO exists in the schema and server code, but the implemented internal PR path can process a PR directly into an SJ. So the safest reading is: PO is part of the intended hierarchy, but current implementation treats it as an admin-managed optional document path rather than a required gate for branch restocking.</p>
-  <p class="note">Quarantine is accepted as a rejection disposition, but the current implementation says future enhancement can add a quarantine table. So today it is a recorded exception, not a separate stock bucket with operational controls.</p>
-</main>
-</body>
+      <h2>Deductions For Ambiguity</h2>
+      <p class="note">
+        PO exists in the schema and server code, but the implemented internal PR path can process a
+        PR directly into an SJ. So the safest reading is: PO is part of the intended hierarchy, but
+        current implementation treats it as an admin-managed optional document path rather than a
+        required gate for branch restocking.
+      </p>
+      <p class="note">
+        Quarantine is accepted as a rejection disposition, but the current implementation says
+        future enhancement can add a quarantine table. So today it is a recorded exception, not a
+        separate stock bucket with operational controls.
+      </p>
+    </main>
+  </body>
 </html>

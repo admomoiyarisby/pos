@@ -5,11 +5,7 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import {
-  getOrders,
-  getOrderWithItems,
-  updateOrderStatus,
-} from "#/lib/server/pos";
+import { getOrders, getOrderWithItems, updateOrderStatus } from "#/lib/server/pos";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Printer, Pencil } from "lucide-react";
@@ -135,9 +131,7 @@ function OrderHistoryPage() {
   }, [rawOrders]);
 
   const { status: statusFilter } = Route.useSearch() as { status?: string };
-  const filteredOrders = statusFilter
-    ? orders.filter((o) => o.status === statusFilter)
-    : orders;
+  const filteredOrders = statusFilter ? orders.filter((o) => o.status === statusFilter) : orders;
 
   const updateStatusMutation = useMutation({
     mutationFn: updateOrderStatus,
@@ -209,7 +203,6 @@ function OrderHistoryPage() {
                   >
                     <Pencil className="h-3 w-3" />
                   </button>
-
                 </div>
               </div>
             </div>
@@ -289,7 +282,8 @@ function OrderHistoryPage() {
         {statusModalOrder && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Pesanan: <span className="font-mono font-medium">#{statusModalOrder.id.slice(0, 8)}</span>
+              Pesanan:{" "}
+              <span className="font-mono font-medium">#{statusModalOrder.id.slice(0, 8)}</span>
             </p>
             <div className="space-y-2">
               {Object.entries(allowedStatusLabels).map(function ([val, label]) {
@@ -298,9 +292,7 @@ function OrderHistoryPage() {
                     key={val}
                     className={
                       "flex items-center gap-3 rounded-md border px-3 py-2.5 cursor-pointer transition-colors " +
-                      (targetStatus === val
-                        ? "border-primary bg-primary/5"
-                        : "hover:bg-muted/50")
+                      (targetStatus === val ? "border-primary bg-primary/5" : "hover:bg-muted/50")
                     }
                   >
                     <input
@@ -332,7 +324,10 @@ function OrderHistoryPage() {
                 onClick={function () {
                   if (!targetStatus || targetStatus === statusModalOrder.status) return;
                   updateStatusMutation.mutate({
-                    data: { orderId: statusModalOrder.id, newStatus: targetStatus as "New" | "Processing" | "In Delivery" | "Completed" },
+                    data: {
+                      orderId: statusModalOrder.id,
+                      newStatus: targetStatus as "New" | "Processing" | "In Delivery" | "Completed",
+                    },
                   });
                 }}
                 disabled={

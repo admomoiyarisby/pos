@@ -22,11 +22,7 @@ import { eq } from "drizzle-orm";
 import { transition, updateItem } from "../server/scm-fsm";
 
 async function pickBranch(type: "Central" | "Outlet") {
-  const [branch] = await db
-    .select()
-    .from(branches)
-    .where(eq(branches.type, type))
-    .limit(1);
+  const [branch] = await db.select().from(branches).where(eq(branches.type, type)).limit(1);
   if (!branch) throw new Error(`No ${type} branch found. Run npm run db:seed first.`);
   return branch;
 }
@@ -35,7 +31,12 @@ async function pickUserByRole(role: string) {
   const [u] = await db
     .select()
     .from(users)
-    .where(eq(users.role, role as "branch_admin" | "admin_pusat" | "super_admin" | "area_manager" | "central_kitchen"))
+    .where(
+      eq(
+        users.role,
+        role as "branch_admin" | "admin_pusat" | "super_admin" | "area_manager" | "central_kitchen",
+      ),
+    )
     .limit(1);
   if (!u) throw new Error(`No user with role ${role} found. Run npm run db:seed first.`);
   return u;
@@ -43,7 +44,8 @@ async function pickUserByRole(role: string) {
 
 async function pickIngredients(n: number) {
   const rows = await db.select().from(ingredients).limit(n);
-  if (rows.length < n) throw new Error(`Need at least ${n} ingredients in DB. Found ${rows.length}.`);
+  if (rows.length < n)
+    throw new Error(`Need at least ${n} ingredients in DB. Found ${rows.length}.`);
   return rows;
 }
 
@@ -109,18 +111,8 @@ async function main() {
       unitPrice: it.averageCost,
     })),
   );
-  await transition(
-    underReview.id,
-    "submit",
-    {},
-    actor(ba),
-  );
-  await transition(
-    underReview.id,
-    "open-review",
-    {},
-    actor(ca),
-  );
+  await transition(underReview.id, "submit", {}, actor(ba));
+  await transition(underReview.id, "open-review", {}, actor(ca));
   console.log(`  -> ${underReview.code} (status: UnderReview, reviewer: ${ca.name})`);
 
   // -----------------------------------------------------------------------

@@ -7,7 +7,13 @@ import ThemeToggle from "./ThemeToggle";
 import { usePageTitleContext } from "./PageTitleProvider";
 import type { UserRole } from "#/lib/auth-context";
 
-export default function AppShell({ userRole, userName }: { userRole: UserRole; userName?: string }) {
+export default function AppShell({
+  userRole,
+  userName,
+}: {
+  userRole: UserRole;
+  userName?: string;
+}) {
   const { state } = usePageTitleContext();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 

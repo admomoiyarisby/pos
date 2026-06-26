@@ -51,7 +51,7 @@ The `ScmItemTable.tsx` `decisionColors` map is updated to include
 alert, not a muted neutral — the CA's eye lands on it.
 
 **Why not a confirm-step modal (Model B)?** The silent override is a
-truth-in-audit-log problem. A confirm modal that shows the *effective*
+truth-in-audit-log problem. A confirm modal that shows the _effective_
 state before transition is a band-aid: the CA still didn't make the
 decisions, the modal just makes the consequences visible. The audit log
 would still lack a "CA explicitly approved row X" entry. The fix is
@@ -73,7 +73,7 @@ authenticated view. The badge is computed from the same
 the filtered list, deduplicated via TanStack Query cache.
 
 **Why not a dedicated `/scm-procurements/queue` route?** The list page is
-already the entry point; the queue is a *filter* of the list, not a
+already the entry point; the queue is a _filter_ of the list, not a
 separate surface. Adding a route would mean two URLs for the same
 dataset, two sets of permissions, and two places to keep the search and
 pagination state in sync. A URL param is a smaller additive change.
@@ -131,18 +131,18 @@ no other consumers.
 
 ## Resulting file changes
 
-| File | Change |
-|---|---|
-| `docs/adr/0004-pengadaan-lifecycle-ux.md` | This ADR. |
-| `src/components/scm-procurements/views.tsx` | Remove the `pending → approved` override. Disable **Setujui & Buat SJ** until all rows resolved. Make `DraftForm` editable. Remove the `PendingCaQueue` branch from the route's `DispatchView` (it stays exported but unused in the dispatch — kept for testability). |
-| `src/components/scm-procurements/ScmItemTable.tsx` | Add `draft-edit` mode. Convert `readyQuantity` from `defaultValue` (uncontrolled) to controlled `value` + `onChange` with `useEffect` reset on prop change. Add `pending: "warning"` to `decisionColors`. Fix the `max={picked}` enforce in onChange (currently HTML-only). |
-| `src/components/scm-procurements/Stepper.tsx` | **New.** 7-step monochrome bar with off-ramp support. |
-| `src/routes/_layout/scm-procurements/index.tsx` | Status filter (URL-driven, `?status=`). New query for status-filtered list. Sidebar count via TanStack Query. |
-| `src/routes/_layout/scm-procurements/new.tsx` | Remove auto-submit. Add **Simpan sebagai Draft** button. Migrate raw `<select>` to design-system `<Select>`. Migrate raw reason inputs to `<Input>`. |
-| `src/routes/_layout/scm-procurements/$procurementId.tsx` | Add `<Stepper>` below header. Remove `PendingCaQueue` from `DispatchView`. Replace `Loading...` text with skeleton. Show items table in `CancelledView` and `RejectedView`. |
-| `src/components/scm-procurements/AuditLogTimeline.tsx` | `stateLabel` helper updated to match the corrected labels. |
-| `src/lib/auth-context.tsx` | No change. |
-| `src/lib/server/scm-fsm.ts` | No change. The FSM already supports all transitions. |
+| File                                                     | Change                                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/adr/0004-pengadaan-lifecycle-ux.md`                | This ADR.                                                                                                                                                                                                                                                                   |
+| `src/components/scm-procurements/views.tsx`              | Remove the `pending → approved` override. Disable **Setujui & Buat SJ** until all rows resolved. Make `DraftForm` editable. Remove the `PendingCaQueue` branch from the route's `DispatchView` (it stays exported but unused in the dispatch — kept for testability).       |
+| `src/components/scm-procurements/ScmItemTable.tsx`       | Add `draft-edit` mode. Convert `readyQuantity` from `defaultValue` (uncontrolled) to controlled `value` + `onChange` with `useEffect` reset on prop change. Add `pending: "warning"` to `decisionColors`. Fix the `max={picked}` enforce in onChange (currently HTML-only). |
+| `src/components/scm-procurements/Stepper.tsx`            | **New.** 7-step monochrome bar with off-ramp support.                                                                                                                                                                                                                       |
+| `src/routes/_layout/scm-procurements/index.tsx`          | Status filter (URL-driven, `?status=`). New query for status-filtered list. Sidebar count via TanStack Query.                                                                                                                                                               |
+| `src/routes/_layout/scm-procurements/new.tsx`            | Remove auto-submit. Add **Simpan sebagai Draft** button. Migrate raw `<select>` to design-system `<Select>`. Migrate raw reason inputs to `<Input>`.                                                                                                                        |
+| `src/routes/_layout/scm-procurements/$procurementId.tsx` | Add `<Stepper>` below header. Remove `PendingCaQueue` from `DispatchView`. Replace `Loading...` text with skeleton. Show items table in `CancelledView` and `RejectedView`.                                                                                                 |
+| `src/components/scm-procurements/AuditLogTimeline.tsx`   | `stateLabel` helper updated to match the corrected labels.                                                                                                                                                                                                                  |
+| `src/lib/auth-context.tsx`                               | No change.                                                                                                                                                                                                                                                                  |
+| `src/lib/server/scm-fsm.ts`                              | No change. The FSM already supports all transitions.                                                                                                                                                                                                                        |
 
 ## Visual direction
 
@@ -282,5 +282,5 @@ impeccable command phases per the critique action plan:
    (`bg-green-100` etc.), dark-mode parity, raw input/select
    replacement where not already covered in phase 2.
 5. Phase 5 — `/impeccable polish`: responsive table collapse, 44px
-  tap targets, items table in `CancelledView` / `RejectedView`,
-  variance highlight, audit log density, skeleton for detail loading.
+   tap targets, items table in `CancelledView` / `RejectedView`,
+   variance highlight, audit log density, skeleton for detail loading.

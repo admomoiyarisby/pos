@@ -97,9 +97,7 @@ function PRPage() {
   });
 
   const { status: statusFilter } = Route.useSearch() as { status?: string };
-  const filteredPrs = statusFilter
-    ? prs.filter((p) => p.status === statusFilter)
-    : prs;
+  const filteredPrs = statusFilter ? prs.filter((p) => p.status === statusFilter) : prs;
 
   const createMutation = useMutation({
     mutationFn: createPurchaseRequisition,
@@ -585,7 +583,10 @@ function PRPage() {
               >
                 Batal
               </button>
-              <button type="submit" className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm">
+              <button
+                type="submit"
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm"
+              >
                 Tolak PR
               </button>
             </div>

@@ -718,11 +718,7 @@ export const updateOrderStatus = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
-    const [old] = await db
-      .select()
-      .from(orders)
-      .where(eq(orders.id, data.orderId))
-      .limit(1);
+    const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
 
     if (!old) throw new Error("Order not found");
 
@@ -755,9 +751,7 @@ export const requestReprint = createServerFn({ method: "POST" })
     const [existing] = await db
       .select()
       .from(printRequests)
-      .where(
-        and(eq(printRequests.orderId, data.orderId), eq(printRequests.status, "Pending")),
-      )
+      .where(and(eq(printRequests.orderId, data.orderId), eq(printRequests.status, "Pending")))
       .limit(1);
 
     if (existing) {
@@ -939,7 +933,8 @@ export const consumePrintRequest = createServerFn({ method: "POST" })
       .limit(1);
 
     if (!old) throw new Error("Print request not found");
-    if (old.status !== "Approved") throw new Error("Hanya request dengan status Approved yang dapat dikonsumsi");
+    if (old.status !== "Approved")
+      throw new Error("Hanya request dengan status Approved yang dapat dikonsumsi");
 
     const [req] = await db
       .update(printRequests)
@@ -1131,11 +1126,7 @@ export const executeApprovedCancel = createServerFn({ method: "POST" })
     if (!old) throw new Error("Cancel request not found");
     if (old.status !== "Approved") throw new Error("Request belum disetujui atau sudah dieksekusi");
 
-    const [order] = await db
-      .select()
-      .from(orders)
-      .where(eq(orders.id, old.orderId))
-      .limit(1);
+    const [order] = await db.select().from(orders).where(eq(orders.id, old.orderId)).limit(1);
 
     if (!order) throw new Error("Order not found");
     if (order.status === "Void") throw new Error("Order sudah dibatalkan");
@@ -1167,7 +1158,10 @@ export const executeApprovedCancel = createServerFn({ method: "POST" })
           .select()
           .from(inventory)
           .where(
-            and(eq(inventory.branchId, order.branchId), eq(inventory.ingredientId, ing.ingredientId)),
+            and(
+              eq(inventory.branchId, order.branchId),
+              eq(inventory.ingredientId, ing.ingredientId),
+            ),
           )
           .limit(1);
 
@@ -1265,10 +1259,18 @@ export const getActiveRequestsForOrders = createServerFn({ method: "GET" })
       }
     }
 
-    const latestCancel = new Map<string, { id: string; status: string; reason: string; createdAt: Date }>();
+    const latestCancel = new Map<
+      string,
+      { id: string; status: string; reason: string; createdAt: Date }
+    >();
     for (const r of cancelReqs) {
       if (!latestCancel.has(r.orderId)) {
-        latestCancel.set(r.orderId, { id: r.id, status: r.status, reason: r.reason, createdAt: r.createdAt });
+        latestCancel.set(r.orderId, {
+          id: r.id,
+          status: r.status,
+          reason: r.reason,
+          createdAt: r.createdAt,
+        });
       }
     }
 
@@ -1282,8 +1284,17 @@ export const getActiveRequestsForOrders = createServerFn({ method: "GET" })
     for (const orderId of data.orderIds) {
       const rawPrint = latestPrint.get(orderId) ?? null;
       const rawCancel = latestCancel.get(orderId) ?? null;
-      const print = rawPrint ? { requestId: rawPrint.id, status: rawPrint.status, createdAt: rawPrint.createdAt } : null;
-      const cancel = rawCancel ? { requestId: rawCancel.id, status: rawCancel.status, reason: rawCancel.reason, createdAt: rawCancel.createdAt } : null;
+      const print = rawPrint
+        ? { requestId: rawPrint.id, status: rawPrint.status, createdAt: rawPrint.createdAt }
+        : null;
+      const cancel = rawCancel
+        ? {
+            requestId: rawCancel.id,
+            status: rawCancel.status,
+            reason: rawCancel.reason,
+            createdAt: rawCancel.createdAt,
+          }
+        : null;
       if (print || cancel) {
         result.push({ orderId, print, cancel });
       }
@@ -1291,4 +1302,3 @@ export const getActiveRequestsForOrders = createServerFn({ method: "GET" })
 
     return result;
   });
-

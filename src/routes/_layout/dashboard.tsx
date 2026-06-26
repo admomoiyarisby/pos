@@ -7,10 +7,7 @@ import { getDashboardData } from "#/lib/server/dashboard";
 import { Skeleton } from "#/components/ui/skeleton";
 import { StatsCards } from "#/components/dashboard/StatsCards";
 import { AnomalyAlerts, type Anomaly } from "#/components/dashboard/AnomalyAlerts";
-import {
-  UnsafeStockTable,
-  type UnsafeStockItem,
-} from "#/components/dashboard/UnsafeStockTable";
+import { UnsafeStockTable, type UnsafeStockItem } from "#/components/dashboard/UnsafeStockTable";
 import { CogsAnalysisTable, computeCogsData } from "#/components/dashboard/CogsAnalysisTable";
 import {
   SalesTrendChart,
@@ -163,11 +160,7 @@ function DashboardPage() {
         )}
 
         {/* 1. Stats Cards (3-col) */}
-        <StatsCards
-          totalSales={totalSales}
-          completedCount={completedCount}
-          voidCount={voidCount}
-        />
+        <StatsCards totalSales={totalSales} completedCount={completedCount} voidCount={voidCount} />
 
         {/* 2. Anomaly Alerts (full-width, stacked rows) */}
         <AnomalyAlerts anomalies={anomalies} />

@@ -202,7 +202,8 @@ function CancelRequestsPage() {
               </button>
               <button
                 onClick={() => {
-                  if (confirmAction === "approve" && selectedRequest) handleApprove(selectedRequest);
+                  if (confirmAction === "approve" && selectedRequest)
+                    handleApprove(selectedRequest);
                   else if (selectedRequest) handleReject(selectedRequest);
                 }}
                 disabled={approveMutation.isPending || rejectMutation.isPending}

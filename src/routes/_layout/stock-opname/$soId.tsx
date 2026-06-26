@@ -119,9 +119,14 @@ function StockOpnameDetailPage() {
   const isBlind = detail.isBlind;
   const canApprove =
     ["super_admin", "area_manager"].includes(user?.role ?? "") && detail.status !== "Approved";
-  const canSubmit = (detail.status === "Submitted" || detail.status === "Under Investigation") && user?.role === "branch_admin";
-  const canUpdate = detail.status === "Under Investigation" && (user?.role === "branch_admin" || ["super_admin", "area_manager"].includes(user?.role ?? ""));
-  const canMarkInvestigation = detail.status === "Submitted" && ["super_admin", "area_manager"].includes(user?.role ?? "");
+  const canSubmit =
+    (detail.status === "Submitted" || detail.status === "Under Investigation") &&
+    user?.role === "branch_admin";
+  const canUpdate =
+    detail.status === "Under Investigation" &&
+    (user?.role === "branch_admin" || ["super_admin", "area_manager"].includes(user?.role ?? ""));
+  const canMarkInvestigation =
+    detail.status === "Submitted" && ["super_admin", "area_manager"].includes(user?.role ?? "");
 
   const handleInputChange = (itemId: string, value: string) => {
     setPhysicalInputs((prev) => ({ ...prev, [itemId]: value }));
@@ -393,11 +398,18 @@ function StockOpnameDetailPage() {
         </div>
       </Modal>
 
-      <Modal open={investigationModal} onClose={() => setInvestigationModal(false)} title="Tandai Investigasi">
+      <Modal
+        open={investigationModal}
+        onClose={() => setInvestigationModal(false)}
+        title="Tandai Investigasi"
+      >
         <div className="space-y-4">
           <div className="rounded-md bg-info/10 p-3 text-sm text-info-foreground">
             <p className="font-medium">Informasi</p>
-            <p>SO akan ditandai sebagai Under Investigation. Branch Admin akan diminta untuk menghitung ulang.</p>
+            <p>
+              SO akan ditandai sebagai Under Investigation. Branch Admin akan diminta untuk
+              menghitung ulang.
+            </p>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Catatan Investigasi</label>

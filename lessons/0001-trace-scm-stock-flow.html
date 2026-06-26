@@ -1,215 +1,497 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0001: Trace SCM Stock Flow</title>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
-  <style>
-    :root { --ink:#172026; --muted:#5e6b75; --bg:#f6f8f9; --panel:#ffffff; --line:#d7dee3; --accent:#0f766e; --accent2:#7c3aed; --bad:#b42318; --good:#067647; --warn:#a16207; --intended:#0f766e; --actual:#7c3aed; --gap:#b42318; }
-    body { margin:0; font:16px/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--ink); }
-    main { max-width:980px; margin:0 auto; padding:42px 24px 64px; }
-    h1 { font-size:34px; line-height:1.1; margin:0; }
-    h2 { font-size:21px; margin:32px 0 10px; }
-    h3 { font-size:17px; margin:20px 0 8px; }
-    p { margin:9px 0; }
-    a { color:var(--accent); }
-    .lede { color:var(--muted); font-size:18px; margin:10px 0 24px; }
-    .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px; margin:14px 0; }
-    .map { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin-top:12px; }
-    .box { border:1px solid var(--line); border-radius:8px; padding:12px; background:#fbfcfd; min-height:120px; }
-    .box strong { display:block; color:var(--accent); margin-bottom:6px; }
-    code { background:#eef2f4; padding:1px 4px; border-radius:4px; font:13px/1.4 ui-monospace, "Source Code Pro", Menlo, monospace; }
-    pre { background:#eef2f4; padding:8px 10px; border-radius:6px; overflow-x:auto; font:13px/1.45 ui-monospace, "Source Code Pro", Menlo, monospace; }
-    button { border:1px solid var(--line); background:white; border-radius:8px; padding:9px 12px; font:inherit; cursor:pointer; }
-    button:hover { border-color:var(--accent); }
-    .choices { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
-    .feedback { min-height:26px; margin-top:12px; font-weight:600; }
-    .good { color:var(--good); }
-    .bad { color:var(--bad); }
-    .small { color:var(--muted); font-size:14px; }
-    .legend { display:flex; flex-wrap:wrap; gap:14px; margin:10px 0 4px; font-size:13px; color:var(--muted); }
-    .legend span { display:inline-flex; align-items:center; gap:6px; }
-    .swatch { display:inline-block; width:14px; height:14px; border-radius:3px; border:1px solid var(--line); }
-    .gap-callout { border-left:4px solid var(--gap); padding:10px 12px; background:#fef2f2; border-radius:4px; margin:10px 0; }
-    .diagram-pair { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:8px; }
-    .diagram-panel { border:1px solid var(--line); border-radius:8px; padding:14px; background:#fbfcfd; }
-    .diagram-panel.intended h3 { color:var(--intended); margin-top:0; }
-    .diagram-panel.actual h3 { color:var(--actual); margin-top:0; }
-    .mermaid { background:white; border-radius:6px; padding:10px; }
-    .caption { font-size:13px; color:var(--muted); margin:6px 0 0; }
-    @media (max-width:760px) { .map { grid-template-columns:1fr; } .diagram-pair { grid-template-columns:1fr; } h1 { font-size:28px; } }
-  </style>
-  <script>
-    document.addEventListener("DOMContentLoaded", function () {
-      mermaid.initialize({
-        startOnLoad: true,
-        theme: "base",
-        themeVariables: {
-          fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
-          fontSize: '14px',
-          primaryColor: '#fbfcfd',
-          primaryBorderColor: '#d7dee3',
-          primaryTextColor: '#172026',
-          lineColor: '#5e6b75',
-          tertiaryColor: '#f6f8f9',
-          // state machine colors
-          activeFill: '#0f766e',
-          activeBorder: '#0f766e',
-          // flowchart node borders
-          clusterBkg: '#f6f8f9',
-        },
-        flowchart: { curve: 'basis', htmlLabels: true },
-        stateDiagram: { htmlLabels: true },
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 0001: Trace SCM Stock Flow</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+    <style>
+      :root {
+        --ink: #172026;
+        --muted: #5e6b75;
+        --bg: #f6f8f9;
+        --panel: #ffffff;
+        --line: #d7dee3;
+        --accent: #0f766e;
+        --accent2: #7c3aed;
+        --bad: #b42318;
+        --good: #067647;
+        --warn: #a16207;
+        --intended: #0f766e;
+        --actual: #7c3aed;
+        --gap: #b42318;
+      }
+      body {
+        margin: 0;
+        font:
+          16px/1.6 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 42px 24px 64px;
+      }
+      h1 {
+        font-size: 34px;
+        line-height: 1.1;
+        margin: 0;
+      }
+      h2 {
+        font-size: 21px;
+        margin: 32px 0 10px;
+      }
+      h3 {
+        font-size: 17px;
+        margin: 20px 0 8px;
+      }
+      p {
+        margin: 9px 0;
+      }
+      a {
+        color: var(--accent);
+      }
+      .lede {
+        color: var(--muted);
+        font-size: 18px;
+        margin: 10px 0 24px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 18px;
+        margin: 14px 0;
+      }
+      .map {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .box {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        background: #fbfcfd;
+        min-height: 120px;
+      }
+      .box strong {
+        display: block;
+        color: var(--accent);
+        margin-bottom: 6px;
+      }
+      code {
+        background: #eef2f4;
+        padding: 1px 4px;
+        border-radius: 4px;
+        font:
+          13px/1.4 ui-monospace,
+          "Source Code Pro",
+          Menlo,
+          monospace;
+      }
+      pre {
+        background: #eef2f4;
+        padding: 8px 10px;
+        border-radius: 6px;
+        overflow-x: auto;
+        font:
+          13px/1.45 ui-monospace,
+          "Source Code Pro",
+          Menlo,
+          monospace;
+      }
+      button {
+        border: 1px solid var(--line);
+        background: white;
+        border-radius: 8px;
+        padding: 9px 12px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      .choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .feedback {
+        min-height: 26px;
+        margin-top: 12px;
+        font-weight: 600;
+      }
+      .good {
+        color: var(--good);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .small {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin: 10px 0 4px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .swatch {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border-radius: 3px;
+        border: 1px solid var(--line);
+      }
+      .gap-callout {
+        border-left: 4px solid var(--gap);
+        padding: 10px 12px;
+        background: #fef2f2;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
+      .diagram-pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-top: 8px;
+      }
+      .diagram-panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        background: #fbfcfd;
+      }
+      .diagram-panel.intended h3 {
+        color: var(--intended);
+        margin-top: 0;
+      }
+      .diagram-panel.actual h3 {
+        color: var(--actual);
+        margin-top: 0;
+      }
+      .mermaid {
+        background: white;
+        border-radius: 6px;
+        padding: 10px;
+      }
+      .caption {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 6px 0 0;
+      }
+      @media (max-width: 760px) {
+        .map {
+          grid-template-columns: 1fr;
+        }
+        .diagram-pair {
+          grid-template-columns: 1fr;
+        }
+        h1 {
+          font-size: 28px;
+        }
+      }
+    </style>
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        mermaid.initialize({
+          startOnLoad: true,
+          theme: "base",
+          themeVariables: {
+            fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+            fontSize: "14px",
+            primaryColor: "#fbfcfd",
+            primaryBorderColor: "#d7dee3",
+            primaryTextColor: "#172026",
+            lineColor: "#5e6b75",
+            tertiaryColor: "#f6f8f9",
+            // state machine colors
+            activeFill: "#0f766e",
+            activeBorder: "#0f766e",
+            // flowchart node borders
+            clusterBkg: "#f6f8f9",
+          },
+          flowchart: { curve: "basis", htmlLabels: true },
+          stateDiagram: { htmlLabels: true },
+        });
       });
-    });
-  </script>
-</head>
-<body>
-<main>
-  <h1>Trace One SKU Through SCM</h1>
-  <p class="lede">Your win in this lesson: given one bag of rice requested by a branch, you can say which document owns it, where the stock sits, and when it becomes invoiceable — and you can spot the gap between the FRD's intended flow and the current implementation.</p>
+    </script>
+  </head>
+  <body>
+    <main>
+      <h1>Trace One SKU Through SCM</h1>
+      <p class="lede">
+        Your win in this lesson: given one bag of rice requested by a branch, you can say which
+        document owns it, where the stock sits, and when it becomes invoiceable — and you can spot
+        the gap between the FRD's intended flow and the current implementation.
+      </p>
 
-  <section class="card">
-    <h2>1. The Two Flows, Side by Side</h2>
-    <p>The FRD names a four-document chain (PR → PO → SJ → Invoice) as the <em>canonical</em> restocking cycle. The implementation treats PO as optional for the internal restocking path and lets a PR create an SJ directly. Read the two diagrams and the gap is the difference between the green "intended" path and the purple "actual" path.</p>
-    <div class="legend">
-      <span><span class="swatch" style="background:#0f766e"></span> Intended (FRD)</span>
-      <span><span class="swatch" style="background:#7c3aed"></span> Actual (code)</span>
-      <span><span class="swatch" style="background:#b42318"></span> Gap or unreachable state</span>
-    </div>
-
-    <div class="diagram-pair">
-      <div class="diagram-panel intended">
-        <h3>Intended FRD flow (PR §4.2.1)</h3>
-        <div class="mermaid">
-flowchart LR
-  PR[PR Pending] -->|Proses| PO[PO Draft]
-  PO -->|Kirim| POS[PO Sent]
-  POS -->|Buat SJ| SJP[SJ Picking]
-  SJP -->|Kirim| SJI[SJ In Transit]
-  SJI -->|Terima Cabang| SJR[SJ Received]
-  SJR -->|Review Admin Pusat| SJRev[SJ Reviewed]
-  SJRev -->|Generate Invoice| INV[Invoice Unpaid]
-  INV -->|Bayar| Paid[Invoice Paid]
+      <section class="card">
+        <h2>1. The Two Flows, Side by Side</h2>
+        <p>
+          The FRD names a four-document chain (PR → PO → SJ → Invoice) as the
+          <em>canonical</em> restocking cycle. The implementation treats PO as optional for the
+          internal restocking path and lets a PR create an SJ directly. Read the two diagrams and
+          the gap is the difference between the green "intended" path and the purple "actual" path.
+        </p>
+        <div class="legend">
+          <span><span class="swatch" style="background: #0f766e"></span> Intended (FRD)</span>
+          <span><span class="swatch" style="background: #7c3aed"></span> Actual (code)</span>
+          <span
+            ><span class="swatch" style="background: #b42318"></span> Gap or unreachable state</span
+          >
         </div>
-        <p class="caption">Every PR becomes a PO. Every PO produces an SJ. Every received SJ produces one Invoice based on received quantity. Source: <code>docs/Functional Requirement Document.md</code> §4.2.1, §4.2.4.</p>
-      </div>
-      <div class="diagram-panel actual">
-        <h3>Actual implementation</h3>
-        <div class="mermaid">
-flowchart LR
-  PR[PR Pending] -->|alsoCreateSJ=true| SJP[SJ Picking]
-  PR -->|alsoCreateSJ=false| SJP
-  PR -.->|PO terpisah| PO[PO Draft]
-  PO -->|Send| POS[PO Sent]
-  POS -->|Receive| POC[PO Completed]
-  SJP -->|Ship| SJI[SJ In Transit]
-  SJI -->|Terima Cabang| SJR[SJ Received]
-  SJR -->|Review| SJRev[SJ Reviewed]
-  SJRev -->|Generate| INV[Invoice Unpaid]
-  INV -->|Pay| Paid[Invoice Paid]
+
+        <div class="diagram-pair">
+          <div class="diagram-panel intended">
+            <h3>Intended FRD flow (PR §4.2.1)</h3>
+            <div class="mermaid">
+              flowchart LR PR[PR Pending] -->|Proses| PO[PO Draft] PO -->|Kirim| POS[PO Sent] POS
+              -->|Buat SJ| SJP[SJ Picking] SJP -->|Kirim| SJI[SJ In Transit] SJI -->|Terima Cabang|
+              SJR[SJ Received] SJR -->|Review Admin Pusat| SJRev[SJ Reviewed] SJRev -->|Generate
+              Invoice| INV[Invoice Unpaid] INV -->|Bayar| Paid[Invoice Paid]
+            </div>
+            <p class="caption">
+              Every PR becomes a PO. Every PO produces an SJ. Every received SJ produces one Invoice
+              based on received quantity. Source:
+              <code>docs/Functional Requirement Document.md</code> §4.2.1, §4.2.4.
+            </p>
+          </div>
+          <div class="diagram-panel actual">
+            <h3>Actual implementation</h3>
+            <div class="mermaid">
+              flowchart LR PR[PR Pending] -->|alsoCreateSJ=true| SJP[SJ Picking] PR
+              -->|alsoCreateSJ=false| SJP PR -.->|PO terpisah| PO[PO Draft] PO -->|Send| POS[PO
+              Sent] POS -->|Receive| POC[PO Completed] SJP -->|Ship| SJI[SJ In Transit] SJI
+              -->|Terima Cabang| SJR[SJ Received] SJR -->|Review| SJRev[SJ Reviewed] SJRev
+              -->|Generate| INV[Invoice Unpaid] INV -->|Pay| Paid[Invoice Paid]
+            </div>
+            <p class="caption">
+              The dotted line is the only path that actually goes through PO for internal
+              restocking. The solid line is the default. Source:
+              <code>src/lib/server/scm.ts:306–390</code> (<code>processPurchaseRequisition</code>),
+              <code>:407–700</code> (PO module).
+            </p>
+          </div>
         </div>
-        <p class="caption">The dotted line is the only path that actually goes through PO for internal restocking. The solid line is the default. Source: <code>src/lib/server/scm.ts:306–390</code> (<code>processPurchaseRequisition</code>), <code>:407–700</code> (PO module).</p>
-      </div>
-    </div>
 
-    <div class="gap-callout">
-      <strong>Gap to remember:</strong> the FRD says the PO step is canonical; the code lets you skip it. This is a defensible design (ERPNext treats PO as optional for internal stock transfers too) but the policy is not written down anywhere — the next lesson will work through how to make it explicit.
-    </div>
-  </section>
+        <div class="gap-callout">
+          <strong>Gap to remember:</strong> the FRD says the PO step is canonical; the code lets you
+          skip it. This is a defensible design (ERPNext treats PO as optional for internal stock
+          transfers too) but the policy is not written down anywhere — the next lesson will work
+          through how to make it explicit.
+        </div>
+      </section>
 
-  <section class="card">
-    <h2>2. State Machines You Can Read Off the Code</h2>
-    <p>State diagrams are how you answer "what can happen to this document next, given its current status?" The two most consequential state machines for the SCM flow are the <strong>PR</strong> and the <strong>SJ</strong>.</p>
+      <section class="card">
+        <h2>2. State Machines You Can Read Off the Code</h2>
+        <p>
+          State diagrams are how you answer "what can happen to this document next, given its
+          current status?" The two most consequential state machines for the SCM flow are the
+          <strong>PR</strong> and the <strong>SJ</strong>.
+        </p>
 
-    <h3>PR status — intended transitions</h3>
-    <div class="mermaid">
-stateDiagram-v2
-  [*] --> Draft
-  Draft --> Pending: Submit
-  Pending --> Approved: Approve
-  Pending --> Rejected: Tolak
-  Pending --> Processed: Proses
-  Approved --> Processed: Proses
-  Processed --> Fulfilled: gap - no code path
-  Rejected --> [*]
-  Processed --> [*]
-  Fulfilled --> [*]
-    </div>
-    <p class="small">The <code>Fulfilled</code> state exists in the <code>prStatusEnum</code> in <code>src/db/schema.ts</code> but no server function ever sets it. In the live system every PR is therefore either still <code>Pending</code>, <code>Processed</code>, or <code>Rejected</code> — the "fulfilled" terminal is unreachable. <span class="gap-callout" style="display:inline-block; padding:2px 6px; margin:0;">Missing</span></p>
+        <h3>PR status — intended transitions</h3>
+        <div class="mermaid">
+          stateDiagram-v2 [*] --> Draft Draft --> Pending: Submit Pending --> Approved: Approve
+          Pending --> Rejected: Tolak Pending --> Processed: Proses Approved --> Processed: Proses
+          Processed --> Fulfilled: gap - no code path Rejected --> [*] Processed --> [*] Fulfilled
+          --> [*]
+        </div>
+        <p class="small">
+          The <code>Fulfilled</code> state exists in the <code>prStatusEnum</code> in
+          <code>src/db/schema.ts</code> but no server function ever sets it. In the live system
+          every PR is therefore either still <code>Pending</code>, <code>Processed</code>, or
+          <code>Rejected</code> — the "fulfilled" terminal is unreachable.
+          <span class="gap-callout" style="display: inline-block; padding: 2px 6px; margin: 0"
+            >Missing</span
+          >
+        </p>
 
-    <h3>SJ status — the only document that moves stock</h3>
-    <div class="mermaid">
-stateDiagram-v2
-  [*] --> Picking
-  Picking --> InTransit: Ship
-  Picking --> Cancelled: Cancel
-  InTransit --> PartialReceived: Receive partial
-  InTransit --> Received: Receive full
-  InTransit --> Cancelled: Cancel
-  PartialReceived --> Received: Receive remainder
-  PartialReceived --> Cancelled: Cancel
-  Received --> Reviewed: Admin Pusat review
-  Reviewed --> [*]
-  Cancelled --> [*]
-    </div>
-    <p class="small">Stock only leaves the source branch at the <code>Picking → InTransit</code> transition (<code>shipDeliveryNote</code> in <code>src/lib/server/scm.ts:876</code>). Stock only arrives at the destination at the <code>InTransit → Received</code> transition (<code>receiveDeliveryNote</code> in <code>src/lib/server/scm.ts:973</code>). The <code>Partial Received</code> state was added in Phase 2 of the supply-chain fix plan to support multi-receive calls on the same SJ.</p>
-  </section>
+        <h3>SJ status — the only document that moves stock</h3>
+        <div class="mermaid">
+          stateDiagram-v2 [*] --> Picking Picking --> InTransit: Ship Picking --> Cancelled: Cancel
+          InTransit --> PartialReceived: Receive partial InTransit --> Received: Receive full
+          InTransit --> Cancelled: Cancel PartialReceived --> Received: Receive remainder
+          PartialReceived --> Cancelled: Cancel Received --> Reviewed: Admin Pusat review Reviewed
+          --> [*] Cancelled --> [*]
+        </div>
+        <p class="small">
+          Stock only leaves the source branch at the <code>Picking → InTransit</code> transition
+          (<code>shipDeliveryNote</code> in <code>src/lib/server/scm.ts:876</code>). Stock only
+          arrives at the destination at the <code>InTransit → Received</code> transition (<code
+            >receiveDeliveryNote</code
+          >
+          in <code>src/lib/server/scm.ts:973</code>). The <code>Partial Received</code> state was
+          added in Phase 2 of the supply-chain fix plan to support multi-receive calls on the same
+          SJ.
+        </p>
+      </section>
 
-  <section class="card">
-    <h2>3. The Five Quantities That Travel With an Item</h2>
-    <p>Every delivery-note item carries five quantity columns. They look like duplication, but each one has a single specific job. Reading them off the schema:</p>
-    <pre>quantity           requested / order baseline
+      <section class="card">
+        <h2>3. The Five Quantities That Travel With an Item</h2>
+        <p>
+          Every delivery-note item carries five quantity columns. They look like duplication, but
+          each one has a single specific job. Reading them off the schema:
+        </p>
+        <pre>
+quantity           requested / order baseline
 readyQuantity      how much Central says is available
 pickedQuantity     how much is actually loaded and shipped
 receivedQuantity   how much the branch accepts into usable stock
-rejectedQuantity   how much the branch rejects (broken / wrong / not SOP)</pre>
-    <p>The invoice line quantity is always <code>receivedQuantity</code>. That is the FRD's "actual base" rule (§4.2.4) and it is correctly implemented in <code>generateSCMInvoice</code> (<code>src/lib/server/scm.ts:1437</code>).</p>
-  </section>
+rejectedQuantity   how much the branch rejects (broken / wrong / not SOP)</pre
+        >
+        <p>
+          The invoice line quantity is always <code>receivedQuantity</code>. That is the FRD's
+          "actual base" rule (§4.2.4) and it is correctly implemented in
+          <code>generateSCMInvoice</code> (<code>src/lib/server/scm.ts:1437</code>).
+        </p>
+      </section>
 
-  <section class="card">
-    <h2>4. What Happens at Each Transition, in Plain English</h2>
-    <ol>
-      <li><strong>Smart reorder suggests.</strong> 30-day OUT total ÷ 30 × ROQ days, rounded up to MOQ. Defaults ROP 3 / ROQ 5. Source: <a href="../src/lib/server/reorder.ts">reorder.ts</a>.</li>
-      <li><strong>Branch creates PR.</strong> Status starts <code>Pending</code>. Branch admins are forced to their own branch; every item must respect MOQ. Source: <a href="../src/lib/server/scm.ts">scm.ts</a> <code>createPurchaseRequisition</code>.</li>
-      <li><strong>Center processes PR.</strong> Once <code>Processed</code>, branch edit is blocked (branch admin may only edit <code>Draft</code> or <code>Pending</code>). With <code>alsoCreateSJ: true</code> the code also writes an SJ in <code>Picking</code> — note: no in-transit record is created here, only the document.</li>
-      <li><strong>SJ ships stock into transit.</strong> At the <code>Picking → InTransit</code> transition, the source inventory is reduced, an OUT ledger entry is written, and an <code>in_transit_inventory</code> row is created. This is the moment the item is physically no longer counted at Central but not yet counted at the branch.</li>
-      <li><strong>Branch receives reality, not theory.</strong> The receiving form records accepted and rejected quantities. Accepted quantity increases destination inventory. Rejected quantity takes one of three dispositions: <em>Return to Source</em> (returns stock + writes mirror ledgers), <em>Scrap</em> (auto-creates a waste entry), or <em>Quarantine</em> (ledger note only — no real bucket yet).</li>
-      <li><strong>Invoice follows accepted quantity.</strong> <code>generateSCMInvoice</code> reads <code>receivedQuantity</code> per item and refuses to issue an invoice with zero total amount. Source: <code>src/lib/server/scm.ts:1437–1545</code>.</li>
-      <li><strong>Admin Pusat reviews, then pays.</strong> The DN has a <code>reviewedByAdminPusat</code> flag that gates the invoice button. <code>paySCMInvoice</code> flips the status and stamps <code>paidAt</code>.</li>
-    </ol>
-  </section>
+      <section class="card">
+        <h2>4. What Happens at Each Transition, in Plain English</h2>
+        <ol>
+          <li>
+            <strong>Smart reorder suggests.</strong> 30-day OUT total ÷ 30 × ROQ days, rounded up to
+            MOQ. Defaults ROP 3 / ROQ 5. Source:
+            <a href="../src/lib/server/reorder.ts">reorder.ts</a>.
+          </li>
+          <li>
+            <strong>Branch creates PR.</strong> Status starts <code>Pending</code>. Branch admins
+            are forced to their own branch; every item must respect MOQ. Source:
+            <a href="../src/lib/server/scm.ts">scm.ts</a> <code>createPurchaseRequisition</code>.
+          </li>
+          <li>
+            <strong>Center processes PR.</strong> Once <code>Processed</code>, branch edit is
+            blocked (branch admin may only edit <code>Draft</code> or <code>Pending</code>). With
+            <code>alsoCreateSJ: true</code> the code also writes an SJ in <code>Picking</code> —
+            note: no in-transit record is created here, only the document.
+          </li>
+          <li>
+            <strong>SJ ships stock into transit.</strong> At the
+            <code>Picking → InTransit</code> transition, the source inventory is reduced, an OUT
+            ledger entry is written, and an <code>in_transit_inventory</code> row is created. This
+            is the moment the item is physically no longer counted at Central but not yet counted at
+            the branch.
+          </li>
+          <li>
+            <strong>Branch receives reality, not theory.</strong> The receiving form records
+            accepted and rejected quantities. Accepted quantity increases destination inventory.
+            Rejected quantity takes one of three dispositions: <em>Return to Source</em> (returns
+            stock + writes mirror ledgers), <em>Scrap</em> (auto-creates a waste entry), or
+            <em>Quarantine</em> (ledger note only — no real bucket yet).
+          </li>
+          <li>
+            <strong>Invoice follows accepted quantity.</strong>
+            <code>generateSCMInvoice</code> reads <code>receivedQuantity</code> per item and refuses
+            to issue an invoice with zero total amount. Source:
+            <code>src/lib/server/scm.ts:1437–1545</code>.
+          </li>
+          <li>
+            <strong>Admin Pusat reviews, then pays.</strong> The DN has a
+            <code>reviewedByAdminPusat</code> flag that gates the invoice button.
+            <code>paySCMInvoice</code> flips the status and stamps <code>paidAt</code>.
+          </li>
+        </ol>
+      </section>
 
-  <section class="card">
-    <h2>5. Interactive Check</h2>
-    <p>A branch requested 25 kg rice. Central picked and shipped 20 kg. The branch received 18 kg and rejected 2 kg as Scrap. What quantity should the SCM invoice charge?</p>
-    <div class="choices">
-      <button onclick="answer(false, 'Not requested quantity. PR is demand, not payable reality.')">25 kg</button>
-      <button onclick="answer(false, 'Not shipped quantity. The invoice is based on what the branch actually accepted.')">20 kg</button>
-      <button onclick="answer(true, 'Correct. Invoice uses receivedQuantity: the 18 kg accepted into branch stock.')">18 kg</button>
-      <button onclick="answer(false, 'The 2 kg was rejected as Scrap, so it becomes waste handling, not invoice quantity.')">2 kg</button>
-    </div>
-    <p id="feedback" class="feedback"></p>
-  </section>
+      <section class="card">
+        <h2>5. Interactive Check</h2>
+        <p>
+          A branch requested 25 kg rice. Central picked and shipped 20 kg. The branch received 18 kg
+          and rejected 2 kg as Scrap. What quantity should the SCM invoice charge?
+        </p>
+        <div class="choices">
+          <button
+            onclick="answer(false, 'Not requested quantity. PR is demand, not payable reality.')"
+          >
+            25 kg
+          </button>
+          <button
+            onclick="
+              answer(
+                false,
+                'Not shipped quantity. The invoice is based on what the branch actually accepted.',
+              )
+            "
+          >
+            20 kg
+          </button>
+          <button
+            onclick="
+              answer(
+                true,
+                'Correct. Invoice uses receivedQuantity: the 18 kg accepted into branch stock.',
+              )
+            "
+          >
+            18 kg
+          </button>
+          <button
+            onclick="
+              answer(
+                false,
+                'The 2 kg was rejected as Scrap, so it becomes waste handling, not invoice quantity.',
+              )
+            "
+          >
+            2 kg
+          </button>
+        </div>
+        <p id="feedback" class="feedback"></p>
+      </section>
 
-  <section class="card">
-    <h2>6. Open Gaps to Carry Forward</h2>
-    <ul>
-      <li><strong>Quarantine is named, not modeled.</strong> A real <code>quarantine_inventory</code> table is needed before a "quarantined" item can be a stock bucket with its own release action. Until then, Quarantine is a recorded exception, not a location.</li>
-      <li><strong>PO is optional in implementation.</strong> The FRD's canonical chain is PR → PO → SJ → Invoice. The code lets you skip PO. The right next decision is to make that policy explicit in writing — either keep PR → SJ direct and update the FRD, or hard-gate the PO step in code.</li>
-      <li><strong>Edit Invoice is missing.</strong> FRD §4.2.4 says Super Admin and Admin Pusat may edit an invoice for discrepancy cases. The current code has no <code>updateSCMInvoice</code>. The safe pattern is a "cancel + reissue" with a chained audit reference.</li>
-    </ul>
-    <p class="small">Ask the agent follow-up questions with a concrete SKU scenario, for example: "Trace 10 kg ayam from supplier delivery to Central, then branch, then reject return."</p>
-  </section>
+      <section class="card">
+        <h2>6. Open Gaps to Carry Forward</h2>
+        <ul>
+          <li>
+            <strong>Quarantine is named, not modeled.</strong> A real
+            <code>quarantine_inventory</code> table is needed before a "quarantined" item can be a
+            stock bucket with its own release action. Until then, Quarantine is a recorded
+            exception, not a location.
+          </li>
+          <li>
+            <strong>PO is optional in implementation.</strong> The FRD's canonical chain is PR → PO
+            → SJ → Invoice. The code lets you skip PO. The right next decision is to make that
+            policy explicit in writing — either keep PR → SJ direct and update the FRD, or hard-gate
+            the PO step in code.
+          </li>
+          <li>
+            <strong>Edit Invoice is missing.</strong> FRD §4.2.4 says Super Admin and Admin Pusat
+            may edit an invoice for discrepancy cases. The current code has no
+            <code>updateSCMInvoice</code>. The safe pattern is a "cancel + reissue" with a chained
+            audit reference.
+          </li>
+        </ul>
+        <p class="small">
+          Ask the agent follow-up questions with a concrete SKU scenario, for example: "Trace 10 kg
+          ayam from supplier delivery to Central, then branch, then reject return."
+        </p>
+      </section>
 
-  <script>
-    function answer(ok, text) {
-      const el = document.getElementById("feedback");
-      el.className = "feedback " + (ok ? "good" : "bad");
-      el.textContent = text;
-    }
-  </script>
-</main>
-</body>
+      <script>
+        function answer(ok, text) {
+          const el = document.getElementById("feedback");
+          el.className = "feedback " + (ok ? "good" : "bad");
+          el.textContent = text;
+        }
+      </script>
+    </main>
+  </body>
 </html>

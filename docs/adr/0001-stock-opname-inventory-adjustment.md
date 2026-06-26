@@ -1,12 +1,13 @@
 # Stock Opname Inventory Adjustment Strategy
 
-When a Stock Opname (SO) is approved, the system adjusts inventory to match the physical count by comparing physical stock against *current* inventory at approval time — not against the frozen system stock captured at trigger time.
+When a Stock Opname (SO) is approved, the system adjusts inventory to match the physical count by comparing physical stock against _current_ inventory at approval time — not against the frozen system stock captured at trigger time.
 
 ## Context
 
 The `systemStock` in SO items is frozen when the SO is triggered. However, inventory continues to change between trigger and approval (new SCM deliveries, order deductions, waste entries). If we adjusted inventory based on the frozen system stock, we would lose track of all intermediate movements.
 
 **Example of the bug this prevents:**
+
 - SO triggered: inventory = 100 kg, systemStock = 100
 - New delivery arrives: inventory becomes 120 kg
 - Physical count: 115 kg
