@@ -614,7 +614,20 @@ export async function seedDatabase() {
       .from(ordersTable)
       .where(eq(ordersTable.orderCode, o.orderCode))
       .limit(1);
-    if (existingOrder[0]) continue;
+    if (existingOrder[0]) {
+      // Update createdAt for 'New'/'Processing' orders so dashboard shows today's sales
+      if (o.status === "New" || o.status === "Processing") {
+        const expectedDate = o.createdAt;
+        const existingDate = new Date(existingOrder[0].createdAt);
+        if (existingDate.toISOString().slice(0, 10) !== expectedDate.toISOString().slice(0, 10)) {
+          await db
+            .update(ordersTable)
+            .set({ createdAt: expectedDate })
+            .where(eq(ordersTable.id, existingOrder[0].id));
+        }
+      }
+      continue;
+    }
 
     const [insertedOrder] = await db
       .insert(ordersTable)
@@ -685,6 +698,12 @@ export async function seedDatabase() {
         notes: e.notes,
         createdAt: new Date(Date.now() - e.dayAgo * 86400000),
       });
+    } else if (existing[0].type !== e.type) {
+      // Update type if seed data changed (e.g. WASTE should be OUT, not IN)
+      await db
+        .update(stockLedgerTable)
+        .set({ type: e.type, notes: e.notes })
+        .where(eq(stockLedgerTable.id, existing[0].id));
     }
   }
 
@@ -1170,7 +1189,20 @@ export async function seedDatabase() {
       .from(periodLogsTable)
       .where(eq(periodLogsTable.periodName, pl.periodName))
       .limit(1);
-    if (existing[0]) continue;
+    if (existing[0]) {
+      // Update status if seed data changed (e.g. May should be Closed, not Open)
+      if (existing[0].status !== pl.status) {
+        await db
+          .update(periodLogsTable)
+          .set({
+            status: pl.status,
+            closedAt: pl.closedAt ?? null,
+            closedBy: closedById ?? null,
+          })
+          .where(eq(periodLogsTable.id, existing[0].id));
+      }
+      continue;
+    }
     await db.insert(periodLogsTable).values({
       periodName: pl.periodName,
       status: pl.status,
