@@ -1,3 +1,4 @@
+import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -141,6 +142,24 @@ function DashboardPage() {
   // ─── Waste Loss ───
   const wasteLoss = computeWasteLoss(wasteEntries, ingredients);
 
+  const [activeTab, setActiveTab] = React.useState(() => {
+    try {
+      const stored = localStorage.getItem("dashboard-tab");
+      if (stored && ["ringkasan", "operasional", "keuangan", "inventaris"].includes(stored)) {
+        if ((stored === "keuangan" || stored === "inventaris") && !isSuperAdmin) return "ringkasan";
+        return stored;
+      }
+    } catch {}
+    return "ringkasan";
+  });
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    try {
+      localStorage.setItem("dashboard-tab", value);
+    } catch {}
+  };
+
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
       <div className="space-y-6">
@@ -158,7 +177,7 @@ function DashboardPage() {
           </div>
         )}
 
-        <Tabs defaultValue="ringkasan">
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList>
             <TabsTrigger value="ringkasan">Ringkasan</TabsTrigger>
             <TabsTrigger value="operasional">Operasional</TabsTrigger>
@@ -230,8 +249,8 @@ function DashboardSkeleton() {
     <div className="space-y-6">
       {/* Tab bar skeleton */}
       <div className="inline-flex h-10 items-center gap-1 rounded-lg border bg-muted p-1">
-        {["Ringkasan", "Operasional"].map((label) => (
-          <div key={label} className="rounded-md px-3 py-1.5">
+        {["ringkasan", "operasional"].map((id) => (
+          <div key={id} className="rounded-md px-3 py-1.5">
             <Skeleton className="h-4 w-16" />
           </div>
         ))}
