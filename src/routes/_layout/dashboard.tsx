@@ -5,6 +5,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
 import { getDashboardData } from "#/lib/server/dashboard";
 import { Skeleton } from "#/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "#/components/ui/tabs";
 import { StatsCards } from "#/components/dashboard/StatsCards";
 import { AnomalyAlerts, type Anomaly } from "#/components/dashboard/AnomalyAlerts";
 import { UnsafeStockTable, type UnsafeStockItem } from "#/components/dashboard/UnsafeStockTable";
@@ -44,7 +45,7 @@ function DashboardPage() {
   if (isLoading || !data) {
     return (
       <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
-        <DashboardSkeleton isSuperAdmin={user?.role === "super_admin"} />
+        <DashboardSkeleton />
       </RoleGuard>
     );
   }
@@ -143,8 +144,6 @@ function DashboardPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
       <div className="space-y-6">
-        {/* Freshness strip — moved out of the duplicate header.
-            The page h1 + subtitle already live in the AppShell. */}
         {dataUpdatedAt && (
           <div className="flex items-center justify-end">
             <p className="text-xs text-muted-foreground">
@@ -159,60 +158,86 @@ function DashboardPage() {
           </div>
         )}
 
-        {/* 1. Stats Cards (3-col) */}
-        <StatsCards totalSales={totalSales} completedCount={completedCount} voidCount={voidCount} />
+        <Tabs defaultValue="ringkasan">
+          <TabsList>
+            <TabsTrigger value="ringkasan">Ringkasan</TabsTrigger>
+            <TabsTrigger value="operasional">Operasional</TabsTrigger>
+            {isSuperAdmin && <TabsTrigger value="keuangan">Keuangan</TabsTrigger>}
+            {isSuperAdmin && <TabsTrigger value="inventaris">Inventaris</TabsTrigger>}
+          </TabsList>
 
-        {/* 2. Anomaly Alerts (full-width, stacked rows) */}
-        <AnomalyAlerts anomalies={anomalies} />
+          {/* ─── Ringkasan (Overview) ─── */}
+          <TabsContent value="ringkasan">
+            <div className="space-y-6">
+              <StatsCards
+                totalSales={totalSales}
+                completedCount={completedCount}
+                voidCount={voidCount}
+              />
+              <AnomalyAlerts anomalies={anomalies} />
+              <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
+                <SalesTrendChart data={salesTrend} />
+                <ChannelPieChart data={channelData} />
+              </div>
+            </div>
+          </TabsContent>
 
-        {/* 3. Top 10 Unsafe Stock (full-width table) — only when there are unsafe items */}
-        {lowStockItems.length > 0 && <UnsafeStockTable data={lowStockItems} />}
+          {/* ─── Operasional (Operations) ─── */}
+          <TabsContent value="operasional">
+            <div className="space-y-6">
+              {lowStockItems.length > 0 && <UnsafeStockTable data={lowStockItems} />}
+              <OrderHistoryTable
+                orders={ordersWithItems}
+                recipes={recipes}
+                branches={branches}
+                showBranch={isSuperAdmin}
+              />
+            </div>
+          </TabsContent>
 
-        {/* 4. COGS Analysis (super_admin only) */}
-        {isSuperAdmin && <CogsAnalysisTable data={cogsData} />}
+          {/* ─── Keuangan (Financials) — super_admin only ─── */}
+          {isSuperAdmin && (
+            <TabsContent value="keuangan">
+              <div className="space-y-6">
+                <CogsAnalysisTable data={cogsData} />
+                <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
+                  <SalesByBranchChart data={salesByBranch} />
+                  <BrandPerformanceChart data={salesByBrand} />
+                </div>
+                <HppAlertCards data={hppAlerts} />
+              </div>
+            </TabsContent>
+          )}
 
-        {/* 5. Sales Trend + Channel Pie (2-col) */}
-        <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
-          <SalesTrendChart data={salesTrend} />
-          <ChannelPieChart data={channelData} />
-        </div>
-
-        {/* 6. Sales by Branch + Brand Performance (super_admin only) */}
-        {isSuperAdmin && (
-          <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
-            <SalesByBranchChart data={salesByBranch} />
-            <BrandPerformanceChart data={salesByBrand} />
-          </div>
-        )}
-
-        {/* 7. HPP + Discrepancy (super_admin only) — equal 1+1 columns, replaces the prior off-balance 1+2 split */}
-        {isSuperAdmin && (
-          <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
-            <HppAlertCards data={hppAlerts} />
-            <DiscrepancyTable data={discrepancies} />
-          </div>
-        )}
-
-        {/* 8. Waste Loss (super_admin only) — full-width, was previously alone in a 2-col grid with a dead cell */}
-        {isSuperAdmin && <WasteLossTable data={wasteLoss} />}
-
-        {/* 9. Order History */}
-        <OrderHistoryTable
-          orders={ordersWithItems}
-          recipes={recipes}
-          branches={branches}
-          showBranch={isSuperAdmin}
-        />
+          {/* ─── Inventaris (Inventory) — super_admin only ─── */}
+          {isSuperAdmin && (
+            <TabsContent value="inventaris">
+              <div className="space-y-6">
+                <DiscrepancyTable data={discrepancies} />
+                <WasteLossTable data={wasteLoss} />
+              </div>
+            </TabsContent>
+          )}
+        </Tabs>
       </div>
     </RoleGuard>
   );
 }
 
-// ─── Loading skeleton — mirrors the real layout to avoid a content jump on load ───
-function DashboardSkeleton({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+// ─── Loading skeleton — tab bar + generic content area ───
+function DashboardSkeleton() {
   return (
     <div className="space-y-6">
-      {/* Stats (3) */}
+      {/* Tab bar skeleton */}
+      <div className="inline-flex h-10 items-center gap-1 rounded-lg border bg-muted p-1">
+        {["Ringkasan", "Operasional"].map((label) => (
+          <div key={label} className="rounded-md px-3 py-1.5">
+            <Skeleton className="h-4 w-16" />
+          </div>
+        ))}
+      </div>
+
+      {/* Stats cards */}
       <div className="grid grid-cols-1 gap-4 md:gap-6 md:grid-cols-3">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
@@ -223,90 +248,13 @@ function DashboardSkeleton({ isSuperAdmin }: { isSuperAdmin: boolean }) {
         ))}
       </div>
 
-      {/* Anomaly alert rows */}
-      <div className="space-y-3">
-        <Skeleton className="h-4 w-40" />
-        {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="flex items-start gap-3 rounded-lg border bg-card p-4">
-            <Skeleton className="h-8 w-8 rounded-md" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-3 w-32" />
-              <Skeleton className="h-3 w-56" />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Unsafe stock table */}
-      <div className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
-        <Skeleton className="h-4 w-56" />
-        <Skeleton className="h-3 w-72" />
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-9 w-full" />
-        ))}
-      </div>
-
-      {isSuperAdmin && (
-        <div className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
-          <Skeleton className="h-4 w-48" />
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-9 w-full" />
-          ))}
-        </div>
-      )}
-
-      {/* Sales trend + channel pie (2-col) */}
+      {/* Charts placeholder (2-col) */}
       <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
         {Array.from({ length: 2 }).map((_, i) => (
           <div key={i} className="rounded-lg border bg-card p-4 shadow-sm space-y-3">
             <Skeleton className="h-4 w-32" />
             <Skeleton className="h-64 w-full" />
           </div>
-        ))}
-      </div>
-
-      {isSuperAdmin && (
-        <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="rounded-lg border bg-card p-4 shadow-sm space-y-3">
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="h-56 w-full" />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {isSuperAdmin && (
-        <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
-          <div className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
-            <Skeleton className="h-4 w-40" />
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-full" />
-            ))}
-          </div>
-          <div className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
-            <Skeleton className="h-4 w-40" />
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {isSuperAdmin && (
-        <div className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
-          <Skeleton className="h-4 w-48" />
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-9 w-full" />
-          ))}
-        </div>
-      )}
-
-      {/* Order history */}
-      <div className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
-        <Skeleton className="h-4 w-40" />
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full" />
         ))}
       </div>
     </div>
