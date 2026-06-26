@@ -2424,6 +2424,14 @@ export const RECIPES_DATA = [
     basePrice: 8000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing118", quantity: 10 },
+      { ingredientProtoId: "ing009", quantity: 20 },
+      { ingredientProtoId: "ing014", quantity: 50 },
+      { ingredientProtoId: "ing013", quantity: 180 },
+      { ingredientProtoId: "ing101", quantity: 1 },
+      { ingredientProtoId: "ing015", quantity: 1 },
+    ],
   },
   {
     protoId: "rec019",

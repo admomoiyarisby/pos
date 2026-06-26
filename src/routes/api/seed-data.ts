@@ -270,6 +270,11 @@ export async function seedDatabase() {
     );
     if (existing) {
       idMap.ingredient.set(ing.protoId, existing.id);
+      // Update averageCost if seed data changed (e.g. per-stock-unit correction)
+      await db
+        .update(ingredientsTable)
+        .set({ averageCost: ing.averageCost })
+        .where(eq(ingredientsTable.id, existing.id));
     } else {
       const [inserted] = await db
         .insert(ingredientsTable)
@@ -425,6 +430,12 @@ export async function seedDatabase() {
           await db
             .insert(recipeIngredientsTable)
             .values({ recipeId: recId, ingredientId: ingId, quantity: ri.quantity });
+        } else if (existingRi[0].quantity !== ri.quantity) {
+          // Update quantity if seed data changed
+          await db
+            .update(recipeIngredientsTable)
+            .set({ quantity: ri.quantity })
+            .where(eq(recipeIngredientsTable.id, existingRi[0].id));
         }
       }
     }
