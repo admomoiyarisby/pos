@@ -2136,6 +2136,16 @@ export const RECIPES_DATA = [
     basePrice: 33000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing024", quantity: 70 },
+      { ingredientProtoId: "ing103", quantity: 1 },
+      { ingredientProtoId: "ing104", quantity: 1 },
+      { ingredientProtoId: "ing065", quantity: 1 },
+      { ingredientProtoId: "ing023", quantity: 67.5 },
+      { ingredientProtoId: "ing088", quantity: 7.5 },
+      { ingredientProtoId: "ing014", quantity: 117 },
+      { ingredientProtoId: "ing089", quantity: 1.25 },
+    ],
   },
   {
     protoId: "rec002",
@@ -2146,6 +2156,15 @@ export const RECIPES_DATA = [
     basePrice: 27000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing107", quantity: 130 },
+      { ingredientProtoId: "ing103", quantity: 1 },
+      { ingredientProtoId: "ing104", quantity: 1 },
+      { ingredientProtoId: "ing023", quantity: 67.5 },
+      { ingredientProtoId: "ing088", quantity: 7.5 },
+      { ingredientProtoId: "ing014", quantity: 117 },
+      { ingredientProtoId: "ing089", quantity: 1.25 },
+    ],
   },
   {
     protoId: "rec003",
@@ -2156,6 +2175,16 @@ export const RECIPES_DATA = [
     basePrice: 32000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing107", quantity: 130 },
+      { ingredientProtoId: "ing103", quantity: 1 },
+      { ingredientProtoId: "ing104", quantity: 1 },
+      { ingredientProtoId: "ing023", quantity: 67.5 },
+      { ingredientProtoId: "ing088", quantity: 7.5 },
+      { ingredientProtoId: "ing014", quantity: 117 },
+      { ingredientProtoId: "ing089", quantity: 1.25 },
+      { ingredientProtoId: "ing108", quantity: 20 },
+    ],
   },
   {
     protoId: "rec004",
@@ -2166,6 +2195,10 @@ export const RECIPES_DATA = [
     basePrice: 49000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing024", quantity: 180 },
+      { ingredientProtoId: "ing070", quantity: 1 },
+    ],
   },
   {
     protoId: "rec005",
@@ -2176,6 +2209,11 @@ export const RECIPES_DATA = [
     basePrice: 45000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing107", quantity: 260 },
+      { ingredientProtoId: "ing103", quantity: 1 },
+      { ingredientProtoId: "ing104", quantity: 1 },
+    ],
   },
   {
     protoId: "rec006",
@@ -2186,6 +2224,12 @@ export const RECIPES_DATA = [
     basePrice: 49000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing107", quantity: 260 },
+      { ingredientProtoId: "ing103", quantity: 1 },
+      { ingredientProtoId: "ing104", quantity: 1 },
+      { ingredientProtoId: "ing108", quantity: 40 },
+    ],
   },
   {
     protoId: "rec007",
@@ -2196,6 +2240,16 @@ export const RECIPES_DATA = [
     basePrice: 35000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing107", quantity: 130 },
+      { ingredientProtoId: "ing103", quantity: 1 },
+      { ingredientProtoId: "ing104", quantity: 1 },
+      { ingredientProtoId: "ing023", quantity: 67.5 },
+      { ingredientProtoId: "ing088", quantity: 7.5 },
+      { ingredientProtoId: "ing014", quantity: 117 },
+      { ingredientProtoId: "ing089", quantity: 1.25 },
+      { ingredientProtoId: "ing109", quantity: 1 },
+    ],
   },
   {
     protoId: "rec008",
@@ -2206,6 +2260,12 @@ export const RECIPES_DATA = [
     basePrice: 10000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing111", quantity: 1 },
+      { ingredientProtoId: "ing062", quantity: 1 },
+      { ingredientProtoId: "ing055", quantity: 0.5 },
+      { ingredientProtoId: "ing102", quantity: 1 },
+    ],
   },
   {
     protoId: "rec009",
@@ -2216,6 +2276,13 @@ export const RECIPES_DATA = [
     basePrice: 10000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing023", quantity: 67.5 },
+      { ingredientProtoId: "ing088", quantity: 7.5 },
+      { ingredientProtoId: "ing014", quantity: 117 },
+      { ingredientProtoId: "ing089", quantity: 1.25 },
+      { ingredientProtoId: "ing102", quantity: 1 },
+    ],
   },
   {
     protoId: "rec010",
@@ -2226,6 +2293,9 @@ export const RECIPES_DATA = [
     basePrice: 10000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing109", quantity: 1 },
+    ],
   },
   {
     protoId: "rec011",
@@ -2236,6 +2306,9 @@ export const RECIPES_DATA = [
     basePrice: 12000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing110", quantity: 1 },
+    ],
   },
   {
     protoId: "rec012",
@@ -2246,6 +2319,9 @@ export const RECIPES_DATA = [
     basePrice: 0,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing107", quantity: 65 },
+    ],
   },
   {
     protoId: "rec013",
@@ -2256,6 +2332,9 @@ export const RECIPES_DATA = [
     basePrice: 0,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing024", quantity: 35 },
+    ],
   },
   {
     protoId: "rec014",
@@ -2266,6 +2345,17 @@ export const RECIPES_DATA = [
     basePrice: 24000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing115", quantity: 1 },
+      { ingredientProtoId: "ing052", quantity: 10 },
+      { ingredientProtoId: "ing103", quantity: 1 },
+      { ingredientProtoId: "ing104", quantity: 1 },
+      { ingredientProtoId: "ing023", quantity: 67.5 },
+      { ingredientProtoId: "ing088", quantity: 7.5 },
+      { ingredientProtoId: "ing014", quantity: 117 },
+      { ingredientProtoId: "ing089", quantity: 1.25 },
+      { ingredientProtoId: "ing062", quantity: 1 },
+    ],
   },
   {
     protoId: "rec015",
@@ -2276,6 +2366,17 @@ export const RECIPES_DATA = [
     basePrice: 32000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing115", quantity: 1 },
+      { ingredientProtoId: "ing109", quantity: 1 },
+      { ingredientProtoId: "ing103", quantity: 1 },
+      { ingredientProtoId: "ing104", quantity: 1 },
+      { ingredientProtoId: "ing023", quantity: 67.5 },
+      { ingredientProtoId: "ing088", quantity: 7.5 },
+      { ingredientProtoId: "ing014", quantity: 117 },
+      { ingredientProtoId: "ing089", quantity: 1.25 },
+      { ingredientProtoId: "ing062", quantity: 1 },
+    ],
   },
   {
     protoId: "rec016",
@@ -2286,6 +2387,15 @@ export const RECIPES_DATA = [
     basePrice: 28000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing100", quantity: 4 },
+      { ingredientProtoId: "ing009", quantity: 15 },
+      { ingredientProtoId: "ing014", quantity: 50 },
+      { ingredientProtoId: "ing013", quantity: 180 },
+      { ingredientProtoId: "ing008", quantity: 125 },
+      { ingredientProtoId: "ing101", quantity: 1 },
+      { ingredientProtoId: "ing015", quantity: 1 },
+    ],
   },
   {
     protoId: "rec017",
@@ -2296,6 +2406,14 @@ export const RECIPES_DATA = [
     basePrice: 15000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing100", quantity: 1.5 },
+      { ingredientProtoId: "ing009", quantity: 25 },
+      { ingredientProtoId: "ing014", quantity: 175 },
+      { ingredientProtoId: "ing013", quantity: 180 },
+      { ingredientProtoId: "ing101", quantity: 1 },
+      { ingredientProtoId: "ing015", quantity: 1 },
+    ],
   },
   {
     protoId: "rec018",
@@ -2316,6 +2434,17 @@ export const RECIPES_DATA = [
     basePrice: 36000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
+    ingredients: [
+      { ingredientProtoId: "ing024", quantity: 70 },
+      { ingredientProtoId: "ing109", quantity: 1 },
+      { ingredientProtoId: "ing103", quantity: 1 },
+      { ingredientProtoId: "ing104", quantity: 1 },
+      { ingredientProtoId: "ing023", quantity: 67.5 },
+      { ingredientProtoId: "ing088", quantity: 7.5 },
+      { ingredientProtoId: "ing014", quantity: 117 },
+      { ingredientProtoId: "ing089", quantity: 1.25 },
+      { ingredientProtoId: "ing065", quantity: 1 },
+    ],
   },
   {
     protoId: "rec020",
@@ -2536,9 +2665,13 @@ export const ORDERS_DATA = (() => {
     else if (statusIdx < 19) status = "Void";
     else status = "Cancel Requested";
 
-    // Days ago: spread across 60 days, more recent orders have more "New" status
+    // Days ago: spread across 60 days, more recent orders have more "New" status.
+    // Ensure "New" and "Processing" orders always land on today (daysAgo: 0)
+    // so the dashboard "Penjualan Hari Ini" shows non-zero sales.
     const daysAgo =
-      status === "New" ? Math.floor(Math.random() * 3) : Math.floor(Math.random() * 60);
+      status === "New" ? 0
+      : status === "Processing" ? 0
+      : Math.floor(Math.random() * 60);
     const hour = 8 + (i % 14);
     const minute = (i * 7) % 60;
 
@@ -3456,13 +3589,20 @@ export const STOCK_LEDGER_DATA = (() => {
   ];
   const refs = ["POS", "DELIVERY", "TRANSFER", "WASTE", "ADJUSTMENT", "YIELD"];
   for (let i = 1; i <= 100; i++) {
-    const isIn = i % 3 === 0;
+    const ref = refs[i % refs.length];
+    // Assign IN/OUT based on reference type, not arbitrary index.
+    // WASTE is always OUT; POS is always OUT; DELIVERY is always IN;
+    // others alternate by index (transfer direction varies).
+    let isIn: boolean;
+    if (ref === "WASTE" || ref === "POS") isIn = false;
+    else if (ref === "DELIVERY") isIn = true;
+    else isIn = i % 3 === 0;
     entries.push({
       branchCode: BRANCH_CODES[i % BRANCH_CODES.length],
       ingredientProtoId: ledgerIngredients[i % ledgerIngredients.length],
       type: isIn ? "IN" : "OUT",
       quantity: 100 + i * 50,
-      reference: `${refs[i % refs.length]}-${20250000 + i}`,
+      reference: `${ref}-${20250000 + i}`,
       notes: `${isIn ? "Masuk" : "Keluar"} stok ${ledgerIngredients[i % ledgerIngredients.length]}`,
       dayAgo: i % 30,
     });
