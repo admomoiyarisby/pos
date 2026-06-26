@@ -403,7 +403,7 @@ export async function seedRecipesPass1(idMap: IdMap) {
       }
     }
 
-    for (const ri of r.ingredients) {
+    for (const ri of r.ingredients ?? []) {
       const ingId = idMap.ingredient.get(ri.ingredientProtoId);
       if (!ingId) continue;
       const existingRi = await db
