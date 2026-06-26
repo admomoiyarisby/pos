@@ -7,6 +7,7 @@ import {
   timestamp,
   pgEnum,
   numeric,
+  real,
   index,
   jsonb,
   unique,
@@ -302,7 +303,7 @@ export const recipeIngredients = pgTable("recipe_ingredients", {
   ingredientId: uuid("ingredient_id")
     .notNull()
     .references(() => ingredients.id),
-  quantity: integer("quantity").notNull(),
+  quantity: real("quantity").notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
 
@@ -316,7 +317,7 @@ export const recipeChildRecipes = pgTable(
     childRecipeId: uuid("child_recipe_id")
       .notNull()
       .references(() => recipes.id, { onDelete: "cascade" }),
-    quantity: integer("quantity").notNull(),
+    quantity: real("quantity").notNull(),
   },
   (t) => [unique("recipe_child_unique").on(t.parentRecipeId, t.childRecipeId)],
 );
@@ -366,7 +367,7 @@ export const modifierIngredients = pgTable(
     ingredientId: uuid("ingredient_id")
       .notNull()
       .references(() => ingredients.id),
-    quantity: integer("quantity").notNull(),
+    quantity: real("quantity").notNull(),
   },
   (t) => [unique("modifier_ingredient_unique").on(t.modifierId, t.ingredientId)],
 );
@@ -384,7 +385,7 @@ export const recipeModifierExclusions = pgTable(
     ingredientId: uuid("ingredient_id")
       .notNull()
       .references(() => ingredients.id),
-    quantity: integer("quantity").notNull(),
+    quantity: real("quantity").notNull(),
   },
   (t) => [unique("recipe_mod_excl_unique").on(t.recipeId, t.modifierId, t.ingredientId)],
 );

@@ -429,12 +429,12 @@ export async function seedDatabase() {
         if (!existingRi[0]) {
           await db
             .insert(recipeIngredientsTable)
-            .values({ recipeId: recId, ingredientId: ingId, quantity: Math.round(ri.quantity) });
+            .values({ recipeId: recId, ingredientId: ingId, quantity: ri.quantity });
         } else if (existingRi[0].quantity !== ri.quantity) {
           // Update quantity if seed data changed
           await db
             .update(recipeIngredientsTable)
-            .set({ quantity: Math.round(ri.quantity) })
+            .set({ quantity: ri.quantity })
             .where(eq(recipeIngredientsTable.id, existingRi[0].id));
         }
       }

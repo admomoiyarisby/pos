@@ -28,7 +28,9 @@ interface CogsItem {
 const PAGE_SIZE = 15;
 
 export function computeCogsData(recipes: Recipe[], ingredients: Ingredient[]): CogsItem[] {
-  return recipes.map((r) => {
+  return recipes
+    .filter((r) => r.basePrice > 0)
+    .map((r) => {
     const cogs = r.ingredients.reduce((acc, ri) => {
       const ing = ingredients.find((i) => i.id === ri.ingredientId);
       if (!ing) return acc;
