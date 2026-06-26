@@ -30,7 +30,7 @@ export function HppAlertCards({ data }: { data: ReturnType<typeof computeHppAler
   return (
     <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="mb-2">
-        <h3 className="text-base font-bold text-foreground">HPP Monitoring Alert</h3>
+        <h3 className="text-base font-bold text-foreground">Peringatan Monitoring HPP</h3>
         <p className="text-sm text-muted-foreground">Menu dengan HPP di bawah 40% (High Margin)</p>
       </div>
       <div className="space-y-4">

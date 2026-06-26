@@ -69,7 +69,7 @@ export function DiscrepancyTable({
   return (
     <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="mb-2">
-        <h3 className="text-base font-bold text-foreground">Discrepancy Report (&gt; 3%)</h3>
+        <h3 className="text-base font-bold text-foreground">Laporan Selisih Stok (&gt; 3%)</h3>
         <p className="text-sm text-muted-foreground">
           Rekapitulasi selisih stok fisik vs sistem yang signifikan
         </p>

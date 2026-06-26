@@ -27,7 +27,10 @@ type FormatterFn = NonNullable<TooltipProps<ValueType, NameType>["formatter"]>;
 const orderCountFormatter: FormatterFn = (_value, _name) =>
   [_value, "Pesanan"] as unknown as ReturnType<FormatterFn>;
 const revenueFormatter: FormatterFn = (_value, _name) =>
-  [`Rp ${Number(_value).toLocaleString("id-ID")}`, "Revenue"] as unknown as ReturnType<FormatterFn>;
+  [
+    `Rp ${Number(_value).toLocaleString("id-ID")}`,
+    "Pendapatan",
+  ] as unknown as ReturnType<FormatterFn>;
 
 interface Order {
   id: string;
@@ -195,7 +198,10 @@ export function ChannelPieChart({ data }: { data: { name: string; value: number 
         <h3 className="text-base font-bold text-foreground">Distribusi Channel</h3>
         <p className="text-sm text-muted-foreground">Berdasarkan volume pesanan</p>
       </div>
-      <div className="flex items-center justify-center min-w-0" style={{ width: "100%", height: 320 }}>
+      <div
+        className="flex items-center justify-center min-w-0"
+        style={{ width: "100%", height: 320 }}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -278,9 +284,9 @@ export function BrandPerformanceChart({
   return (
     <div className="rounded-lg border bg-card p-3 md:p-4 shadow-sm">
       <div className="mb-2">
-        <h3 className="text-base font-bold text-foreground">Brand Performance</h3>
+        <h3 className="text-base font-bold text-foreground">Performa Brand</h3>
         <p className="text-sm text-muted-foreground">
-          Kontribusi pendapatan per Brand (Inc. Manual)
+          Kontribusi pendapatan per Brand (Termasuk Manual)
         </p>
       </div>
       <div style={{ width: "100%", height: 256 }} className="min-w-0">

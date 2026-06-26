@@ -43,7 +43,7 @@ export function WasteLossTable({
   return (
     <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="mb-2">
-        <h3 className="text-base font-bold text-foreground">Waste Loss Report (COGS Loss)</h3>
+        <h3 className="text-base font-bold text-foreground">Laporan Kerugian Waste (COGS)</h3>
         <p className="text-sm text-muted-foreground">
           Detail kerugian finansial akibat waste bahan baku
         </p>
@@ -56,7 +56,7 @@ export function WasteLossTable({
                 Bahan Baku
               </th>
               <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
-                Qty Waste
+                Jumlah Waste
               </th>
               <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
                 Estimasi Rugi
