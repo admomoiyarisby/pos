@@ -220,23 +220,39 @@ export async function writeTransferReceivedStock(
   _actor: FsmActor,
   tx: FsmTx,
 ): Promise<void> {
-  if (!payload.items) return;
+  console.log(`[writeTransferReceivedStock] Starting stock update for transfer ${transferId}`);
+  if (!payload.items) {
+    console.warn(`[writeTransferReceivedStock] No items in payload for transfer ${transferId}`);
+    return;
+  }
 
   const [tr] = await tx
     .select()
     .from(scmTransfers)
     .where(eq(scmTransfers.id, transferId));
-  if (!tr) return;
+  if (!tr) {
+    console.error(`[writeTransferReceivedStock] Transfer ${transferId} not found`);
+    return;
+  }
+  console.log(`[writeTransferReceivedStock] Processing transfer ${tr.code} from ${tr.fromBranchId} to ${tr.toBranchId}`);
 
   for (const itemPatch of payload.items) {
     const received = itemPatch.receivedQuantity ?? 0;
-    if (received <= 0) continue;
+    if (received <= 0) {
+      console.log(`[writeTransferReceivedStock] Skipping item ${itemPatch.id}: received quantity ${received}`);
+      continue;
+    }
 
     const [item] = await tx
       .select()
       .from(scmTransferItems)
       .where(eq(scmTransferItems.id, itemPatch.id));
-    if (!item) continue;
+    if (!item) {
+      console.warn(`[writeTransferReceivedStock] Item ${itemPatch.id} not found`);
+      continue;
+    }
+
+    console.log(`[writeTransferReceivedStock] Processing item ${item.ingredientId}: ${received} units`);
 
     // Upsert into Receiver's inventory
     const [inv] = await tx
@@ -252,6 +268,7 @@ export async function writeTransferReceivedStock(
 
     if (inv) {
       const newQty = inv.quantity + received;
+      console.log(`[writeTransferReceivedStock] Updating existing inventory: ${inv.quantity} → ${newQty}`);
       await tx
         .update(inventory)
         .set({ quantity: newQty, lastUpdated: new Date() })
@@ -266,6 +283,7 @@ export async function writeTransferReceivedStock(
         notes: `Mutasi ${tr.code} diterima`,
       });
     } else {
+      console.log(`[writeTransferReceivedStock] Creating new inventory entry: ${received}`);
       await tx.insert(inventory).values({
         branchId: tr.toBranchId,
         ingredientId: item.ingredientId,
@@ -293,6 +311,7 @@ export async function writeTransferReceivedStock(
         ),
       );
   }
+  console.log(`[writeTransferReceivedStock] Completed stock update for transfer ${transferId}`);
 }
 
 /**

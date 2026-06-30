@@ -127,6 +127,13 @@
       "when": 1782447969085,
       "tag": "0017_nostalgic_plazm",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782786431702,
+      "tag": "0018_curvy_mauler",
+      "breakpoints": true
     }
   ]
 }

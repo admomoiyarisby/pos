@@ -40,6 +40,7 @@ import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
 import { printMutasiSuratJalan, printMutasiInvoice } from "#/lib/server/scm-transfer-print";
 import { openPrintWindow } from "#/lib/print-window";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_layout/scm-transfers/$transferId")({
   component: TransferDetailPage,
@@ -353,7 +354,13 @@ function TransferDetailPage() {
                     }
                     payload.push({ id: it.id, receivedQuantity: edit.received, rejectedQuantity: edit.rejected, reason: edit.reason || undefined });
                   }
-                  await runAction(() => finishReceiveMut({ data: { transferId, items: payload } }));
+                  try {
+                    await runAction(() => finishReceiveMut({ data: { transferId, items: payload } }));
+                    toast.success("Penerimaan Mutasi Stok berhasil. Stok telah diperbarui.");
+                  } catch (error) {
+                    toast.error(`Gagal memperbarui stok: ${error instanceof Error ? error.message : String(error)}`);
+                    console.error("Mutasi Stok receive error:", error);
+                  }
                   setReviewEdits({});
                   setReviewError(null);
                 }}

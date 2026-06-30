@@ -654,7 +654,7 @@ export const inventory = pgTable(
     ingredientId: uuid("ingredient_id")
       .notNull()
       .references(() => ingredients.id),
-    quantity: integer("quantity").notNull().default(0),
+    quantity: real("quantity").notNull().default(0),
     lastUpdated: timestamp("last_updated", { mode: "date" }).defaultNow().notNull(),
   },
   (t) => [

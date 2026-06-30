@@ -14,6 +14,7 @@ import { printSuratJalan } from "#/lib/pos-print";
 import { getBranches } from "#/lib/server/branches";
 import { Badge } from "#/components/ui/badge";
 import { CheckCircle, Printer } from "lucide-react";
+import { toast } from "sonner";
 
 interface DNItem {
   id: string;
@@ -76,7 +77,17 @@ function DNDetailPage() {
   });
 
   const receiveMutation = useMutation({
-    mutationFn: receiveDeliveryNote,
+    mutationFn: async (data) => {
+      try {
+        const result = await receiveDeliveryNote(data);
+        toast.success("Penerimaan Pengadaan berhasil. Stok telah diperbarui.");
+        return result;
+      } catch (error) {
+        toast.error(`Gagal memperbarui stok: ${error instanceof Error ? error.message : String(error)}`);
+        console.error("Pengadaan receive error:", error);
+        throw error;
+      }
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["delivery-note", dnId] });
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
