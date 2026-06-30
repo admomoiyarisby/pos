@@ -289,9 +289,9 @@ export function DraftForm({ procurement, items }: StateViewProps) {
     queryFn: () => getIngredients({ data: {} }),
   });
 
-  const availableToAdd = (allIngredients as Array<{ id: string; name: string }>).filter(
-    (ing) => !editableItems.some((it) => it.ingredientId === ing.id),
-  );
+  const availableToAdd = (
+    allIngredients as Array<{ id: string; name: string; stockUnit: string; averageCost: number }>
+  ).filter((ing) => !editableItems.some((it) => it.ingredientId === ing.id));
 
   function handleAdd() {
     if (!newIngredientId || newQuantity <= 0) return;
@@ -368,7 +368,7 @@ export function DraftForm({ procurement, items }: StateViewProps) {
                 ) : (
                   availableToAdd.map((ing) => (
                     <SelectItem key={ing.id} value={ing.id}>
-                      {ing.name}
+                      {ing.name} — Rp {ing.averageCost.toLocaleString("id-ID")}/{ing.stockUnit}
                     </SelectItem>
                   ))
                 )}

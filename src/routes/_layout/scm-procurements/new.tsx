@@ -24,7 +24,7 @@ export const Route = createFileRoute("/_layout/scm-procurements/new")({
   component: NewProcurementPage,
 });
 
-type IngredientRow = { id: string; name: string; averageCost: number };
+type IngredientRow = { id: string; name: string; stockUnit: string; averageCost: number };
 
 function NewProcurementPage() {
   const navigate = useNavigate();
@@ -45,6 +45,7 @@ function NewProcurementPage() {
       ingredientName: string;
       quantity: number;
       unitPrice: number;
+      unitPriceUnit: string;
     }>
   >([]);
   const [notes, setNotes] = useState("");
@@ -105,6 +106,7 @@ function NewProcurementPage() {
         ingredientName: ing.name,
         quantity,
         unitPrice: ing.averageCost,
+        unitPriceUnit: ing.stockUnit,
       },
     ]);
     setSelectedIngredient("");
@@ -157,9 +159,16 @@ function NewProcurementPage() {
                     <SelectValue placeholder="Pilih bahan..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {(ingredients as Array<{ id: string; name: string }>).map((ing) => (
+                    {(
+                      ingredients as Array<{
+                        id: string;
+                        name: string;
+                        stockUnit: string;
+                        averageCost: number;
+                      }>
+                    ).map((ing) => (
                       <SelectItem key={ing.id} value={ing.id}>
-                        {ing.name}
+                        {ing.name} — Rp {ing.averageCost.toLocaleString("id-ID")}/{ing.stockUnit}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -196,7 +205,7 @@ function NewProcurementPage() {
                         <td className="px-3 py-2">{it.ingredientName}</td>
                         <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
                         <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                          Rp {it.unitPrice.toLocaleString("id-ID")}
+                          Rp {it.unitPrice.toLocaleString("id-ID")}/{it.unitPriceUnit}
                         </td>
                         <td className="px-3 py-2 text-right font-mono">
                           Rp {(it.quantity * it.unitPrice).toLocaleString("id-ID")}
