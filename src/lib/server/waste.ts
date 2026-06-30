@@ -14,7 +14,7 @@ import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
 
 export const getWasteEntries = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       branchId?: string;
       category?: "Beban Makan" | "Biaya Operasional" | "Spoiled" | null;
@@ -80,7 +80,7 @@ export const getWasteEntries = createServerFn({ method: "GET" })
   });
 
 export const createWasteEntry = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z
       .object({
         branchId: z.string().uuid(),
@@ -176,7 +176,7 @@ export const createWasteEntry = createServerFn({ method: "POST" })
   });
 
 export const addInvestigationNote = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z
       .object({
         wasteEntryId: z.string().uuid(),
@@ -225,7 +225,7 @@ export const addInvestigationNote = createServerFn({ method: "POST" })
   });
 
 export const updateWasteEntry = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z
       .object({
         wasteEntryId: z.string().uuid(),
@@ -285,7 +285,7 @@ export const updateWasteEntry = createServerFn({ method: "POST" })
   });
 
 export const getBrokenStock = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string }) => data)
+  .validator((data: { branchId?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 

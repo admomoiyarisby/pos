@@ -20,7 +20,7 @@ export const getPlatformFees = createServerFn({ method: "GET" }).handler(async (
 });
 
 export const updatePlatformFee = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => feeInput.parse(data))
+  .validator((data: unknown) => feeInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 

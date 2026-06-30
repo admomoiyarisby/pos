@@ -8,7 +8,7 @@ import { logSystemAction, logAudit } from "./logging";
 // ─── Get all pending approvals for Area Manager dashboard ───
 
 export const getPendingApprovals = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string }) => data)
+  .validator((data: { branchId?: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -43,7 +43,7 @@ export const getPendingApprovals = createServerFn({ method: "GET" })
 // ─── Approve a print request ───
 
 export const approvePrintRequest = createServerFn({ method: "POST" })
-  .inputValidator((data: { requestId: string }) => data)
+  .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -94,7 +94,7 @@ export const approvePrintRequest = createServerFn({ method: "POST" })
 // ─── Reject a print request ───
 
 export const rejectPrintRequest = createServerFn({ method: "POST" })
-  .inputValidator((data: { requestId: string }) => data)
+  .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 

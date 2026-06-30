@@ -23,7 +23,7 @@ const modifierGroupInput = z.object({
 });
 
 export const getModifierGroups = createServerFn({ method: "GET" })
-  .inputValidator((data: { search?: string }) => data)
+  .validator((data: { search?: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -46,7 +46,7 @@ export const getModifierGroups = createServerFn({ method: "GET" })
   });
 
 export const getModifierGroup = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
     const [group] = await db
@@ -76,7 +76,7 @@ export const getModifierGroup = createServerFn({ method: "GET" })
   });
 
 export const createModifierGroup = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => modifierGroupInput.parse(data))
+  .validator((data: unknown) => modifierGroupInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -129,7 +129,7 @@ export const createModifierGroup = createServerFn({ method: "POST" })
   });
 
 export const updateModifierGroup = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     modifierGroupInput.partial().extend({ id: z.string().uuid() }).parse(data),
   )
   .handler(async ({ data }) => {
@@ -198,7 +198,7 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
   });
 
 export const deleteModifierGroup = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 

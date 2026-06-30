@@ -17,7 +17,7 @@ const branchInput = z.object({
 });
 
 export const getBranches = createServerFn({ method: "GET" })
-  .inputValidator((data: { search?: string; type?: "Central" | "Outlet" | null }) => data)
+  .validator((data: { search?: string; type?: "Central" | "Outlet" | null }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -45,7 +45,7 @@ export const getBranches = createServerFn({ method: "GET" })
   });
 
 export const getBranch = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
     const [result] = await db.select().from(branches).where(eq(branches.id, data.id)).limit(1);
@@ -53,7 +53,7 @@ export const getBranch = createServerFn({ method: "GET" })
   });
 
 export const createBranch = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => branchInput.parse(data))
+  .validator((data: unknown) => branchInput.parse(data))
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat");
 
@@ -74,9 +74,7 @@ export const createBranch = createServerFn({ method: "POST" })
   });
 
 export const updateBranch = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
-    branchInput.partial().extend({ id: z.string().uuid() }).parse(data),
-  )
+  .validator((data: unknown) => branchInput.partial().extend({ id: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -108,7 +106,7 @@ export const updateBranch = createServerFn({ method: "POST" })
   });
 
 export const deleteBranch = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 

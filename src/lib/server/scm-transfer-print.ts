@@ -129,7 +129,7 @@ function buildMutasiSuratJalanHtml(d: MutasiSuratJalanData): string {
 }
 
 export const printMutasiSuratJalan = createServerFn({ method: "GET" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -351,7 +351,7 @@ function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
 }
 
 export const printMutasiInvoice = createServerFn({ method: "GET" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 

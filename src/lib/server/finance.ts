@@ -35,7 +35,7 @@ export interface FinanceSummary {
 }
 
 export const getFinanceSummary = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
+  .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
   .handler(async ({ data }): Promise<FinanceSummary> => {
     await requireRole("super_admin");
 
@@ -89,7 +89,7 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
   });
 
 export const createManualRevenue = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       branchId: string;
       date: string;
@@ -140,7 +140,7 @@ export const createManualRevenue = createServerFn({ method: "POST" })
   });
 
 export const getChannelRevenues = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string; date?: string }) => data)
+  .validator((data: { branchId?: string; date?: string }) => data)
   .handler(async ({ data }) => {
     await requireRole("super_admin");
 
@@ -159,7 +159,7 @@ export const getChannelRevenues = createServerFn({ method: "GET" })
   });
 
 export const createChannelRevenue = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       branchId: string;
       date: string;
@@ -209,7 +209,7 @@ export interface SalesAnalytics {
 }
 
 export const getSalesAnalytics = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: { branchId?: string; dateFrom: string; dateTo: string; category?: string }) => data,
   )
   .handler(async ({ data }): Promise<SalesAnalytics> => {
@@ -297,7 +297,7 @@ export const getPeriods = createServerFn({ method: "GET" }).handler(async () => 
 });
 
 export const getPeriodDetail = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireRole("super_admin");
 
@@ -314,7 +314,7 @@ export const getPeriodDetail = createServerFn({ method: "GET" })
   });
 
 export const openPeriod = createServerFn({ method: "POST" })
-  .inputValidator((data: { periodName: string }) => data)
+  .validator((data: { periodName: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
@@ -371,7 +371,7 @@ export const openPeriod = createServerFn({ method: "POST" })
   });
 
 export const closePeriod = createServerFn({ method: "POST" })
-  .inputValidator((data: { periodId: string }) => data)
+  .validator((data: { periodId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
@@ -583,7 +583,7 @@ export interface HourlyDataPoint {
 }
 
 export const getHourlyAnalytics = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string; dateFrom: string; dateTo: string }) => data)
+  .validator((data: { branchId?: string; dateFrom: string; dateTo: string }) => data)
   .handler(async ({ data }): Promise<HourlyDataPoint[]> => {
     await requireRole("super_admin");
 

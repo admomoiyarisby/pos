@@ -11,7 +11,6 @@ import {
   brands,
   modifierGroups,
   modifiers,
-  branches,
   orderItems,
 } from "#/db/schema";
 import { eq, ilike, inArray, sql, and } from "drizzle-orm";
@@ -47,7 +46,7 @@ const recipeInput = z.object({
 });
 
 export const getRecipes = createServerFn({ method: "GET" })
-  .inputValidator((data: { search?: string; category?: string; brandId?: string }) => data)
+  .validator((data: { search?: string; category?: string; brandId?: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -147,7 +146,7 @@ export const getRecipes = createServerFn({ method: "GET" })
   });
 
 export const getRecipeDetail = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -227,7 +226,7 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
   });
 
 export const createRecipe = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => recipeInput.parse(data))
+  .validator((data: unknown) => recipeInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -307,9 +306,7 @@ export const createRecipe = createServerFn({ method: "POST" })
   });
 
 export const updateRecipe = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
-    recipeInput.partial().extend({ id: z.string().uuid() }).parse(data),
-  )
+  .validator((data: unknown) => recipeInput.partial().extend({ id: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -374,7 +371,7 @@ export const updateRecipe = createServerFn({ method: "POST" })
     }
 
     // Update branch visibility
-    if (branchIds !== undefined) {
+    if (branchIds !== undefined && branchIds !== null) {
       if (branchIds.length === 0) {
         // Explicitly set to "all branches" by deleting all explicit records
         await db.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
@@ -427,7 +424,7 @@ export const recalculateAllRecipeCosts = createServerFn({ method: "POST" }).hand
 // =============================================================================
 
 export const deleteRecipe = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z.object({ id: z.string().uuid(), hardDelete: z.boolean().default(false) }).parse(data),
   )
   .handler(async ({ data }) => {

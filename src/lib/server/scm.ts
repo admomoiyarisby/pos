@@ -51,7 +51,7 @@ function assertBranchAccess(user: Awaited<ReturnType<typeof requireAuth>>, branc
 // ─── Purchase Requisitions ───
 
 export const getPurchaseRequisitions = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string; status?: string }) => data)
+  .validator((data: { branchId?: string; status?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     let branchFilter = data.branchId;
@@ -108,7 +108,7 @@ export const getPurchaseRequisitions = createServerFn({ method: "GET" })
   });
 
 export const getPurchaseRequisition = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -137,7 +137,7 @@ export const getPurchaseRequisition = createServerFn({ method: "GET" })
   });
 
 export const createPurchaseRequisition = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       branchId: string;
       code: string;
@@ -211,7 +211,7 @@ export const createPurchaseRequisition = createServerFn({ method: "POST" })
   });
 
 export const updatePurchaseRequisition = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       id: string;
       items?: { ingredientId: string; quantity: number }[];
@@ -304,7 +304,7 @@ export const updatePurchaseRequisition = createServerFn({ method: "POST" })
   });
 
 export const processPurchaseRequisition = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { id: string; alsoCreateSJ: boolean; driverName?: string; vehicleNumber?: string }) =>
       data,
   )
@@ -405,7 +405,7 @@ export const processPurchaseRequisition = createServerFn({ method: "POST" })
 // ─── Purchase Orders ───
 
 export const getPurchaseOrders = createServerFn({ method: "GET" })
-  .inputValidator((data: { status?: string }) => data)
+  .validator((data: { status?: string }) => data)
   .handler(async () => {
     await requireRole("super_admin", "admin_pusat");
 
@@ -425,7 +425,7 @@ export const getPurchaseOrders = createServerFn({ method: "GET" })
   });
 
 export const getPurchaseOrder = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat");
 
@@ -455,7 +455,7 @@ export const getPurchaseOrder = createServerFn({ method: "GET" })
   });
 
 export const createPurchaseOrder = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       code: string;
       purchaseRequisitionId?: string;
@@ -513,7 +513,7 @@ export const createPurchaseOrder = createServerFn({ method: "POST" })
   });
 
 export const updatePurchaseOrder = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       id: string;
       items?: { ingredientId: string; quantity: number; unitPrice?: number }[];
@@ -571,7 +571,7 @@ export const updatePurchaseOrder = createServerFn({ method: "POST" })
   });
 
 export const sendPurchaseOrder = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -604,9 +604,7 @@ export const sendPurchaseOrder = createServerFn({ method: "POST" })
   });
 
 export const receivePurchaseOrder = createServerFn({ method: "POST" })
-  .inputValidator(
-    (data: { id: string; items: { itemId: string; receivedQuantity: number }[] }) => data,
-  )
+  .validator((data: { id: string; items: { itemId: string; receivedQuantity: number }[] }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -661,7 +659,7 @@ export const receivePurchaseOrder = createServerFn({ method: "POST" })
   });
 
 export const cancelPurchaseOrder = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -700,7 +698,7 @@ export const cancelPurchaseOrder = createServerFn({ method: "POST" })
 // ─── Delivery Notes (Surat Jalan) ───
 
 export const getDeliveryNotes = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string; status?: string }) => data)
+  .validator((data: { branchId?: string; status?: string }) => data)
   .handler(async ({ data: _data }) => {
     await requireAuth();
 
@@ -728,7 +726,7 @@ export const getDeliveryNotes = createServerFn({ method: "GET" })
   });
 
 export const getDeliveryNote = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -762,7 +760,7 @@ export const getDeliveryNote = createServerFn({ method: "GET" })
   });
 
 export const createDeliveryNote = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       code: string;
       prId?: string;
@@ -820,7 +818,7 @@ export const createDeliveryNote = createServerFn({ method: "POST" })
   });
 
 export const updateDeliveryNote = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       dnId: string;
       items: { itemId: string; pickedQuantity: number }[];
@@ -874,7 +872,7 @@ export const updateDeliveryNote = createServerFn({ method: "POST" })
   });
 
 export const shipDeliveryNote = createServerFn({ method: "POST" })
-  .inputValidator((data: { dnId: string }) => data)
+  .validator((data: { dnId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -971,7 +969,7 @@ export const shipDeliveryNote = createServerFn({ method: "POST" })
   });
 
 export const receiveDeliveryNote = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       dnId: string;
       items: {
@@ -1243,7 +1241,7 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
   });
 
 export const cancelDeliveryNote = createServerFn({ method: "POST" })
-  .inputValidator((data: { dnId: string; reason: string }) => data)
+  .validator((data: { dnId: string; reason: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -1334,7 +1332,7 @@ export const cancelDeliveryNote = createServerFn({ method: "POST" })
 // ─── Review Delivery Note ───
 
 export const reviewDeliveryNote = createServerFn({ method: "POST" })
-  .inputValidator((data: { dnId: string }) => data)
+  .validator((data: { dnId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -1388,7 +1386,7 @@ export const reviewDeliveryNote = createServerFn({ method: "POST" })
 // ─── SCM Invoices ───
 
 export const getSCMInvoices = createServerFn({ method: "GET" })
-  .inputValidator((data: { status?: string }) => data)
+  .validator((data: { status?: string }) => data)
   .handler(async () => {
     await requireAuth();
 
@@ -1410,7 +1408,7 @@ export const getSCMInvoices = createServerFn({ method: "GET" })
   });
 
 export const getSCMInvoice = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -1435,7 +1433,7 @@ export const getSCMInvoice = createServerFn({ method: "GET" })
   });
 
 export const generateSCMInvoice = createServerFn({ method: "POST" })
-  .inputValidator((data: { dnId: string }) => data)
+  .validator((data: { dnId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -1542,7 +1540,7 @@ export const generateSCMInvoice = createServerFn({ method: "POST" })
   });
 
 export const paySCMInvoice = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -1576,7 +1574,7 @@ export const paySCMInvoice = createServerFn({ method: "POST" })
   });
 
 export const cancelSCMInvoice = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -1615,7 +1613,7 @@ export const cancelSCMInvoice = createServerFn({ method: "POST" })
 // ─── Stock Transfers (Mutasi Stok) ───
 
 export const getStockTransfers = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string }) => data)
+  .validator((data: { branchId?: string }) => data)
   .handler(async ({ data: _data }) => {
     const user = await requireAuth();
 
@@ -1650,7 +1648,7 @@ export const getStockTransfers = createServerFn({ method: "GET" })
   });
 
 export const getStockTransfer = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -1665,7 +1663,7 @@ export const getStockTransfer = createServerFn({ method: "GET" })
   });
 
 export const createStockTransfer = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       code: string;
       fromBranchId: string;
@@ -1721,7 +1719,7 @@ export const createStockTransfer = createServerFn({ method: "POST" })
   });
 
 export const approveStockTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     await requireRole("super_admin", "area_manager");
@@ -1771,7 +1769,7 @@ export const approveStockTransfer = createServerFn({ method: "POST" })
   });
 
 export const rejectStockTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string; reason: string }) => data)
+  .validator((data: { transferId: string; reason: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     await requireRole("super_admin", "area_manager");
@@ -1830,7 +1828,7 @@ export const rejectStockTransfer = createServerFn({ method: "POST" })
   });
 
 export const shipStockTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     await requireRole("super_admin", "admin_pusat", "branch_admin");
@@ -1923,7 +1921,7 @@ export const shipStockTransfer = createServerFn({ method: "POST" })
   });
 
 export const receiveStockTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     await requireRole("super_admin", "branch_admin");
@@ -2015,7 +2013,7 @@ export const receiveStockTransfer = createServerFn({ method: "POST" })
   });
 
 export const cancelStockTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string; reason: string }) => data)
+  .validator((data: { transferId: string; reason: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 

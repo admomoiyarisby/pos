@@ -11,12 +11,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, eq } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth } from "./auth";
-import { ingredients, inventory, scmTransferAuditLog, scmTransferItems, scmTransfers } from "#/db/schema";
 import {
-  type ScmTransferEvent,
-  transitionTransfer,
-  updateTransferItem,
-} from "./scm-transfer-fsm";
+  ingredients,
+  inventory,
+  scmTransferAuditLog,
+  scmTransferItems,
+  scmTransfers,
+} from "#/db/schema";
+import { type ScmTransferEvent, transitionTransfer, updateTransferItem } from "./scm-transfer-fsm";
 import {
   assertTransferAccess,
   listTransfersForUser,
@@ -86,7 +88,7 @@ async function hardStockCheck(
 // =============================================================================
 
 export const getMutasiTransfers = createServerFn({ method: "GET" })
-  .inputValidator((data: Record<string, never> | undefined) => data ?? {})
+  .validator((data: Record<string, never> | undefined) => data ?? {})
   .handler(async () => {
     const user = await requireAuth();
     return listTransfersForUser(user);
@@ -97,7 +99,7 @@ export const getMutasiTransfers = createServerFn({ method: "GET" })
 // =============================================================================
 
 export const getMutasiTransfer = createServerFn({ method: "GET" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     const result = await loadTransferWithItems(data.transferId);
@@ -187,7 +189,7 @@ export interface CreateMutasiTransferResult {
 }
 
 export const createMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: CreateMutasiTransferInput) => data)
+  .validator((data: CreateMutasiTransferInput) => data)
   .handler(async ({ data }): Promise<CreateMutasiTransferResult> => {
     const user = await requireAuth();
 
@@ -255,9 +257,7 @@ export const createMutasiTransfer = createServerFn({ method: "POST" })
 // =============================================================================
 
 export const updateMutasiTransferDraftItems = createServerFn({ method: "POST" })
-  .inputValidator(
-    (data: { transferId: string; items: Array<{ id: string; quantity: number }> }) => data,
-  )
+  .validator((data: { transferId: string; items: Array<{ id: string; quantity: number }> }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     const result = await loadTransferWithItems(data.transferId);
@@ -298,7 +298,7 @@ export const updateMutasiTransferDraftItems = createServerFn({ method: "POST" })
 // =============================================================================
 
 export const updateMutasiTransferItem = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       transferId: string;
       itemId: string;
@@ -340,7 +340,12 @@ async function runTransition(args: {
   payload?: {
     reason?: string;
     notes?: string;
-    items?: Array<{ id: string; receivedQuantity?: number; rejectedQuantity?: number; reason?: string }>;
+    items?: Array<{
+      id: string;
+      receivedQuantity?: number;
+      rejectedQuantity?: number;
+      reason?: string;
+    }>;
     invoiceCode?: string;
   };
   /**
@@ -368,17 +373,19 @@ async function runTransition(args: {
     if (args.branchGuard === "receiver" && ub !== result.transfer.toBranchId) {
       throw new Error("Only the receiver branch admin can perform this action");
     }
-    if (args.branchGuard === "either" && ub !== result.transfer.fromBranchId && ub !== result.transfer.toBranchId) {
+    if (
+      args.branchGuard === "either" &&
+      ub !== result.transfer.fromBranchId &&
+      ub !== result.transfer.toBranchId
+    ) {
       throw new Error("Only a branch admin at one of the two branches can perform this action");
     }
   }
 
-  const tr = await transitionTransfer(
-    args.transferId,
-    args.event,
-    args.payload ?? {},
-    { id: args.user.id, role: args.user.role },
-  );
+  const tr = await transitionTransfer(args.transferId, args.event, args.payload ?? {}, {
+    id: args.user.id,
+    role: args.user.role,
+  });
 
   if (!tr.success) {
     throw new Error(tr.error.message);
@@ -404,14 +411,19 @@ async function runTransition(args: {
 // =============================================================================
 
 export const submitMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-    return runTransition({ transferId: data.transferId, event: "submit", user, branchGuard: "sender" });
+    return runTransition({
+      transferId: data.transferId,
+      event: "submit",
+      user,
+      branchGuard: "sender",
+    });
   });
 
 export const approveMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string; notes?: string }) => data)
+  .validator((data: { transferId: string; notes?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     if (user.role !== "area_manager" && user.role !== "super_admin") {
@@ -426,7 +438,7 @@ export const approveMutasiTransfer = createServerFn({ method: "POST" })
   });
 
 export const rejectMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string; reason: string }) => data)
+  .validator((data: { transferId: string; reason: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     if (user.role !== "area_manager" && user.role !== "super_admin") {
@@ -442,7 +454,7 @@ export const rejectMutasiTransfer = createServerFn({ method: "POST" })
   });
 
 export const withdrawMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     return runTransition({
@@ -454,7 +466,7 @@ export const withdrawMutasiTransfer = createServerFn({ method: "POST" })
   });
 
 export const shipMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     return runTransition({
@@ -466,7 +478,7 @@ export const shipMutasiTransfer = createServerFn({ method: "POST" })
   });
 
 export const markDeliveredMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     return runTransition({
@@ -478,7 +490,7 @@ export const markDeliveredMutasiTransfer = createServerFn({ method: "POST" })
   });
 
 export const openReceiveMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     return runTransition({
@@ -490,10 +502,15 @@ export const openReceiveMutasiTransfer = createServerFn({ method: "POST" })
   });
 
 export const finishReceiveMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       transferId: string;
-      items: Array<{ id: string; receivedQuantity: number; rejectedQuantity: number; reason?: string }>;
+      items: Array<{
+        id: string;
+        receivedQuantity: number;
+        rejectedQuantity: number;
+        reason?: string;
+      }>;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -509,7 +526,7 @@ export const finishReceiveMutasiTransfer = createServerFn({ method: "POST" })
   });
 
 export const markPaidMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string }) => data)
+  .validator((data: { transferId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     return runTransition({
@@ -521,7 +538,7 @@ export const markPaidMutasiTransfer = createServerFn({ method: "POST" })
   });
 
 export const cancelMutasiTransfer = createServerFn({ method: "POST" })
-  .inputValidator((data: { transferId: string; reason: string }) => data)
+  .validator((data: { transferId: string; reason: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     if (!data.reason.trim()) throw new Error("A cancellation reason is required");

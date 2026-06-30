@@ -13,7 +13,7 @@ const brandInput = z.object({
 });
 
 export const getBrands = createServerFn({ method: "GET" })
-  .inputValidator((data: { search?: string }) => data)
+  .validator((data: { search?: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -27,7 +27,7 @@ export const getBrands = createServerFn({ method: "GET" })
   });
 
 export const createBrand = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => brandInput.parse(data))
+  .validator((data: unknown) => brandInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -47,9 +47,7 @@ export const createBrand = createServerFn({ method: "POST" })
   });
 
 export const updateBrand = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
-    brandInput.partial().extend({ id: z.string().uuid() }).parse(data),
-  )
+  .validator((data: unknown) => brandInput.partial().extend({ id: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -77,7 +75,7 @@ export const updateBrand = createServerFn({ method: "POST" })
   });
 
 export const deleteBrand = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 

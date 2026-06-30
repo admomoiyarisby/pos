@@ -27,7 +27,7 @@ export const getReorderSettings = createServerFn({ method: "GET" }).handler(asyn
 });
 
 export const updateReorderSettings = createServerFn({ method: "POST" })
-  .inputValidator((data: { ropDays: number; roqDays: number }) => data)
+  .validator((data: { ropDays: number; roqDays: number }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -68,7 +68,7 @@ export const updateReorderSettings = createServerFn({ method: "POST" })
  * Returns list of ingredients with suggested order quantities.
  */
 export const generateReorderRecommendations = createServerFn({ method: "POST" })
-  .inputValidator((data: { branchId: string }) => data)
+  .validator((data: { branchId: string }) => data)
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat", "branch_admin");
 

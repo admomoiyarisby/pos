@@ -6,7 +6,7 @@ import { requireAuth, requireRole } from "./auth";
 import { logSystemAction } from "./logging";
 
 export const getAuditLogs = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       tableName?: string;
       action?: string;
@@ -51,7 +51,7 @@ export const getAuditLogs = createServerFn({ method: "GET" })
   });
 
 export const getSystemLogs = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       status?: "Success" | "Warning" | "Error";
       userId?: string;
@@ -86,7 +86,7 @@ export const getSystemLogs = createServerFn({ method: "GET" })
   });
 
 export const getNotifications = createServerFn({ method: "GET" })
-  .inputValidator((data: { unreadOnly?: boolean }) => data)
+  .validator((data: { unreadOnly?: boolean }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -115,7 +115,7 @@ export const getNotifications = createServerFn({ method: "GET" })
   });
 
 export const markNotificationRead = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -130,7 +130,7 @@ export const markNotificationRead = createServerFn({ method: "POST" })
   });
 
 export const createSystemNotification = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       userId: string;
       title: string;

@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { ingredients } from "#/db/schema";
+import { ingredients, recipeIngredients } from "#/db/schema";
 import { eq, ilike, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
@@ -25,7 +25,7 @@ const ingredientInput = z.object({
 });
 
 export const getIngredients = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       search?: string;
       category?: "Fresh" | "Dry" | "Packaging" | null;
@@ -59,7 +59,7 @@ export const getIngredients = createServerFn({ method: "GET" })
   });
 
 export const getIngredient = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
     const [result] = await db
@@ -71,7 +71,7 @@ export const getIngredient = createServerFn({ method: "GET" })
   });
 
 export const createIngredient = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => ingredientInput.parse(data))
+  .validator((data: unknown) => ingredientInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat", "central_kitchen");
 
@@ -95,7 +95,7 @@ export const createIngredient = createServerFn({ method: "POST" })
   });
 
 export const updateIngredient = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     ingredientInput.partial().extend({ id: z.string().uuid() }).parse(data),
   )
   .handler(async ({ data }) => {
@@ -138,7 +138,7 @@ export const updateIngredient = createServerFn({ method: "POST" })
 // =============================================================================
 
 export const deleteIngredient = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z.object({ id: z.string().uuid(), hardDelete: z.boolean().default(false) }).parse(data),
   )
   .handler(async ({ data }) => {

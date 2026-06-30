@@ -115,7 +115,7 @@ export const getSupplierDeliveries = createServerFn({ method: "GET" }).handler(a
 // ─── Get Single Supplier Delivery ───
 
 export const getSupplierDelivery = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -147,7 +147,7 @@ export const getSupplierDelivery = createServerFn({ method: "GET" })
 // ─── Create Supplier Delivery ───
 
 export const createSupplierDelivery = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { supplierName: string; ingredientId: string; quantity: number; price: number }) => data,
   )
   .handler(async ({ data }) => {
@@ -210,7 +210,7 @@ export const createSupplierDelivery = createServerFn({ method: "POST" })
 // ─── Update Supplier Delivery ───
 
 export const updateSupplierDelivery = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       id: string;
       supplierName?: string;
@@ -314,7 +314,7 @@ export const updateSupplierDelivery = createServerFn({ method: "POST" })
 // ─── Delete Supplier Delivery ───
 
 export const deleteSupplierDelivery = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 

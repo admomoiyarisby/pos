@@ -123,7 +123,7 @@ function buildSuratJalanHtml(d: SuratJalanData): string {
 }
 
 export const printSuratJalan = createServerFn({ method: "GET" })
-  .inputValidator((data: { procurementId: string }) => data)
+  .validator((data: { procurementId: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -338,7 +338,7 @@ function buildInvoiceHtml(d: InvoiceData): string {
 }
 
 export const printInvoice = createServerFn({ method: "GET" })
-  .inputValidator((data: { procurementId: string }) => data)
+  .validator((data: { procurementId: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 

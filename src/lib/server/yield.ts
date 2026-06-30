@@ -13,7 +13,7 @@ import { requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 
 export const getYieldConversions = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string }) => data)
+  .validator((data: { branchId?: string }) => data)
   .handler(async ({ data: _data }) => {
     await requireRole("super_admin", "central_kitchen");
 
@@ -85,7 +85,7 @@ export const getYieldConversions = createServerFn({ method: "GET" })
   });
 
 export const createYieldConversion = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       branchId: string;
       // Single source (legacy) — optional

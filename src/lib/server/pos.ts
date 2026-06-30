@@ -32,7 +32,7 @@ import { resolveNewItemIngredients, resolvePersistedItemIngredients } from "./in
 import { z } from "zod";
 
 export const getPosMenu = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: { branchId?: string; brandId?: string; category?: string; search?: string }) => data,
   )
   .handler(async ({ data }) => {
@@ -162,7 +162,7 @@ export const getPosMenu = createServerFn({ method: "GET" })
   });
 
 export const getShiftStatus = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId: string; userId: string }) => data)
+  .validator((data: { branchId: string; userId: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -183,7 +183,7 @@ export const getShiftStatus = createServerFn({ method: "GET" })
   });
 
 export const openShift = createServerFn({ method: "POST" })
-  .inputValidator((data: { branchId: string; userId: string; cashFloat: number }) => data)
+  .validator((data: { branchId: string; userId: string; cashFloat: number }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -215,7 +215,7 @@ export const openShift = createServerFn({ method: "POST" })
   });
 
 export const closeShift = createServerFn({ method: "POST" })
-  .inputValidator((data: { shiftId: string; actualCash: number; notes?: string }) => data)
+  .validator((data: { shiftId: string; actualCash: number; notes?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -274,7 +274,7 @@ const orderItemInput = z.object({
 });
 
 export const createOrder = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       branchId: string;
       channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in";
@@ -510,7 +510,7 @@ export const createOrder = createServerFn({ method: "POST" })
   });
 
 export const getOrders = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       branchId?: string;
       dateFrom?: string;
@@ -558,7 +558,7 @@ export const getOrders = createServerFn({ method: "GET" })
   });
 
 export const getOrderWithItems = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -602,7 +602,7 @@ export const getOrderWithItems = createServerFn({ method: "GET" })
   });
 
 export const completeOrder = createServerFn({ method: "POST" })
-  .inputValidator((data: { orderId: string }) => data)
+  .validator((data: { orderId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -633,7 +633,7 @@ export const completeOrder = createServerFn({ method: "POST" })
   });
 
 export const voidOrder = createServerFn({ method: "POST" })
-  .inputValidator((data: { orderId: string; reason: string }) => data)
+  .validator((data: { orderId: string; reason: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -709,7 +709,7 @@ export const voidOrder = createServerFn({ method: "POST" })
   });
 
 export const updateOrderStatus = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     z.object({
       orderId: z.string(),
       newStatus: z.enum(["New", "Processing", "In Delivery", "Completed"]),
@@ -743,7 +743,7 @@ export const updateOrderStatus = createServerFn({ method: "POST" })
 // ─── Print Request (Re-print Approval Flow) ───
 
 export const requestReprint = createServerFn({ method: "POST" })
-  .inputValidator((data: { orderId: string; requestType?: string }) => data)
+  .validator((data: { orderId: string; requestType?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -778,7 +778,7 @@ export const requestReprint = createServerFn({ method: "POST" })
   });
 
 export const getReprintRequestStatus = createServerFn({ method: "GET" })
-  .inputValidator((data: { orderId: string }) => data)
+  .validator((data: { orderId: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -800,7 +800,7 @@ export const getReprintRequestStatus = createServerFn({ method: "GET" })
   });
 
 export const getPendingPrintRequests = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string } | null | undefined) => data ?? {})
+  .validator((data: { branchId?: string } | null | undefined) => data ?? {})
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -833,7 +833,7 @@ export const getPendingPrintRequests = createServerFn({ method: "GET" })
   });
 
 export const approveReprint = createServerFn({ method: "POST" })
-  .inputValidator((data: { requestId: string }) => data)
+  .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -882,7 +882,7 @@ export const approveReprint = createServerFn({ method: "POST" })
   });
 
 export const rejectReprint = createServerFn({ method: "POST" })
-  .inputValidator((data: { requestId: string }) => data)
+  .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -922,7 +922,7 @@ export const rejectReprint = createServerFn({ method: "POST" })
   });
 
 export const consumePrintRequest = createServerFn({ method: "POST" })
-  .inputValidator((data: { requestId: string }) => data)
+  .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -964,7 +964,7 @@ export const consumePrintRequest = createServerFn({ method: "POST" })
 // ─── Cancel Requests ───
 
 export const createCancelRequest = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       orderId: string;
       reason: "Stok Habis" | "Salah Input" | "Customer Cancel";
@@ -995,7 +995,7 @@ export const createCancelRequest = createServerFn({ method: "POST" })
   });
 
 export const getCancelRequests = createServerFn({ method: "GET" })
-  .inputValidator((data: { status?: string; branchId?: string }) => data)
+  .validator((data: { status?: string; branchId?: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -1030,7 +1030,7 @@ export const getCancelRequests = createServerFn({ method: "GET" })
   });
 
 export const approveCancelRequest = createServerFn({ method: "POST" })
-  .inputValidator((data: { requestId: string }) => data)
+  .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -1075,7 +1075,7 @@ export const approveCancelRequest = createServerFn({ method: "POST" })
   });
 
 export const rejectCancelRequest = createServerFn({ method: "POST" })
-  .inputValidator((data: { requestId: string }) => data)
+  .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -1113,7 +1113,7 @@ export const rejectCancelRequest = createServerFn({ method: "POST" })
 // ─── Execute Approved Cancel (cashier-side) ───
 
 export const executeApprovedCancel = createServerFn({ method: "POST" })
-  .inputValidator((data: { requestId: string }) => data)
+  .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -1210,7 +1210,7 @@ export const executeApprovedCancel = createServerFn({ method: "POST" })
 // ─── Active Requests for Orders (POS polling source) ───
 
 export const getActiveRequestsForOrders = createServerFn({ method: "GET" })
-  .inputValidator((data: { orderIds: string[] }) => data)
+  .validator((data: { orderIds: string[] }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 

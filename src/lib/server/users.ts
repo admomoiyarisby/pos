@@ -16,7 +16,7 @@ const userRoleEnum = z.enum([
 ]);
 
 export const getUsers = createServerFn({ method: "GET" })
-  .inputValidator((data: { search?: string; role?: string }) => data)
+  .validator((data: { search?: string; role?: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -72,7 +72,7 @@ export const getUsers = createServerFn({ method: "GET" })
   });
 
 export const createUser = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z
       .object({
         email: z.string().email(),
@@ -158,7 +158,7 @@ export const createUser = createServerFn({ method: "POST" })
   });
 
 export const updateUser = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     z
       .object({
         id: z.string().uuid(),

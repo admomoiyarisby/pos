@@ -17,7 +17,7 @@ const voucherInput = z.object({
 });
 
 export const getVouchers = createServerFn({ method: "GET" })
-  .inputValidator((data: { search?: string; activeOnly?: boolean }) => data)
+  .validator((data: { search?: string; activeOnly?: boolean }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -40,7 +40,7 @@ export const getVouchers = createServerFn({ method: "GET" })
   });
 
 export const createVoucher = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => voucherInput.parse(data))
+  .validator((data: unknown) => voucherInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
@@ -71,7 +71,7 @@ export const createVoucher = createServerFn({ method: "POST" })
   });
 
 export const updateVoucher = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     voucherInput.partial().extend({ id: z.string().uuid() }).parse(data),
   )
   .handler(async ({ data }) => {
@@ -108,7 +108,7 @@ export const updateVoucher = createServerFn({ method: "POST" })
   });
 
 export const deleteVoucher = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 

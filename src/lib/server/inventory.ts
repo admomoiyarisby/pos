@@ -15,7 +15,7 @@ import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 
 export const getInventory = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       branchId?: string;
       search?: string;
@@ -87,7 +87,7 @@ export const getInventory = createServerFn({ method: "GET" })
   });
 
 export const getStockLedger = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       branchId?: string;
       ingredientId?: string;
@@ -132,7 +132,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
   });
 
 export const triggerStockOpname = createServerFn({ method: "POST" })
-  .inputValidator((data: { branchId: string; date: string }) => data)
+  .validator((data: { branchId: string; date: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     await requireRole("super_admin", "admin_pusat", "area_manager");
@@ -180,7 +180,7 @@ export const triggerStockOpname = createServerFn({ method: "POST" })
   });
 
 export const getStockOpnames = createServerFn({ method: "GET" })
-  .inputValidator((data: { branchId?: string }) => data)
+  .validator((data: { branchId?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -248,7 +248,7 @@ export const getStockOpnames = createServerFn({ method: "GET" })
   });
 
 export const getStockOpnameDetail = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -315,9 +315,7 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
   });
 
 export const submitStockOpname = createServerFn({ method: "POST" })
-  .inputValidator(
-    (data: { soId: string; items: { itemId: string; physicalStock: number }[] }) => data,
-  )
+  .validator((data: { soId: string; items: { itemId: string; physicalStock: number }[] }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -389,7 +387,7 @@ export const submitStockOpname = createServerFn({ method: "POST" })
   });
 
 export const markStockOpnameInvestigation = createServerFn({ method: "POST" })
-  .inputValidator((data: { soId: string; investigationNote?: string }) => data)
+  .validator((data: { soId: string; investigationNote?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     await requireRole("super_admin", "area_manager");
@@ -443,7 +441,7 @@ export const markStockOpnameInvestigation = createServerFn({ method: "POST" })
   });
 
 export const approveStockOpname = createServerFn({ method: "POST" })
-  .inputValidator((data: { soId: string; investigationNote?: string }) => data)
+  .validator((data: { soId: string; investigationNote?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     await requireRole("super_admin", "area_manager");
@@ -569,9 +567,7 @@ export const approveStockOpname = createServerFn({ method: "POST" })
   });
 
 export const updateStockOpnameCounts = createServerFn({ method: "POST" })
-  .inputValidator(
-    (data: { soId: string; items: { itemId: string; physicalStock: number }[] }) => data,
-  )
+  .validator((data: { soId: string; items: { itemId: string; physicalStock: number }[] }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     // Branch admin and supervisors can update during investigation

@@ -17,7 +17,7 @@ import { availableEvents, transition, updateItem } from "./scm-fsm";
 // =============================================================================
 
 export const createProcurement = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       branchId: string;
       items: Array<{
@@ -111,7 +111,7 @@ export interface ListProcurementsFilters {
 type FsmRole = "branch_admin" | "admin_pusat" | "super_admin" | "area_manager";
 
 export const listProcurements = createServerFn({ method: "GET" })
-  .inputValidator((data: ListProcurementsFilters) => data)
+  .validator((data: ListProcurementsFilters) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     const conditions = [];
@@ -150,7 +150,7 @@ export const listProcurements = createServerFn({ method: "GET" })
 // =============================================================================
 
 export const getProcurement = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -178,7 +178,7 @@ export const getProcurement = createServerFn({ method: "GET" })
 // =============================================================================
 
 export const getProcurementItems = createServerFn({ method: "GET" })
-  .inputValidator((data: { procurementId: string }) => data)
+  .validator((data: { procurementId: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
     const rows = await db
@@ -211,7 +211,7 @@ export const getProcurementItems = createServerFn({ method: "GET" })
 // =============================================================================
 
 export const getProcurementAuditLog = createServerFn({ method: "GET" })
-  .inputValidator((data: { procurementId: string; limit?: number; offset?: number }) => data)
+  .validator((data: { procurementId: string; limit?: number; offset?: number }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
     const limit = Math.max(1, Math.min(100, data.limit ?? 10));
@@ -269,7 +269,7 @@ export interface ScmProcurementInvoiceLineItem {
  * returns either { success: true, status } or { success: false, error }.
  */
 export const transitionProcurement = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { procurementId: string; event: string; payload?: Record<string, unknown> }) => data,
   )
   .handler(async ({ data }) => {
@@ -284,7 +284,7 @@ export const transitionProcurement = createServerFn({ method: "POST" })
   });
 
 export const updateProcurementItem = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { procurementId: string; itemId: string; patch: Record<string, unknown> }) => data,
   )
   .handler(async ({ data }) => {
@@ -305,7 +305,7 @@ export const updateProcurementItem = createServerFn({ method: "POST" })
 // Audit event: 'item-add'. (ADR 0004 §3)
 
 export const addProcurementItem = createServerFn({ method: "POST" })
-  .inputValidator((data: { procurementId: string; ingredientId: string; quantity: number }) => data)
+  .validator((data: { procurementId: string; ingredientId: string; quantity: number }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("branch_admin", "super_admin");
     return await db.transaction(async (tx) => {
@@ -376,7 +376,7 @@ export const addProcurementItem = createServerFn({ method: "POST" })
 // Audit event: 'item-remove'. (ADR 0004 §3)
 
 export const removeProcurementItem = createServerFn({ method: "POST" })
-  .inputValidator((data: { procurementId: string; itemId: string }) => data)
+  .validator((data: { procurementId: string; itemId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("branch_admin", "super_admin");
     return await db.transaction(async (tx) => {
@@ -429,7 +429,7 @@ export const removeProcurementItem = createServerFn({ method: "POST" })
 // =============================================================================
 
 export const getProcurementInvoice = createServerFn({ method: "GET" })
-  .inputValidator((data: { procurementId: string }) => data)
+  .validator((data: { procurementId: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
     const [inv] = await db
