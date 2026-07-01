@@ -282,7 +282,7 @@ function PosPage() {
   let invResult = useQuery({
     queryKey: ["inventory", activeBranchId],
     queryFn: function () {
-      return getInventory({ data: { branchId: activeBranchId } });
+      return getInventory({ data: { branchId: activeBranchId, limit: 500 } });
     },
     enabled: !!activeBranchId,
   });

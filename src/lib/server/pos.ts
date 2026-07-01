@@ -26,7 +26,7 @@ import {
   cancelRequests,
   users,
 } from "#/db/schema";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, notInArray } from "drizzle-orm";
 import { requireAuth } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { resolveNewItemIngredients, resolvePersistedItemIngredients } from "./ingredient-resolver";
@@ -39,24 +39,38 @@ export const getPosMenu = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     await requireAuth();
 
-    // When branchId is provided, check if recipeBranches has visibility data.
-    // If it does, filter to only recipes visible at that branch.
-    // If no visibility data exists, show all active recipes (no restriction).
-    let visibleRecipeIds: Set<string> | null = null;
+    // When branchId is provided, apply branch visibility:
+    // - Recipes WITH branch assignments: only show at assigned branches
+    // - Recipes WITHOUT any branch assignments: show everywhere (unrestricted)
+    // - If no assignment data exists at all: show all recipes
+    let excludeRecipeIds: Set<string> | null = null;
     if (data.branchId) {
-      const branchLinks = await db
-        .select({ recipeId: recipeBranches.recipeId })
-        .from(recipeBranches)
-        .where(eq(recipeBranches.branchId, data.branchId));
+      const allBranchLinks = await db
+        .select({ recipeId: recipeBranches.recipeId, branchId: recipeBranches.branchId })
+        .from(recipeBranches);
 
-      if (branchLinks.length > 0) {
-        visibleRecipeIds = new Set(branchLinks.map((l) => l.recipeId));
+      if (allBranchLinks.length > 0) {
+        // Recipes assigned to OTHER branches but NOT this one should be hidden
+        const assignedToOtherBranch = new Set<string>();
+        const assignedToThisBranch = new Set<string>();
+        for (const link of allBranchLinks) {
+          if (link.branchId === data.branchId) {
+            assignedToThisBranch.add(link.recipeId);
+          } else if (!assignedToThisBranch.has(link.recipeId)) {
+            assignedToOtherBranch.add(link.recipeId);
+          }
+        }
+        // Only exclude recipes explicitly assigned to other branches
+        // and not also assigned to this branch
+        excludeRecipeIds = new Set(
+          [...assignedToOtherBranch].filter((id) => !assignedToThisBranch.has(id)),
+        );
       }
     }
 
     const whereConditions = [eq(recipes.status, "Active")];
-    if (visibleRecipeIds) {
-      whereConditions.push(inArray(recipes.id, [...visibleRecipeIds]));
+    if (excludeRecipeIds && excludeRecipeIds.size > 0) {
+      whereConditions.push(notInArray(recipes.id, [...excludeRecipeIds]));
     }
 
     const result = await db
