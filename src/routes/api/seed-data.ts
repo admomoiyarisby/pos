@@ -561,7 +561,15 @@ export async function seedDatabase() {
   console.log("[seed] Seeding inventory...");
   const branchCodes = ["CENTRAL", "WYG-01", "DRM-01", "TGL-01", "MLY-01", "JMB-01", "PCG-01", "SWL-01"];
 
-  // Derive ingredient protoIds from the seed data so the array stays in sync.
+  // Simple seeded PRNG for deterministic per-branch variation
+  function seededRandom(seed: string): number {
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) {
+      h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
+    }
+    return ((h >>> 0) % 10000) / 10000;
+  }
+
   const ingredientProtoIds = INGREDIENTS.map((ing) => ing.protoId);
   for (const bc of branchCodes) {
     const bid = idMap.branch.get(
@@ -571,16 +579,41 @@ export async function seedDatabase() {
     for (const ipid of ingredientProtoIds) {
       const iid = idMap.ingredient.get(ipid);
       if (!iid) continue;
+
+      const rand = seededRandom(`${bc}:${ipid}`);
+
+      let qty: number;
+      if (bc === "CENTRAL") {
+        // Central warehouse: high stock
+        qty = 200000 + Math.round(rand * 300000);
+      } else {
+        // Outlet branches: varied stock per branch-ingredient combo
+        // ~10% chance of zero stock, ~15% chance of low stock (< 1000),
+        // rest is moderate-to-good stock
+        if (rand < 0.1) {
+          qty = 0; // out of stock
+        } else if (rand < 0.25) {
+          qty = Math.round(100 + rand * 900); // low: 100-1000
+        } else {
+          qty = Math.round(2000 + rand * 48000); // normal: 2000-50000
+        }
+      }
+
+      // Upsert: update if exists, insert if not
       const existing = await db
-        .select()
+        .select({ id: inventoryTable.id })
         .from(inventoryTable)
         .where(and(eq(inventoryTable.branchId, bid), eq(inventoryTable.ingredientId, iid)))
         .limit(1);
-      if (!existing[0]) {
-        const baseQty = bc === "CENTRAL" ? 500000 : 10000 + Math.random() * 50000;
+      if (existing[0]) {
+        await db
+          .update(inventoryTable)
+          .set({ quantity: qty, lastUpdated: new Date() })
+          .where(eq(inventoryTable.id, existing[0].id));
+      } else {
         await db
           .insert(inventoryTable)
-          .values({ branchId: bid, ingredientId: iid, quantity: Math.round(baseQty) });
+          .values({ branchId: bid, ingredientId: iid, quantity: qty });
       }
     }
   }
