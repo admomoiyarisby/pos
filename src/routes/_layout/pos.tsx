@@ -304,6 +304,16 @@ function PosPage() {
   });
 
   // Keyboard shortcuts for POS speed
+  //
+  // FEATURE FLAG: Number-key shortcuts (1–9) are disabled because they fire
+  // even when focus is inside the search box or other inputs, causing unintended
+  // add-to-cart actions while typing. The flag is here for a future harness
+  // that will properly guard all keyboard shortcuts.
+  //
+  // To re-enable: set to true. Long-term fix: add an input-focus guard
+  // (matching the Enter-key guard) and remove this flag.
+  const ENABLE_POS_NUMBER_KEYS = false;
+
   useEffect(
     function () {
       function handleKeyDown(e: KeyboardEvent) {
@@ -345,24 +355,27 @@ function PosPage() {
         }
 
         // Number keys 1-9 map to first 9 visible menu items
-        var digit = parseInt(e.key);
-        if (digit >= 1 && digit <= 9 && !mobileCartOpen) {
-          var visibleItems = menuItems.filter(function (item) {
-            return (
-              item.ingredientIds.length === 0 ||
-              getStockQuantity(item, branchInventory) >
-                cart
-                  .filter(function (c) {
-                    return c.recipeId === item.id;
-                  })
-                  .reduce(function (s, c) {
-                    return s + c.quantity;
-                  }, 0)
-            );
-          });
-          if (digit <= visibleItems.length) {
-            e.preventDefault();
-            handleAddToCart(visibleItems[digit - 1]);
+        // (disabled via feature flag — see ENABLE_POS_NUMBER_KEYS)
+        if (ENABLE_POS_NUMBER_KEYS) {
+          var digit = parseInt(e.key);
+          if (digit >= 1 && digit <= 9 && !mobileCartOpen) {
+            var visibleItems = menuItems.filter(function (item) {
+              return (
+                item.ingredientIds.length === 0 ||
+                getStockQuantity(item, branchInventory) >
+                  cart
+                    .filter(function (c) {
+                      return c.recipeId === item.id;
+                    })
+                    .reduce(function (s, c) {
+                      return s + c.quantity;
+                    }, 0)
+              );
+            });
+            if (digit <= visibleItems.length) {
+              e.preventDefault();
+              handleAddToCart(visibleItems[digit - 1]);
+            }
           }
         }
       }
