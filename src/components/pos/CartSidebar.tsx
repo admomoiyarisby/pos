@@ -2,7 +2,7 @@
 // Cart Sidebar — Desktop cart with checkout controls
 // ============================================================
 
-import { ShoppingCart, X, Printer, Percent } from "lucide-react";
+import { ShoppingCart, X, Printer, Percent, Plus, Minus } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import type { CartItem, Voucher } from "#/lib/pos-types";
 
@@ -128,7 +128,7 @@ export default function CartSidebar({
                       aria-label="Kurangi jumlah"
                       className="h-5 w-5 rounded border flex items-center justify-center"
                     >
-                      <X className="h-2.5 w-2.5 rotate-45" />
+                      <Minus className="h-2.5 w-2.5" />
                     </button>
                     <span className="w-6 text-center text-xs font-medium">{item.quantity}</span>
                     <button
@@ -138,7 +138,7 @@ export default function CartSidebar({
                       aria-label="Tambah jumlah"
                       className="h-5 w-5 rounded border flex items-center justify-center"
                     >
-                      <X className="h-2.5 w-2.5" />
+                      <Plus className="h-2.5 w-2.5" />
                     </button>
                   </div>
                   <p className="text-xs font-semibold">
