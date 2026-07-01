@@ -16,6 +16,7 @@ import {
   orderItemModifiers,
   orderItemExclusions,
   recipeModifierExclusions,
+  recipeBranches,
   shifts,
   platformFees,
   branches,
@@ -38,6 +39,26 @@ export const getPosMenu = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     await requireAuth();
 
+    // When branchId is provided, check if recipeBranches has visibility data.
+    // If it does, filter to only recipes visible at that branch.
+    // If no visibility data exists, show all active recipes (no restriction).
+    let visibleRecipeIds: Set<string> | null = null;
+    if (data.branchId) {
+      const branchLinks = await db
+        .select({ recipeId: recipeBranches.recipeId })
+        .from(recipeBranches)
+        .where(eq(recipeBranches.branchId, data.branchId));
+
+      if (branchLinks.length > 0) {
+        visibleRecipeIds = new Set(branchLinks.map((l) => l.recipeId));
+      }
+    }
+
+    const whereConditions = [eq(recipes.status, "Active")];
+    if (visibleRecipeIds) {
+      whereConditions.push(inArray(recipes.id, [...visibleRecipeIds]));
+    }
+
     const result = await db
       .select({
         id: recipes.id,
@@ -50,7 +71,7 @@ export const getPosMenu = createServerFn({ method: "GET" })
         status: recipes.status,
       })
       .from(recipes)
-      .where(eq(recipes.status, "Active"))
+      .where(and(...whereConditions))
       .orderBy(recipes.name);
 
     const recipeIds = result.map((r) => r.id);

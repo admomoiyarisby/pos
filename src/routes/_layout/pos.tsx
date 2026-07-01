@@ -255,10 +255,11 @@ function PosPage() {
   }
 
   let menuResult = useQuery({
-    queryKey: ["pos-menu", selectedBrandId, selectedCategory, searchQuery],
+    queryKey: ["pos-menu", activeBranchId, selectedBrandId, selectedCategory, searchQuery],
     queryFn: function () {
       return getPosMenu({
         data: {
+          branchId: activeBranchId || undefined,
           brandId: selectedBrandId || undefined,
           category: selectedCategory || undefined,
           search: searchQuery || undefined,
