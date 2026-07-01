@@ -42,6 +42,7 @@ const categories = [
   { key: "minuman", label: "Minuman" },
   { key: "snack", label: "Snack" },
   { key: "add_ons", label: "Add-on" },
+  { key: "paket_bundle", label: "Paket" },
 ];
 
 const channels = [
