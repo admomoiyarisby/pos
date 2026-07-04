@@ -1,0 +1,1003 @@
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { Button } from "#/components/ui/button";
+import { Badge } from "#/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
+import {
+  Send,
+  Check,
+  XCircle,
+  Truck,
+  PackageCheck,
+  ClipboardCheck,
+  CreditCard,
+  Ban,
+  Undo2,
+  Printer,
+  AlertCircle,
+} from "lucide-react";
+import {
+  submitMutasiTransfer,
+  approveMutasiTransfer,
+  rejectMutasiTransfer,
+  withdrawMutasiTransfer,
+  shipMutasiTransfer,
+  markDeliveredMutasiTransfer,
+  openReceiveMutasiTransfer,
+  finishReceiveMutasiTransfer,
+  markPaidMutasiTransfer,
+  cancelMutasiTransfer,
+} from "#/lib/server/scm-transfers";
+import { printMutasiSuratJalan, printMutasiInvoice } from "#/lib/server/scm-transfer-print";
+import { openPrintWindow } from "#/lib/print-window";
+import { toast } from "sonner";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface TransferViewProps {
+  transfer: Record<string, unknown>;
+  items: Array<Record<string, unknown>>;
+  invoice: Record<string, unknown> | null;
+  auditLog: Array<Record<string, unknown>>;
+  branchById: Map<string, { id: string; name: string }>;
+  ingredientById: Map<string, { id: string; name: string; stockUnit: string }>;
+  /** Whether the current user is the sender branch_admin */
+  isSenderBa: boolean;
+  /** Whether the current user is the receiver branch_admin */
+  isReceiverBa: boolean;
+  /** Whether the current user is an area_manager */
+  isAm: boolean;
+  /** Whether the AM can act on this transfer (both branches in jurisdiction) */
+  amInJurisdiction: boolean;
+  /** Navigate back to the list page */
+  onBack: () => void;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function useTransferActions(transferId: string) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+
+  const submitMut = useServerFn(submitMutasiTransfer);
+  const approveMut = useServerFn(approveMutasiTransfer);
+  const rejectMut = useServerFn(rejectMutasiTransfer);
+  const withdrawMut = useServerFn(withdrawMutasiTransfer);
+  const shipMut = useServerFn(shipMutasiTransfer);
+  const markDeliveredMut = useServerFn(markDeliveredMutasiTransfer);
+  const openReceiveMut = useServerFn(openReceiveMutasiTransfer);
+  const finishReceiveMut = useServerFn(finishReceiveMutasiTransfer);
+  const markPaidMut = useServerFn(markPaidMutasiTransfer);
+  const cancelMut = useServerFn(cancelMutasiTransfer);
+  const printSJ = useServerFn(printMutasiSuratJalan);
+  const printInv = useServerFn(printMutasiInvoice);
+
+  async function run(fn: () => Promise<unknown>) {
+    setError(null);
+    try {
+      await fn();
+      void queryClient.invalidateQueries({ queryKey: ["scm-transfer", transferId] });
+      void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Aksi gagal");
+    }
+  }
+
+  return {
+    error,
+    setError,
+    run,
+    actions: {
+      submit: () => run(() => submitMut({ data: { transferId } })),
+      approve: () => run(() => approveMut({ data: { transferId } })),
+      reject: (reason: string) => run(() => rejectMut({ data: { transferId, reason } })),
+      withdraw: () => run(() => withdrawMut({ data: { transferId } })),
+      ship: () => run(() => shipMut({ data: { transferId } })),
+      markDelivered: () => run(() => markDeliveredMut({ data: { transferId } })),
+      openReceive: () => run(() => openReceiveMut({ data: { transferId } })),
+      finishReceive: (
+        items: Array<{
+          id: string;
+          receivedQuantity: number;
+          rejectedQuantity: number;
+          reason?: string;
+        }>,
+      ) => run(() => finishReceiveMut({ data: { transferId, items } })),
+      markPaid: () => run(() => markPaidMut({ data: { transferId } })),
+      cancel: (reason: string) => run(() => cancelMut({ data: { transferId, reason } })),
+      printSJ: async () => {
+        const html = await printSJ({ data: { transferId } });
+        openPrintWindow(html);
+      },
+      printInvoice: async () => {
+        const html = await printInv({ data: { transferId } });
+        openPrintWindow(html);
+      },
+    },
+  };
+}
+
+/** Render items in read-only mode */
+function ReadOnlyItems({
+  items,
+  ingredientById,
+}: {
+  items: Array<Record<string, unknown>>;
+  ingredientById: Map<string, { id: string; name: string; stockUnit: string }>;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Item</CardTitle>
+      </CardHeader>
+      <CardContent className="divide-y p-0">
+        {items.map((it) => {
+          const ing = ingredientById.get(it.ingredientId as string);
+          return (
+            <div key={it.id as string} className="flex items-center gap-4 p-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium">
+                  {ing?.name ?? (it.ingredientId as string).slice(0, 8) + "..."}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Qty janji: {it.quantity as number} {ing?.stockUnit ?? ""}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm">
+                  Diterima: <strong>{(it.receivedQuantity as number) ?? "—"}</strong>
+                </p>
+                <p className="text-sm">
+                  Ditolak: <strong>{(it.rejectedQuantity as number) ?? "—"}</strong>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  @ Rp {(it.unitPrice as number).toLocaleString("id-ID")}/{ing?.stockUnit ?? "unit"}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Render the audit log */
+function AuditLog({ rows }: { rows: Array<Record<string, unknown>> }) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Riwayat</CardTitle>
+      </CardHeader>
+      <CardContent className="divide-y p-0">
+        {rows.map((row) => (
+          <div key={row.id as string} className="flex items-center gap-3 p-3 text-sm">
+            <span className="w-32 text-xs text-muted-foreground">
+              {new Date(row.createdAt as string).toLocaleString("id-ID")}
+            </span>
+            <span className="font-medium">{String(row.event)}</span>
+            <span className="text-muted-foreground">
+              {String(row.fromState)} → {String(row.toState)}
+            </span>
+            {row.note ? (
+              <span className="truncate text-xs italic text-muted-foreground">
+                {String(row.note)}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Print buttons (shown from Approved onwards) */
+function PrintButtons({
+  onPrintSJ,
+  onPrintInvoice,
+  showInvoice,
+}: {
+  onPrintSJ: () => void;
+  onPrintInvoice: () => void;
+  showInvoice: boolean;
+}) {
+  return (
+    <div className="flex gap-2">
+      <Button variant="outline" onClick={onPrintSJ}>
+        <Printer className="mr-1 h-4 w-4" />
+        Cetak SJ
+      </Button>
+      {showInvoice && (
+        <Button variant="outline" onClick={onPrintInvoice}>
+          <Printer className="mr-1 h-4 w-4" />
+          Cetak Invoice
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** Error banner */
+function ErrorBanner({ error, onDismiss }: { error: string; onDismiss: () => void }) {
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+      <span className="flex-1">{error}</span>
+      <button onClick={onDismiss} className="text-destructive/70">
+        ✕
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Terminal views (shared across all roles)
+// ---------------------------------------------------------------------------
+
+export function FinishedView(props: TransferViewProps) {
+  return (
+    <div className="space-y-4">
+      <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
+      {props.invoice && <InvoiceCard invoice={props.invoice} />}
+      <AuditLog rows={props.auditLog} />
+    </div>
+  );
+}
+
+export function RejectedView(props: TransferViewProps) {
+  return (
+    <div className="space-y-4">
+      <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
+      <AuditLog rows={props.auditLog} />
+    </div>
+  );
+}
+
+export function CancelledView(props: TransferViewProps) {
+  return (
+    <div className="space-y-4">
+      <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
+      <AuditLog rows={props.auditLog} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Invoice card (used by WaitingForPayment and Finished)
+// ---------------------------------------------------------------------------
+
+function InvoiceCard({ invoice }: { invoice: Record<string, unknown> }) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Invoice</CardTitle>
+        <Badge variant={invoice.paidAt ? "success" : "warning"}>
+          {invoice.paidAt ? "Lunas" : "Belum Dibayar"}
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm">Kode: {String(invoice.code)}</p>
+        <p className="text-2xl font-bold">
+          Rp {(invoice.totalAmount as number).toLocaleString("id-ID")}
+        </p>
+        {invoice.paidAt ? (
+          <p className="text-xs text-muted-foreground">
+            Dibayar: {new Date(invoice.paidAt as string).toLocaleDateString("id-ID")}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sender BA views
+// ---------------------------------------------------------------------------
+
+export function DraftSenderForm(props: TransferViewProps) {
+  const { transfer, items, ingredientById, auditLog } = props;
+  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
+  return (
+    <div className="space-y-4">
+      {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
+
+      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Aksi</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button
+            onClick={async () => {
+              await actions.submit();
+              toast.success("Mutasi dikirim ke AM untuk review.");
+            }}
+          >
+            <Send className="mr-1 h-4 w-4" />
+            Kirim ke AM
+          </Button>
+          <Button variant="destructive" onClick={() => setCancelOpen(true)}>
+            <Ban className="mr-1 h-4 w-4" />
+            Batalkan
+          </Button>
+        </CardContent>
+      </Card>
+
+      <AuditLog rows={auditLog} />
+
+      {cancelOpen && (
+        <CancelModal
+          code={transfer.code as string}
+          reason={cancelReason}
+          onReasonChange={setCancelReason}
+          onCancel={() => {
+            setCancelOpen(false);
+            setCancelReason("");
+          }}
+          onConfirm={async () => {
+            if (!cancelReason.trim()) {
+              setError("Alasan pembatalan wajib diisi");
+              return;
+            }
+            await actions.cancel(cancelReason);
+            setCancelOpen(false);
+            setCancelReason("");
+            toast.success("Mutasi dibatalkan.");
+          }}
+          status={transfer.status as string}
+        />
+      )}
+    </div>
+  );
+}
+
+export function PendingSenderWaiting(props: TransferViewProps) {
+  const { transfer, items, ingredientById, auditLog } = props;
+  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
+  return (
+    <div className="space-y-4">
+      {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
+
+      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Aksi</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <p className="w-full text-sm text-muted-foreground">
+            Menunggu review dari Area Manager. Anda dapat menarik kembali ke Draft jika perlu
+            mengubah.
+          </p>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              await actions.withdraw();
+              toast.success("Mutasi ditarik kembali ke Draft.");
+            }}
+          >
+            <Undo2 className="mr-1 h-4 w-4" />
+            Tarik Kembali ke Draft
+          </Button>
+          <Button variant="destructive" onClick={() => setCancelOpen(true)}>
+            <Ban className="mr-1 h-4 w-4" />
+            Batalkan
+          </Button>
+        </CardContent>
+      </Card>
+
+      <AuditLog rows={auditLog} />
+
+      {cancelOpen && (
+        <CancelModal
+          code={transfer.code as string}
+          reason={cancelReason}
+          onReasonChange={setCancelReason}
+          onCancel={() => {
+            setCancelOpen(false);
+            setCancelReason("");
+          }}
+          onConfirm={async () => {
+            if (!cancelReason.trim()) {
+              setError("Alasan pembatalan wajib diisi");
+              return;
+            }
+            await actions.cancel(cancelReason);
+            setCancelOpen(false);
+            setCancelReason("");
+            toast.success("Mutasi dibatalkan.");
+          }}
+          status={transfer.status as string}
+        />
+      )}
+    </div>
+  );
+}
+
+export function ApprovedSenderShip(props: TransferViewProps) {
+  const { transfer, items, ingredientById, invoice, auditLog } = props;
+  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
+  return (
+    <div className="space-y-4">
+      {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
+
+      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Aksi</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button
+            onClick={async () => {
+              await actions.ship();
+              toast.success("Barang dikirim. Stok dipindahkan ke in-transit.");
+            }}
+          >
+            <Truck className="mr-1 h-4 w-4" />
+            Kirim
+          </Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              await actions.withdraw();
+              toast.success("Mutasi ditarik kembali ke Draft.");
+            }}
+          >
+            <Undo2 className="mr-1 h-4 w-4" />
+            Tarik ke Draft
+          </Button>
+          <PrintButtons
+            onPrintSJ={actions.printSJ}
+            onPrintInvoice={actions.printInvoice}
+            showInvoice={!!invoice}
+          />
+        </CardContent>
+      </Card>
+
+      <AuditLog rows={auditLog} />
+
+      {cancelOpen && (
+        <CancelModal
+          code={transfer.code as string}
+          reason={cancelReason}
+          onReasonChange={setCancelReason}
+          onCancel={() => {
+            setCancelOpen(false);
+            setCancelReason("");
+          }}
+          onConfirm={async () => {
+            if (!cancelReason.trim()) {
+              setError("Alasan pembatalan wajib diisi");
+              return;
+            }
+            await actions.cancel(cancelReason);
+            setCancelOpen(false);
+            setCancelReason("");
+            toast.success("Mutasi dibatalkan.");
+          }}
+          status={transfer.status as string}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Area Manager views
+// ---------------------------------------------------------------------------
+
+export function PendingAmReview(props: TransferViewProps) {
+  const { transfer, items, ingredientById, auditLog } = props;
+  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+
+  return (
+    <div className="space-y-4">
+      {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
+
+      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Aksi</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button
+            onClick={async () => {
+              await actions.approve();
+              toast.success("Mutasi disetujui.");
+            }}
+          >
+            <Check className="mr-1 h-4 w-4" />
+            Setujui
+          </Button>
+          <Button variant="destructive" onClick={() => setRejectOpen(true)}>
+            <XCircle className="mr-1 h-4 w-4" />
+            Tolak
+          </Button>
+        </CardContent>
+      </Card>
+
+      <AuditLog rows={auditLog} />
+
+      {rejectOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md rounded-lg border bg-background p-6 shadow-lg">
+            <h3 className="text-lg font-semibold">Tolak Mutasi</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Tolak mutasi <strong>{transfer.code as string}</strong>?
+            </p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Alasan penolakan (wajib)"
+              rows={3}
+              className="mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setRejectOpen(false);
+                  setRejectReason("");
+                }}
+                className="h-9 rounded-md border px-4 text-sm"
+              >
+                Batal
+              </button>
+              <button
+                onClick={async () => {
+                  if (!rejectReason.trim()) {
+                    setError("Alasan penolakan wajib diisi");
+                    return;
+                  }
+                  await actions.reject(rejectReason);
+                  setRejectOpen(false);
+                  setRejectReason("");
+                  toast.success("Mutasi ditolak.");
+                }}
+                className="h-9 rounded-md bg-destructive px-4 text-sm text-destructive-foreground"
+              >
+                Tolak
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Receiver BA views
+// ---------------------------------------------------------------------------
+
+export function InTransitReceiverTracking(props: TransferViewProps) {
+  const { transfer, items, ingredientById, auditLog } = props;
+  const { error, setError, actions } = useTransferActions(transfer.id as string);
+
+  return (
+    <div className="space-y-4">
+      {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
+
+      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Aksi</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button
+            onClick={async () => {
+              await actions.markDelivered();
+              toast.success("Barang ditandai diterima.");
+            }}
+          >
+            <PackageCheck className="mr-1 h-4 w-4" />
+            Tandai Diterima
+          </Button>
+        </CardContent>
+      </Card>
+
+      <AuditLog rows={auditLog} />
+    </div>
+  );
+}
+
+export function DeliveredReceiverForm(props: TransferViewProps) {
+  const { transfer, items, ingredientById, auditLog } = props;
+  const { error, setError, actions } = useTransferActions(transfer.id as string);
+
+  return (
+    <div className="space-y-4">
+      {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
+
+      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Aksi</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button
+            onClick={async () => {
+              await actions.openReceive();
+              toast.success("Review penerimaan dimulai.");
+            }}
+          >
+            <ClipboardCheck className="mr-1 h-4 w-4" />
+            Mulai Review
+          </Button>
+        </CardContent>
+      </Card>
+
+      <AuditLog rows={auditLog} />
+    </div>
+  );
+}
+
+export function ReviewingReceiverInteractive(props: TransferViewProps) {
+  const { transfer, items, ingredientById, auditLog } = props;
+  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const [reviewEdits, setReviewEdits] = useState<
+    Record<string, { received: number; rejected: number; reason: string }>
+  >({});
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-4">
+      {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Item — Review Penerimaan</CardTitle>
+          {reviewError && <span className="text-xs text-destructive">{reviewError}</span>}
+        </CardHeader>
+        <CardContent className="divide-y p-0">
+          {items.map((it) => {
+            const ing = ingredientById.get(it.ingredientId as string);
+            const edit = reviewEdits[it.id as string] ?? {
+              received: (it.receivedQuantity as number) ?? (it.quantity as number),
+              rejected: (it.rejectedQuantity as number) ?? 0,
+              reason: (it.reason as string) ?? "",
+            };
+            const sumOk = edit.received + edit.rejected === (it.quantity as number);
+            return (
+              <div key={it.id as string} className="space-y-2 p-4">
+                <div className="flex items-center gap-2">
+                  <p className="flex-1 text-sm font-medium">
+                    {ing?.name ?? (it.ingredientId as string).slice(0, 8) + "..."}
+                  </p>
+                  <span className="text-xs text-muted-foreground">
+                    Janji: {it.quantity as number} {ing?.stockUnit ?? ""}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1">
+                    <label className="text-xs text-muted-foreground">Diterima</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={edit.received}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setReviewEdits((prev) => ({
+                          ...prev,
+                          [it.id as string]: { ...(prev[it.id as string] ?? edit), received: val },
+                        }));
+                      }}
+                      className="h-8 w-20 rounded-md border border-input bg-background px-2 text-right text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <label className="text-xs text-muted-foreground">Ditolak</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={edit.rejected}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setReviewEdits((prev) => ({
+                          ...prev,
+                          [it.id as string]: { ...(prev[it.id as string] ?? edit), rejected: val },
+                        }));
+                      }}
+                      className="h-8 w-20 rounded-md border border-input bg-background px-2 text-right text-sm"
+                    />
+                  </div>
+                  {edit.rejected > 0 && (
+                    <div className="flex items-center gap-1">
+                      <label className="text-xs text-muted-foreground">Alasan</label>
+                      <input
+                        value={edit.reason}
+                        onChange={(e) =>
+                          setReviewEdits((prev) => ({
+                            ...prev,
+                            [it.id as string]: {
+                              ...(prev[it.id as string] ?? edit),
+                              reason: e.target.value,
+                            },
+                          }))
+                        }
+                        placeholder="Wajib"
+                        className="h-8 w-40 rounded-md border border-input bg-background px-2 text-sm"
+                      />
+                    </div>
+                  )}
+                  {!sumOk && (
+                    <span className="text-xs text-destructive">
+                      {edit.received + edit.rejected} ≠ {it.quantity as number}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </CardContent>
+        <div className="flex justify-end gap-2 border-t p-4">
+          <Button variant="outline" onClick={() => setReviewEdits({})}>
+            Batal
+          </Button>
+          <Button
+            onClick={async () => {
+              setReviewError(null);
+              const payload: Array<{
+                id: string;
+                receivedQuantity: number;
+                rejectedQuantity: number;
+                reason?: string;
+              }> = [];
+              for (const it of items) {
+                const edit = reviewEdits[it.id as string] ?? {
+                  received: (it.receivedQuantity as number) ?? (it.quantity as number),
+                  rejected: (it.rejectedQuantity as number) ?? 0,
+                  reason: (it.reason as string) ?? "",
+                };
+                if (edit.received + edit.rejected !== (it.quantity as number)) {
+                  const ing = ingredientById.get(it.ingredientId as string);
+                  setReviewError(
+                    `${ing?.name ?? (it.ingredientId as string).slice(0, 8)}: diterima + ditolak harus = ${it.quantity as number}`,
+                  );
+                  return;
+                }
+                if (edit.rejected > 0 && !edit.reason.trim()) {
+                  const ing = ingredientById.get(it.ingredientId as string);
+                  setReviewError(
+                    `${ing?.name ?? (it.ingredientId as string).slice(0, 8)}: alasan penolakan wajib diisi`,
+                  );
+                  return;
+                }
+                payload.push({
+                  id: it.id as string,
+                  receivedQuantity: edit.received,
+                  rejectedQuantity: edit.rejected,
+                  reason: edit.reason || undefined,
+                });
+              }
+              try {
+                await actions.finishReceive(payload);
+                toast.success("Penerimaan Mutasi Stok berhasil. Stok telah diperbarui.");
+              } catch (err) {
+                toast.error(
+                  `Gagal memperbarui stok: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+              setReviewEdits({});
+              setReviewError(null);
+            }}
+          >
+            <Check className="mr-1 h-4 w-4" />
+            Simpan Review
+          </Button>
+        </div>
+      </Card>
+
+      <AuditLog rows={auditLog} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared views (no role-specific logic)
+// ---------------------------------------------------------------------------
+
+export function WaitingInvoice(props: TransferViewProps) {
+  const { transfer, items, ingredientById, invoice, auditLog } = props;
+  const { error, setError, actions } = useTransferActions(transfer.id as string);
+
+  return (
+    <div className="space-y-4">
+      {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
+
+      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+
+      {invoice && <InvoiceCard invoice={invoice} />}
+
+      {props.isSenderBa && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Aksi</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button
+              onClick={async () => {
+                await actions.markPaid();
+                toast.success("Invoice ditandai lunas.");
+              }}
+            >
+              <CreditCard className="mr-1 h-4 w-4" />
+              Tandai Lunas
+            </Button>
+            <PrintButtons
+              onPrintSJ={actions.printSJ}
+              onPrintInvoice={actions.printInvoice}
+              showInvoice={!!invoice}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {props.amInJurisdiction && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Aksi</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CancelAction
+              code={transfer.code as string}
+              status={transfer.status as string}
+              onCancel={async (reason) => {
+                await actions.cancel(reason);
+                toast.success("Mutasi dibatalkan.");
+              }}
+              onError={(msg) => setError(msg)}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      <AuditLog rows={auditLog} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared cancel action (inline, not modal — used by AM at multiple states)
+// ---------------------------------------------------------------------------
+
+function CancelAction({
+  code,
+  status,
+  onCancel,
+  onError,
+}: {
+  code: string;
+  status: string;
+  onCancel: (reason: string) => Promise<void>;
+  onError: (msg: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+
+  if (!open) {
+    return (
+      <Button variant="destructive" onClick={() => setOpen(true)}>
+        <Ban className="mr-1 h-4 w-4" />
+        Batalkan
+      </Button>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm">
+        Batalkan mutasi <strong>{code}</strong>?
+      </p>
+      {status === "InTransit" && (
+        <p className="text-xs text-muted-foreground">
+          Stok yang sedang dalam perjalanan akan dikembalikan ke cabang pengirim.
+        </p>
+      )}
+      <textarea
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Alasan pembatalan (wajib)"
+        rows={3}
+        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+      />
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={() => {
+            setOpen(false);
+            setReason("");
+          }}
+          className="h-9 rounded-md border px-4 text-sm"
+        >
+          Tutup
+        </button>
+        <button
+          onClick={async () => {
+            if (!reason.trim()) {
+              onError("Alasan pembatalan wajib diisi");
+              return;
+            }
+            await onCancel(reason);
+            setOpen(false);
+            setReason("");
+          }}
+          className="h-9 rounded-md bg-destructive px-4 text-sm text-destructive-foreground"
+        >
+          Batalkan
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Cancel modal (used by sender BA views) */
+function CancelModal({
+  code,
+  reason,
+  onReasonChange,
+  onCancel,
+  onConfirm,
+  status,
+}: {
+  code: string;
+  reason: string;
+  onReasonChange: (v: string) => void;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+  status: string;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-full max-w-md rounded-lg border bg-background p-6 shadow-lg">
+        <h3 className="text-lg font-semibold">Batalkan Mutasi</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Batalkan mutasi <strong>{code}</strong>?
+        </p>
+        {status === "InTransit" && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Stok yang sedang dalam perjalanan akan dikembalikan ke cabang pengirim.
+          </p>
+        )}
+        <textarea
+          value={reason}
+          onChange={(e) => onReasonChange(e.target.value)}
+          placeholder="Alasan pembatalan (wajib)"
+          rows={3}
+          className="mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onCancel} className="h-9 rounded-md border px-4 text-sm">
+            Tutup
+          </button>
+          <button
+            onClick={onConfirm}
+            className="h-9 rounded-md bg-destructive px-4 text-sm text-destructive-foreground"
+          >
+            Batalkan
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

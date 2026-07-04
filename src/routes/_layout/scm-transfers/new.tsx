@@ -66,10 +66,7 @@ function NewMutasiPage() {
     enabled: !!fromBranchId,
   });
 
-  const ingredientById = useMemo(
-    () => new Map(ingredients.map((i) => [i.id, i])),
-    [ingredients],
-  );
+  const ingredientById = useMemo(() => new Map(ingredients.map((i) => [i.id, i])), [ingredients]);
 
   // Map ingredientId → available qty in the sender's inventory
   const stockByIngredient = useMemo(() => {
@@ -179,7 +176,7 @@ function NewMutasiPage() {
       <form onSubmit={handleSubmit} className="space-y-4 max-w-3xl">
         <button
           type="button"
-          onClick={() => navigate({ to: "/scm-transfers" })}
+          onClick={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -208,8 +205,8 @@ function NewMutasiPage() {
                 const ing = ingredientById.get(w.ingredientId);
                 return (
                   <li key={w.ingredientId}>
-                    {ing?.name ?? w.ingredientId}: diminta <strong>{w.requested}</strong>,
-                    tersedia hanya <strong>{w.available}</strong>
+                    {ing?.name ?? w.ingredientId}: diminta <strong>{w.requested}</strong>, tersedia
+                    hanya <strong>{w.available}</strong>
                   </li>
                 );
               })}
@@ -282,7 +279,8 @@ function NewMutasiPage() {
             {inventoryResult.data.length} jenis bahan tercatat
             {itemsOverStock.length > 0 && (
               <span className="text-destructive font-medium">
-                {" — "}{itemsOverStock.length} item melebihi stok
+                {" — "}
+                {itemsOverStock.length} item melebihi stok
               </span>
             )}
           </div>
@@ -327,9 +325,10 @@ function NewMutasiPage() {
                       }
                       itemToStringValue={(item: IngredientOption) => item.id}
                       itemToStringLabel={(item: IngredientOption) => item.name}
-                      isItemEqualToValue={(a: IngredientOption | null, b: IngredientOption | null) =>
-                        a?.id === b?.id
-                      }
+                      isItemEqualToValue={(
+                        a: IngredientOption | null,
+                        b: IngredientOption | null,
+                      ) => a?.id === b?.id}
                     >
                       <ComboboxInput
                         showTrigger
@@ -370,9 +369,7 @@ function NewMutasiPage() {
                         min={1}
                         value={it.quantity}
                         disabled={!it.ingredientId}
-                        onChange={(e) =>
-                          updateItem(it.id, { quantity: Number(e.target.value) })
-                        }
+                        onChange={(e) => updateItem(it.id, { quantity: Number(e.target.value) })}
                         className={`h-9 w-20 rounded-md border px-2 text-sm text-right ${
                           over
                             ? "border-destructive bg-destructive/5 text-destructive"
@@ -406,7 +403,8 @@ function NewMutasiPage() {
         {items.length > 0 && fromBranchId && (
           <div className="rounded-md border px-4 py-3 text-xs text-muted-foreground space-y-1">
             <p>
-              Total item: <strong>{items.length}</strong>{" · "}
+              Total item: <strong>{items.length}</strong>
+              {" · "}
               Total diminta: <strong>{items.reduce((s, it) => s + it.quantity, 0)}</strong>
             </p>
             {itemsOverStock.length > 0 && (
@@ -430,7 +428,7 @@ function NewMutasiPage() {
         <div className="flex justify-end gap-2">
           <button
             type="button"
-            onClick={() => navigate({ to: "/scm-transfers" })}
+            onClick={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
             className="h-9 px-4 rounded-md border text-sm"
           >
             Batal

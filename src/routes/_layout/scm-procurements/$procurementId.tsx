@@ -13,7 +13,7 @@ import {
   getProcurementInvoice,
 } from "#/lib/server/scm-queries";
 import type { ScmProcurementStatus } from "#/lib/server/scm-fsm";
-import { Stepper } from "#/components/scm-procurements/Stepper";
+import { ScmStepper } from "#/components/scm/Stepper";
 import {
   DraftForm,
   PendingBaView,
@@ -66,6 +66,17 @@ const statusColors: Record<
   Finished: "success",
   Cancelled: "secondary",
 };
+
+const PROCUREMENT_STEPS = [
+  { key: "Draft", label: "Draft" },
+  { key: "Pending", label: "Menunggu Review" },
+  { key: "UnderReview", label: "Review" },
+  { key: "InTransit", label: "Dalam Pengiriman" },
+  { key: "Delivered", label: "Sudah Dikirim" },
+  { key: "ReviewingSJ", label: "Review Cabang" },
+  { key: "WaitingForPayment", label: "Pembayaran" },
+  { key: "Finished", label: "Lunas" },
+];
 
 function ProcurementDetailPage() {
   const { procurementId } = Route.useParams();
@@ -144,7 +155,17 @@ function ProcurementDetailPage() {
           </Link>
         </div>
 
-        <Stepper currentStatus={proc.status as ScmProcurementStatus} />
+        <ScmStepper
+          steps={PROCUREMENT_STEPS}
+          currentKey={proc.status as string}
+          offRampKeys={["Rejected", "Cancelled"]}
+          offRampAttach={{ Rejected: 2 }}
+          ariaLabel="Procurement lifecycle progress"
+          offRampMessage={{
+            Rejected: "Pengadaan ini ditolak saat review.",
+            Cancelled: "Pengadaan ini dibatalkan.",
+          }}
+        />
 
         <DispatchView
           status={proc.status as ScmProcurementStatus}

@@ -20,7 +20,16 @@ import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
-import { AlertCircle, AlertTriangle, ArrowRight, Check, Truck, PackageCheck, XCircle, Ban } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowRight,
+  Check,
+  Truck,
+  PackageCheck,
+  XCircle,
+  Ban,
+} from "lucide-react";
 
 interface TRRow {
   id: string;
@@ -317,13 +326,17 @@ function TransferPage() {
         <div className="flex-1">
           <p className="font-medium text-warning">Alur Mutasi Stok lawas</p>
           <p className="text-warning/80 mt-1">
-            Halaman ini sudah dibekukan. Alur baru menggunakan model Surat Jalan
-            dengan 10-state FSM (mirip Pengadaan). Buat mutasi baru di{" "}
-            <Link to="/scm-transfers" className="underline font-medium">
+            Halaman ini sudah dibekukan. Alur baru menggunakan model Surat Jalan dengan 10-state FSM
+            (mirip Pengadaan). Buat mutasi baru di{" "}
+            <Link
+              to="/scm-transfers"
+              search={{ status: undefined }}
+              className="underline font-medium"
+            >
               /scm-transfers
             </Link>
-            . Data lawas tetap dapat dibaca di sini untuk referensi historis.
-            Lihat ADR 0006 untuk detailnya.
+            . Data lawas tetap dapat dibaca di sini untuk referensi historis. Lihat ADR 0006 untuk
+            detailnya.
           </p>
         </div>
       </div>
