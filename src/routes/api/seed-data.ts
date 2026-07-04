@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { auth } from "#/lib/auth";
 import { and, eq } from "drizzle-orm";
@@ -1499,6 +1498,12 @@ export const Route = createFileRoute("/api/seed-data")({
   server: {
     handlers: {
       POST: async () => {
+        if (process.env.NODE_ENV === "production") {
+          return new Response(JSON.stringify({ error: "Seed routes are disabled in production" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         const result = await seedDatabase();
         return new Response(JSON.stringify(result), {
           headers: { "Content-Type": "application/json" },
