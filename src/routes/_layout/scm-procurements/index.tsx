@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
@@ -35,6 +36,7 @@ interface ProcurementRow extends Record<string, unknown> {
   status: ScmProcurementStatus;
   createdAt: Date | string;
   submittedAt: Date | string | null;
+  availableEvents?: string[];
 }
 
 const statusLabels: Record<ScmProcurementStatus, string> = {
@@ -66,22 +68,36 @@ const statusColors: Record<
   Cancelled: "secondary",
 };
 
+// Events that count as "actionable" for badge counts.
+// Excludes escape-hatch / destructive-only events (cancel, withdraw)
+// so the badge reflects genuine forward-progress work.
+const FORWARD_EVENTS = new Set([
+  "submit",
+  "open-review",
+  "reject",
+  "accept-and-ship",
+  "mark-delivered",
+  "open-receive",
+  "finish-receive",
+  "mark-paid",
+]);
+
 // Tab definitions. "all" is the default; per-status tabs deep-link via
 // ?status=. (ADR 0004 §2)
 type FilterKey = "all" | ScmProcurementStatus;
 
-const FILTER_TABS: { key: FilterKey; label: string }[] = [
+const FILTER_TABS: { key: FilterKey; label: string; annotation?: string }[] = [
   { key: "all", label: "Semua" },
-  { key: "Draft", label: "Draft" },
-  { key: "Pending", label: "Menunggu Review" },
-  { key: "UnderReview", label: "Sedang Direview" },
-  { key: "InTransit", label: "Dalam Pengiriman" },
-  { key: "Delivered", label: "Sudah Dikirim" },
-  { key: "ReviewingSJ", label: "Review Cabang" },
-  { key: "WaitingForPayment", label: "Pembayaran" },
-  { key: "Finished", label: "Lunas" },
-  { key: "Cancelled", label: "Dibatalkan" },
-  { key: "Rejected", label: "Ditolak" },
+  { key: "Draft", label: "Draft", annotation: "cabang edit & kirim" },
+  { key: "Pending", label: "Menunggu Review", annotation: "admin pusat" },
+  { key: "UnderReview", label: "Sedang Direview", annotation: "admin pusat review" },
+  { key: "InTransit", label: "Dalam Pengiriman", annotation: "cabang terima" },
+  { key: "Delivered", label: "Sudah Dikirim", annotation: "cabang periksa" },
+  { key: "ReviewingSJ", label: "Review Cabang", annotation: "cabang konfirmasi" },
+  { key: "WaitingForPayment", label: "Pembayaran", annotation: "admin pusat bayar" },
+  { key: "Finished", label: "Lunas", annotation: "selesai" },
+  { key: "Cancelled", label: "Dibatalkan", annotation: "batal" },
+  { key: "Rejected", label: "Ditolak", annotation: "batal" },
 ];
 
 function ProcurementsListPage() {
@@ -102,6 +118,13 @@ function ProcurementsListPage() {
         data: statusFilter ? { status: statusFilter as ScmProcurementStatus } : {},
       }),
     initialData: initialRows,
+  });
+
+  // Unfiltered query for badge counts. We need ALL procurements to compute
+  // per-status actionable counts, regardless of which tab is active.
+  const { data: allRows } = useQuery({
+    queryKey: ["scm-procurements"],
+    queryFn: () => listProcurements({ data: {} }),
   });
 
   const setFilter = (next: FilterKey) => {
@@ -151,6 +174,26 @@ function ProcurementsListPage() {
 
   const activeTab: FilterKey = (statusFilter as FilterKey | undefined) ?? "all";
 
+  // Compute per-status actionable counts from ALL rows (unfiltered).
+  // Each row includes `availableEvents` from the server (filtered by role);
+  // we count a row as actionable if it has at least one forward-progress event.
+  const actionableCounts = useMemo(() => {
+    const source = (allRows ?? rows) as ProcurementRow[];
+    const counts: Partial<Record<FilterKey, number>> = {};
+    let total = 0;
+    for (const row of source) {
+      const events = (row.availableEvents as string[] | undefined) ?? [];
+      const isActionable = events.some((e) => FORWARD_EVENTS.has(e));
+      if (isActionable) {
+        const key = row.status as FilterKey;
+        counts[key] = (counts[key] ?? 0) + 1;
+        total++;
+      }
+    }
+    counts.all = total;
+    return counts;
+  }, [allRows, rows]);
+
   usePageTitle(
     "Pengadaan",
     "Restock dari Central ke Cabang. Satu dokumen mengikuti seluruh siklus dari Draft sampai Lunas.",
@@ -187,7 +230,23 @@ function ProcurementsListPage() {
                     : "text-muted-foreground hover:text-foreground")
                 }
               >
-                {tab.label}
+                <span>
+                  {tab.label}
+                  {(() => {
+                    const count = actionableCounts[tab.key] ?? 0;
+                    if (count === 0) return null;
+                    return (
+                      <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+                        {count}
+                      </span>
+                    );
+                  })()}
+                </span>
+                {tab.annotation ? (
+                  <span className="block text-[10px] font-normal leading-tight text-muted-foreground">
+                    {tab.annotation}
+                  </span>
+                ) : null}
               </button>
             );
           })}
