@@ -216,7 +216,7 @@ function ProcurementsListPage() {
         {/* Status filter tabs. URL-driven so the filter is shareable and
             deep-linkable. (ADR 0004 §2) */}
         <div
-          className="flex gap-1 overflow-x-auto border-b"
+          className="flex overflow-x-auto border-b"
           role="tablist"
           aria-label="Filter status pengadaan"
         >
@@ -231,10 +231,10 @@ function ProcurementsListPage() {
                 aria-selected={isActive}
                 onClick={() => setFilter(tab.key)}
                 className={
-                  "group flex shrink-0 flex-col items-start gap-0.5 rounded-t-md px-3 py-2 text-sm font-medium transition-colors " +
+                  "group flex shrink-0 flex-col items-start gap-0.5 border-r border-border px-3 py-2 text-sm font-medium transition-colors " +
                   (isActive
-                    ? "border-b-2 border-primary text-foreground"
-                    : "border-b-2 border-transparent text-muted-foreground hover:text-foreground")
+                    ? "border-b-2 border-b-primary text-foreground"
+                    : "border-b-2 border-b-transparent text-muted-foreground hover:text-foreground")
                 }
               >
                 <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
