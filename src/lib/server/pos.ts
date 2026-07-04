@@ -26,7 +26,7 @@ import {
   cancelRequests,
   users,
 } from "#/db/schema";
-import { eq, and, desc, inArray, notInArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { resolveNewItemIngredients, resolvePersistedItemIngredients } from "./ingredient-resolver";
@@ -39,38 +39,16 @@ export const getPosMenu = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     await requireAuth();
 
-    // When branchId is provided, apply branch visibility:
-    // - Recipes WITH branch assignments: only show at assigned branches
-    // - Recipes WITHOUT any branch assignments: show everywhere (unrestricted)
-    // - If no assignment data exists at all: show all recipes
-    let excludeRecipeIds: Set<string> | null = null;
+    // Branch visibility: hide recipes that are assigned to other branches
+    // but NOT to this branch. Recipes with no assignments are shown everywhere.
+    const whereConditions: Array<ReturnType<typeof eq>> = [eq(recipes.status, "Active")];
+
     if (data.branchId) {
-      const allBranchLinks = await db
-        .select({ recipeId: recipeBranches.recipeId, branchId: recipeBranches.branchId })
-        .from(recipeBranches);
-
-      if (allBranchLinks.length > 0) {
-        // Recipes assigned to OTHER branches but NOT this one should be hidden
-        const assignedToOtherBranch = new Set<string>();
-        const assignedToThisBranch = new Set<string>();
-        for (const link of allBranchLinks) {
-          if (link.branchId === data.branchId) {
-            assignedToThisBranch.add(link.recipeId);
-          } else if (!assignedToThisBranch.has(link.recipeId)) {
-            assignedToOtherBranch.add(link.recipeId);
-          }
-        }
-        // Only exclude recipes explicitly assigned to other branches
-        // and not also assigned to this branch
-        excludeRecipeIds = new Set(
-          [...assignedToOtherBranch].filter((id) => !assignedToThisBranch.has(id)),
-        );
-      }
-    }
-
-    const whereConditions = [eq(recipes.status, "Active")];
-    if (excludeRecipeIds && excludeRecipeIds.size > 0) {
-      whereConditions.push(notInArray(recipes.id, [...excludeRecipeIds]));
+      // Has no branch assignments (unrestricted) OR is assigned to this branch
+      whereConditions.push(
+        sql`NOT EXISTS (SELECT 1 FROM ${recipeBranches} WHERE ${recipeBranches.recipeId} = ${recipes.id})
+            OR EXISTS (SELECT 1 FROM ${recipeBranches} WHERE ${recipeBranches.recipeId} = ${recipes.id} AND ${recipeBranches.branchId} = ${data.branchId})`,
+      );
     }
 
     const result = await db
@@ -327,9 +305,6 @@ export const createOrder = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
-    // ─── SOFT BLOCK: Check stock but allow negative ───
-    const negativeStockAlerts: { ingredientName: string; shortfall: number; branchName: string }[] =
-      [];
     const [branchInfo] = await db
       .select({ name: branches.name })
       .from(branches)
@@ -337,15 +312,36 @@ export const createOrder = createServerFn({ method: "POST" })
       .limit(1);
     const branchName = branchInfo?.name ?? data.branchId;
 
-    for (const item of data.items) {
-      const resolved = await resolveNewItemIngredients(
-        item.recipeId,
-        item.quantity,
-        item.selectedModifiers,
-      );
+    // ─── Resolve ingredients ONCE per item (batched, includes cost) ───
+    const resolvedPerItem = await Promise.all(
+      data.items.map((item) =>
+        resolveNewItemIngredients(item.recipeId, item.quantity, item.selectedModifiers, {
+          includeCost: true,
+        }),
+      ),
+    );
+
+    // ─── Soft stock check + COGS calculation (read-only) ───
+    const negativeStockAlerts: { ingredientName: string; shortfall: number; branchName: string }[] =
+      [];
+    let subtotal = 0;
+    let totalCogs = 0;
+    const voucherDiscount = data.voucherDiscount ?? 0;
+    const taxAmount = data.taxAmount ?? 0;
+    const itemCogsList: number[] = [];
+
+    for (let i = 0; i < data.items.length; i++) {
+      const item = data.items[i];
+      const resolved = resolvedPerItem[i];
+
+      subtotal += item.price * item.quantity;
+
+      const itemCogs = resolved.ingredients.reduce((sum, ing) => sum + (ing.cost ?? 0), 0);
+      itemCogsList.push(itemCogs);
+      totalCogs += itemCogs;
 
       for (const ing of resolved.ingredients) {
-        if (ing.quantity <= 0) continue; // only check consumed ingredients
+        if (ing.quantity <= 0) continue;
         const [inv] = await db
           .select()
           .from(inventory)
@@ -356,166 +352,145 @@ export const createOrder = createServerFn({ method: "POST" })
             ),
           )
           .limit(1);
-
         const currentQty = inv?.quantity ?? 0;
         if (currentQty < ing.quantity) {
-          const shortfall = ing.quantity - currentQty;
           negativeStockAlerts.push({
             ingredientName: ing.ingredientName,
-            shortfall,
+            shortfall: ing.quantity - currentQty,
             branchName,
           });
         }
       }
     }
 
-    // ─── Calculate totals + COGS ───
-    let subtotal = 0;
-    let totalCogs = 0;
-    const voucherDiscount = data.voucherDiscount ?? 0;
-    const taxAmount = data.taxAmount ?? 0;
-
-    // Per-item COGS tracking for snapshot
-    const itemCogsList: number[] = [];
-
-    for (const item of data.items) {
-      subtotal += item.price * item.quantity;
-
-      const resolved = await resolveNewItemIngredients(
-        item.recipeId,
-        item.quantity,
-        item.selectedModifiers,
-        { includeCost: true },
-      );
-
-      const itemCogs = resolved.ingredients.reduce((sum, ing) => sum + (ing.cost ?? 0), 0);
-
-      itemCogsList.push(itemCogs);
-      totalCogs += itemCogs;
-    }
-
     const totalAmount = subtotal - voucherDiscount + taxAmount;
 
-    // Get platform fee
     const [fee] = await db
       .select()
       .from(platformFees)
       .where(eq(platformFees.channel, data.channel))
       .limit(1);
-
     const mdrFee = fee ? Math.round((subtotal * fee.feePercentage) / 100) + fee.fixedFee : 0;
     const netSales = totalAmount - mdrFee;
 
-    // Create order
-    const [order] = await db
-      .insert(orders)
-      .values({
-        branchId: data.branchId,
-        channel: data.channel,
-        subtotal,
-        taxAmount,
-        totalAmount,
-        totalCogs,
-        mdrFee,
-        netSales,
-        orderCode: data.orderCode,
-        customerName: data.customerName,
-        paymentMethod: data.paymentMethod,
-        voucherCode: data.voucherCode,
-        voucherDiscount,
-        notes: data.notes,
-        shiftId: data.shiftId,
-      })
-      .returning();
-
-    // Create order items with COGS snapshot
-    for (let i = 0; i < data.items.length; i++) {
-      const item = data.items[i];
-      const itemCogs = itemCogsList[i];
-      const [orderItem] = await db
-        .insert(orderItems)
+    // ─── All writes inside a single transaction ───
+    const order = await db.transaction(async (tx) => {
+      // Create order
+      const [newOrder] = await tx
+        .insert(orders)
         .values({
-          orderId: order.id,
-          recipeId: item.recipeId,
-          brandId: item.brandId || undefined,
-          quantity: item.quantity,
-          price: item.price,
-          cogsAtTransaction:
-            item.quantity > 0 ? Math.max(0, Math.round(itemCogs / item.quantity)) : 0,
-          notes: item.notes,
+          branchId: data.branchId,
+          channel: data.channel,
+          subtotal,
+          taxAmount,
+          totalAmount,
+          totalCogs,
+          mdrFee,
+          netSales,
+          orderCode: data.orderCode,
+          customerName: data.customerName,
+          paymentMethod: data.paymentMethod,
+          voucherCode: data.voucherCode,
+          voucherDiscount,
+          notes: data.notes,
+          shiftId: data.shiftId,
         })
         .returning();
 
-      // Insert modifiers
-      if (item.selectedModifiers?.length) {
-        for (const mod of item.selectedModifiers) {
-          await db.insert(orderItemModifiers).values({
+      // Create order items, modifiers, exclusions
+      for (let i = 0; i < data.items.length; i++) {
+        const item = data.items[i];
+        const itemCogs = itemCogsList[i];
+        const resolved = resolvedPerItem[i];
+
+        const [orderItem] = await tx
+          .insert(orderItems)
+          .values({
+            orderId: newOrder.id,
+            recipeId: item.recipeId,
+            brandId: item.brandId || undefined,
+            quantity: item.quantity,
+            price: item.price,
+            cogsAtTransaction:
+              item.quantity > 0 ? Math.max(0, Math.round(itemCogs / item.quantity)) : 0,
+            notes: item.notes,
+          })
+          .returning();
+
+        if (item.selectedModifiers?.length) {
+          for (const mod of item.selectedModifiers) {
+            await tx.insert(orderItemModifiers).values({
+              orderItemId: orderItem.id,
+              modifierGroupId: mod.groupId,
+              modifierId: mod.modifierId,
+            });
+          }
+        }
+
+        for (const ex of resolved.exclusionRecords) {
+          await tx.insert(orderItemExclusions).values({
             orderItemId: orderItem.id,
-            modifierGroupId: mod.groupId,
-            modifierId: mod.modifierId,
+            ingredientId: ex.ingredientId,
+            quantity: ex.quantity,
           });
         }
       }
 
-      // Persist exclusion records
-      const resolvedExclusions = await resolveNewItemIngredients(
-        item.recipeId,
-        item.quantity,
-        item.selectedModifiers,
-      );
-      for (const ex of resolvedExclusions.exclusionRecords) {
-        await db.insert(orderItemExclusions).values({
-          orderItemId: orderItem.id,
-          ingredientId: ex.ingredientId,
-          quantity: ex.quantity,
-        });
-      }
-    }
+      // Deduct inventory (with FOR UPDATE row locks to prevent double-spend)
+      const seenIngredients = new Set<string>();
+      for (let i = 0; i < data.items.length; i++) {
+        const resolved = resolvedPerItem[i];
+        for (const ing of resolved.ingredients) {
+          if (seenIngredients.has(ing.ingredientId)) continue;
+          seenIngredients.add(ing.ingredientId);
 
-    // ─── Deduct inventory (soft block — allow negative) ───
-    for (const item of data.items) {
-      const resolved = await resolveNewItemIngredients(
-        item.recipeId,
-        item.quantity,
-        item.selectedModifiers,
-      );
+          const [inv] = await tx
+            .select()
+            .from(inventory)
+            .where(
+              and(
+                eq(inventory.branchId, data.branchId),
+                eq(inventory.ingredientId, ing.ingredientId),
+              ),
+            )
+            .for("update")
+            .limit(1);
 
-      for (const ing of resolved.ingredients) {
-        const [inv] = await db
-          .select()
-          .from(inventory)
-          .where(
-            and(
-              eq(inventory.branchId, data.branchId),
-              eq(inventory.ingredientId, ing.ingredientId),
-            ),
-          )
-          .limit(1);
+          if (inv) {
+            // Calculate net delta: sum across all items for this ingredient
+            let netDelta = 0;
+            for (let j = 0; j < data.items.length; j++) {
+              const r = resolvedPerItem[j];
+              const match = r.ingredients.find((x) => x.ingredientId === ing.ingredientId);
+              if (match) netDelta += match.quantity;
+            }
 
-        if (inv) {
-          const newQty = inv.quantity - ing.quantity; // negative = restore (exclusions)
-          await db
-            .update(inventory)
-            .set({ quantity: newQty, lastUpdated: new Date() })
-            .where(eq(inventory.id, inv.id));
+            const newQty = inv.quantity - netDelta;
+            await tx
+              .update(inventory)
+              .set({ quantity: newQty, lastUpdated: new Date() })
+              .where(eq(inventory.id, inv.id));
 
-          await db.insert(stockLedger).values({
-            branchId: data.branchId,
-            ingredientId: ing.ingredientId,
-            type: ing.quantity > 0 ? "OUT" : "IN",
-            quantity: Math.abs(ing.quantity),
-            balance: newQty,
-            reference: order.id,
-            notes:
-              ing.quantity > 0
-                ? `POS Order ${order.id.slice(0, 8)}`
-                : `Exclusion restore: ${order.id.slice(0, 8)}`,
-          });
+            await tx.insert(stockLedger).values({
+              branchId: data.branchId,
+              ingredientId: ing.ingredientId,
+              type: netDelta > 0 ? "OUT" : "IN",
+              quantity: Math.abs(netDelta),
+              balance: newQty,
+              reference: newOrder.id,
+              notes:
+                netDelta > 0
+                  ? `POS Order ${newOrder.id.slice(0, 8)}`
+                  : `Exclusion restore: ${newOrder.id.slice(0, 8)}`,
+            });
+          }
         }
       }
-    }
 
-    // ─── Send negative stock alerts to Area Managers ───
+      return newOrder;
+    });
+
+    // ─── Notifications (non-critical, outside transaction) ───
     if (negativeStockAlerts.length > 0) {
       const ams = await db
         .select({ userId: areaManagerBranches.userId })
@@ -676,54 +651,62 @@ export const voidOrder = createServerFn({ method: "POST" })
     if (!old) throw new Error("Order not found");
     if (old.status === "Void") throw new Error("Order sudah dibatalkan");
 
-    const [order] = await db
-      .update(orders)
-      .set({ status: "Void", voidReason: data.reason })
-      .where(eq(orders.id, data.orderId))
-      .returning();
+    const order = await db.transaction(async (tx) => {
+      const [updatedOrder] = await tx
+        .update(orders)
+        .set({ status: "Void", voidReason: data.reason })
+        .where(eq(orders.id, data.orderId))
+        .returning();
 
-    // Restore inventory (including child recipes and modifier ingredients)
-    const orderItemsList = await db
-      .select()
-      .from(orderItems)
-      .where(eq(orderItems.orderId, data.orderId));
+      // Restore inventory (with FOR UPDATE row locks)
+      const orderItemsList = await tx
+        .select()
+        .from(orderItems)
+        .where(eq(orderItems.orderId, data.orderId));
 
-    for (const oi of orderItemsList) {
-      const resolved = await resolvePersistedItemIngredients(oi.id);
+      for (const oi of orderItemsList) {
+        const resolved = await resolvePersistedItemIngredients(oi.id, { tx });
 
-      for (const ing of resolved.ingredients) {
-        const [inv] = await db
-          .select()
-          .from(inventory)
-          .where(
-            and(eq(inventory.branchId, old.branchId), eq(inventory.ingredientId, ing.ingredientId)),
-          )
-          .limit(1);
+        for (const ing of resolved.ingredients) {
+          const [inv] = await tx
+            .select()
+            .from(inventory)
+            .where(
+              and(
+                eq(inventory.branchId, old.branchId),
+                eq(inventory.ingredientId, ing.ingredientId),
+              ),
+            )
+            .for("update")
+            .limit(1);
 
-        if (inv) {
-          const newQty = inv.quantity + ing.quantity;
-          await db
-            .update(inventory)
-            .set({ quantity: newQty, lastUpdated: new Date() })
-            .where(eq(inventory.id, inv.id));
+          if (inv) {
+            const newQty = inv.quantity + ing.quantity;
+            await tx
+              .update(inventory)
+              .set({ quantity: newQty, lastUpdated: new Date() })
+              .where(eq(inventory.id, inv.id));
 
-          if (ing.quantity !== 0) {
-            await db.insert(stockLedger).values({
-              branchId: old.branchId,
-              ingredientId: ing.ingredientId,
-              type: ing.quantity > 0 ? "IN" : "OUT",
-              quantity: Math.abs(ing.quantity),
-              balance: newQty,
-              reference: data.orderId,
-              notes:
-                ing.quantity > 0
-                  ? `Void Order ${order.id.slice(0, 8)}: ${data.reason}`
-                  : `Void re-deduct exclusion: ${order.id.slice(0, 8)}`,
-            });
+            if (ing.quantity !== 0) {
+              await tx.insert(stockLedger).values({
+                branchId: old.branchId,
+                ingredientId: ing.ingredientId,
+                type: ing.quantity > 0 ? "IN" : "OUT",
+                quantity: Math.abs(ing.quantity),
+                balance: newQty,
+                reference: data.orderId,
+                notes:
+                  ing.quantity > 0
+                    ? `Void Order ${updatedOrder.id.slice(0, 8)}: ${data.reason}`
+                    : `Void re-deduct exclusion: ${updatedOrder.id.slice(0, 8)}`,
+              });
+            }
           }
         }
       }
-    }
+
+      return updatedOrder;
+    });
 
     await logSystemAction(
       user,
@@ -1166,64 +1149,69 @@ export const executeApprovedCancel = createServerFn({ method: "POST" })
     if (!order) throw new Error("Order not found");
     if (order.status === "Void") throw new Error("Order sudah dibatalkan");
 
-    // Mark the request as Executed
-    await db
-      .update(cancelRequests)
-      .set({ status: "Executed" })
-      .where(eq(cancelRequests.id, data.requestId));
+    const voidedOrder = await db.transaction(async (tx) => {
+      // Mark the request as Executed
+      await tx
+        .update(cancelRequests)
+        .set({ status: "Executed" })
+        .where(eq(cancelRequests.id, data.requestId));
 
-    // Void the order
-    const [voidedOrder] = await db
-      .update(orders)
-      .set({ status: "Void", voidReason: `Cancel: ${old.reason}` })
-      .where(eq(orders.id, old.orderId))
-      .returning();
+      // Void the order
+      const [updatedOrder] = await tx
+        .update(orders)
+        .set({ status: "Void", voidReason: `Cancel: ${old.reason}` })
+        .where(eq(orders.id, old.orderId))
+        .returning();
 
-    // Restore inventory (same logic as voidOrder)
-    const orderItemsList = await db
-      .select()
-      .from(orderItems)
-      .where(eq(orderItems.orderId, old.orderId));
+      // Restore inventory (with FOR UPDATE row locks)
+      const orderItemsList = await tx
+        .select()
+        .from(orderItems)
+        .where(eq(orderItems.orderId, old.orderId));
 
-    for (const oi of orderItemsList) {
-      const resolved = await resolvePersistedItemIngredients(oi.id);
+      for (const oi of orderItemsList) {
+        const resolved = await resolvePersistedItemIngredients(oi.id, { tx });
 
-      for (const ing of resolved.ingredients) {
-        const [inv] = await db
-          .select()
-          .from(inventory)
-          .where(
-            and(
-              eq(inventory.branchId, order.branchId),
-              eq(inventory.ingredientId, ing.ingredientId),
-            ),
-          )
-          .limit(1);
+        for (const ing of resolved.ingredients) {
+          const [inv] = await tx
+            .select()
+            .from(inventory)
+            .where(
+              and(
+                eq(inventory.branchId, order.branchId),
+                eq(inventory.ingredientId, ing.ingredientId),
+              ),
+            )
+            .for("update")
+            .limit(1);
 
-        if (inv) {
-          const newQty = inv.quantity + ing.quantity;
-          await db
-            .update(inventory)
-            .set({ quantity: newQty, lastUpdated: new Date() })
-            .where(eq(inventory.id, inv.id));
+          if (inv) {
+            const newQty = inv.quantity + ing.quantity;
+            await tx
+              .update(inventory)
+              .set({ quantity: newQty, lastUpdated: new Date() })
+              .where(eq(inventory.id, inv.id));
 
-          if (ing.quantity !== 0) {
-            await db.insert(stockLedger).values({
-              branchId: order.branchId,
-              ingredientId: ing.ingredientId,
-              type: ing.quantity > 0 ? "IN" : "OUT",
-              quantity: Math.abs(ing.quantity),
-              balance: newQty,
-              reference: old.orderId,
-              notes:
-                ing.quantity > 0
-                  ? `Void Order ${order.id.slice(0, 8)}: ${old.reason}`
-                  : `Void re-deduct exclusion: ${order.id.slice(0, 8)}`,
-            });
+            if (ing.quantity !== 0) {
+              await tx.insert(stockLedger).values({
+                branchId: order.branchId,
+                ingredientId: ing.ingredientId,
+                type: ing.quantity > 0 ? "IN" : "OUT",
+                quantity: Math.abs(ing.quantity),
+                balance: newQty,
+                reference: old.orderId,
+                notes:
+                  ing.quantity > 0
+                    ? `Void Order ${updatedOrder.id.slice(0, 8)}: ${old.reason}`
+                    : `Void re-deduct exclusion: ${updatedOrder.id.slice(0, 8)}`,
+              });
+            }
           }
         }
       }
-    }
+
+      return updatedOrder;
+    });
 
     await logSystemAction(
       user,

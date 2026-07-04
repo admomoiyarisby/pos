@@ -1,4 +1,6 @@
 import { db } from "#/lib/server/db";
+import type * as schema from "#/db/schema";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import {
   recipeIngredients,
   recipeChildRecipes,
@@ -10,6 +12,9 @@ import {
   ingredients,
 } from "#/db/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
+
+/** Transaction client type — same shape as the SCM effects `FsmTx`. */
+export type DbTx = Parameters<Parameters<NodePgDatabase<typeof schema>["transaction"]>[0]>[0];
 
 // =============================================================================
 // Types
@@ -33,10 +38,14 @@ export interface ResolvedItemIngredients {
 // Helper — batch ingredient name fetch
 // =============================================================================
 
-async function fetchIngredientNames(ingredientIds: string[]): Promise<Map<string, string>> {
+async function fetchIngredientNames(
+  ingredientIds: string[],
+  tx?: DbTx,
+): Promise<Map<string, string>> {
   if (ingredientIds.length === 0) return new Map();
 
-  const rows = await db
+  const conn = tx ?? db;
+  const rows = await conn
     .select({ id: ingredients.id, name: ingredients.name })
     .from(ingredients)
     .where(inArray(ingredients.id, ingredientIds));
@@ -61,6 +70,7 @@ async function resolveRecipeBOM(
   entries: BOMEntry[],
   addonModifierIds: string[],
   includeCost: boolean,
+  tx?: DbTx,
 ): Promise<Map<string, { qty: number; cost: number }>> {
   const ingredientMap = new Map<string, { qty: number; cost: number }>();
 
@@ -76,7 +86,8 @@ async function resolveRecipeBOM(
     qty: recipeIngredients.quantity,
   };
 
-  const recipeIngs = await db
+  const conn = tx ?? db;
+  const recipeIngs = await conn
     .select({
       ...baseSelect,
       cost: includeCost ? ingredients.averageCost : sql<number | null>`null`,
@@ -106,7 +117,7 @@ async function resolveRecipeBOM(
       qty: modifierIngredients.quantity,
     };
 
-    const modIngs = await db
+    const modIngs = await conn
       .select({
         ...modBaseSelect,
         cost: includeCost ? ingredients.averageCost : sql<number | null>`null`,
@@ -137,13 +148,15 @@ export async function resolveNewItemIngredients(
   recipeId: string,
   quantity: number,
   selectedModifiers?: Array<{ modifierId: string; isExclusion?: boolean }>,
-  opts?: { includeCost?: boolean },
+  opts?: { includeCost?: boolean; tx?: DbTx },
 ): Promise<ResolvedItemIngredients> {
   const includeCost = opts?.includeCost ?? false;
+  const tx = opts?.tx;
+  const conn = tx ?? db;
   const modifiers = selectedModifiers ?? [];
 
   // 1. Resolve child recipes for bundling
-  const childLinks = await db
+  const childLinks = await conn
     .select()
     .from(recipeChildRecipes)
     .where(eq(recipeChildRecipes.parentRecipeId, recipeId));
@@ -163,12 +176,12 @@ export async function resolveNewItemIngredients(
   const exclusionModIds = modifiers.filter((m) => m.isExclusion).map((m) => m.modifierId);
 
   // 4. Resolve BOM (recipe ingredients + modifier add-ons)
-  const ingredientMap = await resolveRecipeBOM(bomEntries, addonModifierIds, includeCost);
+  const ingredientMap = await resolveRecipeBOM(bomEntries, addonModifierIds, includeCost, tx);
 
   // 5. Fetch exclusion records
   const exclusionRecords: Array<{ ingredientId: string; quantity: number }> = [];
   if (exclusionModIds.length > 0) {
-    const exclusions = await db
+    const exclusions = await conn
       .select({
         modifierId: recipeModifierExclusions.modifierId,
         ingredientId: recipeModifierExclusions.ingredientId,
@@ -198,7 +211,7 @@ export async function resolveNewItemIngredients(
 
   // 6. Fetch ingredient names
   const ingredientIds = [...ingredientMap.keys()];
-  const nameMap = await fetchIngredientNames(ingredientIds);
+  const nameMap = await fetchIngredientNames(ingredientIds, tx);
 
   // 7. Build result
   const ingredientsList: ResolvedIngredient[] = [];
@@ -229,13 +242,15 @@ export async function resolveNewItemIngredients(
 
 export async function resolvePersistedItemIngredients(
   orderItemId: string,
-  opts?: { includeCost?: boolean },
+  opts?: { includeCost?: boolean; tx?: DbTx },
 ): Promise<ResolvedItemIngredients> {
   const includeCost = opts?.includeCost ?? false;
+  const tx = opts?.tx;
+  const conn = tx ?? db;
 
   // 1. Look up the order item to find its recipeId and quantity
 
-  const [orderItem] = await db
+  const [orderItem] = await conn
     .select()
     .from(orderItems)
     .where(eq(orderItems.id, orderItemId))
@@ -249,15 +264,15 @@ export async function resolvePersistedItemIngredients(
 
   // 2. Get modifiers and exclusions from persisted tables
   const [persistedMods, persistedExclusions] = await Promise.all([
-    db
+    conn
       .select({ modifierId: orderItemModifiers.modifierId })
       .from(orderItemModifiers)
       .where(eq(orderItemModifiers.orderItemId, orderItemId)),
-    db.select().from(orderItemExclusions).where(eq(orderItemExclusions.orderItemId, orderItemId)),
+    conn.select().from(orderItemExclusions).where(eq(orderItemExclusions.orderItemId, orderItemId)),
   ]);
 
   // 3. Build BOM: parent recipe + children
-  const childLinks = await db
+  const childLinks = await conn
     .select()
     .from(recipeChildRecipes)
     .where(eq(recipeChildRecipes.parentRecipeId, recipeId));
@@ -274,7 +289,7 @@ export async function resolvePersistedItemIngredients(
   const addonModifierIds = persistedMods.map((m) => m.modifierId);
 
   // 5. Resolve BOM
-  const ingredientMap = await resolveRecipeBOM(bomEntries, addonModifierIds, includeCost);
+  const ingredientMap = await resolveRecipeBOM(bomEntries, addonModifierIds, includeCost, tx);
 
   // 6. Apply exclusions (re-deduct what was excluded during void restore)
   // In voidOrder, we need to NOT restore excluded ingredients — they weren't consumed.
@@ -294,7 +309,7 @@ export async function resolvePersistedItemIngredients(
 
   // 7. Fetch ingredient names
   const ingredientIds = [...ingredientMap.keys()];
-  const nameMap = await fetchIngredientNames(ingredientIds);
+  const nameMap = await fetchIngredientNames(ingredientIds, tx);
 
   // 8. Build result
   const ingredientsList: ResolvedIngredient[] = [];

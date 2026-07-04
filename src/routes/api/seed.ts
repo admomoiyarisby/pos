@@ -3,7 +3,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { branches } from "#/db/schema";
 
+function assertDevOnly() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Seed routes are disabled in production");
+  }
+}
+
 const seedData = createServerFn({ method: "POST" }).handler(async () => {
+  assertDevOnly();
   // Seed branches
   const existingBranches = await db.select().from(branches);
   if (existingBranches.length === 0) {
