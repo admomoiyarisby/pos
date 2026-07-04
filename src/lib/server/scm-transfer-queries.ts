@@ -18,6 +18,8 @@ import {
   users,
 } from "#/db/schema";
 import type { FsmActor } from "./scm-effects";
+import { availableTransferEvents } from "./scm-transfer-fsm";
+import type { ScmTransferEvent, ScmTransferStatus, TransferActorRole } from "./scm-transfer-fsm";
 
 // -----------------------------------------------------------------------------
 // Authorization helpers (Q8)
@@ -72,7 +74,10 @@ export function assertTransferAccess(
 
   // branch_admin: must be at one of the two branches
   if (user.role === "branch_admin") {
-    if (user.branchId && (user.branchId === transfer.fromBranchId || user.branchId === transfer.toBranchId)) {
+    if (
+      user.branchId &&
+      (user.branchId === transfer.fromBranchId || user.branchId === transfer.toBranchId)
+    ) {
       return;
     }
     throw new Error("branch_admin can only access transfers involving their branch");
@@ -105,6 +110,7 @@ export interface TransferListRow {
   status: string;
   createdAt: Date;
   requestedById: string;
+  availableEvents: ScmTransferEvent[];
 }
 
 /**
@@ -160,7 +166,44 @@ export async function listTransfersForUser(user: {
     .from(scmTransfers)
     .orderBy(desc(scmTransfers.createdAt));
 
-  return whereClause ? await query.where(whereClause) : await query;
+  const rows = whereClause ? await query.where(whereClause) : await query;
+
+  // Compute branch-aware available events per row. For branch_admin, only
+  // return events where the user's branchId matches the correct side of the
+  // transfer (sender vs receiver). area_manager and super_admin are filtered
+  // by role only.
+  return rows.map((row) => {
+    const roleEvents = availableTransferEvents(
+      row.status as ScmTransferStatus,
+      user.role as TransferActorRole,
+    );
+
+    let availableEvents: ScmTransferEvent[];
+    if (user.role === "branch_admin" && user.branchId) {
+      // Sender branch can: submit (Draft), ship (Approved), withdraw, cancel
+      // Receiver branch can: mark-delivered (InTransit), open-receive (Delivered),
+      //   finish-receive (ReviewingSJ), mark-paid (WaitingForPayment)
+      const senderEvents: ScmTransferEvent[] = ["submit", "ship", "withdraw", "cancel"];
+      const receiverEvents: ScmTransferEvent[] = [
+        "mark-delivered",
+        "open-receive",
+        "finish-receive",
+        "mark-paid",
+      ];
+      const isSender = user.branchId === row.fromBranchId;
+      const isReceiver = user.branchId === row.toBranchId;
+      const allowedSet = new Set<ScmTransferEvent>([
+        ...(isSender ? senderEvents : []),
+        ...(isReceiver ? receiverEvents : []),
+      ]);
+      availableEvents = roleEvents.filter((e) => allowedSet.has(e));
+    } else {
+      // area_manager / super_admin: role-only filter is sufficient
+      availableEvents = roleEvents;
+    }
+
+    return { ...row, availableEvents };
+  });
 }
 
 /**

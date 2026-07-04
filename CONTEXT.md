@@ -75,8 +75,16 @@ _Avoid_: Central admin, central kitchen admin (different role), warehouse manage
 The destination branch's administrator role. Owns the procurement lifecycle from the branch side: creates PRs, fills receiving forms, views invoice preview, can withdraw a Pending procurement.
 _Avoid_: store manager, outlet admin (when referring to the role)
 
+**Cabang Pengirim (Sender Branch Admin)**:
+The `branch_admin` at the **sender** branch (`fromBranchId`) in a Mutasi Stok transfer. Responsible for creating the Surat Jalan, editing items, and shipping (SuratJalanDraft → Approved → InTransit). Not to be confused with the Receiver Branch Admin — they never touch receiving or payment.
+_Avoid_: sender, pengirim (when used as a standalone role name)
+
+**Cabang Penerima (Receiver Branch Admin)**:
+The `branch_admin` at the **receiver** branch (`toBranchId`) in a Mutasi Stok transfer. Responsible for confirming delivery, reviewing received items, and marking paid (InTransit → Delivered → ReviewingSJ → WaitingForPayment → Finished). Not to be confused with the Sender Branch Admin — they never create or ship.
+_Avoid_: receiver, penerima (when used as a standalone role name)
+
 **Stock Transfer (Transfer Stok)**:
-The parent concept for any movement of stock from one branch to another. Has two concrete subtypes: **Procurement (Pengadaan)** (Central→Branch) and **Mutasi Stok** (Branch→Branch). Both subtypes share the same FSM *shape* — one root document, item-level review, an invoice snapshot at the end, and an audit log — but they differ in actors (Admin Pusat vs Sender Branch on the source side), state semantics (which states exist and who owns each transition), and pricing. Two parallel root tables (`scm_procurements`, `scm_transfers`) — see Q1 decision.
+The parent concept for any movement of stock from one branch to another. Has two concrete subtypes: **Procurement (Pengadaan)** (Central→Branch) and **Mutasi Stok** (Branch→Branch). Both subtypes share the same FSM _shape_ — one root document, item-level review, an invoice snapshot at the end, and an audit log — but they differ in actors (Admin Pusat vs Sender Branch on the source side), state semantics (which states exist and who owns each transition), and pricing. Two parallel root tables (`scm_procurements`, `scm_transfers`) — see Q1 decision.
 _Avoid_: stock movement, transfer (alone), perpindahan stok
 
 **Mutasi Stok (Stock Transfer, Branch→Branch)**:
@@ -92,7 +100,7 @@ The shared `in_transit_inventory` ledger used by three flows: (1) legacy deliver
 _Avoid_: transit stock, in-transit ledger
 
 **Mutasi Unit Price**:
-The price per unit (in IDR) that the **Receiver Branch** pays the **Sender Branch** for an ingredient in a specific Mutasi transfer. Snapshotted from `ingredients.averageCost` at the **sender's** branch (i.e., the `inventory.averageCost` at the `fromBranchId` location) at item-creation time. Frozen on the item row — subsequent changes to `averageCost` do not affect existing transfers. The Mutasi invoice is generated as `receivedQuantity * unitPrice`, summing to a `totalAmount` paid by the receiver to the sender. Mirrors Pengadaan's pricing model (ADR 0003) but the snapshot source is the *sender* branch's inventory, not a Central warehouse.
+The price per unit (in IDR) that the **Receiver Branch** pays the **Sender Branch** for an ingredient in a specific Mutasi transfer. Snapshotted from `ingredients.averageCost` at the **sender's** branch (i.e., the `inventory.averageCost` at the `fromBranchId` location) at item-creation time. Frozen on the item row — subsequent changes to `averageCost` do not affect existing transfers. The Mutasi invoice is generated as `receivedQuantity * unitPrice`, summing to a `totalAmount` paid by the receiver to the sender. Mirrors Pengadaan's pricing model (ADR 0003) but the snapshot source is the _sender_ branch's inventory, not a Central warehouse.
 _Avoid_: transfer cost, mutasi cost
 
 **Procurement Unit Price**:
