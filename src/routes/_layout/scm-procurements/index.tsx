@@ -88,13 +88,13 @@ type FilterKey = "all" | ScmProcurementStatus;
 
 const FILTER_TABS: { key: FilterKey; label: string; annotation?: string }[] = [
   { key: "all", label: "Semua" },
-  { key: "Draft", label: "Draft", annotation: "cabang edit & kirim" },
-  { key: "Pending", label: "Menunggu Review", annotation: "admin pusat" },
-  { key: "UnderReview", label: "Sedang Direview", annotation: "admin pusat review" },
-  { key: "InTransit", label: "Dalam Pengiriman", annotation: "cabang terima" },
-  { key: "Delivered", label: "Sudah Dikirim", annotation: "cabang periksa" },
-  { key: "ReviewingSJ", label: "Review Cabang", annotation: "cabang konfirmasi" },
-  { key: "WaitingForPayment", label: "Pembayaran", annotation: "admin pusat bayar" },
+  { key: "Draft", label: "Draft", annotation: "cabang: edit & kirim" },
+  { key: "Pending", label: "Menunggu Review", annotation: "admin pusat: buka review" },
+  { key: "UnderReview", label: "Sedang Direview", annotation: "admin pusat: review item" },
+  { key: "InTransit", label: "Dalam Pengiriman", annotation: "cabang: terima barang" },
+  { key: "Delivered", label: "Sudah Dikirim", annotation: "cabang: periksa barang" },
+  { key: "ReviewingSJ", label: "Review Cabang", annotation: "cabang: konfirmasi jumlah" },
+  { key: "WaitingForPayment", label: "Pembayaran", annotation: "admin pusat: tandai bayar" },
   { key: "Finished", label: "Lunas", annotation: "selesai" },
   { key: "Cancelled", label: "Dibatalkan", annotation: "batal" },
   { key: "Rejected", label: "Ditolak", annotation: "batal" },
@@ -215,35 +215,46 @@ function ProcurementsListPage() {
 
         {/* Status filter tabs. URL-driven so the filter is shareable and
             deep-linkable. (ADR 0004 §2) */}
-        <div className="flex flex-wrap gap-1 border-b">
+        <div
+          className="flex gap-1 overflow-x-auto border-b"
+          role="tablist"
+          aria-label="Filter status pengadaan"
+        >
           {FILTER_TABS.map((tab) => {
             const isActive = activeTab === tab.key;
+            const count = actionableCounts[tab.key] ?? 0;
             return (
               <button
                 key={tab.key}
                 type="button"
+                role="tab"
+                aria-selected={isActive}
                 onClick={() => setFilter(tab.key)}
                 className={
-                  "rounded-t-md px-3 py-2 text-sm font-medium transition-colors " +
+                  "group flex shrink-0 flex-col items-start gap-0.5 rounded-t-md px-3 py-2 text-sm font-medium transition-colors " +
                   (isActive
                     ? "border-b-2 border-primary text-foreground"
-                    : "text-muted-foreground hover:text-foreground")
+                    : "border-b-2 border-transparent text-muted-foreground hover:text-foreground")
                 }
               >
-                <span>
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                   {tab.label}
-                  {(() => {
-                    const count = actionableCounts[tab.key] ?? 0;
-                    if (count === 0) return null;
-                    return (
-                      <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-                        {count}
-                      </span>
-                    );
-                  })()}
+                  {count > 0 ? (
+                    <span
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs font-semibold text-destructive-foreground"
+                      aria-label={`${count} aksi tertunda`}
+                    >
+                      {count > 99 ? "99+" : count}
+                    </span>
+                  ) : null}
                 </span>
                 {tab.annotation ? (
-                  <span className="block text-[10px] font-normal leading-tight text-muted-foreground">
+                  <span
+                    className={
+                      "whitespace-nowrap text-xs leading-tight " +
+                      (isActive ? "text-foreground/70" : "text-muted-foreground")
+                    }
+                  >
                     {tab.annotation}
                   </span>
                 ) : null}
