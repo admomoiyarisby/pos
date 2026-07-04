@@ -32,30 +32,50 @@ export const createProcurement = createServerFn({ method: "POST" })
     const user = await requireRole("branch_admin", "super_admin");
 
     // Generate a human-readable code: PROC-YYYY-NNNN where NNNN is a
-    // count of procurements for this branch in this year + 1. Fallback to
-    // a random suffix if the count fails for any reason.
+    // globally sequential counter for the current year. We count ALL
+    // procurements in the year (not per-branch) because the `code` column
+    // has a global UNIQUE constraint.
+    //
+    // To handle concurrent inserts safely, we retry on unique constraint
+    // violations with an incremented sequence number.
     const year = new Date().getFullYear();
-    const [{ count: existing }] = await db
-      .select({ count: sql<number>`cast(count(*) as integer)` })
-      .from(scmProcurements)
-      .where(
-        and(
-          eq(scmProcurements.branchId, data.branchId),
-          sql`extract(year from ${scmProcurements.createdAt}) = ${year}`,
-        ),
-      );
-    const code = `PROC-${year}-${String((existing ?? 0) + 1).padStart(4, "0")}`;
+    const MAX_RETRIES = 5;
+    let proc: { id: string; code: string } | undefined;
 
-    const [proc] = await db
-      .insert(scmProcurements)
-      .values({
-        code,
-        branchId: data.branchId,
-        status: "Draft",
-        requestedById: user.id,
-        notes: data.notes,
-      })
-      .returning();
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      // Find the highest existing sequence number for this year
+      const [{ maxNum }] = await db
+        .select({
+          maxNum: sql<number>`coalesce(max(cast(split_part(${scmProcurements.code}, '-', 3) as integer)), 0)`,
+        })
+        .from(scmProcurements)
+        .where(sql`${scmProcurements.code} like ${`PROC-${year}-%`}`);
+      const nextSeq = (maxNum ?? 0) + 1 + attempt;
+      const code = `PROC-${year}-${String(nextSeq).padStart(4, "0")}`;
+
+      try {
+        [proc] = await db
+          .insert(scmProcurements)
+          .values({
+            code,
+            branchId: data.branchId,
+            status: "Draft",
+            requestedById: user.id,
+            notes: data.notes,
+          })
+          .returning();
+        break; // success
+      } catch (err) {
+        const pgCode = (err as any).cause?.code ?? (err as any).code;
+        if (pgCode === "23505" && attempt < MAX_RETRIES - 1) {
+          // unique_violation — race condition, retry with next number
+          continue;
+        }
+        const pgError = (err as any).cause ?? err;
+        console.error("[createProcurement] INSERT failed:", pgError.message ?? pgError);
+        throw new Error(pgError.message ?? "Gagal membuat pengadaan");
+      }
+    }
 
     if (!proc) throw new Error("Failed to create procurement");
 
