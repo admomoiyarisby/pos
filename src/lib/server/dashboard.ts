@@ -18,7 +18,7 @@ import {
   recipeChildRecipes,
   recipeBrands,
 } from "#/db/schema";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, lt } from "drizzle-orm";
 import { requireAuth } from "./auth";
 
 export const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
@@ -27,9 +27,24 @@ export const getDashboardData = createServerFn({ method: "GET" }).handler(async 
   const branchFilter =
     user.role === "branch_admin" && user.branchId ? eq(orders.branchId, user.branchId) : undefined;
 
-  // Orders with items
+  // Orders — only select columns the dashboard actually uses
   const allOrders = await db
-    .select()
+    .select({
+      id: orders.id,
+      branchId: orders.branchId,
+      channel: orders.channel,
+      subtotal: orders.subtotal,
+      taxAmount: orders.taxAmount,
+      totalAmount: orders.totalAmount,
+      totalCogs: orders.totalCogs,
+      mdrFee: orders.mdrFee,
+      netSales: orders.netSales,
+      status: orders.status,
+      createdAt: orders.createdAt,
+      completedAt: orders.completedAt,
+      orderCode: orders.orderCode,
+      customerName: orders.customerName,
+    })
     .from(orders)
     .where(branchFilter ? and(branchFilter) : undefined)
     .orderBy(desc(orders.createdAt))
@@ -38,18 +53,34 @@ export const getDashboardData = createServerFn({ method: "GET" }).handler(async 
   const orderIdList = allOrders.map((o) => o.id);
   const orderItemsData =
     orderIdList.length > 0
-      ? await db.select().from(orderItems).where(inArray(orderItems.orderId, orderIdList))
+      ? await db
+          .select({
+            id: orderItems.id,
+            orderId: orderItems.orderId,
+            recipeId: orderItems.recipeId,
+            quantity: orderItems.quantity,
+            price: orderItems.price,
+            cogsAtTransaction: orderItems.cogsAtTransaction,
+          })
+          .from(orderItems)
+          .where(inArray(orderItems.orderId, orderIdList))
       : [];
 
-  // Inventory
-  const invFilter =
-    user.role === "branch_admin" && user.branchId
-      ? eq(inventory.branchId, user.branchId)
-      : undefined;
+  // Inventory — filter to low-stock items server-side, select only needed columns
+  const invConditions = [lt(inventory.quantity, 100)];
+  if (user.role === "branch_admin" && user.branchId) {
+    invConditions.push(eq(inventory.branchId, user.branchId));
+  }
   const inventoryData = await db
-    .select()
+    .select({
+      id: inventory.id,
+      branchId: inventory.branchId,
+      ingredientId: inventory.ingredientId,
+      quantity: inventory.quantity,
+    })
     .from(inventory)
-    .where(invFilter ? and(invFilter) : undefined);
+    .where(and(...invConditions))
+    .limit(50);
 
   // Recipes with ingredients
   const allRecipes = await db.select().from(recipes);
