@@ -29,7 +29,11 @@ import {
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
-import { resolveNewItemIngredients, resolvePersistedItemIngredients } from "./ingredient-resolver";
+import {
+  resolveNewItemIngredients,
+  resolvePersistedItemIngredients,
+  type DbTx,
+} from "./ingredient-resolver";
 import { z } from "zod";
 
 export const getPosMenu = createServerFn({ method: "GET" })
@@ -642,6 +646,55 @@ export const completeOrder = createServerFn({ method: "POST" })
     return order;
   });
 
+// ─── Shared helper: restore inventory for a voided order ───
+
+async function restoreInventoryForVoid(
+  orderId: string,
+  branchId: string,
+  reason: string,
+  tx: DbTx,
+): Promise<void> {
+  const orderItemsList = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+
+  const orderIdShort = orderId.slice(0, 8);
+
+  for (const oi of orderItemsList) {
+    const resolved = await resolvePersistedItemIngredients(oi.id, { tx });
+
+    for (const ing of resolved.ingredients) {
+      const [inv] = await tx
+        .select()
+        .from(inventory)
+        .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, ing.ingredientId)))
+        .for("update")
+        .limit(1);
+
+      if (inv) {
+        const newQty = inv.quantity + ing.quantity;
+        await tx
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, inv.id));
+
+        if (ing.quantity !== 0) {
+          await tx.insert(stockLedger).values({
+            branchId,
+            ingredientId: ing.ingredientId,
+            type: ing.quantity > 0 ? "IN" : "OUT",
+            quantity: Math.abs(ing.quantity),
+            balance: newQty,
+            reference: orderId,
+            notes:
+              ing.quantity > 0
+                ? `Void Order ${orderIdShort}: ${reason}`
+                : `Void re-deduct exclusion: ${orderIdShort}`,
+          });
+        }
+      }
+    }
+  }
+}
+
 export const voidOrder = createServerFn({ method: "POST" })
   .validator((data: { orderId: string; reason: string }) => data)
   .handler(async ({ data }) => {
@@ -658,52 +711,7 @@ export const voidOrder = createServerFn({ method: "POST" })
         .where(eq(orders.id, data.orderId))
         .returning();
 
-      // Restore inventory (with FOR UPDATE row locks)
-      const orderItemsList = await tx
-        .select()
-        .from(orderItems)
-        .where(eq(orderItems.orderId, data.orderId));
-
-      for (const oi of orderItemsList) {
-        const resolved = await resolvePersistedItemIngredients(oi.id, { tx });
-
-        for (const ing of resolved.ingredients) {
-          const [inv] = await tx
-            .select()
-            .from(inventory)
-            .where(
-              and(
-                eq(inventory.branchId, old.branchId),
-                eq(inventory.ingredientId, ing.ingredientId),
-              ),
-            )
-            .for("update")
-            .limit(1);
-
-          if (inv) {
-            const newQty = inv.quantity + ing.quantity;
-            await tx
-              .update(inventory)
-              .set({ quantity: newQty, lastUpdated: new Date() })
-              .where(eq(inventory.id, inv.id));
-
-            if (ing.quantity !== 0) {
-              await tx.insert(stockLedger).values({
-                branchId: old.branchId,
-                ingredientId: ing.ingredientId,
-                type: ing.quantity > 0 ? "IN" : "OUT",
-                quantity: Math.abs(ing.quantity),
-                balance: newQty,
-                reference: data.orderId,
-                notes:
-                  ing.quantity > 0
-                    ? `Void Order ${updatedOrder.id.slice(0, 8)}: ${data.reason}`
-                    : `Void re-deduct exclusion: ${updatedOrder.id.slice(0, 8)}`,
-              });
-            }
-          }
-        }
-      }
+      await restoreInventoryForVoid(data.orderId, old.branchId, data.reason, tx);
 
       return updatedOrder;
     });
@@ -1163,52 +1171,7 @@ export const executeApprovedCancel = createServerFn({ method: "POST" })
         .where(eq(orders.id, old.orderId))
         .returning();
 
-      // Restore inventory (with FOR UPDATE row locks)
-      const orderItemsList = await tx
-        .select()
-        .from(orderItems)
-        .where(eq(orderItems.orderId, old.orderId));
-
-      for (const oi of orderItemsList) {
-        const resolved = await resolvePersistedItemIngredients(oi.id, { tx });
-
-        for (const ing of resolved.ingredients) {
-          const [inv] = await tx
-            .select()
-            .from(inventory)
-            .where(
-              and(
-                eq(inventory.branchId, order.branchId),
-                eq(inventory.ingredientId, ing.ingredientId),
-              ),
-            )
-            .for("update")
-            .limit(1);
-
-          if (inv) {
-            const newQty = inv.quantity + ing.quantity;
-            await tx
-              .update(inventory)
-              .set({ quantity: newQty, lastUpdated: new Date() })
-              .where(eq(inventory.id, inv.id));
-
-            if (ing.quantity !== 0) {
-              await tx.insert(stockLedger).values({
-                branchId: order.branchId,
-                ingredientId: ing.ingredientId,
-                type: ing.quantity > 0 ? "IN" : "OUT",
-                quantity: Math.abs(ing.quantity),
-                balance: newQty,
-                reference: old.orderId,
-                notes:
-                  ing.quantity > 0
-                    ? `Void Order ${updatedOrder.id.slice(0, 8)}: ${old.reason}`
-                    : `Void re-deduct exclusion: ${updatedOrder.id.slice(0, 8)}`,
-              });
-            }
-          }
-        }
-      }
+      await restoreInventoryForVoid(old.orderId, order.branchId, old.reason, tx);
 
       return updatedOrder;
     });
