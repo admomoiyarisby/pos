@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -65,6 +65,7 @@ function PRPage() {
   const { user } = useAuth();
   const { prs: initial, ingredients, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
+  const formRef = useRef<HTMLFormElement>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [prItems, setPrItems] = useState<{ ingredientId: string; quantity: number }[]>([]);
   const [selectedPrBranchId, setSelectedPrBranchId] = useState(
@@ -315,7 +316,7 @@ function PRPage() {
         title="Buat Purchase Requisition"
         size="lg"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
           {submitError && (
             <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -374,7 +375,7 @@ function PRPage() {
                   placeholder="Pilih bahan..."
                   className="flex-1 min-w-0"
                 />
-                <ComboboxContent>
+                <ComboboxContent container={formRef.current}>
                   <ComboboxList>
                     {(item: (typeof ingredientOptions)[number]) => (
                       <ComboboxItem key={item.id} value={item}>
@@ -481,10 +482,10 @@ function PRPage() {
             </button>
             <button
               type="submit"
-              disabled={prItems.length === 0}
+              disabled={prItems.length === 0 || createMutation.isPending}
               className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
             >
-              Simpan
+              {createMutation.isPending ? "Menyimpan..." : "Simpan"}
             </button>
           </div>
         </form>

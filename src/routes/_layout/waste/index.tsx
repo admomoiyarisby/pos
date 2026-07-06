@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -62,8 +62,10 @@ function WastePage() {
   const { user } = useAuth();
   const { entries: initial, ingredients, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
+  const formRef = useRef<HTMLFormElement>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [ingredientError, setIngredientError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -149,10 +151,15 @@ function WastePage() {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!selectedIngredient) {
+      setIngredientError("Pilih bahan terlebih dahulu");
+      return;
+    }
+    setIngredientError(null);
     const fd = new FormData(e.currentTarget);
     const data = {
       branchId: (fd.get("branchId") as string | null) ?? user?.branchId ?? "",
-      ingredientId: fd.get("ingredientId") as string,
+      ingredientId: selectedIngredient.id,
       quantity: Number(fd.get("quantity")),
       category: fd.get("category") as "Beban Makan" | "Biaya Operasional" | "Spoiled",
       notes: (fd.get("notes") as string) || undefined,
@@ -298,7 +305,15 @@ function WastePage() {
         "central_kitchen",
       ]}
     >
-      <PageHeader action={{ label: "Input Waste", onClick: () => setModalOpen(true) }} />
+      <PageHeader
+        action={{
+          label: "Input Waste",
+          onClick: () => {
+            setModalOpen(true);
+            setIngredientError(null);
+          },
+        }}
+      />
 
       <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-md border bg-card p-3">
@@ -357,11 +372,12 @@ function WastePage() {
         onClose={() => {
           setModalOpen(false);
           setSubmitError(null);
+          setIngredientError(null);
         }}
         title="Input Waste"
         size="lg"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
           {submitError && (
             <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -390,6 +406,7 @@ function WastePage() {
               onValueChange={(val) => {
                 setSelectedIngredient(val);
                 setIngredientInputValue(val ? val.label : "");
+                if (val) setIngredientError(null);
               }}
               inputValue={ingredientInputValue}
               onInputValueChange={setIngredientInputValue}
@@ -402,8 +419,9 @@ function WastePage() {
                 showTrigger
                 showClear={!!selectedIngredient}
                 placeholder="Pilih bahan..."
+                className={ingredientError ? "border-destructive" : ""}
               />
-              <ComboboxContent>
+              <ComboboxContent container={formRef.current}>
                 <ComboboxList>
                   {(item: (typeof ingredientOptions)[number]) => (
                     <ComboboxItem key={item.id} value={item}>
@@ -414,6 +432,7 @@ function WastePage() {
                 <ComboboxEmpty>Tidak ada bahan yang cocok</ComboboxEmpty>
               </ComboboxContent>
             </Combobox>
+            {ingredientError && <p className="text-xs text-destructive">{ingredientError}</p>}
             <input type="hidden" name="ingredientId" value={selectedIngredient?.id ?? ""} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -457,9 +476,10 @@ function WastePage() {
             </button>
             <button
               type="submit"
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
+              disabled={createMutation.isPending}
+              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
             >
-              Simpan
+              {createMutation.isPending ? "Menyimpan..." : "Simpan"}
             </button>
           </div>
         </form>
