@@ -18,6 +18,7 @@ import {
 } from "#/components/ui/combobox";
 import { getWasteEntries, createWasteEntry, addInvestigationNote } from "#/lib/server/waste";
 import { getIngredients } from "#/lib/server/ingredients";
+import { getInventory } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
@@ -74,26 +75,80 @@ function WastePage() {
   const [investigationNoteText, setInvestigationNoteText] = useState("");
   const [investigationError, setInvestigationError] = useState<string | null>(null);
 
-  const ingredientOptions = useMemo(() => {
-    return ingredients.map((i) => ({
-      id: i.id,
-      value: i.id,
-      label: `${i.name} (${i.stockUnit})`,
-      keywords: [i.code ?? "", i.stockUnit],
-    }));
-  }, [ingredients]);
-
-  const [selectedIngredient, setSelectedIngredient] = useState<
-    (typeof ingredientOptions)[number] | null
-  >(null);
-  const [ingredientInputValue, setIngredientInputValue] = useState("");
-
   const filteredBranches = useMemo(() => {
     if (user?.role === "area_manager" && user.assignedBranches?.length) {
       return branches.filter((b) => user.assignedBranches!.includes(b.id));
     }
     return branches;
   }, [branches, user]);
+
+  // Effective branch ID for inventory lookup
+  const effectiveBranchId = user?.branchId ?? filteredBranches[0]?.id;
+
+  // Fetch inventory for the selected branch
+  const { data: inventoryResult } = useQuery({
+    queryKey: ["inventory-branch", effectiveBranchId],
+    queryFn: () => getInventory({ data: { branchId: effectiveBranchId } }),
+    enabled: !!effectiveBranchId,
+  });
+
+  // Map ingredientId → available qty
+  const stockByIngredient = useMemo(() => {
+    const m = new Map<string, number>();
+    const rows = inventoryResult?.data;
+    if (rows) {
+      for (const inv of rows) {
+        m.set(inv.ingredientId, inv.quantity);
+      }
+    }
+    return m;
+  }, [inventoryResult]);
+
+  // Set of ingredientIds that have an inventory row (branch has this item)
+  const branchHasIngredient = useMemo(() => {
+    const s = new Set<string>();
+    const rows = inventoryResult?.data;
+    if (rows) {
+      for (const inv of rows) {
+        s.add(inv.ingredientId);
+      }
+    }
+    return s;
+  }, [inventoryResult]);
+
+  const ingredientOptions = useMemo(() => {
+    return ingredients
+      .map((i) => {
+        const hasRow = branchHasIngredient.has(i.id);
+        const stockQty = stockByIngredient.get(i.id) ?? 0;
+        return {
+          id: i.id,
+          value: i.id,
+          label: `${i.name} (${i.stockUnit})`,
+          stockQty,
+          stockUnit: i.stockUnit,
+          hasInventory: hasRow,
+          keywords: [i.code ?? "", i.stockUnit],
+        };
+      })
+      .sort((a, b) => {
+        // Items in branch inventory first (even if empty)
+        if (a.hasInventory && !b.hasInventory) return -1;
+        if (!a.hasInventory && b.hasInventory) return 1;
+        // Then in-stock before empty
+        if (a.stockQty > 0 && b.stockQty <= 0) return -1;
+        if (a.stockQty <= 0 && b.stockQty > 0) return 1;
+        // Then by stock descending
+        if (b.stockQty !== a.stockQty) return b.stockQty - a.stockQty;
+        // Then alphabetically
+        return a.label.localeCompare(b.label);
+      });
+  }, [ingredients, stockByIngredient, branchHasIngredient]);
+
+  const [selectedIngredient, setSelectedIngredient] = useState<
+    (typeof ingredientOptions)[number] | null
+  >(null);
+  const [ingredientInputValue, setIngredientInputValue] = useState("");
 
   const { data: entries } = useQuery({
     queryKey: ["waste-entries", selectedCategory, debouncedSearch],
@@ -157,10 +212,29 @@ function WastePage() {
     }
     setIngredientError(null);
     const fd = new FormData(e.currentTarget);
+    const quantity = Number(fd.get("quantity"));
+
+    // Check if ingredient exists in branch inventory
+    if (!branchHasIngredient.has(selectedIngredient.id)) {
+      setSubmitError("Bahan ini belum pernah ada di cabang ini");
+      return;
+    }
+
+    // Check stock availability
+    const availableStock = stockByIngredient.get(selectedIngredient.id) ?? 0;
+    if (availableStock <= 0) {
+      setSubmitError("Stok bahan ini sudah habis");
+      return;
+    }
+    if (quantity > availableStock) {
+      setSubmitError(`Jumlah waste (${quantity}) melebihi stok tersedia (${availableStock})`);
+      return;
+    }
+
     const data = {
       branchId: (fd.get("branchId") as string | null) ?? user?.branchId ?? "",
       ingredientId: selectedIngredient.id,
-      quantity: Number(fd.get("quantity")),
+      quantity,
       category: fd.get("category") as "Beban Makan" | "Biaya Operasional" | "Spoiled",
       notes: (fd.get("notes") as string) || undefined,
     };
@@ -425,7 +499,29 @@ function WastePage() {
                 <ComboboxList>
                   {(item: (typeof ingredientOptions)[number]) => (
                     <ComboboxItem key={item.id} value={item}>
-                      {item.label}
+                      <div className="flex items-center justify-between w-full">
+                        <span
+                          className={!item.hasInventory || item.stockQty <= 0 ? "opacity-50" : ""}
+                        >
+                          {item.label}
+                        </span>
+                        <span
+                          className={
+                            "text-xs " +
+                            (!item.hasInventory
+                              ? "text-muted-foreground italic"
+                              : item.stockQty <= 0
+                                ? "text-destructive font-medium"
+                                : "text-muted-foreground")
+                          }
+                        >
+                          {!item.hasInventory
+                            ? "belum pernah ada"
+                            : item.stockQty <= 0
+                              ? "habis"
+                              : `Stok: ${item.stockQty}`}
+                        </span>
+                      </div>
                     </ComboboxItem>
                   )}
                 </ComboboxList>
@@ -434,6 +530,21 @@ function WastePage() {
             </Combobox>
             {ingredientError && <p className="text-xs text-destructive">{ingredientError}</p>}
             <input type="hidden" name="ingredientId" value={selectedIngredient?.id ?? ""} />
+            {selectedIngredient && (
+              <p
+                className={`text-xs ${
+                  !branchHasIngredient.has(selectedIngredient.id)
+                    ? "text-muted-foreground italic"
+                    : (stockByIngredient.get(selectedIngredient.id) ?? 0) <= 0
+                      ? "text-destructive font-medium"
+                      : "text-muted-foreground"
+                }`}
+              >
+                {!branchHasIngredient.has(selectedIngredient.id)
+                  ? "Bahan ini belum pernah ada di cabang ini"
+                  : `Stok tersedia: ${stockByIngredient.get(selectedIngredient.id) ?? 0} ${selectedIngredient.stockUnit}${(stockByIngredient.get(selectedIngredient.id) ?? 0) <= 0 ? " — tidak bisa dicatat sebagai waste" : ""}`}
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
