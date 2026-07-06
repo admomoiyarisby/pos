@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -27,6 +27,32 @@ interface SOItem {
   investigationNote: string | null;
 }
 
+function loadSoCache(key: string) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as { physicalInputs: Record<string, string>; touchedItems: string[] };
+  } catch {
+    return null;
+  }
+}
+
+function saveSoCache(key: string, physicalInputs: Record<string, string>, touchedItems: string[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ physicalInputs, touchedItems }));
+  } catch {
+    // Storage full or unavailable — silently ignore
+  }
+}
+
+function clearSoCache(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore
+  }
+}
+
 const statusColors: Record<string, "default" | "warning" | "success"> = {
   Submitted: "default",
   Approved: "success",
@@ -46,12 +72,28 @@ function StockOpnameDetailPage() {
   const { detail: initial } = Route.useLoaderData();
   const { soId } = Route.useParams();
   const queryClient = useQueryClient();
-  const [physicalInputs, setPhysicalInputs] = useState<Record<string, string>>({});
-  const [touchedItems, setTouchedItems] = useState<Set<string>>(new Set());
+  const cacheKey = `so-edit-${soId}`;
+  const cached = loadSoCache(cacheKey);
+  const [physicalInputs, setPhysicalInputs] = useState<Record<string, string>>(
+    cached?.physicalInputs ?? {},
+  );
+  const [touchedItems, setTouchedItems] = useState<Set<string>>(
+    () => new Set(cached?.touchedItems ?? []),
+  );
   const [investigationNote, setInvestigationNote] = useState("");
   const [approveModal, setApproveModal] = useState(false);
   const [investigationModal, setInvestigationModal] = useState(false);
   const [submitError, setSubmitError] = useState("");
+
+  // Debounced save edit state to localStorage
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveSoCache(cacheKey, physicalInputs, [...touchedItems]);
+    }, 300);
+    return () => clearTimeout(saveTimer.current);
+  }, [cacheKey, physicalInputs, touchedItems]);
 
   const { data: detail } = useQuery({
     queryKey: ["stock-opname", soId],
@@ -62,6 +104,7 @@ function StockOpnameDetailPage() {
   const submitMutation = useMutation({
     mutationFn: submitStockOpname,
     onSuccess: () => {
+      clearSoCache(`so-edit-${soId}`);
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setSubmitError("");
@@ -75,6 +118,7 @@ function StockOpnameDetailPage() {
   const approveMutation = useMutation({
     mutationFn: approveStockOpname,
     onSuccess: () => {
+      clearSoCache(cacheKey);
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setApproveModal(false);
@@ -88,6 +132,7 @@ function StockOpnameDetailPage() {
   const updateCountsMutation = useMutation({
     mutationFn: updateStockOpnameCounts,
     onSuccess: () => {
+      clearSoCache(cacheKey);
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setSubmitError("");
@@ -101,6 +146,7 @@ function StockOpnameDetailPage() {
   const markInvestigationMutation = useMutation({
     mutationFn: markStockOpnameInvestigation,
     onSuccess: () => {
+      clearSoCache(cacheKey);
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setInvestigationModal(false);
