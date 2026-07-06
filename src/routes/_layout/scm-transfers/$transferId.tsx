@@ -142,7 +142,15 @@ function TransferDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
       <div className="space-y-4 p-4 md:p-6">
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
+            className="gap-1"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Kembali
+          </Button>
           <Badge
             variant={
               (statusColors[transfer.status] ?? "default") as
@@ -155,13 +163,6 @@ function TransferDetailPage() {
           >
             {statusLabels[transfer.status] ?? transfer.status}
           </Badge>
-          <Button
-            variant="ghost"
-            onClick={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Kembali
-          </Button>
         </div>
 
         <ScmStepper

@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
+
 import {
   Send,
   Check,
@@ -122,6 +122,30 @@ function useTransferActions(transferId: string) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Shared layout primitives
+// ---------------------------------------------------------------------------
+
+/** Section with consistent vertical rhythm */
+function Section({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`space-y-3 ${className}`}>{children}</div>;
+}
+
+/** Section heading — lighter than a Card title, used outside Cards */
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-sm font-medium text-muted-foreground">{children}</h3>;
+}
+
+/** Primary action bar — no Card wrapper, visually subordinate to content */
+function ActionBar({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-wrap items-center gap-2 pt-2">{children}</div>;
+}
+
+/** Divider between major sections */
+function SectionDivider() {
+  return <hr className="border-border" />;
+}
+
 /** Render items in read-only mode */
 function ReadOnlyItems({
   items,
@@ -130,25 +154,30 @@ function ReadOnlyItems({
   items: Array<Record<string, unknown>>;
   ingredientById: Map<string, { id: string; name: string; stockUnit: string }>;
 }) {
+  if (items.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+        Belum ada item.
+      </div>
+    );
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Item</CardTitle>
-      </CardHeader>
-      <CardContent className="divide-y p-0">
+    <div className="rounded-md border">
+      <div className="divide-y">
         {items.map((it) => {
           const ing = ingredientById.get(it.ingredientId as string);
           return (
             <div key={it.id as string} className="flex items-center gap-4 p-4">
-              <div className="flex-1">
-                <p className="text-sm font-medium">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
                   {ing?.name ?? (it.ingredientId as string).slice(0, 8) + "..."}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Qty janji: {it.quantity as number} {ing?.stockUnit ?? ""}
                 </p>
               </div>
-              <div className="text-right">
+              <div className="text-right shrink-0">
                 <p className="text-sm">
                   Diterima: <strong>{(it.receivedQuantity as number) ?? "—"}</strong>
                 </p>
@@ -162,28 +191,61 @@ function ReadOnlyItems({
             </div>
           );
         })}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
+
+/** Status labels for audit log display */
+const auditStatusLabels: Record<string, string> = {
+  SuratJalanDraft: "Draft SJ",
+  PendingAMReview: "Menunggu AM",
+  Approved: "Disetujui",
+  InTransit: "Dalam Pengiriman",
+  Delivered: "Diterima",
+  ReviewingSJ: "Review Penerima",
+  WaitingForPayment: "Menunggu Bayar",
+  Finished: "Lunas",
+  Rejected: "Ditolak",
+  Cancelled: "Dibatalkan",
+};
+
+/** Event labels for audit log display */
+const auditEventLabels: Record<string, string> = {
+  submit: "Diajukan",
+  approve: "Disetujui",
+  reject: "Ditolak",
+  withdraw: "Ditarik",
+  ship: "Dikirim",
+  "mark-delivered": "Ditandai Diterima",
+  "open-receive": "Review Dibuka",
+  "finish-receive": "Review Selesai",
+  "mark-paid": "Ditandai Lunas",
+  cancel: "Dibatalkan",
+  "item-update": "Item Diperbarui",
+};
 
 /** Render the audit log */
 function AuditLog({ rows }: { rows: Array<Record<string, unknown>> }) {
   if (!rows || rows.length === 0) return null;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Riwayat</CardTitle>
-      </CardHeader>
-      <CardContent className="divide-y p-0">
+    <div className="rounded-md border">
+      <div className="border-b p-4">
+        <h3 className="text-sm font-medium">Riwayat</h3>
+      </div>
+      <div className="divide-y">
         {rows.map((row) => (
           <div key={row.id as string} className="flex items-center gap-3 p-3 text-sm">
             <span className="w-32 text-xs text-muted-foreground">
               {new Date(row.createdAt as string).toLocaleString("id-ID")}
             </span>
-            <span className="font-medium">{String(row.event)}</span>
+            <span className="font-medium">
+              {auditEventLabels[String(row.event)] ?? String(row.event)}
+            </span>
             <span className="text-muted-foreground">
-              {String(row.fromState)} → {String(row.toState)}
+              {auditStatusLabels[String(row.fromState)] ?? String(row.fromState)}
+              {" → "}
+              {auditStatusLabels[String(row.toState)] ?? String(row.toState)}
             </span>
             {row.note ? (
               <span className="truncate text-xs italic text-muted-foreground">
@@ -192,8 +254,8 @@ function AuditLog({ rows }: { rows: Array<Record<string, unknown>> }) {
             ) : null}
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -242,29 +304,62 @@ function ErrorBanner({ error, onDismiss }: { error: string; onDismiss: () => voi
 
 export function FinishedView(props: TransferViewProps) {
   return (
-    <div className="space-y-4">
-      <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
-      {props.invoice && <InvoiceCard invoice={props.invoice} />}
-      <AuditLog rows={props.auditLog} />
-    </div>
+    <Section>
+      <div>
+        <SectionHeading>Item</SectionHeading>
+        <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
+      </div>
+
+      {props.invoice && (
+        <>
+          <SectionDivider />
+          <InvoiceCard invoice={props.invoice} />
+        </>
+      )}
+
+      {props.auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={props.auditLog} />
+        </>
+      )}
+    </Section>
   );
 }
 
 export function RejectedView(props: TransferViewProps) {
   return (
-    <div className="space-y-4">
-      <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
-      <AuditLog rows={props.auditLog} />
-    </div>
+    <Section>
+      <div>
+        <SectionHeading>Item</SectionHeading>
+        <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
+      </div>
+
+      {props.auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={props.auditLog} />
+        </>
+      )}
+    </Section>
   );
 }
 
 export function CancelledView(props: TransferViewProps) {
   return (
-    <div className="space-y-4">
-      <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
-      <AuditLog rows={props.auditLog} />
-    </div>
+    <Section>
+      <div>
+        <SectionHeading>Item</SectionHeading>
+        <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
+      </div>
+
+      {props.auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={props.auditLog} />
+        </>
+      )}
+    </Section>
   );
 }
 
@@ -274,14 +369,14 @@ export function CancelledView(props: TransferViewProps) {
 
 function InvoiceCard({ invoice }: { invoice: Record<string, unknown> }) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Invoice</CardTitle>
+    <div className="rounded-md border">
+      <div className="flex items-center justify-between border-b p-4">
+        <h3 className="text-sm font-medium">Invoice</h3>
         <Badge variant={invoice.paidAt ? "success" : "warning"}>
           {invoice.paidAt ? "Lunas" : "Belum Dibayar"}
         </Badge>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div className="p-4">
         <p className="text-sm">Kode: {String(invoice.code)}</p>
         <p className="text-2xl font-bold">
           Rp {(invoice.totalAmount as number).toLocaleString("id-ID")}
@@ -291,8 +386,8 @@ function InvoiceCard({ invoice }: { invoice: Record<string, unknown> }) {
             Dibayar: {new Date(invoice.paidAt as string).toLocaleDateString("id-ID")}
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -307,16 +402,23 @@ export function DraftSenderForm(props: TransferViewProps) {
   const [cancelReason, setCancelReason] = useState("");
 
   return (
-    <div className="space-y-4">
+    <Section>
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
 
-      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      <div>
+        <SectionHeading>Item</SectionHeading>
+        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Aksi</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+      <SectionDivider />
+
+      <div>
+        <SectionHeading>Aksi</SectionHeading>
+        <p className="text-sm text-muted-foreground mb-3">
+          Kirim Surat Jalan ini ke Area Manager untuk persetujuan. Pastikan item dan jumlah sudah
+          benar.
+        </p>
+        <ActionBar>
           <Button
             onClick={async () => {
               await actions.submit();
@@ -330,10 +432,15 @@ export function DraftSenderForm(props: TransferViewProps) {
             <Ban className="mr-1 h-4 w-4" />
             Batalkan
           </Button>
-        </CardContent>
-      </Card>
+        </ActionBar>
+      </div>
 
-      <AuditLog rows={auditLog} />
+      {auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={auditLog} />
+        </>
+      )}
 
       {cancelOpen && (
         <CancelModal
@@ -357,7 +464,7 @@ export function DraftSenderForm(props: TransferViewProps) {
           status={transfer.status as string}
         />
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -368,20 +475,23 @@ export function PendingSenderWaiting(props: TransferViewProps) {
   const [cancelReason, setCancelReason] = useState("");
 
   return (
-    <div className="space-y-4">
+    <Section>
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
 
-      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      <div>
+        <SectionHeading>Item</SectionHeading>
+        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Aksi</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <p className="w-full text-sm text-muted-foreground">
-            Menunggu review dari Area Manager. Anda dapat menarik kembali ke Draft jika perlu
-            mengubah.
-          </p>
+      <SectionDivider />
+
+      <div>
+        <SectionHeading>Menunggu Review</SectionHeading>
+        <p className="text-sm text-muted-foreground mb-3">
+          Mutasi ini sedang menunggu review dari Area Manager. Anda dapat menarik kembali ke Draft
+          jika perlu mengubah.
+        </p>
+        <ActionBar>
           <Button
             variant="outline"
             onClick={async () => {
@@ -396,10 +506,15 @@ export function PendingSenderWaiting(props: TransferViewProps) {
             <Ban className="mr-1 h-4 w-4" />
             Batalkan
           </Button>
-        </CardContent>
-      </Card>
+        </ActionBar>
+      </div>
 
-      <AuditLog rows={auditLog} />
+      {auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={auditLog} />
+        </>
+      )}
 
       {cancelOpen && (
         <CancelModal
@@ -423,7 +538,7 @@ export function PendingSenderWaiting(props: TransferViewProps) {
           status={transfer.status as string}
         />
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -434,16 +549,23 @@ export function ApprovedSenderShip(props: TransferViewProps) {
   const [cancelReason, setCancelReason] = useState("");
 
   return (
-    <div className="space-y-4">
+    <Section>
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
 
-      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      <div>
+        <SectionHeading>Item</SectionHeading>
+        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Aksi</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+      <SectionDivider />
+
+      <div>
+        <SectionHeading>Siap Dikirim</SectionHeading>
+        <p className="text-sm text-muted-foreground mb-3">
+          Mutasi telah disetujui oleh Area Manager. Kirim barang ke cabang penerima. Stok akan
+          dikurangi dari inventaris Anda.
+        </p>
+        <ActionBar>
           <Button
             onClick={async () => {
               await actions.ship();
@@ -468,10 +590,15 @@ export function ApprovedSenderShip(props: TransferViewProps) {
             onPrintInvoice={actions.printInvoice}
             showInvoice={!!invoice}
           />
-        </CardContent>
-      </Card>
+        </ActionBar>
+      </div>
 
-      <AuditLog rows={auditLog} />
+      {auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={auditLog} />
+        </>
+      )}
 
       {cancelOpen && (
         <CancelModal
@@ -495,7 +622,7 @@ export function ApprovedSenderShip(props: TransferViewProps) {
           status={transfer.status as string}
         />
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -510,16 +637,23 @@ export function PendingAmReview(props: TransferViewProps) {
   const [rejectReason, setRejectReason] = useState("");
 
   return (
-    <div className="space-y-4">
+    <Section>
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
 
-      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      <div>
+        <SectionHeading>Item</SectionHeading>
+        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Aksi</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+      <SectionDivider />
+
+      <div>
+        <SectionHeading>Review Area Manager</SectionHeading>
+        <p className="text-sm text-muted-foreground mb-3">
+          Mutasi ini menunggu persetujuan Anda. Setujui untuk melanjutkan proses pengiriman, atau
+          tolak dengan alasan.
+        </p>
+        <ActionBar>
           <Button
             onClick={async () => {
               await actions.approve();
@@ -533,10 +667,15 @@ export function PendingAmReview(props: TransferViewProps) {
             <XCircle className="mr-1 h-4 w-4" />
             Tolak
           </Button>
-        </CardContent>
-      </Card>
+        </ActionBar>
+      </div>
 
-      <AuditLog rows={auditLog} />
+      {auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={auditLog} />
+        </>
+      )}
 
       {rejectOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -581,7 +720,7 @@ export function PendingAmReview(props: TransferViewProps) {
           </div>
         </div>
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -594,16 +733,23 @@ export function InTransitReceiverTracking(props: TransferViewProps) {
   const { error, setError, actions } = useTransferActions(transfer.id as string);
 
   return (
-    <div className="space-y-4">
+    <Section>
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
 
-      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      <div>
+        <SectionHeading>Item</SectionHeading>
+        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Aksi</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+      <SectionDivider />
+
+      <div>
+        <SectionHeading>Dalam Perjalanan</SectionHeading>
+        <p className="text-sm text-muted-foreground mb-3">
+          Barang sedang dalam perjalanan dari cabang pengirim. Tandai sebagai diterima setelah
+          barang tiba.
+        </p>
+        <ActionBar>
           <Button
             onClick={async () => {
               await actions.markDelivered();
@@ -613,11 +759,16 @@ export function InTransitReceiverTracking(props: TransferViewProps) {
             <PackageCheck className="mr-1 h-4 w-4" />
             Tandai Diterima
           </Button>
-        </CardContent>
-      </Card>
+        </ActionBar>
+      </div>
 
-      <AuditLog rows={auditLog} />
-    </div>
+      {auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={auditLog} />
+        </>
+      )}
+    </Section>
   );
 }
 
@@ -626,16 +777,23 @@ export function DeliveredReceiverForm(props: TransferViewProps) {
   const { error, setError, actions } = useTransferActions(transfer.id as string);
 
   return (
-    <div className="space-y-4">
+    <Section>
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
 
-      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      <div>
+        <SectionHeading>Item</SectionHeading>
+        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Aksi</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+      <SectionDivider />
+
+      <div>
+        <SectionHeading>Barang Diterima</SectionHeading>
+        <p className="text-sm text-muted-foreground mb-3">
+          Barang telah tiba di cabang Anda. Mulai review untuk memeriksa jumlah yang diterima dan
+          ditolak.
+        </p>
+        <ActionBar>
           <Button
             onClick={async () => {
               await actions.openReceive();
@@ -645,11 +803,16 @@ export function DeliveredReceiverForm(props: TransferViewProps) {
             <ClipboardCheck className="mr-1 h-4 w-4" />
             Mulai Review
           </Button>
-        </CardContent>
-      </Card>
+        </ActionBar>
+      </div>
 
-      <AuditLog rows={auditLog} />
-    </div>
+      {auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={auditLog} />
+        </>
+      )}
+    </Section>
   );
 }
 
@@ -662,15 +825,24 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
   const [reviewError, setReviewError] = useState<string | null>(null);
 
   return (
-    <div className="space-y-4">
+    <Section>
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Item — Review Penerimaan</CardTitle>
-          {reviewError && <span className="text-xs text-destructive">{reviewError}</span>}
-        </CardHeader>
-        <CardContent className="divide-y p-0">
+      <div className="rounded-md border">
+        <div className="flex items-center justify-between border-b p-4">
+          <div>
+            <h3 className="text-sm font-medium">Review Penerimaan</h3>
+            <p className="text-xs text-muted-foreground">
+              Masukkan jumlah yang diterima dan ditolak untuk setiap item.
+            </p>
+          </div>
+          {reviewError && (
+            <span className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">
+              {reviewError}
+            </span>
+          )}
+        </div>
+        <div className="divide-y">
           {items.map((it) => {
             const ing = ingredientById.get(it.ingredientId as string);
             const edit = reviewEdits[it.id as string] ?? {
@@ -750,7 +922,39 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
               </div>
             );
           })}
-        </CardContent>
+        </div>
+        {/* Summary row */}
+        <div className="border-t bg-muted/30 p-4">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Total: {items.length} item</span>
+            <div className="flex items-center gap-4">
+              <span>
+                Janji: <strong>{items.reduce((s, it) => s + (it.quantity as number), 0)}</strong>
+              </span>
+              <span>
+                Diterima:{" "}
+                <strong>
+                  {items.reduce((s, it) => {
+                    const edit = reviewEdits[it.id as string];
+                    return (
+                      s +
+                      (edit?.received ?? (it.receivedQuantity as number) ?? (it.quantity as number))
+                    );
+                  }, 0)}
+                </strong>
+              </span>
+              <span>
+                Ditolak:{" "}
+                <strong>
+                  {items.reduce((s, it) => {
+                    const edit = reviewEdits[it.id as string];
+                    return s + (edit?.rejected ?? (it.rejectedQuantity as number) ?? 0);
+                  }, 0)}
+                </strong>
+              </span>
+            </div>
+          </div>
+        </div>
         <div className="flex justify-end gap-2 border-t p-4">
           <Button variant="outline" onClick={() => setReviewEdits({})}>
             Batal
@@ -807,10 +1011,15 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
             Simpan Review
           </Button>
         </div>
-      </Card>
+      </div>
 
-      <AuditLog rows={auditLog} />
-    </div>
+      {auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={auditLog} />
+        </>
+      )}
+    </Section>
   );
 }
 
@@ -823,43 +1032,55 @@ export function WaitingInvoice(props: TransferViewProps) {
   const { error, setError, actions } = useTransferActions(transfer.id as string);
 
   return (
-    <div className="space-y-4">
+    <Section>
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
 
-      <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      <div>
+        <SectionHeading>Item</SectionHeading>
+        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+      </div>
 
-      {invoice && <InvoiceCard invoice={invoice} />}
+      {invoice && (
+        <>
+          <SectionDivider />
+          <InvoiceCard invoice={invoice} />
+        </>
+      )}
 
       {props.isSenderBa && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Aksi</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Button
-              onClick={async () => {
-                await actions.markPaid();
-                toast.success("Invoice ditandai lunas.");
-              }}
-            >
-              <CreditCard className="mr-1 h-4 w-4" />
-              Tandai Lunas
-            </Button>
-            <PrintButtons
-              onPrintSJ={actions.printSJ}
-              onPrintInvoice={actions.printInvoice}
-              showInvoice={!!invoice}
-            />
-          </CardContent>
-        </Card>
+        <>
+          <SectionDivider />
+          <div>
+            <SectionHeading>Pembayaran</SectionHeading>
+            <p className="text-sm text-muted-foreground mb-3">
+              Invoice telah diterbitkan. Tandai lunas setelah menerima pembayaran dari cabang
+              penerima.
+            </p>
+            <ActionBar>
+              <Button
+                onClick={async () => {
+                  await actions.markPaid();
+                  toast.success("Invoice ditandai lunas.");
+                }}
+              >
+                <CreditCard className="mr-1 h-4 w-4" />
+                Tandai Lunas
+              </Button>
+              <PrintButtons
+                onPrintSJ={actions.printSJ}
+                onPrintInvoice={actions.printInvoice}
+                showInvoice={!!invoice}
+              />
+            </ActionBar>
+          </div>
+        </>
       )}
 
       {props.amInJurisdiction && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Aksi</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <>
+          <SectionDivider />
+          <div>
+            <SectionHeading>Aksi AM</SectionHeading>
             <CancelAction
               code={transfer.code as string}
               status={transfer.status as string}
@@ -869,12 +1090,17 @@ export function WaitingInvoice(props: TransferViewProps) {
               }}
               onError={(msg) => setError(msg)}
             />
-          </CardContent>
-        </Card>
+          </div>
+        </>
       )}
 
-      <AuditLog rows={auditLog} />
-    </div>
+      {auditLog.length > 0 && (
+        <>
+          <SectionDivider />
+          <AuditLog rows={auditLog} />
+        </>
+      )}
+    </Section>
   );
 }
 

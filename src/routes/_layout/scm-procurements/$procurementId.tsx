@@ -143,16 +143,16 @@ function ProcurementDetailPage() {
   return (
     <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
       <div className="space-y-4 p-4 md:p-6">
-        <div className="flex items-center justify-end gap-2">
-          <Badge variant={statusColors[proc.status as ScmProcurementStatus]}>
-            {statusLabels[proc.status as ScmProcurementStatus]}
-          </Badge>
+        <div className="flex items-center justify-between gap-2">
           <Link to="/scm-procurements" search={() => ({ status: undefined })}>
-            <Button variant="ghost">
+            <Button variant="ghost" className="gap-1">
               <ArrowLeft className="h-4 w-4" />
               Kembali
             </Button>
           </Link>
+          <Badge variant={statusColors[proc.status as ScmProcurementStatus]}>
+            {statusLabels[proc.status as ScmProcurementStatus]}
+          </Badge>
         </div>
 
         <ScmStepper

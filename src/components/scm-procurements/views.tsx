@@ -23,6 +23,30 @@ import { printSuratJalan, printInvoice } from "#/lib/server/scm-print";
 import { openPrintWindow } from "#/lib/print-window";
 import { Plus, Trash2 } from "lucide-react";
 
+// ---------------------------------------------------------------------------
+// Shared layout primitives (same as Mutasi Stok views)
+// ---------------------------------------------------------------------------
+
+/** Section with consistent vertical rhythm */
+function Section({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`space-y-3 ${className}`}>{children}</div>;
+}
+
+/** Section heading — lighter than a Card title, used outside Cards */
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-sm font-medium text-muted-foreground">{children}</h3>;
+}
+
+/** Primary action bar — no Card wrapper, visually subordinate to content */
+function ActionBar({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-wrap items-center gap-2 pt-2">{children}</div>;
+}
+
+/** Divider between major sections */
+function SectionDivider() {
+  return <hr className="border-border" />;
+}
+
 /**
  * Shared props for all state views. The detail page passes the procurement
  * row and items. Audit log is fetched by the view itself via AuditLogCard
@@ -88,14 +112,14 @@ function invoiceLineItemsToRows(lineItems: Array<Record<string, unknown>>): ScmI
  */
 function AuditLogSection({ procurementId }: { procurementId: string }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Riwayat</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <div className="rounded-md border">
+      <div className="border-b p-4">
+        <h3 className="text-sm font-medium">Riwayat</h3>
+      </div>
+      <div className="p-4">
         <AuditLogCard procurementId={procurementId} />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -311,96 +335,89 @@ export function DraftForm({ procurement, items }: StateViewProps) {
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Item Pengadaan (Draft)</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Ubah jumlah, tambah bahan, atau hapus bahan. Setiap perubahan langsung tersimpan dan
-            tercatat di audit log.
-          </p>
-          <ScmItemTable
-            mode="draft-edit"
-            items={editableItems}
-            onItemChange={(id, patch) => {
-              handleItemChange(id, patch);
-              if (patch.readyQuantity !== undefined) {
-                void persistQuantity(id, patch.readyQuantity);
-              }
-            }}
-            disabled={updateM.isPending}
-          />
-          {editableItems.length > 0 ? (
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  editableItems.forEach((it) => handleRemove(it.id));
-                }}
-                disabled={removeM.isPending}
-              >
-                <Trash2 className="h-4 w-4 text-destructive" />
-                Hapus Semua Bahan
-              </Button>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Tambah Bahan</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            <Select value={newIngredientId} onValueChange={setNewIngredientId}>
-              <SelectTrigger className="flex-1">
-                <SelectValue placeholder="Pilih bahan..." />
-              </SelectTrigger>
-              <SelectContent>
-                {availableToAdd.length === 0 ? (
-                  <SelectItem value="__none__" disabled>
-                    Semua bahan sudah ditambahkan
-                  </SelectItem>
-                ) : (
-                  availableToAdd.map((ing) => (
-                    <SelectItem key={ing.id} value={ing.id}>
-                      {ing.name} — Rp {ing.averageCost.toLocaleString("id-ID")}/{ing.stockUnit}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-            <Input
-              type="number"
-              min={1}
-              value={newQuantity}
-              onChange={(e) => setNewQuantity(Number(e.target.value))}
-              className="w-32"
-            />
+    <Section>
+      <div>
+        <SectionHeading>Item Pengadaan (Draft)</SectionHeading>
+        <p className="text-sm text-muted-foreground mb-3">
+          Ubah jumlah, tambah bahan, atau hapus bahan. Setiap perubahan langsung tersimpan dan
+          tercatat di audit log.
+        </p>
+        <ScmItemTable
+          mode="draft-edit"
+          items={editableItems}
+          onItemChange={(id, patch) => {
+            handleItemChange(id, patch);
+            if (patch.readyQuantity !== undefined) {
+              void persistQuantity(id, patch.readyQuantity);
+            }
+          }}
+          disabled={updateM.isPending}
+        />
+        {editableItems.length > 0 ? (
+          <div className="flex justify-end mt-2">
             <Button
-              onClick={handleAdd}
-              disabled={
-                !newIngredientId ||
-                newQuantity <= 0 ||
-                addM.isPending ||
-                availableToAdd.length === 0
-              }
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                editableItems.forEach((it) => handleRemove(it.id));
+              }}
+              disabled={removeM.isPending}
             >
-              <Plus className="h-4 w-4" />
-              Tambah Bahan
+              <Trash2 className="h-4 w-4 text-destructive" />
+              Hapus Semua Bahan
             </Button>
           </div>
-          {addM.isError ? (
-            <p className="mt-2 text-sm text-destructive">{(addM.error as Error).message}</p>
-          ) : null}
-        </CardContent>
-      </Card>
+        ) : null}
+      </div>
 
-      <div className="flex justify-end gap-2">
+      <SectionDivider />
+
+      <div>
+        <SectionHeading>Tambah Bahan</SectionHeading>
+        <div className="flex gap-2 mt-2">
+          <Select value={newIngredientId} onValueChange={setNewIngredientId}>
+            <SelectTrigger className="flex-1">
+              <SelectValue placeholder="Pilih bahan..." />
+            </SelectTrigger>
+            <SelectContent>
+              {availableToAdd.length === 0 ? (
+                <SelectItem value="__none__" disabled>
+                  Semua bahan sudah ditambahkan
+                </SelectItem>
+              ) : (
+                availableToAdd.map((ing) => (
+                  <SelectItem key={ing.id} value={ing.id}>
+                    {ing.name} — Rp {ing.averageCost.toLocaleString("id-ID")}/{ing.stockUnit}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+          <Input
+            type="number"
+            min={1}
+            value={newQuantity}
+            onChange={(e) => setNewQuantity(Number(e.target.value))}
+            className="w-32"
+          />
+          <Button
+            onClick={handleAdd}
+            disabled={
+              !newIngredientId || newQuantity <= 0 || addM.isPending || availableToAdd.length === 0
+            }
+          >
+            <Plus className="h-4 w-4" />
+            Tambah Bahan
+          </Button>
+        </div>
+        {addM.isError ? (
+          <p className="mt-2 text-sm text-destructive">{(addM.error as Error).message}</p>
+        ) : null}
+      </div>
+
+      <SectionDivider />
+
+      <ActionBar>
         <Button
           onClick={() =>
             transitionM.mutate({ procurementId: procurement.id as string, event: "cancel" })
@@ -418,9 +435,9 @@ export function DraftForm({ procurement, items }: StateViewProps) {
         >
           {transitionM.isPending ? "Menyimpan..." : "Submit Pengadaan"}
         </Button>
-      </div>
+      </ActionBar>
       <AuditLogSection procurementId={procurement.id as string} />
-    </div>
+    </Section>
   );
 }
 
@@ -549,25 +566,23 @@ export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
   const pendingCount = editableItems.filter((it) => it.caDecision === "pending").length;
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Review Pengadaan</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-3 text-sm text-muted-foreground">
-            Setujui per item atau tolak seluruh pengadaan. Item yang disetujui akan dikirim; yang
-            ditolak diabaikan. Pengeditan tersimpan saat Anda klik{" "}
-            <strong>Setujui & Buat SJ</strong>.
-          </p>
-          <ScmItemTable
-            mode="ca-review"
-            items={editableItems}
-            onItemChange={handleItemChange}
-            disabled={updateM.isPending || transitionM.isPending}
-          />
-        </CardContent>
-      </Card>
+    <Section>
+      <div>
+        <SectionHeading>Review Pengadaan</SectionHeading>
+        <p className="text-sm text-muted-foreground mb-3">
+          Setujui per item atau tolak seluruh pengadaan. Item yang disetujui akan dikirim; yang
+          ditolak diabaikan. Pengeditan tersimpan saat Anda klik <strong>Setujui & Buat SJ</strong>.
+        </p>
+        <ScmItemTable
+          mode="ca-review"
+          items={editableItems}
+          onItemChange={handleItemChange}
+          disabled={updateM.isPending || transitionM.isPending}
+        />
+      </div>
+
+      <SectionDivider />
+
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1">
           <Input
@@ -577,7 +592,7 @@ export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
             onChange={(e) => setRejectionReason(e.target.value)}
           />
         </div>
-        <div className="flex gap-2">
+        <ActionBar>
           <Button
             variant="destructive"
             disabled={!rejectionReason || transitionM.isPending || updateM.isPending}
@@ -608,10 +623,10 @@ export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
                 ? "Memproses..."
                 : "Setujui & Buat SJ"}
           </Button>
-        </div>
+        </ActionBar>
       </div>
       <AuditLogSection procurementId={procurement.id as string} />
-    </div>
+    </Section>
   );
 }
 
@@ -870,24 +885,23 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
   };
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Review Penerimaan</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-3 text-sm text-muted-foreground">
-            Konfirmasi jumlah yang diterima (Ditolak dihitung otomatis). Klik{" "}
-            <strong>Selesai Review</strong> untuk konfirmasi.
-          </p>
-          <ScmItemTable
-            mode="ba-receive"
-            items={editableItems}
-            onItemChange={handleItemChange}
-            disabled={transitionM.isPending}
-          />
-        </CardContent>
-      </Card>
+    <Section>
+      <div>
+        <SectionHeading>Review Penerimaan</SectionHeading>
+        <p className="text-sm text-muted-foreground mb-3">
+          Konfirmasi jumlah yang diterima (Ditolak dihitung otomatis). Klik{" "}
+          <strong>Selesai Review</strong> untuk konfirmasi.
+        </p>
+        <ScmItemTable
+          mode="ba-receive"
+          items={editableItems}
+          onItemChange={handleItemChange}
+          disabled={transitionM.isPending}
+        />
+      </div>
+
+      <SectionDivider />
+
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1">
           <Input
@@ -897,7 +911,7 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
             onChange={(e) => setCancellationReason(e.target.value)}
           />
         </div>
-        <div className="flex gap-2">
+        <ActionBar>
           <Button
             variant="destructive"
             disabled={!cancellationReason || transitionM.isPending}
@@ -914,10 +928,10 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
           <Button disabled={transitionM.isPending} onClick={handleFinishReceive}>
             Selesai Review
           </Button>
-        </div>
+        </ActionBar>
       </div>
       <AuditLogSection procurementId={procurement.id as string} />
-    </div>
+    </Section>
   );
 }
 

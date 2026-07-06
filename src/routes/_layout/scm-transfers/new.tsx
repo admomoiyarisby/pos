@@ -55,6 +55,7 @@ function NewMutasiPage() {
   const [items, setItems] = useState<ItemRow[]>([]);
   const [notes, setNotes] = useState<string>("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const createMut = useServerFn(createMutasiTransfer);
   const queryClient = useQueryClient();
@@ -145,6 +146,7 @@ function NewMutasiPage() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const result = await createMut({
         data: {
@@ -164,6 +166,8 @@ function NewMutasiPage() {
       navigate({ to: "/scm-transfers/$transferId", params: { transferId: result.transfer.id } });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Gagal membuat mutasi");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -173,15 +177,19 @@ function NewMutasiPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "branch_admin"]}>
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-3xl">
-        <button
-          type="button"
-          onClick={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Kembali ke daftar
-        </button>
+      <form onSubmit={handleSubmit} className="space-y-4 max-w-3xl mx-auto">
+        <div className="flex items-center justify-between">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
+            className="gap-1"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Kembali
+          </Button>
+          <h1 className="text-lg font-semibold">Buat Mutasi Stok</h1>
+        </div>
 
         {submitError && (
           <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
@@ -398,6 +406,18 @@ function NewMutasiPage() {
               })}
             </div>
           )}
+          {items.length > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={addItem}
+              className="w-full mt-2"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Tambah Item
+            </Button>
+          )}
         </div>
 
         {items.length > 0 && fromBranchId && (
@@ -426,20 +446,22 @@ function NewMutasiPage() {
         </div>
 
         <div className="flex justify-end gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
-            className="h-9 px-4 rounded-md border text-sm"
+            disabled={isSubmitting}
           >
             Batal
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            disabled={itemsOverStock.length > 0 || items.some((it) => !it.ingredientId)}
-            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-40"
+            disabled={
+              isSubmitting || itemsOverStock.length > 0 || items.some((it) => !it.ingredientId)
+            }
           >
-            Buat Draft SJ
-          </button>
+            {isSubmitting ? "Membuat..." : "Buat Draft SJ"}
+          </Button>
         </div>
       </form>
     </RoleGuard>
