@@ -75,7 +75,7 @@ function FinancePage() {
         data: {
           branchId: fd.get("branchId") as string,
           date: fd.get("date") as string,
-          channel: fd.get("channel") as "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in",
+          channel: fd.get("channel") as "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok",
           amount: Number(fd.get("amount")),
           notes: (fd.get("notes") as string) || undefined,
         },

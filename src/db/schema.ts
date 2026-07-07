@@ -50,6 +50,7 @@ export const orderChannelEnum = pgEnum("order_channel", [
   "Grabfood",
   "ShopeeFood",
   "Dine-in",
+  "TikTok",
 ]);
 
 export const orderStatusEnum = pgEnum("order_status", [
@@ -213,6 +214,7 @@ export const branches = pgTable("branches", {
   code: text("code").notNull().unique(),
   name: text("name").notNull(),
   location: text("location").notNull(),
+  pin: text("pin"), // Per-branch shared PIN for login
   active: boolean("active").notNull().default(true),
   isOnline: boolean("is_online").notNull().default(true),
   type: branchTypeEnum("type").notNull().default("Outlet"),
@@ -1698,6 +1700,38 @@ export const passkey = pgTable(
   ],
 );
 
+// ─── Document Code Sequences (ID9) ───
+
+export const documentCodeSequences = pgTable(
+  "document_code_sequences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    prefix: text("prefix").notNull(),
+    branchCode: text("branch_code").notNull(),
+    date: text("date").notNull(), // ddmmyy format
+    lastSerial: integer("last_serial").notNull().default(0),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (t) => [unique("doc_code_seq_unique").on(t.prefix, t.branchCode, t.date)],
+);
+
+// ─── Branch Staff Names (ID1) ───
+
+export const branchStaffNames = pgTable(
+  "branch_staff_names",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (t) => [unique("branch_staff_name_unique").on(t.branchId, t.name)],
+);
+
 // =============================================================================
 // RELATIONS
 // =============================================================================
@@ -2547,6 +2581,13 @@ export const recipeBranchesRelations = relations(recipeBranches, ({ one }) => ({
   }),
   branch: one(branches, {
     fields: [recipeBranches.branchId],
+    references: [branches.id],
+  }),
+}));
+
+export const branchStaffNamesRelations = relations(branchStaffNames, ({ one }) => ({
+  branch: one(branches, {
+    fields: [branchStaffNames.branchId],
     references: [branches.id],
   }),
 }));

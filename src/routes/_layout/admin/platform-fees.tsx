@@ -22,6 +22,7 @@ const channelLabels: Record<string, string> = {
   Grabfood: "Grabfood",
   ShopeeFood: "ShopeeFood",
   "Dine-in": "Dine-in / Offline",
+  TikTok: "TikTok",
 };
 
 const columns: Column<FeeRow>[] = [

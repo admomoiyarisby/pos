@@ -89,6 +89,7 @@ function PrintRequestsPage() {
     Grabfood: "Grabfood",
     ShopeeFood: "ShopeeFood",
     "Dine-in": "Dine-in",
+    TikTok: "TikTok",
   };
 
   return (

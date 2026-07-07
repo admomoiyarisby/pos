@@ -506,10 +506,11 @@ export async function seedDatabase() {
 
   console.log("[seed] Seeding platform fees...");
   const platformFees = [
-    { channel: "Gofood", feePercentage: 20, fixedFee: 0 },
-    { channel: "Grabfood", feePercentage: 20, fixedFee: 0 },
-    { channel: "ShopeeFood", feePercentage: 20, fixedFee: 0 },
-    { channel: "Dine-in", feePercentage: 0, fixedFee: 0 },
+    { channel: "Gofood" as const, feePercentage: 20, fixedFee: 0 },
+    { channel: "Grabfood" as const, feePercentage: 20, fixedFee: 0 },
+    { channel: "ShopeeFood" as const, feePercentage: 20, fixedFee: 0 },
+    { channel: "Dine-in" as const, feePercentage: 0, fixedFee: 0 },
+    { channel: "TikTok" as const, feePercentage: 20, fixedFee: 0 },
   ];
   for (const pf of platformFees) {
     const existing = await db

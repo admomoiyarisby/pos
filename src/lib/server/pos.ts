@@ -294,7 +294,7 @@ export const createOrder = createServerFn({ method: "POST" })
   .validator(
     (data: {
       branchId: string;
-      channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in";
+      channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok";
       customerName?: string;
       orderCode?: string;
       items: z.infer<typeof orderItemInput>[];

@@ -478,7 +478,7 @@ export async function seedRecipesPass1(idMap: IdMap) {
 
 export async function seedPlatformFees() {
   const channels: Array<{
-    channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in";
+    channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok";
     feePercentage: number;
     fixedFee: number;
   }> = [
@@ -486,6 +486,7 @@ export async function seedPlatformFees() {
     { channel: "Grabfood", feePercentage: 20, fixedFee: 0 },
     { channel: "ShopeeFood", feePercentage: 20, fixedFee: 0 },
     { channel: "Dine-in", feePercentage: 0, fixedFee: 0 },
+    { channel: "TikTok", feePercentage: 20, fixedFee: 0 },
   ];
   for (const pf of channels) {
     const existing = await db

@@ -50,6 +50,7 @@ const channels = [
   { key: "Gofood", label: "Gofood" },
   { key: "Grabfood", label: "Grabfood" },
   { key: "ShopeeFood", label: "ShopeeFood" },
+  { key: "TikTok", label: "TikTok" },
 ];
 
 export const Route = createFileRoute("/_layout/pos")({
@@ -668,7 +669,7 @@ function PosPage() {
       await createOrderMutation.mutateAsync({
         data: {
           branchId: activeBranchId,
-          channel: channel as "Dine-in" | "Gofood" | "Grabfood" | "ShopeeFood",
+          channel: channel as "Dine-in" | "Gofood" | "Grabfood" | "ShopeeFood" | "TikTok",
           customerName: channel === "Dine-in" ? customerName : undefined,
           orderCode: channel !== "Dine-in" ? orderCode : undefined,
           items: items,

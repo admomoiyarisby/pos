@@ -27,6 +27,7 @@ const channelLabels: Record<string, string> = {
   Grabfood: "Grabfood",
   ShopeeFood: "ShopeeFood",
   "Dine-in": "Dine-in",
+  TikTok: "TikTok",
 };
 
 const statusColors: Record<string, string> = {
