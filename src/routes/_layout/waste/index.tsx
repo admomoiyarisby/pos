@@ -75,6 +75,36 @@ function WastePage() {
   const [investigationNoteText, setInvestigationNoteText] = useState("");
   const [investigationError, setInvestigationError] = useState<string | null>(null);
 
+  // Date range state (default: 26th prev month to 25th current month)
+  const [dateFrom, setDateFrom] = useState(() => {
+    const now = new Date();
+    const currentDay = now.getDate();
+    // If before 26th, range is 26th prev month to 25th current month
+    // If on or after 26th, range is 26th current month to 25th next month
+    if (currentDay < 26) {
+      const from = new Date(now.getFullYear(), now.getMonth() - 1, 26);
+      return from.toISOString().split("T")[0];
+    } else {
+      const from = new Date(now.getFullYear(), now.getMonth(), 26);
+      return from.toISOString().split("T")[0];
+    }
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    const now = new Date();
+    const currentDay = now.getDate();
+    if (currentDay < 26) {
+      const to = new Date(now.getFullYear(), now.getMonth(), 25);
+      return to.toISOString().split("T")[0];
+    } else {
+      const to = new Date(now.getFullYear(), now.getMonth() + 1, 25);
+      return to.toISOString().split("T")[0];
+    }
+  });
+
+  // Sort state
+  const [sortBy, setSortBy] = useState<"date" | "category">("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
   const filteredBranches = useMemo(() => {
     if (user?.role === "area_manager" && user.assignedBranches?.length) {
       return branches.filter((b) => user.assignedBranches!.includes(b.id));
@@ -163,10 +193,41 @@ function WastePage() {
   });
 
   const { noInvestigation } = Route.useSearch() as { noInvestigation?: string };
-  const filteredEntries =
-    noInvestigation === "true"
-      ? entries.filter((e) => !e.investigationNote || e.investigationNote.trim() === "")
-      : entries;
+
+  // Filter and sort entries
+  const filteredEntries = useMemo(() => {
+    let result = entries;
+
+    // Filter by noInvestigation
+    if (noInvestigation === "true") {
+      result = result.filter((e) => !e.investigationNote || e.investigationNote.trim() === "");
+    }
+
+    // Filter by date range
+    if (dateFrom && dateTo) {
+      const from = new Date(dateFrom);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date(dateTo);
+      to.setHours(23, 59, 59, 999);
+      result = result.filter((e) => {
+        const entryDate = new Date(e.createdAt);
+        return entryDate >= from && entryDate <= to;
+      });
+    }
+
+    // Sort
+    result = [...result].sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === "date") {
+        cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      } else if (sortBy === "category") {
+        cmp = a.category.localeCompare(b.category);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+
+    return result;
+  }, [entries, noInvestigation, dateFrom, dateTo, sortBy, sortDir]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -256,7 +317,7 @@ function WastePage() {
     setInvestigationModalOpen(true);
   };
 
-  usePageTitle("Pemborosan", "Pencatatan sisa produksi, jatah makan, dan barang rusak");
+  usePageTitle("Waste", "Pencatatan sisa produksi, jatah makan, dan barang rusak");
 
   const columns: Column<WasteRow>[] = [
     {
@@ -389,41 +450,78 @@ function WastePage() {
         }}
       />
 
-      <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-md border bg-card p-3">
           <div className="text-xs text-muted-foreground">Total Kerugian Waste</div>
           <div className="text-lg font-semibold">{formatRupiah(totalValuation)}</div>
-          <div className="text-[10px] text-muted-foreground">periode aktif</div>
+          <div className="text-[10px] text-muted-foreground">
+            {dateFrom} — {dateTo}
+          </div>
         </div>
-        <div className="flex items-end">
-          <div className="w-full space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Kategori</label>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Periode</label>
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Kategori</label>
+          <select
+            value={selectedCategory ?? ""}
+            onChange={(e) => setSelectedCategory(e.target.value || null)}
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="">Semua Kategori</option>
+            <option value="Beban Makan">Beban Makan</option>
+            <option value="Biaya Operasional">Biaya Operasional</option>
+            <option value="Spoiled">Spoiled</option>
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Urutkan</label>
+          <div className="flex gap-2">
             <select
-              value={selectedCategory ?? ""}
-              onChange={(e) => setSelectedCategory(e.target.value || null)}
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as "date" | "category")}
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
-              <option value="">Semua Kategori</option>
-              <option value="Beban Makan">Beban Makan</option>
-              <option value="Biaya Operasional">Biaya Operasional</option>
-              <option value="Spoiled">Spoiled</option>
+              <option value="date">Tanggal</option>
+              <option value="category">Kategori</option>
             </select>
+            <button
+              type="button"
+              onClick={() => setSortDir(sortDir === "asc" ? "desc" : "asc")}
+              className="h-9 w-9 rounded-md border flex items-center justify-center hover:bg-muted transition-colors"
+              title={sortDir === "asc" ? "Ascending" : "Descending"}
+            >
+              {sortDir === "asc" ? "↑" : "↓"}
+            </button>
           </div>
         </div>
-        <div className="flex items-end">
-          <div className="w-full space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Cari Bahan</label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Nama bahan..."
-                className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm"
-              />
-            </div>
-          </div>
+      </div>
+
+      {/* Search bar */}
+      <div className="mb-4">
+        <div className="relative max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Cari bahan..."
+            className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm"
+          />
         </div>
       </div>
 
