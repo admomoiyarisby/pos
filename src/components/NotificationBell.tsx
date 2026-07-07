@@ -41,6 +41,7 @@ export default function NotificationBell() {
   });
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const urgentUnreadCount = notifications.filter((n) => !n.isRead && n.priority === "urgent").length;
 
   const typeIcons = {
     info: <Info className="h-4 w-4 text-blue-500" />,
@@ -58,7 +59,13 @@ export default function NotificationBell() {
       >
         <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
+          <span
+            className={`absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium ${
+              urgentUnreadCount > 0
+                ? "bg-red-500 text-white animate-pulse"
+                : "bg-destructive text-destructive-foreground"
+            }`}
+          >
             {unreadCount}
           </span>
         )}
@@ -78,11 +85,24 @@ export default function NotificationBell() {
               notifications.map((n) => (
                 <div
                   key={n.id}
-                  className={`flex items-start gap-3 border-b p-3 transition-colors ${n.isRead ? "opacity-60" : "bg-muted/30"}`}
+                  className={`flex items-start gap-3 border-b p-3 transition-colors ${
+                    n.isRead
+                      ? "opacity-60"
+                      : n.priority === "urgent"
+                        ? "bg-red-50 border-l-2 border-l-red-500"
+                        : "bg-muted/30"
+                  }`}
                 >
                   {typeIcons[n.type as keyof typeof typeIcons] ?? <Info className="h-4 w-4" />}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{n.title}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{n.title}</p>
+                      {n.priority === "urgent" && !n.isRead && (
+                        <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                          URGENT
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground mt-0.5">{n.message}</p>
                     <p className="text-[10px] text-muted-foreground mt-1">
                       {new Date(n.createdAt).toLocaleString("id-ID", {
