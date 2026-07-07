@@ -10,6 +10,7 @@ import {
   approveStockOpname,
   updateStockOpnameCounts,
   markStockOpnameInvestigation,
+  realizeStockOpname,
 } from "#/lib/server/inventory";
 import { Badge } from "#/components/ui/badge";
 import { cn } from "#/lib/utils";
@@ -158,6 +159,19 @@ function StockOpnameDetailPage() {
     },
   });
 
+  // ID12: Realize SO mutation
+  const realizeMutation = useMutation({
+    mutationFn: realizeStockOpname,
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
+      void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
+      toast.success(`Stock opname berhasil di-realize. ${result.itemsAdjusted} item disesuaikan.`);
+    },
+    onError: (error) => {
+      toast.error("Gagal realize stock opname", { description: error.message });
+    },
+  });
+
   if (!detail) {
     return <div className="text-muted-foreground">Stock opname tidak ditemukan</div>;
   }
@@ -173,6 +187,15 @@ function StockOpnameDetailPage() {
     (user?.role === "branch_admin" || ["super_admin", "area_manager"].includes(user?.role ?? ""));
   const canMarkInvestigation =
     detail.status === "Submitted" && ["super_admin", "area_manager"].includes(user?.role ?? "");
+
+  // ID12: Can realize SO only on 25th, for admin_pusat/super_admin, when status is Approved
+  const today = new Date();
+  const is25th = today.getDate() === 25;
+  const canRealize =
+    is25th &&
+    ["super_admin", "admin_pusat"].includes(user?.role ?? "") &&
+    detail.status === "Approved" &&
+    !detail.realizedAt;
 
   const handleInputChange = (itemId: string, value: string) => {
     setPhysicalInputs((prev) => ({ ...prev, [itemId]: value }));
@@ -397,6 +420,28 @@ function StockOpnameDetailPage() {
             >
               Setujui & Sesuaikan
             </button>
+          )}
+
+          {/* ID12: Realize SO button - only on 25th for admin_pusat/super_admin */}
+          {canRealize && (
+            <button
+              onClick={() => {
+                if (confirm("Apakah Anda yakin ingin me-realize Stock Opname ini? Stok akan disesuaikan ke stok fisik.")) {
+                  void realizeMutation.mutateAsync({ data: { soId } });
+                }
+              }}
+              disabled={realizeMutation.isPending}
+              className="h-10 px-6 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+            >
+              {realizeMutation.isPending ? "Memproses..." : "Realize SO"}
+            </button>
+          )}
+
+          {/* Show info when SO is already realized */}
+          {detail.realizedAt && (
+            <div className="text-sm text-muted-foreground">
+              Di-realize pada {new Date(detail.realizedAt).toLocaleString("id-ID")}
+            </div>
           )}
 
           {isDev && canSubmit && (
