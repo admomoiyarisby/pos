@@ -124,12 +124,6 @@ const navGroups: NavGroup[] = [
         icon: Trash2,
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
       },
-      {
-        label: "Barang Rusak",
-        to: "/waste/broken-stock",
-        icon: Trash2,
-        roles: ["super_admin", "admin_pusat", "area_manager"],
-      },
     ],
   },
   {
@@ -193,15 +187,21 @@ const navGroups: NavGroup[] = [
   },
   {
     label: "Keuangan & Analitik",
-    roles: ["super_admin"],
+    roles: ["super_admin", "admin_pusat"],
     items: [
       {
         label: "Keuangan & Rekonsiliasi",
         to: "/finance",
         icon: DollarSign,
-        roles: ["super_admin"],
+        roles: ["super_admin", "admin_pusat"],
       },
       { label: "Dashboard Analitik", to: "/analytics", icon: BarChart3, roles: ["super_admin"] },
+      {
+        label: "Barang Rusak",
+        to: "/waste/broken-stock",
+        icon: Trash2,
+        roles: ["super_admin", "admin_pusat"],
+      },
     ],
   },
   {
