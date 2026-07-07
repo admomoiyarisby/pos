@@ -44,6 +44,7 @@ export interface MenuItem {
   category: string;
   basePrice: number;
   isBOGO: boolean;
+  isStaffMeal: boolean;
   isBundle: boolean;
   brands: { id: string; name: string | null }[];
   modifierGroups: ModifierGroup[];

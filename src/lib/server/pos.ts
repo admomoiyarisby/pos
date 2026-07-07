@@ -64,6 +64,7 @@ export const getPosMenu = createServerFn({ method: "GET" })
         category: recipes.category,
         basePrice: recipes.basePrice,
         isBOGO: recipes.isBOGO,
+        isStaffMeal: recipes.isStaffMeal,
         status: recipes.status,
       })
       .from(recipes)

@@ -573,13 +573,16 @@ function PosPage() {
       updated[existingIdx].quantity += 1;
       setCart(updated);
     } else {
+      // Staff meals display as Rp 0 but HPP is still calculated
+      const displayPrice = item.isStaffMeal ? 0 : item.basePrice + modPrice;
+
       setCart(
         cart.concat([
           {
             recipeId: item.id,
             brandId: item.brands[0]?.id ?? undefined,
             name: item.name,
-            price: item.basePrice + modPrice,
+            price: displayPrice,
             quantity: 1,
             modifiers: modifiers,
             notes: itemNotes,
