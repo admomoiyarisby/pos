@@ -147,6 +147,7 @@ export const printRequestStatusEnum = pgEnum("print_request_status", [
 export const logStatusEnum = pgEnum("log_status", ["Success", "Warning", "Error"]);
 
 export const notificationTypeEnum = pgEnum("notification_type", ["info", "warning", "alert"]);
+export const notificationPriorityEnum = pgEnum("notification_priority", ["normal", "urgent"]); // ID7
 
 // --- SCM (new FSM, ADR 0002) ---
 
@@ -278,6 +279,7 @@ export const recipes = pgTable("recipes", {
   basePrice: integer("base_price").notNull(),
   totalCogs: integer("total_cogs").notNull().default(0),
   isBOGO: boolean("is_bogo").notNull().default(false),
+  isStaffMeal: boolean("is_staff_meal").notNull().default(false), // ID6: Staff meals display as Rp 0
   status: ingredientStatusEnum("status").notNull().default("Active"),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
@@ -1069,6 +1071,7 @@ export const scmProcurements = pgTable(
     cancelledById: uuid("cancelled_by_id").references(() => users.id),
     cancellationReason: text("cancellation_reason"),
     notes: text("notes"),
+    requestSource: text("request_source"), // ID5: Where request originated (WhatsApp, Phone, System)
   },
   (t) => [
     index("sp_branch_idx").on(t.branchId),
@@ -1231,6 +1234,7 @@ export const scmTransfers = pgTable(
     cancelledAt: timestamp("cancelled_at", { mode: "date" }),
     cancellationReason: text("cancellation_reason"),
     notes: text("notes"),
+    requestSource: text("request_source"), // ID5: Where request originated (WhatsApp, Phone, System)
   },
   (t) => [
     index("stx_from_branch_idx").on(t.fromBranchId),
@@ -1419,6 +1423,8 @@ export const stockOpnames = pgTable(
       .references(() => users.id),
     approvedBy: uuid("approved_by").references(() => users.id),
     investigationNote: text("investigation_note"),
+    realizedAt: timestamp("realized_at", { mode: "date" }), // ID4: When SO was realized
+    realizedBy: uuid("realized_by").references(() => users.id), // ID4: Who realized the SO
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (t) => [
@@ -1445,6 +1451,33 @@ export const stockOpnameItems = pgTable(
     investigationNote: text("investigation_note"),
   },
   (t) => [index("soi_opname_idx").on(t.stockOpnameId)],
+);
+
+// ID3: Employee penalties linked to stock opname
+export const employeePenalties = pgTable(
+  "employee_penalties",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    stockOpnameId: uuid("stock_opname_id")
+      .references(() => stockOpnames.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    amount: integer("amount").notNull(),
+    reason: text("reason").notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("ep_branch_idx").on(t.branchId),
+    index("ep_user_idx").on(t.userId),
+    index("ep_so_idx").on(t.stockOpnameId),
+  ],
 );
 
 export const auditLogs = pgTable(
@@ -1603,6 +1636,7 @@ export const systemNotifications = pgTable(
     title: text("title").notNull(),
     message: text("message").notNull(),
     type: notificationTypeEnum("type").notNull().default("info"),
+    priority: notificationPriorityEnum("priority").notNull().default("normal"), // ID7
     isRead: boolean("is_read").notNull().default(false),
     metadata: jsonb("metadata"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
@@ -2490,7 +2524,13 @@ export const stockOpnamesRelations = relations(stockOpnames, ({ one, many }) => 
     references: [users.id],
     relationName: "approvedBy",
   }),
+  realizedByUser: one(users, {
+    fields: [stockOpnames.realizedBy],
+    references: [users.id],
+    relationName: "realizedBy",
+  }),
   items: many(stockOpnameItems),
+  penalties: many(employeePenalties),
 }));
 
 export const stockOpnameItemsRelations = relations(stockOpnameItems, ({ one }) => ({
@@ -2506,6 +2546,24 @@ export const stockOpnameItemsRelations = relations(stockOpnameItems, ({ one }) =
 
 export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   user: one(users, { fields: [auditLogs.userId], references: [users.id] }),
+}));
+
+export const employeePenaltiesRelations = relations(employeePenalties, ({ one }) => ({
+  branch: one(branches, { fields: [employeePenalties.branchId], references: [branches.id] }),
+  stockOpname: one(stockOpnames, {
+    fields: [employeePenalties.stockOpnameId],
+    references: [stockOpnames.id],
+  }),
+  user: one(users, {
+    fields: [employeePenalties.userId],
+    references: [users.id],
+    relationName: "penalizedUser",
+  }),
+  createdByUser: one(users, {
+    fields: [employeePenalties.createdBy],
+    references: [users.id],
+    relationName: "penaltyCreatedBy",
+  }),
 }));
 
 // ─── Finance ───
