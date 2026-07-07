@@ -645,3 +645,107 @@ export const getAssignedBranchIds = createServerFn({ method: "GET" }).handler(as
 
   return [];
 });
+
+// ID12: Realize Stock Opname
+// Applies SO results to live inventory on the 25th of the month
+export const realizeStockOpname = createServerFn({ method: "POST" })
+  .validator((data: { soId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    // 1. Verify current date is the 25th
+    const today = new Date();
+    if (today.getDate() !== 25) {
+      throw new Error("Stock Opname hanya bisa di-realize pada tanggal 25");
+    }
+
+    // 2. Get the SO and verify status is Approved
+    const [so] = await db
+      .select()
+      .from(stockOpnames)
+      .where(eq(stockOpnames.id, data.soId))
+      .limit(1);
+
+    if (!so) {
+      throw new Error("Stock Opname tidak ditemukan");
+    }
+
+    if (so.status !== "Approved") {
+      throw new Error("Stock Opname harus di-approve terlebih dahulu");
+    }
+
+    if (so.realizedAt) {
+      throw new Error("Stock Opname sudah di-realize sebelumnya");
+    }
+
+    // 3. Get SO items
+    const items = await db
+      .select({
+        id: stockOpnameItems.id,
+        ingredientId: stockOpnameItems.ingredientId,
+        physicalStock: stockOpnameItems.physicalStock,
+      })
+      .from(stockOpnameItems)
+      .where(eq(stockOpnameItems.stockOpnameId, data.soId));
+
+    // 4. For each item, adjust inventory to match physical stock
+    for (const item of items) {
+      // Get current inventory for this ingredient at this branch
+      const [inv] = await db
+        .select()
+        .from(inventory)
+        .where(
+          and(
+            eq(inventory.branchId, so.branchId),
+            eq(inventory.ingredientId, item.ingredientId),
+          ),
+        )
+        .limit(1);
+
+      if (inv) {
+        const oldQty = inv.quantity;
+        const newQty = item.physicalStock;
+        const delta = newQty - oldQty;
+
+        // Update inventory
+        await db
+          .update(inventory)
+          .set({
+            quantity: newQty,
+            lastUpdated: new Date(),
+          })
+          .where(eq(inventory.id, inv.id));
+
+        // Create stock ledger entry for the adjustment
+        if (delta !== 0) {
+          await db.insert(stockLedger).values({
+            branchId: so.branchId,
+            ingredientId: item.ingredientId,
+            type: (delta > 0 ? "IN" : "OUT") as "IN" | "OUT",
+            quantity: Math.abs(delta),
+            balance: newQty,
+            reference: `SO:${data.soId}`,
+            notes: `SO Realization: Adjusted from ${oldQty} to ${newQty}`,
+          });
+        }
+      }
+    }
+
+    // 5. Mark SO as realized
+    await db
+      .update(stockOpnames)
+      .set({
+        realizedAt: new Date(),
+        realizedBy: user.id,
+      })
+      .where(eq(stockOpnames.id, data.soId));
+
+    // 6. Log the action
+    await logSystemAction(
+      user,
+      "Realize SO",
+      `Stock Opname ${data.soId} realized by ${user.name}. Inventory adjusted for ${items.length} items.`,
+    );
+
+    return { success: true, itemsAdjusted: items.length };
+  });
