@@ -46,6 +46,7 @@ function InventoryPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<"Fresh" | "Dry" | "Packaging" | "">("");
   const [branchId, setBranchId] = useState("");
+  const [locationType, setLocationType] = useState<"" | "Central" | "Outlet">("");
   const [page, setPage] = useState(0);
   const pageSize = 25;
 
@@ -61,13 +62,14 @@ function InventoryPage() {
   const negativeFilter = negativeParam === "true";
 
   const { data: result } = useQuery({
-    queryKey: ["inventory", search, category, branchId, page, negativeFilter],
+    queryKey: ["inventory", search, category, branchId, locationType, page, negativeFilter],
     queryFn: () =>
       getInventory({
         data: {
           search: search || undefined,
           category: category || null,
           branchId: branchId || undefined,
+          locationType: locationType || null,
           page,
           limit: pageSize,
           negative: negativeFilter || undefined,
@@ -148,6 +150,22 @@ function InventoryPage() {
               </option>
             ))}
           </select>
+        )}
+        {canFilterBranches && (
+          <div className="flex gap-1.5">
+            {(["", "Central", "Outlet"] as const).map((loc) => (
+              <button
+                key={loc || "all-loc"}
+                onClick={() => {
+                  setLocationType(loc);
+                  setPage(0);
+                }}
+                className={`h-8 px-3 rounded-md text-xs font-medium transition-colors ${locationType === loc ? "bg-secondary text-secondary-foreground" : "border hover:bg-muted"}`}
+              >
+                {loc === "" ? "Semua Lokasi" : loc === "Central" ? "Pusat" : "Cabang"}
+              </button>
+            ))}
+          </div>
         )}
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {(["", "Fresh", "Dry", "Packaging"] as const).map((cat) => (

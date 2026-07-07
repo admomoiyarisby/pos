@@ -21,6 +21,7 @@ export const getInventory = createServerFn({ method: "GET" })
       search?: string;
       category?: "Fresh" | "Dry" | "Packaging" | null;
       skuType?: "RM" | "SFG" | "FG" | null;
+      locationType?: "Central" | "Outlet" | null; // ID18
       page?: number;
       limit?: number;
       sortBy?: string;
@@ -44,6 +45,7 @@ export const getInventory = createServerFn({ method: "GET" })
       data.search ? ilike(ingredients.name, `%${data.search}%`) : undefined,
       data.category ? eq(ingredients.category, data.category) : undefined,
       data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
+      data.locationType ? eq(branches.type, data.locationType) : undefined, // ID18
       data.negative ? sql`${inventory.quantity} <= 0` : undefined,
     ];
     const where = and(...conditions.filter(Boolean));
