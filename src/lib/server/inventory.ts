@@ -755,3 +755,120 @@ export const realizeStockOpname = createServerFn({ method: "POST" })
 
     return { success: true, itemsAdjusted: items.length };
   });
+
+// ID13: Print Stock Opname to PDF (HTML + browser print)
+export const printStockOpname = createServerFn({ method: "GET" })
+  .validator((data: { soId: string }) => data)
+  .handler(async ({ data }) => {
+    await requireAuth();
+
+    const [so] = await db
+      .select()
+      .from(stockOpnames)
+      .where(eq(stockOpnames.id, data.soId))
+      .limit(1);
+    if (!so) throw new Error("Stock Opname not found");
+
+    const [branch] = await db
+      .select()
+      .from(branches)
+      .where(eq(branches.id, so.branchId))
+      .limit(1);
+
+    const items = await db
+      .select({
+        id: stockOpnameItems.id,
+        ingredientName: ingredients.name,
+        ingredientCode: ingredients.code,
+        systemStock: stockOpnameItems.systemStock,
+        physicalStock: stockOpnameItems.physicalStock,
+        variance: stockOpnameItems.variance,
+      })
+      .from(stockOpnameItems)
+      .innerJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
+      .where(eq(stockOpnameItems.stockOpnameId, data.soId))
+      .orderBy(ingredients.name);
+
+    const rows = items
+      .map(
+        (it, idx) => `
+        <tr>
+          <td style="text-align:center;">${idx + 1}</td>
+          <td>${escapeHtml(it.ingredientCode ?? "")}</td>
+          <td>${escapeHtml(it.ingredientName ?? "")}</td>
+          <td style="text-align:right;">${it.systemStock.toLocaleString("id-ID")}</td>
+          <td style="text-align:right;">${it.physicalStock.toLocaleString("id-ID")}</td>
+          <td style="text-align:right;">${it.variance > 0 ? "+" : ""}${it.variance.toLocaleString("id-ID")}</td>
+        </tr>`,
+      )
+      .join("");
+
+    const statusLabel =
+      so.status === "Approved"
+        ? "Disetujui"
+        : so.status === "Under Investigation"
+          ? "Investigasi"
+          : so.status;
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Stock Opname ${escapeHtml(branch?.name ?? "")}</title>
+<style>
+  @page { size: A4 landscape; margin: 1.5cm; }
+  body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; color: #000; margin: 0; padding: 0; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 8pt; margin-bottom: 16pt; }
+  .title { font-size: 16pt; font-weight: bold; }
+  .subtitle { font-size: 9pt; color: #555; }
+  .meta { text-align: right; font-size: 10pt; }
+  .meta strong { font-size: 11pt; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12pt; }
+  th { background: #f0f0f0; font-weight: bold; padding: 6pt 8pt; border: 1px solid #ccc; text-align: left; }
+  td { padding: 5pt 8pt; border: 1px solid #ddd; }
+  .total-row td { font-weight: bold; background: #fafafa; }
+  .signature { margin-top: 40pt; display: flex; justify-content: space-between; }
+  .signature div { width: 30%; }
+  .signature p { margin: 0; font-size: 10pt; }
+  .signature .line { border-top: 1px solid #000; margin-top: 36pt; padding-top: 4pt; font-size: 10pt; text-align: center; }
+  .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 8pt; color: #999; padding: 8pt; border-top: 1px solid #eee; }
+</style>
+</head><body>
+<div class="header">
+  <div>
+    <div class="title">Laporan Stock Opname</div>
+    <div class="subtitle">${escapeHtml(branch?.name ?? "")} (${escapeHtml(branch?.code ?? "")})</div>
+  </div>
+  <div class="meta">
+    <div><strong>Tanggal:</strong> ${so.date}</div>
+    <div><strong>Status:</strong> ${statusLabel}</div>
+    <div><strong>Dibuat:</strong> ${new Date(so.createdAt).toLocaleDateString("id-ID")}</div>
+  </div>
+</div>
+<table>
+<thead><tr>
+  <th style="width:40pt;">No</th>
+  <th style="width:80pt;">Kode</th>
+  <th>Nama Bahan</th>
+  <th style="width:80pt;text-align:right;">Stok Sistem</th>
+  <th style="width:80pt;text-align:right;">Stok Fisik</th>
+  <th style="width:80pt;text-align:right;">Selisih</th>
+</tr></thead>
+<tbody>${rows}</tbody>
+</table>
+<div class="signature">
+  <div><p>Pencatat,</p><div class="line">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div></div>
+  <div><p>Mengetahui,</p><div class="line">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div></div>
+  <div><p>Menyetujui,</p><div class="line">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div></div>
+</div>
+<div class="footer">Dicetak dari Omoiyari POS — ${new Date().toLocaleDateString("id-ID")}</div>
+<script>window.print();window.close();</script>
+</body></html>`;
+
+    return { html };
+  });
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}

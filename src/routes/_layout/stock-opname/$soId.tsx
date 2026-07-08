@@ -11,8 +11,10 @@ import {
   updateStockOpnameCounts,
   markStockOpnameInvestigation,
   realizeStockOpname,
+  printStockOpname,
 } from "#/lib/server/inventory";
 import { Badge } from "#/components/ui/badge";
+import { openPrintWindow } from "#/lib/print-window";
 import { cn } from "#/lib/utils";
 import { toast } from "sonner";
 
@@ -297,6 +299,20 @@ function StockOpnameDetailPage() {
               {detail.status === "Under Investigation" ? "Investigasi" : detail.status}
             </Badge>
             {isBlind && <Badge variant="outline">Blind SO</Badge>}
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const result = await printStockOpname({ data: { soId } });
+                  openPrintWindow(result.html);
+                } catch (err) {
+                  toast.error("Gagal mencetak", { description: (err as Error).message });
+                }
+              }}
+              className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-muted transition-colors"
+            >
+              Cetak PDF
+            </button>
           </div>
         </div>
 
