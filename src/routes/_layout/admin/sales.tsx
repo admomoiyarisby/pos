@@ -5,7 +5,13 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getSalesRecords, updateSalesRecord, deleteSalesRecord, type SalesRow } from "#/lib/server/sales";
+import {
+  getSalesRecords,
+  createSalesRecord,
+  updateSalesRecord,
+  deleteSalesRecord,
+  type SalesRow,
+} from "#/lib/server/sales";
 import { getBranches } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
@@ -89,6 +95,30 @@ function SalesAdminPage() {
     },
   });
 
+  // ID14: Create mutation
+  const createMutation = useMutation({
+    mutationFn: createSalesRecord,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["sales-admin"] });
+      setCreateModal(false);
+      setNewOrder({ branchId: "", channel: "Gofood", totalAmount: "", customerName: "", orderCode: "" });
+      toast.success("Data penjualan berhasil ditambahkan");
+    },
+    onError: (err) => {
+      toast.error("Gagal menambahkan", { description: err.message });
+    },
+  });
+
+  // Create modal state
+  const [createModal, setCreateModal] = useState(false);
+  const [newOrder, setNewOrder] = useState({
+    branchId: "",
+    channel: "Gofood",
+    totalAmount: "",
+    customerName: "",
+    orderCode: "",
+  });
+
   usePageTitle("Data Penjualan", "Rekap dan kelola data penjualan");
 
   const columns: Column<SalesRow>[] = [
@@ -112,7 +142,12 @@ function SalesAdminPage() {
       sortable: true,
       render: (r) => <Badge variant="outline">{channelLabels[r.channel] ?? r.channel}</Badge>,
     },
-    { key: "customerName", header: "Pelanggan", render: (r) => r.customerName ?? "-", width: "w-28" },
+    {
+      key: "customerName",
+      header: "Pelanggan",
+      render: (r) => r.customerName ?? "-",
+      width: "w-28",
+    },
     {
       key: "totalAmount",
       header: "Total",
@@ -133,9 +168,7 @@ function SalesAdminPage() {
       header: "Status",
       width: "w-24",
       sortable: true,
-      render: (r) => (
-        <Badge variant={statusColors[r.status] ?? "default"}>{r.status}</Badge>
-      ),
+      render: (r) => <Badge variant={statusColors[r.status] ?? "default"}>{r.status}</Badge>,
     },
     {
       key: "actions",
@@ -170,6 +203,18 @@ function SalesAdminPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="space-y-4">
+        {/* Header with Add button */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Data Penjualan</h2>
+          <button
+            type="button"
+            onClick={() => setCreateModal(true)}
+            className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            + Tambah Penjualan
+          </button>
+        </div>
+
         {/* Filters */}
         <div className="flex flex-wrap gap-3 items-end">
           <div className="space-y-1">
@@ -199,7 +244,9 @@ function SalesAdminPage() {
             >
               <option value="">Semua</option>
               {branches?.map((b: { id: string; name: string }) => (
-                <option key={b.id} value={b.id}>{b.name}</option>
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
               ))}
             </select>
           </div>
@@ -212,7 +259,9 @@ function SalesAdminPage() {
             >
               <option value="">Semua</option>
               {Object.entries(channelLabels).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
+                <option key={key} value={key}>
+                  {label}
+                </option>
               ))}
             </select>
           </div>
@@ -227,12 +276,18 @@ function SalesAdminPage() {
         />
 
         {/* Edit Modal */}
-        <Modal open={editModal} onClose={() => setEditModal(false)} title="Edit Data Penjualan" size="sm">
+        <Modal
+          open={editModal}
+          onClose={() => setEditModal(false)}
+          title="Edit Data Penjualan"
+          size="sm"
+        >
           <div className="space-y-4">
             {selectedOrder && (
               <>
                 <div className="text-sm text-muted-foreground">
-                  Order: {selectedOrder.orderCode ?? "-"} · {selectedOrder.branchName} · {channelLabels[selectedOrder.channel]}
+                  Order: {selectedOrder.orderCode ?? "-"} · {selectedOrder.branchName} ·{" "}
+                  {channelLabels[selectedOrder.channel]}
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Total Amount (Rp)</label>
@@ -272,15 +327,22 @@ function SalesAdminPage() {
         </Modal>
 
         {/* Delete Confirmation Modal */}
-        <Modal open={deleteModal} onClose={() => setDeleteModal(false)} title="Hapus Data Penjualan" size="sm">
+        <Modal
+          open={deleteModal}
+          onClose={() => setDeleteModal(false)}
+          title="Hapus Data Penjualan"
+          size="sm"
+        >
           <div className="space-y-4">
             {selectedOrder && (
               <>
                 <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
                   <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                   <span>
-                    Order {selectedOrder.orderCode ?? "-"} ({selectedOrder.branchName}) akan di-void.
-                    {selectedOrder.totalAmount > 0 && ` Nilai: ${formatRupiah(selectedOrder.totalAmount)}`}
+                    Order {selectedOrder.orderCode ?? "-"} ({selectedOrder.branchName}) akan
+                    di-void.
+                    {selectedOrder.totalAmount > 0 &&
+                      ` Nilai: ${formatRupiah(selectedOrder.totalAmount)}`}
                   </span>
                 </div>
                 <p className="text-sm text-muted-foreground">
@@ -306,6 +368,90 @@ function SalesAdminPage() {
                 </div>
               </>
             )}
+          </div>
+        </Modal>
+
+        {/* Create Modal */}
+        <Modal open={createModal} onClose={() => setCreateModal(false)} title="Tambah Data Penjualan" size="sm">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Cabang</label>
+              <select
+                value={newOrder.branchId}
+                onChange={(e) => setNewOrder({ ...newOrder, branchId: e.target.value })}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Pilih cabang</option>
+                {branches?.map((b: { id: string; name: string }) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Channel</label>
+              <select
+                value={newOrder.channel}
+                onChange={(e) => setNewOrder({ ...newOrder, channel: e.target.value })}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {Object.entries(channelLabels).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Total Amount (Rp)</label>
+              <input
+                type="number"
+                value={newOrder.totalAmount}
+                onChange={(e) => setNewOrder({ ...newOrder, totalAmount: e.target.value })}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Kode Order (opsional)</label>
+              <input
+                type="text"
+                value={newOrder.orderCode}
+                onChange={(e) => setNewOrder({ ...newOrder, orderCode: e.target.value })}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Pelanggan (opsional)</label>
+              <input
+                type="text"
+                value={newOrder.customerName}
+                onChange={(e) => setNewOrder({ ...newOrder, customerName: e.target.value })}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setCreateModal(false)}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  if (!newOrder.branchId || !newOrder.totalAmount) return;
+                  void createMutation.mutateAsync({
+                    data: {
+                      branchId: newOrder.branchId,
+                      channel: newOrder.channel as "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok",
+                      totalAmount: Number(newOrder.totalAmount),
+                      customerName: newOrder.customerName || undefined,
+                      orderCode: newOrder.orderCode || undefined,
+                    },
+                  });
+                }}
+                disabled={createMutation.isPending || !newOrder.branchId || !newOrder.totalAmount}
+                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+              >
+                {createMutation.isPending ? "Menyimpan..." : "Simpan"}
+              </button>
+            </div>
           </div>
         </Modal>
       </div>

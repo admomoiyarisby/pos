@@ -115,12 +115,7 @@ export const pinAuth = () => ({
         const [branch] = await db
           .select()
           .from(branches)
-          .where(
-            and(
-              eq(branches.code, branchCode),
-              eq(branches.active, true),
-            ),
-          )
+          .where(and(eq(branches.code, branchCode), eq(branches.active, true)))
           .limit(1);
 
         if (!branch) {
@@ -131,6 +126,9 @@ export const pinAuth = () => ({
         }
 
         // 2. Verify PIN
+        // TODO(security): PINs are stored as plaintext. Consider hashing with bcrypt
+        // before storage. This is a shared branch secret, not per-user, so the threat
+        // model is different from user passwords, but hashing is still recommended.
         if (!branch.pin || branch.pin !== pin) {
           throw APIError.from("UNAUTHORIZED", {
             code: "INVALID_PIN",
@@ -145,12 +143,7 @@ export const pinAuth = () => ({
             name: branchStaffNames.name,
           })
           .from(branchStaffNames)
-          .where(
-            and(
-              eq(branchStaffNames.branchId, branch.id),
-              eq(branchStaffNames.active, true),
-            ),
-          )
+          .where(and(eq(branchStaffNames.branchId, branch.id), eq(branchStaffNames.active, true)))
           .orderBy(branchStaffNames.name);
 
         // 4. Return branch info + staff names
@@ -187,12 +180,7 @@ export const pinAuth = () => ({
         const [branch] = await db
           .select()
           .from(branches)
-          .where(
-            and(
-              eq(branches.id, branchId),
-              eq(branches.active, true),
-            ),
-          )
+          .where(and(eq(branches.id, branchId), eq(branches.active, true)))
           .limit(1);
 
         if (!branch) {
@@ -225,11 +213,7 @@ export const pinAuth = () => ({
         // 3. Find or create a user account for this staff member
         const email = `${branch.code.toLowerCase()}_${staffName.toLowerCase().replace(/\s+/g, "_")}@staff.omoiyari.net`;
 
-        let [user] = await db
-          .select()
-          .from(usersTable)
-          .where(eq(usersTable.email, email))
-          .limit(1);
+        let [user] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
 
         if (!user) {
           // Create a user account for this staff member

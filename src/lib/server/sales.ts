@@ -7,7 +7,14 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { orders, orderItems, branches, users, areaManagerBranches, systemNotifications } from "#/db/schema";
+import {
+  orders,
+  orderItems,
+  branches,
+  users,
+  areaManagerBranches,
+  systemNotifications,
+} from "#/db/schema";
 import { eq, and, gte, lte, desc, sql, inArray } from "drizzle-orm";
 import { requireRole } from "#/lib/server/auth";
 import { z } from "zod";
@@ -44,7 +51,6 @@ export const getSalesRecords = createServerFn({ method: "POST" })
       dateTo?: string;
       branchId?: string;
       channel?: string;
-      search?: string;
       page?: number;
       limit?: number;
     }) => data,
@@ -56,7 +62,7 @@ export const getSalesRecords = createServerFn({ method: "POST" })
       data.dateFrom ? gte(orders.createdAt, new Date(data.dateFrom)) : undefined,
       data.dateTo ? lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")) : undefined,
       data.branchId ? eq(orders.branchId, data.branchId) : undefined,
-      data.channel ? eq(orders.channel, data.channel as any) : undefined,
+      data.channel ? eq(orders.channel, data.channel as "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok") : undefined,
     );
 
     const page = data.page ?? 0;
@@ -85,16 +91,17 @@ export const getSalesRecords = createServerFn({ method: "POST" })
 
     // Get item counts for each order
     const orderIds = result.map((r) => r.id);
-    const itemCounts = orderIds.length > 0
-      ? await db
-          .select({
-            orderId: orderItems.orderId,
-            count: sql<number>`COUNT(*)`.as("count"),
-          })
-          .from(orderItems)
-          .where(inArray(orderItems.orderId, orderIds))
-          .groupBy(orderItems.orderId)
-      : [];
+    const itemCounts =
+      orderIds.length > 0
+        ? await db
+            .select({
+              orderId: orderItems.orderId,
+              count: sql<number>`COUNT(*)`.as("count"),
+            })
+            .from(orderItems)
+            .where(inArray(orderItems.orderId, orderIds))
+            .groupBy(orderItems.orderId)
+        : [];
 
     const countMap = new Map(itemCounts.map((ic) => [ic.orderId, ic.count]));
 
@@ -107,6 +114,50 @@ export const getSalesRecords = createServerFn({ method: "POST" })
 // =============================================================================
 // Mutations
 // =============================================================================
+
+// ID14: Create a new sales record
+export const createSalesRecord = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      branchId: z.string(),
+      channel: z.enum(["Gofood", "Grabfood", "ShopeeFood", "Dine-in", "TikTok"]),
+      totalAmount: z.number().int(),
+      totalCogs: z.number().int().default(0),
+      netSales: z.number().int().default(0),
+      customerName: z.string().optional(),
+      orderCode: z.string().optional(),
+      notes: z.string().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [created] = await db
+      .insert(orders)
+      .values({
+        branchId: data.branchId,
+        channel: data.channel,
+        subtotal: data.totalAmount,
+        totalAmount: data.totalAmount,
+        totalCogs: data.totalCogs,
+        netSales: data.netSales,
+        customerName: data.customerName,
+        orderCode: data.orderCode,
+        status: "Completed",
+      })
+      .returning();
+
+    // Send notifications
+    await notifySalesChange(
+      user,
+      data.branchId,
+      "menambahkan",
+      `Order ${data.orderCode ?? created.id}`,
+      `Order baru senilai Rp ${data.totalAmount.toLocaleString("id-ID")}`,
+    );
+
+    return { success: true, id: created.id };
+  });
 
 /**
  * Update a sales record.
@@ -127,11 +178,7 @@ export const updateSalesRecord = createServerFn({ method: "POST" })
     const user = await requireRole("super_admin", "admin_pusat");
 
     // Get the order before updating for notification
-    const [oldOrder] = await db
-      .select()
-      .from(orders)
-      .where(eq(orders.id, data.id))
-      .limit(1);
+    const [oldOrder] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1);
 
     if (!oldOrder) {
       throw new Error("Order tidak ditemukan");
@@ -149,10 +196,7 @@ export const updateSalesRecord = createServerFn({ method: "POST" })
     if (updates.channel !== undefined) updateValues.channel = updates.channel;
 
     // Update the order
-    await db
-      .update(orders)
-      .set(updateValues)
-      .where(eq(orders.id, id));
+    await db.update(orders).set(updateValues).where(eq(orders.id, id));
 
     // Send notifications to Area Manager and Branch Admin for this branch
     await notifySalesChange(
@@ -174,11 +218,7 @@ export const deleteSalesRecord = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
-    const [order] = await db
-      .select()
-      .from(orders)
-      .where(eq(orders.id, data.id))
-      .limit(1);
+    const [order] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1);
 
     if (!order) {
       throw new Error("Order tidak ditemukan");
@@ -199,7 +239,7 @@ export const deleteSalesRecord = createServerFn({ method: "POST" })
       order.branchId,
       "menghapus",
       `Order ${order.orderCode ?? order.id}`,
-      `Order senilai Rp ${order.totalAmount.toLocaleString("id-ID")} telah di-void`,
+      `Order ${order.channel} senilai Rp ${order.totalAmount.toLocaleString("id-ID")} (status: ${order.status}) telah di-void oleh ${user.name}`,
     );
 
     return { success: true };
@@ -227,17 +267,10 @@ async function notifySalesChange(
     .select({ id: users.id, name: users.name })
     .from(users)
     .where(
-      and(
-        eq(users.branchId, branchId),
-        eq(users.role, "branch_admin"),
-        eq(users.status, "Active"),
-      ),
+      and(eq(users.branchId, branchId), eq(users.role, "branch_admin"), eq(users.status, "Active")),
     );
 
-  const recipients = [
-    ...ams.map((a) => a.userId),
-    ...branchAdmins.map((a) => a.id),
-  ];
+  const recipients = [...ams.map((a) => a.userId), ...branchAdmins.map((a) => a.id)];
 
   if (recipients.length === 0) return;
 

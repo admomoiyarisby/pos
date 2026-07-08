@@ -16,6 +16,7 @@ import { ArrowRightLeft, TrendingDown, TrendingUp, Plus, X } from "lucide-react"
 interface YieldRow {
   id: string;
   createdAt: Date;
+  productionDate?: Date;
   sourceName: string | null;
   sourceQuantity: number | null;
   targetName: string | null;
@@ -126,8 +127,8 @@ function YieldTrackingPage() {
       header: "Tanggal Produksi",
       width: "w-32",
       sortable: true,
-      render: (r: { productionDate?: Date; createdAt: Date }) =>
-        new Date((r as any).productionDate ?? r.createdAt).toLocaleDateString("id-ID", {
+      render: (r) =>
+        new Date(r.productionDate ?? r.createdAt).toLocaleDateString("id-ID", {
           day: "2-digit",
           month: "short",
           year: "numeric",
@@ -138,7 +139,7 @@ function YieldTrackingPage() {
       header: "Jam Input",
       width: "w-24",
       sortable: true,
-      render: (r: { createdAt: Date }) =>
+      render: (r) =>
         new Date(r.createdAt).toLocaleString("id-ID", {
           hour: "2-digit",
           minute: "2-digit",

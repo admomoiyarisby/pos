@@ -13,6 +13,7 @@ import {
 import { eq, and, ilike, desc, asc, count, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+import { escapeHtml, buildPrintHtml } from "./html-utils";
 
 export const getInventory = createServerFn({ method: "GET" })
   .validator(
@@ -701,10 +702,7 @@ export const realizeStockOpname = createServerFn({ method: "POST" })
         .select()
         .from(inventory)
         .where(
-          and(
-            eq(inventory.branchId, so.branchId),
-            eq(inventory.ingredientId, item.ingredientId),
-          ),
+          and(eq(inventory.branchId, so.branchId), eq(inventory.ingredientId, item.ingredientId)),
         )
         .limit(1);
 
@@ -769,11 +767,7 @@ export const printStockOpname = createServerFn({ method: "GET" })
       .limit(1);
     if (!so) throw new Error("Stock Opname not found");
 
-    const [branch] = await db
-      .select()
-      .from(branches)
-      .where(eq(branches.id, so.branchId))
-      .limit(1);
+    const [branch] = await db.select().from(branches).where(eq(branches.id, so.branchId)).limit(1);
 
     const items = await db
       .select({
@@ -810,28 +804,8 @@ export const printStockOpname = createServerFn({ method: "GET" })
           ? "Investigasi"
           : so.status;
 
-    const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Stock Opname ${escapeHtml(branch?.name ?? "")}</title>
-<style>
-  @page { size: A4 landscape; margin: 1.5cm; }
-  body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; color: #000; margin: 0; padding: 0; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 8pt; margin-bottom: 16pt; }
-  .title { font-size: 16pt; font-weight: bold; }
-  .subtitle { font-size: 9pt; color: #555; }
-  .meta { text-align: right; font-size: 10pt; }
-  .meta strong { font-size: 11pt; }
-  table { width: 100%; border-collapse: collapse; margin-top: 12pt; }
-  th { background: #f0f0f0; font-weight: bold; padding: 6pt 8pt; border: 1px solid #ccc; text-align: left; }
-  td { padding: 5pt 8pt; border: 1px solid #ddd; }
-  .total-row td { font-weight: bold; background: #fafafa; }
-  .signature { margin-top: 40pt; display: flex; justify-content: space-between; }
-  .signature div { width: 30%; }
-  .signature p { margin: 0; font-size: 10pt; }
-  .signature .line { border-top: 1px solid #000; margin-top: 36pt; padding-top: 4pt; font-size: 10pt; text-align: center; }
-  .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 8pt; color: #999; padding: 8pt; border-top: 1px solid #eee; }
-</style>
-</head><body>
-<div class="header">
+    const body = `
+<div class="header-flex">
   <div>
     <div class="title">Laporan Stock Opname</div>
     <div class="subtitle">${escapeHtml(branch?.name ?? "")} (${escapeHtml(branch?.code ?? "")})</div>
@@ -857,18 +831,7 @@ export const printStockOpname = createServerFn({ method: "GET" })
   <div><p>Pencatat,</p><div class="line">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div></div>
   <div><p>Mengetahui,</p><div class="line">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div></div>
   <div><p>Menyetujui,</p><div class="line">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div></div>
-</div>
-<div class="footer">Dicetak dari Omoiyari POS — ${new Date().toLocaleDateString("id-ID")}</div>
-<script>window.print();window.close();</script>
-</body></html>`;
+</div>`;
 
-    return { html };
+    return { html: buildPrintHtml(`Stock Opname ${branch?.name ?? ""}`, body, "landscape") };
   });
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}

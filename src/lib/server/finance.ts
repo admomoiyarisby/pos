@@ -22,6 +22,7 @@ import {
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+import { escapeHtml, formatRupiah } from "./html-utils";
 
 export interface FinanceSummary {
   totalSales: number;
@@ -618,13 +619,7 @@ export const getHourlyAnalytics = createServerFn({ method: "GET" })
 
 // ID13: Print Finance page to PDF (HTML + browser print)
 export const printFinancePage = createServerFn({ method: "GET" })
-  .validator(
-    (data: {
-      dateFrom?: string;
-      dateTo?: string;
-      branchId?: string;
-    }) => data,
-  )
+  .validator((data: { dateFrom?: string; dateTo?: string; branchId?: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
     const summary = await getFinanceSummary({ data });
@@ -654,7 +649,7 @@ export const printFinancePage = createServerFn({ method: "GET" })
           <td>${escapeHtml(ch.channel)}</td>
           <td style="text-align:right;">${ch.count}</td>
           <td style="text-align:right;">${formatRupiah(ch.totalAmount)}</td>
-          <td style="text-align:right;">${(summary.totalSales > 0 ? ((ch.totalAmount / summary.totalSales) * 100).toFixed(1) : "0.0")}%</td>
+          <td style="text-align:right;">${summary.totalSales > 0 ? ((ch.totalAmount / summary.totalSales) * 100).toFixed(1) : "0.0"}%</td>
         </tr>`,
       )
       .join("\n");
@@ -743,11 +738,3 @@ export const printFinancePage = createServerFn({ method: "GET" })
 
     return { html };
   });
-
-function formatRupiah(v: number): string {
-  return `Rp${Math.abs(v).toLocaleString("id-ID")}`;
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
