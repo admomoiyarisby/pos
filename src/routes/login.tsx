@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter, Navigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { authClient } from "#/lib/auth-client";
 import { useAuth } from "#/lib/auth-context";
 import PinPad from "#/components/PinPad";
@@ -64,6 +64,20 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [dark, setDark] = useState(false);
+
+  // Detect dark mode
+  useEffect(() => {
+    const updateTheme = () => {
+      setDark(document.documentElement.classList.contains("dark"));
+    };
+    updateTheme();
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  const logoSrc = dark ? "/logo-for-dark-mode.png" : "/logo-for-light-mode.png";
 
   // Branch PIN login state
   const [branchPinStep, setBranchPinStep] = useState<BranchPinStep>("branch-select");
@@ -196,7 +210,7 @@ function LoginPage() {
         <div className="flex flex-col items-center gap-2 text-center">
           <div className="flex h-16 w-16 items-center justify-center">
             <img
-              src="/logo-for-light-mode.png"
+              src={logoSrc}
               alt="Omoiyari"
               className="h-16 w-auto"
             />
