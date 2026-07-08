@@ -37,6 +37,7 @@ export interface ScmItemTableProps {
   items: ScmItemRow[];
   onItemChange?: (itemId: string, patch: Partial<ScmItemRow>) => void;
   disabled?: boolean;
+  showPrices?: boolean; // ID15: Hide prices for branch_admin
 }
 
 const decisionLabels: Record<string, string> = {
@@ -56,7 +57,7 @@ const decisionColors: Record<
   rejected: "destructive",
 };
 
-export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTableProps) {
+export function ScmItemTable({ mode, items, onItemChange, disabled, showPrices = true }: ScmItemTableProps) {
   if (mode === "ca-review" || mode === "draft-edit") {
     const isDraft = mode === "draft-edit";
     return (
@@ -67,8 +68,8 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
               <th className="px-3 py-2 text-left">Bahan</th>
               <th className="px-3 py-2 text-right">Diminta</th>
               <th className="px-3 py-2 text-right">{isDraft ? "Jumlah" : "Disetujui"}</th>
-              <th className="px-3 py-2 text-right">Harga</th>
-              <th className="px-3 py-2 text-right">Subtotal</th>
+              {showPrices && <th className="px-3 py-2 text-right">Harga</th>}
+              {showPrices && <th className="px-3 py-2 text-right">Subtotal</th>}
               {!isDraft ? <th className="px-3 py-2 text-center">Keputusan CA</th> : null}
             </tr>
           </thead>
@@ -92,12 +93,16 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
                       className="h-8 w-24 text-right"
                     />
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                    Rp {(it.unitPrice ?? 0).toLocaleString("id-ID")}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono">
-                    Rp {lineTotal.toLocaleString("id-ID")}
-                  </td>
+                  {showPrices && (
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                      Rp {(it.unitPrice ?? 0).toLocaleString("id-ID")}
+                    </td>
+                  )}
+                  {showPrices && (
+                    <td className="px-3 py-2 text-right font-mono">
+                      Rp {lineTotal.toLocaleString("id-ID")}
+                    </td>
+                  )}
                   {!isDraft ? (
                     <td className="px-3 py-2 text-center">
                       <div className="inline-flex gap-1">
@@ -128,23 +133,25 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
               );
             })}
           </tbody>
-          <tfoot>
-            <tr className="border-t-2 bg-muted/30 font-semibold">
-              <td colSpan={4} className="px-3 py-2 text-right">
-                Subtotal:
-              </td>
-              <td className="px-3 py-2 text-right font-mono">
-                Rp{" "}
-                {items
-                  .reduce(
-                    (sum, it) => sum + (it.readyQuantity ?? it.quantity) * (it.unitPrice ?? 0),
-                    0,
-                  )
-                  .toLocaleString("id-ID")}
-              </td>
-              {!isDraft ? <td></td> : null}
-            </tr>
-          </tfoot>
+          {showPrices && (
+            <tfoot>
+              <tr className="border-t-2 bg-muted/30 font-semibold">
+                <td colSpan={4} className="px-3 py-2 text-right">
+                  Subtotal:
+                </td>
+                <td className="px-3 py-2 text-right font-mono">
+                  Rp{" "}
+                  {items
+                    .reduce(
+                      (sum, it) => sum + (it.readyQuantity ?? it.quantity) * (it.unitPrice ?? 0),
+                      0,
+                    )
+                    .toLocaleString("id-ID")}
+                </td>
+                {!isDraft ? <td></td> : null}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     );
@@ -226,8 +233,8 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
             <tr>
               <th className="px-3 py-2 text-left">Bahan</th>
               <th className="px-3 py-2 text-right">Diterima</th>
-              <th className="px-3 py-2 text-right">Harga</th>
-              <th className="px-3 py-2 text-right">Subtotal</th>
+              {showPrices && <th className="px-3 py-2 text-right">Harga</th>}
+              {showPrices && <th className="px-3 py-2 text-right">Subtotal</th>}
             </tr>
           </thead>
           <tbody>
@@ -237,12 +244,16 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
                 <tr key={it.id} className="border-b">
                   <td className="px-3 py-2">{it.ingredientName}</td>
                   <td className="px-3 py-2 text-right font-mono">{it.receivedQuantity}</td>
-                  <td className="px-3 py-2 text-right font-mono">
-                    Rp {(it.unitPrice ?? 0).toLocaleString("id-ID")}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono">
-                    Rp {lineTotal.toLocaleString("id-ID")}
-                  </td>
+                  {showPrices && (
+                    <td className="px-3 py-2 text-right font-mono">
+                      Rp {(it.unitPrice ?? 0).toLocaleString("id-ID")}
+                    </td>
+                  )}
+                  {showPrices && (
+                    <td className="px-3 py-2 text-right font-mono">
+                      Rp {lineTotal.toLocaleString("id-ID")}
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -259,8 +270,8 @@ export function ScmItemTable({ mode, items, onItemChange, disabled }: ScmItemTab
                   <td className="px-3 py-2 text-right font-mono text-muted-foreground">
                     {it.rejectedQuantity ?? 0} ditolak
                   </td>
-                  <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>
-                  <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>
+                  {showPrices && <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>}
+                  {showPrices && <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>}
                 </tr>
               ))}
           </tbody>

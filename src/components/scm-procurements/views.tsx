@@ -57,6 +57,7 @@ export interface StateViewProps {
   items: Array<Record<string, unknown>>;
   auditLog?: never; // no longer passed; use AuditLogCard
   invoice?: Record<string, unknown> | null;
+  showPrices?: boolean; // ID15: Hide prices for branch_admin
 }
 
 function rowsToItems(items: Array<Record<string, unknown>>): ScmItemRow[] {
@@ -258,7 +259,7 @@ function useUpdateItemMutation() {
 // immediately (no separate "save" step) so the audit log records every
 // mutation.
 
-export function DraftForm({ procurement, items }: StateViewProps) {
+export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
   const transitionM = useTransitionMutation();
   const updateM = useUpdateItemMutation();
   const queryClient = useQueryClient();
@@ -345,6 +346,7 @@ export function DraftForm({ procurement, items }: StateViewProps) {
         <ScmItemTable
           mode="draft-edit"
           items={editableItems}
+          showPrices={showPrices}
           onItemChange={(id, patch) => {
             handleItemChange(id, patch);
             if (patch.readyQuantity !== undefined) {
@@ -524,7 +526,7 @@ export function PendingCaView({ procurement, items }: StateViewProps) {
 // =============================================================================
 // UnderReview — CA: interactive table; BA: live read-only
 // =============================================================================
-export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
+export function UnderReviewCaReview({ procurement, items, showPrices }: StateViewProps) {
   const updateM = useUpdateItemMutation();
   const transitionM = useTransitionMutation();
   const [rejectionReason, setRejectionReason] = useState("");
@@ -576,6 +578,7 @@ export function UnderReviewCaReview({ procurement, items }: StateViewProps) {
         <ScmItemTable
           mode="ca-review"
           items={editableItems}
+          showPrices={showPrices}
           onItemChange={handleItemChange}
           disabled={updateM.isPending || transitionM.isPending}
         />
@@ -960,7 +963,7 @@ export function ReviewingSjCaLive({ procurement, items }: StateViewProps) {
 // =============================================================================
 // WaitingForPayment — BA: invoice preview; CA: invoice + Mark Paid
 // =============================================================================
-export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: StateViewProps) {
+export function WaitingForPaymentBaInvoice({ procurement, items, invoice, showPrices }: StateViewProps) {
   const total = (invoice?.totalAmount as number) ?? 0;
   // Prefer the invoice's frozen lineItems over the live procurement items
   // so the detail page matches the print window. The procurement items
@@ -981,7 +984,7 @@ export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: Stat
           <p className="mb-3 text-sm text-muted-foreground">
             Invoice berikut sudah diterbitkan. Silakan transfer sesuai total di bawah.
           </p>
-          <ScmItemTable mode="invoice-preview" items={previewItems} />
+          <ScmItemTable mode="invoice-preview" items={previewItems} showPrices={showPrices} />
           <p className="mt-4 text-right text-lg font-semibold">
             Total: Rp {total.toLocaleString("id-ID")}
           </p>
@@ -995,7 +998,7 @@ export function WaitingForPaymentBaInvoice({ procurement, items, invoice }: Stat
   );
 }
 
-export function WaitingForPaymentCaInvoice({ procurement, items, invoice }: StateViewProps) {
+export function WaitingForPaymentCaInvoice({ procurement, items, invoice, showPrices }: StateViewProps) {
   const transitionM = useTransitionMutation();
   const total = (invoice?.totalAmount as number) ?? 0;
   const invoiceLineItems =
@@ -1010,7 +1013,7 @@ export function WaitingForPaymentCaInvoice({ procurement, items, invoice }: Stat
           <CardTitle>Invoice: Tandai Pembayaran</CardTitle>
         </CardHeader>
         <CardContent>
-          <ScmItemTable mode="invoice-preview" items={previewItems} />
+          <ScmItemTable mode="invoice-preview" items={previewItems} showPrices={showPrices} />
           <p className="mt-4 text-right text-lg font-semibold">
             Total: Rp {total.toLocaleString("id-ID")}
           </p>

@@ -190,40 +190,43 @@ function DispatchView(props: DispatchViewProps) {
   const isCA = actorRole === "admin_pusat" || actorRole === "super_admin";
   const isBA = actorRole === "branch_admin" || actorRole === "super_admin";
 
+  // ID15: Only CA roles see prices
+  const viewProps = { ...props, showPrices: isCA };
+
   if (status === "Draft") {
-    if (isBA) return <DraftForm {...props} />;
+    if (isBA) return <DraftForm {...viewProps} />;
   }
   if (status === "Pending") {
-    if (isBA) return <PendingBaView {...props} />;
+    if (isBA) return <PendingBaView {...viewProps} />;
     // The CA's review queue lives on the list page
     // (/scm-procurements?status=Pending). This detail view shows a
     // single 'Buka Review' action for when a CA lands here from a
     // deep link or the sidebar badge. (ADR 0004 §2)
-    if (isCA) return <PendingCaView {...props} />;
+    if (isCA) return <PendingCaView {...viewProps} />;
   }
   if (status === "UnderReview") {
-    if (isCA) return <UnderReviewCaReview {...props} />;
-    if (isBA) return <UnderReviewBaLive {...props} />;
+    if (isCA) return <UnderReviewCaReview {...viewProps} />;
+    if (isBA) return <UnderReviewBaLive {...viewProps} />;
   }
-  if (status === "Rejected") return <RejectedView {...props} />;
+  if (status === "Rejected") return <RejectedView {...viewProps} />;
   if (status === "InTransit") {
-    if (isCA) return <InTransitCaDetail {...props} />;
-    if (isBA) return <InTransitBaTracking {...props} />;
+    if (isCA) return <InTransitCaDetail {...viewProps} />;
+    if (isBA) return <InTransitBaTracking {...viewProps} />;
   }
   if (status === "Delivered") {
-    if (isBA) return <DeliveredBaForm {...props} />;
-    if (isCA) return <DeliveredCaWaiting {...props} />;
+    if (isBA) return <DeliveredBaForm {...viewProps} />;
+    if (isCA) return <DeliveredCaWaiting {...viewProps} />;
   }
   if (status === "ReviewingSJ") {
-    if (isBA) return <ReviewingSjBaInteractive {...props} />;
-    if (isCA) return <ReviewingSjCaLive {...props} />;
+    if (isBA) return <ReviewingSjBaInteractive {...viewProps} />;
+    if (isCA) return <ReviewingSjCaLive {...viewProps} />;
   }
   if (status === "WaitingForPayment") {
-    if (isCA) return <WaitingForPaymentCaInvoice {...props} />;
-    if (isBA) return <WaitingForPaymentBaInvoice {...props} />;
+    if (isCA) return <WaitingForPaymentCaInvoice {...viewProps} />;
+    if (isBA) return <WaitingForPaymentBaInvoice {...viewProps} />;
   }
-  if (status === "Finished") return <FinishedView {...props} />;
-  if (status === "Cancelled") return <CancelledView {...props} />;
+  if (status === "Finished") return <FinishedView {...viewProps} />;
+  if (status === "Cancelled") return <CancelledView {...viewProps} />;
 
-  return <FinishedView {...props} />;
+  return <FinishedView {...viewProps} />;
 }
