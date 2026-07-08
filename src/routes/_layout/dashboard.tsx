@@ -1,6 +1,5 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
@@ -30,11 +29,9 @@ export const Route = createFileRoute("/_layout/dashboard")({
     try {
       return await getDashboardData();
     } catch {
-      // If auth fails, return null — the layout will redirect to /login
       return null;
     }
   },
-  staleTime: 60_000,
   component: DashboardPage,
 });
 
@@ -44,24 +41,10 @@ function DashboardPage() {
 
   const isSuperAdmin = user?.role === "super_admin";
 
-  const loaderData = Route.useLoaderData();
+  const data = Route.useLoaderData();
   const dataUpdatedAt = Date.now();
 
-  // Use useQuery for periodic refetching, with loader data as initial data
-  const { data } = useQuery({
-    queryKey: ["dashboard-data"],
-    queryFn: async () => {
-      const result = await getDashboardData();
-      return result;
-    },
-    initialData: loaderData ?? undefined,
-    refetchInterval: 60_000,
-    retry: 1,
-  });
-
-  if (!data) {
-    return null;
-  }
+  if (!data) return null;
 
   const [activeTab, setActiveTab] = React.useState(() => {
     try {
