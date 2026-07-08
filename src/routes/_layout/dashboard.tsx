@@ -4,8 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
-import { getDashboardData, fetchDashboardData } from "#/lib/server/dashboard";
-import { getCurrentUserRaw } from "#/lib/server/auth";
+import { getDashboardData } from "#/lib/server/dashboard";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "#/components/ui/tabs";
 import { StatsCards } from "#/components/dashboard/StatsCards";
 import { AnomalyAlerts, type Anomaly } from "#/components/dashboard/AnomalyAlerts";
@@ -27,11 +26,6 @@ import { WasteLossTable, computeWasteLoss } from "#/components/dashboard/WasteLo
 import { OrderHistoryTable } from "#/components/dashboard/OrderHistoryTable";
 
 export const Route = createFileRoute("/_layout/dashboard")({
-  loader: async () => {
-    const user = await getCurrentUserRaw();
-    if (!user) return null;
-    return fetchDashboardData(user);
-  },
   component: DashboardPage,
 });
 
@@ -41,21 +35,35 @@ function DashboardPage() {
 
   const isSuperAdmin = user?.role === "super_admin";
 
-  const loaderData = Route.useLoaderData();
-
-  // useQuery with loader data as initial data for periodic client-side refetch
-  const { data } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["dashboard-data"],
     queryFn: () => getDashboardData(),
-    initialData: loaderData ?? undefined,
-    refetchInterval: 60_000,
     retry: 1,
-    enabled: !!user,
+    refetchInterval: 60_000,
   });
 
-  const dataUpdatedAt = Date.now();
+  const dataUpdatedAt = data ? Date.now() : null;
 
-  if (!data) return null;
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-24 animate-pulse rounded-lg bg-muted" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <p className="text-muted-foreground">Gagal memuat data dashboard</p>
+      </div>
+    );
+  }
 
   const [activeTab, setActiveTab] = React.useState(() => {
     try {
