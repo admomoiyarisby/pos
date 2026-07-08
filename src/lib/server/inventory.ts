@@ -137,7 +137,13 @@ export const triggerStockOpname = createServerFn({ method: "POST" })
   .validator((data: { branchId: string; date: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-    await requireRole("super_admin", "admin_pusat", "area_manager");
+    // ID11: branch_admin can now trigger SO for their own branch
+    await requireRole("super_admin", "admin_pusat", "area_manager", "branch_admin");
+
+    // Branch admin can only trigger for their own branch
+    if (user.role === "branch_admin" && user.branchId && data.branchId !== user.branchId) {
+      throw new Error("Branch Admin hanya bisa trigger SO untuk cabang sendiri");
+    }
 
     // Get current inventory for the branch (only countable items)
     const invItems = await db
