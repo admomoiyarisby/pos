@@ -20,10 +20,13 @@ import {
 } from "#/db/schema";
 import { eq, and, desc, inArray, lt } from "drizzle-orm";
 import { requireAuth } from "./auth";
+import type { AppUser } from "./auth";
 
-export const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
-  const user = await requireAuth();
-
+/**
+ * Raw dashboard query logic. Called directly from route loaders (SSR-safe)
+ * and also wrapped by the createServerFn for client-side calls.
+ */
+export async function fetchDashboardData(user: AppUser) {
   const branchFilter =
     user.role === "branch_admin" && user.branchId ? eq(orders.branchId, user.branchId) : undefined;
 
@@ -201,4 +204,12 @@ export const getDashboardData = createServerFn({ method: "GET" }).handler(async 
       brandBreakdown: mrBrandBreakdowns.filter((bb) => bb.manualRevenueId === mr.id),
     })),
   };
+}
+
+/**
+ * Server function wrapper for client-side calls (React Query refetch).
+ */
+export const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await requireAuth();
+  return fetchDashboardData(user);
 });

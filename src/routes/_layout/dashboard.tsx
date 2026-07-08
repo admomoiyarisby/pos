@@ -1,9 +1,11 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
-import { getDashboardData } from "#/lib/server/dashboard";
+import { getDashboardData, fetchDashboardData } from "#/lib/server/dashboard";
+import { getCurrentUserRaw } from "#/lib/server/auth";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "#/components/ui/tabs";
 import { StatsCards } from "#/components/dashboard/StatsCards";
 import { AnomalyAlerts, type Anomaly } from "#/components/dashboard/AnomalyAlerts";
@@ -26,11 +28,9 @@ import { OrderHistoryTable } from "#/components/dashboard/OrderHistoryTable";
 
 export const Route = createFileRoute("/_layout/dashboard")({
   loader: async () => {
-    try {
-      return await getDashboardData();
-    } catch {
-      return null;
-    }
+    const user = await getCurrentUserRaw();
+    if (!user) return null;
+    return fetchDashboardData(user);
   },
   component: DashboardPage,
 });
@@ -41,7 +41,18 @@ function DashboardPage() {
 
   const isSuperAdmin = user?.role === "super_admin";
 
-  const data = Route.useLoaderData();
+  const loaderData = Route.useLoaderData();
+
+  // useQuery with loader data as initial data for periodic client-side refetch
+  const { data } = useQuery({
+    queryKey: ["dashboard-data"],
+    queryFn: () => getDashboardData(),
+    initialData: loaderData ?? undefined,
+    refetchInterval: 60_000,
+    retry: 1,
+    enabled: !!user,
+  });
+
   const dataUpdatedAt = Date.now();
 
   if (!data) return null;
