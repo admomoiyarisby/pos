@@ -5,10 +5,12 @@ import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import Modal from "#/components/ui/Modal";
-import { getFinanceSummary, createManualRevenue, createChannelRevenue } from "#/lib/server/finance";
+import { getFinanceSummary, createManualRevenue, createChannelRevenue, printFinancePage } from "#/lib/server/finance";
 import { getBranches } from "#/lib/server/branches";
 import { TrendingDown, DollarSign, PiggyBank, Percent, Banknote, Receipt } from "lucide-react";
 import { formatRp } from "#/lib/utils";
+import { openPrintWindow } from "#/lib/print-window";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_layout/finance/")({
   component: FinancePage,
@@ -143,6 +145,25 @@ function FinancePage() {
             onChange={(e) => setDateRange((p) => ({ ...p, to: e.target.value }))}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           />
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const result = await printFinancePage({
+                  data: {
+                    dateFrom: dateRange.from || undefined,
+                    dateTo: dateRange.to || undefined,
+                  },
+                });
+                openPrintWindow(result.html);
+              } catch (err) {
+                toast.error("Gagal mencetak", { description: (err as Error).message });
+              }
+            }}
+            className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
+          >
+            Cetak PDF
+          </button>
         </div>
 
         {/* Summary Cards */}

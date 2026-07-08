@@ -615,3 +615,139 @@ export const getHourlyAnalytics = createServerFn({ method: "GET" })
       revenue: Number(r.revenue),
     }));
   });
+
+// ID13: Print Finance page to PDF (HTML + browser print)
+export const printFinancePage = createServerFn({ method: "GET" })
+  .validator(
+    (data: {
+      dateFrom?: string;
+      dateTo?: string;
+      branchId?: string;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    await requireAuth();
+    const summary = await getFinanceSummary({ data });
+
+    // Build conditions for channel breakdown
+    const conds: ReturnType<typeof and> = and(
+      data.dateFrom ? gte(orders.createdAt, new Date(data.dateFrom)) : undefined,
+      data.dateTo ? lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")) : undefined,
+      data.branchId ? eq(orders.branchId, data.branchId) : undefined,
+    );
+
+    const channelBreakdown = await db
+      .select({
+        channel: orders.channel,
+        totalAmount: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(orders)
+      .where(conds)
+      .groupBy(orders.channel)
+      .orderBy(orders.channel);
+
+    const channelRows = channelBreakdown
+      .map(
+        (ch) =>
+          `<tr>
+          <td>${escapeHtml(ch.channel)}</td>
+          <td style="text-align:right;">${ch.count}</td>
+          <td style="text-align:right;">${formatRupiah(ch.totalAmount)}</td>
+          <td style="text-align:right;">${(summary.totalSales > 0 ? ((ch.totalAmount / summary.totalSales) * 100).toFixed(1) : "0.0")}%</td>
+        </tr>`,
+      )
+      .join("\n");
+
+    const periodLabel =
+      data.dateFrom || data.dateTo
+        ? `${data.dateFrom ?? "-"} s.d. ${data.dateTo ?? "-"}`
+        : "Semua Periode";
+
+    const gpClass = summary.grossProfit >= 0 ? "green" : "red";
+    const gpSign = summary.grossProfit >= 0 ? "" : "-";
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Laporan Keuangan</title>
+<style>
+  @page { size: A4; margin: 1.5cm; }
+  body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; color: #000; margin: 0; padding: 0; }
+  .header { border-bottom: 2px solid #000; padding-bottom: 8pt; margin-bottom: 16pt; }
+  .title { font-size: 18pt; font-weight: bold; }
+  .subtitle { font-size: 9pt; color: #555; margin-top: 2pt; }
+  .cards { display: flex; flex-wrap: wrap; gap: 12pt; margin-bottom: 16pt; }
+  .card { border: 1px solid #ddd; border-radius: 4pt; padding: 10pt 14pt; flex: 1; min-width: 140pt; }
+  .card-label { font-size: 8pt; color: #888; text-transform: uppercase; letter-spacing: 0.5pt; }
+  .card-value { font-size: 14pt; font-weight: bold; margin-top: 4pt; }
+  .card-value.green { color: #16a34a; }
+  .card-value.red { color: #dc2626; }
+  .section-title { font-size: 12pt; font-weight: bold; margin-top: 20pt; margin-bottom: 8pt; border-bottom: 1px solid #eee; padding-bottom: 4pt; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8pt; }
+  th { background: #f0f0f0; font-weight: bold; padding: 6pt 8pt; border: 1px solid #ccc; text-align: left; font-size: 9pt; }
+  td { padding: 5pt 8pt; border: 1px solid #ddd; font-size: 9pt; }
+  .summary-table { margin-top: 16pt; }
+  .summary-table td.label { font-weight: bold; padding: 4pt 8pt; border: none; }
+  .summary-table td.value { text-align: right; font-weight: bold; padding: 4pt 8pt; border: none; }
+  .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 8pt; color: #999; padding: 8pt; border-top: 1px solid #eee; }
+</style>
+</head><body>
+<div class="header">
+  <div class="title">Laporan Keuangan</div>
+  <div class="subtitle">Omoiyari POS — ${escapeHtml(periodLabel)}</div>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Total Penjualan</div>
+    <div class="card-value green">${formatRupiah(summary.totalSales)}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">HPP</div>
+    <div class="card-value red">${formatRupiah(summary.totalCogs)}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Net Sales</div>
+    <div class="card-value green">${formatRupiah(summary.netSales)}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Gross Profit</div>
+    <div class="card-value ${gpClass}">${gpSign}${formatRupiah(Math.abs(summary.grossProfit))}</div>
+  </div>
+</div>
+
+<div class="section-title">Total Pesanan: ${summary.orderCount}</div>
+
+<div class="section-title">Rincian per Channel</div>
+<table>
+<thead><tr>
+  <th>Channel</th>
+  <th style="text-align:right;width:80pt;">Pesanan</th>
+  <th style="text-align:right;width:100pt;">Total</th>
+  <th style="text-align:right;width:60pt;">%</th>
+</tr></thead>
+<tbody>${channelRows}</tbody>
+</table>
+
+<table class="summary-table">
+  <tr><td class="label">Total Penjualan</td><td class="value">${formatRupiah(summary.totalSales)}</td></tr>
+  <tr><td class="label">Diskon Merchant</td><td class="value">${formatRupiah(summary.totalMerchantDiscount)}</td></tr>
+  <tr><td class="label">HPP</td><td class="value">${formatRupiah(summary.totalCogs)}</td></tr>
+  <tr><td class="label">MDR</td><td class="value">${formatRupiah(summary.totalMdr)}</td></tr>
+  <tr><td class="label">Pendapatan Manual</td><td class="value">${formatRupiah(summary.manualRevenue)}</td></tr>
+  <tr><td class="label" style="color: ${gpClass};">Gross Profit</td><td class="value" style="color: ${gpClass};">${gpSign}${formatRupiah(Math.abs(summary.grossProfit))}</td></tr>
+</table>
+
+<div class="footer">Dicetak dari Omoiyari POS — ${new Date().toLocaleDateString("id-ID")}</div>
+<script>window.print();window.close();</script>
+</body></html>`;
+
+    return { html };
+  });
+
+function formatRupiah(v: number): string {
+  return `Rp${Math.abs(v).toLocaleString("id-ID")}`;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
