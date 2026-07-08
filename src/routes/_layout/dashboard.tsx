@@ -44,6 +44,24 @@ function DashboardPage() {
 
   const dataUpdatedAt = data ? Date.now() : null;
 
+  const [activeTab, setActiveTab] = React.useState(() => {
+    try {
+      const stored = localStorage.getItem("dashboard-tab");
+      if (stored && ["ringkasan", "operasional", "keuangan", "inventaris"].includes(stored)) {
+        if ((stored === "keuangan" || stored === "inventaris") && !isSuperAdmin) return "ringkasan";
+        return stored;
+      }
+    } catch {}
+    return "ringkasan";
+  });
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    try {
+      localStorage.setItem("dashboard-tab", value);
+    } catch {}
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -64,24 +82,6 @@ function DashboardPage() {
       </div>
     );
   }
-
-  const [activeTab, setActiveTab] = React.useState(() => {
-    try {
-      const stored = localStorage.getItem("dashboard-tab");
-      if (stored && ["ringkasan", "operasional", "keuangan", "inventaris"].includes(stored)) {
-        if ((stored === "keuangan" || stored === "inventaris") && !isSuperAdmin) return "ringkasan";
-        return stored;
-      }
-    } catch {}
-    return "ringkasan";
-  });
-
-  const handleTabChange = (value: string) => {
-    setActiveTab(value);
-    try {
-      localStorage.setItem("dashboard-tab", value);
-    } catch {}
-  };
 
   // Loader data is always available — no loading/error states needed
   const {
