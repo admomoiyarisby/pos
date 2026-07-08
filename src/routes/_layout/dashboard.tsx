@@ -5,7 +5,6 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
 import { getDashboardData } from "#/lib/server/dashboard";
-import { Skeleton } from "#/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "#/components/ui/tabs";
 import { StatsCards } from "#/components/dashboard/StatsCards";
 import { AnomalyAlerts, type Anomaly } from "#/components/dashboard/AnomalyAlerts";
@@ -27,6 +26,15 @@ import { WasteLossTable, computeWasteLoss } from "#/components/dashboard/WasteLo
 import { OrderHistoryTable } from "#/components/dashboard/OrderHistoryTable";
 
 export const Route = createFileRoute("/_layout/dashboard")({
+  loader: async () => {
+    try {
+      return await getDashboardData();
+    } catch {
+      // If auth fails, return null — the layout will redirect to /login
+      return null;
+    }
+  },
+  staleTime: 60_000,
   component: DashboardPage,
 });
 
@@ -36,15 +44,24 @@ function DashboardPage() {
 
   const isSuperAdmin = user?.role === "super_admin";
 
-  const { data, isLoading, dataUpdatedAt, error } = useQuery({
+  const loaderData = Route.useLoaderData();
+  const dataUpdatedAt = Date.now();
+
+  // Use useQuery for periodic refetching, with loader data as initial data
+  const { data } = useQuery({
     queryKey: ["dashboard-data"],
     queryFn: async () => {
       const result = await getDashboardData();
       return result;
     },
-    refetchInterval: 60000,
+    initialData: loaderData ?? undefined,
+    refetchInterval: 60_000,
     retry: 1,
   });
+
+  if (!data) {
+    return null;
+  }
 
   const [activeTab, setActiveTab] = React.useState(() => {
     try {
@@ -64,33 +81,7 @@ function DashboardPage() {
     } catch {}
   };
 
-  if (isLoading || !data) {
-    return (
-      <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
-        <DashboardSkeleton />
-      </RoleGuard>
-    );
-  }
-
-  if (error) {
-    return (
-      <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
-        <div className="flex h-64 items-center justify-center">
-          <div className="text-center">
-            <p className="text-destructive font-medium">Gagal memuat dashboard</p>
-            <p className="text-sm text-muted-foreground mt-1">{error.message}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-4 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
-            >
-              Muat Ulang
-            </button>
-          </div>
-        </div>
-      </RoleGuard>
-    );
-  }
-
+  // Loader data is always available — no loading/error states needed
   const {
     orders,
     orderItems,
@@ -263,39 +254,4 @@ function DashboardPage() {
   );
 }
 
-// ─── Loading skeleton — tab bar + generic content area ───
-function DashboardSkeleton() {
-  return (
-    <div className="space-y-6">
-      {/* Tab bar skeleton */}
-      <div className="inline-flex h-10 items-center gap-1 rounded-lg border bg-muted p-1">
-        {["ringkasan", "operasional"].map((id) => (
-          <div key={id} className="rounded-md px-3 py-1.5">
-            <Skeleton className="h-4 w-16" />
-          </div>
-        ))}
-      </div>
 
-      {/* Stats cards */}
-      <div className="grid grid-cols-1 gap-4 md:gap-6 md:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
-            <Skeleton className="h-5 w-5" />
-            <Skeleton className="h-3 w-28" />
-            <Skeleton className="h-7 w-32" />
-          </div>
-        ))}
-      </div>
-
-      {/* Charts placeholder (2-col) */}
-      <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
-        {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="rounded-lg border bg-card p-4 shadow-sm space-y-3">
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-64 w-full" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
