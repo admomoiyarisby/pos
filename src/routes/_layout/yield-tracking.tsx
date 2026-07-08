@@ -108,6 +108,7 @@ function YieldTrackingPage() {
         targetIngredientId: fd.get("targetIngredientId") as string,
         targetQuantity: Number(fd.get("targetQuantity")),
         notes: (fd.get("notes") as string) || undefined,
+        productionDate: (fd.get("productionDate") as string) || undefined,
       },
     });
   };
@@ -121,14 +122,24 @@ function YieldTrackingPage() {
 
   const columns: Column<YieldRow>[] = [
     {
-      key: "createdAt",
-      header: "Waktu",
-      width: "w-36",
+      key: "productionDate",
+      header: "Tanggal Produksi",
+      width: "w-32",
       sortable: true,
-      render: (r) =>
-        new Date(r.createdAt).toLocaleString("id-ID", {
+      render: (r: { productionDate?: Date; createdAt: Date }) =>
+        new Date((r as any).productionDate ?? r.createdAt).toLocaleDateString("id-ID", {
           day: "2-digit",
           month: "short",
+          year: "numeric",
+        }),
+    },
+    {
+      key: "createdAt",
+      header: "Jam Input",
+      width: "w-24",
+      sortable: true,
+      render: (r: { createdAt: Date }) =>
+        new Date(r.createdAt).toLocaleString("id-ID", {
           hour: "2-digit",
           minute: "2-digit",
         }),
@@ -295,6 +306,16 @@ function YieldTrackingPage() {
                     </option>
                   ))}
               </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Tanggal Produksi</label>
+              <input
+                type="date"
+                name="productionDate"
+                defaultValue={new Date().toISOString().slice(0, 10)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
             </div>
 
             <div className="rounded-md border p-4 space-y-4">

@@ -28,6 +28,7 @@ export const getYieldConversions = createServerFn({ method: "GET" })
         yieldPercentage: yieldConversions.yieldPercentage,
         shrinkageQuantity: yieldConversions.shrinkageQuantity,
         notes: yieldConversions.notes,
+        productionDate: yieldConversions.productionDate,
         createdAt: yieldConversions.createdAt,
         sourceName: ingredients.name,
         targetName: ingredients.name,
@@ -96,6 +97,7 @@ export const createYieldConversion = createServerFn({ method: "POST" })
       targetIngredientId: string;
       targetQuantity: number;
       notes?: string;
+      productionDate?: string;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -178,6 +180,9 @@ export const createYieldConversion = createServerFn({ method: "POST" })
         shrinkageQuantity,
         notes: data.notes,
         processedBy: user.id,
+        productionDate: data.productionDate
+          ? new Date(data.productionDate)
+          : new Date(),
       })
       .returning();
 

@@ -766,6 +766,9 @@ export const yieldConversions = pgTable(
     processedBy: uuid("processed_by")
       .notNull()
       .references(() => users.id),
+    productionDate: timestamp("production_date", { mode: "date" })
+      .notNull()
+      .defaultNow(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (t) => [
