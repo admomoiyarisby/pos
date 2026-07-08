@@ -8,6 +8,8 @@ import {
   scmProcurementInvoices,
   scmProcurementItems,
   scmProcurements,
+  branches,
+  users,
 } from "#/db/schema";
 import type { ScmProcurementStatus } from "./scm-fsm";
 import { availableEvents, transition, updateItem } from "./scm-fsm";
@@ -153,8 +155,21 @@ export const listProcurements = createServerFn({ method: "GET" })
     }
 
     const rows = await db
-      .select()
+      .select({
+        id: scmProcurements.id,
+        code: scmProcurements.code,
+        branchId: scmProcurements.branchId,
+        status: scmProcurements.status,
+        requestedById: scmProcurements.requestedById,
+        requestSource: scmProcurements.requestSource,
+        createdAt: scmProcurements.createdAt,
+        submittedAt: scmProcurements.submittedAt,
+        branchName: branches.name,
+        requestedByName: users.name,
+      })
       .from(scmProcurements)
+      .leftJoin(branches, eq(scmProcurements.branchId, branches.id))
+      .leftJoin(users, eq(scmProcurements.requestedById, users.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(scmProcurements.createdAt))
       .limit(data.limit ?? 100);

@@ -245,8 +245,8 @@ export async function transitionTransfer(
       if (!rule) throw new InvalidTransferTransitionError(tr.status, event);
 
       // Actor authorization: rule's actors OR super_admin
-      const isAllowed = rule.actors.includes(actor.role as TransferActorRole) ||
-        actor.role === "super_admin";
+      const isAllowed =
+        rule.actors.includes(actor.role as TransferActorRole) || actor.role === "super_admin";
       if (!isAllowed) {
         throw new TransferUnauthorizedError(actor.role, event);
       }
@@ -378,19 +378,16 @@ export async function updateTransferItem(
       }
 
       const updateFields: Record<string, unknown> = {};
-      if (patch.receivedQuantity !== undefined) updateFields.receivedQuantity = patch.receivedQuantity;
-      if (patch.rejectedQuantity !== undefined) updateFields.rejectedQuantity = patch.rejectedQuantity;
+      if (patch.receivedQuantity !== undefined)
+        updateFields.receivedQuantity = patch.receivedQuantity;
+      if (patch.rejectedQuantity !== undefined)
+        updateFields.rejectedQuantity = patch.rejectedQuantity;
       if (patch.reason !== undefined) updateFields.reason = patch.reason;
 
       const updated = await tx
         .update(scmTransferItems)
         .set(updateFields)
-        .where(
-          and(
-            eq(scmTransferItems.id, itemId),
-            eq(scmTransferItems.scmTransferId, transferId),
-          ),
-        )
+        .where(and(eq(scmTransferItems.id, itemId), eq(scmTransferItems.scmTransferId, transferId)))
         .returning({ id: scmTransferItems.id });
 
       if (updated.length === 0) {
@@ -411,10 +408,7 @@ export async function updateTransferItem(
 
     return { success: true };
   } catch (err) {
-    if (
-      err instanceof InvalidTransferStateForEditError ||
-      err instanceof TransferNotFoundError
-    ) {
+    if (err instanceof InvalidTransferStateForEditError || err instanceof TransferNotFoundError) {
       return { success: false, error: { name: err.name, message: err.message } };
     }
     throw err;

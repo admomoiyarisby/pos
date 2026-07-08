@@ -427,7 +427,9 @@ function RecipeDetailPage() {
                         <tr key={i} className="border-b">
                           <td className="px-4 py-2">{ing.ingredientName ?? ing.ingredientId}</td>
                           <td className="px-4 py-2 text-right">{ing.quantity}</td>
-                          <td className="px-4 py-2 text-right text-muted-foreground">{ing.stockUnit ?? "—"}</td>
+                          <td className="px-4 py-2 text-right text-muted-foreground">
+                            {ing.stockUnit ?? "—"}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

@@ -54,9 +54,7 @@ interface NotificationTarget {
  * given event. Does NOT insert — the caller (the FSM effect or the server
  * function) inserts them in the same transaction.
  */
-export async function buildNotificationsForEvent(
-  args: NotifyArgs,
-): Promise<NotificationTarget[]> {
+export async function buildNotificationsForEvent(args: NotifyArgs): Promise<NotificationTarget[]> {
   const { transfer, event, actorUserId } = args;
   const actorId = actorUserId;
 
@@ -80,20 +78,19 @@ export async function buildNotificationsForEvent(
     }
 
     case "approve": {
-      const targets = await userIdsForBranchAdmins([
-        transfer.fromBranchId,
-        transfer.toBranchId,
-      ]);
+      const targets = await userIdsForBranchAdmins([transfer.fromBranchId, transfer.toBranchId]);
       return targets
         .filter((uid) => uid !== actorId)
         .map((uid) => ({
           userId: uid,
-          title: transferBranchOf(uid, transfer) === transfer.fromBranchId
-            ? "Mutasi Stok — Disetujui"
-            : "Mutasi Stok — Surat Jalan Baru",
-          message: transferBranchOf(uid, transfer) === transfer.fromBranchId
-            ? `Mutasi "${transfer.code}" disetujui. Siap dikirim.`
-            : `Mutasi "${transfer.code}" telah disetujui. Anda akan menerima stok dari cabang pengirim.`,
+          title:
+            transferBranchOf(uid, transfer) === transfer.fromBranchId
+              ? "Mutasi Stok — Disetujui"
+              : "Mutasi Stok — Surat Jalan Baru",
+          message:
+            transferBranchOf(uid, transfer) === transfer.fromBranchId
+              ? `Mutasi "${transfer.code}" disetujui. Siap dikirim.`
+              : `Mutasi "${transfer.code}" telah disetujui. Anda akan menerima stok dari cabang pengirim.`,
           type: "info" as const,
         }));
     }
@@ -187,10 +184,7 @@ export async function buildNotificationsForEvent(
     }
 
     case "cancel": {
-      const allBAs = await userIdsForBranchAdmins([
-        transfer.fromBranchId,
-        transfer.toBranchId,
-      ]);
+      const allBAs = await userIdsForBranchAdmins([transfer.fromBranchId, transfer.toBranchId]);
       const ams = await db
         .select({ id: users.id })
         .from(users)
@@ -274,9 +268,7 @@ async function filterByAmAct(
   const assignments = await db
     .select({ userId: areaManagerBranches.userId, branchId: areaManagerBranches.branchId })
     .from(areaManagerBranches)
-    .where(
-      inArray(areaManagerBranches.branchId, [transfer.fromBranchId, transfer.toBranchId]),
-    );
+    .where(inArray(areaManagerBranches.branchId, [transfer.fromBranchId, transfer.toBranchId]));
 
   // userId → set of assigned branchIds
   const branchesByAm = new Map<string, Set<string>>();
@@ -306,4 +298,3 @@ function transferBranchOf(
   // informative of the two.)
   return userId === transfer.requestedById ? transfer.fromBranchId : transfer.toBranchId;
 }
-

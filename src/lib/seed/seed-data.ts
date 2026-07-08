@@ -2335,9 +2335,7 @@ export const RECIPES_DATA = [
     basePrice: 10000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
-    ingredients: [
-      { ingredientProtoId: "ing109", quantity: 1 },
-    ],
+    ingredients: [{ ingredientProtoId: "ing109", quantity: 1 }],
   },
   {
     protoId: "rec011",
@@ -2348,9 +2346,7 @@ export const RECIPES_DATA = [
     basePrice: 12000,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
-    ingredients: [
-      { ingredientProtoId: "ing110", quantity: 1 },
-    ],
+    ingredients: [{ ingredientProtoId: "ing110", quantity: 1 }],
   },
   {
     protoId: "rec012",
@@ -2361,9 +2357,7 @@ export const RECIPES_DATA = [
     basePrice: 0,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
-    ingredients: [
-      { ingredientProtoId: "ing107", quantity: 65 },
-    ],
+    ingredients: [{ ingredientProtoId: "ing107", quantity: 65 }],
   },
   {
     protoId: "rec013",
@@ -2374,9 +2368,7 @@ export const RECIPES_DATA = [
     basePrice: 0,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
-    ingredients: [
-      { ingredientProtoId: "ing024", quantity: 35 },
-    ],
+    ingredients: [{ ingredientProtoId: "ing024", quantity: 35 }],
   },
   {
     protoId: "rec014",
@@ -2617,9 +2609,7 @@ export const RECIPES_DATA = [
     basePrice: 1750,
     isBOGO: false,
     brandProtoIds: ["brand-1"],
-    ingredients: [
-      { ingredientProtoId: "ing004", quantity: 1 },
-    ],
+    ingredients: [{ ingredientProtoId: "ing004", quantity: 1 }],
   },
 ];
 
@@ -2744,9 +2734,7 @@ export const ORDERS_DATA = (() => {
     // Ensure "New" and "Processing" orders always land on today (daysAgo: 0)
     // so the dashboard "Penjualan Hari Ini" shows non-zero sales.
     const daysAgo =
-      status === "New" ? 0
-      : status === "Processing" ? 0
-      : Math.floor(Math.random() * 60);
+      status === "New" ? 0 : status === "Processing" ? 0 : Math.floor(Math.random() * 60);
     const hour = 8 + (i % 14);
     const minute = (i * 7) % 60;
 

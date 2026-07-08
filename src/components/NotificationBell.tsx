@@ -41,7 +41,9 @@ export default function NotificationBell() {
   });
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
-  const urgentUnreadCount = notifications.filter((n) => !n.isRead && n.priority === "urgent").length;
+  const urgentUnreadCount = notifications.filter(
+    (n) => !n.isRead && n.priority === "urgent",
+  ).length;
 
   const typeIcons = {
     info: <Info className="h-4 w-4 text-blue-500" />,

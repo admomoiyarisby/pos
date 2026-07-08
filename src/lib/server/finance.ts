@@ -4,6 +4,7 @@ import {
   manualRevenues,
   manualRevenueBrandBreakdowns,
   channelRevenues,
+  operationalExpenses,
   orders,
   orderItems,
   recipes,
@@ -15,6 +16,7 @@ import {
   inventory,
   systemNotifications,
   users,
+  branches,
   wasteEntries,
   stockTransfers,
   deliveryNotes,
@@ -32,6 +34,7 @@ export interface FinanceSummary {
   netSales: number;
   orderCount: number;
   manualRevenue: number;
+  manualExpenses: number;
   grossProfit: number;
 }
 
@@ -70,6 +73,19 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
         ),
       );
 
+    const manualExp = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(${operationalExpenses.amount}), 0)`,
+      })
+      .from(operationalExpenses)
+      .where(
+        and(
+          data.branchId ? eq(operationalExpenses.branchId, data.branchId) : undefined,
+          data.dateFrom ? gte(operationalExpenses.date, data.dateFrom) : undefined,
+          data.dateTo ? lte(operationalExpenses.date, data.dateTo) : undefined,
+        ),
+      );
+
     const toNum = (v: string | number | null | undefined): number =>
       typeof v === "string" ? Number(v) : (v ?? 0);
     const totalSales = toNum(orderData[0]?.totalSales);
@@ -77,6 +93,7 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
     const totalCogs = toNum(orderData[0]?.totalCogs);
     const totalMdr = toNum(orderData[0]?.totalMdr);
     const netSales = toNum(orderData[0]?.netSales);
+    const manualExpensesTotal = toNum(manualExp[0]?.total);
     return {
       totalSales,
       totalMerchantDiscount,
@@ -85,7 +102,8 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
       netSales,
       orderCount: toNum(orderData[0]?.count),
       manualRevenue: toNum(manualRev[0]?.total),
-      grossProfit: netSales - totalCogs,
+      manualExpenses: manualExpensesTotal,
+      grossProfit: netSales - totalCogs - manualExpensesTotal,
     };
   });
 
@@ -199,6 +217,113 @@ export const createChannelRevenue = createServerFn({ method: "POST" })
     );
 
     return revenue;
+  });
+
+// ─── Manual Expenses ───
+
+export const getManualExpenses = createServerFn({ method: "GET" })
+  .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
+  .handler(async ({ data }) => {
+    await requireRole("super_admin", "admin_pusat");
+
+    const conditions = [];
+    if (data.branchId) conditions.push(eq(operationalExpenses.branchId, data.branchId));
+    if (data.dateFrom) conditions.push(gte(operationalExpenses.date, data.dateFrom));
+    if (data.dateTo) conditions.push(lte(operationalExpenses.date, data.dateTo));
+
+    const result = await db
+      .select({
+        id: operationalExpenses.id,
+        branchId: operationalExpenses.branchId,
+        branchName: branches.name,
+        date: operationalExpenses.date,
+        category: operationalExpenses.category,
+        amount: operationalExpenses.amount,
+        notes: operationalExpenses.notes,
+        createdAt: operationalExpenses.createdAt,
+      })
+      .from(operationalExpenses)
+      .leftJoin(branches, eq(operationalExpenses.branchId, branches.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(operationalExpenses.date));
+
+    return result;
+  });
+
+export const createManualExpense = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      branchId: string;
+      date: string;
+      category: string;
+      amount: number;
+      notes?: string;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [expense] = await db
+      .insert(operationalExpenses)
+      .values({
+        branchId: data.branchId,
+        date: data.date,
+        category: data.category,
+        amount: data.amount,
+        notes: data.notes,
+        submittedBy: user.id,
+      })
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Create Manual Expense",
+      `Manual expense Rp${data.amount.toLocaleString()} (${data.category}) dicatat oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "expenses",
+      expense.id,
+      "CREATE",
+      undefined,
+      expense as Record<string, unknown>,
+    );
+
+    return expense;
+  });
+
+export const deleteManualExpense = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [expense] = await db
+      .select()
+      .from(operationalExpenses)
+      .where(eq(operationalExpenses.id, data.id))
+      .limit(1);
+
+    if (!expense) {
+      throw new Error("Pengeluaran tidak ditemukan");
+    }
+
+    await db.delete(operationalExpenses).where(eq(operationalExpenses.id, data.id));
+
+    await logSystemAction(
+      user,
+      "Delete Manual Expense",
+      `Manual expense Rp${expense.amount.toLocaleString()} (${expense.category}) dihapus oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "expenses",
+      expense.id,
+      "DELETE",
+      expense as Record<string, unknown>,
+      undefined,
+    );
+
+    return { success: true };
   });
 
 // ─── Analytics ───

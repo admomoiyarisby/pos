@@ -71,10 +71,7 @@ export async function writeTransferInTransitInventory(
   _actor: FsmActor,
   tx: FsmTx,
 ): Promise<void> {
-  const [tr] = await tx
-    .select()
-    .from(scmTransfers)
-    .where(eq(scmTransfers.id, transferId));
+  const [tr] = await tx.select().from(scmTransfers).where(eq(scmTransfers.id, transferId));
   if (!tr) throw new Error(`Transfer ${transferId} not found`);
 
   const items = await tx
@@ -90,10 +87,7 @@ export async function writeTransferInTransitInventory(
       .select()
       .from(inventory)
       .where(
-        and(
-          eq(inventory.branchId, tr.fromBranchId),
-          eq(inventory.ingredientId, item.ingredientId),
-        ),
+        and(eq(inventory.branchId, tr.fromBranchId), eq(inventory.ingredientId, item.ingredientId)),
       )
       .limit(1);
 
@@ -201,10 +195,7 @@ export async function setTransferReceivedQuantities(
         reason: itemPatch.reason,
       })
       .where(
-        and(
-          eq(scmTransferItems.id, itemPatch.id),
-          eq(scmTransferItems.scmTransferId, transferId),
-        ),
+        and(eq(scmTransferItems.id, itemPatch.id), eq(scmTransferItems.scmTransferId, transferId)),
       );
   }
 }
@@ -226,20 +217,21 @@ export async function writeTransferReceivedStock(
     return;
   }
 
-  const [tr] = await tx
-    .select()
-    .from(scmTransfers)
-    .where(eq(scmTransfers.id, transferId));
+  const [tr] = await tx.select().from(scmTransfers).where(eq(scmTransfers.id, transferId));
   if (!tr) {
     console.error(`[writeTransferReceivedStock] Transfer ${transferId} not found`);
     return;
   }
-  console.log(`[writeTransferReceivedStock] Processing transfer ${tr.code} from ${tr.fromBranchId} to ${tr.toBranchId}`);
+  console.log(
+    `[writeTransferReceivedStock] Processing transfer ${tr.code} from ${tr.fromBranchId} to ${tr.toBranchId}`,
+  );
 
   for (const itemPatch of payload.items) {
     const received = itemPatch.receivedQuantity ?? 0;
     if (received <= 0) {
-      console.log(`[writeTransferReceivedStock] Skipping item ${itemPatch.id}: received quantity ${received}`);
+      console.log(
+        `[writeTransferReceivedStock] Skipping item ${itemPatch.id}: received quantity ${received}`,
+      );
       continue;
     }
 
@@ -252,23 +244,24 @@ export async function writeTransferReceivedStock(
       continue;
     }
 
-    console.log(`[writeTransferReceivedStock] Processing item ${item.ingredientId}: ${received} units`);
+    console.log(
+      `[writeTransferReceivedStock] Processing item ${item.ingredientId}: ${received} units`,
+    );
 
     // Upsert into Receiver's inventory
     const [inv] = await tx
       .select()
       .from(inventory)
       .where(
-        and(
-          eq(inventory.branchId, tr.toBranchId),
-          eq(inventory.ingredientId, item.ingredientId),
-        ),
+        and(eq(inventory.branchId, tr.toBranchId), eq(inventory.ingredientId, item.ingredientId)),
       )
       .limit(1);
 
     if (inv) {
       const newQty = inv.quantity + received;
-      console.log(`[writeTransferReceivedStock] Updating existing inventory: ${inv.quantity} → ${newQty}`);
+      console.log(
+        `[writeTransferReceivedStock] Updating existing inventory: ${inv.quantity} → ${newQty}`,
+      );
       await tx
         .update(inventory)
         .set({ quantity: newQty, lastUpdated: new Date() })
@@ -329,10 +322,7 @@ export async function writeTransferRejectedWaste(
 ): Promise<void> {
   if (!payload.items) return;
 
-  const [tr] = await tx
-    .select()
-    .from(scmTransfers)
-    .where(eq(scmTransfers.id, transferId));
+  const [tr] = await tx.select().from(scmTransfers).where(eq(scmTransfers.id, transferId));
   if (!tr) return;
 
   for (const itemPatch of payload.items) {
@@ -393,10 +383,7 @@ export async function generateTransferInvoiceSnapshot(
     throw new Error("finish-receive requires payload.items");
   }
 
-  const [tr] = await tx
-    .select()
-    .from(scmTransfers)
-    .where(eq(scmTransfers.id, transferId));
+  const [tr] = await tx.select().from(scmTransfers).where(eq(scmTransfers.id, transferId));
   if (!tr) throw new Error(`Transfer ${transferId} not found`);
 
   // Build the per-line snapshot with ingredient name for the printable invoice.
@@ -521,10 +508,7 @@ export async function reverseTransferInTransitOnCancel(
       .select()
       .from(inventory)
       .where(
-        and(
-          eq(inventory.branchId, row.branchId),
-          eq(inventory.ingredientId, row.ingredientId),
-        ),
+        and(eq(inventory.branchId, row.branchId), eq(inventory.ingredientId, row.ingredientId)),
       )
       .limit(1);
 
@@ -584,10 +568,7 @@ export async function reverseTransferPendingReviewOnCancel(
   _actor: FsmActor,
   tx: FsmTx,
 ): Promise<void> {
-  const [tr] = await tx
-    .select()
-    .from(scmTransfers)
-    .where(eq(scmTransfers.id, transferId));
+  const [tr] = await tx.select().from(scmTransfers).where(eq(scmTransfers.id, transferId));
   if (!tr) return;
 
   // Phase 1: if there are pending_review_inventory rows, credit them back to
@@ -627,10 +608,7 @@ export async function reverseTransferPendingReviewOnCancel(
         .select()
         .from(inventory)
         .where(
-          and(
-            eq(inventory.branchId, tr.toBranchId),
-            eq(inventory.ingredientId, item.ingredientId),
-          ),
+          and(eq(inventory.branchId, tr.toBranchId), eq(inventory.ingredientId, item.ingredientId)),
         )
         .limit(1);
 

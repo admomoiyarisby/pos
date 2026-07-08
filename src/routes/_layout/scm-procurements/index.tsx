@@ -36,6 +36,9 @@ interface ProcurementRow extends Record<string, unknown> {
   status: ScmProcurementStatus;
   createdAt: Date | string;
   submittedAt: Date | string | null;
+  branchName: string | null;
+  requestedByName: string | null;
+  requestSource: string | null;
   availableEvents?: string[];
 }
 
@@ -146,6 +149,25 @@ function ProcurementsListPage() {
         >
           {row.code}
         </Link>
+      ),
+    },
+    {
+      key: "branchName",
+      header: "Cabang",
+      render: (row) => row.branchName ?? "-",
+    },
+    {
+      key: "requestedByName",
+      header: "Pemohon",
+      render: (row) => row.requestedByName ?? "-",
+    },
+    {
+      key: "requestSource",
+      header: "Sumber",
+      render: (row) => (
+        <span className="text-xs text-muted-foreground">
+          {row.requestSource ?? "System"}
+        </span>
       ),
     },
     {

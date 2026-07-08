@@ -147,7 +147,7 @@ Either way, the in-place override in `rowsToItems` is a load-bearing lie and sho
 
 ### [P1] The CA queue lives inside a procurement detail page
 
-**What**: `PendingCaQueue` is rendered as the body of a procurement detail page when the procurement is in `Pending` state and the viewer is CA. So the only way for an admin_pusat to see _all_ pending procurements is to:
+**What**: `PendingCaQueue` is rendered as the body of a procurement detail page when the procurement is in `Pending` state and the viewer is CA. So the only way for an admin*pusat to see \_all* pending procurements is to:
 
 1. Navigate to `/scm-procurements`.
 2. Click any procurement that happens to be in `Pending`.

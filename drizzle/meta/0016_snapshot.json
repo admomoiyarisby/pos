@@ -110,12 +110,8 @@
           "name": "account_user_id_users_id_fk",
           "tableFrom": "account",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -175,12 +171,8 @@
           "name": "app_settings_updated_by_users_id_fk",
           "tableFrom": "app_settings",
           "tableTo": "users",
-          "columnsFrom": [
-            "updated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["updated_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -190,9 +182,7 @@
         "app_settings_key_unique": {
           "name": "app_settings_key_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "key"
-          ]
+          "columns": ["key"]
         }
       },
       "policies": {},
@@ -229,12 +219,8 @@
           "name": "area_manager_branches_user_id_users_id_fk",
           "tableFrom": "area_manager_branches",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -242,12 +228,8 @@
           "name": "area_manager_branches_branch_id_branches_id_fk",
           "tableFrom": "area_manager_branches",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -257,10 +239,7 @@
         "am_branch_unique": {
           "name": "am_branch_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id",
-            "branch_id"
-          ]
+          "columns": ["user_id", "branch_id"]
         }
       },
       "policies": {},
@@ -395,12 +374,8 @@
           "name": "audit_logs_user_id_users_id_fk",
           "tableFrom": "audit_logs",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -503,9 +478,7 @@
         "branches_code_unique": {
           "name": "branches_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -563,9 +536,7 @@
         "brands_code_unique": {
           "name": "brands_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -673,12 +644,8 @@
           "name": "cancel_requests_order_id_orders_id_fk",
           "tableFrom": "cancel_requests",
           "tableTo": "orders",
-          "columnsFrom": [
-            "order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["order_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -686,12 +653,8 @@
           "name": "cancel_requests_requested_by_users_id_fk",
           "tableFrom": "cancel_requests",
           "tableTo": "users",
-          "columnsFrom": [
-            "requested_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["requested_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -699,12 +662,8 @@
           "name": "cancel_requests_approved_by_users_id_fk",
           "tableFrom": "cancel_requests",
           "tableTo": "users",
-          "columnsFrom": [
-            "approved_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["approved_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -808,12 +767,8 @@
           "name": "channel_revenues_branch_id_branches_id_fk",
           "tableFrom": "channel_revenues",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -821,12 +776,8 @@
           "name": "channel_revenues_submitted_by_users_id_fk",
           "tableFrom": "channel_revenues",
           "tableTo": "users",
-          "columnsFrom": [
-            "submitted_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["submitted_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -836,11 +787,7 @@
         "channel_revenue_unique": {
           "name": "channel_revenue_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "branch_id",
-            "date",
-            "channel"
-          ]
+          "columns": ["branch_id", "date", "channel"]
         }
       },
       "policies": {},
@@ -937,12 +884,8 @@
           "name": "delivery_note_items_delivery_note_id_delivery_notes_id_fk",
           "tableFrom": "delivery_note_items",
           "tableTo": "delivery_notes",
-          "columnsFrom": [
-            "delivery_note_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["delivery_note_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -950,12 +893,8 @@
           "name": "delivery_note_items_ingredient_id_ingredients_id_fk",
           "tableFrom": "delivery_note_items",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1161,12 +1100,8 @@
           "name": "delivery_notes_purchase_requisition_id_purchase_requisitions_id_fk",
           "tableFrom": "delivery_notes",
           "tableTo": "purchase_requisitions",
-          "columnsFrom": [
-            "purchase_requisition_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["purchase_requisition_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1174,12 +1109,8 @@
           "name": "delivery_notes_purchase_order_id_purchase_orders_id_fk",
           "tableFrom": "delivery_notes",
           "tableTo": "purchase_orders",
-          "columnsFrom": [
-            "purchase_order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["purchase_order_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1187,12 +1118,8 @@
           "name": "delivery_notes_from_branch_id_branches_id_fk",
           "tableFrom": "delivery_notes",
           "tableTo": "branches",
-          "columnsFrom": [
-            "from_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["from_branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1200,12 +1127,8 @@
           "name": "delivery_notes_to_branch_id_branches_id_fk",
           "tableFrom": "delivery_notes",
           "tableTo": "branches",
-          "columnsFrom": [
-            "to_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["to_branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1213,12 +1136,8 @@
           "name": "delivery_notes_picked_by_users_id_fk",
           "tableFrom": "delivery_notes",
           "tableTo": "users",
-          "columnsFrom": [
-            "picked_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["picked_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1226,12 +1145,8 @@
           "name": "delivery_notes_delivered_by_users_id_fk",
           "tableFrom": "delivery_notes",
           "tableTo": "users",
-          "columnsFrom": [
-            "delivered_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["delivered_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1239,12 +1154,8 @@
           "name": "delivery_notes_received_by_users_id_fk",
           "tableFrom": "delivery_notes",
           "tableTo": "users",
-          "columnsFrom": [
-            "received_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["received_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1254,9 +1165,7 @@
         "delivery_notes_code_unique": {
           "name": "delivery_notes_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -1421,12 +1330,8 @@
           "name": "in_transit_inventory_delivery_note_id_delivery_notes_id_fk",
           "tableFrom": "in_transit_inventory",
           "tableTo": "delivery_notes",
-          "columnsFrom": [
-            "delivery_note_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["delivery_note_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1434,12 +1339,8 @@
           "name": "in_transit_inventory_stock_transfer_id_stock_transfers_id_fk",
           "tableFrom": "in_transit_inventory",
           "tableTo": "stock_transfers",
-          "columnsFrom": [
-            "stock_transfer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["stock_transfer_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1447,12 +1348,8 @@
           "name": "in_transit_inventory_scm_procurement_id_scm_procurements_id_fk",
           "tableFrom": "in_transit_inventory",
           "tableTo": "scm_procurements",
-          "columnsFrom": [
-            "scm_procurement_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_procurement_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1460,12 +1357,8 @@
           "name": "in_transit_inventory_scm_transfer_id_scm_transfers_id_fk",
           "tableFrom": "in_transit_inventory",
           "tableTo": "scm_transfers",
-          "columnsFrom": [
-            "scm_transfer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_transfer_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1473,12 +1366,8 @@
           "name": "in_transit_inventory_branch_id_branches_id_fk",
           "tableFrom": "in_transit_inventory",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1486,12 +1375,8 @@
           "name": "in_transit_inventory_ingredient_id_ingredients_id_fk",
           "tableFrom": "in_transit_inventory",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1632,9 +1517,7 @@
         "ingredients_code_unique": {
           "name": "ingredients_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -1716,12 +1599,8 @@
           "name": "inventory_branch_id_branches_id_fk",
           "tableFrom": "inventory",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1729,12 +1608,8 @@
           "name": "inventory_ingredient_id_ingredients_id_fk",
           "tableFrom": "inventory",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1744,10 +1619,7 @@
         "inventory_branch_ingredient_unique": {
           "name": "inventory_branch_ingredient_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "branch_id",
-            "ingredient_id"
-          ]
+          "columns": ["branch_id", "ingredient_id"]
         }
       },
       "policies": {},
@@ -1790,12 +1662,8 @@
           "name": "manual_revenue_brand_breakdowns_manual_revenue_id_manual_revenues_id_fk",
           "tableFrom": "manual_revenue_brand_breakdowns",
           "tableTo": "manual_revenues",
-          "columnsFrom": [
-            "manual_revenue_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["manual_revenue_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1803,12 +1671,8 @@
           "name": "manual_revenue_brand_breakdowns_brand_id_brands_id_fk",
           "tableFrom": "manual_revenue_brand_breakdowns",
           "tableTo": "brands",
-          "columnsFrom": [
-            "brand_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["brand_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1818,10 +1682,7 @@
         "mr_brand_unique": {
           "name": "mr_brand_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "manual_revenue_id",
-            "brand_id"
-          ]
+          "columns": ["manual_revenue_id", "brand_id"]
         }
       },
       "policies": {},
@@ -1914,12 +1775,8 @@
           "name": "manual_revenues_branch_id_branches_id_fk",
           "tableFrom": "manual_revenues",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1927,12 +1784,8 @@
           "name": "manual_revenues_submitted_by_users_id_fk",
           "tableFrom": "manual_revenues",
           "tableTo": "users",
-          "columnsFrom": [
-            "submitted_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["submitted_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1995,9 +1848,7 @@
         "modifier_groups_code_unique": {
           "name": "modifier_groups_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -2040,12 +1891,8 @@
           "name": "modifier_ingredients_modifier_id_modifiers_id_fk",
           "tableFrom": "modifier_ingredients",
           "tableTo": "modifiers",
-          "columnsFrom": [
-            "modifier_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["modifier_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2053,12 +1900,8 @@
           "name": "modifier_ingredients_ingredient_id_ingredients_id_fk",
           "tableFrom": "modifier_ingredients",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2068,10 +1911,7 @@
         "modifier_ingredient_unique": {
           "name": "modifier_ingredient_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "modifier_id",
-            "ingredient_id"
-          ]
+          "columns": ["modifier_id", "ingredient_id"]
         }
       },
       "policies": {},
@@ -2135,12 +1975,8 @@
           "name": "modifiers_modifier_group_id_modifier_groups_id_fk",
           "tableFrom": "modifiers",
           "tableTo": "modifier_groups",
-          "columnsFrom": [
-            "modifier_group_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["modifier_group_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2150,9 +1986,7 @@
         "modifiers_code_unique": {
           "name": "modifiers_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -2272,12 +2106,8 @@
           "name": "operational_expenses_branch_id_branches_id_fk",
           "tableFrom": "operational_expenses",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2285,12 +2115,8 @@
           "name": "operational_expenses_waste_entry_id_waste_entries_id_fk",
           "tableFrom": "operational_expenses",
           "tableTo": "waste_entries",
-          "columnsFrom": [
-            "waste_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["waste_entry_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2298,12 +2124,8 @@
           "name": "operational_expenses_submitted_by_users_id_fk",
           "tableFrom": "operational_expenses",
           "tableTo": "users",
-          "columnsFrom": [
-            "submitted_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["submitted_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2373,12 +2195,8 @@
           "name": "order_item_exclusions_order_item_id_order_items_id_fk",
           "tableFrom": "order_item_exclusions",
           "tableTo": "order_items",
-          "columnsFrom": [
-            "order_item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["order_item_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2386,12 +2204,8 @@
           "name": "order_item_exclusions_ingredient_id_ingredients_id_fk",
           "tableFrom": "order_item_exclusions",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2468,12 +2282,8 @@
           "name": "order_item_modifiers_order_item_id_order_items_id_fk",
           "tableFrom": "order_item_modifiers",
           "tableTo": "order_items",
-          "columnsFrom": [
-            "order_item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["order_item_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2481,12 +2291,8 @@
           "name": "order_item_modifiers_modifier_group_id_modifier_groups_id_fk",
           "tableFrom": "order_item_modifiers",
           "tableTo": "modifier_groups",
-          "columnsFrom": [
-            "modifier_group_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["modifier_group_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2494,12 +2300,8 @@
           "name": "order_item_modifiers_modifier_id_modifiers_id_fk",
           "tableFrom": "order_item_modifiers",
           "tableTo": "modifiers",
-          "columnsFrom": [
-            "modifier_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["modifier_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2609,12 +2411,8 @@
           "name": "order_items_order_id_orders_id_fk",
           "tableFrom": "order_items",
           "tableTo": "orders",
-          "columnsFrom": [
-            "order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["order_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2622,12 +2420,8 @@
           "name": "order_items_recipe_id_recipes_id_fk",
           "tableFrom": "order_items",
           "tableTo": "recipes",
-          "columnsFrom": [
-            "recipe_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["recipe_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2635,12 +2429,8 @@
           "name": "order_items_brand_id_brands_id_fk",
           "tableFrom": "order_items",
           "tableTo": "brands",
-          "columnsFrom": [
-            "brand_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["brand_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2866,12 +2656,8 @@
           "name": "orders_branch_id_branches_id_fk",
           "tableFrom": "orders",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2879,12 +2665,8 @@
           "name": "orders_shift_id_shifts_id_fk",
           "tableFrom": "orders",
           "tableTo": "shifts",
-          "columnsFrom": [
-            "shift_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["shift_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3003,12 +2785,8 @@
           "name": "passkey_user_id_users_id_fk",
           "tableFrom": "passkey",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3153,12 +2931,8 @@
           "name": "pending_review_inventory_scm_procurement_id_scm_procurements_id_fk",
           "tableFrom": "pending_review_inventory",
           "tableTo": "scm_procurements",
-          "columnsFrom": [
-            "scm_procurement_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_procurement_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3166,12 +2940,8 @@
           "name": "pending_review_inventory_scm_transfer_id_scm_transfers_id_fk",
           "tableFrom": "pending_review_inventory",
           "tableTo": "scm_transfers",
-          "columnsFrom": [
-            "scm_transfer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_transfer_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3179,12 +2949,8 @@
           "name": "pending_review_inventory_branch_id_branches_id_fk",
           "tableFrom": "pending_review_inventory",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3192,12 +2958,8 @@
           "name": "pending_review_inventory_ingredient_id_ingredients_id_fk",
           "tableFrom": "pending_review_inventory",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3205,12 +2967,8 @@
           "name": "pending_review_inventory_created_by_id_users_id_fk",
           "tableFrom": "pending_review_inventory",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3290,12 +3048,8 @@
           "name": "period_balances_period_log_id_period_logs_id_fk",
           "tableFrom": "period_balances",
           "tableTo": "period_logs",
-          "columnsFrom": [
-            "period_log_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["period_log_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3303,12 +3057,8 @@
           "name": "period_balances_branch_id_branches_id_fk",
           "tableFrom": "period_balances",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3316,12 +3066,8 @@
           "name": "period_balances_ingredient_id_ingredients_id_fk",
           "tableFrom": "period_balances",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3331,12 +3077,7 @@
         "period_balance_unique": {
           "name": "period_balance_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "period_log_id",
-            "branch_id",
-            "ingredient_id",
-            "balance_type"
-          ]
+          "columns": ["period_log_id", "branch_id", "ingredient_id", "balance_type"]
         }
       },
       "policies": {},
@@ -3421,12 +3162,8 @@
           "name": "period_logs_opened_by_users_id_fk",
           "tableFrom": "period_logs",
           "tableTo": "users",
-          "columnsFrom": [
-            "opened_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["opened_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3434,12 +3171,8 @@
           "name": "period_logs_closed_by_users_id_fk",
           "tableFrom": "period_logs",
           "tableTo": "users",
-          "columnsFrom": [
-            "closed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["closed_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3449,9 +3182,7 @@
         "period_name_unique": {
           "name": "period_name_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "period_name"
-          ]
+          "columns": ["period_name"]
         }
       },
       "policies": {},
@@ -3505,9 +3236,7 @@
         "platform_fees_channel_unique": {
           "name": "platform_fees_channel_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "channel"
-          ]
+          "columns": ["channel"]
         }
       },
       "policies": {},
@@ -3608,12 +3337,8 @@
           "name": "print_requests_order_id_orders_id_fk",
           "tableFrom": "print_requests",
           "tableTo": "orders",
-          "columnsFrom": [
-            "order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["order_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3621,12 +3346,8 @@
           "name": "print_requests_requested_by_users_id_fk",
           "tableFrom": "print_requests",
           "tableTo": "users",
-          "columnsFrom": [
-            "requested_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["requested_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3634,12 +3355,8 @@
           "name": "print_requests_approved_by_users_id_fk",
           "tableFrom": "print_requests",
           "tableTo": "users",
-          "columnsFrom": [
-            "approved_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["approved_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3721,12 +3438,8 @@
           "name": "purchase_order_items_purchase_order_id_purchase_orders_id_fk",
           "tableFrom": "purchase_order_items",
           "tableTo": "purchase_orders",
-          "columnsFrom": [
-            "purchase_order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["purchase_order_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3734,12 +3447,8 @@
           "name": "purchase_order_items_ingredient_id_ingredients_id_fk",
           "tableFrom": "purchase_order_items",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3878,12 +3587,8 @@
           "name": "purchase_orders_purchase_requisition_id_purchase_requisitions_id_fk",
           "tableFrom": "purchase_orders",
           "tableTo": "purchase_requisitions",
-          "columnsFrom": [
-            "purchase_requisition_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["purchase_requisition_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3891,12 +3596,8 @@
           "name": "purchase_orders_supplier_id_suppliers_id_fk",
           "tableFrom": "purchase_orders",
           "tableTo": "suppliers",
-          "columnsFrom": [
-            "supplier_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["supplier_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3904,12 +3605,8 @@
           "name": "purchase_orders_from_branch_id_branches_id_fk",
           "tableFrom": "purchase_orders",
           "tableTo": "branches",
-          "columnsFrom": [
-            "from_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["from_branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3917,12 +3614,8 @@
           "name": "purchase_orders_to_branch_id_branches_id_fk",
           "tableFrom": "purchase_orders",
           "tableTo": "branches",
-          "columnsFrom": [
-            "to_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["to_branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3930,12 +3623,8 @@
           "name": "purchase_orders_created_by_users_id_fk",
           "tableFrom": "purchase_orders",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3945,9 +3634,7 @@
         "purchase_orders_code_unique": {
           "name": "purchase_orders_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -4006,12 +3693,8 @@
           "name": "purchase_requisition_items_purchase_requisition_id_purchase_requisitions_id_fk",
           "tableFrom": "purchase_requisition_items",
           "tableTo": "purchase_requisitions",
-          "columnsFrom": [
-            "purchase_requisition_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["purchase_requisition_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4019,12 +3702,8 @@
           "name": "purchase_requisition_items_ingredient_id_ingredients_id_fk",
           "tableFrom": "purchase_requisition_items",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4149,12 +3828,8 @@
           "name": "purchase_requisitions_branch_id_branches_id_fk",
           "tableFrom": "purchase_requisitions",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -4162,12 +3837,8 @@
           "name": "purchase_requisitions_requested_by_users_id_fk",
           "tableFrom": "purchase_requisitions",
           "tableTo": "users",
-          "columnsFrom": [
-            "requested_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["requested_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -4175,12 +3846,8 @@
           "name": "purchase_requisitions_approved_by_users_id_fk",
           "tableFrom": "purchase_requisitions",
           "tableTo": "users",
-          "columnsFrom": [
-            "approved_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["approved_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4190,9 +3857,7 @@
         "purchase_requisitions_code_unique": {
           "name": "purchase_requisitions_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -4236,12 +3901,8 @@
           "name": "recipe_branches_recipe_id_recipes_id_fk",
           "tableFrom": "recipe_branches",
           "tableTo": "recipes",
-          "columnsFrom": [
-            "recipe_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["recipe_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4249,12 +3910,8 @@
           "name": "recipe_branches_branch_id_branches_id_fk",
           "tableFrom": "recipe_branches",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4264,10 +3921,7 @@
         "recipe_branch_unique": {
           "name": "recipe_branch_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "recipe_id",
-            "branch_id"
-          ]
+          "columns": ["recipe_id", "branch_id"]
         }
       },
       "policies": {},
@@ -4304,12 +3958,8 @@
           "name": "recipe_brands_recipe_id_recipes_id_fk",
           "tableFrom": "recipe_brands",
           "tableTo": "recipes",
-          "columnsFrom": [
-            "recipe_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["recipe_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4317,12 +3967,8 @@
           "name": "recipe_brands_brand_id_brands_id_fk",
           "tableFrom": "recipe_brands",
           "tableTo": "brands",
-          "columnsFrom": [
-            "brand_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["brand_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4332,10 +3978,7 @@
         "recipe_brand_unique": {
           "name": "recipe_brand_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "recipe_id",
-            "brand_id"
-          ]
+          "columns": ["recipe_id", "brand_id"]
         }
       },
       "policies": {},
@@ -4378,12 +4021,8 @@
           "name": "recipe_child_recipes_parent_recipe_id_recipes_id_fk",
           "tableFrom": "recipe_child_recipes",
           "tableTo": "recipes",
-          "columnsFrom": [
-            "parent_recipe_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["parent_recipe_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4391,12 +4030,8 @@
           "name": "recipe_child_recipes_child_recipe_id_recipes_id_fk",
           "tableFrom": "recipe_child_recipes",
           "tableTo": "recipes",
-          "columnsFrom": [
-            "child_recipe_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["child_recipe_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4406,10 +4041,7 @@
         "recipe_child_unique": {
           "name": "recipe_child_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "parent_recipe_id",
-            "child_recipe_id"
-          ]
+          "columns": ["parent_recipe_id", "child_recipe_id"]
         }
       },
       "policies": {},
@@ -4459,12 +4091,8 @@
           "name": "recipe_ingredients_recipe_id_recipes_id_fk",
           "tableFrom": "recipe_ingredients",
           "tableTo": "recipes",
-          "columnsFrom": [
-            "recipe_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["recipe_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4472,12 +4100,8 @@
           "name": "recipe_ingredients_ingredient_id_ingredients_id_fk",
           "tableFrom": "recipe_ingredients",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4530,12 +4154,8 @@
           "name": "recipe_modifier_exclusions_recipe_id_recipes_id_fk",
           "tableFrom": "recipe_modifier_exclusions",
           "tableTo": "recipes",
-          "columnsFrom": [
-            "recipe_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["recipe_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4543,12 +4163,8 @@
           "name": "recipe_modifier_exclusions_modifier_id_modifiers_id_fk",
           "tableFrom": "recipe_modifier_exclusions",
           "tableTo": "modifiers",
-          "columnsFrom": [
-            "modifier_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["modifier_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4556,12 +4172,8 @@
           "name": "recipe_modifier_exclusions_ingredient_id_ingredients_id_fk",
           "tableFrom": "recipe_modifier_exclusions",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4571,11 +4183,7 @@
         "recipe_mod_excl_unique": {
           "name": "recipe_mod_excl_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "recipe_id",
-            "modifier_id",
-            "ingredient_id"
-          ]
+          "columns": ["recipe_id", "modifier_id", "ingredient_id"]
         }
       },
       "policies": {},
@@ -4612,12 +4220,8 @@
           "name": "recipe_modifier_groups_recipe_id_recipes_id_fk",
           "tableFrom": "recipe_modifier_groups",
           "tableTo": "recipes",
-          "columnsFrom": [
-            "recipe_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["recipe_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4625,12 +4229,8 @@
           "name": "recipe_modifier_groups_modifier_group_id_modifier_groups_id_fk",
           "tableFrom": "recipe_modifier_groups",
           "tableTo": "modifier_groups",
-          "columnsFrom": [
-            "modifier_group_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["modifier_group_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4640,10 +4240,7 @@
         "recipe_mod_group_unique": {
           "name": "recipe_mod_group_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "recipe_id",
-            "modifier_group_id"
-          ]
+          "columns": ["recipe_id", "modifier_group_id"]
         }
       },
       "policies": {},
@@ -4750,9 +4347,7 @@
         "recipes_code_unique": {
           "name": "recipes_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -4823,12 +4418,8 @@
           "name": "scm_invoice_items_scm_invoice_id_scm_invoices_id_fk",
           "tableFrom": "scm_invoice_items",
           "tableTo": "scm_invoices",
-          "columnsFrom": [
-            "scm_invoice_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_invoice_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4836,12 +4427,8 @@
           "name": "scm_invoice_items_ingredient_id_ingredients_id_fk",
           "tableFrom": "scm_invoice_items",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4958,12 +4545,8 @@
           "name": "scm_invoices_delivery_note_id_delivery_notes_id_fk",
           "tableFrom": "scm_invoices",
           "tableTo": "delivery_notes",
-          "columnsFrom": [
-            "delivery_note_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["delivery_note_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -4971,12 +4554,8 @@
           "name": "scm_invoices_from_branch_id_branches_id_fk",
           "tableFrom": "scm_invoices",
           "tableTo": "branches",
-          "columnsFrom": [
-            "from_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["from_branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -4984,12 +4563,8 @@
           "name": "scm_invoices_to_branch_id_branches_id_fk",
           "tableFrom": "scm_invoices",
           "tableTo": "branches",
-          "columnsFrom": [
-            "to_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["to_branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4999,9 +4574,7 @@
         "scm_invoices_code_unique": {
           "name": "scm_invoices_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -5120,12 +4693,8 @@
           "name": "scm_procurement_audit_log_scm_procurement_id_scm_procurements_id_fk",
           "tableFrom": "scm_procurement_audit_log",
           "tableTo": "scm_procurements",
-          "columnsFrom": [
-            "scm_procurement_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_procurement_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -5133,12 +4702,8 @@
           "name": "scm_procurement_audit_log_item_id_scm_procurement_items_id_fk",
           "tableFrom": "scm_procurement_audit_log",
           "tableTo": "scm_procurement_items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -5146,12 +4711,8 @@
           "name": "scm_procurement_audit_log_actor_id_users_id_fk",
           "tableFrom": "scm_procurement_audit_log",
           "tableTo": "users",
-          "columnsFrom": [
-            "actor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["actor_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -5238,12 +4799,8 @@
           "name": "scm_procurement_invoices_scm_procurement_id_scm_procurements_id_fk",
           "tableFrom": "scm_procurement_invoices",
           "tableTo": "scm_procurements",
-          "columnsFrom": [
-            "scm_procurement_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_procurement_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -5251,12 +4808,8 @@
           "name": "scm_procurement_invoices_generated_by_id_users_id_fk",
           "tableFrom": "scm_procurement_invoices",
           "tableTo": "users",
-          "columnsFrom": [
-            "generated_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["generated_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -5264,12 +4817,8 @@
           "name": "scm_procurement_invoices_paid_by_id_users_id_fk",
           "tableFrom": "scm_procurement_invoices",
           "tableTo": "users",
-          "columnsFrom": [
-            "paid_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["paid_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -5279,9 +4828,7 @@
         "scm_procurement_invoices_scm_procurement_id_unique": {
           "name": "scm_procurement_invoices_scm_procurement_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "scm_procurement_id"
-          ]
+          "columns": ["scm_procurement_id"]
         }
       },
       "policies": {},
@@ -5420,12 +4967,8 @@
           "name": "scm_procurement_items_scm_procurement_id_scm_procurements_id_fk",
           "tableFrom": "scm_procurement_items",
           "tableTo": "scm_procurements",
-          "columnsFrom": [
-            "scm_procurement_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_procurement_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -5433,12 +4976,8 @@
           "name": "scm_procurement_items_ingredient_id_ingredients_id_fk",
           "tableFrom": "scm_procurement_items",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -5673,12 +5212,8 @@
           "name": "scm_procurements_branch_id_branches_id_fk",
           "tableFrom": "scm_procurements",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -5686,12 +5221,8 @@
           "name": "scm_procurements_requested_by_id_users_id_fk",
           "tableFrom": "scm_procurements",
           "tableTo": "users",
-          "columnsFrom": [
-            "requested_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["requested_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -5699,12 +5230,8 @@
           "name": "scm_procurements_reviewing_by_id_users_id_fk",
           "tableFrom": "scm_procurements",
           "tableTo": "users",
-          "columnsFrom": [
-            "reviewing_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["reviewing_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -5712,12 +5239,8 @@
           "name": "scm_procurements_receiving_by_id_users_id_fk",
           "tableFrom": "scm_procurements",
           "tableTo": "users",
-          "columnsFrom": [
-            "receiving_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["receiving_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -5725,12 +5248,8 @@
           "name": "scm_procurements_cancelled_by_id_users_id_fk",
           "tableFrom": "scm_procurements",
           "tableTo": "users",
-          "columnsFrom": [
-            "cancelled_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["cancelled_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -5740,9 +5259,7 @@
         "scm_procurements_code_unique": {
           "name": "scm_procurements_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -5861,12 +5378,8 @@
           "name": "scm_transfer_audit_log_scm_transfer_id_scm_transfers_id_fk",
           "tableFrom": "scm_transfer_audit_log",
           "tableTo": "scm_transfers",
-          "columnsFrom": [
-            "scm_transfer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_transfer_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -5874,12 +5387,8 @@
           "name": "scm_transfer_audit_log_item_id_scm_transfer_items_id_fk",
           "tableFrom": "scm_transfer_audit_log",
           "tableTo": "scm_transfer_items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -5887,12 +5396,8 @@
           "name": "scm_transfer_audit_log_actor_id_users_id_fk",
           "tableFrom": "scm_transfer_audit_log",
           "tableTo": "users",
-          "columnsFrom": [
-            "actor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["actor_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -5992,12 +5497,8 @@
           "name": "scm_transfer_invoices_scm_transfer_id_scm_transfers_id_fk",
           "tableFrom": "scm_transfer_invoices",
           "tableTo": "scm_transfers",
-          "columnsFrom": [
-            "scm_transfer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_transfer_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6005,12 +5506,8 @@
           "name": "scm_transfer_invoices_created_by_id_users_id_fk",
           "tableFrom": "scm_transfer_invoices",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -6018,12 +5515,8 @@
           "name": "scm_transfer_invoices_paid_by_id_users_id_fk",
           "tableFrom": "scm_transfer_invoices",
           "tableTo": "users",
-          "columnsFrom": [
-            "paid_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["paid_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -6033,16 +5526,12 @@
         "scm_transfer_invoices_scm_transfer_id_unique": {
           "name": "scm_transfer_invoices_scm_transfer_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "scm_transfer_id"
-          ]
+          "columns": ["scm_transfer_id"]
         },
         "scm_transfer_invoices_code_unique": {
           "name": "scm_transfer_invoices_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -6161,12 +5650,8 @@
           "name": "scm_transfer_items_scm_transfer_id_scm_transfers_id_fk",
           "tableFrom": "scm_transfer_items",
           "tableTo": "scm_transfers",
-          "columnsFrom": [
-            "scm_transfer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["scm_transfer_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6174,12 +5659,8 @@
           "name": "scm_transfer_items_ingredient_id_ingredients_id_fk",
           "tableFrom": "scm_transfer_items",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -6476,12 +5957,8 @@
           "name": "scm_transfers_from_branch_id_branches_id_fk",
           "tableFrom": "scm_transfers",
           "tableTo": "branches",
-          "columnsFrom": [
-            "from_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["from_branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -6489,12 +5966,8 @@
           "name": "scm_transfers_to_branch_id_branches_id_fk",
           "tableFrom": "scm_transfers",
           "tableTo": "branches",
-          "columnsFrom": [
-            "to_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["to_branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -6502,12 +5975,8 @@
           "name": "scm_transfers_requested_by_id_users_id_fk",
           "tableFrom": "scm_transfers",
           "tableTo": "users",
-          "columnsFrom": [
-            "requested_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["requested_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -6515,12 +5984,8 @@
           "name": "scm_transfers_reviewing_by_id_users_id_fk",
           "tableFrom": "scm_transfers",
           "tableTo": "users",
-          "columnsFrom": [
-            "reviewing_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["reviewing_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -6528,12 +5993,8 @@
           "name": "scm_transfers_receiving_by_id_users_id_fk",
           "tableFrom": "scm_transfers",
           "tableTo": "users",
-          "columnsFrom": [
-            "receiving_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["receiving_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -6541,12 +6002,8 @@
           "name": "scm_transfers_paid_by_id_users_id_fk",
           "tableFrom": "scm_transfers",
           "tableTo": "users",
-          "columnsFrom": [
-            "paid_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["paid_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -6554,12 +6011,8 @@
           "name": "scm_transfers_cancelled_by_id_users_id_fk",
           "tableFrom": "scm_transfers",
           "tableTo": "users",
-          "columnsFrom": [
-            "cancelled_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["cancelled_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -6569,9 +6022,7 @@
         "scm_transfers_code_unique": {
           "name": "scm_transfers_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -6659,12 +6110,8 @@
           "name": "session_user_id_users_id_fk",
           "tableFrom": "session",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -6674,9 +6121,7 @@
         "session_token_unique": {
           "name": "session_token_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -6754,12 +6199,8 @@
           "name": "shift_edits_shift_id_shifts_id_fk",
           "tableFrom": "shift_edits",
           "tableTo": "shifts",
-          "columnsFrom": [
-            "shift_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["shift_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -6767,12 +6208,8 @@
           "name": "shift_edits_edited_by_users_id_fk",
           "tableFrom": "shift_edits",
           "tableTo": "users",
-          "columnsFrom": [
-            "edited_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["edited_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -6910,12 +6347,8 @@
           "name": "shifts_branch_id_branches_id_fk",
           "tableFrom": "shifts",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -6923,12 +6356,8 @@
           "name": "shifts_user_id_users_id_fk",
           "tableFrom": "shifts",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -7068,12 +6497,8 @@
           "name": "stock_ledger_branch_id_branches_id_fk",
           "tableFrom": "stock_ledger",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7081,12 +6506,8 @@
           "name": "stock_ledger_ingredient_id_ingredients_id_fk",
           "tableFrom": "stock_ledger",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -7173,12 +6594,8 @@
           "name": "stock_opname_items_stock_opname_id_stock_opnames_id_fk",
           "tableFrom": "stock_opname_items",
           "tableTo": "stock_opnames",
-          "columnsFrom": [
-            "stock_opname_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["stock_opname_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -7186,12 +6603,8 @@
           "name": "stock_opname_items_ingredient_id_ingredients_id_fk",
           "tableFrom": "stock_opname_items",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -7324,12 +6737,8 @@
           "name": "stock_opnames_branch_id_branches_id_fk",
           "tableFrom": "stock_opnames",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7337,12 +6746,8 @@
           "name": "stock_opnames_triggered_by_users_id_fk",
           "tableFrom": "stock_opnames",
           "tableTo": "users",
-          "columnsFrom": [
-            "triggered_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["triggered_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7350,12 +6755,8 @@
           "name": "stock_opnames_submitted_by_users_id_fk",
           "tableFrom": "stock_opnames",
           "tableTo": "users",
-          "columnsFrom": [
-            "submitted_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["submitted_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7363,12 +6764,8 @@
           "name": "stock_opnames_approved_by_users_id_fk",
           "tableFrom": "stock_opnames",
           "tableTo": "users",
-          "columnsFrom": [
-            "approved_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["approved_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -7512,12 +6909,8 @@
           "name": "stock_transfers_from_branch_id_branches_id_fk",
           "tableFrom": "stock_transfers",
           "tableTo": "branches",
-          "columnsFrom": [
-            "from_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["from_branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7525,12 +6918,8 @@
           "name": "stock_transfers_to_branch_id_branches_id_fk",
           "tableFrom": "stock_transfers",
           "tableTo": "branches",
-          "columnsFrom": [
-            "to_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["to_branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7538,12 +6927,8 @@
           "name": "stock_transfers_ingredient_id_ingredients_id_fk",
           "tableFrom": "stock_transfers",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7551,12 +6936,8 @@
           "name": "stock_transfers_requested_by_users_id_fk",
           "tableFrom": "stock_transfers",
           "tableTo": "users",
-          "columnsFrom": [
-            "requested_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["requested_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7564,12 +6945,8 @@
           "name": "stock_transfers_approved_by_users_id_fk",
           "tableFrom": "stock_transfers",
           "tableTo": "users",
-          "columnsFrom": [
-            "approved_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["approved_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7577,12 +6954,8 @@
           "name": "stock_transfers_rejected_by_users_id_fk",
           "tableFrom": "stock_transfers",
           "tableTo": "users",
-          "columnsFrom": [
-            "rejected_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["rejected_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -7592,9 +6965,7 @@
         "stock_transfers_code_unique": {
           "name": "stock_transfers_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -7722,12 +7093,8 @@
           "name": "supplier_deliveries_supplier_id_suppliers_id_fk",
           "tableFrom": "supplier_deliveries",
           "tableTo": "suppliers",
-          "columnsFrom": [
-            "supplier_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["supplier_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7735,12 +7102,8 @@
           "name": "supplier_deliveries_ingredient_id_ingredients_id_fk",
           "tableFrom": "supplier_deliveries",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -7748,12 +7111,8 @@
           "name": "supplier_deliveries_received_by_users_id_fk",
           "tableFrom": "supplier_deliveries",
           "tableTo": "users",
-          "columnsFrom": [
-            "received_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["received_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -7840,9 +7199,7 @@
         "suppliers_code_unique": {
           "name": "suppliers_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -7952,12 +7309,8 @@
           "name": "system_logs_user_id_users_id_fk",
           "tableFrom": "system_logs",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -8078,12 +7431,8 @@
           "name": "system_notifications_user_id_users_id_fk",
           "tableFrom": "system_notifications",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -8178,12 +7527,8 @@
           "name": "users_branch_id_branches_id_fk",
           "tableFrom": "users",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -8193,17 +7538,12 @@
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         },
         "user_pin_branch_unique": {
           "name": "user_pin_branch_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "pin",
-            "branch_id"
-          ]
+          "columns": ["pin", "branch_id"]
         }
       },
       "policies": {},
@@ -8369,12 +7709,8 @@
           "name": "vouchers_created_by_users_id_fk",
           "tableFrom": "vouchers",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -8384,9 +7720,7 @@
         "vouchers_code_unique": {
           "name": "vouchers_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -8514,12 +7848,8 @@
           "name": "waste_entries_branch_id_branches_id_fk",
           "tableFrom": "waste_entries",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -8527,12 +7857,8 @@
           "name": "waste_entries_ingredient_id_ingredients_id_fk",
           "tableFrom": "waste_entries",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -8540,12 +7866,8 @@
           "name": "waste_entries_submitted_by_users_id_fk",
           "tableFrom": "waste_entries",
           "tableTo": "users",
-          "columnsFrom": [
-            "submitted_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["submitted_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -8623,12 +7945,8 @@
           "name": "yield_conversion_sources_yield_conversion_id_yield_conversions_id_fk",
           "tableFrom": "yield_conversion_sources",
           "tableTo": "yield_conversions",
-          "columnsFrom": [
-            "yield_conversion_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["yield_conversion_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -8636,12 +7954,8 @@
           "name": "yield_conversion_sources_ingredient_id_ingredients_id_fk",
           "tableFrom": "yield_conversion_sources",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -8778,12 +8092,8 @@
           "name": "yield_conversions_branch_id_branches_id_fk",
           "tableFrom": "yield_conversions",
           "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["branch_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -8791,12 +8101,8 @@
           "name": "yield_conversions_source_ingredient_id_ingredients_id_fk",
           "tableFrom": "yield_conversions",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "source_ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["source_ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -8804,12 +8110,8 @@
           "name": "yield_conversions_target_ingredient_id_ingredients_id_fk",
           "tableFrom": "yield_conversions",
           "tableTo": "ingredients",
-          "columnsFrom": [
-            "target_ingredient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["target_ingredient_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -8817,12 +8119,8 @@
           "name": "yield_conversions_processed_by_users_id_fk",
           "tableFrom": "yield_conversions",
           "tableTo": "users",
-          "columnsFrom": [
-            "processed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["processed_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -8838,186 +8136,97 @@
     "public.ba_decision": {
       "name": "ba_decision",
       "schema": "public",
-      "values": [
-        "pending",
-        "accepted",
-        "rejected"
-      ]
+      "values": ["pending", "accepted", "rejected"]
     },
     "public.branch_type": {
       "name": "branch_type",
       "schema": "public",
-      "values": [
-        "Central",
-        "Outlet"
-      ]
+      "values": ["Central", "Outlet"]
     },
     "public.ca_decision": {
       "name": "ca_decision",
       "schema": "public",
-      "values": [
-        "pending",
-        "approved",
-        "rejected"
-      ]
+      "values": ["pending", "approved", "rejected"]
     },
     "public.cancel_request_reason": {
       "name": "cancel_request_reason",
       "schema": "public",
-      "values": [
-        "Stok Habis",
-        "Salah Input",
-        "Customer Cancel"
-      ]
+      "values": ["Stok Habis", "Salah Input", "Customer Cancel"]
     },
     "public.cancel_request_status": {
       "name": "cancel_request_status",
       "schema": "public",
-      "values": [
-        "Pending",
-        "Approved",
-        "Rejected",
-        "Executed"
-      ]
+      "values": ["Pending", "Approved", "Rejected", "Executed"]
     },
     "public.delivery_note_status": {
       "name": "delivery_note_status",
       "schema": "public",
-      "values": [
-        "Draft",
-        "Picking",
-        "In Transit",
-        "Partial Received",
-        "Received",
-        "Cancelled"
-      ]
+      "values": ["Draft", "Picking", "In Transit", "Partial Received", "Received", "Cancelled"]
     },
     "public.ingredient_category": {
       "name": "ingredient_category",
       "schema": "public",
-      "values": [
-        "Fresh",
-        "Dry",
-        "Packaging"
-      ]
+      "values": ["Fresh", "Dry", "Packaging"]
     },
     "public.ingredient_status": {
       "name": "ingredient_status",
       "schema": "public",
-      "values": [
-        "Active",
-        "Inactive"
-      ]
+      "values": ["Active", "Inactive"]
     },
     "public.log_status": {
       "name": "log_status",
       "schema": "public",
-      "values": [
-        "Success",
-        "Warning",
-        "Error"
-      ]
+      "values": ["Success", "Warning", "Error"]
     },
     "public.notification_type": {
       "name": "notification_type",
       "schema": "public",
-      "values": [
-        "info",
-        "warning",
-        "alert"
-      ]
+      "values": ["info", "warning", "alert"]
     },
     "public.order_channel": {
       "name": "order_channel",
       "schema": "public",
-      "values": [
-        "Gofood",
-        "Grabfood",
-        "ShopeeFood",
-        "Dine-in"
-      ]
+      "values": ["Gofood", "Grabfood", "ShopeeFood", "Dine-in"]
     },
     "public.order_status": {
       "name": "order_status",
       "schema": "public",
-      "values": [
-        "New",
-        "Processing",
-        "In Delivery",
-        "Completed",
-        "Void",
-        "Cancel Requested"
-      ]
+      "values": ["New", "Processing", "In Delivery", "Completed", "Void", "Cancel Requested"]
     },
     "public.period_status": {
       "name": "period_status",
       "schema": "public",
-      "values": [
-        "Open",
-        "Closed"
-      ]
+      "values": ["Open", "Closed"]
     },
     "public.po_status": {
       "name": "po_status",
       "schema": "public",
-      "values": [
-        "Draft",
-        "Sent",
-        "Partial",
-        "Completed",
-        "Cancelled"
-      ]
+      "values": ["Draft", "Sent", "Partial", "Completed", "Cancelled"]
     },
     "public.pr_status": {
       "name": "pr_status",
       "schema": "public",
-      "values": [
-        "Draft",
-        "Pending",
-        "Approved",
-        "Processed",
-        "Rejected",
-        "Fulfilled"
-      ]
+      "values": ["Draft", "Pending", "Approved", "Processed", "Rejected", "Fulfilled"]
     },
     "public.print_request_status": {
       "name": "print_request_status",
       "schema": "public",
-      "values": [
-        "Pending",
-        "Approved",
-        "Rejected",
-        "Consumed"
-      ]
+      "values": ["Pending", "Approved", "Rejected", "Consumed"]
     },
     "public.recipe_category": {
       "name": "recipe_category",
       "schema": "public",
-      "values": [
-        "makanan",
-        "minuman",
-        "snack",
-        "add_ons",
-        "paket_bundle"
-      ]
+      "values": ["makanan", "minuman", "snack", "add_ons", "paket_bundle"]
     },
     "public.rejection_disposition": {
       "name": "rejection_disposition",
       "schema": "public",
-      "values": [
-        "Return to Source",
-        "Scrap",
-        "Quarantine"
-      ]
+      "values": ["Return to Source", "Scrap", "Quarantine"]
     },
     "public.scm_invoice_status": {
       "name": "scm_invoice_status",
       "schema": "public",
-      "values": [
-        "Unpaid",
-        "Paid",
-        "Cancelled"
-      ]
+      "values": ["Unpaid", "Paid", "Cancelled"]
     },
     "public.scm_procurement_status": {
       "name": "scm_procurement_status",
@@ -9054,92 +8263,52 @@
     "public.shift_status": {
       "name": "shift_status",
       "schema": "public",
-      "values": [
-        "Open",
-        "Closed"
-      ]
+      "values": ["Open", "Closed"]
     },
     "public.sku_type": {
       "name": "sku_type",
       "schema": "public",
-      "values": [
-        "RM",
-        "SFG",
-        "FG"
-      ]
+      "values": ["RM", "SFG", "FG"]
     },
     "public.stock_ledger_type": {
       "name": "stock_ledger_type",
       "schema": "public",
-      "values": [
-        "IN",
-        "OUT"
-      ]
+      "values": ["IN", "OUT"]
     },
     "public.stock_opname_status": {
       "name": "stock_opname_status",
       "schema": "public",
-      "values": [
-        "Submitted",
-        "Approved",
-        "Under Investigation"
-      ]
+      "values": ["Submitted", "Approved", "Under Investigation"]
     },
     "public.stock_transfer_status": {
       "name": "stock_transfer_status",
       "schema": "public",
-      "values": [
-        "Pending Approval",
-        "Approved",
-        "Rejected",
-        "In Transit",
-        "Completed",
-        "Cancelled"
-      ]
+      "values": ["Pending Approval", "Approved", "Rejected", "In Transit", "Completed", "Cancelled"]
     },
     "public.supplier_delivery_status": {
       "name": "supplier_delivery_status",
       "schema": "public",
-      "values": [
-        "Pending Invoice",
-        "Completed"
-      ]
+      "values": ["Pending Invoice", "Completed"]
     },
     "public.user_role": {
       "name": "user_role",
       "schema": "public",
-      "values": [
-        "super_admin",
-        "admin_pusat",
-        "area_manager",
-        "branch_admin",
-        "central_kitchen"
-      ]
+      "values": ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"]
     },
     "public.user_status": {
       "name": "user_status",
       "schema": "public",
-      "values": [
-        "Active",
-        "Inactive"
-      ]
+      "values": ["Active", "Inactive"]
     },
     "public.voucher_discount_type": {
       "name": "voucher_discount_type",
       "schema": "public",
-      "values": [
-        "percentage",
-        "fixed"
-      ]
+      "values": ["percentage", "fixed"]
     },
     "public.waste_category": {
       "name": "waste_category",
       "schema": "public",
-      "values": [
-        "Beban Makan",
-        "Biaya Operasional",
-        "Spoiled"
-      ]
+      "values": ["Beban Makan", "Biaya Operasional", "Spoiled"]
     }
   },
   "schemas": {},

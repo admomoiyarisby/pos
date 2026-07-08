@@ -963,7 +963,12 @@ export function ReviewingSjCaLive({ procurement, items }: StateViewProps) {
 // =============================================================================
 // WaitingForPayment — BA: invoice preview; CA: invoice + Mark Paid
 // =============================================================================
-export function WaitingForPaymentBaInvoice({ procurement, items, invoice, showPrices }: StateViewProps) {
+export function WaitingForPaymentBaInvoice({
+  procurement,
+  items,
+  invoice,
+  showPrices,
+}: StateViewProps) {
   const total = (invoice?.totalAmount as number) ?? 0;
   // Prefer the invoice's frozen lineItems over the live procurement items
   // so the detail page matches the print window. The procurement items
@@ -998,7 +1003,12 @@ export function WaitingForPaymentBaInvoice({ procurement, items, invoice, showPr
   );
 }
 
-export function WaitingForPaymentCaInvoice({ procurement, items, invoice, showPrices }: StateViewProps) {
+export function WaitingForPaymentCaInvoice({
+  procurement,
+  items,
+  invoice,
+  showPrices,
+}: StateViewProps) {
   const transitionM = useTransitionMutation();
   const total = (invoice?.totalAmount as number) ?? 0;
   const invoiceLineItems =

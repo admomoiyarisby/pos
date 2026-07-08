@@ -160,13 +160,14 @@ for (const state of ALL_STATES) {
       check(`admin_pusat sees no events in ${state}`, events.length === 0);
     } else {
       // role matches the spec
-      const allowedForRole = (Object.entries(SPEC[state] ?? {}) as [ScmTransferEvent, { actors: string[] }][])
+      const allowedForRole = (
+        Object.entries(SPEC[state] ?? {}) as [ScmTransferEvent, { actors: string[] }][]
+      )
         .filter(([, s]) => s.actors.includes(role))
         .map(([e]) => e);
       check(
         `${role} sees ${JSON.stringify(allowedForRole)} in ${state}`,
-        events.length === allowedForRole.length &&
-          allowedForRole.every((e) => events.includes(e)),
+        events.length === allowedForRole.length && allowedForRole.every((e) => events.includes(e)),
         `expected ${JSON.stringify(allowedForRole)}, got ${JSON.stringify(events)}`,
       );
     }

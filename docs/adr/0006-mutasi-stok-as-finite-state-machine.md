@@ -44,39 +44,39 @@ Model **Mutasi Stok** as a **single unified document** (`scm_transfers`) with a 
               → SuratJalanDraft (Sender BA withdraw)               ↓
 ```
 
-State names mirror Pengadaan where the semantics match (`InTransit`, `Delivered`, `ReviewingSJ`, `WaitingForPayment`, `Finished`, `Rejected`, `Cancelled`). The two early states diverge because Mutasi has no PR phase: `SuratJalanDraft` replaces Pengadaan's `Draft`, and `PendingAMReview` collapses Pengadaan's `Pending` + `UnderReview` into one (the AM sees the SJ immediately on submit). A new `Approved` state is introduced because approval and shipping are *separate* steps in Mutasi (AM is not the one with the goods).
+State names mirror Pengadaan where the semantics match (`InTransit`, `Delivered`, `ReviewingSJ`, `WaitingForPayment`, `Finished`, `Rejected`, `Cancelled`). The two early states diverge because Mutasi has no PR phase: `SuratJalanDraft` replaces Pengadaan's `Draft`, and `PendingAMReview` collapses Pengadaan's `Pending` + `UnderReview` into one (the AM sees the SJ immediately on submit). A new `Approved` state is introduced because approval and shipping are _separate_ steps in Mutasi (AM is not the one with the goods).
 
 ### The actors
 
 - `branch_admin` (BA) at the **Sender** branch — creates the SJ draft, submits to AM, ships, marks invoice paid, can withdraw back to draft.
 - `branch_admin` (BA) at the **Receiver** branch — sees the SJ from `Approved` onward, marks Delivered, opens receive, finishes receive (sets per-line received/rejected qty).
-- `area_manager` (AM) — approves or rejects from `PendingAMReview`; cancels from late states (`InTransit` onwards); sees all SJs touching at least one of their `assignedBranches`, but can *act* on an SJ only if **both** branches are in their `assignedBranches`.
+- `area_manager` (AM) — approves or rejects from `PendingAMReview`; cancels from late states (`InTransit` onwards); sees all SJs touching at least one of their `assignedBranches`, but can _act_ on an SJ only if **both** branches are in their `assignedBranches`.
 - `super_admin` — emergency override on every transition.
 - `admin_pusat` — **not an actor** in Mutasi. They have no business relationship with branch-to-branch transfers (Q1, Q4).
 
 ### The transition table
 
-| #  | From                                                                | Event              | To                  | Primary actor                | Effects                                                                                            |
-| -- | ------------------------------------------------------------------- | ------------------ | ------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------- |
-| 1  | `[*]`                                                               | `create`           | `SuratJalanDraft`   | `branch_admin` (sender)      | Insert transfer + items; snapshot `unitPrice` from `inventory.averageCost` at `fromBranchId`      |
-| 2  | `SuratJalanDraft`                                                   | `submit`           | `PendingAMReview`   | `branch_admin` (sender)      | Set `submittedAt`; soft stock check (warn if any line exceeds sender's current inventory)          |
-| 3  | `SuratJalanDraft`                                                   | `cancel`           | `Cancelled`         | `branch_admin` (sender)      | Audit log + reason; no stock reversal                                                              |
-| 4  | `PendingAMReview`                                                   | `approve`          | `Approved`          | `area_manager`               | Set `reviewingById`, `approvedAt`                                                                  |
-| 5  | `PendingAMReview`                                                   | `reject`           | `Rejected`          | `area_manager`               | Set `rejectedAt`, `rejectionReason`                                                                |
-| 6  | `PendingAMReview`                                                   | `withdraw`         | `SuratJalanDraft`   | `branch_admin` (sender)      | Audit log; `withdrawnAt` timestamp                                                                 |
-| 7  | `PendingAMReview`                                                   | `cancel`           | `Cancelled`         | `branch_admin` (sender) OR `area_manager` | Audit log + reason; no stock reversal                                                  |
-| 8  | `Approved`                                                          | `ship`             | `InTransit`         | `branch_admin` (sender)      | **Strict** stock check; decrement sender's `inventory`; write `in_transit_inventory` (with `scmTransferId` set); set `shippedAt` |
-| 9  | `Approved`                                                          | `withdraw`         | `SuratJalanDraft`   | `branch_admin` (sender)      | Audit log; `withdrawnAt`; AM must re-approve                                                       |
-| 10 | `Approved`                                                          | `cancel`           | `Cancelled`         | `branch_admin` (sender) OR `area_manager` | Audit log + reason; no stock reversal (goods not yet moved)                              |
-| 11 | `InTransit`                                                         | `mark-delivered`   | `Delivered`         | `branch_admin` (receiver)    | Move `in_transit_inventory` → `pending_review_inventory` (with `scmTransferId` set); set `deliveredAt` |
-| 12 | `InTransit`                                                         | `cancel`           | `Cancelled`         | `area_manager`               | Reverse `in_transit_inventory` → sender's `inventory`                                              |
-| 13 | `Delivered`                                                         | `open-receive`     | `ReviewingSJ`       | `branch_admin` (receiver)    | Set `receivingById`                                                                                |
-| 14 | `Delivered`                                                         | `cancel`           | `Cancelled`         | `area_manager`               | Reverse `pending_review_inventory` → sender's `inventory`                                          |
-| 15 | `ReviewingSJ`                                                       | `finish-receive`   | `WaitingForPayment` | `branch_admin` (receiver)    | Set per-line `receivedQuantity`, `rejectedQuantity`, `reason`; move `pending_review_inventory` → receiver's `inventory` (received) or `waste_entries` (rejected); generate invoice snapshot; set `receivedAt` |
-| 16 | `ReviewingSJ`                                                       | `cancel`           | `Cancelled`         | `area_manager`               | Reverse `pending_review_inventory` → sender's `inventory`                                          |
-| 17 | `WaitingForPayment`                                                 | `mark-paid`        | `Finished`          | `branch_admin` (sender)      | Set `invoice.paidAt`, `invoice.paidById`; set `transfer.paidAt`, `paidById`                        |
-| 18 | `WaitingForPayment`                                                 | `cancel`           | `Cancelled`         | `area_manager`               | Reverse receiver's `inventory` → sender's `inventory`; mark invoice as cancelled                   |
-| -  | `Rejected`, `Finished`, `Cancelled`                                 | (terminal)         | -                   | -                            | -                                                                                                  |
+| #   | From                                | Event            | To                  | Primary actor                             | Effects                                                                                                                                                                                                       |
+| --- | ----------------------------------- | ---------------- | ------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `[*]`                               | `create`         | `SuratJalanDraft`   | `branch_admin` (sender)                   | Insert transfer + items; snapshot `unitPrice` from `inventory.averageCost` at `fromBranchId`                                                                                                                  |
+| 2   | `SuratJalanDraft`                   | `submit`         | `PendingAMReview`   | `branch_admin` (sender)                   | Set `submittedAt`; soft stock check (warn if any line exceeds sender's current inventory)                                                                                                                     |
+| 3   | `SuratJalanDraft`                   | `cancel`         | `Cancelled`         | `branch_admin` (sender)                   | Audit log + reason; no stock reversal                                                                                                                                                                         |
+| 4   | `PendingAMReview`                   | `approve`        | `Approved`          | `area_manager`                            | Set `reviewingById`, `approvedAt`                                                                                                                                                                             |
+| 5   | `PendingAMReview`                   | `reject`         | `Rejected`          | `area_manager`                            | Set `rejectedAt`, `rejectionReason`                                                                                                                                                                           |
+| 6   | `PendingAMReview`                   | `withdraw`       | `SuratJalanDraft`   | `branch_admin` (sender)                   | Audit log; `withdrawnAt` timestamp                                                                                                                                                                            |
+| 7   | `PendingAMReview`                   | `cancel`         | `Cancelled`         | `branch_admin` (sender) OR `area_manager` | Audit log + reason; no stock reversal                                                                                                                                                                         |
+| 8   | `Approved`                          | `ship`           | `InTransit`         | `branch_admin` (sender)                   | **Strict** stock check; decrement sender's `inventory`; write `in_transit_inventory` (with `scmTransferId` set); set `shippedAt`                                                                              |
+| 9   | `Approved`                          | `withdraw`       | `SuratJalanDraft`   | `branch_admin` (sender)                   | Audit log; `withdrawnAt`; AM must re-approve                                                                                                                                                                  |
+| 10  | `Approved`                          | `cancel`         | `Cancelled`         | `branch_admin` (sender) OR `area_manager` | Audit log + reason; no stock reversal (goods not yet moved)                                                                                                                                                   |
+| 11  | `InTransit`                         | `mark-delivered` | `Delivered`         | `branch_admin` (receiver)                 | Move `in_transit_inventory` → `pending_review_inventory` (with `scmTransferId` set); set `deliveredAt`                                                                                                        |
+| 12  | `InTransit`                         | `cancel`         | `Cancelled`         | `area_manager`                            | Reverse `in_transit_inventory` → sender's `inventory`                                                                                                                                                         |
+| 13  | `Delivered`                         | `open-receive`   | `ReviewingSJ`       | `branch_admin` (receiver)                 | Set `receivingById`                                                                                                                                                                                           |
+| 14  | `Delivered`                         | `cancel`         | `Cancelled`         | `area_manager`                            | Reverse `pending_review_inventory` → sender's `inventory`                                                                                                                                                     |
+| 15  | `ReviewingSJ`                       | `finish-receive` | `WaitingForPayment` | `branch_admin` (receiver)                 | Set per-line `receivedQuantity`, `rejectedQuantity`, `reason`; move `pending_review_inventory` → receiver's `inventory` (received) or `waste_entries` (rejected); generate invoice snapshot; set `receivedAt` |
+| 16  | `ReviewingSJ`                       | `cancel`         | `Cancelled`         | `area_manager`                            | Reverse `pending_review_inventory` → sender's `inventory`                                                                                                                                                     |
+| 17  | `WaitingForPayment`                 | `mark-paid`      | `Finished`          | `branch_admin` (sender)                   | Set `invoice.paidAt`, `invoice.paidById`; set `transfer.paidAt`, `paidById`                                                                                                                                   |
+| 18  | `WaitingForPayment`                 | `cancel`         | `Cancelled`         | `area_manager`                            | Reverse receiver's `inventory` → sender's `inventory`; mark invoice as cancelled                                                                                                                              |
+| -   | `Rejected`, `Finished`, `Cancelled` | (terminal)       | -                   | -                                         | -                                                                                                                                                                                                             |
 
 `super_admin` is allowed on every transition (emergency override). The `create` event (transition #1) is implemented as a separate `createMutasiTransfer()` server function that inserts a row in `SuratJalanDraft` state, not via `transition()`.
 
@@ -111,6 +111,7 @@ In-state item edits (e.g., Receiver BA setting `receivedQuantity` per item durin
 A single detail page (`/scm-transfers/$transferId`) reads the transfer's `status` and the current actor's `role + branchId + assignedBranches`, then renders the appropriate sub-component from a `state × actor` matrix (parallel to the Pengadaan 16-component matrix). The "giant interactive table" pattern is reused at `ReviewingSJ` (Receiver BA sets per-line `receivedQuantity` / `rejectedQuantity` / `reason`).
 
 The list page (`/scm-transfers/`) splits SJs into two visual buckets for AMs:
+
 - **Actionable** (`canAmAct`): shown with action buttons (Approve, Reject).
 - **View-only** (`canAmSee && !canAmAct`): shown without action buttons, with a "cross-jurisdiction" badge.
 
@@ -138,9 +139,9 @@ Add a `kind` enum (`"Pengadaan" | "Mutasi"`) to `scm_procurements` and use the s
 
 ### Option B — Parallel root tables, shared FSM module (chosen)
 
-Two tables (`scm_procurements`, `scm_transfers`), two transition tables in two files, but the *shape* of the FSM module is the same. Effect handlers are shared via parameterization over the root FK.
+Two tables (`scm_procurements`, `scm_transfers`), two transition tables in two files, but the _shape_ of the FSM module is the same. Effect handlers are shared via parameterization over the root FK.
 
-**Why chosen:** The two flows share *structural* concepts (FSM, audit log, item-level review, invoice snapshot) but *diverge* in actors, state names, and effect details. Two tables + two transition tables + shared effect helpers captures this exactly. The cost (one extra file, one extra migration) is small.
+**Why chosen:** The two flows share _structural_ concepts (FSM, audit log, item-level review, invoice snapshot) but _diverge_ in actors, state names, and effect details. Two tables + two transition tables + shared effect helpers captures this exactly. The cost (one extra file, one extra migration) is small.
 
 ### Option C — Status-enum patch on `stock_transfers` (rejected)
 
@@ -172,7 +173,7 @@ The `unitPrice` on each `scm_transfer_items` row is snapshotted from `inventory.
 
 **Why sender's `inventory.averageCost`:**
 
-- The Pengadaan source (`ingredients.averageCost`) is a global per-ingredient value updated by stock movements across *all* branches. It reflects Central's "weighted average acquisition cost" — appropriate for a Central→Branch restocking process.
+- The Pengadaan source (`ingredients.averageCost`) is a global per-ingredient value updated by stock movements across _all_ branches. It reflects Central's "weighted average acquisition cost" — appropriate for a Central→Branch restocking process.
 - The Mutasi source needs to reflect what the **Sender's branch** paid for the stock. Different branches may have acquired the same ingredient at different prices, so the snapshot must be per-branch, not global.
 - The `inventory` table already carries `averageCost` per (branch, ingredient) — see how `recalculateRecipeCostsForIngredient` reads it. We just read it at item-creation time and freeze it on the item row.
 
@@ -199,7 +200,7 @@ Add a nullable `scmTransferId` FK column to the existing `in_transit_inventory` 
 
 **Why extend rather than duplicate:**
 
-- The ledger *meaning* is identical across all three flows: stock that has left a source branch but not yet settled at the destination. There's no semantic reason to split the table.
+- The ledger _meaning_ is identical across all three flows: stock that has left a source branch but not yet settled at the destination. There's no semantic reason to split the table.
 - Pengadaan's `scmProcurementId` column was added in ADR 0002 with this same pattern ("shared `in_transit_inventory` ledger... with `scmProcurementId` set"). The Mutasi addition is the natural next step.
 - Queries that aggregate in-transit or pending-review stock across all flows can do so without UNIONs.
 
@@ -209,7 +210,7 @@ A new `src/lib/server/scm-transfer-print.ts` module, parallel to the existing `s
 
 **Why separate rather than extend `scm-print.ts`:**
 
-- The two document templates have *different* data sources: Pengadaan's `proc.branchId` (destination-only) + `b.type === "Central"` (source) vs Mutasi's `transfer.fromBranchId` + `transfer.toBranchId`. Forcing both into one function means conditional logic that obscures both flows.
+- The two document templates have _different_ data sources: Pengadaan's `proc.branchId` (destination-only) + `b.type === "Central"` (source) vs Mutasi's `transfer.fromBranchId` + `transfer.toBranchId`. Forcing both into one function means conditional logic that obscures both flows.
 - The signature blocks differ: Pengadaan's SJ is "Pengirim: Central / Penerima: Branch"; Mutasi's is "Pengirim: Sender Branch / Penerima: Receiver Branch". Each can evolve independently.
 - The Mutasi SJ shows `quantity` (the Sender's promise) on print, with the receiver's signature line for "Diterima" filled in by hand. The Invoice is where `receivedQuantity` is final.
 
@@ -220,8 +221,8 @@ When the Receiver rejects some quantity at `finish-receive`, the rejected qty is
 **Why waste at receiver (not return to sender, not AM-decides):**
 
 - The Pengadaan code already does this. Reusing the same `writeRejectedWaste` effect (parameterized over the root FK) means zero new logic.
-- The accounting story is clean: `waste_entries` at the receiver captures the "this is gone" fact; the sender's books reflect what was shipped and paid for; both sides are made whole on the *invoice* dimension.
-- Physical return of rejected stock is a *separate* concern handled out-of-band. If the receiver wants to return goods to the sender, they can create a *new* Mutasi Stok with the actor roles reversed.
+- The accounting story is clean: `waste_entries` at the receiver captures the "this is gone" fact; the sender's books reflect what was shipped and paid for; both sides are made whole on the _invoice_ dimension.
+- Physical return of rejected stock is a _separate_ concern handled out-of-band. If the receiver wants to return goods to the sender, they can create a _new_ Mutasi Stok with the actor roles reversed.
 - AM-decides-per-SJ is over-engineered for what should be SOP.
 
 ## References
@@ -230,5 +231,5 @@ When the Receiver rejects some quantity at `finish-receive`, the rejected qty is
 - ADR 0003: `docs/adr/0003-procurement-unit-price-sourcing.md` — the pricing snapshot model; this ADR extends it to a per-branch source.
 - Lesson 0003: `learning-records/0003-scm-finite-state-machine.md` — the foundational FSM lesson.
 - CONTEXT.md: "Stock Transfer" (parent concept), "Mutasi Stok" (subtype), "Mutasi Unit Price" (pricing term), "In-Transit Inventory" (now shared across 3 flows).
-</content>
-</invoke>
+  </content>
+  </invoke>

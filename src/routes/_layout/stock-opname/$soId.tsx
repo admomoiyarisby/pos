@@ -442,7 +442,11 @@ function StockOpnameDetailPage() {
           {canRealize && (
             <button
               onClick={() => {
-                if (confirm("Apakah Anda yakin ingin me-realize Stock Opname ini? Stok akan disesuaikan ke stok fisik.")) {
+                if (
+                  confirm(
+                    "Apakah Anda yakin ingin me-realize Stock Opname ini? Stok akan disesuaikan ke stok fisik.",
+                  )
+                ) {
                   void realizeMutation.mutateAsync({ data: { soId } });
                 }
               }}

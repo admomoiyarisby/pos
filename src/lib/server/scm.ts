@@ -1016,7 +1016,9 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
     // Process each item
     console.log(`[receiveDeliveryNote] Processing ${data.items.length} items for DN ${data.dnId}`);
     for (const item of data.items) {
-      console.log(`[receiveDeliveryNote] Processing item ${item.itemId}: received=${item.receivedQuantity}, rejected=${item.rejectedQuantity}`);
+      console.log(
+        `[receiveDeliveryNote] Processing item ${item.itemId}: received=${item.receivedQuantity}, rejected=${item.rejectedQuantity}`,
+      );
       await db
         .update(deliveryNoteItems)
         .set({
@@ -1031,7 +1033,9 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
       const ingredientId = dnItem.ingredientId;
 
       // Add received to destination inventory
-      console.log(`[receiveDeliveryNote] Updating inventory for ingredient ${ingredientId} at branch ${dn.toBranchId}`);
+      console.log(
+        `[receiveDeliveryNote] Updating inventory for ingredient ${ingredientId} at branch ${dn.toBranchId}`,
+      );
       const [targetInv] = await db
         .select()
         .from(inventory)
@@ -1040,7 +1044,9 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
 
       if (targetInv) {
         const newQty = targetInv.quantity + item.receivedQuantity;
-        console.log(`[receiveDeliveryNote] Updating existing inventory: ${targetInv.quantity} → ${newQty}`);
+        console.log(
+          `[receiveDeliveryNote] Updating existing inventory: ${targetInv.quantity} → ${newQty}`,
+        );
         await db
           .update(inventory)
           .set({ quantity: newQty, lastUpdated: new Date() })

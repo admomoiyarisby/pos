@@ -12,12 +12,12 @@
 **32 findings** total. Breakdown by severity:
 
 | Severity | Count |
-|----------|-------|
-| CRITICAL | 4 |
-| HIGH | 8 |
-| MEDIUM | 7 |
-| LOW | 10 |
-| INFO | 3 |
+| -------- | ----- |
+| CRITICAL | 4     |
+| HIGH     | 8     |
+| MEDIUM   | 7     |
+| LOW      | 10    |
+| INFO     | 3     |
 
 **Top themes:**
 
@@ -30,7 +30,7 @@
 
 ---
 
-### F01: Matcha Latte COGS calculated at 80x selling price  **[CRITICAL]**
+### F01: Matcha Latte COGS calculated at 80x selling price **[CRITICAL]**
 
 - **Category:** Data/Financial
 - **URL:** `/dashboard`
@@ -41,7 +41,7 @@ Dashboard COGS shows Matcha Latte COGS Rp 2.265.640, margin Rp -2.237.640, food 
 
 ---
 
-### F02: POS price Rp 0 but Analytics reports non-zero revenue for the same item  **[CRITICAL]**
+### F02: POS price Rp 0 but Analytics reports non-zero revenue for the same item **[CRITICAL]**
 
 - **Category:** Data/Financial
 - **URL:** `/pos, /dashboard, /analytics`
@@ -52,7 +52,7 @@ Dashboard COGS shows Matcha Latte COGS Rp 2.265.640, margin Rp -2.237.640, food 
 
 ---
 
-### F04: Waste events recorded as INBOUND stock in Kartu Stok  **[CRITICAL]**
+### F04: Waste events recorded as INBOUND stock in Kartu Stok **[CRITICAL]**
 
 - **Category:** Data/Financial
 - **URL:** `/inventory/ledger`
@@ -63,7 +63,7 @@ Kartu Stok rows show Tipe='IN' (incoming) with Keterangan 'Masuk stok ing012 / i
 
 ---
 
-### F10: Creating a new user drops the Cabang (branch) assignment  **[CRITICAL]**
+### F10: Creating a new user drops the Cabang (branch) assignment **[CRITICAL]**
 
 - **Category:** Functional
 - **URL:** `/admin/users`
@@ -74,7 +74,7 @@ Created user 'Test User QA' as Branch Admin / Omoiyari Wiyung. After save, table
 
 ---
 
-### F03: Dashboard COGS ≠ Recipes HPP for the same menu item  **[HIGH]**
+### F03: Dashboard COGS ≠ Recipes HPP for the same menu item **[HIGH]**
 
 - **Category:** Data/Financial
 - **URL:** `/dashboard vs /recipes`
@@ -85,7 +85,7 @@ For the same menu, Dashboard 'Analisis COGS' and Recipes 'HPP Total' return diff
 
 ---
 
-### F05: Nilai Kerugian (loss value) shows Rp 0 across all waste entries  **[HIGH]**
+### F05: Nilai Kerugian (loss value) shows Rp 0 across all waste entries **[HIGH]**
 
 - **Category:** Data/Financial
 - **URL:** `/waste`
@@ -96,7 +96,7 @@ For the same menu, Dashboard 'Analisis COGS' and Recipes 'HPP Total' return diff
 
 ---
 
-### F06: Stock-value widget shows absurd per-unit prices  **[HIGH]**
+### F06: Stock-value widget shows absurd per-unit prices **[HIGH]**
 
 - **Category:** Data/Financial
 - **URL:** `/dashboard`
@@ -107,7 +107,7 @@ Dashboard 'Selisih' widget: 'Plastik Sealer Cup 825 / Rp 24.750.000' = Rp 30.000
 
 ---
 
-### F07: Most POS menu items are HABIS (out of stock) for all branches  **[HIGH]**
+### F07: Most POS menu items are HABIS (out of stock) for all branches **[HIGH]**
 
 - **Category:** Functional
 - **URL:** `/pos`
@@ -118,7 +118,7 @@ On Entry Pesanan, 18+ main-dish items show the 'HABIS' badge and are disabled at
 
 ---
 
-### F08: Dashboard 'Penjualan Hari Ini' = Rp 0 despite many orders today  **[HIGH]**
+### F08: Dashboard 'Penjualan Hari Ini' = Rp 0 despite many orders today **[HIGH]**
 
 - **Category:** Data/Financial
 - **URL:** `/dashboard vs /order-history`
@@ -129,7 +129,7 @@ Dashboard 'Penjualan Hari Ini Rp 0' and 'Pesanan Selesai 0'. Order History for 2
 
 ---
 
-### F09: Many Bahan Baku ingredients have HPP = Rp 0  **[HIGH]**
+### F09: Many Bahan Baku ingredients have HPP = Rp 0 **[HIGH]**
 
 - **Category:** Data/Financial
 - **URL:** `/ingredients`
@@ -140,7 +140,7 @@ Dashboard 'Penjualan Hari Ini Rp 0' and 'Pesanan Selesai 0'. Order History for 2
 
 ---
 
-### F11: Super Admin cannot change Status to Nonaktif — 'Forbidden: insufficient role'  **[HIGH]**
+### F11: Super Admin cannot change Status to Nonaktif — 'Forbidden: insufficient role' **[HIGH]**
 
 - **Category:** Permissions
 - **URL:** `/admin/users`
@@ -151,7 +151,7 @@ Edit Pengguna dialog: changing Status to 'Nonaktif' and clicking Simpan returns 
 
 ---
 
-### F27: Auth/session desync: /admin/branches first paints as 'Branch Admin / Unknown' before settling to Super Admin  **[HIGH]**
+### F27: Auth/session desync: /admin/branches first paints as 'Branch Admin / Unknown' before settling to Super Admin **[HIGH]**
 
 - **Category:** Security/Functional
 - **URL:** `/admin/branches (and other admin pages on first nav)`
@@ -162,7 +162,7 @@ Navigating to /admin/branches as Super Admin first paints sidebar role='Branch A
 
 ---
 
-### F12: User-action button label mismatches the dialog it opens  **[MEDIUM]**
+### F12: User-action button label mismatches the dialog it opens **[MEDIUM]**
 
 - **Category:** UX
 - **URL:** `/admin/users`
@@ -173,7 +173,7 @@ The action-column button is labelled 'Nonaktifkan melalui edit' (Disable through
 
 ---
 
-### F13: Period Control: 'Mei 2026' is Terbuka (open) but today is 23 June 2026  **[MEDIUM]**
+### F13: Period Control: 'Mei 2026' is Terbuka (open) but today is 23 June 2026 **[MEDIUM]**
 
 - **Category:** Process
 - **URL:** `/period-control`
@@ -184,7 +184,7 @@ Period Control shows 'Mei 2026 | Terbuka | 1/5/2026 | -' as the open period. Tod
 
 ---
 
-### F14: Recipe detail page missing the menu name heading  **[MEDIUM]**
+### F14: Recipe detail page missing the menu name heading **[MEDIUM]**
 
 - **Category:** Visual/UX
 - **URL:** `/recipes/<id>`
@@ -195,7 +195,7 @@ Recipe detail pages have no h1 and no breadcrumb. The user sees KATEGORI / HARGA
 
 ---
 
-### F15: Recipe BOM 'Jumlah' column has no unit  **[MEDIUM]**
+### F15: Recipe BOM 'Jumlah' column has no unit **[MEDIUM]**
 
 - **Category:** Data/UX
 - **URL:** `/recipes/<id>`
@@ -206,7 +206,7 @@ BOM Jumlah column shows bare numbers (1, 10, 1, 1, 68, 8, 117, 1, 1) with no uni
 
 ---
 
-### F17: Voucher form: required 'Berlaku Sampai' defaults to 0/0/0/0/0/0 — submit silently no-ops  **[MEDIUM]**
+### F17: Voucher form: required 'Berlaku Sampai' defaults to 0/0/0/0/0/0 — submit silently no-ops **[MEDIUM]**
 
 - **Category:** UX/Functional
 - **URL:** `/admin/vouchers`
@@ -217,7 +217,7 @@ The validUntil datetime field is required but defaults to Month=0, Day=0, Year=0
 
 ---
 
-### F21: Recharts warning: 'width(-1) and height(-1) of chart should be greater than 0'  **[MEDIUM]**
+### F21: Recharts warning: 'width(-1) and height(-1) of chart should be greater than 0' **[MEDIUM]**
 
 - **Category:** Console/Visual
 - **URL:** `/dashboard, /analytics`
@@ -228,18 +228,18 @@ Browser console emits 6+ identical Recharts warnings on dashboard load. The char
 
 ---
 
-### F26: Tren Penjualan 7 Hari: filter by toDateString() may include/exclude orders based on local TZ  **[MEDIUM]**
+### F26: Tren Penjualan 7 Hari: filter by toDateString() may include/exclude orders based on local TZ **[MEDIUM]**
 
 - **Category:** Functional
 - **URL:** `/dashboard`
 
-Bundle code: 'for r=6;r>=0;r-- { let i = new Date(Date.now()-r*864e5); let a = e.filter(e => new Date(e.createdAt).toDateString() === i.toDateString()); t.push(...) }'. Uses toDateString() (local TZ). If the local TZ differs from the server TZ, the chart shows the wrong 7 days. Also drops orders missing createdAt silently.
+Bundle code: 'for r=6;r>=0;r-- { let i = new Date(Date.now()-r\*864e5); let a = e.filter(e => new Date(e.createdAt).toDateString() === i.toDateString()); t.push(...) }'. Uses toDateString() (local TZ). If the local TZ differs from the server TZ, the chart shows the wrong 7 days. Also drops orders missing createdAt silently.
 
 **Evidence:** /tmp/dogfood-omoiyari/data/dashboard.js — toDateString() loop found.
 
 ---
 
-### F16: Edit Pengguna: PIN placeholder '1234' overlaps the actual value  **[LOW]**
+### F16: Edit Pengguna: PIN placeholder '1234' overlaps the actual value **[LOW]**
 
 - **Category:** Visual/UX
 - **URL:** `/admin/users`
@@ -250,7 +250,7 @@ Edit Pengguna PIN field has placeholder='1234' (visible) and the actual saved va
 
 ---
 
-### F18: Voucher duplicate-code submission silently no-ops  **[LOW]**
+### F18: Voucher duplicate-code submission silently no-ops **[LOW]**
 
 - **Category:** UX
 - **URL:** `/admin/vouchers`
@@ -261,7 +261,7 @@ Submitting Tambah Voucher with Kode='PROMO10' (duplicate) shows no error and the
 
 ---
 
-### F19: Print Requests page: description and empty-state copy are in DOM but not rendered  **[LOW]**
+### F19: Print Requests page: description and empty-state copy are in DOM but not rendered **[LOW]**
 
 - **Category:** UX
 - **URL:** `/print-requests`
@@ -272,7 +272,7 @@ Other admin pages (Voucher, Pengguna, Cabang) render both h1 + description parag
 
 ---
 
-### F20: Three pages have no h1 heading: /yield-tracking, /scm-procurements, /period-control  **[LOW]**
+### F20: Three pages have no h1 heading: /yield-tracking, /scm-procurements, /period-control **[LOW]**
 
 - **Category:** Accessibility
 - **URL:** `/yield-tracking, /scm-procurements, /period-control`
@@ -283,7 +283,7 @@ Yield Tracking, Pengadaan, and Period Control pages do not have any h1 (or even 
 
 ---
 
-### F22: Dialog a11y warning: 'Missing Description or aria-describedby for DialogContent'  **[LOW]**
+### F22: Dialog a11y warning: 'Missing Description or aria-describedby for DialogContent' **[LOW]**
 
 - **Category:** Accessibility
 - **URL:** `/admin/users (and any Radix Dialog)`
@@ -294,7 +294,7 @@ Tambah Pengguna and Tambah Voucher dialogs do not provide a DialogDescription. S
 
 ---
 
-### F23: Waste 'Qty' column has no unit  **[LOW]**
+### F23: Waste 'Qty' column has no unit **[LOW]**
 
 - **Category:** Data/UX
 - **URL:** `/waste`
@@ -305,7 +305,7 @@ Waste Qty shows bare numbers (100, 675, 75, 700, 725, 100, 125, 750, 150, 775, 1
 
 ---
 
-### F24: Kartu Stok 'Qty' and 'Saldo' columns have no unit  **[LOW]**
+### F24: Kartu Stok 'Qty' and 'Saldo' columns have no unit **[LOW]**
 
 - **Category:** Data/UX
 - **URL:** `/inventory/ledger`
@@ -316,7 +316,7 @@ Kartu Stok Qty uses Indonesian thousands-separator ('24.900' = 24,900) but no un
 
 ---
 
-### F25: Kartu Stok is missing the branch filter  **[LOW]**
+### F25: Kartu Stok is missing the branch filter **[LOW]**
 
 - **Category:** Functional
 - **URL:** `/inventory/ledger`
@@ -327,7 +327,7 @@ Stok Saat Ini has a branch filter. Kartu Stok does not — entries from all bran
 
 ---
 
-### F28: Recipes header says '29 item' but only 15 rows visible — no page indicator  **[LOW]**
+### F28: Recipes header says '29 item' but only 15 rows visible — no page indicator **[LOW]**
 
 - **Category:** UX/Consistency
 - **URL:** `/recipes`
@@ -338,7 +338,7 @@ Header says '29 item' on /recipes. Only 15 rows are visible before pagination, a
 
 ---
 
-### F30: Tambah User PIN field has no client/server minlength; placeholder '1234' could be saved as default  **[LOW]**
+### F30: Tambah User PIN field has no client/server minlength; placeholder '1234' could be saved as default **[LOW]**
 
 - **Category:** UX/Security
 - **URL:** `/admin/users`
@@ -349,7 +349,7 @@ PIN input has maxLength=4, pattern=\d{4}, placeholder='1234', required=false. If
 
 ---
 
-### F29: No hard delete anywhere — only soft-disable, and the path is broken for users  **[INFO]**
+### F29: No hard delete anywhere — only soft-disable, and the path is broken for users **[INFO]**
 
 - **Category:** Functional
 - **URL:** `/admin/users, /admin/branches, /admin/brands, /admin/vouchers, /ingredients`
@@ -360,7 +360,7 @@ Every entity I tested offers only 'Nonaktifkan' (deactivate) — Pengguna, Caban
 
 ---
 
-### F31: Notes: did not exercise POS cart end-to-end  **[INFO]**
+### F31: Notes: did not exercise POS cart end-to-end **[INFO]**
 
 - **Category:** Coverage note
 - **URL:** `/pos`
@@ -371,7 +371,7 @@ Most items are HABIS (F07), so the cart could not be filled. Buka Shift was not 
 
 ---
 
-### F32: Demo-login user list matches the Pengguna table exactly (11 users)  **[INFO]**
+### F32: Demo-login user list matches the Pengguna table exactly (11 users) **[INFO]**
 
 - **Category:** Data
 - **URL:** `Login screen vs /admin/users`
@@ -384,40 +384,40 @@ Login demo buttons list 11 users; /admin/users table shows 11. No mismatch. (Neg
 
 ## Summary table
 
-| # | Severity | Title | URL |
-|---|----------|-------|-----|
-| F01 | CRITICAL | Matcha Latte COGS calculated at 80x selling price | `/dashboard` |
-| F02 | CRITICAL | POS price Rp 0 but Analytics reports non-zero revenue for the same item | `/pos, /dashboard, /analytics` |
-| F04 | CRITICAL | Waste events recorded as INBOUND stock in Kartu Stok | `/inventory/ledger` |
-| F10 | CRITICAL | Creating a new user drops the Cabang (branch) assignment | `/admin/users` |
-| F03 | HIGH | Dashboard COGS ≠ Recipes HPP for the same menu item | `/dashboard vs /recipes` |
-| F05 | HIGH | Nilai Kerugian (loss value) shows Rp 0 across all waste entries | `/waste` |
-| F06 | HIGH | Stock-value widget shows absurd per-unit prices | `/dashboard` |
-| F07 | HIGH | Most POS menu items are HABIS (out of stock) for all branches | `/pos` |
-| F08 | HIGH | Dashboard 'Penjualan Hari Ini' = Rp 0 despite many orders today | `/dashboard vs /order-history` |
-| F09 | HIGH | Many Bahan Baku ingredients have HPP = Rp 0 | `/ingredients` |
-| F11 | HIGH | Super Admin cannot change Status to Nonaktif — 'Forbidden: insufficient role' | `/admin/users` |
-| F27 | HIGH | Auth/session desync: /admin/branches first paints as 'Branch Admin / Unknown' before settling to Super Admin | `/admin/branches (and other admin pages on first nav)` |
-| F12 | MEDIUM | User-action button label mismatches the dialog it opens | `/admin/users` |
-| F13 | MEDIUM | Period Control: 'Mei 2026' is Terbuka (open) but today is 23 June 2026 | `/period-control` |
-| F14 | MEDIUM | Recipe detail page missing the menu name heading | `/recipes/<id>` |
-| F15 | MEDIUM | Recipe BOM 'Jumlah' column has no unit | `/recipes/<id>` |
-| F17 | MEDIUM | Voucher form: required 'Berlaku Sampai' defaults to 0/0/0/0/0/0 — submit silently no-ops | `/admin/vouchers` |
-| F21 | MEDIUM | Recharts warning: 'width(-1) and height(-1) of chart should be greater than 0' | `/dashboard, /analytics` |
-| F26 | MEDIUM | Tren Penjualan 7 Hari: filter by toDateString() may include/exclude orders based on local TZ | `/dashboard` |
-| F16 | LOW | Edit Pengguna: PIN placeholder '1234' overlaps the actual value | `/admin/users` |
-| F18 | LOW | Voucher duplicate-code submission silently no-ops | `/admin/vouchers` |
-| F19 | LOW | Print Requests page: description and empty-state copy are in DOM but not rendered | `/print-requests` |
-| F20 | LOW | Three pages have no h1 heading: /yield-tracking, /scm-procurements, /period-control | `/yield-tracking, /scm-procurements, /period-control` |
-| F22 | LOW | Dialog a11y warning: 'Missing Description or aria-describedby for DialogContent' | `/admin/users (and any Radix Dialog)` |
-| F23 | LOW | Waste 'Qty' column has no unit | `/waste` |
-| F24 | LOW | Kartu Stok 'Qty' and 'Saldo' columns have no unit | `/inventory/ledger` |
-| F25 | LOW | Kartu Stok is missing the branch filter | `/inventory/ledger` |
-| F28 | LOW | Recipes header says '29 item' but only 15 rows visible — no page indicator | `/recipes` |
-| F30 | LOW | Tambah User PIN field has no client/server minlength; placeholder '1234' could be saved as default | `/admin/users` |
-| F29 | INFO | No hard delete anywhere — only soft-disable, and the path is broken for users | `/admin/users, /admin/branches, /admin/brands, /admin/vouchers, /ingredients` |
-| F31 | INFO | Notes: did not exercise POS cart end-to-end | `/pos` |
-| F32 | INFO | Demo-login user list matches the Pengguna table exactly (11 users) | `Login screen vs /admin/users` |
+| #   | Severity | Title                                                                                                        | URL                                                                           |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| F01 | CRITICAL | Matcha Latte COGS calculated at 80x selling price                                                            | `/dashboard`                                                                  |
+| F02 | CRITICAL | POS price Rp 0 but Analytics reports non-zero revenue for the same item                                      | `/pos, /dashboard, /analytics`                                                |
+| F04 | CRITICAL | Waste events recorded as INBOUND stock in Kartu Stok                                                         | `/inventory/ledger`                                                           |
+| F10 | CRITICAL | Creating a new user drops the Cabang (branch) assignment                                                     | `/admin/users`                                                                |
+| F03 | HIGH     | Dashboard COGS ≠ Recipes HPP for the same menu item                                                          | `/dashboard vs /recipes`                                                      |
+| F05 | HIGH     | Nilai Kerugian (loss value) shows Rp 0 across all waste entries                                              | `/waste`                                                                      |
+| F06 | HIGH     | Stock-value widget shows absurd per-unit prices                                                              | `/dashboard`                                                                  |
+| F07 | HIGH     | Most POS menu items are HABIS (out of stock) for all branches                                                | `/pos`                                                                        |
+| F08 | HIGH     | Dashboard 'Penjualan Hari Ini' = Rp 0 despite many orders today                                              | `/dashboard vs /order-history`                                                |
+| F09 | HIGH     | Many Bahan Baku ingredients have HPP = Rp 0                                                                  | `/ingredients`                                                                |
+| F11 | HIGH     | Super Admin cannot change Status to Nonaktif — 'Forbidden: insufficient role'                                | `/admin/users`                                                                |
+| F27 | HIGH     | Auth/session desync: /admin/branches first paints as 'Branch Admin / Unknown' before settling to Super Admin | `/admin/branches (and other admin pages on first nav)`                        |
+| F12 | MEDIUM   | User-action button label mismatches the dialog it opens                                                      | `/admin/users`                                                                |
+| F13 | MEDIUM   | Period Control: 'Mei 2026' is Terbuka (open) but today is 23 June 2026                                       | `/period-control`                                                             |
+| F14 | MEDIUM   | Recipe detail page missing the menu name heading                                                             | `/recipes/<id>`                                                               |
+| F15 | MEDIUM   | Recipe BOM 'Jumlah' column has no unit                                                                       | `/recipes/<id>`                                                               |
+| F17 | MEDIUM   | Voucher form: required 'Berlaku Sampai' defaults to 0/0/0/0/0/0 — submit silently no-ops                     | `/admin/vouchers`                                                             |
+| F21 | MEDIUM   | Recharts warning: 'width(-1) and height(-1) of chart should be greater than 0'                               | `/dashboard, /analytics`                                                      |
+| F26 | MEDIUM   | Tren Penjualan 7 Hari: filter by toDateString() may include/exclude orders based on local TZ                 | `/dashboard`                                                                  |
+| F16 | LOW      | Edit Pengguna: PIN placeholder '1234' overlaps the actual value                                              | `/admin/users`                                                                |
+| F18 | LOW      | Voucher duplicate-code submission silently no-ops                                                            | `/admin/vouchers`                                                             |
+| F19 | LOW      | Print Requests page: description and empty-state copy are in DOM but not rendered                            | `/print-requests`                                                             |
+| F20 | LOW      | Three pages have no h1 heading: /yield-tracking, /scm-procurements, /period-control                          | `/yield-tracking, /scm-procurements, /period-control`                         |
+| F22 | LOW      | Dialog a11y warning: 'Missing Description or aria-describedby for DialogContent'                             | `/admin/users (and any Radix Dialog)`                                         |
+| F23 | LOW      | Waste 'Qty' column has no unit                                                                               | `/waste`                                                                      |
+| F24 | LOW      | Kartu Stok 'Qty' and 'Saldo' columns have no unit                                                            | `/inventory/ledger`                                                           |
+| F25 | LOW      | Kartu Stok is missing the branch filter                                                                      | `/inventory/ledger`                                                           |
+| F28 | LOW      | Recipes header says '29 item' but only 15 rows visible — no page indicator                                   | `/recipes`                                                                    |
+| F30 | LOW      | Tambah User PIN field has no client/server minlength; placeholder '1234' could be saved as default           | `/admin/users`                                                                |
+| F29 | INFO     | No hard delete anywhere — only soft-disable, and the path is broken for users                                | `/admin/users, /admin/branches, /admin/brands, /admin/vouchers, /ingredients` |
+| F31 | INFO     | Notes: did not exercise POS cart end-to-end                                                                  | `/pos`                                                                        |
+| F32 | INFO     | Demo-login user list matches the Pengguna table exactly (11 users)                                           | `Login screen vs /admin/users`                                                |
 
 ## Testing notes
 

@@ -17,7 +17,7 @@ export const getWasteEntries = createServerFn({ method: "GET" })
   .validator(
     (data: {
       branchId?: string;
-      category?: "Beban Makan" | "Biaya Operasional" | "Spoiled" | null;
+      category?: "Beban Makan" | "Biaya Operasional" | "Spoiled" | "Denda" | null;
       search?: string;
     }) => data,
   )
@@ -40,6 +40,7 @@ export const getWasteEntries = createServerFn({ method: "GET" })
         ingredientId: wasteEntries.ingredientId,
         quantity: wasteEntries.quantity,
         category: wasteEntries.category,
+        staffName: wasteEntries.staffName,
         notes: wasteEntries.notes,
         investigationNote: wasteEntries.investigationNote,
         valuation: wasteEntries.valuation,
@@ -86,7 +87,8 @@ export const createWasteEntry = createServerFn({ method: "POST" })
         branchId: z.string().uuid(),
         ingredientId: z.string().uuid(),
         quantity: z.number().int().min(1),
-        category: z.enum(["Beban Makan", "Biaya Operasional", "Spoiled"]),
+        category: z.enum(["Beban Makan", "Biaya Operasional", "Spoiled", "Denda"]),
+        staffName: z.string().optional(),
         notes: z.string().optional(),
       })
       .parse(data),
@@ -116,6 +118,7 @@ export const createWasteEntry = createServerFn({ method: "POST" })
         ingredientId: data.ingredientId,
         quantity: data.quantity,
         category: data.category,
+        staffName: data.staffName,
         notes: data.notes,
         valuation,
         submittedBy: user.id,

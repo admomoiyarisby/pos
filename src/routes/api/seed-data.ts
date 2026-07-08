@@ -559,7 +559,16 @@ export async function seedDatabase() {
   }
 
   console.log("[seed] Seeding inventory...");
-  const branchCodes = ["CENTRAL", "WYG-01", "DRM-01", "TGL-01", "MLY-01", "JMB-01", "PCG-01", "SWL-01"];
+  const branchCodes = [
+    "CENTRAL",
+    "WYG-01",
+    "DRM-01",
+    "TGL-01",
+    "MLY-01",
+    "JMB-01",
+    "PCG-01",
+    "SWL-01",
+  ];
 
   // Simple seeded PRNG for deterministic per-branch variation
   function seededRandom(seed: string): number {
@@ -611,9 +620,7 @@ export async function seedDatabase() {
           .set({ quantity: qty, lastUpdated: new Date() })
           .where(eq(inventoryTable.id, existing[0].id));
       } else {
-        await db
-          .insert(inventoryTable)
-          .values({ branchId: bid, ingredientId: iid, quantity: qty });
+        await db.insert(inventoryTable).values({ branchId: bid, ingredientId: iid, quantity: qty });
       }
     }
   }

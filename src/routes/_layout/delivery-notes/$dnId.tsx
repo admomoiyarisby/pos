@@ -83,7 +83,9 @@ function DNDetailPage() {
         toast.success("Penerimaan Pengadaan berhasil. Stok telah diperbarui.");
         return result;
       } catch (error) {
-        toast.error(`Gagal memperbarui stok: ${error instanceof Error ? error.message : String(error)}`);
+        toast.error(
+          `Gagal memperbarui stok: ${error instanceof Error ? error.message : String(error)}`,
+        );
         console.error("Pengadaan receive error:", error);
         throw error;
       }

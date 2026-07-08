@@ -57,7 +57,13 @@ const decisionColors: Record<
   rejected: "destructive",
 };
 
-export function ScmItemTable({ mode, items, onItemChange, disabled, showPrices = true }: ScmItemTableProps) {
+export function ScmItemTable({
+  mode,
+  items,
+  onItemChange,
+  disabled,
+  showPrices = true,
+}: ScmItemTableProps) {
   if (mode === "ca-review" || mode === "draft-edit") {
     const isDraft = mode === "draft-edit";
     return (
@@ -270,8 +276,12 @@ export function ScmItemTable({ mode, items, onItemChange, disabled, showPrices =
                   <td className="px-3 py-2 text-right font-mono text-muted-foreground">
                     {it.rejectedQuantity ?? 0} ditolak
                   </td>
-                  {showPrices && <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>}
-                  {showPrices && <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>}
+                  {showPrices && (
+                    <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>
+                  )}
+                  {showPrices && (
+                    <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>
+                  )}
                 </tr>
               ))}
           </tbody>

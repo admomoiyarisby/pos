@@ -180,9 +180,7 @@ export const createYieldConversion = createServerFn({ method: "POST" })
         shrinkageQuantity,
         notes: data.notes,
         processedBy: user.id,
-        productionDate: data.productionDate
-          ? new Date(data.productionDate)
-          : new Date(),
+        productionDate: data.productionDate ? new Date(data.productionDate) : new Date(),
       })
       .returning();
 

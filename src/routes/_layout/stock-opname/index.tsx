@@ -106,7 +106,9 @@ function StockOpnamePage() {
     }
   }, [visibleBranches, selectedBranch]);
 
-  const canTrigger = ["super_admin", "admin_pusat", "area_manager", "branch_admin"].includes(user?.role ?? "");
+  const canTrigger = ["super_admin", "admin_pusat", "area_manager", "branch_admin"].includes(
+    user?.role ?? "",
+  );
 
   const { data: opnames } = useQuery({
     queryKey: ["stock-opnames"],

@@ -70,6 +70,7 @@ export const wasteCategoryEnum = pgEnum("waste_category", [
   "Beban Makan",
   "Biaya Operasional",
   "Spoiled",
+  "Denda",
 ]);
 
 export const stockOpnameStatusEnum = pgEnum("stock_opname_status", [
@@ -766,9 +767,7 @@ export const yieldConversions = pgTable(
     processedBy: uuid("processed_by")
       .notNull()
       .references(() => users.id),
-    productionDate: timestamp("production_date", { mode: "date" })
-      .notNull()
-      .defaultNow(),
+    productionDate: timestamp("production_date", { mode: "date" }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (t) => [
@@ -1284,14 +1283,8 @@ export const scmTransferItems = pgTable(
     index("stxi_transfer_idx").on(t.scmTransferId),
     index("stxi_ingredient_idx").on(t.ingredientId),
     check("stxi_qty_positive", sql`${t.quantity} > 0`),
-    check(
-      "stxi_received_nonneg",
-      sql`${t.receivedQuantity} IS NULL OR ${t.receivedQuantity} >= 0`,
-    ),
-    check(
-      "stxi_rejected_nonneg",
-      sql`${t.rejectedQuantity} IS NULL OR ${t.rejectedQuantity} >= 0`,
-    ),
+    check("stxi_received_nonneg", sql`${t.receivedQuantity} IS NULL OR ${t.receivedQuantity} >= 0`),
+    check("stxi_rejected_nonneg", sql`${t.rejectedQuantity} IS NULL OR ${t.rejectedQuantity} >= 0`),
     check(
       "stxi_received_plus_rejected_le_qty",
       sql`(${t.receivedQuantity} IS NULL AND ${t.rejectedQuantity} IS NULL)
@@ -1365,6 +1358,7 @@ export const wasteEntries = pgTable(
       .references(() => ingredients.id),
     quantity: integer("quantity").notNull(),
     category: wasteCategoryEnum("category").notNull(),
+    staffName: text("staff_name"), // For Denda category: who the penalty is assigned to
     notes: text("notes"),
     investigationNote: text("investigation_note"),
     valuation: integer("valuation").notNull().default(0),
@@ -1464,8 +1458,7 @@ export const employeePenalties = pgTable(
     branchId: uuid("branch_id")
       .notNull()
       .references(() => branches.id),
-    stockOpnameId: uuid("stock_opname_id")
-      .references(() => stockOpnames.id),
+    stockOpnameId: uuid("stock_opname_id").references(() => stockOpnames.id),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id),

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { authClient } from "#/lib/auth-client";
 import { useAuth } from "#/lib/auth-context";
 import PinPad from "#/components/PinPad";
-import { Store, Loader2, Smartphone, Mail, ChevronLeft, Building2 } from "lucide-react";
+import { Loader2, Smartphone, Mail, ChevronLeft, Building2 } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -13,14 +13,44 @@ export const Route = createFileRoute("/login")({
 const demoUsers = [
   { name: "Super Admin", email: "superadmin@omoiyari.net", role: "super_admin", pin: "1111" },
   { name: "Admin Pusat", email: "pusat@omoiyari.net", role: "admin_pusat", pin: "2222" },
-  { name: "Area Mgr East Java", email: "manager.east@omoiyari.net", role: "area_manager", pin: "3333" },
+  {
+    name: "Area Mgr East Java",
+    email: "manager.east@omoiyari.net",
+    role: "area_manager",
+    pin: "3333",
+  },
   { name: "Andi (Wiyung)", email: "andi.wiyung@omoiyari.net", role: "branch_admin", pin: "1234" },
-  { name: "Budi (Darmo Permai)", email: "budi.darmo@omoiyari.net", role: "branch_admin", pin: "2345" },
-  { name: "Citra (Tenggilis)", email: "citra.tenggilis@omoiyari.net", role: "branch_admin", pin: "3456" },
-  { name: "Dewi (Mulyorejo)", email: "dewi.mulyorejo@omoiyari.net", role: "branch_admin", pin: "4567" },
-  { name: "Eko (Jambangan)", email: "eko.jambangan@omoiyari.net", role: "branch_admin", pin: "5678" },
+  {
+    name: "Budi (Darmo Permai)",
+    email: "budi.darmo@omoiyari.net",
+    role: "branch_admin",
+    pin: "2345",
+  },
+  {
+    name: "Citra (Tenggilis)",
+    email: "citra.tenggilis@omoiyari.net",
+    role: "branch_admin",
+    pin: "3456",
+  },
+  {
+    name: "Dewi (Mulyorejo)",
+    email: "dewi.mulyorejo@omoiyari.net",
+    role: "branch_admin",
+    pin: "4567",
+  },
+  {
+    name: "Eko (Jambangan)",
+    email: "eko.jambangan@omoiyari.net",
+    role: "branch_admin",
+    pin: "5678",
+  },
   { name: "Fitri (Pucang)", email: "fitri.pucang@omoiyari.net", role: "branch_admin", pin: "6789" },
-  { name: "Gilang (Siwalankerto)", email: "gilang.siwalankerto@omoiyari.net", role: "branch_admin", pin: "7890" },
+  {
+    name: "Gilang (Siwalankerto)",
+    email: "gilang.siwalankerto@omoiyari.net",
+    role: "branch_admin",
+    pin: "7890",
+  },
   { name: "Central Kitchen", email: "ck@omoiyari.net", role: "central_kitchen", pin: "0000" },
 ];
 
@@ -41,7 +71,9 @@ function LoginPage() {
   const [branchPin, setBranchPin] = useState("");
   const [branchPinError, setBranchPinError] = useState("");
   const [branchPinLoading, setBranchPinLoading] = useState(false);
-  const [branchInfo, setBranchInfo] = useState<{ id: string; code: string; name: string } | null>(null);
+  const [branchInfo, setBranchInfo] = useState<{ id: string; code: string; name: string } | null>(
+    null,
+  );
   const [staffNames, setStaffNames] = useState<{ id: string; name: string }[]>([]);
   const [selectedStaffName, setSelectedStaffName] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
@@ -162,8 +194,12 @@ function LoginPage() {
       <div className="w-full max-w-md space-y-6 rounded-xl border bg-card p-6 md:p-8 shadow-sm">
         {/* Logo & Title */}
         <div className="flex flex-col items-center gap-2 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <Store className="h-6 w-6 text-primary" />
+          <div className="flex h-16 w-16 items-center justify-center">
+            <img
+              src="/logo-for-light-mode.png"
+              alt="Omoiyari"
+              className="h-16 w-auto"
+            />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Omoiyari POS</h1>
           <p className="text-sm text-muted-foreground">Masuk ke sistem manajemen POS & inventori</p>
@@ -289,7 +325,9 @@ function LoginPage() {
                 </button>
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Siapa yang sedang login?</p>
-                  <p className="text-lg font-bold">{branchInfo.name} ({branchInfo.code})</p>
+                  <p className="text-lg font-bold">
+                    {branchInfo.name} ({branchInfo.code})
+                  </p>
                 </div>
 
                 {staffNames.length === 0 ? (

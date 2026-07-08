@@ -46,12 +46,7 @@ export const getBranchStaffNames = createServerFn({ method: "POST" })
         active: branchStaffNames.active,
       })
       .from(branchStaffNames)
-      .where(
-        and(
-          eq(branchStaffNames.branchId, data.branchId),
-          eq(branchStaffNames.active, true),
-        ),
-      )
+      .where(and(eq(branchStaffNames.branchId, data.branchId), eq(branchStaffNames.active, true)))
       .orderBy(branchStaffNames.name);
 
     return names;
@@ -140,9 +135,7 @@ export const deleteBranchStaffName = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat");
 
-    await db
-      .delete(branchStaffNames)
-      .where(eq(branchStaffNames.id, data.id));
+    await db.delete(branchStaffNames).where(eq(branchStaffNames.id, data.id));
 
     return { success: true };
   });

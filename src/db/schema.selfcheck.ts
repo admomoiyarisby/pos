@@ -49,10 +49,18 @@ async function testSchemaExports() {
   check("systemNotifications is exported", typeof schema.systemNotifications === "object");
 
   // ID7: notificationPriorityEnum is exported
-  check("notificationPriorityEnum is exported", typeof schema.notificationPriorityEnum === "function" || typeof schema.notificationPriorityEnum === "object");
+  check(
+    "notificationPriorityEnum is exported",
+    typeof schema.notificationPriorityEnum === "function" ||
+      typeof schema.notificationPriorityEnum === "object",
+  );
 
   // Relations
-  check("employeePenaltiesRelations is exported", typeof schema.employeePenaltiesRelations === "object" || typeof schema.employeePenaltiesRelations === "function");
+  check(
+    "employeePenaltiesRelations is exported",
+    typeof schema.employeePenaltiesRelations === "object" ||
+      typeof schema.employeePenaltiesRelations === "function",
+  );
 }
 
 // =============================================================================

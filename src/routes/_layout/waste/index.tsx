@@ -30,7 +30,8 @@ interface WasteRow {
   ingredientName: string | null;
   ingredientCode: string | null;
   quantity: number;
-  category: "Beban Makan" | "Biaya Operasional" | "Spoiled";
+  category: "Beban Makan" | "Biaya Operasional" | "Spoiled" | "Denda";
+  staffName: string | null;
   notes: string | null;
   investigationNote: string | null;
   valuation: number;
@@ -39,10 +40,11 @@ interface WasteRow {
   stockUnit: string | null;
 }
 
-const catColors: Record<string, "default" | "warning" | "destructive"> = {
+const catColors: Record<string, "default" | "warning" | "destructive" | "secondary"> = {
   "Beban Makan": "default",
   "Biaya Operasional": "warning",
   Spoiled: "destructive",
+  Denda: "secondary",
 };
 
 function formatRupiah(value: number): string {
@@ -185,7 +187,7 @@ function WastePage() {
     queryFn: () =>
       getWasteEntries({
         data: {
-          category: selectedCategory as "Beban Makan" | "Biaya Operasional" | "Spoiled" | null,
+          category: selectedCategory as "Beban Makan" | "Biaya Operasional" | "Spoiled" | "Denda" | null,
           search: debouncedSearch || undefined,
         },
       }),
@@ -296,7 +298,8 @@ function WastePage() {
       branchId: (fd.get("branchId") as string | null) ?? user?.branchId ?? "",
       ingredientId: selectedIngredient.id,
       quantity,
-      category: fd.get("category") as "Beban Makan" | "Biaya Operasional" | "Spoiled",
+      category: fd.get("category") as "Beban Makan" | "Biaya Operasional" | "Spoiled" | "Denda",
+      staffName: (fd.get("staffName") as string) || undefined,
       notes: (fd.get("notes") as string) || undefined,
     };
     void createMutation.mutateAsync({ data });
@@ -342,6 +345,11 @@ function WastePage() {
       render: (r) => (
         <div className="space-y-0.5">
           <Badge variant={catColors[r.category]}>{r.category}</Badge>
+          {r.category === "Denda" && r.staffName && (
+            <div className="text-[10px] text-muted-foreground">
+              Staff: {r.staffName}
+            </div>
+          )}
           <div className="text-[10px] text-muted-foreground">
             {getFinancialClassificationLabel(r.category)}
           </div>
@@ -486,6 +494,7 @@ function WastePage() {
             <option value="Beban Makan">Beban Makan</option>
             <option value="Biaya Operasional">Biaya Operasional</option>
             <option value="Spoiled">Spoiled</option>
+            <option value="Denda">Denda</option>
           </select>
         </div>
         <div className="space-y-1">
@@ -650,11 +659,18 @@ function WastePage() {
               <select
                 name="category"
                 required
+                onChange={(e) => {
+                  const staffField = document.getElementById("staffNameField");
+                  if (staffField) {
+                    staffField.style.display = e.target.value === "Denda" ? "block" : "none";
+                  }
+                }}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="Beban Makan">Beban Makan (Jatah karyawan)</option>
                 <option value="Biaya Operasional">Biaya Operasional</option>
                 <option value="Spoiled">Spoiled (Basi/Hancur)</option>
+                <option value="Denda">Denda Karyawan</option>
               </select>
             </div>
             <div className="space-y-2">
@@ -667,6 +683,15 @@ function WastePage() {
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
+          </div>
+          <div id="staffNameField" className="space-y-2" style={{ display: "none" }}>
+            <label className="text-sm font-medium">Nama Staff (untuk Denda)</label>
+            <input
+              name="staffName"
+              type="text"
+              placeholder="Nama karyawan yang kena denda"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Keterangan</label>
