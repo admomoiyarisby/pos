@@ -36,13 +36,14 @@ function DashboardPage() {
 
   const isSuperAdmin = user?.role === "super_admin";
 
-  const { data, isLoading, dataUpdatedAt } = useQuery({
+  const { data, isLoading, dataUpdatedAt, error } = useQuery({
     queryKey: ["dashboard-data"],
     queryFn: async () => {
       const result = await getDashboardData();
       return result;
     },
     refetchInterval: 60000,
+    retry: 1,
   });
 
   const [activeTab, setActiveTab] = React.useState(() => {
@@ -67,6 +68,25 @@ function DashboardPage() {
     return (
       <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
         <DashboardSkeleton />
+      </RoleGuard>
+    );
+  }
+
+  if (error) {
+    return (
+      <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
+        <div className="flex h-64 items-center justify-center">
+          <div className="text-center">
+            <p className="text-destructive font-medium">Gagal memuat dashboard</p>
+            <p className="text-sm text-muted-foreground mt-1">{error.message}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
+            >
+              Muat Ulang
+            </button>
+          </div>
+        </div>
       </RoleGuard>
     );
   }

@@ -27,133 +27,148 @@ export const getDashboardData = createServerFn({ method: "GET" }).handler(async 
   const branchFilter =
     user.role === "branch_admin" && user.branchId ? eq(orders.branchId, user.branchId) : undefined;
 
-  // Orders — only select columns the dashboard actually uses
-  const allOrders = await db
-    .select({
-      id: orders.id,
-      branchId: orders.branchId,
-      channel: orders.channel,
-      subtotal: orders.subtotal,
-      taxAmount: orders.taxAmount,
-      totalAmount: orders.totalAmount,
-      totalCogs: orders.totalCogs,
-      mdrFee: orders.mdrFee,
-      netSales: orders.netSales,
-      status: orders.status,
-      createdAt: orders.createdAt,
-      completedAt: orders.completedAt,
-      orderCode: orders.orderCode,
-      customerName: orders.customerName,
-    })
-    .from(orders)
-    .where(branchFilter ? and(branchFilter) : undefined)
-    .orderBy(desc(orders.createdAt))
-    .limit(100);
+  // Run all independent queries in parallel for faster response
+  const [
+    allOrders,
+    inventoryData,
+    allRecipes,
+    allIngredients,
+    allBranches,
+    allBrands,
+    allPlatformFees,
+    allStockOpnames,
+    wasteData,
+    manualRevData,
+  ] = await Promise.all([
+    // Orders
+    db
+      .select({
+        id: orders.id,
+        branchId: orders.branchId,
+        channel: orders.channel,
+        subtotal: orders.subtotal,
+        taxAmount: orders.taxAmount,
+        totalAmount: orders.totalAmount,
+        totalCogs: orders.totalCogs,
+        mdrFee: orders.mdrFee,
+        netSales: orders.netSales,
+        status: orders.status,
+        createdAt: orders.createdAt,
+        completedAt: orders.completedAt,
+        orderCode: orders.orderCode,
+        customerName: orders.customerName,
+      })
+      .from(orders)
+      .where(branchFilter ? and(branchFilter) : undefined)
+      .orderBy(desc(orders.createdAt))
+      .limit(100),
 
-  const orderIdList = allOrders.map((o) => o.id);
-  const orderItemsData =
-    orderIdList.length > 0
-      ? await db
-          .select({
-            id: orderItems.id,
-            orderId: orderItems.orderId,
-            recipeId: orderItems.recipeId,
-            quantity: orderItems.quantity,
-            price: orderItems.price,
-            cogsAtTransaction: orderItems.cogsAtTransaction,
-          })
-          .from(orderItems)
-          .where(inArray(orderItems.orderId, orderIdList))
-      : [];
+    // Inventory — filter to low-stock items server-side
+    (async () => {
+      const invConditions = [lt(inventory.quantity, 100)];
+      if (user.role === "branch_admin" && user.branchId) {
+        invConditions.push(eq(inventory.branchId, user.branchId));
+      }
+      return db
+        .select({
+          id: inventory.id,
+          branchId: inventory.branchId,
+          ingredientId: inventory.ingredientId,
+          quantity: inventory.quantity,
+        })
+        .from(inventory)
+        .where(and(...invConditions))
+        .limit(50);
+    })(),
 
-  // Inventory — filter to low-stock items server-side, select only needed columns
-  const invConditions = [lt(inventory.quantity, 100)];
-  if (user.role === "branch_admin" && user.branchId) {
-    invConditions.push(eq(inventory.branchId, user.branchId));
-  }
-  const inventoryData = await db
-    .select({
-      id: inventory.id,
-      branchId: inventory.branchId,
-      ingredientId: inventory.ingredientId,
-      quantity: inventory.quantity,
-    })
-    .from(inventory)
-    .where(and(...invConditions))
-    .limit(50);
+    // Recipes
+    db.select().from(recipes),
 
-  // Recipes with ingredients
-  const allRecipes = await db.select().from(recipes);
-  const recipeIdList = allRecipes.map((r) => r.id);
-  const recipeIngsData =
-    recipeIdList.length > 0
-      ? await db
-          .select()
-          .from(recipeIngredients)
-          .where(inArray(recipeIngredients.recipeId, recipeIdList))
-      : [];
-  const childRecipes =
-    recipeIdList.length > 0
-      ? await db
-          .select()
-          .from(recipeChildRecipes)
-          .where(inArray(recipeChildRecipes.parentRecipeId, recipeIdList))
-      : [];
-  const recipeBrandsData =
-    recipeIdList.length > 0
-      ? await db.select().from(recipeBrands).where(inArray(recipeBrands.recipeId, recipeIdList))
-      : [];
+    // Ingredients
+    db.select().from(ingredients),
 
-  // Ingredients
-  const allIngredients = await db.select().from(ingredients);
+    // Branches
+    db.select().from(branches),
 
-  // Branches
-  const allBranches = await db.select().from(branches);
+    // Brands
+    db.select().from(brands),
 
-  // Brands
-  const allBrands = await db.select().from(brands);
+    // Platform fees
+    db.select().from(platformFees),
 
-  // Platform fees
-  const allPlatformFees = await db.select().from(platformFees);
+    // Stock opnames
+    db.select().from(stockOpnames).orderBy(desc(stockOpnames.createdAt)),
 
-  // Stock opnames with items
-  const allStockOpnames = await db
-    .select()
-    .from(stockOpnames)
-    .orderBy(desc(stockOpnames.createdAt));
-  const soIdList = allStockOpnames.map((s) => s.id);
-  const soItems =
-    soIdList.length > 0
-      ? await db
-          .select()
-          .from(stockOpnameItems)
-          .where(inArray(stockOpnameItems.stockOpnameId, soIdList))
-      : [];
+    // Waste entries
+    (async () => {
+      const wasteFilter =
+        user.role === "branch_admin" && user.branchId
+          ? eq(wasteEntries.branchId, user.branchId)
+          : undefined;
+      return db
+        .select()
+        .from(wasteEntries)
+        .where(wasteFilter ? and(wasteFilter) : undefined)
+        .orderBy(desc(wasteEntries.createdAt));
+    })(),
 
-  // Waste entries
-  const wasteFilter =
-    user.role === "branch_admin" && user.branchId
-      ? eq(wasteEntries.branchId, user.branchId)
-      : undefined;
-  const wasteData = await db
-    .select()
-    .from(wasteEntries)
-    .where(wasteFilter ? and(wasteFilter) : undefined)
-    .orderBy(desc(wasteEntries.createdAt));
-
-  // Manual revenues with brand breakdowns
-  const manualRevData =
+    // Manual revenues
     user.role === "super_admin"
-      ? await db.select().from(manualRevenues).orderBy(desc(manualRevenues.date)).limit(100)
-      : [];
+      ? db.select().from(manualRevenues).orderBy(desc(manualRevenues.date)).limit(100)
+      : Promise.resolve([]),
+  ]);
+
+  // Dependent queries (need IDs from first batch) — also parallelized
+  const orderIdList = allOrders.map((o) => o.id);
+  const recipeIdList = allRecipes.map((r) => r.id);
+  const soIdList = allStockOpnames.map((s) => s.id);
   const mrIdList = manualRevData.map((m) => m.id);
-  const mrBrandBreakdowns =
-    mrIdList.length > 0
-      ? await db
-          .select()
-          .from(manualRevenueBrandBreakdowns)
-          .where(inArray(manualRevenueBrandBreakdowns.manualRevenueId, mrIdList))
-      : [];
+
+  const [orderItemsData, recipeIngsData, childRecipes, recipeBrandsData, soItems, mrBrandBreakdowns] =
+    await Promise.all([
+      orderIdList.length > 0
+        ? db
+            .select({
+              id: orderItems.id,
+              orderId: orderItems.orderId,
+              recipeId: orderItems.recipeId,
+              quantity: orderItems.quantity,
+              price: orderItems.price,
+              cogsAtTransaction: orderItems.cogsAtTransaction,
+            })
+            .from(orderItems)
+            .where(inArray(orderItems.orderId, orderIdList))
+        : Promise.resolve([]),
+
+      recipeIdList.length > 0
+        ? db.select().from(recipeIngredients).where(inArray(recipeIngredients.recipeId, recipeIdList))
+        : Promise.resolve([]),
+
+      recipeIdList.length > 0
+        ? db
+            .select()
+            .from(recipeChildRecipes)
+            .where(inArray(recipeChildRecipes.parentRecipeId, recipeIdList))
+        : Promise.resolve([]),
+
+      recipeIdList.length > 0
+        ? db.select().from(recipeBrands).where(inArray(recipeBrands.recipeId, recipeIdList))
+        : Promise.resolve([]),
+
+      soIdList.length > 0
+        ? db
+            .select()
+            .from(stockOpnameItems)
+            .where(inArray(stockOpnameItems.stockOpnameId, soIdList))
+        : Promise.resolve([]),
+
+      mrIdList.length > 0
+        ? db
+            .select()
+            .from(manualRevenueBrandBreakdowns)
+            .where(inArray(manualRevenueBrandBreakdowns.manualRevenueId, mrIdList))
+        : Promise.resolve([]),
+    ]);
 
   return {
     user: {
