@@ -26,7 +26,7 @@ function BrokenStockPage() {
     queryFn: () => getBrokenStock({ data: {} }),
     initialData: initial,
   });
-  usePageTitle("Barang Rusak", "Audit visual pemborosan kategori Biaya Operasional");
+  usePageTitle("Barang Rusak", "Audit visual waste kategori Biaya Operasional");
 
   const summaryData = useMemo(() => {
     const map = new Map<

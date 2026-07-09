@@ -97,6 +97,7 @@ function StockOpnamePage() {
   const visibleBranches = branches.filter((b) => {
     if (user?.role === "admin_pusat") return b.type === "Central";
     if (user?.role === "area_manager") return assignedBranchIds?.includes(b.id);
+    if (user?.role === "branch_admin") return b.id === user.branchId;
     return true; // super_admin sees all
   });
 
@@ -174,7 +175,8 @@ function StockOpnamePage() {
             <select
               value={selectedBranch}
               onChange={(e) => setSelectedBranch(e.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              disabled={user?.role === "branch_admin"}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
             >
               <option value="">Pilih cabang...</option>
               {visibleBranches.map((b) => (
@@ -183,6 +185,11 @@ function StockOpnamePage() {
                 </option>
               ))}
             </select>
+            {user?.role === "branch_admin" && (
+              <p className="text-xs text-muted-foreground">
+                Branch Admin hanya bisa trigger SO untuk cabang sendiri
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Tanggal</label>

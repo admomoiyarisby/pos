@@ -186,6 +186,7 @@ interface MutasiInvoiceLineItem {
 
 interface MutasiInvoiceData {
   code: string;
+  transferCode: string;
   generatedAt: Date;
   paidAt: Date | null;
   totalAmount: number;
@@ -263,7 +264,7 @@ function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
     </div>
     <div class="meta">
       <div>No Invoice: <strong>${escapeHtml(d.code)}</strong></div>
-      <div>No Mutasi: ${escapeHtml(d.code.replace("MT-INV-", "MT-"))}</div>
+      <div>No Mutasi: <strong>${escapeHtml(d.transferCode)}</strong></div>
       <div>Tanggal: ${new Date(d.generatedAt).toLocaleDateString("id-ID")}</div>
       <div class="${d.paidAt ? "paid" : "unpaid"}">
         ${d.paidAt ? `LUNAS — ${new Date(d.paidAt).toLocaleDateString("id-ID")}` : "BELUM DIBAYAR"}
@@ -386,6 +387,7 @@ export const printMutasiInvoice = createServerFn({ method: "GET" })
 
     return buildMutasiInvoiceHtml({
       code: invoice.code,
+      transferCode: tr.code,
       generatedAt: invoice.createdAt,
       paidAt: invoice.paidAt,
       totalAmount: invoice.totalAmount,

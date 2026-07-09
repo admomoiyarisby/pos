@@ -51,6 +51,17 @@ function formatRupiah(value: number): string {
   return `Rp${value.toLocaleString("id-ID")}`;
 }
 
+/**
+ * Format a date as YYYY-MM-DD using local time (not UTC).
+ * Avoids the timezone shift caused by toISOString().
+ */
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export const Route = createFileRoute("/_layout/waste/")({
   component: WastePage,
   loader: async () => {
@@ -85,10 +96,10 @@ function WastePage() {
     // If on or after 26th, range is 26th current month to 25th next month
     if (currentDay < 26) {
       const from = new Date(now.getFullYear(), now.getMonth() - 1, 26);
-      return from.toISOString().split("T")[0];
+      return formatLocalDate(from);
     } else {
       const from = new Date(now.getFullYear(), now.getMonth(), 26);
-      return from.toISOString().split("T")[0];
+      return formatLocalDate(from);
     }
   });
   const [dateTo, setDateTo] = useState(() => {
@@ -96,12 +107,14 @@ function WastePage() {
     const currentDay = now.getDate();
     if (currentDay < 26) {
       const to = new Date(now.getFullYear(), now.getMonth(), 25);
-      return to.toISOString().split("T")[0];
+      return formatLocalDate(to);
     } else {
       const to = new Date(now.getFullYear(), now.getMonth() + 1, 25);
-      return to.toISOString().split("T")[0];
+      return formatLocalDate(to);
     }
   });
+
+  const [showStaffField, setShowStaffField] = useState(false);
 
   // Sort state
   const [sortBy, setSortBy] = useState<"date" | "category">("date");
@@ -187,7 +200,12 @@ function WastePage() {
     queryFn: () =>
       getWasteEntries({
         data: {
-          category: selectedCategory as "Beban Makan" | "Biaya Operasional" | "Spoiled" | "Denda" | null,
+          category: selectedCategory as
+            | "Beban Makan"
+            | "Biaya Operasional"
+            | "Spoiled"
+            | "Denda"
+            | null,
           search: debouncedSearch || undefined,
         },
       }),
@@ -346,11 +364,9 @@ function WastePage() {
         <div className="space-y-0.5">
           <Badge variant={catColors[r.category]}>{r.category}</Badge>
           {r.category === "Denda" && r.staffName && (
-            <div className="text-[10px] text-muted-foreground">
-              Staff: {r.staffName}
-            </div>
+            <div className="text-xs text-muted-foreground">Staff: {r.staffName}</div>
           )}
-          <div className="text-[10px] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             {getFinancialClassificationLabel(r.category)}
           </div>
         </div>
@@ -372,7 +388,7 @@ function WastePage() {
             {r.quantity.toLocaleString("id-ID")}
             {r.stockUnit && <span className="text-muted-foreground ml-0.5">{r.stockUnit}</span>}
             {isAnomaly && (
-              <div className="text-[10px] text-rose-500">({wastePercentage.toFixed(1)}%)</div>
+              <div className="text-xs text-rose-500">({wastePercentage.toFixed(1)}%)</div>
             )}
           </div>
         );
@@ -401,7 +417,7 @@ function WastePage() {
         if (r.investigationNote) {
           return (
             <div className="space-y-1">
-              <Badge variant="secondary" className="text-[10px]">
+              <Badge variant="secondary" className="text-xs">
                 Diinvestigasi
               </Badge>
               <div className="text-xs text-muted-foreground line-clamp-2 max-w-[160px]">
@@ -423,7 +439,7 @@ function WastePage() {
             );
           }
           return (
-            <Badge variant="destructive" className="text-[10px]">
+            <Badge variant="destructive" className="text-xs">
               Butuh Investigasi
             </Badge>
           );
@@ -458,71 +474,70 @@ function WastePage() {
         }}
       />
 
-      <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="rounded-md border bg-card p-3">
-          <div className="text-xs text-muted-foreground">Total Kerugian Waste</div>
-          <div className="text-lg font-semibold">{formatRupiah(totalValuation)}</div>
-          <div className="text-[10px] text-muted-foreground">
-            {dateFrom} — {dateTo}
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Periode</label>
-          <div className="flex gap-2">
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Kategori</label>
-          <select
-            value={selectedCategory ?? ""}
-            onChange={(e) => setSelectedCategory(e.target.value || null)}
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">Semua Kategori</option>
-            <option value="Beban Makan">Beban Makan</option>
-            <option value="Biaya Operasional">Biaya Operasional</option>
-            <option value="Spoiled">Spoiled</option>
-            <option value="Denda">Denda</option>
-          </select>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Urutkan</label>
-          <div className="flex gap-2">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as "date" | "category")}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="date">Tanggal</option>
-              <option value="category">Kategori</option>
-            </select>
-            <button
-              type="button"
-              onClick={() => setSortDir(sortDir === "asc" ? "desc" : "asc")}
-              className="h-9 w-9 rounded-md border flex items-center justify-center hover:bg-muted transition-colors"
-              title={sortDir === "asc" ? "Ascending" : "Descending"}
-            >
-              {sortDir === "asc" ? "↑" : "↓"}
-            </button>
+      {/* Summary — prominent, above filters */}
+      <div className="mb-6">
+        <div className="rounded-md border bg-card p-4">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+            <div>
+              <div className="text-sm text-muted-foreground">Total Kerugian</div>
+              <div className="text-2xl font-semibold tracking-tight">
+                {formatRupiah(totalValuation)}
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Periode: {dateFrom} — {dateTo}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Search bar */}
-      <div className="mb-4">
-        <div className="relative max-w-sm">
+      {/* Filters — compact row below summary */}
+      <div className="mb-4 flex flex-col sm:flex-row flex-wrap gap-3">
+        <div className="flex gap-2">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="h-9 w-full sm:w-auto rounded-md border border-input bg-background px-3 text-sm"
+          />
+          <span className="hidden sm:flex items-center text-muted-foreground text-sm">—</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="h-9 w-full sm:w-auto rounded-md border border-input bg-background px-3 text-sm"
+          />
+        </div>
+        <select
+          value={selectedCategory ?? ""}
+          onChange={(e) => setSelectedCategory(e.target.value || null)}
+          className="h-9 w-full sm:w-auto rounded-md border border-input bg-background px-3 text-sm"
+        >
+          <option value="">Semua Kategori</option>
+          <option value="Beban Makan">Beban Makan</option>
+          <option value="Biaya Operasional">Biaya Operasional</option>
+          <option value="Spoiled">Spoiled</option>
+          <option value="Denda">Denda</option>
+        </select>
+        <div className="flex gap-2">
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "date" | "category")}
+            className="h-9 w-full sm:w-auto rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="date">Urut: Tanggal</option>
+            <option value="category">Urut: Kategori</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setSortDir(sortDir === "asc" ? "desc" : "asc")}
+            className="h-9 w-9 rounded-md border flex items-center justify-center hover:bg-muted transition-colors"
+            title={sortDir === "asc" ? "Ascending" : "Descending"}
+          >
+            {sortDir === "asc" ? "↑" : "↓"}
+          </button>
+        </div>
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
@@ -554,6 +569,7 @@ function WastePage() {
           setModalOpen(false);
           setSubmitError(null);
           setIngredientError(null);
+          setShowStaffField(false);
         }}
         title="Input Waste"
         size="lg"
@@ -659,12 +675,7 @@ function WastePage() {
               <select
                 name="category"
                 required
-                onChange={(e) => {
-                  const staffField = document.getElementById("staffNameField");
-                  if (staffField) {
-                    staffField.style.display = e.target.value === "Denda" ? "block" : "none";
-                  }
-                }}
+                onChange={(e) => setShowStaffField(e.target.value === "Denda")}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="Beban Makan">Beban Makan (Jatah karyawan)</option>
@@ -684,15 +695,17 @@ function WastePage() {
               />
             </div>
           </div>
-          <div id="staffNameField" className="space-y-2" style={{ display: "none" }}>
-            <label className="text-sm font-medium">Nama Staff (untuk Denda)</label>
-            <input
-              name="staffName"
-              type="text"
-              placeholder="Nama karyawan yang kena denda"
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
-          </div>
+          {showStaffField && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nama Staff (untuk Denda)</label>
+              <input
+                name="staffName"
+                type="text"
+                placeholder="Nama karyawan yang kena denda"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+          )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Keterangan</label>
             <textarea

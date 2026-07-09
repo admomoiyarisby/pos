@@ -128,7 +128,7 @@ function SCMInvoicePage() {
                   e.stopPropagation();
                   void payMutation.mutateAsync({ data: { id: r.id } });
                 }}
-                className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-medium"
+                className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-xs font-medium"
               >
                 Bayar
               </button>
@@ -139,7 +139,7 @@ function SCMInvoicePage() {
                     void cancelMutation.mutateAsync({ data: { id: r.id } });
                   }
                 }}
-                className="h-7 px-2 rounded-md bg-destructive text-destructive-foreground text-[10px] font-medium"
+                className="h-7 px-2 rounded-md bg-destructive text-destructive-foreground text-xs font-medium"
               >
                 Batal
               </button>
@@ -165,7 +165,7 @@ function SCMInvoicePage() {
                 });
               });
             }}
-            className="h-7 px-2 rounded-md border text-[10px] font-medium flex items-center gap-1 hover:bg-accent"
+            className="h-7 px-2 rounded-md border text-xs font-medium flex items-center gap-1 hover:bg-accent"
             title="Cetak Invoice"
           >
             <Printer className="h-3 w-3" />

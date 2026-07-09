@@ -94,7 +94,6 @@ export function printReceipt({ order, cartItems, branchName }: PrintReceiptParam
     '<div class="center subheader">' + branchName + "</div>",
     '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
     '<div class="divider"></div>',
-    '<div class="row"><span>No. Order:</span><span>' + idStr + "</span></div>",
     '<div class="row"><span>Kode Order:</span><span>' +
       (order.orderCode || idStr) +
       "</span></div>",

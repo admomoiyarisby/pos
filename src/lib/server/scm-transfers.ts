@@ -12,6 +12,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth } from "./auth";
 import {
+  branches,
   ingredients,
   inventory,
   scmTransferAuditLog,
@@ -221,7 +222,15 @@ export const createMutasiTransfer = createServerFn({ method: "POST" })
       .from(ingredients);
     const avgById = new Map(ingredientRows.map((i) => [i.id, i.averageCost]));
 
-    const code = await nextTransferCode();
+    // Get branch code for document code generation
+    const [fromBranch] = await db
+      .select({ code: branches.code })
+      .from(branches)
+      .where(eq(branches.id, data.fromBranchId))
+      .limit(1);
+    if (!fromBranch) throw new Error("Sender branch not found");
+
+    const code = await nextTransferCode(fromBranch.code);
 
     // Insert the transfer row
     const [transfer] = await db
@@ -515,7 +524,23 @@ export const finishReceiveMutasiTransfer = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
-    const invoiceCode = await nextTransferInvoiceCode();
+
+    // Get the transfer to find the receiver branch code
+    const [transfer] = await db
+      .select({ toBranchId: scmTransfers.toBranchId })
+      .from(scmTransfers)
+      .where(eq(scmTransfers.id, data.transferId))
+      .limit(1);
+    if (!transfer) throw new Error("Transfer not found");
+
+    const [toBranch] = await db
+      .select({ code: branches.code })
+      .from(branches)
+      .where(eq(branches.id, transfer.toBranchId))
+      .limit(1);
+    if (!toBranch) throw new Error("Receiver branch not found");
+
+    const invoiceCode = await nextTransferInvoiceCode(toBranch.code);
     return runTransition({
       transferId: data.transferId,
       event: "finish-receive",
