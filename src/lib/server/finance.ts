@@ -8,6 +8,7 @@ import {
   orders,
   orderItems,
   recipes,
+  ingredients,
   periodLogs,
   periodBalances,
   stockOpnames,
@@ -105,6 +106,50 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
       manualExpenses: manualExpensesTotal,
       grossProfit: netSales - totalCogs - manualExpensesTotal,
     };
+  });
+
+export interface DailyFinanceRow {
+  tanggal: string;
+  hpp: number;
+  omzet: number;
+  grossProfit: number;
+  margin: number;
+}
+
+export const getDailyFinanceSummary = createServerFn({ method: "GET" })
+  .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
+  .handler(async ({ data }): Promise<DailyFinanceRow[]> => {
+    await requireRole("super_admin");
+
+    const conditions = [];
+    if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
+    if (data.dateFrom) conditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
+    if (data.dateTo) conditions.push(lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")));
+
+    const result = await db
+      .select({
+        tanggal: sql<string>`DATE(${orders.createdAt})`,
+        hpp: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
+        omzet: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+      })
+      .from(orders)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .groupBy(sql`DATE(${orders.createdAt})`)
+      .orderBy(sql`DATE(${orders.createdAt})`);
+
+    return result.map((row) => {
+      const hpp = Number(row.hpp);
+      const omzet = Number(row.omzet);
+      const grossProfit = omzet - hpp;
+      const margin = omzet > 0 ? grossProfit / omzet : 0;
+      return {
+        tanggal: row.tanggal,
+        hpp,
+        omzet,
+        grossProfit,
+        margin,
+      };
+    });
   });
 
 export const createManualRevenue = createServerFn({ method: "POST" })
@@ -252,13 +297,8 @@ export const getManualExpenses = createServerFn({ method: "GET" })
 
 export const createManualExpense = createServerFn({ method: "POST" })
   .validator(
-    (data: {
-      branchId: string;
-      date: string;
-      category: string;
-      amount: number;
-      notes?: string;
-    }) => data,
+    (data: { branchId: string; date: string; category: string; amount: number; notes?: string }) =>
+      data,
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
@@ -862,4 +902,236 @@ export const printFinancePage = createServerFn({ method: "GET" })
 </body></html>`;
 
     return { html };
+  });
+
+// ─── Pencatatan Manual Functions ───
+
+export interface RecipeHpp {
+  id: string;
+  name: string;
+  code: string;
+  totalCogs: number;
+}
+
+export const getRecipesWithHpp = createServerFn({ method: "GET" })
+  .validator((data: { branchId?: string }) => data)
+  .handler(async ({ data: _data }): Promise<RecipeHpp[]> => {
+    await requireRole("super_admin");
+
+    const result = await db
+      .select({
+        id: recipes.id,
+        name: recipes.name,
+        code: recipes.code,
+        totalCogs: recipes.totalCogs,
+      })
+      .from(recipes)
+      .where(eq(recipes.status, "Active"))
+      .orderBy(recipes.name);
+
+    return result.map((r) => ({
+      ...r,
+      totalCogs: Number(r.totalCogs),
+    }));
+  });
+
+export interface EmployeeMealSummary {
+  staffName: string;
+  ingredientName: string;
+  quantity: number;
+  valuation: number;
+}
+
+export const getEmployeeMealSummary = createServerFn({ method: "GET" })
+  .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
+  .handler(async ({ data }): Promise<EmployeeMealSummary[]> => {
+    await requireRole("super_admin");
+
+    const conditions = [eq(wasteEntries.category, "Beban Makan")];
+    if (data.branchId) conditions.push(eq(wasteEntries.branchId, data.branchId));
+    if (data.dateFrom) conditions.push(gte(wasteEntries.createdAt, new Date(data.dateFrom)));
+    if (data.dateTo)
+      conditions.push(lte(wasteEntries.createdAt, new Date(data.dateTo + "T23:59:59")));
+
+    const result = await db
+      .select({
+        staffName: wasteEntries.staffName,
+        ingredientName: ingredients.name,
+        quantity: wasteEntries.quantity,
+        valuation: wasteEntries.valuation,
+      })
+      .from(wasteEntries)
+      .leftJoin(ingredients, eq(wasteEntries.ingredientId, ingredients.id))
+      .where(and(...conditions));
+
+    return result.map((r) => ({
+      staffName: r.staffName ?? "Unknown",
+      ingredientName: r.ingredientName ?? "Unknown",
+      quantity: Number(r.quantity),
+      valuation: Number(r.valuation),
+    }));
+  });
+
+export interface ExpenseByCategory {
+  category: string;
+  total: number;
+  items: { id: string; date: string; notes: string | null; amount: number }[];
+}
+
+export const getExpensesByCategory = createServerFn({ method: "GET" })
+  .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
+  .handler(async ({ data }): Promise<ExpenseByCategory[]> => {
+    await requireRole("super_admin");
+
+    const conditions = [];
+    if (data.branchId) conditions.push(eq(operationalExpenses.branchId, data.branchId));
+    if (data.dateFrom) conditions.push(gte(operationalExpenses.date, data.dateFrom));
+    if (data.dateTo) conditions.push(lte(operationalExpenses.date, data.dateTo));
+
+    const result = await db
+      .select({
+        id: operationalExpenses.id,
+        category: operationalExpenses.category,
+        amount: operationalExpenses.amount,
+        date: operationalExpenses.date,
+        notes: operationalExpenses.notes,
+      })
+      .from(operationalExpenses)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(operationalExpenses.category, operationalExpenses.date);
+
+    const grouped = new Map<string, ExpenseByCategory>();
+    for (const row of result) {
+      const existing = grouped.get(row.category);
+      if (existing) {
+        existing.total += Number(row.amount);
+        existing.items.push({
+          id: row.id,
+          date: row.date,
+          notes: row.notes,
+          amount: Number(row.amount),
+        });
+      } else {
+        grouped.set(row.category, {
+          category: row.category,
+          total: Number(row.amount),
+          items: [
+            {
+              id: row.id,
+              date: row.date,
+              notes: row.notes,
+              amount: Number(row.amount),
+            },
+          ],
+        });
+      }
+    }
+
+    return Array.from(grouped.values());
+  });
+
+export interface PencatatanManualSummary {
+  biayaMakanStaff: number;
+  biayaOperasional: number;
+  biayaGaji: number;
+  biayaListrikAir: number;
+  biayaWifi: number;
+  biayaSewa: number;
+  total: number;
+  hpp: number;
+  piutangPenjualan: number;
+  profitMargin: number;
+  nettProfit: number;
+  biayaFranchise: number;
+  christopher: number;
+  pusat: number;
+}
+
+export const getPencatatanManualSummary = createServerFn({ method: "GET" })
+  .validator(
+    (data: { branchId?: string; dateFrom?: string; dateTo?: string; christopher?: number }) => data,
+  )
+  .handler(async ({ data }): Promise<PencatatanManualSummary> => {
+    await requireRole("super_admin");
+
+    // Get expenses by category
+    const expenseConditions = [];
+    if (data.branchId) expenseConditions.push(eq(operationalExpenses.branchId, data.branchId));
+    if (data.dateFrom) expenseConditions.push(gte(operationalExpenses.date, data.dateFrom));
+    if (data.dateTo) expenseConditions.push(lte(operationalExpenses.date, data.dateTo));
+
+    const expenses = await db
+      .select({
+        category: operationalExpenses.category,
+        total: sql<number>`COALESCE(SUM(${operationalExpenses.amount}), 0)`,
+      })
+      .from(operationalExpenses)
+      .where(expenseConditions.length > 0 ? and(...expenseConditions) : undefined)
+      .groupBy(operationalExpenses.category);
+
+    const expenseMap = new Map<string, number>();
+    for (const row of expenses) {
+      expenseMap.set(row.category, Number(row.total));
+    }
+
+    // Get employee meal total from waste
+    const wasteConditions = [eq(wasteEntries.category, "Beban Makan")];
+    if (data.branchId) wasteConditions.push(eq(wasteEntries.branchId, data.branchId));
+    if (data.dateFrom) wasteConditions.push(gte(wasteEntries.createdAt, new Date(data.dateFrom)));
+    if (data.dateTo)
+      wasteConditions.push(lte(wasteEntries.createdAt, new Date(data.dateTo + "T23:59:59")));
+
+    const [wasteResult] = await db
+      .select({ total: sql<number>`COALESCE(SUM(${wasteEntries.valuation}), 0)` })
+      .from(wasteEntries)
+      .where(and(...wasteConditions));
+
+    // Get order totals
+    const orderConditions = [];
+    if (data.branchId) orderConditions.push(eq(orders.branchId, data.branchId));
+    if (data.dateFrom) orderConditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
+    if (data.dateTo)
+      orderConditions.push(lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")));
+
+    const [orderResult] = await db
+      .select({
+        totalCogs: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
+        totalAmount: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+      })
+      .from(orders)
+      .where(orderConditions.length > 0 ? and(...orderConditions) : undefined);
+
+    const biayaMakanStaff = Number(wasteResult?.total ?? 0);
+    const biayaOperasional = expenseMap.get("Operasional") ?? 0;
+    const biayaGaji = expenseMap.get("Gaji") ?? 0;
+    const biayaListrikAir = expenseMap.get("ListrikAir") ?? 0;
+    const biayaWifi = expenseMap.get("Wifi") ?? 0;
+    const biayaSewa = expenseMap.get("Sewa") ?? 0;
+    const total =
+      biayaMakanStaff + biayaOperasional + biayaGaji + biayaListrikAir + biayaWifi + biayaSewa;
+
+    const hpp = Number(orderResult?.totalCogs ?? 0);
+    const piutangPenjualan = Number(orderResult?.totalAmount ?? 0);
+    const profitMargin = piutangPenjualan - hpp;
+    const nettProfit = profitMargin - total;
+    const biayaFranchise = piutangPenjualan * 0.05;
+    const christopher = data.christopher ?? 0;
+    const pusat = nettProfit - biayaFranchise - christopher;
+
+    return {
+      biayaMakanStaff,
+      biayaOperasional,
+      biayaGaji,
+      biayaListrikAir,
+      biayaWifi,
+      biayaSewa,
+      total,
+      hpp,
+      piutangPenjualan,
+      profitMargin,
+      nettProfit,
+      biayaFranchise,
+      christopher,
+      pusat,
+    };
   });

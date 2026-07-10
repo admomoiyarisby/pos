@@ -57,8 +57,8 @@ export default function Modal({ open, onClose, title, children, size = "md" }: M
           <div className="flex items-center justify-between mb-4">
             <DialogPrimitive.Title className="text-lg font-semibold">{title}</DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
-            <DialogPrimitive.Close className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-              <X className="h-4 w-4" />
+            <DialogPrimitive.Close className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground">
+              <X className="h-5 w-5" />
               <span className="sr-only">Tutup</span>
             </DialogPrimitive.Close>
           </div>

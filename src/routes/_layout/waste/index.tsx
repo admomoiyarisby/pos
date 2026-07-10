@@ -491,27 +491,27 @@ function WastePage() {
         </div>
       </div>
 
-      {/* Filters — compact row below summary */}
-      <div className="mb-4 flex flex-col sm:flex-row flex-wrap gap-3">
-        <div className="flex gap-2">
+      {/* Filters — 2-col grid on tablet, wrap on desktop */}
+      <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="flex gap-2 sm:col-span-2 lg:col-span-1">
           <input
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            className="h-9 w-full sm:w-auto rounded-md border border-input bg-background px-3 text-sm"
+            className="h-11 md:h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
           />
-          <span className="hidden sm:flex items-center text-muted-foreground text-sm">—</span>
+          <span className="flex items-center text-muted-foreground text-sm">—</span>
           <input
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            className="h-9 w-full sm:w-auto rounded-md border border-input bg-background px-3 text-sm"
+            className="h-11 md:h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
           />
         </div>
         <select
           value={selectedCategory ?? ""}
           onChange={(e) => setSelectedCategory(e.target.value || null)}
-          className="h-9 w-full sm:w-auto rounded-md border border-input bg-background px-3 text-sm"
+          className="h-11 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="">Semua Kategori</option>
           <option value="Beban Makan">Beban Makan</option>
@@ -523,7 +523,7 @@ function WastePage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as "date" | "category")}
-            className="h-9 w-full sm:w-auto rounded-md border border-input bg-background px-3 text-sm"
+            className="h-11 md:h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="date">Urut: Tanggal</option>
             <option value="category">Urut: Kategori</option>
@@ -531,20 +531,20 @@ function WastePage() {
           <button
             type="button"
             onClick={() => setSortDir(sortDir === "asc" ? "desc" : "asc")}
-            className="h-9 w-9 rounded-md border flex items-center justify-center hover:bg-muted transition-colors"
+            className="h-11 md:h-9 w-11 md:w-9 rounded-md border flex items-center justify-center hover:bg-muted transition-colors"
             title={sortDir === "asc" ? "Ascending" : "Descending"}
           >
             {sortDir === "asc" ? "↑" : "↓"}
           </button>
         </div>
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="relative sm:col-span-2 lg:col-span-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Cari bahan..."
-            className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm"
+            className="h-11 md:h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm"
           />
         </div>
       </div>
@@ -587,7 +587,7 @@ function WastePage() {
               name="branchId"
               defaultValue={user?.branchId ?? ""}
               disabled={!!user?.branchId || user?.role === "area_manager"}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
+              className="h-11 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
             >
               {filteredBranches.map((b) => (
                 <option key={b.id} value={b.id}>
@@ -676,7 +676,7 @@ function WastePage() {
                 name="category"
                 required
                 onChange={(e) => setShowStaffField(e.target.value === "Denda")}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-11 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="Beban Makan">Beban Makan (Jatah karyawan)</option>
                 <option value="Biaya Operasional">Biaya Operasional</option>
@@ -691,7 +691,7 @@ function WastePage() {
                 type="number"
                 min={1}
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-11 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
           </div>
@@ -702,7 +702,7 @@ function WastePage() {
                 name="staffName"
                 type="text"
                 placeholder="Nama karyawan yang kena denda"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-11 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
           )}
@@ -710,21 +710,21 @@ function WastePage() {
             <label className="text-sm font-medium">Keterangan</label>
             <textarea
               name="notes"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-none"
+              className="w-full rounded-md border border-input bg-background px-3 py-3 md:py-2 text-sm min-h-[80px] md:min-h-[60px] resize-none"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="h-9 px-4 rounded-md border text-sm"
+              className="h-11 md:h-9 px-4 rounded-md border text-sm"
             >
               Batal
             </button>
             <button
               type="submit"
               disabled={createMutation.isPending}
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+              className="h-11 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
             >
               {createMutation.isPending ? "Menyimpan..." : "Simpan"}
             </button>
@@ -757,7 +757,7 @@ function WastePage() {
               onChange={(e) => setInvestigationNoteText(e.target.value)}
               required
               placeholder="Tulis hasil investigasi selisih stok..."
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[120px] resize-none"
+              className="w-full rounded-md border border-input bg-background px-3 py-3 md:py-2 text-sm min-h-[140px] md:min-h-[120px] resize-none"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -769,14 +769,14 @@ function WastePage() {
                 setInvestigationNoteText("");
                 setInvestigationError(null);
               }}
-              className="h-9 px-4 rounded-md border text-sm"
+              className="h-11 md:h-9 px-4 rounded-md border text-sm"
             >
               Batal
             </button>
             <button
               type="submit"
               disabled={investigationMutation.isPending}
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+              className="h-11 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
             >
               {investigationMutation.isPending ? "Menyimpan..." : "Simpan"}
             </button>
