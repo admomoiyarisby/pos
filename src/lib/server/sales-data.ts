@@ -7,7 +7,14 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { orders, orderItems, recipes } from "#/db/schema";
+import {
+  orders,
+  orderItems,
+  recipes,
+  systemNotifications,
+  users,
+  areaManagerBranches,
+} from "#/db/schema";
 import { requireAuth, requireRole } from "#/lib/server/auth";
 import { eq, and, gte, lte, sql, desc, count } from "drizzle-orm";
 
@@ -474,10 +481,35 @@ async function createSalesNotification(params: {
     const actionText =
       params.action === "create" ? "Dibuat" : params.action === "update" ? "Diubah" : "Dihapus";
 
+    const title = `Pesanan ${actionText}`;
     const message = `Pesanan ${params.orderCode ?? "-"} (${params.channel}) ${actionText} oleh Admin Pusat. ${branch?.name ?? ""}. Item: ${itemList}`;
 
-    // TODO: Insert into notifications table when implemented
-    console.log("[Notification]", message);
+    // Find recipients: area managers assigned to this branch + branch admins for this branch
+    const amRecipients = await db
+      .select({ userId: areaManagerBranches.userId })
+      .from(areaManagerBranches)
+      .where(eq(areaManagerBranches.branchId, params.branchId));
+
+    const baRecipients = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.branchId, params.branchId), eq(users.role, "branch_admin")));
+
+    // Combine and deduplicate recipient IDs
+    const recipientIds = [
+      ...new Set([...amRecipients.map((r) => r.userId), ...baRecipients.map((r) => r.id)]),
+    ];
+
+    // Insert notification for each recipient
+    for (const recipientId of recipientIds) {
+      await db.insert(systemNotifications).values({
+        userId: recipientId,
+        title,
+        message,
+        type: params.action === "delete" ? "warning" : "info",
+        priority: params.action === "delete" ? "urgent" : "normal",
+      });
+    }
   } catch (err) {
     console.error("Failed to create notification:", err);
   }
