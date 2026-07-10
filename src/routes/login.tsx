@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { authClient } from "#/lib/auth-client";
 import { useAuth } from "#/lib/auth-context";
 import PinPad from "#/components/PinPad";
-import { Loader2, Smartphone, Mail, ChevronLeft, Building2 } from "lucide-react";
+import { Loader2, Smartphone, Mail, ChevronLeft, Building2, UserCircle } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -91,6 +91,12 @@ function LoginPage() {
   const [staffNames, setStaffNames] = useState<{ id: string; name: string }[]>([]);
   const [selectedStaffName, setSelectedStaffName] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
+
+  // Non-branch PIN login state
+  const [nonBranchPin, setNonBranchPin] = useState("");
+  const [nonBranchPinError, setNonBranchPinError] = useState("");
+  const [nonBranchPinLoading, setNonBranchPinLoading] = useState(false);
+  const [showNonBranchPin, setShowNonBranchPin] = useState(false);
 
   // Demo branches for quick access
   const demoBranches = [
@@ -193,6 +199,34 @@ function LoginPage() {
     }
   };
 
+  const handleNonBranchPinSubmit = async (enteredPin: string) => {
+    setNonBranchPinError("");
+    setNonBranchPinLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/non-branch-pin-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: enteredPin }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setNonBranchPinError(data.message || "PIN tidak valid");
+        setNonBranchPin("");
+      } else {
+        // Login successful, redirect
+        void router.invalidate();
+      }
+    } catch (e) {
+      console.error("Non-branch PIN login error:", e);
+      setNonBranchPinError("Terjadi kesalahan saat login");
+      setNonBranchPin("");
+    } finally {
+      setNonBranchPinLoading(false);
+    }
+  };
+
   const resetBranchLogin = () => {
     setBranchPinStep("branch-select");
     setSelectedBranchCode("");
@@ -203,17 +237,19 @@ function LoginPage() {
     setSelectedStaffName("");
   };
 
+  const resetNonBranchLogin = () => {
+    setShowNonBranchPin(false);
+    setNonBranchPin("");
+    setNonBranchPinError("");
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <div className="w-full max-w-md space-y-6 rounded-xl border bg-card p-6 md:p-8 shadow-sm">
         {/* Logo & Title */}
         <div className="flex flex-col items-center gap-2 text-center">
           <div className="flex h-16 w-16 items-center justify-center">
-            <img
-              src={logoSrc}
-              alt="Omoiyari"
-              className="h-16 w-auto"
-            />
+            <img src={logoSrc} alt="Omoiyari" className="h-16 w-auto" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Omoiyari POS</h1>
           <p className="text-sm text-muted-foreground">Masuk ke sistem manajemen POS & inventori</p>
@@ -227,6 +263,7 @@ function LoginPage() {
               setMode("pin");
               setError("");
               resetBranchLogin();
+              resetNonBranchLogin();
             }}
             className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
               mode === "pin"
@@ -243,6 +280,7 @@ function LoginPage() {
               setMode("email");
               setError("");
               resetBranchLogin();
+              resetNonBranchLogin();
             }}
             className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
               mode === "email"
@@ -255,13 +293,15 @@ function LoginPage() {
           </button>
         </div>
 
-        {/* PIN Mode — Branch-based login */}
+        {/* PIN Mode */}
         {mode === "pin" && (
           <div className="space-y-4">
-            {/* Step 1: Branch Selection */}
-            {branchPinStep === "branch-select" && (
+            {/* Step 1: Branch Selection (default) */}
+            {branchPinStep === "branch-select" && !showNonBranchPin && (
               <div className="space-y-3">
-                <p className="text-sm text-muted-foreground text-center">Pilih cabang Anda</p>
+                <p className="text-sm text-muted-foreground text-center">
+                  Pilih cabang atau staf non-cabang
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   {demoBranches.map((branch) => (
                     <button
@@ -281,10 +321,25 @@ function LoginPage() {
                     </button>
                   ))}
                 </div>
+
+                {/* Non-branch staff button */}
+                <button
+                  type="button"
+                  onClick={() => setShowNonBranchPin(true)}
+                  className="w-full py-3 px-4 text-sm font-medium rounded-lg border border-dashed hover:bg-muted transition-colors flex items-center justify-center gap-2"
+                >
+                  <UserCircle className="h-4 w-4 text-muted-foreground" />
+                  <div className="text-left">
+                    <div className="font-bold">Staf Non-Cabang</div>
+                    <div className="text-xs text-muted-foreground">
+                      Superadmin, Admin Pusat, Central Kitchen, Area Manager
+                    </div>
+                  </div>
+                </button>
               </div>
             )}
 
-            {/* Step 2: PIN Entry */}
+            {/* Step 2a: Branch PIN Entry */}
             {branchPinStep === "pin-entry" && (
               <div className="space-y-3">
                 <button
@@ -319,7 +374,45 @@ function LoginPage() {
               </div>
             )}
 
-            {/* Step 3: Name Picker */}
+            {/* Step 2b: Non-branch PIN Entry */}
+            {showNonBranchPin && (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={resetNonBranchLogin}
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Kembali
+                </button>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Staf Non-Cabang</p>
+                  <p className="text-lg font-bold">Masukkan PIN Anda</p>
+                </div>
+                {nonBranchPinLoading && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Memverifikasi PIN...
+                  </div>
+                )}
+                <PinPad
+                  value={nonBranchPin}
+                  onChange={setNonBranchPin}
+                  onComplete={handleNonBranchPinSubmit}
+                  disabled={nonBranchPinLoading}
+                />
+                {nonBranchPinError && (
+                  <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive text-center">
+                    {nonBranchPinError}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground text-center">
+                  Untuk Superadmin, Admin Pusat, Central Kitchen, dan Area Manager
+                </p>
+              </div>
+            )}
+
+            {/* Step 3: Name Picker (branch flow only) */}
             {branchPinStep === "name-picker" && branchInfo && (
               <div className="space-y-3">
                 <button

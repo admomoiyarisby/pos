@@ -160,6 +160,80 @@ export const pinAuth = () => ({
     ),
 
     /**
+     * Login with a non-branch user PIN.
+     * Used for Superadmin, Admin Pusat, Central Kitchen, and Area Manager.
+     * The PIN is individual and globally unique, so entering it directly
+     * identifies the user — no name picker needed.
+     */
+    nonBranchPinLogin: createAuthEndpoint(
+      "/non-branch-pin-login",
+      {
+        method: "POST",
+        body: z.object({
+          pin: z.string().regex(/^\d{4}$/, "PIN harus 4 digit"),
+        }),
+      },
+      async (ctx: any) => {
+        const { pin } = ctx.body;
+
+        // 1. Find user by PIN
+        const [user] = await db
+          .select()
+          .from(usersTable)
+          .where(and(eq(usersTable.pin, pin), eq(usersTable.status, "Active")))
+          .limit(1);
+
+        // 2. Validate user exists and is a non-branch role
+        const nonBranchRoles = ["super_admin", "admin_pusat", "central_kitchen", "area_manager"];
+        if (!user || !nonBranchRoles.includes(user.role)) {
+          throw APIError.from("UNAUTHORIZED", {
+            code: "INVALID_PIN",
+            message: "PIN tidak valid",
+          });
+        }
+
+        // 3. Create session via internal adapter
+        const session = await ctx.context.internalAdapter.createSession(user.id);
+        if (!session) {
+          throw APIError.from("INTERNAL_SERVER_ERROR", {
+            code: "FAILED_TO_CREATE_SESSION",
+            message: "Gagal membuat sesi",
+          });
+        }
+
+        // 4. Get full user data for the session cookie
+        const userData = await ctx.context.internalAdapter.findUserById(user.id);
+        if (!userData) {
+          throw APIError.from("INTERNAL_SERVER_ERROR", {
+            code: "USER_NOT_FOUND",
+            message: "User tidak ditemukan",
+          });
+        }
+
+        // 5. Set session cookie
+        await setSessionCookie(ctx, { session, user: userData });
+
+        // 6. Log PIN login
+        await db.insert(systemLogs).values({
+          action: "Non-Branch PIN Login",
+          detail: `User "${String(userData.name)}" (${String((userData as Record<string, unknown>).role)}) login via PIN`,
+          userId: userData.id,
+          userName: String(userData.name),
+        });
+
+        // 7. Return success
+        return ctx.json({
+          success: true,
+          user: {
+            id: userData.id,
+            name: userData.name,
+            role: (userData as Record<string, unknown>).role,
+          },
+        });
+      },
+    ),
+
+    /**
      * Login with branch ID and staff name.
      * Used as step 2 of the branch login flow.
      * Creates a session for the selected staff member.

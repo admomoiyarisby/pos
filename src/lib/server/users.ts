@@ -71,6 +71,30 @@ export const getUsers = createServerFn({ method: "GET" })
     }));
   });
 
+/**
+ * Get all users assigned to a specific branch.
+ * Used by the branch detail view to show staff.
+ */
+export const getBranchUsers = createServerFn({ method: "GET" })
+  .validator((data: { branchId: string }) => data)
+  .handler(async ({ data }) => {
+    await requireAuth();
+
+    const result = await db
+      .select({
+        id: usersTable.id,
+        email: usersTable.email,
+        name: usersTable.name,
+        role: usersTable.role,
+        status: usersTable.status,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.branchId, data.branchId))
+      .orderBy(usersTable.name);
+
+    return result;
+  });
+
 export const createUser = createServerFn({ method: "POST" })
   .validator((data: unknown) =>
     z
@@ -262,6 +286,147 @@ export const updateUser = createServerFn({ method: "POST" })
         await db.insert(areaManagerBranches).values({ userId: id, branchId });
       }
     }
+
+    return { success: true };
+  });
+
+// =============================================================================
+// Self-service settings (any authenticated user can update their own account)
+// =============================================================================
+
+/**
+ * Update the current user's profile (name and email).
+ */
+export const updateMyProfile = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        name: z.string().min(1),
+        email: z.string().email(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    // Check if email is already taken by another user
+    if (data.email !== user.email) {
+      const [existing] = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(and(eq(usersTable.email, data.email), ne(usersTable.id, user.id)))
+        .limit(1);
+      if (existing) {
+        throw new Error("Email sudah digunakan oleh user lain");
+      }
+    }
+
+    await db
+      .update(usersTable)
+      .set({ name: data.name, email: data.email, updatedAt: new Date() })
+      .where(eq(usersTable.id, user.id));
+
+    await logSystemAction(user, "Update Profile", `User "${user.name}" memperbarui profil`);
+
+    return { success: true };
+  });
+
+/**
+ * Update the current user's PIN.
+ * Validates global uniqueness across users.pin and branches.pin.
+ */
+export const updateMyPin = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        pin: z
+          .string()
+          .length(4)
+          .regex(/^\d{4}$/, "PIN harus 4 digit"),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    // Validate uniqueness across users.pin (excluding self)
+    const [existingUser] = await db
+      .select({ id: usersTable.id, name: usersTable.name })
+      .from(usersTable)
+      .where(and(eq(usersTable.pin, data.pin), ne(usersTable.id, user.id)))
+      .limit(1);
+
+    if (existingUser) {
+      throw new Error(`PIN sudah digunakan oleh staf "${existingUser.name}"`);
+    }
+
+    // Validate uniqueness across branches.pin
+    const [existingBranch] = await db
+      .select({ id: branches.id, name: branches.name })
+      .from(branches)
+      .where(eq(branches.pin, data.pin))
+      .limit(1);
+
+    if (existingBranch) {
+      throw new Error(`PIN sudah digunakan oleh cabang "${existingBranch.name}"`);
+    }
+
+    await db
+      .update(usersTable)
+      .set({ pin: data.pin, updatedAt: new Date() })
+      .where(eq(usersTable.id, user.id));
+
+    await logSystemAction(user, "Update PIN", `User "${user.name}" memperbarui PIN`);
+
+    return { success: true };
+  });
+
+/**
+ * Update the current user's password.
+ * Verifies current password before allowing change.
+ */
+export const updateMyPassword = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        currentPassword: z.string().min(1, "Password saat ini wajib diisi"),
+        newPassword: z.string().min(8, "Password baru minimal 8 karakter"),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    // Get current password hash from account table
+    const { account: accountTable } = await import("#/db/schema");
+    const [account] = await db
+      .select()
+      .from(accountTable)
+      .where(and(eq(accountTable.userId, user.id), eq(accountTable.providerId, "credential")))
+      .limit(1);
+
+    if (!account || !account.password) {
+      throw new Error("Akun tidak ditemukan");
+    }
+
+    // Verify current password
+    const { verifyPassword } = await import("better-auth/crypto");
+    const isValid = await verifyPassword({
+      password: data.currentPassword,
+      hash: account.password,
+    });
+    if (!isValid) {
+      throw new Error("Password saat ini salah");
+    }
+
+    // Hash and update new password
+    const hashedPassword = await hashPassword(data.newPassword);
+    await db
+      .update(accountTable)
+      .set({ password: hashedPassword })
+      .where(eq(accountTable.id, account.id));
+
+    await logSystemAction(user, "Update Password", `User "${user.name}" memperbarui password`);
 
     return { success: true };
   });

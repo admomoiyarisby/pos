@@ -1,18 +1,30 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
+import { Badge } from "#/components/ui/badge";
 import { Checkbox } from "#/components/ui/checkbox";
 import { getUsers, createUser, updateUser } from "#/lib/server/users";
 import { getBranches } from "#/lib/server/branches";
-import type { Column } from "#/components/ui/DataTable";
-import { Badge } from "#/components/ui/badge";
-import { Eye, EyeOff, Trash2, Info } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Shield,
+  Building2,
+  ChefHat,
+  Map,
+  Store,
+  Users,
+} from "lucide-react";
+
+// =============================================================================
+// Types
+// =============================================================================
 
 interface UserRow {
   id: string;
@@ -26,6 +38,44 @@ interface UserRow {
   assignedBranches?: string[];
 }
 
+interface BranchRow {
+  id: string;
+  code: string;
+  name: string;
+  location: string;
+  type: "Central" | "Outlet";
+  active: boolean;
+}
+
+type StaffItem =
+  | { type: "user"; user: UserRow }
+  | { type: "branch"; branch: BranchRow; staff: UserRow[] };
+
+interface StaffGroupData {
+  id: string;
+  label: string;
+  icon: typeof Shield;
+  count: number;
+  items: StaffItem[];
+}
+
+// =============================================================================
+// Route
+// =============================================================================
+
+export const Route = createFileRoute("/_layout/admin/users")({
+  component: StaffPage,
+  loader: async () => {
+    const users = await getUsers({ data: {} });
+    const branches = await getBranches({ data: {} });
+    return { users, branches };
+  },
+});
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
 const roleLabels: Record<string, string> = {
   super_admin: "Super Admin",
   admin_pusat: "Admin Pusat",
@@ -34,108 +84,541 @@ const roleLabels: Record<string, string> = {
   central_kitchen: "Central Kitchen",
 };
 
-export const Route = createFileRoute("/_layout/admin/users")({
-  component: UsersPage,
-  loader: async () => {
-    const users = await getUsers({ data: {} });
-    const branches = await getBranches({ data: {} });
-    return { users, branches };
-  },
-});
+const roleColors: Record<string, string> = {
+  super_admin: "destructive",
+  admin_pusat: "default",
+  area_manager: "secondary",
+  branch_admin: "outline",
+  central_kitchen: "secondary",
+};
 
-function UsersPage() {
+function buildGroupedStaff(users: UserRow[], branches: BranchRow[]): StaffGroupData[] {
+  const groups: StaffGroupData[] = [];
+
+  // 1. Superadmin
+  const superadmins = users.filter((u) => u.role === "super_admin");
+  if (superadmins.length > 0) {
+    groups.push({
+      id: "superadmin",
+      label: "Superadmin",
+      icon: Shield,
+      count: superadmins.length,
+      items: superadmins.map((u) => ({ type: "user" as const, user: u })),
+    });
+  }
+
+  // 2. Admin Pusat
+  const adminPusat = users.filter((u) => u.role === "admin_pusat");
+  if (adminPusat.length > 0) {
+    groups.push({
+      id: "admin-pusat",
+      label: "Admin Pusat",
+      icon: Building2,
+      count: adminPusat.length,
+      items: adminPusat.map((u) => ({ type: "user" as const, user: u })),
+    });
+  }
+
+  // 3. Central Kitchen
+  const centralKitchen = users.filter((u) => u.role === "central_kitchen");
+  if (centralKitchen.length > 0) {
+    groups.push({
+      id: "central-kitchen",
+      label: "Central Kitchen",
+      icon: ChefHat,
+      count: centralKitchen.length,
+      items: centralKitchen.map((u) => ({ type: "user" as const, user: u })),
+    });
+  }
+
+  // 4. Area Managers and their branches
+  const areaManagers = users.filter((u) => u.role === "area_manager");
+  const managedBranchIds = new Set<string>();
+
+  for (const am of areaManagers) {
+    const assignedBranches = am.assignedBranches || [];
+    const branchItems: StaffItem[] = [];
+
+    // Add the AM themselves
+    branchItems.push({ type: "user", user: am });
+
+    // Add branches under this AM
+    for (const branchId of assignedBranches) {
+      managedBranchIds.add(branchId);
+      const branch = branches.find((b) => b.id === branchId);
+      if (branch) {
+        const branchStaff = users.filter(
+          (u) => u.role === "branch_admin" && u.branchId === branchId,
+        );
+        branchItems.push({ type: "branch", branch, staff: branchStaff });
+      }
+    }
+
+    const totalCount = branchItems.reduce((sum, item) => {
+      if (item.type === "user") return sum + 1;
+      return sum + 1 + item.staff.length;
+    }, 0);
+
+    groups.push({
+      id: `am-${am.id}`,
+      label: `Area Manager: ${am.name}`,
+      icon: Map,
+      count: totalCount,
+      items: branchItems,
+    });
+  }
+
+  // 5. Unmanaged branches (not assigned to any AM)
+  const unmanagedBranches = branches.filter(
+    (b) => !managedBranchIds.has(b.id) && b.type === "Outlet",
+  );
+
+  if (unmanagedBranches.length > 0) {
+    const unmanagedItems: StaffItem[] = [];
+    for (const branch of unmanagedBranches) {
+      const branchStaff = users.filter(
+        (u) => u.role === "branch_admin" && u.branchId === branch.id,
+      );
+      unmanagedItems.push({ type: "branch", branch, staff: branchStaff });
+    }
+
+    const totalCount = unmanagedItems.reduce((sum, item) => {
+      if (item.type === "branch") return sum + 1 + item.staff.length;
+      return sum + 1;
+    }, 0);
+
+    groups.push({
+      id: "unmanaged",
+      label: "Cabang Tidak Terkelola",
+      icon: Store,
+      count: totalCount,
+      items: unmanagedItems,
+    });
+  }
+
+  return groups;
+}
+
+// =============================================================================
+// Components
+// =============================================================================
+
+function StaffGroup({
+  group,
+  defaultOpen = true,
+  onEditUser,
+}: {
+  group: StaffGroupData;
+  defaultOpen?: boolean;
+  onEditUser: (user: UserRow) => void;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const Icon = group.icon;
+
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center justify-between w-full px-4 py-3 bg-muted/50 hover:bg-muted transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {open ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium text-sm">{group.label}</span>
+        </div>
+        <Badge variant="secondary" className="text-xs">
+          {group.count}
+        </Badge>
+      </button>
+
+      {open && (
+        <div className="divide-y">
+          {group.items.map((item) => {
+            if (item.type === "user") {
+              return (
+                <StaffRow
+                  key={item.user.id}
+                  user={item.user}
+                  onEdit={() => onEditUser(item.user)}
+                />
+              );
+            }
+
+            // Branch group (type === "branch")
+            const branchItem = item as { type: "branch"; branch: BranchRow; staff: UserRow[] };
+            return (
+              <BranchSubGroup
+                key={branchItem.branch.id}
+                branch={branchItem.branch}
+                staff={branchItem.staff}
+                onEditUser={onEditUser}
+                defaultOpen={true}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BranchSubGroup({
+  branch,
+  staff,
+  onEditUser,
+  defaultOpen = true,
+}: {
+  branch: BranchRow;
+  staff: UserRow[];
+  onEditUser: (user: UserRow) => void;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="bg-background">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center justify-between w-full px-4 py-2 pl-10 hover:bg-muted/30 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {open ? (
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+          <Store className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-sm font-medium text-muted-foreground">{branch.name}</span>
+        </div>
+        <Badge variant="outline" className="text-xs">
+          {staff.length}
+        </Badge>
+      </button>
+
+      {open && (
+        <div className="divide-y">
+          {staff.length === 0 ? (
+            <div className="px-4 py-2 pl-16 text-sm text-muted-foreground">Belum ada staf</div>
+          ) : (
+            staff.map((user) => (
+              <StaffRow key={user.id} user={user} onEdit={() => onEditUser(user)} indent />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StaffRow({
+  user,
+  onEdit,
+  indent = false,
+}: {
+  user: UserRow;
+  onEdit: () => void;
+  indent?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors ${
+        indent ? "pl-16" : "pl-10"
+      }`}
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-medium shrink-0">
+          {user.name.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium truncate">{user.name}</p>
+          <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        <Badge variant={roleColors[user.role] as any} className="text-xs hidden sm:inline-flex">
+          {roleLabels[user.role] ?? user.role}
+        </Badge>
+        {user.status === "Active" ? (
+          <Badge variant="success" className="text-xs">
+            Aktif
+          </Badge>
+        ) : (
+          <Badge variant="secondary" className="text-xs">
+            Nonaktif
+          </Badge>
+        )}
+        <Button variant="ghost" size="sm" onClick={onEdit}>
+          Edit
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function StaffModal({
+  user,
+  branches,
+  open,
+  onClose,
+  onSave,
+  isLoading,
+  error,
+}: {
+  user: UserRow | null;
+  branches: BranchRow[];
+  open: boolean;
+  onClose: () => void;
+  onSave: (data: any) => void;
+  isLoading: boolean;
+  error?: string;
+}) {
+  const isEdit = !!user;
+  const [selectedRole, setSelectedRole] = useState(user?.role ?? "branch_admin");
+  const [amBranches, setAmBranches] = useState<string[]>(user?.assignedBranches ?? []);
+  const [generatedPassword, setGeneratedPassword] = useState("");
+
+  const generatePassword = () => {
+    const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let password = "";
+    for (let i = 0; i < 10; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  };
+
+  const toggleAmBranch = (branchId: string) => {
+    setAmBranches((prev) =>
+      prev.includes(branchId) ? prev.filter((id) => id !== branchId) : [...prev, branchId],
+    );
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const data: any = {
+      name: fd.get("name") as string,
+      email: fd.get("email") as string,
+      role: fd.get("role") as string,
+      status: fd.get("status") as string,
+    };
+
+    if (!isEdit) {
+      data.password = fd.get("password") as string;
+    } else {
+      const password = fd.get("password") as string;
+      if (password) data.password = password;
+    }
+
+    // Branch fields based on role
+    if (selectedRole === "branch_admin" || selectedRole === "central_kitchen") {
+      data.branchId = (fd.get("branchId") as string) || undefined;
+    }
+
+    if (selectedRole === "area_manager") {
+      data.assignedBranches = amBranches;
+    }
+
+    if (isEdit) {
+      data.id = user.id;
+    }
+
+    onSave(data);
+  };
+
+  const showBranchField = selectedRole === "branch_admin" || selectedRole === "central_kitchen";
+  const showAmBranches = selectedRole === "area_manager";
+
+  return (
+    <Modal open={open} onClose={onClose} title={isEdit ? "Edit Staf" : "Tambah Staf"} size="lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Nama</label>
+            <input
+              name="name"
+              defaultValue={user?.name ?? ""}
+              required
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Email</label>
+            <input
+              name="email"
+              type="email"
+              defaultValue={user?.email ?? ""}
+              required
+              disabled={isEdit}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Password</label>
+          {isEdit ? (
+            <input
+              name="password"
+              type="password"
+              minLength={8}
+              placeholder="Kosongkan jika tidak diubah"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
+          ) : (
+            <div className="flex gap-2">
+              <input
+                name="password"
+                type="text"
+                required
+                minLength={8}
+                value={generatedPassword}
+                onChange={(e) => setGeneratedPassword(e.target.value)}
+                placeholder="Minimal 8 karakter"
+                className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm font-mono"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setGeneratedPassword(generatePassword())}
+              >
+                Generate
+              </Button>
+            </div>
+          )}
+          {!isEdit && (
+            <p className="text-xs text-muted-foreground">
+              Klik "Generate" untuk membuat password acak, atau masukkan password manual.
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Role</label>
+            <select
+              name="role"
+              defaultValue={user?.role ?? "branch_admin"}
+              onChange={(e) => setSelectedRole(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="super_admin">Super Admin</option>
+              <option value="admin_pusat">Admin Pusat</option>
+              <option value="area_manager">Area Manager</option>
+              <option value="branch_admin">Branch Admin</option>
+              <option value="central_kitchen">Central Kitchen</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Status</label>
+            <select
+              name="status"
+              defaultValue={user?.status ?? "Active"}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="Active">Aktif</option>
+              <option value="Inactive">Nonaktif</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Branch field for branch_admin and central_kitchen */}
+        {showBranchField && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Cabang</label>
+            <select
+              name="branchId"
+              defaultValue={user?.branchId ?? ""}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">-- Pilih Cabang --</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Area Manager branch assignment */}
+        {showAmBranches && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Cabang yang Dikelola</label>
+            <div className="grid grid-cols-2 gap-2 rounded-md border p-3 max-h-40 overflow-y-auto">
+              {branches.map((b) => (
+                <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox
+                    checked={amBranches.includes(b.id)}
+                    onCheckedChange={() => toggleAmBranch(b.id)}
+                  />
+                  <span>{b.name}</span>
+                </label>
+              ))}
+            </div>
+            {amBranches.length === 0 && (
+              <p className="text-xs text-warning-foreground">
+                Area Manager harus memiliki minimal 1 cabang yang dikelola.
+              </p>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Batal
+          </Button>
+          <Button type="submit" disabled={isLoading}>
+            {isLoading ? "Menyimpan..." : isEdit ? "Simpan" : "Tambah"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// =============================================================================
+// Page
+// =============================================================================
+
+function StaffPage() {
   const { users: initialUsers, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
-  const [selectedRole, setSelectedRole] = useState("branch_admin");
-  const [amBranches, setAmBranches] = useState<string[]>([]);
   const [mutationError, setMutationError] = useState("");
-  const [deleteInfoTarget, setDeleteInfoTarget] = useState<string | null>(null);
-  const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
 
-  const togglePin = useCallback((userId: string) => {
-    setVisiblePins((prev) => {
-      const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
-      return next;
-    });
-  }, []);
-
-  const toggleAmBranch = useCallback((branchId: string) => {
-    setAmBranches((prev) =>
-      prev.includes(branchId) ? prev.filter((id) => id !== branchId) : [...prev, branchId],
-    );
-  }, []);
-
-  const columns: Column<UserRow>[] = [
-    { key: "name", header: "Nama", sortable: true },
-    { key: "email", header: "Email", sortable: true },
-    {
-      key: "role",
-      header: "Role",
-      sortable: true,
-      render: (r) => <Badge variant="outline">{roleLabels[r.role] ?? r.role}</Badge>,
-    },
-    { key: "branchName", header: "Cabang", sortable: true, render: (r) => r.branchName ?? "-" },
-    {
-      key: "pin",
-      header: "PIN",
-      render: (r) =>
-        r.role === "branch_admin" && r.pin ? (
-          <span className="inline-flex items-center gap-1.5">
-            <code className="text-sm font-mono tracking-widest">
-              {visiblePins.has(r.id) ? r.pin : "••••"}
-            </code>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                togglePin(r.id);
-              }}
-              className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent"
-              title={visiblePins.has(r.id) ? "Sembunyikan PIN" : "Tampilkan PIN"}
-            >
-              {visiblePins.has(r.id) ? (
-                <EyeOff className="h-3.5 w-3.5" />
-              ) : (
-                <Eye className="h-3.5 w-3.5" />
-              )}
-            </button>
-          </span>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        ),
-    },
-    {
-      key: "status",
-      header: "Status",
-      sortable: true,
-      render: (r) =>
-        r.status === "Active" ? (
-          <Badge variant="success">Aktif</Badge>
-        ) : (
-          <Badge variant="secondary">Nonaktif</Badge>
-        ),
-    },
-  ];
-
-  const { data: users } = useQuery({
+  const { data: users = initialUsers } = useQuery({
     queryKey: ["users"],
     queryFn: () => getUsers({ data: {} }),
     initialData: initialUsers,
   });
 
+  const groupedStaff = useMemo(() => buildGroupedStaff(users, branches), [users, branches]);
+
   const createMutation = useMutation({
     mutationFn: createUser,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["users"] });
+      toast.success("Staf baru ditambahkan");
       setModalOpen(false);
       setEditing(null);
+      setMutationError("");
     },
     onError: (err) => {
       setMutationError(err.message);
+      toast.error(err.message);
     },
   });
 
@@ -143,299 +626,77 @@ function UsersPage() {
     mutationFn: updateUser,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["users"] });
+      toast.success("Data staf diperbarui");
       setModalOpen(false);
       setEditing(null);
+      setMutationError("");
     },
     onError: (err) => {
       setMutationError(err.message);
+      toast.error(err.message);
     },
   });
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const data = {
-      email: fd.get("email") as string,
-      password: fd.get("password") as string,
-      name: fd.get("name") as string,
-      role: fd.get("role") as
-        | "super_admin"
-        | "admin_pusat"
-        | "area_manager"
-        | "branch_admin"
-        | "central_kitchen",
-      branchId: (fd.get("branchId") as string) || undefined,
-      pin: (fd.get("pin") as string) || undefined,
-      status: fd.get("status") as "Active" | "Inactive",
-      assignedBranches: selectedRole === "area_manager" ? amBranches : undefined,
-    };
-
+  const handleSave = (data: any) => {
+    setMutationError("");
     if (editing) {
-      const updateData = {
-        id: editing.id,
-        name: data.name,
-        role: data.role,
-        branchId: data.branchId,
-        pin: data.pin,
-        status: data.status,
-        assignedBranches: selectedRole === "area_manager" ? amBranches : [],
-      };
-      void updateMutation.mutateAsync({ data: updateData });
+      void updateMutation.mutateAsync({ data: { ...data, id: editing.id } });
     } else {
       void createMutation.mutateAsync({ data });
     }
   };
-  usePageTitle("Manajemen Pengguna", "Kelola pengguna sistem dan PIN kasir");
-
-  const handleCloseModal = () => {
-    setModalOpen(false);
-    setMutationError("");
-    setAmBranches([]);
-  };
 
   const handleOpenCreate = () => {
     setEditing(null);
-    setSelectedRole("branch_admin");
-    setAmBranches([]);
     setMutationError("");
     setModalOpen(true);
   };
+
+  const handleEditUser = (user: UserRow) => {
+    setEditing(user);
+    setMutationError("");
+    setModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setModalOpen(false);
+    setEditing(null);
+    setMutationError("");
+  };
+
+  usePageTitle("Manajemen Staf", "Kelola staf sistem dan role");
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
       <PageHeader
         action={{
-          label: "Tambah User",
+          label: "Tambah Staf",
           onClick: handleOpenCreate,
         }}
       />
 
-      <DataTable
-        columns={[
-          ...columns,
-          {
-            key: "actions",
-            header: "",
-            width: "w-12",
-            render: (r) => (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDeleteInfoTarget(r.name);
-                }}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/40 cursor-not-allowed"
-                title="Nonaktifkan melalui edit"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            ),
-          },
-        ]}
-        data={users}
-        keyExtractor={(r) => r.id}
-        onRowClick={(r) => {
-          setEditing(r);
-          setSelectedRole(r.role);
-          setAmBranches(r.role === "area_manager" ? (r.assignedBranches ?? []) : []);
-          setMutationError("");
-          setModalOpen(true);
-        }}
-      />
+      <div className="space-y-4">
+        {groupedStaff.map((group) => (
+          <StaffGroup key={group.id} group={group} onEditUser={handleEditUser} />
+        ))}
+      </div>
 
-      <Modal
+      {groupedStaff.length === 0 && (
+        <div className="text-center py-12">
+          <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">Belum ada staf terdaftar</p>
+        </div>
+      )}
+
+      <StaffModal
+        user={editing}
+        branches={branches}
         open={modalOpen}
         onClose={handleCloseModal}
-        title={editing ? "Edit Pengguna" : "Tambah Pengguna"}
-        size="lg"
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Nama</label>
-              <input
-                name="name"
-                defaultValue={editing?.name ?? ""}
-                required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Email</label>
-              <input
-                name="email"
-                type="email"
-                defaultValue={editing?.email ?? ""}
-                required
-                disabled={!!editing}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
-              />
-            </div>
-          </div>
-
-          {!editing && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Password</label>
-              <input
-                name="password"
-                type="password"
-                required={!editing}
-                minLength={8}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Role</label>
-              <select
-                name="role"
-                defaultValue={editing?.role ?? "branch_admin"}
-                onChange={(e) => setSelectedRole(e.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="super_admin">Super Admin</option>
-                <option value="admin_pusat">Admin Pusat</option>
-                <option value="area_manager">Area Manager</option>
-                <option value="branch_admin">Branch Admin</option>
-                <option value="central_kitchen">Central Kitchen</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Cabang</label>
-              <select
-                name="branchId"
-                defaultValue={editing?.branchId ?? ""}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">-- Pilih Cabang --</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Area Manager: assign branches */}
-          {selectedRole === "area_manager" && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Cabang yang Dikelola</label>
-              <div className="grid grid-cols-2 gap-2 rounded-md border p-3 max-h-40 overflow-y-auto">
-                {branches.map((b) => (
-                  <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <Checkbox
-                      checked={amBranches.includes(b.id)}
-                      onCheckedChange={() => toggleAmBranch(b.id)}
-                    />
-                    <span>{b.name}</span>
-                  </label>
-                ))}
-              </div>
-              {amBranches.length === 0 && (
-                <p className="text-xs text-warning-foreground">
-                  Area Manager harus memiliki minimal 1 cabang yang dikelola.
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* PIN field — only for branch_admin role */}
-            {selectedRole === "branch_admin" && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  PIN (4 digit) <span className="text-destructive">*</span>
-                </label>
-                <input
-                  name="pin"
-                  defaultValue={editing?.pin ?? ""}
-                  required
-                  minLength={4}
-                  maxLength={4}
-                  pattern="\d{4}"
-                  inputMode="numeric"
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-mono tracking-widest"
-                  placeholder="1234"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  PIN unik per cabang. Digunakan untuk login cepat di terminal kasir.
-                </p>
-              </div>
-            )}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Status</label>
-              <select
-                name="status"
-                defaultValue={editing?.status ?? "Active"}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="Active">Aktif</option>
-                <option value="Inactive">Nonaktif</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Mutation error */}
-          {mutationError && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {mutationError}
-            </div>
-          )}
-
-          {/* If role is branch_admin and no branch selected, show warning */}
-          {selectedRole === "branch_admin" && !editing?.branchId && (
-            <p className="text-xs text-warning-foreground">
-              Branch Admin harus memiliki cabang. Pilih cabang sebelum menyimpan.
-            </p>
-          )}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={handleCloseModal}
-              className="h-9 px-4 rounded-md border text-sm"
-            >
-              Batal
-            </button>
-            <button
-              type="submit"
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
-            >
-              {editing ? "Simpan" : "Tambah"}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Info modal for delete-not-available */}
-      <Modal
-        open={!!deleteInfoTarget}
-        onClose={() => setDeleteInfoTarget(null)}
-        title="Nonaktifkan via Edit"
-        size="sm"
-      >
-        <div className="space-y-4">
-          <div className="flex items-start gap-3">
-            <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium">Nonaktifkan pengguna melalui edit.</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Pengguna "{deleteInfoTarget}" tidak dapat dihapus karena data mereka tertaut ke
-                riwayat pesanan dan aktivitas sistem. Untuk menonaktifkan akses, ubah status menjadi
-                "Nonaktif" melalui menu Edit.
-              </p>
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button type="button" variant="outline" onClick={() => setDeleteInfoTarget(null)}>
-              Tutup
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        onSave={handleSave}
+        isLoading={createMutation.isPending || updateMutation.isPending}
+        error={mutationError}
+      />
     </RoleGuard>
   );
 }

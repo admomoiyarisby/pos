@@ -128,16 +128,20 @@ export const updateBranchStaffName = createServerFn({ method: "POST" })
   });
 
 /**
- * Delete a staff name.
+ * Soft-delete a staff name (set active=false).
  */
 export const deleteBranchStaffName = createServerFn({ method: "POST" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat");
 
-    await db.delete(branchStaffNames).where(eq(branchStaffNames.id, data.id));
+    const [updated] = await db
+      .update(branchStaffNames)
+      .set({ active: false, updatedAt: new Date() })
+      .where(eq(branchStaffNames.id, data.id))
+      .returning();
 
-    return { success: true };
+    return { success: true, updated };
   });
 
 // =============================================================================

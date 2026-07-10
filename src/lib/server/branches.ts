@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { branches } from "#/db/schema";
-import { eq, ilike, or, and } from "drizzle-orm";
+import { branches, users } from "#/db/schema";
+import { eq, ilike, or, and, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -14,7 +14,42 @@ const branchInput = z.object({
   active: z.boolean().optional(),
   isOnline: z.boolean().optional(),
   pb1Rate: z.number().int().min(0).max(100).optional(),
+  pin: z.string().length(4).optional(),
+  phone: z.string().max(20).optional(),
+  complaintPhone: z.string().max(20).optional(),
 });
+
+/**
+ * Validate that a PIN is globally unique (across branches and users).
+ * Throws an error if the PIN is already in use.
+ */
+async function validatePinUnique(pin: string, excludeBranchId?: string) {
+  // Check against other branches
+  const branchCondition = excludeBranchId
+    ? and(eq(branches.pin, pin), ne(branches.id, excludeBranchId))
+    : eq(branches.pin, pin);
+
+  const [existingBranch] = await db
+    .select({ id: branches.id, name: branches.name })
+    .from(branches)
+    .where(branchCondition)
+    .limit(1);
+
+  if (existingBranch) {
+    throw new Error(`PIN sudah digunakan oleh cabang "${existingBranch.name}"`);
+  }
+
+  // Check against users
+  const [existingUser] = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(eq(users.pin, pin))
+    .limit(1);
+
+  if (existingUser) {
+    throw new Error(`PIN sudah digunakan oleh staf "${existingUser.name}"`);
+  }
+}
 
 export const getBranches = createServerFn({ method: "GET" })
   .validator((data: { search?: string; type?: "Central" | "Outlet" | null }) => data)
@@ -57,6 +92,11 @@ export const createBranch = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat");
 
+    // Validate PIN uniqueness if provided
+    if (data.pin) {
+      await validatePinUnique(data.pin);
+    }
+
     const [result] = await db
       .insert(branches)
       .values({
@@ -67,6 +107,9 @@ export const createBranch = createServerFn({ method: "POST" })
         active: data.active ?? true,
         isOnline: data.isOnline ?? true,
         pb1Rate: data.pb1Rate ?? 11,
+        pin: data.pin,
+        phone: data.phone,
+        complaintPhone: data.complaintPhone,
       })
       .returning();
 
@@ -79,6 +122,11 @@ export const updateBranch = createServerFn({ method: "POST" })
     const user = await requireRole("super_admin", "admin_pusat");
 
     const { id, ...updates } = data;
+
+    // Validate PIN uniqueness if being updated
+    if (updates.pin) {
+      await validatePinUnique(updates.pin, id);
+    }
 
     const [old] = await db.select().from(branches).where(eq(branches.id, id)).limit(1);
 

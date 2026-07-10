@@ -179,10 +179,22 @@ const navGroups: NavGroup[] = [
         icon: Tag,
         roles: ["super_admin", "admin_pusat"],
       },
-      { label: "Pengguna", to: "/admin/users", icon: Users, roles: ["super_admin"] },
-      { label: "Cabang", to: "/admin/branches", icon: Store, roles: ["super_admin"] },
       { label: "Merek", to: "/admin/brands", icon: Tag, roles: ["super_admin", "admin_pusat"] },
       { label: "Voucher", to: "/admin/vouchers", icon: Percent, roles: ["super_admin"] },
+    ],
+  },
+  {
+    label: "Managerial",
+    roles: ["super_admin", "admin_pusat", "central_kitchen", "area_manager"],
+    items: [
+      { label: "Cabang", to: "/admin/branches", icon: Store, roles: ["super_admin"] },
+      { label: "Staf", to: "/admin/users", icon: Users, roles: ["super_admin"] },
+      {
+        label: "Pengaturan Akun",
+        to: "/settings",
+        icon: Settings,
+        roles: ["super_admin", "admin_pusat", "central_kitchen", "area_manager"],
+      },
     ],
   },
   {
