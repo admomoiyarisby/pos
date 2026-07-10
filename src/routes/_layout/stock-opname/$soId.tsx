@@ -18,6 +18,7 @@ import { openPrintWindow } from "#/lib/print-window";
 import { cn } from "#/lib/utils";
 import { toast } from "sonner";
 import { calculateNasiConversion } from "#/lib/server/nasi-conversion";
+import { usePageTitle } from "#/hooks/usePageTitle";
 
 function loadSoCache(key: string) {
   try {
@@ -256,6 +257,9 @@ function StockOpnameDetailPage() {
   };
 
   const isDev = import.meta.env.DEV;
+  const [realizeModal, setRealizeModal] = useState(false);
+
+  usePageTitle("Opname Stok", `${detail.date} · ${detail.branchName}`);
 
   const handleMarkInvestigation = () => {
     void markInvestigationMutation.mutateAsync({
@@ -346,7 +350,23 @@ function StockOpnameDetailPage() {
                         pattern="[0-9]*"
                         value={inputValue}
                         onChange={(e) => handleInputChange(item.id, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const inputs = Array.from(
+                              document.querySelectorAll<HTMLInputElement>(
+                                "input[inputmode='numeric']",
+                              ),
+                            );
+                            const currentIdx = inputs.indexOf(e.currentTarget);
+                            if (currentIdx < inputs.length - 1) {
+                              inputs[currentIdx + 1].focus();
+                              inputs[currentIdx + 1].select();
+                            }
+                          }
+                        }}
                         disabled={detail.status === "Approved"}
+                        aria-label={`${item.ingredientName} stok fisik`}
                         className={cn(
                           "h-8 w-24 rounded-md border bg-background px-2 text-sm text-right disabled:opacity-50",
                           !touchedItems.has(item.id) && detail.status !== "Approved"
@@ -432,7 +452,7 @@ function StockOpnameDetailPage() {
           {canMarkInvestigation && (
             <button
               onClick={() => setInvestigationModal(true)}
-              className="h-10 px-6 rounded-md bg-warning text-warning-foreground text-sm font-medium hover:bg-warning/90"
+              className="h-8 px-3 rounded-md bg-warning text-warning-foreground text-xs font-medium hover:bg-warning/90"
             >
               Tandai Investigasi
             </button>
@@ -442,7 +462,7 @@ function StockOpnameDetailPage() {
             <button
               onClick={handleUpdateCounts}
               disabled={updateCountsMutation.isPending}
-              className="h-10 px-6 rounded-md bg-warning text-warning-foreground text-sm font-medium hover:bg-warning/90 disabled:opacity-50"
+              className="h-8 px-3 rounded-md bg-warning text-warning-foreground text-xs font-medium hover:bg-warning/90 disabled:opacity-50"
             >
               {updateCountsMutation.isPending ? "Memperbarui..." : "Perbarui Hitungan"}
             </button>
@@ -451,7 +471,7 @@ function StockOpnameDetailPage() {
           {canApprove && detail.status !== "Approved" && (
             <button
               onClick={() => setApproveModal(true)}
-              className="h-10 px-6 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+              className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-medium"
             >
               Setujui & Sesuaikan
             </button>
@@ -460,17 +480,9 @@ function StockOpnameDetailPage() {
           {/* ID12: Realize SO button - only on 25th for admin_pusat/super_admin */}
           {canRealize && (
             <button
-              onClick={() => {
-                if (
-                  confirm(
-                    "Apakah Anda yakin ingin me-realize Stock Opname ini? Stok akan disesuaikan ke stok fisik.",
-                  )
-                ) {
-                  void realizeMutation.mutateAsync({ data: { soId } });
-                }
-              }}
+              onClick={() => setRealizeModal(true)}
               disabled={realizeMutation.isPending}
-              className="h-10 px-6 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+              className="h-8 px-3 rounded-md bg-green-600 text-white text-xs font-medium hover:bg-green-700 disabled:opacity-50"
             >
               {realizeMutation.isPending ? "Memproses..." : "Realize SO"}
             </button>
@@ -563,6 +575,50 @@ function StockOpnameDetailPage() {
               className="h-9 px-4 rounded-md bg-amber-600 text-white text-sm font-medium disabled:opacity-50"
             >
               {markInvestigationMutation.isPending ? "Memproses..." : "Tandai Investigasi"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={realizeModal}
+        onClose={() => setRealizeModal(false)}
+        title="Realize Stock Opname"
+      >
+        <div className="space-y-4">
+          <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+            <p className="font-medium">Konfirmasi Realisasi</p>
+            <p className="mt-1">
+              Stok fisik akan disetel sebagai stok baru. Selisih akan dibuatkan jurnal ledger.
+            </p>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            <p>
+              Tanggal: <span className="font-medium text-foreground">{detail.date}</span>
+            </p>
+            <p>
+              Cabang: <span className="font-medium text-foreground">{detail.branchName}</span>
+            </p>
+            <p className="mt-2 text-xs">
+              Aksi ini tidak dapat dibatalkan. Hanya dapat dilakukan pada tanggal 25.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setRealizeModal(false)}
+              className="h-9 px-4 rounded-md border text-sm"
+            >
+              Batal
+            </button>
+            <button
+              onClick={() => {
+                void realizeMutation.mutateAsync({ data: { soId } });
+                setRealizeModal(false);
+              }}
+              disabled={realizeMutation.isPending}
+              className="h-9 px-4 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+            >
+              {realizeMutation.isPending ? "Memproses..." : "Ya, Realize"}
             </button>
           </div>
         </div>

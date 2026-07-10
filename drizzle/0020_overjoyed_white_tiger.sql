@@ -1,0 +1,1 @@
+ALTER TABLE "ingredients" ADD COLUMN "is_nasi" boolean DEFAULT false NOT NULL;

@@ -141,6 +141,13 @@
       "when": 1783692881235,
       "tag": "0019_wide_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1783711134314,
+      "tag": "0020_overjoyed_white_tiger",
+      "breakpoints": true
     }
   ]
 }
