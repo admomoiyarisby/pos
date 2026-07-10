@@ -33,7 +33,7 @@ function NewProcurementPage() {
 
   const { data: ingredients = [] } = useQuery({
     queryKey: ["ingredients"],
-    queryFn: () => getIngredients({ data: {} }),
+    queryFn: () => getIngredients({ data: { excludeNasi: true } }),
   });
 
   // Local draft state. Persisted to the server on "Simpan sebagai Draft"

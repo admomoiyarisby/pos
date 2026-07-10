@@ -30,6 +30,7 @@ export const getIngredients = createServerFn({ method: "GET" })
       search?: string;
       category?: "Fresh" | "Dry" | "Packaging" | null;
       skuType?: "RM" | "SFG" | "FG" | null;
+      excludeNasi?: boolean; // Hide Nasi from non-stock-opname contexts
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -47,6 +48,9 @@ export const getIngredients = createServerFn({ method: "GET" })
     }
     if (data.skuType) {
       conditions.push(eq(ingredients.skuType, data.skuType));
+    }
+    if (data.excludeNasi) {
+      conditions.push(eq(ingredients.isNasi, false));
     }
 
     const result = await db

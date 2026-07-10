@@ -25,7 +25,7 @@ export const Route = createFileRoute("/_layout/scm-transfers/new")({
   loader: async () => {
     const [branches, ingredients] = await Promise.all([
       getBranches({ data: {} }),
-      getIngredients({ data: {} }),
+      getIngredients({ data: { excludeNasi: true } }),
     ]);
     return { branches, ingredients };
   },
@@ -163,7 +163,10 @@ function NewMutasiPage() {
       void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
       void queryClient.invalidateQueries({ queryKey: ["inventory-branch"] });
 
-      navigate({ to: "/scm-transfers/$transferId", params: { transferId: result.transfer.id } });
+      void navigate({
+        to: "/scm-transfers/$transferId",
+        params: { transferId: result.transfer.id },
+      });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Gagal membuat mutasi");
     } finally {

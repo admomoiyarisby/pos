@@ -66,7 +66,7 @@ export const Route = createFileRoute("/_layout/waste/")({
   component: WastePage,
   loader: async () => {
     const entries = await getWasteEntries({ data: {} });
-    const ingredients = await getIngredients({ data: {} });
+    const ingredients = await getIngredients({ data: { excludeNasi: true } });
     const branches = await getBranches({ data: {} });
     return { entries, ingredients, branches };
   },

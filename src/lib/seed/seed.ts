@@ -268,6 +268,7 @@ export async function seedIngredients(idMap: IdMap) {
           rop: ing.rop,
           moq: ing.moq,
           countable: ing.countable,
+          isNasi: (ing as any).isNasi ?? false,
         })
         .returning({ id: ingredientsTable.id });
       idMap.ingredient.set(ing.protoId, inserted.id);
@@ -423,8 +424,8 @@ export async function seedRecipesPass1(idMap: IdMap) {
       }
     }
 
-    if ("modifierGroupProtoIds" in r && r.modifierGroupProtoIds) {
-      for (const mgpId of r.modifierGroupProtoIds) {
+    if ("modifierGroupProtoIds" in r && (r as any).modifierGroupProtoIds) {
+      for (const mgpId of (r as any).modifierGroupProtoIds) {
         const mgId = idMap.modifierGroup.get(mgpId);
         if (!mgId) continue;
         const existingRmg = await db
@@ -447,10 +448,10 @@ export async function seedRecipesPass1(idMap: IdMap) {
   }
 
   for (const r of RECIPES_DATA) {
-    if (!("childRecipes" in r) || !r.childRecipes) continue;
+    if (!("childRecipes" in r) || !(r as any).childRecipes) continue;
     const parentId = idMap.recipe.get(r.protoId);
     if (!parentId) continue;
-    for (const cr of r.childRecipes) {
+    for (const cr of (r as any).childRecipes) {
       const childId = idMap.recipe.get(cr.recipeProtoId);
       if (!childId) continue;
       const existingCr = await db

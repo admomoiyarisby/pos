@@ -31,7 +31,7 @@ export const Route = createFileRoute("/_layout/purchase-orders/$poId")({
   loader: async ({ params }) => {
     const po = await getPurchaseOrder({ data: { id: params.poId } });
     const branches = await getBranches({ data: {} });
-    const ingredients = await getIngredients({ data: {} });
+    const ingredients = await getIngredients({ data: { excludeNasi: true } });
     return { po, branches, ingredients };
   },
 });

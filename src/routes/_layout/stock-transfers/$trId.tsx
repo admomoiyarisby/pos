@@ -23,7 +23,7 @@ export const Route = createFileRoute("/_layout/stock-transfers/$trId")({
   loader: async ({ params }) => {
     const transfer = await getStockTransfer({ data: { id: params.trId } });
     const branches = await getBranches({ data: {} });
-    const ingredients = await getIngredients({ data: {} });
+    const ingredients = await getIngredients({ data: { excludeNasi: true } });
     return { transfer, branches, ingredients };
   },
 });

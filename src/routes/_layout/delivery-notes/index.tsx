@@ -49,7 +49,7 @@ export const Route = createFileRoute("/_layout/delivery-notes/")({
   loader: async () => {
     const dns = await getDeliveryNotes({ data: {} });
     const branches = await getBranches({ data: {} });
-    const ingredients = await getIngredients({ data: {} });
+    const ingredients = await getIngredients({ data: { excludeNasi: true } });
     return { dns, branches, ingredients };
   },
 });

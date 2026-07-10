@@ -47,7 +47,7 @@ export const Route = createFileRoute("/_layout/supplier-deliveries/")({
   component: SupplierDeliveriesPage,
   loader: async () => {
     const deliveries = await getSupplierDeliveries();
-    const ingredients = await getIngredients({ data: {} });
+    const ingredients = await getIngredients({ data: { excludeNasi: true } });
     const suppliersList = await getSuppliers();
     return { deliveries, ingredients, suppliersList };
   },

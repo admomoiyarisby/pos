@@ -59,7 +59,7 @@ export const Route = createFileRoute("/_layout/stock-transfers/")({
   loader: async () => {
     const transfers = await getStockTransfers({ data: {} });
     const branches = await getBranches({ data: {} });
-    const ingredients = await getIngredients({ data: {} });
+    const ingredients = await getIngredients({ data: { excludeNasi: true } });
     return { transfers, branches, ingredients };
   },
 });

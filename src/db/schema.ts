@@ -265,6 +265,7 @@ export const ingredients = pgTable("ingredients", {
   moq: integer("moq").notNull().default(1),
   status: ingredientStatusEnum("status").notNull().default("Active"),
   countable: boolean("countable").notNull().default(true),
+  isNasi: boolean("is_nasi").notNull().default(false), // Special: cooked rice, only in stock opname
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });

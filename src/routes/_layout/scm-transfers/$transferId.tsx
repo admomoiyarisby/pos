@@ -34,7 +34,7 @@ export const Route = createFileRoute("/_layout/scm-transfers/$transferId")({
     const [data, branches, ingredients] = await Promise.all([
       getMutasiTransfer({ data: { transferId: params.transferId } }),
       getBranches({ data: {} }),
-      getIngredients({ data: {} }),
+      getIngredients({ data: { excludeNasi: true } }),
     ]);
     return { initial: data, initialBranches: branches, initialIngredients: ingredients };
   },

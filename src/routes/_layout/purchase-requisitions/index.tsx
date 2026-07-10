@@ -55,7 +55,7 @@ export const Route = createFileRoute("/_layout/purchase-requisitions/")({
   component: PRPage,
   loader: async () => {
     const prs = await getPurchaseRequisitions({ data: {} });
-    const ingredients = await getIngredients({ data: {} });
+    const ingredients = await getIngredients({ data: { excludeNasi: true } });
     const branches = await getBranches({ data: {} });
     return { prs, ingredients, branches };
   },

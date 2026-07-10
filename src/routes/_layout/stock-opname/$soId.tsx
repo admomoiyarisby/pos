@@ -17,18 +17,7 @@ import { Badge } from "#/components/ui/badge";
 import { openPrintWindow } from "#/lib/print-window";
 import { cn } from "#/lib/utils";
 import { toast } from "sonner";
-
-interface SOItem {
-  id: string;
-  ingredientId: string;
-  ingredientName: string | null;
-  ingredientCode: string | null;
-  systemStock: number;
-  physicalStock: number;
-  variance: number;
-  variancePercentage: string | null;
-  investigationNote: string | null;
-}
+import { calculateNasiConversion } from "#/lib/server/nasi-conversion";
 
 function loadSoCache(key: string) {
   try {
@@ -206,9 +195,7 @@ function StockOpnameDetailPage() {
 
   const buildItems = () => {
     // 1. Check that EVERY item has an explicit entry in physicalInputs
-    const missingItems = detail.items.filter(
-      (item: SOItem) => physicalInputs[item.id] === undefined,
-    );
+    const missingItems = detail.items.filter((item: any) => physicalInputs[item.id] === undefined);
     if (missingItems.length > 0) {
       setSubmitError(
         `Masih ada ${missingItems.length} item yang belum diisi. Semua item wajib diisi sebelum submit.`,
@@ -217,7 +204,7 @@ function StockOpnameDetailPage() {
     }
 
     // 2. Build payload only from explicitly entered values
-    const items = detail.items.map((item: SOItem) => ({
+    const items = detail.items.map((item: any) => ({
       itemId: item.id,
       physicalStock: Number(physicalInputs[item.id]),
     }));
@@ -335,7 +322,7 @@ function StockOpnameDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {detail.items.map((item: SOItem, idx: number) => {
+              {detail.items.map((item: any, idx: number) => {
                 const inputValue =
                   physicalInputs[item.id] ??
                   (item.physicalStock > 0 ? String(item.physicalStock) : "");
@@ -395,6 +382,38 @@ function StockOpnameDetailPage() {
           <div className="rounded-md bg-warning/10 border border-warning/20 p-4">
             <p className="text-sm font-medium text-warning-foreground mb-1">Catatan Investigasi</p>
             <p className="text-sm text-warning-foreground/80">{detail.investigationNote}</p>
+          </div>
+        )}
+
+        {/* Nasi Conversion Display */}
+        {detail.items.some((item: any) => item.isNasi) && (
+          <div className="rounded-md border bg-blue-50/50 p-4">
+            <p className="text-sm font-medium mb-2">Konversi Nasi Putih → Bahan Baku</p>
+            <p className="text-xs text-muted-foreground mb-3">
+              Stok fisik Nasi akan dikonversi ke bahan baku saat Realize SO.
+            </p>
+            {detail.items
+              .filter((item: any) => item.isNasi)
+              .map((item: any) => {
+                const portions = physicalInputs[item.id] ?? String(item.physicalStock);
+                const numPortions = Number(portions) || 0;
+                const conversions = calculateNasiConversion(numPortions);
+                return (
+                  <div key={item.id} className="space-y-2">
+                    <div className="text-sm font-medium">{numPortions} porsi Nasi Putih</div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {conversions.map((conv) => (
+                        <div key={conv.ingredientName} className="text-xs">
+                          <span className="text-muted-foreground">{conv.ingredientName}:</span>
+                          <span className="ml-1 font-medium">
+                            {conv.totalAmount.toLocaleString("id-ID")} {conv.unit}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         )}
 

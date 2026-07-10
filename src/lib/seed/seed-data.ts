@@ -2040,6 +2040,21 @@ export const INGREDIENTS = [
     moq: 1,
     countable: true,
   },
+  {
+    protoId: "ing-nasi",
+    code: "ING-NASI",
+    name: "Nasi Putih",
+    category: "Fresh" as const,
+    skuType: "FG" as const,
+    purchaseUnit: "porsi",
+    stockUnit: "porsi",
+    conversionFactor: 1,
+    averageCost: 0,
+    rop: 0,
+    moq: 1,
+    countable: true,
+    isNasi: true,
+  },
 ];
 
 export const MODIFIER_GROUPS_DATA = [

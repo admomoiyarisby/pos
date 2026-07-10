@@ -289,6 +289,7 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
         ingredientName: ingredients.name,
         ingredientCode: ingredients.code,
         ingredientCategory: ingredients.category,
+        isNasi: ingredients.isNasi,
       })
       .from(stockOpnameItems)
       .leftJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
@@ -685,19 +686,80 @@ export const realizeStockOpname = createServerFn({ method: "POST" })
       throw new Error("Stock Opname sudah di-realize sebelumnya");
     }
 
-    // 3. Get SO items
+    // 3. Get SO items with ingredient info
     const items = await db
       .select({
         id: stockOpnameItems.id,
         ingredientId: stockOpnameItems.ingredientId,
         physicalStock: stockOpnameItems.physicalStock,
+        isNasi: ingredients.isNasi,
+        ingredientName: ingredients.name,
       })
       .from(stockOpnameItems)
+      .innerJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
       .where(eq(stockOpnameItems.stockOpnameId, data.soId));
+
+    // Import Nasi conversion
+    const { calculateNasiConversion } = await import("./nasi-conversion");
+    const { ingredients: ingredientsTable } = await import("#/db/schema");
 
     // 4. For each item, adjust inventory to match physical stock
     for (const item of items) {
-      // Get current inventory for this ingredient at this branch
+      // Special handling for Nasi: convert to raw ingredients
+      if (item.isNasi) {
+        const nasiPortions = item.physicalStock; // Physical stock = portions of Nasi
+        const conversions = calculateNasiConversion(nasiPortions);
+
+        for (const conv of conversions) {
+          // Find the raw ingredient by name
+          const [rawIngredient] = await db
+            .select({ id: ingredientsTable.id })
+            .from(ingredientsTable)
+            .where(eq(ingredientsTable.name, conv.ingredientName))
+            .limit(1);
+
+          if (!rawIngredient) continue;
+
+          // Get current inventory for this raw ingredient
+          const [inv] = await db
+            .select()
+            .from(inventory)
+            .where(
+              and(
+                eq(inventory.branchId, so.branchId),
+                eq(inventory.ingredientId, rawIngredient.id),
+              ),
+            )
+            .limit(1);
+
+          if (inv) {
+            // Nasi was made from raw ingredients, so subtract them
+            const rawAmount = conv.totalAmount;
+            const newQty = Math.max(0, inv.quantity - rawAmount);
+
+            await db
+              .update(inventory)
+              .set({ quantity: newQty, lastUpdated: new Date() })
+              .where(eq(inventory.id, inv.id));
+
+            if (rawAmount > 0) {
+              await db.insert(stockLedger).values({
+                branchId: so.branchId,
+                ingredientId: rawIngredient.id,
+                type: "OUT",
+                quantity: rawAmount,
+                balance: newQty,
+                reference: `SO:${data.soId}`,
+                notes: `SO Realization: Nasi ${nasiPortions} porsi → ${conv.ingredientName} -${rawAmount}${conv.unit}`,
+              });
+            }
+          }
+        }
+        // Skip the normal inventory adjustment for Nasi
+        continue;
+      }
+
+      // Normal items: adjust inventory to match physical stock
       const [inv] = await db
         .select()
         .from(inventory)

@@ -36,7 +36,7 @@ export const Route = createFileRoute("/_layout/yield-tracking")({
   component: YieldTrackingPage,
   loader: async () => {
     const conversions = await getYieldConversions({ data: {} });
-    const ingredients = await getIngredients({ data: {} });
+    const ingredients = await getIngredients({ data: { excludeNasi: true } });
     const branches = await getBranches({ data: {} });
     return { conversions, ingredients, branches };
   },
