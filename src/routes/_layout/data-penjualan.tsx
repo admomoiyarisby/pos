@@ -6,6 +6,7 @@ import { Trash2, Pencil, Plus, ChevronDown, ChevronRight, Search } from "lucide-
 import RoleGuard from "#/components/RoleGuard";
 import Modal from "#/components/ui/Modal";
 import { usePageTitle } from "#/hooks/usePageTitle";
+import { useAuth } from "#/lib/auth-context";
 import { getBranches } from "#/lib/server/branches";
 import { getRecipesWithHpp } from "#/lib/server/finance";
 import {
@@ -47,6 +48,7 @@ function DataPenjualanPage() {
   const { branches } = Route.useLoaderData();
   usePageTitle("Data Penjualan", "Kelola data penjualan semua channel");
 
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const now = new Date();
 
@@ -133,7 +135,7 @@ function DataPenjualanPage() {
     }
   }, [deletingOrder, deleteMutation]);
 
-  const canEdit = true; // super_admin and admin_pusat can edit
+  const canEdit = user?.role === "super_admin" || user?.role === "admin_pusat";
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
@@ -201,17 +203,13 @@ function DataPenjualanPage() {
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <SummaryCard label="Total Order" value={String(summary?.totals.orderCount ?? 0)} />
-        <SummaryCard
-          label="Total Omzet"
-          value={formatRp(summary?.totals.totalAmount ?? 0)}
-          highlight
-        />
-        <SummaryCard label="Total HPP" value={formatRp(summary?.totals.totalCogs ?? 0)} />
-        <SummaryCard
-          label="Gross Profit"
+      {/* Summary bar */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-6 py-3 px-4 rounded-lg border bg-muted/30">
+        <SummaryItem label="Order" value={String(summary?.totals.orderCount ?? 0)} />
+        <SummaryItem label="Omzet" value={formatRp(summary?.totals.totalAmount ?? 0)} />
+        <SummaryItem label="HPP" value={formatRp(summary?.totals.totalCogs ?? 0)} />
+        <SummaryItem
+          label="Profit"
           value={formatRp((summary?.totals.totalAmount ?? 0) - (summary?.totals.totalCogs ?? 0))}
           positive={(summary?.totals.totalAmount ?? 0) - (summary?.totals.totalCogs ?? 0) >= 0}
         />
@@ -325,6 +323,7 @@ function DataPenjualanPage() {
           order={editingOrder}
           recipes={recipes ?? []}
           branches={branches}
+          defaultDate={dateFrom}
           onClose={() => {
             setEditModalOpen(false);
             setEditingOrder(null);
@@ -483,29 +482,27 @@ function OrderRow({
   );
 }
 
-/* ─── Summary Card ───────────────────────────────────────────── */
+/* ─── Summary Item (inline) ──────────────────────────────────── */
 
-function SummaryCard({
+function SummaryItem({
   label,
   value,
-  highlight,
   positive,
 }: {
   label: string;
   value: string;
-  highlight?: boolean;
   positive?: boolean;
 }) {
   return (
-    <div className={`rounded-lg border p-3 ${highlight ? "bg-primary/5" : ""}`}>
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
-      <p
-        className={`text-lg font-semibold tabular-nums ${
+    <div className="flex items-baseline gap-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span
+        className={`text-sm font-semibold tabular-nums ${
           positive === false ? "text-destructive" : positive ? "text-emerald-600" : ""
         }`}
       >
         {value}
-      </p>
+      </span>
     </div>
   );
 }
@@ -524,12 +521,14 @@ function OrderEditModal({
   order,
   recipes,
   branches,
+  defaultDate,
   onClose,
   onSaved,
 }: {
   order: any | null;
   recipes: { id: string; name: string; totalCogs: number }[];
   branches: { id: string; name: string }[];
+  defaultDate?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -544,7 +543,7 @@ function OrderEditModal({
     if (order?.createdAt) {
       return new Date(order.createdAt).toISOString().split("T")[0];
     }
-    return new Date().toISOString().split("T")[0];
+    return defaultDate ?? new Date().toISOString().split("T")[0];
   });
   const [items, setItems] = useState<OrderItemInput[]>([]);
 
@@ -622,7 +621,7 @@ function OrderEditModal({
     branchId && channel && items.length > 0 && items.every((i) => i.recipeId && i.quantity > 0);
 
   return (
-    <Modal open onClose={onClose} title={isEdit ? "Edit Pesanan" : "Tambah Pesanan"}>
+    <Modal open onClose={onClose} title={isEdit ? "Edit Pesanan" : "Tambah Pesanan"} size="xl">
       {isEdit && orderLoading ? (
         <div className="py-8 text-center text-muted-foreground">Memuat detail…</div>
       ) : (
