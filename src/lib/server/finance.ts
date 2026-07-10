@@ -21,6 +21,7 @@ import {
   wasteEntries,
   stockTransfers,
   deliveryNotes,
+  dailyOverrides,
 } from "#/db/schema";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
@@ -114,6 +115,7 @@ export interface DailyFinanceRow {
   omzet: number;
   grossProfit: number;
   margin: number;
+  hasOmzetOverride: boolean;
 }
 
 export const getDailyFinanceSummary = createServerFn({ method: "GET" })
@@ -137,9 +139,28 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
       .groupBy(sql`DATE(${orders.createdAt})`)
       .orderBy(sql`DATE(${orders.createdAt})`);
 
+    // Fetch overrides for this branch/date range
+    const overrideConditions = [];
+    if (data.branchId) overrideConditions.push(eq(dailyOverrides.branchId, data.branchId));
+    if (data.dateFrom) overrideConditions.push(gte(dailyOverrides.date, data.dateFrom));
+    if (data.dateTo) overrideConditions.push(lte(dailyOverrides.date, data.dateTo));
+
+    const overrides = await db
+      .select()
+      .from(dailyOverrides)
+      .where(overrideConditions.length > 0 ? and(...overrideConditions) : undefined);
+
+    // Build override map: date -> { field -> value }
+    const overrideMap = new Map<string, Record<string, number>>();
+    for (const o of overrides) {
+      if (!overrideMap.has(o.date)) overrideMap.set(o.date, {});
+      overrideMap.get(o.date)![o.field] = o.value;
+    }
+
     return result.map((row) => {
       const hpp = Number(row.hpp);
-      const omzet = Number(row.omzet);
+      const dayOverrides = overrideMap.get(row.tanggal) ?? {};
+      const omzet = dayOverrides.omzet ?? Number(row.omzet);
       const grossProfit = omzet - hpp;
       const margin = omzet > 0 ? grossProfit / omzet : 0;
       return {
@@ -148,8 +169,44 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
         omzet,
         grossProfit,
         margin,
+        hasOmzetOverride: dayOverrides.omzet !== undefined,
       };
     });
+  });
+
+export const upsertDailyOverride = createServerFn({ method: "POST" })
+  .validator((data: { branchId: string; date: string; field: string; value: number }) => data)
+  .handler(async ({ data }) => {
+    await requireRole("super_admin");
+
+    // Check if override exists
+    const existing = await db
+      .select()
+      .from(dailyOverrides)
+      .where(
+        and(
+          eq(dailyOverrides.branchId, data.branchId),
+          eq(dailyOverrides.date, data.date),
+          eq(dailyOverrides.field, data.field),
+        ),
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db
+        .update(dailyOverrides)
+        .set({ value: data.value, updatedAt: new Date() })
+        .where(eq(dailyOverrides.id, existing[0].id));
+    } else {
+      await db.insert(dailyOverrides).values({
+        branchId: data.branchId,
+        date: data.date,
+        field: data.field,
+        value: data.value,
+      });
+    }
+
+    return { success: true };
   });
 
 export const createManualRevenue = createServerFn({ method: "POST" })

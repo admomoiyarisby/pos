@@ -1398,6 +1398,26 @@ export const operationalExpenses = pgTable(
   ],
 );
 
+export const dailyOverrides = pgTable(
+  "daily_overrides",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    date: text("date").notNull(),
+    field: text("field").notNull(), // "omzet", "hpp", etc.
+    value: integer("value").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("do_branch_idx").on(t.branchId),
+    index("do_date_idx").on(t.date),
+    unique("do_branch_date_field_idx").on(t.branchId, t.date, t.field),
+  ],
+);
+
 // =============================================================================
 // MODULE 6 — AUDIT & STOCK OPNAME
 // =============================================================================
@@ -2499,6 +2519,10 @@ export const operationalExpensesRelations = relations(operationalExpenses, ({ on
     fields: [operationalExpenses.submittedBy],
     references: [users.id],
   }),
+}));
+
+export const dailyOverridesRelations = relations(dailyOverrides, ({ one }) => ({
+  branch: one(branches, { fields: [dailyOverrides.branchId], references: [branches.id] }),
 }));
 
 // ─── Audit & SO ───

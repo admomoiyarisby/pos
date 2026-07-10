@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -7,15 +7,26 @@ import Modal from "#/components/ui/Modal";
 import {
   getFinanceSummary,
   getDailyFinanceSummary,
+  getRecipesWithHpp,
+  getEmployeeMealSummary,
+  getPencatatanManualSummary,
+  upsertDailyOverride,
   createManualRevenue,
   createChannelRevenue,
   createManualExpense,
   getManualExpenses,
-  deleteManualExpense,
   printFinancePage,
 } from "#/lib/server/finance";
 import { getBranches } from "#/lib/server/branches";
-import { TrendingDown, PiggyBank, Percent, Receipt } from "lucide-react";
+import {
+  TrendingDown,
+  PiggyBank,
+  Percent,
+  Receipt,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+} from "lucide-react";
 import { formatRp } from "#/lib/utils";
 import { openPrintWindow } from "#/lib/print-window";
 import { toast } from "sonner";
@@ -29,12 +40,122 @@ export const Route = createFileRoute("/_layout/finance/")({
   },
 });
 
+// Period types
+type PeriodType = "bulanan" | "mingguan" | "harian";
+
+// Helper: get weeks in a month
+function getWeeksInMonth(year: number, month: number) {
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return [
+    {
+      label: "Minggu 1: 1-7",
+      from: `${year}-${String(month + 1).padStart(2, "0")}-01`,
+      to: `${year}-${String(month + 1).padStart(2, "0")}-07`,
+    },
+    {
+      label: "Minggu 2: 8-14",
+      from: `${year}-${String(month + 1).padStart(2, "0")}-08`,
+      to: `${year}-${String(month + 1).padStart(2, "0")}-14`,
+    },
+    {
+      label: "Minggu 3: 15-21",
+      from: `${year}-${String(month + 1).padStart(2, "0")}-15`,
+      to: `${year}-${String(month + 1).padStart(2, "0")}-21`,
+    },
+    {
+      label: `Minggu 4: 22-${lastDay}`,
+      from: `${year}-${String(month + 1).padStart(2, "0")}-22`,
+      to: `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
+    },
+  ];
+}
+
+// Helper: get months list (last 12 months)
+function getMonthsList() {
+  const months = [];
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({
+      label: d.toLocaleDateString("id-ID", { month: "long", year: "numeric" }),
+      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      year: d.getFullYear(),
+      month: d.getMonth(),
+    });
+  }
+  return months;
+}
+
+// Inline edit cell component
+function EditableOmzetCell({
+  value,
+  hasOverride,
+  onSave,
+}: {
+  value: number;
+  hasOverride: boolean;
+  onSave: (newValue: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value);
+
+  const handleSave = useCallback(() => {
+    if (editValue !== value) {
+      onSave(editValue);
+    }
+    setEditing(false);
+  }, [editValue, value, onSave]);
+
+  if (editing) {
+    return (
+      <input
+        type="number"
+        value={editValue}
+        onChange={(e) => setEditValue(Number(e.target.value) || 0)}
+        onBlur={handleSave}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") handleSave();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        className="w-28 h-8 rounded border border-primary bg-blue-50 px-2 text-sm text-right font-medium"
+        autoFocus
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditValue(value);
+        setEditing(true);
+      }}
+      className={`group flex items-center gap-1 text-right font-medium ${
+        hasOverride ? "bg-blue-50 px-2 py-1 rounded" : ""
+      } hover:bg-blue-100 transition-colors cursor-pointer`}
+      title={hasOverride ? "Override (klik untuk edit)" : "Klik untuk edit"}
+    >
+      {formatRp(value)}
+      <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground" />
+    </button>
+  );
+}
+
 function FinancePage() {
   const { summary: initial, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [revenueType, setRevenueType] = useState<"manual" | "channel">("manual");
+
+  // Period state
+  const [periodType, setPeriodType] = useState<PeriodType>("bulanan");
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [selectedWeek, setSelectedWeek] = useState(0);
   const [dateRange, setDateRange] = useState(() => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -46,7 +167,6 @@ function FinancePage() {
 
   // Branch state
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
-  const [checkedBranches, setCheckedBranches] = useState<Set<string>>(new Set());
 
   // Selected day for analytics panel
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -54,22 +174,41 @@ function FinancePage() {
   // Christopher input
   const [christopher, setChristopher] = useState<number>(0);
 
-  // Initialize checked branches
-  useMemo(() => {
-    if (branches.length > 0 && checkedBranches.size === 0) {
-      setCheckedBranches(new Set(branches.map((b) => b.id)));
+  // Collapsible filter sections
+  const [filterExpanded, setFilterExpanded] = useState<Record<PeriodType, boolean>>({
+    bulanan: true,
+    mingguan: false,
+    harian: false,
+  });
+
+  // Calculate date range based on period
+  const effectiveDateRange = useMemo(() => {
+    if (periodType === "bulanan") {
+      const [year, month] = selectedMonth.split("-").map(Number);
+      const lastDay = new Date(year, month, 0).getDate();
+      return {
+        from: `${selectedMonth}-01`,
+        to: `${selectedMonth}-${String(lastDay).padStart(2, "0")}`,
+      };
     }
-  }, [branches]);
+    if (periodType === "mingguan") {
+      const [year, month] = selectedMonth.split("-").map(Number);
+      const weeks = getWeeksInMonth(year, month);
+      const week = weeks[selectedWeek];
+      return { from: week.from, to: week.to };
+    }
+    return dateRange;
+  }, [periodType, selectedMonth, selectedWeek, dateRange]);
 
   const branchId = selectedBranchId || undefined;
 
   const { data: summary } = useQuery({
-    queryKey: ["finance-summary", dateRange.from, dateRange.to, branchId],
+    queryKey: ["finance-summary", effectiveDateRange.from, effectiveDateRange.to, branchId],
     queryFn: () =>
       getFinanceSummary({
         data: {
-          dateFrom: dateRange.from || undefined,
-          dateTo: dateRange.to || undefined,
+          dateFrom: effectiveDateRange.from || undefined,
+          dateTo: effectiveDateRange.to || undefined,
           branchId,
         },
       }),
@@ -77,27 +216,69 @@ function FinancePage() {
   });
 
   const { data: dailyRows } = useQuery({
-    queryKey: ["daily-finance", dateRange.from, dateRange.to, branchId],
+    queryKey: ["daily-finance", effectiveDateRange.from, effectiveDateRange.to, branchId],
     queryFn: () =>
       getDailyFinanceSummary({
         data: {
-          dateFrom: dateRange.from || undefined,
-          dateTo: dateRange.to || undefined,
+          dateFrom: effectiveDateRange.from || undefined,
+          dateTo: effectiveDateRange.to || undefined,
           branchId,
         },
       }),
   });
 
   const { data: expenses } = useQuery({
-    queryKey: ["manual-expenses", dateRange.from, dateRange.to, branchId],
+    queryKey: ["manual-expenses", effectiveDateRange.from, effectiveDateRange.to, branchId],
     queryFn: () =>
       getManualExpenses({
         data: {
-          dateFrom: dateRange.from || undefined,
-          dateTo: dateRange.to || undefined,
+          dateFrom: effectiveDateRange.from || undefined,
+          dateTo: effectiveDateRange.to || undefined,
           branchId,
         },
       }),
+  });
+
+  // Pencatatan Manual data (monthly only)
+  const { data: recipesData } = useQuery({
+    queryKey: ["recipes-hpp"],
+    queryFn: () => getRecipesWithHpp({ data: {} }),
+    enabled: periodType === "bulanan",
+  });
+
+  const { data: employeeMeals } = useQuery({
+    queryKey: ["employee-meals", effectiveDateRange.from, effectiveDateRange.to, branchId],
+    queryFn: () =>
+      getEmployeeMealSummary({
+        data: {
+          dateFrom: effectiveDateRange.from!,
+          dateTo: effectiveDateRange.to!,
+          branchId,
+        },
+      }),
+    enabled: periodType === "bulanan",
+  });
+
+  const { data: pmSummary } = useQuery({
+    queryKey: ["pm-summary", effectiveDateRange.from, effectiveDateRange.to, branchId],
+    queryFn: () =>
+      getPencatatanManualSummary({
+        data: {
+          dateFrom: effectiveDateRange.from!,
+          dateTo: effectiveDateRange.to!,
+          branchId,
+        },
+      }),
+    enabled: periodType === "bulanan",
+  });
+
+  // Omzet override mutation
+  const upsertOverrideMutation = useMutation({
+    mutationFn: upsertDailyOverride,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["daily-finance"] });
+      void queryClient.invalidateQueries({ queryKey: ["finance-summary"] });
+    },
   });
 
   const createManualMutation = useMutation({
@@ -123,23 +304,13 @@ function FinancePage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["finance-summary"] });
       void queryClient.invalidateQueries({ queryKey: ["manual-expenses"] });
+      void queryClient.invalidateQueries({ queryKey: ["expenses-by-category"] });
+      void queryClient.invalidateQueries({ queryKey: ["pm-summary"] });
       setExpenseModalOpen(false);
       toast.success("Pengeluaran berhasil dicatat");
     },
     onError: (err) => {
       toast.error("Gagal mencatat pengeluaran", { description: err.message });
-    },
-  });
-
-  const deleteExpenseMutation = useMutation({
-    mutationFn: deleteManualExpense,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["finance-summary"] });
-      void queryClient.invalidateQueries({ queryKey: ["manual-expenses"] });
-      toast.success("Pengeluaran berhasil dihapus");
-    },
-    onError: (err) => {
-      toast.error("Gagal menghapus pengeluaran", { description: err.message });
     },
   });
 
@@ -168,57 +339,35 @@ function FinancePage() {
     }
   };
 
-  // Toggle branch checkbox
-  const toggleBranch = (branchId: string) => {
-    setCheckedBranches((prev) => {
-      const next = new Set(prev);
-      if (next.has(branchId)) {
-        next.delete(branchId);
-      } else {
-        next.add(branchId);
-      }
-      return next;
-    });
-  };
-
-  // Selected day data (from dailyRows)
+  // Selected day data
   const selectedDayData = useMemo(() => {
     if (!selectedDay || !dailyRows) return null;
     return dailyRows.find((r) => r.tanggal === selectedDay) ?? null;
   }, [selectedDay, dailyRows]);
 
-  // Summary for checked branches (uses summary which is already branch-filtered)
-  // For now, we show the selected branch summary. Multi-branch requires separate queries.
-  const displaySummary = summary;
+  // Month/week options
+  const months = useMemo(() => getMonthsList(), []);
+  const weeks = useMemo(() => {
+    const [year, month] = selectedMonth.split("-").map(Number);
+    return getWeeksInMonth(year, month);
+  }, [selectedMonth]);
 
   const cards = [
-    {
-      label: "Omzet Bruto",
-      value: displaySummary.totalSales,
-      icon: Receipt,
-      color: "text-blue-600",
-    },
-    {
-      label: "HPP / COGS",
-      value: displaySummary.totalCogs,
-      icon: TrendingDown,
-      color: "text-red-500",
-    },
+    { label: "Omzet Bruto", value: summary.totalSales, icon: Receipt, color: "text-blue-600" },
+    { label: "HPP / COGS", value: summary.totalCogs, icon: TrendingDown, color: "text-red-500" },
     {
       label: "Gross Profit",
-      value: displaySummary.grossProfit,
+      value: summary.grossProfit,
       icon: PiggyBank,
-      color: displaySummary.grossProfit >= 0 ? "text-emerald-600" : "text-red-500",
+      color: summary.grossProfit >= 0 ? "text-emerald-600" : "text-red-500",
     },
     {
       label: "Food Cost %",
       value:
-        displaySummary.totalSales > 0
-          ? Math.round((displaySummary.totalCogs / displaySummary.totalSales) * 100)
-          : 0,
+        summary.totalSales > 0 ? Math.round((summary.totalCogs / summary.totalSales) * 100) : 0,
       icon: Percent,
       color:
-        displaySummary.totalSales > 0 && displaySummary.totalCogs / displaySummary.totalSales > 0.4
+        summary.totalSales > 0 && summary.totalCogs / summary.totalSales > 0.4
           ? "text-red-500"
           : "text-emerald-600",
       suffix: "%",
@@ -229,7 +378,7 @@ function FinancePage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
-      {/* Top bar: actions + filters */}
+      {/* Top bar: actions + branch */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -258,27 +407,14 @@ function FinancePage() {
               </option>
             ))}
           </select>
-          <input
-            type="date"
-            value={dateRange.from}
-            onChange={(e) => setDateRange((p) => ({ ...p, from: e.target.value }))}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          />
-          <span className="text-muted-foreground text-sm">—</span>
-          <input
-            type="date"
-            value={dateRange.to}
-            onChange={(e) => setDateRange((p) => ({ ...p, to: e.target.value }))}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          />
           <button
             type="button"
             onClick={async () => {
               try {
                 const result = await printFinancePage({
                   data: {
-                    dateFrom: dateRange.from || undefined,
-                    dateTo: dateRange.to || undefined,
+                    dateFrom: effectiveDateRange.from || undefined,
+                    dateTo: effectiveDateRange.to || undefined,
                     branchId,
                   },
                 });
@@ -292,6 +428,119 @@ function FinancePage() {
             Cetak PDF
           </button>
         </div>
+      </div>
+
+      {/* Period filter */}
+      <div className="mb-6 space-y-3">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium">Periode:</span>
+          <div className="flex gap-1">
+            {(["bulanan", "mingguan", "harian"] as PeriodType[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => {
+                  setPeriodType(p);
+                  setFilterExpanded({
+                    bulanan: p === "bulanan",
+                    mingguan: p === "mingguan",
+                    harian: p === "harian",
+                  });
+                }}
+                className={`h-9 px-4 rounded-md text-sm font-medium transition-colors ${
+                  periodType === p ? "bg-primary text-primary-foreground" : "border hover:bg-muted"
+                }`}
+              >
+                {p === "bulanan" ? "Bulanan" : p === "mingguan" ? "Mingguan" : "Harian"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Collapsible filter sections */}
+        {(["bulanan", "mingguan", "harian"] as PeriodType[]).map((p) => (
+          <div key={p} className="rounded-lg border">
+            <button
+              type="button"
+              onClick={() => setFilterExpanded((prev) => ({ ...prev, [p]: !prev[p] }))}
+              className="flex w-full items-center gap-2 px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
+            >
+              {filterExpanded[p] ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+              {p === "bulanan"
+                ? "Filter Bulanan"
+                : p === "mingguan"
+                  ? "Filter Mingguan"
+                  : "Filter Harian"}
+            </button>
+            {filterExpanded[p] && (
+              <div className="px-4 pb-3">
+                {p === "bulanan" && (
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    {months.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {p === "mingguan" && (
+                  <div className="flex items-center gap-3">
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => {
+                        setSelectedMonth(e.target.value);
+                        setSelectedWeek(0);
+                      }}
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      {months.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={selectedWeek}
+                      onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      {weeks.map((w, i) => (
+                        <option key={i} value={i}>
+                          {w.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {p === "harian" && (
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="date"
+                      value={dateRange.from}
+                      onChange={(e) => setDateRange((prev) => ({ ...prev, from: e.target.value }))}
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    />
+                    <span className="text-muted-foreground text-sm">—</span>
+                    <input
+                      type="date"
+                      value={dateRange.to}
+                      onChange={(e) => setDateRange((prev) => ({ ...prev, to: e.target.value }))}
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
 
       {/* Summary cards */}
@@ -316,7 +565,7 @@ function FinancePage() {
           <div className="p-4 border-b">
             <h2 className="font-semibold">Laporan Harian</h2>
             <p className="text-xs text-muted-foreground mt-1">
-              Klik baris untuk melihat detail hari tersebut
+              Klik baris untuk melihat detail hari tersebut. Klik nilai Omzet untuk mengedit.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -325,7 +574,7 @@ function FinancePage() {
                 <tr className="border-b bg-muted/50">
                   <th className="text-left py-2 px-3 font-medium">Tanggal</th>
                   <th className="text-right py-2 px-3 font-medium w-28">HPP</th>
-                  <th className="text-right py-2 px-3 font-medium w-28">Omzet</th>
+                  <th className="text-right py-2 px-3 font-medium w-36">Omzet</th>
                   <th className="text-right py-2 px-3 font-medium w-28">Gross Profit</th>
                   <th className="text-right py-2 px-3 font-medium w-20">Margin</th>
                 </tr>
@@ -342,13 +591,32 @@ function FinancePage() {
                         }`}
                       >
                         <td className="py-2 px-3">
-                          {new Date(row.tanggal).toLocaleDateString("id-ID", {
+                          {new Date(row.tanggal + "T00:00:00").toLocaleDateString("id-ID", {
                             day: "2-digit",
                             month: "short",
                           })}
                         </td>
                         <td className="py-2 px-3 text-right">{formatRp(row.hpp)}</td>
-                        <td className="py-2 px-3 text-right font-medium">{formatRp(row.omzet)}</td>
+                        <td className="py-2 px-3 text-right">
+                          <EditableOmzetCell
+                            value={row.omzet}
+                            hasOverride={row.hasOmzetOverride}
+                            onSave={(newValue) => {
+                              if (!branchId) {
+                                toast.error("Pilih cabang terlebih dahulu untuk mengedit Omzet");
+                                return;
+                              }
+                              void upsertOverrideMutation.mutateAsync({
+                                data: {
+                                  branchId,
+                                  date: row.tanggal,
+                                  field: "omzet",
+                                  value: newValue,
+                                },
+                              });
+                            }}
+                          />
+                        </td>
                         <td
                           className={`py-2 px-3 text-right font-medium ${
                             row.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"
@@ -402,7 +670,7 @@ function FinancePage() {
           <div className="rounded-lg border p-4">
             <h3 className="font-semibold mb-3">
               {selectedDay
-                ? `Detail: ${new Date(selectedDay).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long" })}`
+                ? `Detail: ${new Date(selectedDay + "T00:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long" })}`
                 : "Ringkasan Bulan"}
             </h3>
             {selectedDayData ? (
@@ -418,9 +686,7 @@ function FinancePage() {
                 <div className="flex justify-between py-1">
                   <span className="text-muted-foreground">Gross Profit</span>
                   <span
-                    className={`font-medium ${
-                      selectedDayData.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"
-                    }`}
+                    className={`font-medium ${selectedDayData.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}
                   >
                     {formatRp(selectedDayData.grossProfit)}
                   </span>
@@ -434,62 +700,47 @@ function FinancePage() {
               <div className="space-y-2">
                 <div className="flex justify-between py-1">
                   <span className="text-muted-foreground">Jumlah Order</span>
-                  <span className="font-medium">
-                    {displaySummary.orderCount.toLocaleString("id-ID")}
-                  </span>
+                  <span className="font-medium">{summary.orderCount.toLocaleString("id-ID")}</span>
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-muted-foreground">Diskon Merchant</span>
-                  <span className="font-medium">
-                    {formatRp(displaySummary.totalMerchantDiscount)}
-                  </span>
+                  <span className="font-medium">{formatRp(summary.totalMerchantDiscount)}</span>
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-muted-foreground">MDR Ojol</span>
-                  <span className="font-medium">{formatRp(displaySummary.totalMdr)}</span>
+                  <span className="font-medium">{formatRp(summary.totalMdr)}</span>
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-muted-foreground">Omzet Netto</span>
-                  <span className="font-medium">{formatRp(displaySummary.netSales)}</span>
+                  <span className="font-medium">{formatRp(summary.netSales)}</span>
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-muted-foreground">Manual Revenue</span>
-                  <span className="font-medium">{formatRp(displaySummary.manualRevenue)}</span>
+                  <span className="font-medium">{formatRp(summary.manualRevenue)}</span>
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-muted-foreground">Pengeluaran Operasional</span>
-                  <span className="font-medium">{formatRp(displaySummary.manualExpenses)}</span>
+                  <span className="font-medium">{formatRp(summary.manualExpenses)}</span>
                 </div>
-                {displaySummary.totalCogs > 0 && (
+                {summary.totalCogs > 0 && (
                   <div className="pt-2 space-y-1">
                     <div className="flex items-center justify-between text-sm">
                       <span>Food Cost Ratio</span>
                       <span
-                        className={`font-medium ${
-                          displaySummary.totalCogs / displaySummary.totalSales > 0.4
-                            ? "text-destructive"
-                            : ""
-                        }`}
+                        className={`font-medium ${summary.totalCogs / summary.totalSales > 0.4 ? "text-destructive" : ""}`}
                       >
-                        {((displaySummary.totalCogs / displaySummary.totalSales) * 100).toFixed(1)}%
+                        {((summary.totalCogs / summary.totalSales) * 100).toFixed(1)}%
                       </span>
                     </div>
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                       <div
-                        className={`h-full rounded-full ${
-                          displaySummary.totalCogs / displaySummary.totalSales > 0.4
-                            ? "bg-destructive"
-                            : "bg-primary"
-                        }`}
+                        className={`h-full rounded-full ${summary.totalCogs / summary.totalSales > 0.4 ? "bg-destructive" : "bg-primary"}`}
                         style={{
-                          width: `${Math.min(
-                            (displaySummary.totalCogs / displaySummary.totalSales) * 100,
-                            100,
-                          )}%`,
+                          width: `${Math.min((summary.totalCogs / summary.totalSales) * 100, 100)}%`,
                         }}
                       />
                     </div>
-                    {displaySummary.totalCogs / displaySummary.totalSales > 0.4 && (
+                    {summary.totalCogs / summary.totalSales > 0.4 && (
                       <p className="text-xs text-destructive">⚠️ Food cost melebihi 40%!</p>
                     )}
                   </div>
@@ -514,100 +765,212 @@ function FinancePage() {
               </div>
               <div className="flex justify-between py-1 border-t pt-2">
                 <span className="text-muted-foreground">Biaya Franchise (5%)</span>
-                <span className="font-medium">{formatRp(displaySummary.totalSales * 0.05)}</span>
+                <span className="font-medium">{formatRp(summary.totalSales * 0.05)}</span>
               </div>
               <div className="flex justify-between py-1">
                 <span className="text-muted-foreground">Pusat</span>
                 <span className="font-medium">
                   {formatRp(
-                    displaySummary.grossProfit -
-                      displaySummary.manualExpenses -
-                      displaySummary.totalSales * 0.05 -
+                    summary.grossProfit -
+                      summary.manualExpenses -
+                      summary.totalSales * 0.05 -
                       christopher,
                   )}
                 </span>
               </div>
             </div>
           </div>
-
-          {/* Branch checkboxes */}
-          <div className="rounded-lg border p-4">
-            <h3 className="font-semibold mb-3">Cabang (untuk total)</h3>
-            <div className="space-y-2">
-              {branches.map((b) => (
-                <label key={b.id} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={checkedBranches.has(b.id)}
-                    onChange={() => toggleBranch(b.id)}
-                    className="rounded border-input"
-                  />
-                  <span className="text-sm">{b.name}</span>
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Centang cabang yang ingin dihitung dalam total
-            </p>
-          </div>
         </div>
       </div>
 
-      {/* Manual Expenses Table */}
-      <div className="mt-6 rounded-lg border p-4 space-y-4">
-        <h2 className="font-semibold">Pencatatan Manual</h2>
-        <p className="text-sm text-muted-foreground">
-          Pengeluaran operasional: Gaji, Listrik & Air, Wifi, Sewa, Operasional
-        </p>
-        {expenses && expenses.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2 px-3">Tanggal</th>
-                  <th className="text-left py-2 px-3">Cabang</th>
-                  <th className="text-left py-2 px-3">Kategori</th>
-                  <th className="text-right py-2 px-3">Jumlah</th>
-                  <th className="text-left py-2 px-3">Catatan</th>
-                  <th className="text-center py-2 px-3">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.map((exp) => (
-                  <tr key={exp.id} className="border-b">
-                    <td className="py-2 px-3">{exp.date}</td>
-                    <td className="py-2 px-3">{exp.branchName ?? "-"}</td>
-                    <td className="py-2 px-3">
-                      <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-muted">
-                        {exp.category}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-right font-medium">{formatRp(exp.amount)}</td>
-                    <td className="py-2 px-3 text-muted-foreground">{exp.notes ?? "-"}</td>
-                    <td className="py-2 px-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm("Hapus pengeluaran ini?")) {
-                            void deleteExpenseMutation.mutateAsync({ data: { id: exp.id } });
-                          }
-                        }}
-                        className="text-destructive hover:underline text-xs"
-                      >
-                        Hapus
-                      </button>
-                    </td>
+      {/* Pencatatan Manual (monthly only) */}
+      {periodType === "bulanan" && (
+        <div className="mt-6 space-y-6">
+          <h2 className="text-lg font-semibold">Pencatatan Manual</h2>
+
+          {/* Section 1: HPP Menu Items */}
+          <div className="rounded-lg border p-4">
+            <h3 className="font-semibold mb-3">Harga HPP Makan Pegawai</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left py-2 px-3 font-medium">Menu Item</th>
+                    <th className="text-right py-2 px-3 font-medium w-32">HPP</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {recipesData && recipesData.length > 0 ? (
+                    recipesData.map((recipe) => (
+                      <tr key={recipe.id} className="border-b">
+                        <td className="py-2 px-3">{recipe.name}</td>
+                        <td className="py-2 px-3 text-right font-medium">
+                          {formatRp(recipe.totalCogs)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={2} className="py-4 text-center text-muted-foreground">
+                        Tidak ada data resep
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        ) : (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            Belum ada pengeluaran manual yang dicatat.
-          </p>
-        )}
-      </div>
+
+          {/* Section 2: Employee Meal Matrix */}
+          <div className="rounded-lg border p-4">
+            <h3 className="font-semibold mb-3">Beban Makan Pegawai</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left py-2 px-3 font-medium">Nama Pegawai</th>
+                    <th className="text-left py-2 px-3 font-medium">Menu Item</th>
+                    <th className="text-right py-2 px-3 font-medium w-20">Qty</th>
+                    <th className="text-right py-2 px-3 font-medium w-32">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employeeMeals && employeeMeals.length > 0 ? (
+                    employeeMeals.map((meal, i) => (
+                      <tr key={i} className="border-b">
+                        <td className="py-2 px-3">{meal.staffName}</td>
+                        <td className="py-2 px-3">{meal.ingredientName}</td>
+                        <td className="py-2 px-3 text-right">{meal.quantity}</td>
+                        <td className="py-2 px-3 text-right font-medium">
+                          {formatRp(meal.valuation)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="py-4 text-center text-muted-foreground">
+                        Tidak ada data beban makan
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {employeeMeals && employeeMeals.length > 0 && (
+              <div className="mt-2 flex justify-end">
+                <span className="font-semibold text-sm">
+                  Total: {formatRp(employeeMeals.reduce((sum, m) => sum + m.valuation, 0))}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Section 3: Detailed Operational Expenses */}
+          <div className="rounded-lg border p-4">
+            <h3 className="font-semibold mb-3">Rincian Biaya Operasional</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left py-2 px-3 font-medium w-10">No</th>
+                    <th className="text-left py-2 px-3 font-medium">Items</th>
+                    <th className="text-right py-2 px-3 font-medium w-32">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenses && expenses.length > 0 ? (
+                    expenses.map((exp, i) => (
+                      <tr key={exp.id} className="border-b">
+                        <td className="py-2 px-3">{i + 1}</td>
+                        <td className="py-2 px-3">{exp.notes ?? exp.category}</td>
+                        <td className="py-2 px-3 text-right font-medium">{formatRp(exp.amount)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="py-4 text-center text-muted-foreground">
+                        Tidak ada data pengeluaran operasional
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {expenses && expenses.length > 0 && (
+              <div className="mt-2 flex justify-end">
+                <span className="font-semibold text-sm">
+                  Total: {formatRp(expenses.reduce((sum, e) => sum + e.amount, 0))}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Section 4: Financial Summary */}
+          {pmSummary && (
+            <div className="rounded-lg border p-4">
+              <h3 className="font-semibold mb-3">Ringkasan Keuangan</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Biaya Makan Staff</span>
+                  <span className="font-medium">{formatRp(pmSummary.biayaMakanStaff)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Biaya Operasional</span>
+                  <span className="font-medium">{formatRp(pmSummary.biayaOperasional)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Biaya Gaji</span>
+                  <span className="font-medium">{formatRp(pmSummary.biayaGaji)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Biaya Listrik dan Air</span>
+                  <span className="font-medium">{formatRp(pmSummary.biayaListrikAir)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Wifi</span>
+                  <span className="font-medium">{formatRp(pmSummary.biayaWifi)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Biaya Sewa (Inc Service Charge)</span>
+                  <span className="font-medium">{formatRp(pmSummary.biayaSewa)}</span>
+                </div>
+                <div className="flex justify-between py-1 border-t pt-2 font-semibold">
+                  <span>Total Biaya</span>
+                  <span>{formatRp(pmSummary.total)}</span>
+                </div>
+                <div className="flex justify-between py-1 border-t pt-2">
+                  <span className="text-muted-foreground">HPP</span>
+                  <span className="font-medium">{formatRp(pmSummary.hpp)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Piutang Penjualan</span>
+                  <span className="font-medium">{formatRp(pmSummary.piutangPenjualan)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Profit Margin</span>
+                  <span className="font-medium">{formatRp(pmSummary.profitMargin)}</span>
+                </div>
+                <div className="flex justify-between py-1 border-t pt-2">
+                  <span className="text-muted-foreground">Nett Profit</span>
+                  <span className="font-medium">{formatRp(pmSummary.nettProfit)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Biaya Franchise (5%)</span>
+                  <span className="font-medium">{formatRp(pmSummary.biayaFranchise)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Pusat</span>
+                  <span className="font-medium">{formatRp(pmSummary.pusat)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-muted-foreground">Christopher</span>
+                  <span className="font-medium">{formatRp(christopher)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Revenue Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Input Revenue" size="lg">
