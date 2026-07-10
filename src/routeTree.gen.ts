@@ -25,6 +25,7 @@ import { Route as LayoutPrintRequestsRouteImport } from './routes/_layout/print-
 import { Route as LayoutPosRouteImport } from './routes/_layout/pos'
 import { Route as LayoutPencatatanManualRouteImport } from './routes/_layout/pencatatan-manual'
 import { Route as LayoutOrderHistoryRouteImport } from './routes/_layout/order-history'
+import { Route as LayoutDataPenjualanRouteImport } from './routes/_layout/data-penjualan'
 import { Route as LayoutDashboardRouteImport } from './routes/_layout/dashboard'
 import { Route as LayoutCancelRequestsRouteImport } from './routes/_layout/cancel-requests'
 import { Route as LayoutAuditInventoryRouteImport } from './routes/_layout/audit-inventory'
@@ -154,6 +155,11 @@ const LayoutPencatatanManualRoute = LayoutPencatatanManualRouteImport.update({
 const LayoutOrderHistoryRoute = LayoutOrderHistoryRouteImport.update({
   id: '/order-history',
   path: '/order-history',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutDataPenjualanRoute = LayoutDataPenjualanRouteImport.update({
+  id: '/data-penjualan',
+  path: '/data-penjualan',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutDashboardRoute = LayoutDashboardRouteImport.update({
@@ -437,6 +443,7 @@ export interface FileRoutesByFullPath {
   '/audit-inventory': typeof LayoutAuditInventoryRoute
   '/cancel-requests': typeof LayoutCancelRequestsRoute
   '/dashboard': typeof LayoutDashboardRoute
+  '/data-penjualan': typeof LayoutDataPenjualanRoute
   '/order-history': typeof LayoutOrderHistoryRoute
   '/pencatatan-manual': typeof LayoutPencatatanManualRoute
   '/pos': typeof LayoutPosRoute
@@ -504,6 +511,7 @@ export interface FileRoutesByTo {
   '/audit-inventory': typeof LayoutAuditInventoryRoute
   '/cancel-requests': typeof LayoutCancelRequestsRoute
   '/dashboard': typeof LayoutDashboardRoute
+  '/data-penjualan': typeof LayoutDataPenjualanRoute
   '/order-history': typeof LayoutOrderHistoryRoute
   '/pencatatan-manual': typeof LayoutPencatatanManualRoute
   '/pos': typeof LayoutPosRoute
@@ -574,6 +582,7 @@ export interface FileRoutesById {
   '/_layout/audit-inventory': typeof LayoutAuditInventoryRoute
   '/_layout/cancel-requests': typeof LayoutCancelRequestsRoute
   '/_layout/dashboard': typeof LayoutDashboardRoute
+  '/_layout/data-penjualan': typeof LayoutDataPenjualanRoute
   '/_layout/order-history': typeof LayoutOrderHistoryRoute
   '/_layout/pencatatan-manual': typeof LayoutPencatatanManualRoute
   '/_layout/pos': typeof LayoutPosRoute
@@ -645,6 +654,7 @@ export interface FileRouteTypes {
     | '/audit-inventory'
     | '/cancel-requests'
     | '/dashboard'
+    | '/data-penjualan'
     | '/order-history'
     | '/pencatatan-manual'
     | '/pos'
@@ -712,6 +722,7 @@ export interface FileRouteTypes {
     | '/audit-inventory'
     | '/cancel-requests'
     | '/dashboard'
+    | '/data-penjualan'
     | '/order-history'
     | '/pencatatan-manual'
     | '/pos'
@@ -781,6 +792,7 @@ export interface FileRouteTypes {
     | '/_layout/audit-inventory'
     | '/_layout/cancel-requests'
     | '/_layout/dashboard'
+    | '/_layout/data-penjualan'
     | '/_layout/order-history'
     | '/_layout/pencatatan-manual'
     | '/_layout/pos'
@@ -971,6 +983,13 @@ declare module '@tanstack/react-router' {
       path: '/order-history'
       fullPath: '/order-history'
       preLoaderRoute: typeof LayoutOrderHistoryRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/data-penjualan': {
+      id: '/_layout/data-penjualan'
+      path: '/data-penjualan'
+      fullPath: '/data-penjualan'
+      preLoaderRoute: typeof LayoutDataPenjualanRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/dashboard': {
@@ -1337,6 +1356,7 @@ interface LayoutRouteChildren {
   LayoutAuditInventoryRoute: typeof LayoutAuditInventoryRoute
   LayoutCancelRequestsRoute: typeof LayoutCancelRequestsRoute
   LayoutDashboardRoute: typeof LayoutDashboardRoute
+  LayoutDataPenjualanRoute: typeof LayoutDataPenjualanRoute
   LayoutOrderHistoryRoute: typeof LayoutOrderHistoryRoute
   LayoutPencatatanManualRoute: typeof LayoutPencatatanManualRoute
   LayoutPosRoute: typeof LayoutPosRoute
@@ -1395,6 +1415,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAuditInventoryRoute: LayoutAuditInventoryRoute,
   LayoutCancelRequestsRoute: LayoutCancelRequestsRoute,
   LayoutDashboardRoute: LayoutDashboardRoute,
+  LayoutDataPenjualanRoute: LayoutDataPenjualanRoute,
   LayoutOrderHistoryRoute: LayoutOrderHistoryRoute,
   LayoutPencatatanManualRoute: LayoutPencatatanManualRoute,
   LayoutPosRoute: LayoutPosRoute,

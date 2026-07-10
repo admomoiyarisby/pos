@@ -215,6 +215,12 @@ const navGroups: NavGroup[] = [
         roles: ["super_admin", "admin_pusat"],
       },
       {
+        label: "Data Penjualan",
+        to: "/data-penjualan",
+        icon: BarChart3,
+        roles: ["super_admin", "admin_pusat"],
+      },
+      {
         label: "Audit Inventory",
         to: "/audit-inventory",
         icon: ClipboardList,
