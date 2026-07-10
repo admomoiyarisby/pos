@@ -134,6 +134,13 @@
       "when": 1782786431702,
       "tag": "0018_curvy_mauler",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1783692881235,
+      "tag": "0019_wide_oracle",
+      "breakpoints": true
     }
   ]
 }
