@@ -1243,3 +1243,58 @@ export const getPencatatanManualSummary = createServerFn({ method: "GET" })
       pusat,
     };
   });
+
+/**
+ * Save fixed costs (Gaji, ListrikAir, Wifi, Sewa) for a branch + month.
+ * Deletes existing entries in that category/date range and creates a single new one.
+ */
+export const saveFixedCosts = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      branchId: string;
+      dateFrom: string;
+      dateTo: string;
+      gaji: number;
+      listrikAir: number;
+      wifi: number;
+      sewa: number;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    const categories = [
+      { category: "Gaji", value: data.gaji },
+      { category: "ListrikAir", value: data.listrikAir },
+      { category: "Wifi", value: data.wifi },
+      { category: "Sewa", value: data.sewa },
+    ];
+
+    for (const cat of categories) {
+      // Delete existing entries for this category + branch + date range
+      await db
+        .delete(operationalExpenses)
+        .where(
+          and(
+            eq(operationalExpenses.branchId, data.branchId),
+            eq(operationalExpenses.category, cat.category),
+            gte(operationalExpenses.date, data.dateFrom),
+            lte(operationalExpenses.date, data.dateTo),
+          ),
+        );
+
+      // Create new entry if value > 0
+      if (cat.value > 0) {
+        await db.insert(operationalExpenses).values({
+          branchId: data.branchId,
+          category: cat.category,
+          amount: cat.value,
+          date: data.dateFrom,
+          notes: cat.category,
+          submittedBy: user.id,
+        });
+      }
+    }
+
+    return { success: true };
+  });
