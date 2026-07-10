@@ -9,6 +9,7 @@ import {
   orderItems,
   recipes,
   ingredients,
+  recipeIngredients,
   periodLogs,
   periodBalances,
   stockOpnames,
@@ -118,8 +119,18 @@ export interface DailyFinanceRow {
   hasOmzetOverride: boolean;
 }
 
+export interface HppBreakdownRow {
+  ingredientId: string;
+  name: string;
+  category: string;
+  quantity: number;
+  cost: number;
+}
+
 export const getDailyFinanceSummary = createServerFn({ method: "GET" })
-  .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
+  .validator(
+    (data: { branchId?: string; dateFrom?: string; dateTo?: string; channel?: string }) => data,
+  )
   .handler(async ({ data }): Promise<DailyFinanceRow[]> => {
     await requireRole("super_admin");
 
@@ -127,6 +138,7 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
     if (data.dateFrom) conditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
     if (data.dateTo) conditions.push(lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")));
+    if (data.channel) conditions.push(eq(orders.channel, data.channel as any));
 
     const result = await db
       .select({
@@ -174,12 +186,48 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
     });
   });
 
+export const getDailyHppBreakdown = createServerFn({ method: "GET" })
+  .validator((data: { branchId?: string; date: string; channel?: string }) => data)
+  .handler(async ({ data }): Promise<HppBreakdownRow[]> => {
+    await requireRole("super_admin");
+
+    const conditions = [];
+    if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
+    if (data.channel) conditions.push(eq(orders.channel, data.channel as any));
+    conditions.push(sql`DATE(${orders.createdAt}) = ${data.date}`);
+
+    const rows = await db
+      .select({
+        ingredientId: ingredients.id,
+        name: ingredients.name,
+        category: ingredients.category,
+        quantity: sql<number>`COALESCE(SUM(${orderItems.quantity} * ${recipeIngredients.quantity} / NULLIF(${ingredients.conversionFactor}, 0)), 0)`,
+        cost: sql<number>`COALESCE(SUM(${orderItems.quantity} * ${recipeIngredients.quantity} * ${ingredients.averageCost} / NULLIF(${ingredients.conversionFactor}, 0)), 0)`,
+      })
+      .from(orders)
+      .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+      .innerJoin(recipeIngredients, eq(recipeIngredients.recipeId, orderItems.recipeId))
+      .innerJoin(ingredients, eq(ingredients.id, recipeIngredients.ingredientId))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .groupBy(ingredients.id, ingredients.name, ingredients.category)
+      .orderBy(
+        sql`SUM(${orderItems.quantity} * ${recipeIngredients.quantity} * ${ingredients.averageCost} / NULLIF(${ingredients.conversionFactor}, 0)) DESC`,
+      );
+
+    return rows.map((r) => ({
+      ingredientId: r.ingredientId,
+      name: r.name,
+      category: r.category,
+      quantity: Number(r.quantity),
+      cost: Number(r.cost),
+    }));
+  });
+
 export const upsertDailyOverride = createServerFn({ method: "POST" })
   .validator((data: { branchId: string; date: string; field: string; value: number }) => data)
   .handler(async ({ data }) => {
     await requireRole("super_admin");
 
-    // Check if override exists
     const existing = await db
       .select()
       .from(dailyOverrides)
@@ -841,7 +889,9 @@ export const getHourlyAnalytics = createServerFn({ method: "GET" })
 
 // ID13: Print Finance page to PDF (HTML + browser print)
 export const printFinancePage = createServerFn({ method: "GET" })
-  .validator((data: { dateFrom?: string; dateTo?: string; branchId?: string }) => data)
+  .validator(
+    (data: { dateFrom?: string; dateTo?: string; branchId?: string; channel?: string }) => data,
+  )
   .handler(async ({ data }) => {
     await requireAuth();
     const summary = await getFinanceSummary({ data });
@@ -851,6 +901,7 @@ export const printFinancePage = createServerFn({ method: "GET" })
       data.dateFrom ? gte(orders.createdAt, new Date(data.dateFrom)) : undefined,
       data.dateTo ? lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")) : undefined,
       data.branchId ? eq(orders.branchId, data.branchId) : undefined,
+      data.channel ? eq(orders.channel, data.channel as any) : undefined,
     );
 
     const channelBreakdown = await db

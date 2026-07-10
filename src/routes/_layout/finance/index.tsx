@@ -1,32 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import Modal from "#/components/ui/Modal";
 import {
-  getFinanceSummary,
   getDailyFinanceSummary,
-  getRecipesWithHpp,
-  getEmployeeMealSummary,
-  getPencatatanManualSummary,
+  getDailyHppBreakdown,
   upsertDailyOverride,
   createManualRevenue,
   createChannelRevenue,
   createManualExpense,
-  getManualExpenses,
   printFinancePage,
 } from "#/lib/server/finance";
 import { getBranches } from "#/lib/server/branches";
-import {
-  TrendingDown,
-  PiggyBank,
-  Percent,
-  Receipt,
-  ChevronDown,
-  ChevronRight,
-  Pencil,
-} from "lucide-react";
+import { ChevronRight, Lock, Pencil, Printer } from "lucide-react";
 import { formatRp } from "#/lib/utils";
 import { openPrintWindow } from "#/lib/print-window";
 import { toast } from "sonner";
@@ -34,43 +22,54 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_layout/finance/")({
   component: FinancePage,
   loader: async () => {
-    const summary = await getFinanceSummary({ data: {} });
     const branches = await getBranches({ data: {} });
-    return { summary, branches };
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const daily = await getDailyFinanceSummary({
+      data: { dateFrom: `${ym}-01`, dateTo: `${ym}-${String(lastDay).padStart(2, "0")}` },
+    });
+    return { branches, daily };
   },
 });
 
-// Period types
 type PeriodType = "bulanan" | "mingguan" | "harian";
 
-// Helper: get weeks in a month
+const CHANNELS = [
+  { label: "Semua", value: "" },
+  { label: "Offline", value: "Dine-in" },
+  { label: "Gojek", value: "Gofood" },
+  { label: "Grab", value: "Grabfood" },
+  { label: "Shopee", value: "ShopeeFood" },
+  { label: "TikTok", value: "TikTok" },
+];
+
 function getWeeksInMonth(year: number, month: number) {
   const lastDay = new Date(year, month + 1, 0).getDate();
   return [
     {
-      label: "Minggu 1: 1-7",
+      label: "Minggu 1 (1-7)",
       from: `${year}-${String(month + 1).padStart(2, "0")}-01`,
       to: `${year}-${String(month + 1).padStart(2, "0")}-07`,
     },
     {
-      label: "Minggu 2: 8-14",
+      label: "Minggu 2 (8-14)",
       from: `${year}-${String(month + 1).padStart(2, "0")}-08`,
       to: `${year}-${String(month + 1).padStart(2, "0")}-14`,
     },
     {
-      label: "Minggu 3: 15-21",
+      label: "Minggu 3 (15-21)",
       from: `${year}-${String(month + 1).padStart(2, "0")}-15`,
       to: `${year}-${String(month + 1).padStart(2, "0")}-21`,
     },
     {
-      label: `Minggu 4: 22-${lastDay}`,
+      label: `Minggu 4 (22-${lastDay})`,
       from: `${year}-${String(month + 1).padStart(2, "0")}-22`,
       to: `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
     },
   ];
 }
 
-// Helper: get months list (last 12 months)
 function getMonthsList() {
   const months = [];
   const now = new Date();
@@ -86,23 +85,23 @@ function getMonthsList() {
   return months;
 }
 
-// Inline edit cell component
+// Inline editable Omzet cell — only active when no channel filter (day-level override)
 function EditableOmzetCell({
   value,
   hasOverride,
+  disabled,
   onSave,
 }: {
   value: number;
   hasOverride: boolean;
+  disabled: boolean;
   onSave: (newValue: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(value);
 
   const handleSave = useCallback(() => {
-    if (editValue !== value) {
-      onSave(editValue);
-    }
+    if (editValue !== value) onSave(editValue);
     setEditing(false);
   }, [editValue, value, onSave]);
 
@@ -117,9 +116,21 @@ function EditableOmzetCell({
           if (e.key === "Enter") handleSave();
           if (e.key === "Escape") setEditing(false);
         }}
-        className="w-28 h-8 rounded border border-primary bg-blue-50 px-2 text-sm text-right font-medium"
+        className="w-36 h-8 rounded border border-primary bg-background px-2 text-sm text-right font-medium tabular-nums"
         autoFocus
       />
+    );
+  }
+
+  if (disabled) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 w-36 h-8 px-2 rounded border border-dashed border-muted-foreground/30 bg-muted/30 text-sm text-right text-muted-foreground tabular-nums cursor-not-allowed"
+        title="Filter channel aktif — omzet hanya diedit per hari"
+      >
+        {formatRp(value)}
+        <Lock className="h-3 w-3 shrink-0" />
+      </span>
     );
   }
 
@@ -131,57 +142,119 @@ function EditableOmzetCell({
         setEditValue(value);
         setEditing(true);
       }}
-      className={`group flex items-center gap-1 text-right font-medium ${
-        hasOverride ? "bg-blue-50 px-2 py-1 rounded" : ""
-      } hover:bg-blue-100 transition-colors cursor-pointer`}
-      title={hasOverride ? "Override (klik untuk edit)" : "Klik untuk edit"}
+      className={`inline-flex items-center gap-1.5 w-36 h-8 px-2 rounded border text-sm text-right font-medium tabular-nums transition-colors ${
+        hasOverride
+          ? "border-blue-300 bg-blue-50 hover:bg-blue-100"
+          : "border-input bg-background hover:bg-muted/60"
+      }`}
+      title={hasOverride ? "Override manual — klik untuk edit" : "Klik untuk edit omzet harian"}
     >
       {formatRp(value)}
-      <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground" />
+      <Pencil className="h-3 w-3 shrink-0 text-muted-foreground" />
     </button>
   );
 }
 
+// Expandable HPP-per-bahan breakdown for a single day
+function HppBreakdownRow({
+  branchId,
+  date,
+  channel,
+}: {
+  branchId: string;
+  date: string;
+  channel: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["daily-hpp-breakdown", date, branchId, channel],
+    queryFn: () =>
+      getDailyHppBreakdown({
+        data: { branchId: branchId || undefined, date, channel: channel || undefined },
+      }),
+  });
+
+  if (isLoading) {
+    return (
+      <tr className="bg-muted/30">
+        <td colSpan={6} className="px-4 py-3 text-sm text-muted-foreground">
+          Memuat rincian HPP per bahan…
+        </td>
+      </tr>
+    );
+  }
+
+  if (!data || data.length === 0) {
+    return (
+      <tr className="bg-muted/30">
+        <td colSpan={6} className="px-4 py-3 text-sm text-muted-foreground">
+          Tidak ada rincian bahan untuk hari ini.
+        </td>
+      </tr>
+    );
+  }
+
+  const total = data.reduce((s, d) => s + d.cost, 0);
+  const dateStr = new Date(date + "T00:00:00").toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+  });
+
+  return (
+    <tr className="bg-muted/30">
+      <td colSpan={6} className="px-4 py-3">
+        <div className="text-xs font-medium text-muted-foreground mb-2">
+          Rincian HPP per Bahan — {dateStr}
+        </div>
+        <div className="grid grid-cols-2 gap-x-8 gap-y-0">
+          {data.map((d) => (
+            <div
+              key={d.ingredientId}
+              className="flex items-center justify-between text-sm py-1 border-b border-border/40"
+            >
+              <span className="truncate pr-2">{d.name}</span>
+              <span className="tabular-nums font-medium shrink-0">{formatRp(d.cost)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-end mt-2 pt-2 border-t text-sm font-semibold">
+          Total HPP: <span className="tabular-nums ml-2">{formatRp(total)}</span>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 function FinancePage() {
-  const { summary: initial, branches } = Route.useLoaderData();
+  const { branches, daily: initialDaily } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [revenueType, setRevenueType] = useState<"manual" | "channel">("manual");
 
-  // Period state
+  // Period + filter state
   const [periodType, setPeriodType] = useState<PeriodType>("bulanan");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
   const [selectedWeek, setSelectedWeek] = useState(0);
-  const [dateRange, setDateRange] = useState(() => {
+  const [selectedDate, setSelectedDate] = useState(() => {
     const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    return {
-      from: firstDay.toISOString().split("T")[0],
-      to: now.toISOString().split("T")[0],
-    };
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   });
-
-  // Branch state
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
+  const [selectedChannel, setSelectedChannel] = useState<string>("");
 
-  // Selected day for analytics panel
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  // Expandable HPP row
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
 
-  // Christopher input
-  const [christopher, setChristopher] = useState<number>(0);
+  const months = useMemo(() => getMonthsList(), []);
+  const weeks = useMemo(() => {
+    const [year, month] = selectedMonth.split("-").map(Number);
+    return getWeeksInMonth(year, month);
+  }, [selectedMonth]);
 
-  // Collapsible filter sections
-  const [filterExpanded, setFilterExpanded] = useState<Record<PeriodType, boolean>>({
-    bulanan: true,
-    mingguan: false,
-    harian: false,
-  });
-
-  // Calculate date range based on period
+  // Effective date range from period
   const effectiveDateRange = useMemo(() => {
     if (periodType === "bulanan") {
       const [year, month] = selectedMonth.split("-").map(Number);
@@ -192,126 +265,60 @@ function FinancePage() {
       };
     }
     if (periodType === "mingguan") {
-      const [year, month] = selectedMonth.split("-").map(Number);
-      const weeks = getWeeksInMonth(year, month);
-      const week = weeks[selectedWeek];
-      return { from: week.from, to: week.to };
+      return { from: weeks[selectedWeek].from, to: weeks[selectedWeek].to };
     }
-    return dateRange;
-  }, [periodType, selectedMonth, selectedWeek, dateRange]);
+    return { from: selectedDate, to: selectedDate };
+  }, [periodType, selectedMonth, selectedWeek, selectedDate, weeks]);
 
   const branchId = selectedBranchId || undefined;
-
-  const { data: summary } = useQuery({
-    queryKey: ["finance-summary", effectiveDateRange.from, effectiveDateRange.to, branchId],
-    queryFn: () =>
-      getFinanceSummary({
-        data: {
-          dateFrom: effectiveDateRange.from || undefined,
-          dateTo: effectiveDateRange.to || undefined,
-          branchId,
-        },
-      }),
-    initialData: initial,
-  });
+  const channel = selectedChannel || undefined;
 
   const { data: dailyRows } = useQuery({
-    queryKey: ["daily-finance", effectiveDateRange.from, effectiveDateRange.to, branchId],
+    queryKey: ["daily-finance", effectiveDateRange.from, effectiveDateRange.to, branchId, channel],
     queryFn: () =>
       getDailyFinanceSummary({
         data: {
           dateFrom: effectiveDateRange.from || undefined,
           dateTo: effectiveDateRange.to || undefined,
           branchId,
+          channel,
         },
       }),
+    initialData: initialDaily,
   });
 
-  const { data: expenses } = useQuery({
-    queryKey: ["manual-expenses", effectiveDateRange.from, effectiveDateRange.to, branchId],
-    queryFn: () =>
-      getManualExpenses({
-        data: {
-          dateFrom: effectiveDateRange.from || undefined,
-          dateTo: effectiveDateRange.to || undefined,
-          branchId,
-        },
-      }),
-  });
-
-  // Pencatatan Manual data (monthly only)
-  const { data: recipesData } = useQuery({
-    queryKey: ["recipes-hpp"],
-    queryFn: () => getRecipesWithHpp({ data: {} }),
-    enabled: periodType === "bulanan",
-  });
-
-  const { data: employeeMeals } = useQuery({
-    queryKey: ["employee-meals", effectiveDateRange.from, effectiveDateRange.to, branchId],
-    queryFn: () =>
-      getEmployeeMealSummary({
-        data: {
-          dateFrom: effectiveDateRange.from!,
-          dateTo: effectiveDateRange.to!,
-          branchId,
-        },
-      }),
-    enabled: periodType === "bulanan",
-  });
-
-  const { data: pmSummary } = useQuery({
-    queryKey: ["pm-summary", effectiveDateRange.from, effectiveDateRange.to, branchId],
-    queryFn: () =>
-      getPencatatanManualSummary({
-        data: {
-          dateFrom: effectiveDateRange.from!,
-          dateTo: effectiveDateRange.to!,
-          branchId,
-        },
-      }),
-    enabled: periodType === "bulanan",
-  });
-
-  // Omzet override mutation
   const upsertOverrideMutation = useMutation({
     mutationFn: upsertDailyOverride,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["daily-finance"] });
-      void queryClient.invalidateQueries({ queryKey: ["finance-summary"] });
+      toast.success("Omzet diperbarui");
     },
+    onError: (err) => toast.error("Gagal memperbarui omzet", { description: err.message }),
   });
 
   const createManualMutation = useMutation({
     mutationFn: createManualRevenue,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["finance-summary"] });
-      void queryClient.invalidateQueries({ queryKey: ["daily-finance"] });
       setModalOpen(false);
+      toast.success("Revenue berhasil dicatat");
     },
   });
 
   const createChannelMutation = useMutation({
     mutationFn: createChannelRevenue,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["finance-summary"] });
-      void queryClient.invalidateQueries({ queryKey: ["daily-finance"] });
       setModalOpen(false);
+      toast.success("Revenue berhasil dicatat");
     },
   });
 
   const createExpenseMutation = useMutation({
     mutationFn: createManualExpense,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["finance-summary"] });
-      void queryClient.invalidateQueries({ queryKey: ["manual-expenses"] });
-      void queryClient.invalidateQueries({ queryKey: ["expenses-by-category"] });
-      void queryClient.invalidateQueries({ queryKey: ["pm-summary"] });
       setExpenseModalOpen(false);
       toast.success("Pengeluaran berhasil dicatat");
     },
-    onError: (err) => {
-      toast.error("Gagal mencatat pengeluaran", { description: err.message });
-    },
+    onError: (err) => toast.error("Gagal mencatat pengeluaran", { description: err.message }),
   });
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -339,47 +346,20 @@ function FinancePage() {
     }
   };
 
-  // Selected day data
-  const selectedDayData = useMemo(() => {
-    if (!selectedDay || !dailyRows) return null;
-    return dailyRows.find((r) => r.tanggal === selectedDay) ?? null;
-  }, [selectedDay, dailyRows]);
+  const totals = useMemo(() => {
+    const rows = dailyRows ?? [];
+    const hpp = rows.reduce((s, r) => s + r.hpp, 0);
+    const omzet = rows.reduce((s, r) => s + r.omzet, 0);
+    const gross = rows.reduce((s, r) => s + r.grossProfit, 0);
+    return { hpp, omzet, gross, margin: omzet > 0 ? gross / omzet : 0 };
+  }, [dailyRows]);
 
-  // Month/week options
-  const months = useMemo(() => getMonthsList(), []);
-  const weeks = useMemo(() => {
-    const [year, month] = selectedMonth.split("-").map(Number);
-    return getWeeksInMonth(year, month);
-  }, [selectedMonth]);
-
-  const cards = [
-    { label: "Omzet Bruto", value: summary.totalSales, icon: Receipt, color: "text-blue-600" },
-    { label: "HPP / COGS", value: summary.totalCogs, icon: TrendingDown, color: "text-red-500" },
-    {
-      label: "Gross Profit",
-      value: summary.grossProfit,
-      icon: PiggyBank,
-      color: summary.grossProfit >= 0 ? "text-emerald-600" : "text-red-500",
-    },
-    {
-      label: "Food Cost %",
-      value:
-        summary.totalSales > 0 ? Math.round((summary.totalCogs / summary.totalSales) * 100) : 0,
-      icon: Percent,
-      color:
-        summary.totalSales > 0 && summary.totalCogs / summary.totalSales > 0.4
-          ? "text-red-500"
-          : "text-emerald-600",
-      suffix: "%",
-    },
-  ];
-
-  usePageTitle("Keuangan & Rekonsiliasi", "Input uang cair & kalkulasi profitabilitas");
+  usePageTitle("Keuangan", "Laporan P&L harian, mingguan, bulanan");
 
   return (
-    <RoleGuard allowedRoles={["super_admin"]}>
-      {/* Top bar: actions + branch */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+    <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
+      {/* Top bar */}
+      <div className="flex flex-wrap items-center justify-end gap-3 mb-6">
         <button
           type="button"
           onClick={() => setModalOpen(true)}
@@ -394,11 +374,120 @@ function FinancePage() {
         >
           Input Pengeluaran
         </button>
-        <div className="flex items-center gap-2 ml-auto">
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const result = await printFinancePage({
+                data: {
+                  dateFrom: effectiveDateRange.from || undefined,
+                  dateTo: effectiveDateRange.to || undefined,
+                  branchId,
+                  channel,
+                },
+              });
+              openPrintWindow(result.html);
+            } catch (err) {
+              toast.error("Gagal mencetak", { description: (err as Error).message });
+            }
+          }}
+          className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted transition-colors inline-flex items-center gap-2"
+        >
+          <Printer className="h-4 w-4" /> Cetak PDF
+        </button>
+      </div>
+
+      {/* Single filter row */}
+      <div className="flex flex-wrap items-end gap-3 mb-4 p-4 rounded-lg border">
+        {/* Period segmented control */}
+        <div className="flex rounded-md border overflow-hidden">
+          {(["harian", "mingguan", "bulanan"] as PeriodType[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPeriodType(p)}
+              className={`h-9 px-4 text-sm font-medium transition-colors ${
+                periodType === p
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background hover:bg-muted"
+              }`}
+            >
+              {p === "harian" ? "Harian" : p === "mingguan" ? "Mingguan" : "Bulanan"}
+            </button>
+          ))}
+        </div>
+
+        {/* Contextual date picker */}
+        {periodType === "bulanan" && (
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Bulan</label>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+            >
+              {months.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {periodType === "mingguan" && (
+          <>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Bulan</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => {
+                  setSelectedMonth(e.target.value);
+                  setSelectedWeek(0);
+                }}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+              >
+                {months.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Minggu</label>
+              <select
+                value={selectedWeek}
+                onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+              >
+                {weeks.map((w, i) => (
+                  <option key={i} value={i}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+        {periodType === "harian" && (
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Tanggal</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+            />
+          </div>
+        )}
+
+        {/* Branch */}
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Cabang</label>
           <select
             value={selectedBranchId}
             onChange={(e) => setSelectedBranchId(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
           >
             <option value="">Semua Cabang</option>
             {branches.map((b) => (
@@ -407,200 +496,73 @@ function FinancePage() {
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                const result = await printFinancePage({
-                  data: {
-                    dateFrom: effectiveDateRange.from || undefined,
-                    dateTo: effectiveDateRange.to || undefined,
-                    branchId,
-                  },
-                });
-                openPrintWindow(result.html);
-              } catch (err) {
-                toast.error("Gagal mencetak", { description: (err as Error).message });
-              }
-            }}
-            className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
+        </div>
+
+        {/* Channel */}
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Channel</label>
+          <select
+            value={selectedChannel}
+            onChange={(e) => setSelectedChannel(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
           >
-            Cetak PDF
-          </button>
-        </div>
-      </div>
-
-      {/* Period filter */}
-      <div className="mb-6 space-y-3">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium">Periode:</span>
-          <div className="flex gap-1">
-            {(["bulanan", "mingguan", "harian"] as PeriodType[]).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => {
-                  setPeriodType(p);
-                  setFilterExpanded({
-                    bulanan: p === "bulanan",
-                    mingguan: p === "mingguan",
-                    harian: p === "harian",
-                  });
-                }}
-                className={`h-9 px-4 rounded-md text-sm font-medium transition-colors ${
-                  periodType === p ? "bg-primary text-primary-foreground" : "border hover:bg-muted"
-                }`}
-              >
-                {p === "bulanan" ? "Bulanan" : p === "mingguan" ? "Mingguan" : "Harian"}
-              </button>
+            {CHANNELS.map((c) => (
+              <option key={c.label} value={c.value}>
+                {c.label}
+              </option>
             ))}
-          </div>
+          </select>
         </div>
-
-        {/* Collapsible filter sections */}
-        {(["bulanan", "mingguan", "harian"] as PeriodType[]).map((p) => (
-          <div key={p} className="rounded-lg border">
-            <button
-              type="button"
-              onClick={() => setFilterExpanded((prev) => ({ ...prev, [p]: !prev[p] }))}
-              className="flex w-full items-center gap-2 px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
-            >
-              {filterExpanded[p] ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-              {p === "bulanan"
-                ? "Filter Bulanan"
-                : p === "mingguan"
-                  ? "Filter Mingguan"
-                  : "Filter Harian"}
-            </button>
-            {filterExpanded[p] && (
-              <div className="px-4 pb-3">
-                {p === "bulanan" && (
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    {months.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {p === "mingguan" && (
-                  <div className="flex items-center gap-3">
-                    <select
-                      value={selectedMonth}
-                      onChange={(e) => {
-                        setSelectedMonth(e.target.value);
-                        setSelectedWeek(0);
-                      }}
-                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      {months.map((m) => (
-                        <option key={m.value} value={m.value}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={selectedWeek}
-                      onChange={(e) => setSelectedWeek(Number(e.target.value))}
-                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      {weeks.map((w, i) => (
-                        <option key={i} value={i}>
-                          {w.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {p === "harian" && (
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="date"
-                      value={dateRange.from}
-                      onChange={(e) => setDateRange((prev) => ({ ...prev, from: e.target.value }))}
-                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                    />
-                    <span className="text-muted-foreground text-sm">—</span>
-                    <input
-                      type="date"
-                      value={dateRange.to}
-                      onChange={(e) => setDateRange((prev) => ({ ...prev, to: e.target.value }))}
-                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {cards.map((card) => (
-          <div key={card.label} className="rounded-lg border p-4">
-            <div className="flex items-center gap-2">
-              <card.icon className={`h-4 w-4 ${card.color}`} />
-              <span className="text-xs text-muted-foreground uppercase">{card.label}</span>
-            </div>
-            <p className="text-2xl font-bold mt-2">
-              {card.suffix ? `${card.value}${card.suffix}` : formatRp(card.value)}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Split layout: table left, analytics right */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
-        {/* Left: Daily Table */}
-        <div className="rounded-lg border">
-          <div className="p-4 border-b">
-            <h2 className="font-semibold">Laporan Harian</h2>
-            <p className="text-xs text-muted-foreground mt-1">
-              Klik baris untuk melihat detail hari tersebut. Klik nilai Omzet untuk mengedit.
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left py-2 px-3 font-medium">Tanggal</th>
-                  <th className="text-right py-2 px-3 font-medium w-28">HPP</th>
-                  <th className="text-right py-2 px-3 font-medium w-36">Omzet</th>
-                  <th className="text-right py-2 px-3 font-medium w-28">Gross Profit</th>
-                  <th className="text-right py-2 px-3 font-medium w-20">Margin</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dailyRows && dailyRows.length > 0 ? (
-                  <>
-                    {dailyRows.map((row) => (
+      {/* Ledger table */}
+      <div className="rounded-lg border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="text-left py-2.5 px-3 font-medium w-10"></th>
+                <th className="text-left py-2.5 px-3 font-medium">Tanggal</th>
+                <th className="text-right py-2.5 px-3 font-medium w-36">HPP</th>
+                <th className="text-right py-2.5 px-3 font-medium w-44">Omzet</th>
+                <th className="text-right py-2.5 px-3 font-medium w-36">Gross Profit</th>
+                <th className="text-right py-2.5 px-3 font-medium w-20">Margin</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dailyRows && dailyRows.length > 0 ? (
+                dailyRows.map((row) => {
+                  const isOpen = expandedDay === row.tanggal;
+                  return (
+                    <Fragment key={row.tanggal}>
                       <tr
-                        key={row.tanggal}
-                        onClick={() => setSelectedDay(row.tanggal)}
-                        className={`border-b cursor-pointer transition-colors ${
-                          selectedDay === row.tanggal ? "bg-primary/10" : "hover:bg-muted/50"
-                        }`}
+                        className={`border-b ${isOpen ? "bg-muted/20" : "hover:bg-muted/40"} transition-colors`}
                       >
                         <td className="py-2 px-3">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedDay(isOpen ? null : row.tanggal)}
+                            className="h-7 w-7 rounded flex items-center justify-center hover:bg-muted transition-colors"
+                            title="Lihat rincian HPP per bahan"
+                          >
+                            <ChevronRight
+                              className={`h-4 w-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                            />
+                          </button>
+                        </td>
+                        <td className="py-2 px-3">
                           {new Date(row.tanggal + "T00:00:00").toLocaleDateString("id-ID", {
-                            day: "2-digit",
+                            weekday: "short",
+                            day: "numeric",
                             month: "short",
                           })}
                         </td>
-                        <td className="py-2 px-3 text-right">{formatRp(row.hpp)}</td>
+                        <td className="py-2 px-3 text-right tabular-nums">{formatRp(row.hpp)}</td>
                         <td className="py-2 px-3 text-right">
                           <EditableOmzetCell
                             value={row.omzet}
                             hasOverride={row.hasOmzetOverride}
+                            disabled={!!channel}
                             onSave={(newValue) => {
                               if (!branchId) {
                                 toast.error("Pilih cabang terlebih dahulu untuk mengedit Omzet");
@@ -618,359 +580,51 @@ function FinancePage() {
                           />
                         </td>
                         <td
-                          className={`py-2 px-3 text-right font-medium ${
-                            row.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"
-                          }`}
+                          className={`py-2 px-3 text-right tabular-nums font-medium ${row.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}
                         >
                           {formatRp(row.grossProfit)}
                         </td>
-                        <td className="py-2 px-3 text-right text-muted-foreground">
+                        <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
                           {(row.margin * 100).toFixed(1)}%
                         </td>
                       </tr>
-                    ))}
-                    {/* TOTAL row */}
-                    <tr className="border-t-2 font-semibold bg-muted/30">
-                      <td className="py-2 px-3">TOTAL</td>
-                      <td className="py-2 px-3 text-right">
-                        {formatRp(dailyRows.reduce((sum, r) => sum + r.hpp, 0))}
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        {formatRp(dailyRows.reduce((sum, r) => sum + r.omzet, 0))}
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        {formatRp(dailyRows.reduce((sum, r) => sum + r.grossProfit, 0))}
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        {(() => {
-                          const totalOmzet = dailyRows.reduce((sum, r) => sum + r.omzet, 0);
-                          const totalGp = dailyRows.reduce((sum, r) => sum + r.grossProfit, 0);
-                          return totalOmzet > 0
-                            ? `${((totalGp / totalOmzet) * 100).toFixed(1)}%`
-                            : "-";
-                        })()}
-                      </td>
-                    </tr>
-                  </>
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                      Tidak ada data untuk periode ini
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Right: Analytics Panel */}
-        <div className="space-y-6">
-          {/* Selected day detail or month summary */}
-          <div className="rounded-lg border p-4">
-            <h3 className="font-semibold mb-3">
-              {selectedDay
-                ? `Detail: ${new Date(selectedDay + "T00:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long" })}`
-                : "Ringkasan Bulan"}
-            </h3>
-            {selectedDayData ? (
-              <div className="space-y-2">
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">HPP</span>
-                  <span className="font-medium">{formatRp(selectedDayData.hpp)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Omzet</span>
-                  <span className="font-medium">{formatRp(selectedDayData.omzet)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Gross Profit</span>
-                  <span
-                    className={`font-medium ${selectedDayData.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}
-                  >
-                    {formatRp(selectedDayData.grossProfit)}
-                  </span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Margin</span>
-                  <span className="font-medium">{(selectedDayData.margin * 100).toFixed(1)}%</span>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Jumlah Order</span>
-                  <span className="font-medium">{summary.orderCount.toLocaleString("id-ID")}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Diskon Merchant</span>
-                  <span className="font-medium">{formatRp(summary.totalMerchantDiscount)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">MDR Ojol</span>
-                  <span className="font-medium">{formatRp(summary.totalMdr)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Omzet Netto</span>
-                  <span className="font-medium">{formatRp(summary.netSales)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Manual Revenue</span>
-                  <span className="font-medium">{formatRp(summary.manualRevenue)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Pengeluaran Operasional</span>
-                  <span className="font-medium">{formatRp(summary.manualExpenses)}</span>
-                </div>
-                {summary.totalCogs > 0 && (
-                  <div className="pt-2 space-y-1">
-                    <div className="flex items-center justify-between text-sm">
-                      <span>Food Cost Ratio</span>
-                      <span
-                        className={`font-medium ${summary.totalCogs / summary.totalSales > 0.4 ? "text-destructive" : ""}`}
-                      >
-                        {((summary.totalCogs / summary.totalSales) * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${summary.totalCogs / summary.totalSales > 0.4 ? "bg-destructive" : "bg-primary"}`}
-                        style={{
-                          width: `${Math.min((summary.totalCogs / summary.totalSales) * 100, 100)}%`,
-                        }}
-                      />
-                    </div>
-                    {summary.totalCogs / summary.totalSales > 0.4 && (
-                      <p className="text-xs text-destructive">⚠️ Food cost melebihi 40%!</p>
-                    )}
-                  </div>
-                )}
-              </div>
+                      {isOpen && (
+                        <HppBreakdownRow
+                          branchId={selectedBranchId}
+                          date={row.tanggal}
+                          channel={selectedChannel}
+                        />
+                      )}
+                    </Fragment>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-muted-foreground">
+                    Tidak ada data untuk periode ini
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {dailyRows && dailyRows.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 font-semibold bg-muted/40">
+                  <td className="py-2.5 px-3"></td>
+                  <td className="py-2.5 px-3">TOTAL</td>
+                  <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.hpp)}</td>
+                  <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.omzet)}</td>
+                  <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.gross)}</td>
+                  <td className="py-2.5 px-3 text-right tabular-nums">
+                    {totals.omzet > 0
+                      ? `${((totals.gross / totals.omzet) * 100).toFixed(1)}%`
+                      : "-"}
+                  </td>
+                </tr>
+              </tfoot>
             )}
-          </div>
-
-          {/* Christopher input */}
-          <div className="rounded-lg border p-4">
-            <h3 className="font-semibold mb-3">Profit Split</h3>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between py-1">
-                <label className="text-sm text-muted-foreground">Christopher</label>
-                <input
-                  type="number"
-                  value={christopher || ""}
-                  onChange={(e) => setChristopher(Number(e.target.value) || 0)}
-                  placeholder="0"
-                  className="h-8 w-36 rounded-md border border-input bg-background px-2 text-sm text-right"
-                />
-              </div>
-              <div className="flex justify-between py-1 border-t pt-2">
-                <span className="text-muted-foreground">Biaya Franchise (5%)</span>
-                <span className="font-medium">{formatRp(summary.totalSales * 0.05)}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-muted-foreground">Pusat</span>
-                <span className="font-medium">
-                  {formatRp(
-                    summary.grossProfit -
-                      summary.manualExpenses -
-                      summary.totalSales * 0.05 -
-                      christopher,
-                  )}
-                </span>
-              </div>
-            </div>
-          </div>
+          </table>
         </div>
       </div>
-
-      {/* Pencatatan Manual (monthly only) */}
-      {periodType === "bulanan" && (
-        <div className="mt-6 space-y-6">
-          <h2 className="text-lg font-semibold">Pencatatan Manual</h2>
-
-          {/* Section 1: HPP Menu Items */}
-          <div className="rounded-lg border p-4">
-            <h3 className="font-semibold mb-3">Harga HPP Makan Pegawai</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="text-left py-2 px-3 font-medium">Menu Item</th>
-                    <th className="text-right py-2 px-3 font-medium w-32">HPP</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recipesData && recipesData.length > 0 ? (
-                    recipesData.map((recipe) => (
-                      <tr key={recipe.id} className="border-b">
-                        <td className="py-2 px-3">{recipe.name}</td>
-                        <td className="py-2 px-3 text-right font-medium">
-                          {formatRp(recipe.totalCogs)}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={2} className="py-4 text-center text-muted-foreground">
-                        Tidak ada data resep
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Section 2: Employee Meal Matrix */}
-          <div className="rounded-lg border p-4">
-            <h3 className="font-semibold mb-3">Beban Makan Pegawai</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="text-left py-2 px-3 font-medium">Nama Pegawai</th>
-                    <th className="text-left py-2 px-3 font-medium">Menu Item</th>
-                    <th className="text-right py-2 px-3 font-medium w-20">Qty</th>
-                    <th className="text-right py-2 px-3 font-medium w-32">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {employeeMeals && employeeMeals.length > 0 ? (
-                    employeeMeals.map((meal, i) => (
-                      <tr key={i} className="border-b">
-                        <td className="py-2 px-3">{meal.staffName}</td>
-                        <td className="py-2 px-3">{meal.ingredientName}</td>
-                        <td className="py-2 px-3 text-right">{meal.quantity}</td>
-                        <td className="py-2 px-3 text-right font-medium">
-                          {formatRp(meal.valuation)}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={4} className="py-4 text-center text-muted-foreground">
-                        Tidak ada data beban makan
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {employeeMeals && employeeMeals.length > 0 && (
-              <div className="mt-2 flex justify-end">
-                <span className="font-semibold text-sm">
-                  Total: {formatRp(employeeMeals.reduce((sum, m) => sum + m.valuation, 0))}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Section 3: Detailed Operational Expenses */}
-          <div className="rounded-lg border p-4">
-            <h3 className="font-semibold mb-3">Rincian Biaya Operasional</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="text-left py-2 px-3 font-medium w-10">No</th>
-                    <th className="text-left py-2 px-3 font-medium">Items</th>
-                    <th className="text-right py-2 px-3 font-medium w-32">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expenses && expenses.length > 0 ? (
-                    expenses.map((exp, i) => (
-                      <tr key={exp.id} className="border-b">
-                        <td className="py-2 px-3">{i + 1}</td>
-                        <td className="py-2 px-3">{exp.notes ?? exp.category}</td>
-                        <td className="py-2 px-3 text-right font-medium">{formatRp(exp.amount)}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={3} className="py-4 text-center text-muted-foreground">
-                        Tidak ada data pengeluaran operasional
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {expenses && expenses.length > 0 && (
-              <div className="mt-2 flex justify-end">
-                <span className="font-semibold text-sm">
-                  Total: {formatRp(expenses.reduce((sum, e) => sum + e.amount, 0))}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Section 4: Financial Summary */}
-          {pmSummary && (
-            <div className="rounded-lg border p-4">
-              <h3 className="font-semibold mb-3">Ringkasan Keuangan</h3>
-              <div className="space-y-2">
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Biaya Makan Staff</span>
-                  <span className="font-medium">{formatRp(pmSummary.biayaMakanStaff)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Biaya Operasional</span>
-                  <span className="font-medium">{formatRp(pmSummary.biayaOperasional)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Biaya Gaji</span>
-                  <span className="font-medium">{formatRp(pmSummary.biayaGaji)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Biaya Listrik dan Air</span>
-                  <span className="font-medium">{formatRp(pmSummary.biayaListrikAir)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Wifi</span>
-                  <span className="font-medium">{formatRp(pmSummary.biayaWifi)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Biaya Sewa (Inc Service Charge)</span>
-                  <span className="font-medium">{formatRp(pmSummary.biayaSewa)}</span>
-                </div>
-                <div className="flex justify-between py-1 border-t pt-2 font-semibold">
-                  <span>Total Biaya</span>
-                  <span>{formatRp(pmSummary.total)}</span>
-                </div>
-                <div className="flex justify-between py-1 border-t pt-2">
-                  <span className="text-muted-foreground">HPP</span>
-                  <span className="font-medium">{formatRp(pmSummary.hpp)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Piutang Penjualan</span>
-                  <span className="font-medium">{formatRp(pmSummary.piutangPenjualan)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Profit Margin</span>
-                  <span className="font-medium">{formatRp(pmSummary.profitMargin)}</span>
-                </div>
-                <div className="flex justify-between py-1 border-t pt-2">
-                  <span className="text-muted-foreground">Nett Profit</span>
-                  <span className="font-medium">{formatRp(pmSummary.nettProfit)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Biaya Franchise (5%)</span>
-                  <span className="font-medium">{formatRp(pmSummary.biayaFranchise)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Pusat</span>
-                  <span className="font-medium">{formatRp(pmSummary.pusat)}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted-foreground">Christopher</span>
-                  <span className="font-medium">{formatRp(christopher)}</span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Revenue Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Input Revenue" size="lg">
@@ -991,7 +645,6 @@ function FinancePage() {
               Per Channel
             </button>
           </div>
-
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Cabang</label>
@@ -1017,7 +670,6 @@ function FinancePage() {
               />
             </div>
           </div>
-
           {revenueType === "channel" && (
             <div className="space-y-2">
               <label className="text-sm font-medium">Channel</label>
@@ -1033,7 +685,6 @@ function FinancePage() {
               </select>
             </div>
           )}
-
           <div className="space-y-2">
             <label className="text-sm font-medium">Jumlah (Rp)</label>
             <input
@@ -1044,7 +695,6 @@ function FinancePage() {
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
-
           <div className="space-y-2">
             <label className="text-sm font-medium">Catatan</label>
             <textarea
@@ -1052,7 +702,6 @@ function FinancePage() {
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-none"
             />
           </div>
-
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
@@ -1119,7 +768,6 @@ function FinancePage() {
               />
             </div>
           </div>
-
           <div className="space-y-2">
             <label className="text-sm font-medium">Kategori</label>
             <select
@@ -1134,7 +782,6 @@ function FinancePage() {
               <option value="Operasional">Operasional</option>
             </select>
           </div>
-
           <div className="space-y-2">
             <label className="text-sm font-medium">Jumlah (Rp)</label>
             <input
@@ -1145,7 +792,6 @@ function FinancePage() {
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
-
           <div className="space-y-2">
             <label className="text-sm font-medium">Catatan</label>
             <textarea
@@ -1153,7 +799,6 @@ function FinancePage() {
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-none"
             />
           </div>
-
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"

@@ -27,6 +27,7 @@ import { Route as LayoutPencatatanManualRouteImport } from './routes/_layout/pen
 import { Route as LayoutOrderHistoryRouteImport } from './routes/_layout/order-history'
 import { Route as LayoutDashboardRouteImport } from './routes/_layout/dashboard'
 import { Route as LayoutCancelRequestsRouteImport } from './routes/_layout/cancel-requests'
+import { Route as LayoutAuditInventoryRouteImport } from './routes/_layout/audit-inventory'
 import { Route as LayoutWasteIndexRouteImport } from './routes/_layout/waste/index'
 import { Route as LayoutSupplierDeliveriesIndexRouteImport } from './routes/_layout/supplier-deliveries/index'
 import { Route as LayoutStockTransfersIndexRouteImport } from './routes/_layout/stock-transfers/index'
@@ -163,6 +164,11 @@ const LayoutDashboardRoute = LayoutDashboardRouteImport.update({
 const LayoutCancelRequestsRoute = LayoutCancelRequestsRouteImport.update({
   id: '/cancel-requests',
   path: '/cancel-requests',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutAuditInventoryRoute = LayoutAuditInventoryRouteImport.update({
+  id: '/audit-inventory',
+  path: '/audit-inventory',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutWasteIndexRoute = LayoutWasteIndexRouteImport.update({
@@ -428,6 +434,7 @@ export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
+  '/audit-inventory': typeof LayoutAuditInventoryRoute
   '/cancel-requests': typeof LayoutCancelRequestsRoute
   '/dashboard': typeof LayoutDashboardRoute
   '/order-history': typeof LayoutOrderHistoryRoute
@@ -494,6 +501,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
+  '/audit-inventory': typeof LayoutAuditInventoryRoute
   '/cancel-requests': typeof LayoutCancelRequestsRoute
   '/dashboard': typeof LayoutDashboardRoute
   '/order-history': typeof LayoutOrderHistoryRoute
@@ -563,6 +571,7 @@ export interface FileRoutesById {
   '/_layout': typeof LayoutRouteWithChildren
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
+  '/_layout/audit-inventory': typeof LayoutAuditInventoryRoute
   '/_layout/cancel-requests': typeof LayoutCancelRequestsRoute
   '/_layout/dashboard': typeof LayoutDashboardRoute
   '/_layout/order-history': typeof LayoutOrderHistoryRoute
@@ -633,6 +642,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/login'
+    | '/audit-inventory'
     | '/cancel-requests'
     | '/dashboard'
     | '/order-history'
@@ -699,6 +709,7 @@ export interface FileRouteTypes {
   to:
     | '/about'
     | '/login'
+    | '/audit-inventory'
     | '/cancel-requests'
     | '/dashboard'
     | '/order-history'
@@ -767,6 +778,7 @@ export interface FileRouteTypes {
     | '/_layout'
     | '/about'
     | '/login'
+    | '/_layout/audit-inventory'
     | '/_layout/cancel-requests'
     | '/_layout/dashboard'
     | '/_layout/order-history'
@@ -973,6 +985,13 @@ declare module '@tanstack/react-router' {
       path: '/cancel-requests'
       fullPath: '/cancel-requests'
       preLoaderRoute: typeof LayoutCancelRequestsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/audit-inventory': {
+      id: '/_layout/audit-inventory'
+      path: '/audit-inventory'
+      fullPath: '/audit-inventory'
+      preLoaderRoute: typeof LayoutAuditInventoryRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/waste/': {
@@ -1315,6 +1334,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface LayoutRouteChildren {
+  LayoutAuditInventoryRoute: typeof LayoutAuditInventoryRoute
   LayoutCancelRequestsRoute: typeof LayoutCancelRequestsRoute
   LayoutDashboardRoute: typeof LayoutDashboardRoute
   LayoutOrderHistoryRoute: typeof LayoutOrderHistoryRoute
@@ -1372,6 +1392,7 @@ interface LayoutRouteChildren {
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
+  LayoutAuditInventoryRoute: LayoutAuditInventoryRoute,
   LayoutCancelRequestsRoute: LayoutCancelRequestsRoute,
   LayoutDashboardRoute: LayoutDashboardRoute,
   LayoutOrderHistoryRoute: LayoutOrderHistoryRoute,

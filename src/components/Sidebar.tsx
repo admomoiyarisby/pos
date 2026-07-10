@@ -214,6 +214,18 @@ const navGroups: NavGroup[] = [
         icon: Trash2,
         roles: ["super_admin", "admin_pusat"],
       },
+      {
+        label: "Audit Inventory",
+        to: "/audit-inventory",
+        icon: ClipboardList,
+        roles: ["super_admin", "admin_pusat"],
+      },
+      {
+        label: "Pencatatan Manual",
+        to: "/pencatatan-manual",
+        icon: ScrollText,
+        roles: ["super_admin", "admin_pusat"],
+      },
     ],
   },
   {
