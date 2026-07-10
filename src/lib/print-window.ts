@@ -9,6 +9,7 @@ export function openPrintWindow(html: string): void {
   const printWindow = window.open("", "_blank");
 
   if (printWindow) {
+    printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
     return;
@@ -30,10 +31,15 @@ export function openPrintWindow(html: string): void {
     iframeDoc.write(html);
     iframeDoc.close();
 
-    // Clean up after print
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-    }, 1000);
+    // Clean up after print dialog closes
+    const cleanup = () => {
+      if (iframe.parentNode) {
+        document.body.removeChild(iframe);
+      }
+    };
+    iframe.contentWindow?.addEventListener("afterprint", cleanup);
+    // Fallback cleanup after 5 seconds
+    setTimeout(cleanup, 5000);
   } else {
     // Last resort: open in same window
     const newWindow = window.open("", "_self");
