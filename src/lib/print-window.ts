@@ -5,11 +5,41 @@
  * pattern in src/lib/pos-print.ts).
  */
 export function openPrintWindow(html: string): void {
+  // Try popup first
   const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    alert("Popup diblokir. Mohon izinkan popup untuk mencetak.");
+
+  if (printWindow) {
+    printWindow.document.write(html);
+    printWindow.document.close();
     return;
   }
-  printWindow.document.write(html);
-  printWindow.document.close();
+
+  // Fallback: use iframe for popup-blocked browsers
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "none";
+  document.body.appendChild(iframe);
+
+  const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (iframeDoc) {
+    iframeDoc.open();
+    iframeDoc.write(html);
+    iframeDoc.close();
+
+    // Clean up after print
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+    }, 1000);
+  } else {
+    // Last resort: open in same window
+    const newWindow = window.open("", "_self");
+    if (newWindow) {
+      newWindow.document.write(html);
+      newWindow.document.close();
+    }
+  }
 }
