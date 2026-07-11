@@ -13,6 +13,7 @@ import {
 } from "#/db/schema";
 import type { ScmProcurementStatus } from "./scm-fsm";
 import { availableEvents, transition, updateItem } from "./scm-fsm";
+import { generateDocumentCode } from "./document-codes";
 
 // =============================================================================
 // createProcurement
@@ -28,56 +29,34 @@ export const createProcurement = createServerFn({ method: "POST" })
         sortOrder?: number;
       }>;
       notes?: string;
+      requestSource?: string;
     }) => data,
   )
   .handler(async ({ data }) => {
     const user = await requireRole("branch_admin", "super_admin");
 
-    // Generate a human-readable code: PROC-YYYY-NNNN where NNNN is a
-    // globally sequential counter for the current year. We count ALL
-    // procurements in the year (not per-branch) because the `code` column
-    // has a global UNIQUE constraint.
-    //
-    // To handle concurrent inserts safely, we retry on unique constraint
-    // violations with an incremented sequence number.
-    const year = new Date().getFullYear();
-    const MAX_RETRIES = 5;
-    let proc: { id: string; code: string } | undefined;
+    // Look up branch code for the document code format:
+    // PR/<branch_code>/ddmmyy/serial (see document-codes.ts)
+    const [branch] = await db
+      .select({ code: branches.code })
+      .from(branches)
+      .where(eq(branches.id, data.branchId))
+      .limit(1);
+    if (!branch) throw new Error("Branch not found");
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      // Find the highest existing sequence number for this year
-      const [{ maxNum }] = await db
-        .select({
-          maxNum: sql<number>`coalesce(max(cast(split_part(${scmProcurements.code}, '-', 3) as integer)), 0)`,
-        })
-        .from(scmProcurements)
-        .where(sql`${scmProcurements.code} like ${`PROC-${year}-%`}`);
-      const nextSeq = (maxNum ?? 0) + 1 + attempt;
-      const code = `PROC-${year}-${String(nextSeq).padStart(4, "0")}`;
+    const code = await generateDocumentCode("PR", branch.code);
 
-      try {
-        [proc] = await db
-          .insert(scmProcurements)
-          .values({
-            code,
-            branchId: data.branchId,
-            status: "Draft",
-            requestedById: user.id,
-            notes: data.notes,
-          })
-          .returning();
-        break; // success
-      } catch (err) {
-        const pgCode = (err as any).cause?.code ?? (err as any).code;
-        if (pgCode === "23505" && attempt < MAX_RETRIES - 1) {
-          // unique_violation — race condition, retry with next number
-          continue;
-        }
-        const pgError = (err as any).cause ?? err;
-        console.error("[createProcurement] INSERT failed:", pgError.message ?? pgError);
-        throw new Error(pgError.message ?? "Gagal membuat pengadaan");
-      }
-    }
+    const [proc] = await db
+      .insert(scmProcurements)
+      .values({
+        code,
+        branchId: data.branchId,
+        status: "Draft",
+        requestedById: user.id,
+        notes: data.notes,
+        requestSource: data.requestSource,
+      })
+      .returning();
 
     if (!proc) throw new Error("Failed to create procurement");
 
@@ -190,8 +169,35 @@ export const getProcurement = createServerFn({ method: "GET" })
     const user = await requireAuth();
 
     const [proc] = await db
-      .select()
+      .select({
+        id: scmProcurements.id,
+        code: scmProcurements.code,
+        branchId: scmProcurements.branchId,
+        status: scmProcurements.status,
+        requestedById: scmProcurements.requestedById,
+        reviewingById: scmProcurements.reviewingById,
+        receivingById: scmProcurements.receivingById,
+        lastEvent: scmProcurements.lastEvent,
+        lastEventAt: scmProcurements.lastEventAt,
+        createdAt: scmProcurements.createdAt,
+        updatedAt: scmProcurements.updatedAt,
+        submittedAt: scmProcurements.submittedAt,
+        shippedAt: scmProcurements.shippedAt,
+        receivedAt: scmProcurements.receivedAt,
+        paidAt: scmProcurements.paidAt,
+        rejectedAt: scmProcurements.rejectedAt,
+        rejectionReason: scmProcurements.rejectionReason,
+        cancelledAt: scmProcurements.cancelledAt,
+        cancelledById: scmProcurements.cancelledById,
+        cancellationReason: scmProcurements.cancellationReason,
+        notes: scmProcurements.notes,
+        requestSource: scmProcurements.requestSource,
+        requestedByName: users.name,
+        branchName: branches.name,
+      })
       .from(scmProcurements)
+      .leftJoin(users, eq(scmProcurements.requestedById, users.id))
+      .leftJoin(branches, eq(scmProcurements.branchId, branches.id))
       .where(eq(scmProcurements.id, data.id))
       .limit(1);
 

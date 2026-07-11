@@ -17,6 +17,7 @@ import {
   type FsmPayload,
   type FsmTx,
 } from "./scm-effects";
+import { buildNotificationsForEvent, insertNotifications } from "./scm-procurement-notifications";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -323,6 +324,19 @@ export async function transition(
         actorRole: actor.role,
         note: payload.reason ?? payload.notes,
       });
+
+      // Notifications (same transaction — rolls back on failure)
+      const notifTargets = await buildNotificationsForEvent({
+        procurement: {
+          id: procurementId,
+          code: proc.code,
+          branchId: proc.branchId,
+          requestedById: proc.requestedById,
+        },
+        event,
+        actorUserId: actor.id,
+      });
+      await insertNotifications(notifTargets, tx);
 
       return rule.to;
     });

@@ -8,6 +8,7 @@ import {
   scmProcurementInvoices,
   scmProcurementItems,
   scmProcurements,
+  users,
 } from "#/db/schema";
 
 // =============================================================================
@@ -178,6 +179,8 @@ interface InvoiceData {
   totalAmount: number;
   sourceBranchName: string;
   destBranchName: string;
+  requestedByName: string | null;
+  requestSource: string | null;
   lineItems: InvoiceLineItem[];
 }
 
@@ -266,6 +269,17 @@ function buildInvoiceHtml(d: InvoiceData): string {
     <div class="info-block">
       <div class="info-label">Kepada</div>
       <div class="info-value">${escapeHtml(d.destBranchName)}</div>
+    </div>
+  </div>
+
+  <div class="info">
+    <div class="info-block">
+      <div class="info-label">Pemohon</div>
+      <div class="info-value">${escapeHtml(d.requestedByName ?? "-")}</div>
+    </div>
+    <div class="info-block">
+      <div class="info-label">Sumber</div>
+      <div class="info-value">${escapeHtml(d.requestSource ?? "-")}</div>
     </div>
   </div>
 
@@ -358,6 +372,15 @@ export const printInvoice = createServerFn({ method: "GET" })
 
     const lineItems = (invoice.lineItems ?? []) as InvoiceLineItem[];
 
+    // Fetch requester name
+    const [requester] = proc.requestedById
+      ? await db
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, proc.requestedById))
+          .limit(1)
+      : [];
+
     const allBranches = await db.select().from(branches);
     const dest = allBranches.find((b) => b.id === proc.branchId);
     const central = allBranches.find((b) => b.type === "Central");
@@ -370,6 +393,8 @@ export const printInvoice = createServerFn({ method: "GET" })
       lineItems,
       sourceBranchName: central?.name ?? "Central Kitchen",
       destBranchName: dest?.name ?? "-",
+      requestedByName: requester?.name ?? null,
+      requestSource: proc.requestSource ?? null,
     });
   });
 

@@ -49,8 +49,11 @@ function NewProcurementPage() {
     }>
   >([]);
   const [notes, setNotes] = useState("");
+  const [requestSource, setRequestSource] = useState("");
   const [selectedIngredient, setSelectedIngredient] = useState("");
   const [quantity, setQuantity] = useState(1);
+
+  const showPrices = user?.role !== "branch_admin";
 
   const createDraftM = useMutation({
     mutationFn: async () => {
@@ -66,6 +69,7 @@ function NewProcurementPage() {
             sortOrder: idx,
           })),
           notes: notes || undefined,
+          requestSource: requestSource || undefined,
         },
       });
     },
@@ -224,26 +228,38 @@ function NewProcurementPage() {
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t-2 bg-muted/30 font-semibold">
-                      <td colSpan={3} className="px-3 py-2 text-right">
-                        Total:
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        Rp{" "}
-                        {items
-                          .reduce((sum, it) => sum + it.quantity * it.unitPrice, 0)
-                          .toLocaleString("id-ID")}
-                      </td>
-                      <td></td>
-                    </tr>
+                    {showPrices && (
+                      <tr className="border-t-2 bg-muted/30 font-semibold">
+                        <td colSpan={3} className="px-3 py-2 text-right">
+                          Total:
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          Rp{" "}
+                          {items
+                            .reduce((sum, it) => sum + it.quantity * it.unitPrice, 0)
+                            .toLocaleString("id-ID")}
+                        </td>
+                        <td></td>
+                      </tr>
+                    )}
                   </tfoot>
                 </table>
               </div>
             ) : null}
 
-            <div className="space-y-2">
-              <Label>Catatan (opsional)</Label>
-              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Sumber Permintaan (opsional)</Label>
+                <Input
+                  placeholder="mis. WhatsApp, Telepon, Walk-in"
+                  value={requestSource}
+                  onChange={(e) => setRequestSource(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Catatan (opsional)</Label>
+                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+              </div>
             </div>
 
             <div className="flex flex-wrap justify-end gap-2">

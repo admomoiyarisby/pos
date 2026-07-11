@@ -389,7 +389,10 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
               ) : (
                 availableToAdd.map((ing) => (
                   <SelectItem key={ing.id} value={ing.id}>
-                    {ing.name} — Rp {ing.averageCost.toLocaleString("id-ID")}/{ing.stockUnit}
+                    {ing.name}
+                    {showPrices
+                      ? ` — Rp ${ing.averageCost.toLocaleString("id-ID")}/${ing.stockUnit}`
+                      : ` — ${ing.stockUnit}`}
                   </SelectItem>
                 ))
               )}

@@ -167,6 +167,22 @@ function ProcurementDetailPage() {
           }}
         />
 
+        {/* Traceability: requester + source (visible to all roles) */}
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+          <span>
+            Pemohon:{" "}
+            <span className="font-medium text-foreground">
+              {(proc.requestedByName as string) ?? "-"}
+            </span>
+          </span>
+          <span>
+            Sumber:{" "}
+            <span className="font-medium text-foreground">
+              {(proc.requestSource as string) ?? "-"}
+            </span>
+          </span>
+        </div>
+
         <DispatchView
           status={proc.status as ScmProcurementStatus}
           actorRole={user.role}
@@ -187,11 +203,11 @@ interface DispatchViewProps extends StateViewProps {
 function DispatchView(props: DispatchViewProps) {
   const { status, actorRole } = props;
 
+  const isBA = actorRole === "branch_admin";
   const isCA = actorRole === "admin_pusat" || actorRole === "super_admin";
-  const isBA = actorRole === "branch_admin" || actorRole === "super_admin";
 
-  // ID15: Only CA roles see prices
-  const viewProps = { ...props, showPrices: isCA };
+  // ID15: Only branch_admin hides prices; admin_pusat, super_admin, area_manager see them
+  const viewProps = { ...props, showPrices: !isBA };
 
   if (status === "Draft") {
     if (isBA) return <DraftForm {...viewProps} />;

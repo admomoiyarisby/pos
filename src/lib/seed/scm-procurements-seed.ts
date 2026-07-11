@@ -4,9 +4,9 @@
  * Creates 3 procurements in different states so you can immediately click
  * through the new UI and see how each state renders:
  *
- *  1. PROC-<year>-0001 — Draft (just created, BA can edit/submit)
- *  2. PROC-<year>-0002 — UnderReview (CA can review)
- *  3. PROC-<year>-0003 — Finished (full flow, "Lunas")
+ *  1. PR/<branch>/<date>/01 — Draft (just created, BA can edit/submit)
+ *  2. PR/<branch>/<date>/02 — UnderReview (CA can review)
+ *  3. PR/<branch>/<date>/03 — Finished (full flow, "Lunas")
  *
  * Run with: pnpm tsx src/lib/seed/scm-procurements-seed.ts
  *
@@ -58,8 +58,15 @@ async function main() {
   const ca = await pickUserByRole("admin_pusat");
   const superAdmin = await pickUserByRole("super_admin");
   const ings = await pickIngredients(5);
-  const year = new Date().getFullYear();
   const actor = (user: typeof ba) => ({ id: user.id, role: user.role });
+
+  // Document codes use format: PR/<branch_code>/ddmmyy/serial
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, "0");
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const year = String(now.getFullYear()).slice(-2);
+  const dateStr = `${day}${month}${year}`;
+  const bc = outlet.code; // branch code for the outlet
 
   // -----------------------------------------------------------------------
   // 1. Draft
@@ -68,7 +75,7 @@ async function main() {
   const [draft] = await db
     .insert(scmProcurements)
     .values({
-      code: `PROC-${year}-9001`,
+      code: `PR/${bc}/${dateStr}/01`,
       branchId: outlet.id,
       status: "Draft",
       requestedById: ba.id,
@@ -94,7 +101,7 @@ async function main() {
   const [underReview] = await db
     .insert(scmProcurements)
     .values({
-      code: `PROC-${year}-9002`,
+      code: `PR/${bc}/${dateStr}/02`,
       branchId: outlet.id,
       status: "Draft",
       requestedById: ba.id,
@@ -122,7 +129,7 @@ async function main() {
   const [finished] = await db
     .insert(scmProcurements)
     .values({
-      code: `PROC-${year}-9003`,
+      code: `PR/${bc}/${dateStr}/03`,
       branchId: outlet.id,
       status: "Draft",
       requestedById: ba.id,
@@ -207,9 +214,9 @@ async function main() {
   void superAdmin;
 
   console.log("\nDone. Open http://localhost:3000/scm-procurements");
-  console.log("  - PROC-*-9001: Draft (BA submits)");
-  console.log("  - PROC-*-9002: UnderReview (CA reviews)");
-  console.log("  - PROC-*-9003: Finished (lunas, dengan rejected qty)");
+  console.log(`  - PR/${bc}/${dateStr}/01: Draft (BA submits)`);
+  console.log(`  - PR/${bc}/${dateStr}/02: UnderReview (CA reviews)`);
+  console.log(`  - PR/${bc}/${dateStr}/03: Finished (lunas, dengan rejected qty)`);
   process.exit(0);
 }
 
