@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -12,11 +12,18 @@ import { Badge } from "#/components/ui/badge";
 import { Card } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
 import Modal from "#/components/ui/Modal";
-import { Label } from "#/components/ui/label";
-import { Separator } from "#/components/ui/separator";
-import { Checkbox } from "#/components/ui/checkbox";
+import { RecipeWizard } from "#/components/RecipeWizard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import { Plus, Trash2, Save, AlertTriangle } from "lucide-react";
+import {
+  ArrowLeft,
+  Pencil,
+  Trash2,
+  AlertTriangle,
+  TrendingUp,
+  Package,
+  Store,
+  Tag,
+} from "lucide-react";
 
 export const Route = createFileRoute("/_layout/recipes/$recipeId")({
   component: RecipeDetailPage,
@@ -33,21 +40,15 @@ function RecipeDetailPage() {
   const { recipe: initial, brands, modifierGroups, branches } = Route.useLoaderData();
   const { recipeId } = Route.useParams();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [isBundling, setIsBundling] = useState(false);
-  const [childRecipes, setChildRecipes] = useState<any[]>([]);
-  const [isBOGO, setIsBOGO] = useState(false);
-  const [linkedModifierGroupIds, setLinkedModifierGroupIds] = useState<string[]>([]);
-  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
 
   const { data: recipe } = useQuery({
     queryKey: ["recipe", recipeId],
     queryFn: () => getRecipeDetail({ data: { id: recipeId } }),
     initialData: initial,
   });
-
-  usePageTitle(recipe?.name ?? "Detail Resep", "Bill of Materials & HPP");
 
   const { data: allModifierGroups } = useQuery({
     queryKey: ["modifier-groups"],
@@ -67,6 +68,11 @@ function RecipeDetailPage() {
     initialData: branches,
   });
 
+  const { data: allRecipes } = useQuery({
+    queryKey: ["recipes"],
+    queryFn: () => import("#/lib/server/recipes").then((m) => m.getRecipes({ data: {} })),
+  });
+
   const updateMutation = useMutation({
     mutationFn: updateRecipe,
     onSuccess: () => {
@@ -80,12 +86,9 @@ function RecipeDetailPage() {
     },
   });
 
-  const navigate = useNavigate();
-
   const deleteMutation = useMutation({
     mutationFn: ({ data }: { data: { id: string; hardDelete: boolean } }) => deleteRecipe({ data }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
       void queryClient.invalidateQueries({ queryKey: ["recipes"] });
       setShowDeleteModal(false);
       toast.success("Menu berhasil dinonaktifkan");
@@ -96,27 +99,6 @@ function RecipeDetailPage() {
     },
   });
 
-  const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const brandIds = fd.getAll("brandIds").map(String);
-    const data = {
-      id: recipeId,
-      code: fd.get("code") as string,
-      name: fd.get("name") as string,
-      description: fd.get("description") as string | undefined,
-      category: fd.get("category") as "makanan" | "minuman" | "snack" | "add_ons" | "paket_bundle",
-      basePrice: Number(fd.get("basePrice")),
-      isBOGO: fd.get("isBOGO") === "on",
-      brandIds,
-      ingredients: [],
-      childRecipes: isBundling && childRecipes.length > 0 ? childRecipes : undefined,
-      modifierGroupIds: linkedModifierGroupIds.length > 0 ? linkedModifierGroupIds : undefined,
-      branchIds: selectedBranchIds,
-    };
-    void updateMutation.mutateAsync({ data });
-  };
-
   const handleDelete = async () => {
     if (recipeId) {
       await deleteMutation.mutateAsync({
@@ -125,298 +107,264 @@ function RecipeDetailPage() {
     }
   };
 
+  usePageTitle(recipe?.name ?? "Detail Resep", "Bill of Materials & HPP");
+
   if (!recipe) {
     return <div className="text-muted-foreground">Resep tidak ditemukan</div>;
   }
 
+  // Calculate margin
+  const margin =
+    recipe.totalCogs > 0 && recipe.basePrice > 0
+      ? ((recipe.basePrice - recipe.totalCogs) / recipe.basePrice) * 100
+      : 0;
+  const isHighHPP = recipe.totalCogs / recipe.basePrice > 0.4;
+
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="space-y-6">
-        <div className="mb-6 flex items-center justify-end gap-2">
-          <button
-            onClick={() => {
-              if (!isEditing && recipe) {
-                // Populate form state from current recipe data
-                setSelectedBranchIds(recipe.branchIds ?? []);
-                setIsBOGO(recipe.isBOGO);
-                setLinkedModifierGroupIds(
-                  recipe.modifierGroups?.map((mg: any) => mg.modifierGroupId) ?? [],
-                );
-                if (recipe.childRecipes?.length > 0) {
-                  setIsBundling(true);
-                  setChildRecipes(
-                    recipe.childRecipes.map((cr: any) => ({
-                      recipeId: cr.childRecipeId,
-                      quantity: cr.quantity,
-                    })),
-                  );
+        {/* Back Navigation */}
+        <Link
+          to="/recipes"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Kembali ke Daftar Menu
+        </Link>
+
+        {/* Header with Actions */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">{recipe.name}</h1>
+            <p className="text-muted-foreground mt-1">
+              {recipe.code} • {recipe.category}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {!isEditing && (
+              <Button
+                variant="outline"
+                onClick={() => setShowDeleteModal(true)}
+                className="text-destructive border-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Nonaktifkan
+              </Button>
+            )}
+            <Button
+              onClick={() => {
+                if (!isEditing) {
+                  // Entering edit mode - wizard will use recipe data
+                  setIsEditing(true);
                 } else {
-                  setIsBundling(false);
-                  setChildRecipes([]);
+                  // Cancelling edit
+                  setIsEditing(false);
                 }
-              }
-              setIsEditing(!isEditing);
-            }}
-            className="inline-flex h-10 md:h-9 items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            {!isEditing && <Plus className="h-4 w-4" />}
-            {isEditing ? "Batal" : "Edit Menu"}
-          </button>
-          {!isEditing && (
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              className="inline-flex h-10 md:h-9 items-center gap-2 rounded-md border border-destructive px-4 py-2 text-sm font-medium text-destructive shadow-sm transition-colors hover:bg-destructive/10"
+              }}
             >
-              <Trash2 className="h-4 w-4" />
-              Hapus
-            </button>
-          )}
-        </div>
-        {isEditing ? (
-          <form onSubmit={handleUpdate} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Kode</label>
-                <input
-                  name="code"
-                  defaultValue={recipe.code}
-                  required
-                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Nama</label>
-                <input
-                  name="name"
-                  defaultValue={recipe.name}
-                  required
-                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Deskripsi</label>
-              <input
-                name="description"
-                defaultValue={recipe.description || ""}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Kategori</label>
-                <select
-                  name="category"
-                  defaultValue={recipe.category}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="makanan">Makanan</option>
-                  <option value="minuman">Minuman</option>
-                  <option value="snack">Snack</option>
-                  <option value="add_ons">Add-on</option>
-                  <option value="paket_bundle">Paket Bundle</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Harga Dasar (Rp)</label>
-                <input
-                  name="basePrice"
-                  type="number"
-                  min={0}
-                  defaultValue={recipe.basePrice}
-                  required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Brand</Label>
-              <div className="flex flex-wrap gap-2">
-                {allBrands?.map((b) => (
-                  <label
-                    key={b.id}
-                    className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      name="brandIds"
-                      value={b.id}
-                      defaultChecked={recipe.brands?.some((br) => br.brandId === b.id)}
-                      className="rounded border-gray-300"
-                    />
-                    {b.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <Separator />
-            <div className="space-y-2">
-              <Label>Ketersediaan Cabang</Label>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="allBranches"
-                  checked={selectedBranchIds.length === 0 && allBranches?.length > 0}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedBranchIds([]);
-                    } else {
-                      setSelectedBranchIds(allBranches?.map((b) => b.id) || []);
-                    }
-                  }}
-                />
-                <label htmlFor="allBranches" className="text-sm font-medium">
-                  Tersedia di semua cabang (default)
-                </label>
-              </div>
-              {selectedBranchIds.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  <p className="text-sm font-medium">Pilih cabang spesifik:</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {allBranches?.map((b) => (
-                      <label key={b.id} className="flex items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={selectedBranchIds.includes(b.id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedBranchIds([...selectedBranchIds, b.id]);
-                            } else {
-                              setSelectedBranchIds(selectedBranchIds.filter((id) => id !== b.id));
-                            }
-                          }}
-                        />
-                        {b.name}
-                      </label>
-                    ))}
-                  </div>
-                </div>
+              {isEditing ? (
+                "Batal"
+              ) : (
+                <>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit Menu
+                </>
               )}
-            </div>
-            <Separator />
-            <div className="space-y-2">
-              <Label>Opsi Tambahan</Label>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="isBOGO"
-                  checked={isBOGO}
-                  onCheckedChange={(checked) => setIsBOGO(checked as boolean)}
-                />
-                <label htmlFor="isBOGO" className="text-sm font-medium">
-                  BOGO (Beli 1 Gratis 1)
-                </label>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Grup Modifier</Label>
-              <div className="space-y-1">
-                {allModifierGroups?.map((g) => {
-                  const checked = linkedModifierGroupIds.includes(g.id);
-                  return (
-                    <div key={g.id} className="flex items-center gap-2">
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setLinkedModifierGroupIds([...linkedModifierGroupIds, g.id]);
-                          } else {
-                            setLinkedModifierGroupIds(
-                              linkedModifierGroupIds.filter((id) => id !== g.id),
-                            );
-                          }
+            </Button>
+          </div>
+        </div>
+
+        {isEditing ? (
+          /* Edit Mode: Wizard */
+          <Card className="p-6">
+            <RecipeWizard
+              initialData={{
+                code: recipe.code,
+                name: recipe.name,
+                category: recipe.category,
+                basePrice: recipe.basePrice,
+                brandIds: recipe.brands?.map((b: any) => b.brandId) ?? [],
+                ingredients:
+                  recipe.ingredients?.map((i: any) => ({
+                    ingredientId: i.ingredientId,
+                    quantity: i.quantity,
+                  })) ?? [],
+                branchIds: recipe.branchIds ?? [],
+                isBOGO: recipe.isBOGO,
+                modifierGroupIds: recipe.modifierGroups?.map((mg: any) => mg.modifierGroupId) ?? [],
+                isBundling: recipe.childRecipes?.length > 0,
+                childRecipes:
+                  recipe.childRecipes?.map((cr: any) => ({
+                    recipeId: cr.childRecipeId,
+                    quantity: cr.quantity,
+                  })) ?? [],
+              }}
+              brands={allBrands ?? []}
+              branches={allBranches ?? []}
+              modifierGroups={allModifierGroups ?? []}
+              recipes={allRecipes ?? []}
+              onSubmit={(data) => {
+                void updateMutation.mutateAsync({
+                  data: {
+                    id: recipeId,
+                    ...data,
+                  },
+                });
+              }}
+              onCancel={() => setIsEditing(false)}
+              isPending={updateMutation.isPending}
+              submitLabel="Simpan Perubahan"
+            />
+          </Card>
+        ) : (
+          /* View Mode */
+          <>
+            {/* Key Metrics */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* HPP Card - Highlighted */}
+              <Card className={`p-4 ${isHighHPP ? "border-destructive" : ""}`}>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      HPP
+                      <span className="ml-1 text-[10px]">(Harga Pokok Penjualan)</span>
+                    </p>
+                    <p className="text-2xl font-bold mt-1">
+                      Rp {recipe.totalCogs.toLocaleString("id-ID")}
+                    </p>
+                  </div>
+                  <TrendingUp
+                    className={`h-5 w-5 ${isHighHPP ? "text-destructive" : "text-muted-foreground"}`}
+                  />
+                </div>
+                {recipe.basePrice > 0 && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${isHighHPP ? "bg-destructive" : "bg-primary"}`}
+                        style={{
+                          width: `${Math.min((recipe.totalCogs / recipe.basePrice) * 100, 100)}%`,
                         }}
                       />
-                      <span className="text-sm font-medium">{g.name}</span>
-                      <Badge variant={g.minSelection > 0 ? "default" : "secondary"}>
-                        {g.minSelection > 0 ? "wajib" : "opsional"}
-                      </Badge>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setIsEditing(false);
-                  setIsBundling(false);
-                  setChildRecipes([]);
-                  setIsBOGO(false);
-                  setLinkedModifierGroupIds([]);
-                  setSelectedBranchIds([]);
-                }}
-              >
-                Batal
-              </Button>
-              <Button type="submit" disabled={updateMutation.isPending}>
-                <Save className="h-4 w-4 mr-2" />
-                {updateMutation.isPending ? "Menyimpan..." : "Simpan"}
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="rounded-lg border p-4">
-                <p className="text-xs text-muted-foreground uppercase">Kategori</p>
-                <p className="font-medium mt-1 capitalize">{recipe.category}</p>
-              </div>
-              <div className="rounded-lg border p-4">
-                <p className="text-xs text-muted-foreground uppercase">Harga Dasar</p>
-                <p className="font-medium mt-1">Rp {recipe.basePrice.toLocaleString("id-ID")}</p>
-              </div>
-              <div className="rounded-lg border p-4">
-                <p className="text-xs text-muted-foreground uppercase">HPP Total</p>
-                <p className="font-medium mt-1 text-lg font-bold">
-                  Rp {recipe.totalCogs.toLocaleString("id-ID")}
-                </p>
-                {recipe.totalCogs > 0 && recipe.basePrice > 0 && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Margin:{" "}
-                    {(((recipe.basePrice - recipe.totalCogs) / recipe.basePrice) * 100).toFixed(1)}%
-                    {recipe.totalCogs / recipe.basePrice > 0.4 && (
-                      <Badge variant="destructive" className="ml-1 text-[10px]">
-                        HPP &gt; 40%!
-                      </Badge>
-                    )}
-                  </p>
+                    <span className="text-xs font-medium">
+                      {((recipe.totalCogs / recipe.basePrice) * 100).toFixed(0)}%
+                    </span>
+                  </div>
                 )}
-              </div>
-              <div className="rounded-lg border p-4">
-                <p className="text-xs text-muted-foreground uppercase">Sub-resep</p>
-                <p className="font-medium mt-1">{recipe.isSubRecipe ? "Ya" : "Tidak"}</p>
-              </div>
-              <div className="rounded-lg border p-4">
-                <p className="text-xs text-muted-foreground uppercase">Status</p>
-                <Badge
-                  variant={recipe.status === "Active" ? "success" : "secondary"}
-                  className="mt-1"
-                >
-                  {recipe.status}
-                </Badge>
-              </div>
+              </Card>
+
+              {/* Margin Card */}
+              <Card className="p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Margin</p>
+                    <p
+                      className={`text-2xl font-bold mt-1 ${margin < 0 ? "text-destructive" : ""}`}
+                    >
+                      {margin.toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Harga jual Rp {recipe.basePrice.toLocaleString("id-ID")}
+                </p>
+              </Card>
+
+              {/* Category & Status */}
+              <Card className="p-4">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      <Tag className="h-3 w-3 inline mr-1" />
+                      Kategori
+                    </p>
+                    <p className="font-medium capitalize">{recipe.category}</p>
+                  </div>
+                  <div>
+                    <Badge
+                      variant={recipe.status === "Active" ? "success" : "secondary"}
+                      className="text-xs"
+                    >
+                      {recipe.status === "Active" ? "Aktif" : "Nonaktif"}
+                    </Badge>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Features */}
+              <Card className="p-4">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      <Package className="h-3 w-3 inline mr-1" />
+                      Fitur
+                    </p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {recipe.isSubRecipe && (
+                        <Badge variant="outline" className="text-xs">
+                          Sub-resep
+                        </Badge>
+                      )}
+                      {recipe.isBOGO && (
+                        <Badge variant="warning" className="text-xs">
+                          BOGO
+                        </Badge>
+                      )}
+                      {recipe.childRecipes?.length > 0 && (
+                        <Badge variant="outline" className="text-xs">
+                          Paket ({recipe.childRecipes.length} item)
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      <Store className="h-3 w-3 inline mr-1" />
+                      Cabang
+                    </p>
+                    <p className="font-medium">
+                      {recipe.branchIds?.length === 0 || !recipe.branchIds
+                        ? "Semua cabang"
+                        : `${recipe.branchIds.length} cabang`}
+                    </p>
+                  </div>
+                </div>
+              </Card>
             </div>
 
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold">Bahan (BOM)</h2>
+            {/* Ingredients (BOM) */}
+            <Card>
+              <div className="px-6 py-4 border-b">
+                <h2 className="text-lg font-semibold">Bahan (BOM)</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Bill of Materials — bahan dan takaran untuk resep ini
+                </p>
+              </div>
               {recipe.ingredients.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Belum ada bahan</p>
+                <div className="px-6 py-8 text-center">
+                  <Package className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">Belum ada bahan</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Klik "Edit Menu" untuk menambahkan bahan
+                  </p>
+                </div>
               ) : (
-                <div className="rounded-md border overflow-x-auto">
-                  <table className="w-full text-sm min-w-[480px]">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
                     <thead className="border-b bg-muted/50">
                       <tr>
-                        <th className="px-4 py-2 text-left font-medium">Bahan</th>
-                        <th className="px-4 py-2 text-right font-medium">Jumlah</th>
-                        <th className="px-4 py-2 text-right font-medium">Satuan</th>
+                        <th className="px-6 py-3 text-left font-medium">Bahan</th>
+                        <th className="px-6 py-3 text-right font-medium">Jumlah</th>
+                        <th className="px-6 py-3 text-right font-medium">Satuan</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {recipe.ingredients.map((ing, i) => (
-                        <tr key={i} className="border-b">
-                          <td className="px-4 py-2">{ing.ingredientName ?? ing.ingredientId}</td>
-                          <td className="px-4 py-2 text-right">{ing.quantity}</td>
-                          <td className="px-4 py-2 text-right text-muted-foreground">
+                      {recipe.ingredients.map((ing: any, i: number) => (
+                        <tr key={i} className="border-b last:border-0 hover:bg-muted/30">
+                          <td className="px-6 py-3">{ing.ingredientName ?? ing.ingredientId}</td>
+                          <td className="px-6 py-3 text-right font-medium">{ing.quantity}</td>
+                          <td className="px-6 py-3 text-right text-muted-foreground">
                             {ing.stockUnit ?? "—"}
                           </td>
                         </tr>
@@ -425,113 +373,125 @@ function RecipeDetailPage() {
                   </table>
                 </div>
               )}
-            </div>
+            </Card>
 
+            {/* Bundling */}
             {recipe.childRecipes?.length > 0 && (
-              <div className="space-y-4">
-                <h2 className="text-lg font-semibold">Komposisi Paket (Bundling)</h2>
-                <div className="rounded-md border overflow-x-auto">
-                  <table className="w-full text-sm min-w-[480px]">
+              <Card>
+                <div className="px-6 py-4 border-b">
+                  <h2 className="text-lg font-semibold">Komposisi Paket (Bundling)</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Menu yang termasuk dalam paket ini
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
                     <thead className="border-b bg-muted/50">
                       <tr>
-                        <th className="px-4 py-2 text-left font-medium">Menu</th>
-                        <th className="px-4 py-2 text-right font-medium">Qty</th>
-                        <th className="px-4 py-2 text-right font-medium">Harga</th>
+                        <th className="px-6 py-3 text-left font-medium">Menu</th>
+                        <th className="px-6 py-3 text-right font-medium">Qty</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {recipe.childRecipes.map((cr, i) => (
-                        <tr key={i} className="border-b">
-                          <td className="px-4 py-2">{cr.childRecipeName ?? cr.childRecipeId}</td>
-                          <td className="px-4 py-2 text-right">{cr.quantity}</td>
-                          <td className="px-4 py-2 text-right text-muted-foreground">—</td>
+                      {recipe.childRecipes.map((cr: any, i: number) => (
+                        <tr key={i} className="border-b last:border-0 hover:bg-muted/30">
+                          <td className="px-6 py-3">{cr.childRecipeName ?? cr.childRecipeId}</td>
+                          <td className="px-6 py-3 text-right font-medium">{cr.quantity}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </Card>
             )}
-          </div>
-        )}
 
-        {recipe.modifierGroups.length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Grup Modifier</h2>
-            {recipe.modifierGroups.map((mg: any) => (
-              <Card key={mg.modifierGroupId} className="p-0">
-                <div className="px-4 py-3 border-b">
-                  <h3 className="font-medium">
-                    {mg.modifierGroupName ?? mg.modifierGroupId}
-                    <Badge variant="outline" className="ml-2">
-                      min: {mg.minSelection}, max: {mg.maxSelection}
-                    </Badge>
-                  </h3>
+            {/* Modifier Groups */}
+            {recipe.modifierGroups.length > 0 && (
+              <Card>
+                <div className="px-6 py-4 border-b">
+                  <h2 className="text-lg font-semibold">Grup Modifier</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Opsi tambahan yang tersedia untuk menu ini
+                  </p>
                 </div>
                 <div className="divide-y">
-                  {mg.modifiers?.length > 0 ? (
-                    mg.modifiers.map((m: any) => (
-                      <div
-                        key={m.id}
-                        className="flex items-center justify-between px-4 py-2 text-sm"
-                      >
-                        <span>
-                          {m.name}
-                          {m.isExclusion && (
-                            <Badge variant="destructive" className="ml-2 text-[10px]">
-                              Exclusion
-                            </Badge>
-                          )}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {m.price > 0 ? `+Rp ${m.price.toLocaleString("id-ID")}` : "—"}
-                        </span>
+                  {recipe.modifierGroups.map((mg: any) => (
+                    <div key={mg.modifierGroupId} className="px-6 py-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="font-medium">
+                          {mg.modifierGroupName ?? mg.modifierGroupId}
+                        </h3>
+                        <Badge variant="outline" className="text-xs">
+                          min: {mg.minSelection}, max: {mg.maxSelection}
+                        </Badge>
                       </div>
-                    ))
-                  ) : (
-                    <div className="px-4 py-2 text-sm text-muted-foreground">
-                      Tidak ada modifier
+                      {mg.modifiers?.length > 0 ? (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {mg.modifiers.map((m: any) => (
+                            <div
+                              key={m.id}
+                              className="flex items-center justify-between text-sm bg-muted/50 rounded-md px-3 py-2"
+                            >
+                              <span>
+                                {m.name}
+                                {m.isExclusion && (
+                                  <Badge variant="destructive" className="ml-2 text-[10px]">
+                                    Exclusion
+                                  </Badge>
+                                )}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {m.price > 0 ? `+Rp ${m.price.toLocaleString("id-ID")}` : "—"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Tidak ada modifier</p>
+                      )}
                     </div>
-                  )}
+                  ))}
                 </div>
               </Card>
-            ))}
-          </div>
+            )}
+          </>
         )}
-      </div>
-      <Modal
-        open={showDeleteModal}
-        onClose={() => setShowDeleteModal(false)}
-        title="Nonaktifkan Menu"
-        size="sm"
-      >
-        <div className="space-y-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium">Nonaktifkan menu "{recipe?.name}"?</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Status menu akan diubah menjadi{" "}
-                <code className="mx-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>. Menu tidak
-                akan muncul di daftar aktif, tetapi data historis tetap tersimpan.
-              </p>
+
+        {/* Delete Modal */}
+        <Modal
+          open={showDeleteModal}
+          onClose={() => setShowDeleteModal(false)}
+          title="Nonaktifkan Menu"
+          size="sm"
+        >
+          <div className="space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Nonaktifkan menu "{recipe?.name}"?</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Status menu akan diubah menjadi{" "}
+                  <code className="mx-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>. Menu tidak
+                  akan muncul di daftar aktif, tetapi data historis tetap tersimpan.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setShowDeleteModal(false)}>
+                Batal
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
+              </Button>
             </div>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setShowDeleteModal(false)}>
-              Batal
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        </Modal>
+      </div>
     </RoleGuard>
   );
 }
