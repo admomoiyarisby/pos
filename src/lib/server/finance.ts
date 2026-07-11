@@ -1006,7 +1006,7 @@ export const printFinancePage = createServerFn({ method: "GET" })
 </table>
 
 <div class="footer">Dicetak dari Omoiyari POS — ${new Date().toLocaleDateString("id-ID")}</div>
-<script>window.print();window.close();</script>
+<script>window.onload = function() { window.print(); };</script>
 </body></html>`;
 
     return { html };
