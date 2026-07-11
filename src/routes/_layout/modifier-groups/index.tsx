@@ -8,6 +8,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getModifierGroups, createModifierGroup } from "#/lib/server/modifier-groups";
+import { toast } from "sonner";
 import type { Column } from "#/components/ui/DataTable";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -105,6 +106,10 @@ function ModifierGroupsPage() {
           ingredientQty: undefined,
         },
       ]);
+      toast.success("Grup modifier berhasil ditambahkan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menambah grup modifier", { description: error.message });
     },
   });
 
@@ -157,21 +162,33 @@ function ModifierGroupsPage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Kode</Label>
-              <Input name="code" required />
+              <Input name="code" required className="h-10 md:h-9" />
             </div>
             <div className="space-y-2">
               <Label>Nama</Label>
-              <Input name="name" required />
+              <Input name="name" required className="h-10 md:h-9" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Min Pilihan</Label>
-              <Input name="minSelection" type="number" min={0} defaultValue={0} />
+              <Input
+                name="minSelection"
+                type="number"
+                min={0}
+                defaultValue={0}
+                className="h-10 md:h-9"
+              />
             </div>
             <div className="space-y-2">
               <Label>Max Pilihan</Label>
-              <Input name="maxSelection" type="number" min={1} defaultValue={1} />
+              <Input
+                name="maxSelection"
+                type="number"
+                min={1}
+                defaultValue={1}
+                className="h-10 md:h-9"
+              />
             </div>
           </div>
 

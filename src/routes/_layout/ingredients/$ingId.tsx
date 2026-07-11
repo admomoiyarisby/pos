@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { getIngredient, updateIngredient } from "#/lib/server/ingredients";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_layout/ingredients/$ingId")({
   component: IngredientDetailPage,
@@ -30,6 +31,10 @@ function IngredientDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["ingredient", ingId] });
       void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
       setIsEditing(false);
+      toast.success("Bahan baku berhasil diperbarui");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal memperbarui bahan baku", { description: error.message });
     },
   });
 
@@ -72,7 +77,7 @@ function IngredientDetailPage() {
           </div>
           <button
             onClick={() => setIsEditing(!isEditing)}
-            className="h-9 px-4 rounded-md border text-sm font-medium"
+            className="h-10 md:h-9 px-4 rounded-md border text-sm font-medium"
           >
             {isEditing ? "Batal" : "Edit"}
           </button>
@@ -87,7 +92,7 @@ function IngredientDetailPage() {
                   name="code"
                   defaultValue={ingredient.code}
                   required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
               <div className="space-y-2">
@@ -96,7 +101,7 @@ function IngredientDetailPage() {
                   name="name"
                   defaultValue={ingredient.name}
                   required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
             </div>
@@ -106,7 +111,7 @@ function IngredientDetailPage() {
                 <select
                   name="skuType"
                   defaultValue={ingredient.skuType}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="RM">Raw Material</option>
                   <option value="SFG">Semi-Finished Good</option>
@@ -118,7 +123,7 @@ function IngredientDetailPage() {
                 <select
                   name="category"
                   defaultValue={ingredient.category}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="Fresh">Fresh</option>
                   <option value="Dry">Dry</option>
@@ -133,7 +138,7 @@ function IngredientDetailPage() {
                   name="purchaseUnit"
                   defaultValue={ingredient.purchaseUnit}
                   required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
               <div className="space-y-2">
@@ -142,7 +147,7 @@ function IngredientDetailPage() {
                   name="stockUnit"
                   defaultValue={ingredient.stockUnit}
                   required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
             </div>
@@ -155,7 +160,7 @@ function IngredientDetailPage() {
                   min={1}
                   defaultValue={ingredient.conversionFactor}
                   required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
               <div className="space-y-2">
@@ -166,7 +171,7 @@ function IngredientDetailPage() {
                   min={0}
                   defaultValue={ingredient.averageCost}
                   required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
               <div className="space-y-2">
@@ -176,7 +181,7 @@ function IngredientDetailPage() {
                   type="number"
                   min={0}
                   defaultValue={ingredient.rop}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
             </div>
@@ -187,13 +192,13 @@ function IngredientDetailPage() {
                 type="number"
                 min={1}
                 defaultValue={ingredient.moq}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="submit"
-                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
+                className="h-10 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
               >
                 Simpan
               </button>

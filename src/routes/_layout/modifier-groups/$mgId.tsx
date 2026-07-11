@@ -11,6 +11,8 @@ import { Separator } from "#/components/ui/separator";
 import { Switch } from "#/components/ui/switch";
 import { Label } from "#/components/ui/label";
 import Modal from "#/components/ui/Modal";
+import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import {
   getModifierGroup,
   updateModifierGroup,
@@ -68,12 +70,18 @@ function ModifierGroupDetailPage() {
     setModifiersInput([]);
   };
 
+  const navigate = useNavigate();
+
   const updateMutation = useMutation({
     mutationFn: updateModifierGroup,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["modifier-group", mgId] });
       void queryClient.invalidateQueries({ queryKey: ["modifier-groups"] });
       setIsEditing(false);
+      toast.success("Grup modifier berhasil diperbarui");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal memperbarui grup modifier", { description: error.message });
     },
   });
 
@@ -82,7 +90,11 @@ function ModifierGroupDetailPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["modifier-groups"] });
       setDeleteOpen(false);
-      window.location.href = "/modifier-groups";
+      toast.success("Grup modifier berhasil dihapus");
+      void navigate({ to: "/modifier-groups" });
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus grup modifier", { description: error.message });
     },
   });
 
@@ -125,18 +137,21 @@ function ModifierGroupDetailPage() {
           <div className="flex gap-2">
             <button
               onClick={() => setDeleteOpen(true)}
-              className="h-9 px-3 rounded-md border text-sm text-destructive flex items-center gap-1.5 hover:bg-destructive/10"
+              className="h-10 md:h-9 px-3 rounded-md border text-sm text-destructive flex items-center gap-1.5 hover:bg-destructive/10"
             >
               <Trash2 className="h-4 w-4" /> Hapus
             </button>
             {isEditing ? (
-              <button onClick={cancelEditing} className="h-9 px-4 rounded-md border text-sm">
+              <button
+                onClick={cancelEditing}
+                className="h-10 md:h-9 px-4 rounded-md border text-sm"
+              >
                 Batal
               </button>
             ) : (
               <button
                 onClick={startEditing}
-                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm flex items-center gap-1.5"
+                className="h-10 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm flex items-center gap-1.5"
               >
                 <Pencil className="h-4 w-4" /> Edit
               </button>

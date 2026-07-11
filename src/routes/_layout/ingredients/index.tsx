@@ -7,11 +7,17 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getIngredients, createIngredient, deleteIngredient } from "#/lib/server/ingredients";
+import {
+  getIngredients,
+  createIngredient,
+  updateIngredient,
+  deleteIngredient,
+} from "#/lib/server/ingredients";
+import { toast } from "sonner";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import { ArrowRight, Trash2, Check, X } from "lucide-react";
+import { ArrowRight, Trash2, Check } from "lucide-react";
 
 interface IngredientRow {
   id: string;
@@ -31,83 +37,6 @@ const skuLabels: Record<string, string> = {
   SFG: "Semi-Finished",
   FG: "Finished Goods",
 };
-
-const columns: Column<IngredientRow>[] = [
-  { key: "code", header: "Kode", width: "w-24", sortable: true },
-  { key: "name", header: "Nama Bahan", sortable: true },
-  {
-    key: "skuType",
-    header: "Tipe SKU",
-    sortable: true,
-    render: (r) => <Badge variant="outline">{skuLabels[r.skuType]}</Badge>,
-  },
-  {
-    key: "category",
-    header: "Kategori",
-    sortable: true,
-    render: (r) => (
-      <Badge
-        variant={
-          r.category === "Fresh" ? "destructive" : r.category === "Dry" ? "secondary" : "default"
-        }
-      >
-        {r.category}
-      </Badge>
-    ),
-  },
-  { key: "purchaseUnit", header: "Satuan Beli", width: "w-28", sortable: true },
-  { key: "stockUnit", header: "Satuan Stok", width: "w-28", sortable: true },
-  {
-    key: "averageCost",
-    header: "HPP",
-    align: "right",
-    sortable: true,
-    render: (r) => `Rp ${r.averageCost.toLocaleString("id-ID")}`,
-  },
-  {
-    key: "id",
-    header: "",
-    width: "w-32",
-    render: (r) => (
-      <div className="flex items-center justify-between gap-1">
-        <Link
-          to="/ingredients/$ingId"
-          params={{ ingId: r.id }}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-        >
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-        {r.status === "Active" ? (
-          <button
-            onClick={() => handleStatusToggle(r.id, r.status)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            title="Toggle status"
-          >
-            <Check className="h-4 w-4" />
-          </button>
-        ) : (
-          <button
-            onClick={() => handleStatusToggle(r.id, r.status)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            title="Activate"
-          >
-            <Check className="h-4 w-4" />
-          </button>
-        )}
-        <button
-          onClick={() => {
-            setIngredientToDelete(r.id);
-            setDeleteModalOpen(true);
-          }}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-          title="Delete"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
-    ),
-  },
-];
 
 export const Route = createFileRoute("/_layout/ingredients/")({
   component: IngredientsPage,
@@ -135,6 +64,21 @@ function IngredientsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
       setModalOpen(false);
+      toast.success("Bahan baku berhasil ditambahkan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menambah bahan baku", { description: error.message });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: updateIngredient,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
+      toast.success("Status bahan baku berhasil diubah");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal mengubah status", { description: error.message });
     },
   });
 
@@ -145,11 +89,17 @@ function IngredientsPage() {
       void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
       setDeleteModalOpen(false);
       setIngredientToDelete(null);
+      toast.success("Bahan baku berhasil dinonaktifkan");
     },
     onError: (error: Error) => {
-      alert(error.message);
+      toast.error("Gagal menghapus bahan baku", { description: error.message });
     },
   });
+
+  const handleStatusToggle = async (id: string, currentStatus: "Active" | "Inactive") => {
+    const newStatus = currentStatus === "Active" ? "Inactive" : "Active";
+    await updateMutation.mutateAsync({ data: { id, status: newStatus } });
+  };
 
   const handleDelete = async () => {
     if (ingredientToDelete) {
@@ -158,21 +108,6 @@ function IngredientsPage() {
       });
     }
   };
-
-  const handleStatusToggle = async (id: string, currentStatus: "Active" | "Inactive") => {
-    const newStatus = currentStatus === "Active" ? "Inactive" : "Active";
-    await updateIngredientMutation.mutateAsync({
-      data: { id, status: newStatus },
-    });
-  };
-
-  const updateIngredientMutation = useMutation({
-    mutationFn: ({ data }: { data: Partial<typeof ingredientInput> & { id: string } }) =>
-      updateIngredient({ data }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
-    },
-  });
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -191,7 +126,75 @@ function IngredientsPage() {
     };
     void createMutation.mutateAsync({ data });
   };
+
   usePageTitle("Bahan Baku", "Kelola master bahan baku, semi-finished, dan finished goods");
+
+  const columns: Column<IngredientRow>[] = [
+    { key: "code", header: "Kode", width: "w-24", sortable: true },
+    { key: "name", header: "Nama Bahan", sortable: true },
+    {
+      key: "skuType",
+      header: "Tipe SKU",
+      sortable: true,
+      render: (r) => <Badge variant="outline">{skuLabels[r.skuType]}</Badge>,
+    },
+    {
+      key: "category",
+      header: "Kategori",
+      sortable: true,
+      render: (r) => (
+        <Badge
+          variant={
+            r.category === "Fresh" ? "destructive" : r.category === "Dry" ? "secondary" : "default"
+          }
+        >
+          {r.category}
+        </Badge>
+      ),
+    },
+    { key: "purchaseUnit", header: "Satuan Beli", width: "w-28", sortable: true },
+    { key: "stockUnit", header: "Satuan Stok", width: "w-28", sortable: true },
+    {
+      key: "averageCost",
+      header: "HPP",
+      align: "right",
+      sortable: true,
+      render: (r) => `Rp ${r.averageCost.toLocaleString("id-ID")}`,
+    },
+    {
+      key: "id",
+      header: "",
+      width: "w-32",
+      render: (r) => (
+        <div className="flex items-center gap-1">
+          <Link
+            to="/ingredients/$ingId"
+            params={{ ingId: r.id }}
+            className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+          <button
+            onClick={() => handleStatusToggle(r.id, r.status)}
+            className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            title={r.status === "Active" ? "Nonaktifkan" : "Aktifkan"}
+          >
+            <Check className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => {
+              setIngredientToDelete(r.id);
+              setDeleteModalOpen(true);
+            }}
+            className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            title="Hapus"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "central_kitchen"]}>
@@ -212,7 +215,7 @@ function IngredientsPage() {
               <input
                 name="code"
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -220,7 +223,7 @@ function IngredientsPage() {
               <input
                 name="name"
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
           </div>
@@ -229,7 +232,7 @@ function IngredientsPage() {
               <label className="text-sm font-medium">Tipe SKU</label>
               <select
                 name="skuType"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="RM">Raw Material</option>
                 <option value="SFG">Semi-Finished Good</option>
@@ -240,7 +243,7 @@ function IngredientsPage() {
               <label className="text-sm font-medium">Kategori</label>
               <select
                 name="category"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="Fresh">Fresh</option>
                 <option value="Dry">Dry</option>
@@ -254,7 +257,7 @@ function IngredientsPage() {
               <input
                 name="purchaseUnit"
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -262,7 +265,7 @@ function IngredientsPage() {
               <input
                 name="stockUnit"
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
           </div>
@@ -274,7 +277,7 @@ function IngredientsPage() {
                 type="number"
                 min={1}
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -284,7 +287,7 @@ function IngredientsPage() {
                 type="number"
                 min={0}
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -294,7 +297,7 @@ function IngredientsPage() {
                 type="number"
                 min={0}
                 defaultValue={0}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
           </div>
@@ -305,20 +308,20 @@ function IngredientsPage() {
               type="number"
               min={1}
               defaultValue={1}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="h-9 px-4 rounded-md border text-sm"
+              className="h-10 md:h-9 px-4 rounded-md border text-sm"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
+              className="h-10 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
             >
               Tambah
             </button>
@@ -333,14 +336,13 @@ function IngredientsPage() {
           setDeleteModalOpen(false);
           setIngredientToDelete(null);
         }}
-        title="Delete Bahan Baku"
+        title="Nonaktifkan Bahan Baku"
         size="sm"
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete this ingredient? This action will set the status to
-            <code className="ml-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>. The ingredient
-            cannot be recovered.
+            Yakin ingin menonaktifkan bahan baku ini? Status akan diubah menjadi
+            <code className="ml-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>.
           </p>
           <div className="flex justify-end gap-2 pt-2">
             <Button
@@ -351,7 +353,7 @@ function IngredientsPage() {
                 setIngredientToDelete(null);
               }}
             >
-              Cancel
+              Batal
             </Button>
             <Button
               type="button"
@@ -359,7 +361,7 @@ function IngredientsPage() {
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
             </Button>
           </div>
         </div>

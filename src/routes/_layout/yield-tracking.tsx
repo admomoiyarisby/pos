@@ -230,7 +230,7 @@ function YieldTrackingPage() {
         <PageHeader action={{ label: "Input Produksi", onClick: () => setModalOpen(true) }} />
 
         {result && (
-          <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+          <div className="rounded-lg border border-success/30 bg-success/10 p-4 text-sm text-success-foreground">
             <p className="font-medium">Produksi berhasil dicatat!</p>
             <p>
               HPP hasil baru: Rp {result.newTargetCost.toLocaleString("id-ID")} / unit · Yield:{" "}
@@ -254,7 +254,7 @@ function YieldTrackingPage() {
           </div>
           <div className="rounded-lg border p-4">
             <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-green-500" />
+              <TrendingUp className="h-4 w-4 text-success" />
               <span className="text-xs text-muted-foreground uppercase">Avg Yield</span>
             </div>
             <p className="text-2xl font-bold mt-2">
@@ -269,7 +269,7 @@ function YieldTrackingPage() {
           </div>
           <div className="rounded-lg border p-4">
             <div className="flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-red-500" />
+              <TrendingDown className="h-4 w-4 text-destructive" />
               <span className="text-xs text-muted-foreground uppercase">Total Shrinkage</span>
             </div>
             <p className="text-2xl font-bold mt-2">
@@ -297,7 +297,7 @@ function YieldTrackingPage() {
               <select
                 name="branchId"
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 {branches
                   .filter((b) => b.type === "Central")
@@ -315,7 +315,7 @@ function YieldTrackingPage() {
                 type="date"
                 name="productionDate"
                 defaultValue={new Date().toISOString().slice(0, 10)}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
 
@@ -339,7 +339,7 @@ function YieldTrackingPage() {
                       value={item.ingredientId}
                       onChange={(e) => updateSourceItem(idx, "ingredientId", e.target.value)}
                       required
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
                       <option value="">Pilih bahan mentah...</option>
                       {rmIngredients.map((i) => (
@@ -358,7 +358,7 @@ function YieldTrackingPage() {
                       inputMode="numeric"
                       pattern="[0-9]*"
                       required
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                       placeholder="Contoh: 5000"
                     />
                   </div>
@@ -366,7 +366,7 @@ function YieldTrackingPage() {
                     <button
                       type="button"
                       onClick={() => removeSourceRow(idx)}
-                      className="mt-6 h-9 w-9 rounded-md border flex items-center justify-center text-muted-foreground hover:bg-muted"
+                      className="mt-6 min-h-[44px] min-w-[44px] rounded-md border flex items-center justify-center text-muted-foreground hover:bg-muted"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -388,7 +388,7 @@ function YieldTrackingPage() {
                 <select
                   name="targetIngredientId"
                   required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="">Pilih hasil produksi...</option>
                   {sfgFgIngredients.map((i) => (
@@ -409,7 +409,7 @@ function YieldTrackingPage() {
                   inputMode="numeric"
                   pattern="[0-9]*"
                   required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                   placeholder="Contoh: 8000"
                 />
               </div>
@@ -420,7 +420,7 @@ function YieldTrackingPage() {
               <textarea
                 name="notes"
                 placeholder="Contoh: Pengolahan 10kg ayam mentah..."
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-none"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[80px] md:min-h-[60px] resize-none"
               />
             </div>
 
@@ -439,14 +439,14 @@ function YieldTrackingPage() {
                   setModalOpen(false);
                   resetForm();
                 }}
-                className="h-9 px-4 rounded-md border text-sm"
+                className="h-10 md:h-9 px-4 rounded-md border text-sm"
               >
                 Batal
               </button>
               <button
                 type="submit"
                 disabled={createMutation.isPending}
-                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                className="h-10 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
               >
                 {createMutation.isPending ? "Memproses..." : "Catat Produksi"}
               </button>

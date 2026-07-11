@@ -8,6 +8,7 @@ import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
 import { getBrands, createBrand, updateBrand, deleteBrand } from "#/lib/server/brands";
+import { toast } from "sonner";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Trash2, AlertTriangle } from "lucide-react";
@@ -64,6 +65,10 @@ function BrandsPage() {
       void queryClient.invalidateQueries({ queryKey: ["brands"] });
       setModalOpen(false);
       setEditing(null);
+      toast.success("Merek berhasil ditambahkan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menambah merek", { description: error.message });
     },
   });
 
@@ -73,6 +78,10 @@ function BrandsPage() {
       void queryClient.invalidateQueries({ queryKey: ["brands"] });
       setModalOpen(false);
       setEditing(null);
+      toast.success("Merek berhasil diperbarui");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal memperbarui merek", { description: error.message });
     },
   });
 
@@ -81,6 +90,10 @@ function BrandsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["brands"] });
       setDeleteTarget(null);
+      toast.success("Merek berhasil dinonaktifkan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menonaktifkan merek", { description: error.message });
     },
   });
 
@@ -125,7 +138,7 @@ function BrandsPage() {
                   e.stopPropagation();
                   setDeleteTarget(r);
                 }}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                 title="Nonaktifkan"
               >
                 <Trash2 className="h-4 w-4" />
@@ -153,7 +166,7 @@ function BrandsPage() {
               name="code"
               defaultValue={editing?.code ?? ""}
               required
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
           <div className="space-y-2">
@@ -162,20 +175,20 @@ function BrandsPage() {
               name="name"
               defaultValue={editing?.name ?? ""}
               required
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="h-9 px-4 rounded-md border text-sm"
+              className="h-10 md:h-9 px-4 rounded-md border text-sm"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
+              className="h-10 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
             >
               {editing ? "Simpan" : "Tambah"}
             </button>

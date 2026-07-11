@@ -1,31 +1,22 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import RoleGuard from "#/components/RoleGuard";
 import { getRecipeDetail, updateRecipe, deleteRecipe } from "#/lib/server/recipes";
 import { getBrands } from "#/lib/server/brands";
 import { getModifierGroups } from "#/lib/server/modifier-groups";
 import { getBranches } from "#/lib/server/branches";
-import { useAuth } from "#/lib/auth-context";
+import { toast } from "sonner";
 
 import { Badge } from "#/components/ui/badge";
 import { Card } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
 import Modal from "#/components/ui/Modal";
-import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "#/components/ui/select";
 import { Separator } from "#/components/ui/separator";
 import { Checkbox } from "#/components/ui/checkbox";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import { Plus, Trash2, X, Save, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Save, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/recipes/$recipeId")({
   component: RecipeDetailPage,
@@ -42,7 +33,6 @@ function RecipeDetailPage() {
   const { recipe: initial, brands, modifierGroups, branches } = Route.useLoaderData();
   const { recipeId } = Route.useParams();
   const queryClient = useQueryClient();
-  const user = useAuth().user;
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isBundling, setIsBundling] = useState(false);
@@ -83,8 +73,14 @@ function RecipeDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
       void queryClient.invalidateQueries({ queryKey: ["recipes"] });
       setIsEditing(false);
+      toast.success("Menu berhasil diperbarui");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal memperbarui menu", { description: error.message });
     },
   });
+
+  const navigate = useNavigate();
 
   const deleteMutation = useMutation({
     mutationFn: ({ data }: { data: { id: string; hardDelete: boolean } }) => deleteRecipe({ data }),
@@ -92,20 +88,13 @@ function RecipeDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
       void queryClient.invalidateQueries({ queryKey: ["recipes"] });
       setShowDeleteModal(false);
-      window.location.href = "/recipes";
+      toast.success("Menu berhasil dinonaktifkan");
+      void navigate({ to: "/recipes" });
     },
     onError: (error: Error) => {
-      alert(error.message);
+      toast.error("Gagal menonaktifkan menu", { description: error.message });
     },
   });
-
-  const resetForm = () => {
-    setIsBundling(false);
-    setChildRecipes([]);
-    setIsBOGO(false);
-    setLinkedModifierGroupIds([]);
-    setSelectedBranchIds([]);
-  };
 
   const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -168,7 +157,7 @@ function RecipeDetailPage() {
               }
               setIsEditing(!isEditing);
             }}
-            className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="inline-flex h-10 md:h-9 items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             {!isEditing && <Plus className="h-4 w-4" />}
             {isEditing ? "Batal" : "Edit Menu"}
@@ -176,7 +165,7 @@ function RecipeDetailPage() {
           {!isEditing && (
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-destructive px-4 py-2 text-sm font-medium text-destructive shadow-sm transition-colors hover:bg-destructive/10"
+              className="inline-flex h-10 md:h-9 items-center gap-2 rounded-md border border-destructive px-4 py-2 text-sm font-medium text-destructive shadow-sm transition-colors hover:bg-destructive/10"
             >
               <Trash2 className="h-4 w-4" />
               Hapus
@@ -192,7 +181,7 @@ function RecipeDetailPage() {
                   name="code"
                   defaultValue={recipe.code}
                   required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
               <div className="space-y-2">
@@ -201,7 +190,7 @@ function RecipeDetailPage() {
                   name="name"
                   defaultValue={recipe.name}
                   required
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
             </div>
