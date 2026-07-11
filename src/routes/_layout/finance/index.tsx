@@ -13,8 +13,9 @@ import {
   createManualExpense,
   printFinancePage,
 } from "#/lib/server/finance";
+import { getBrokenStock } from "#/lib/server/waste";
 import { getBranches } from "#/lib/server/branches";
-import { ChevronRight, Lock, Pencil, Printer } from "lucide-react";
+import { ChevronRight, Lock, Pencil, Printer, Package } from "lucide-react";
 import { formatRp } from "#/lib/utils";
 import { openPrintWindow } from "#/lib/print-window";
 import { toast } from "sonner";
@@ -230,6 +231,7 @@ function FinancePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [revenueType, setRevenueType] = useState<"manual" | "channel">("manual");
+  const [activeTab, setActiveTab] = useState<"keuangan" | "barang-rusak">("keuangan");
 
   // Period + filter state
   const [periodType, setPeriodType] = useState<PeriodType>("bulanan");
@@ -286,6 +288,29 @@ function FinancePage() {
       }),
     initialData: initialDaily,
   });
+
+  // Broken stock query (for Barang Rusak tab)
+  const { data: brokenStockEntries } = useQuery({
+    queryKey: ["broken-stock", effectiveDateRange.from, effectiveDateRange.to, branchId],
+    queryFn: () => getBrokenStock({ data: {} }),
+  });
+
+  // Filter broken stock by date range and branch
+  const filteredBrokenStock = useMemo(() => {
+    if (!brokenStockEntries) return [];
+    return brokenStockEntries.filter((entry) => {
+      const entryDate = new Date(entry.createdAt);
+      const from = new Date(effectiveDateRange.from + "T00:00:00");
+      const to = new Date(effectiveDateRange.to + "T23:59:59");
+      const inDateRange = entryDate >= from && entryDate <= to;
+      const inBranch = !branchId || entry.branchId === branchId;
+      return inDateRange && inBranch;
+    });
+  }, [brokenStockEntries, effectiveDateRange, branchId]);
+
+  const brokenStockTotal = useMemo(() => {
+    return filteredBrokenStock.reduce((sum, e) => sum + (e.valuation ?? 0), 0);
+  }, [filteredBrokenStock]);
 
   const upsertOverrideMutation = useMutation({
     mutationFn: upsertDailyOverride,
@@ -394,6 +419,33 @@ function FinancePage() {
           className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted transition-colors inline-flex items-center gap-2"
         >
           <Printer className="h-4 w-4" /> Cetak PDF
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-4 p-1 rounded-lg border bg-muted/30 w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveTab("keuangan")}
+          className={`h-9 px-4 rounded-md text-sm font-medium transition-colors ${
+            activeTab === "keuangan"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Keuangan
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("barang-rusak")}
+          className={`h-9 px-4 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 ${
+            activeTab === "barang-rusak"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Package className="h-4 w-4" />
+          Barang Rusak
         </button>
       </div>
 
@@ -515,116 +567,179 @@ function FinancePage() {
         </div>
       </div>
 
-      {/* Ledger table */}
-      <div className="rounded-lg border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="text-left py-2.5 px-3 font-medium w-10"></th>
-                <th className="text-left py-2.5 px-3 font-medium">Tanggal</th>
-                <th className="text-right py-2.5 px-3 font-medium w-36">HPP</th>
-                <th className="text-right py-2.5 px-3 font-medium w-44">Omzet</th>
-                <th className="text-right py-2.5 px-3 font-medium w-36">Gross Profit</th>
-                <th className="text-right py-2.5 px-3 font-medium w-20">Margin</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dailyRows && dailyRows.length > 0 ? (
-                dailyRows.map((row) => {
-                  const isOpen = expandedDay === row.tanggal;
-                  return (
-                    <Fragment key={row.tanggal}>
-                      <tr
-                        className={`border-b ${isOpen ? "bg-muted/20" : "hover:bg-muted/40"} transition-colors`}
-                      >
-                        <td className="py-2 px-3">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedDay(isOpen ? null : row.tanggal)}
-                            className="h-7 w-7 rounded flex items-center justify-center hover:bg-muted transition-colors"
-                            title="Lihat rincian HPP per bahan"
-                          >
-                            <ChevronRight
-                              className={`h-4 w-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
+      {/* Ledger table - Keuangan tab */}
+      {activeTab === "keuangan" && (
+        <div className="rounded-lg border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="text-left py-2.5 px-3 font-medium w-10"></th>
+                  <th className="text-left py-2.5 px-3 font-medium">Tanggal</th>
+                  <th className="text-right py-2.5 px-3 font-medium w-36">HPP</th>
+                  <th className="text-right py-2.5 px-3 font-medium w-44">Omzet</th>
+                  <th className="text-right py-2.5 px-3 font-medium w-36">Gross Profit</th>
+                  <th className="text-right py-2.5 px-3 font-medium w-20">Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyRows && dailyRows.length > 0 ? (
+                  dailyRows.map((row) => {
+                    const isOpen = expandedDay === row.tanggal;
+                    return (
+                      <Fragment key={row.tanggal}>
+                        <tr
+                          className={`border-b ${isOpen ? "bg-muted/20" : "hover:bg-muted/40"} transition-colors`}
+                        >
+                          <td className="py-2 px-3">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedDay(isOpen ? null : row.tanggal)}
+                              className="h-7 w-7 rounded flex items-center justify-center hover:bg-muted transition-colors"
+                              title="Lihat rincian HPP per bahan"
+                            >
+                              <ChevronRight
+                                className={`h-4 w-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                              />
+                            </button>
+                          </td>
+                          <td className="py-2 px-3">
+                            {new Date(row.tanggal + "T00:00:00").toLocaleDateString("id-ID", {
+                              weekday: "short",
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          </td>
+                          <td className="py-2 px-3 text-right tabular-nums">{formatRp(row.hpp)}</td>
+                          <td className="py-2 px-3 text-right">
+                            <EditableOmzetCell
+                              value={row.omzet}
+                              hasOverride={row.hasOmzetOverride}
+                              disabled={!!channel}
+                              onSave={(newValue) => {
+                                if (!branchId) {
+                                  toast.error("Pilih cabang terlebih dahulu untuk mengedit Omzet");
+                                  return;
+                                }
+                                void upsertOverrideMutation.mutateAsync({
+                                  data: {
+                                    branchId,
+                                    date: row.tanggal,
+                                    field: "omzet",
+                                    value: newValue,
+                                  },
+                                });
+                              }}
                             />
-                          </button>
-                        </td>
-                        <td className="py-2 px-3">
-                          {new Date(row.tanggal + "T00:00:00").toLocaleDateString("id-ID", {
-                            weekday: "short",
+                          </td>
+                          <td
+                            className={`py-2 px-3 text-right tabular-nums font-medium ${row.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}
+                          >
+                            {formatRp(row.grossProfit)}
+                          </td>
+                          <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
+                            {(row.margin * 100).toFixed(1)}%
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <HppBreakdownRow
+                            branchId={selectedBranchId}
+                            date={row.tanggal}
+                            channel={selectedChannel}
+                          />
+                        )}
+                      </Fragment>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="py-10 text-center text-muted-foreground">
+                      Tidak ada data untuk periode ini
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {dailyRows && dailyRows.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 font-semibold bg-muted/40">
+                    <td className="py-2.5 px-3"></td>
+                    <td className="py-2.5 px-3">TOTAL</td>
+                    <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.hpp)}</td>
+                    <td className="py-2.5 px-3 text-right tabular-nums">
+                      {formatRp(totals.omzet)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right tabular-nums">
+                      {formatRp(totals.gross)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right tabular-nums">
+                      {totals.omzet > 0
+                        ? `${((totals.gross / totals.omzet) * 100).toFixed(1)}%`
+                        : "-"}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Barang Rusak tab */}
+      {activeTab === "barang-rusak" && (
+        <div className="space-y-4">
+          {/* Summary */}
+          <div className="rounded-lg border bg-card p-4">
+            <div className="text-sm text-muted-foreground">Total Kerugian</div>
+            <div className="text-2xl font-semibold tabular-nums">{formatRp(brokenStockTotal)}</div>
+          </div>
+
+          {/* Table */}
+          <div className="rounded-lg border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left py-2.5 px-3 font-medium">Tanggal</th>
+                    <th className="text-left py-2.5 px-3 font-medium">Bahan</th>
+                    <th className="text-right py-2.5 px-3 font-medium w-24">Qty</th>
+                    <th className="text-right py-2.5 px-3 font-medium w-32">Nilai</th>
+                    <th className="text-left py-2.5 px-3 font-medium">Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredBrokenStock.length > 0 ? (
+                    filteredBrokenStock.map((entry) => (
+                      <tr key={entry.id} className="border-b hover:bg-muted/40 transition-colors">
+                        <td className="py-2.5 px-3">
+                          {new Date(entry.createdAt).toLocaleDateString("id-ID", {
                             day: "numeric",
                             month: "short",
+                            year: "numeric",
                           })}
                         </td>
-                        <td className="py-2 px-3 text-right tabular-nums">{formatRp(row.hpp)}</td>
-                        <td className="py-2 px-3 text-right">
-                          <EditableOmzetCell
-                            value={row.omzet}
-                            hasOverride={row.hasOmzetOverride}
-                            disabled={!!channel}
-                            onSave={(newValue) => {
-                              if (!branchId) {
-                                toast.error("Pilih cabang terlebih dahulu untuk mengedit Omzet");
-                                return;
-                              }
-                              void upsertOverrideMutation.mutateAsync({
-                                data: {
-                                  branchId,
-                                  date: row.tanggal,
-                                  field: "omzet",
-                                  value: newValue,
-                                },
-                              });
-                            }}
-                          />
+                        <td className="py-2.5 px-3">{entry.ingredientName}</td>
+                        <td className="py-2.5 px-3 text-right font-medium tabular-nums">
+                          {entry.quantity}
                         </td>
-                        <td
-                          className={`py-2 px-3 text-right tabular-nums font-medium ${row.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}
-                        >
-                          {formatRp(row.grossProfit)}
+                        <td className="py-2.5 px-3 text-right tabular-nums">
+                          {formatRp(entry.valuation ?? 0)}
                         </td>
-                        <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
-                          {(row.margin * 100).toFixed(1)}%
-                        </td>
+                        <td className="py-2.5 px-3 text-muted-foreground">{entry.notes ?? "-"}</td>
                       </tr>
-                      {isOpen && (
-                        <HppBreakdownRow
-                          branchId={selectedBranchId}
-                          date={row.tanggal}
-                          channel={selectedChannel}
-                        />
-                      )}
-                    </Fragment>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-muted-foreground">
-                    Tidak ada data untuk periode ini
-                  </td>
-                </tr>
-              )}
-            </tbody>
-            {dailyRows && dailyRows.length > 0 && (
-              <tfoot>
-                <tr className="border-t-2 font-semibold bg-muted/40">
-                  <td className="py-2.5 px-3"></td>
-                  <td className="py-2.5 px-3">TOTAL</td>
-                  <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.hpp)}</td>
-                  <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.omzet)}</td>
-                  <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.gross)}</td>
-                  <td className="py-2.5 px-3 text-right tabular-nums">
-                    {totals.omzet > 0
-                      ? `${((totals.gross / totals.omzet) * 100).toFixed(1)}%`
-                      : "-"}
-                  </td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={5} className="py-10 text-center text-muted-foreground">
+                        Tidak ada data barang rusak untuk periode ini
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Revenue Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Input Revenue" size="lg">
