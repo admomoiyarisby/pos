@@ -896,6 +896,17 @@ export const printFinancePage = createServerFn({ method: "GET" })
     await requireAuth();
     const summary = await getFinanceSummary({ data });
 
+    // Fetch branch name if branchId provided
+    let branchName = "Semua Cabang";
+    if (data.branchId) {
+      const [branch] = await db
+        .select({ name: branches.name })
+        .from(branches)
+        .where(eq(branches.id, data.branchId))
+        .limit(1);
+      branchName = branch?.name ?? "-";
+    }
+
     // Build conditions for channel breakdown
     const conds: ReturnType<typeof and> = and(
       data.dateFrom ? gte(orders.createdAt, new Date(data.dateFrom)) : undefined,
@@ -932,6 +943,8 @@ export const printFinancePage = createServerFn({ method: "GET" })
         ? `${data.dateFrom ?? "-"} s.d. ${data.dateTo ?? "-"}`
         : "Semua Periode";
 
+    const channelLabel = data.channel || "Semua Channel";
+
     const gpClass = summary.grossProfit >= 0 ? "green" : "red";
     const gpSign = summary.grossProfit >= 0 ? "" : "-";
 
@@ -961,7 +974,12 @@ export const printFinancePage = createServerFn({ method: "GET" })
 </head><body>
 <div class="header">
   <div class="title">Laporan Keuangan</div>
-  <div class="subtitle">Omoiyari POS — ${escapeHtml(periodLabel)}</div>
+  <div class="subtitle">Omoiyari POS</div>
+  <div style="margin-top: 8pt; font-size: 10pt;">
+    <div><strong>Periode:</strong> ${escapeHtml(periodLabel)}</div>
+    <div><strong>Cabang:</strong> ${escapeHtml(branchName)}</div>
+    <div><strong>Channel:</strong> ${escapeHtml(channelLabel)}</div>
+  </div>
 </div>
 
 <div class="cards">
