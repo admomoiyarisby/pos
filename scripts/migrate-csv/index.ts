@@ -27,6 +27,8 @@ import { migrateRecipesRincian } from "./recipes-rincian";
 import { migrateMenuKasir } from "./menu-kasir";
 import { migrateStaffMenu } from "./staff-menu";
 import { migrateHargaInvoice } from "./harga-invoice";
+import { migrateMenuShopeefood } from "./menu-shopeefood";
+import { migrateChannelAccounting } from "./channel-accounting";
 
 config({ path: [".env.local", ".env"] });
 
@@ -63,6 +65,12 @@ const migrations: Record<string, MigrationSpec> = {
   },
   "harga-invoice": {
     fn: migrateHargaInvoice,
+  },
+  "menu-shopeefood": {
+    fn: migrateMenuShopeefood,
+  },
+  "channel-accounting": {
+    fn: migrateChannelAccounting,
   },
 };
 

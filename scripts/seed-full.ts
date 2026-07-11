@@ -22,3 +22,12 @@ console.log("[seed-full] running seedDatabase()...");
 const { seedDatabase } = await import("../src/routes/api/seed-data.js");
 const result = await seedDatabase();
 console.log("[seed-full] result:", JSON.stringify(result, null, 2));
+
+// After the demo seed creates users, load the historical Mulyorejo channel
+// revenue from the Pembukuan TENANT Excel. channel_revenues.submitted_by is
+// NOT NULL → users.id, so this must run AFTER users exist (which seedDatabase
+// guarantees). Safe to run standalone too — it resolves a user or skips.
+console.log("[seed-full] loading Mulyorejo channel accounting from Excel...");
+const { migrateChannelAccounting } = await import("./migrate-csv/channel-accounting.js");
+await migrateChannelAccounting();
+console.log("[seed-full] done.");
