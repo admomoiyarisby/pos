@@ -210,7 +210,7 @@ const navGroups: NavGroup[] = [
       { label: "Dashboard Analitik", to: "/analytics", icon: BarChart3, roles: ["super_admin"] },
       {
         label: "Barang Rusak",
-        to: "/waste/broken-stock",
+        to: "/finance/broken-stock",
         icon: Trash2,
         roles: ["super_admin", "admin_pusat"],
       },

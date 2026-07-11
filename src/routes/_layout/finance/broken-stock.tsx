@@ -10,7 +10,7 @@ function formatRupiah(value: number): string {
   return `Rp${value.toLocaleString("id-ID")}`;
 }
 
-export const Route = createFileRoute("/_layout/waste/broken-stock")({
+export const Route = createFileRoute("/_layout/finance/broken-stock")({
   component: BrokenStockPage,
   loader: async () => {
     const entries = await getBrokenStock({ data: {} });
@@ -75,7 +75,7 @@ function BrokenStockPage() {
   }, [entries]);
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
+    <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="mb-4 rounded-md border bg-card p-3">
         <div className="text-xs text-muted-foreground">Total Kerugian Broken Stock</div>
         <div className="text-lg font-semibold">{formatRupiah(totalValuation)}</div>

@@ -50,7 +50,6 @@ import { Route as LayoutAdminIndexRouteImport } from './routes/_layout/admin/ind
 import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
 import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as LayoutWasteBrokenStockRouteImport } from './routes/_layout/waste/broken-stock'
 import { Route as LayoutStockTransfersTrIdRouteImport } from './routes/_layout/stock-transfers/$trId'
 import { Route as LayoutStockOpnameSoIdRouteImport } from './routes/_layout/stock-opname/$soId'
 import { Route as LayoutScmTransfersNewRouteImport } from './routes/_layout/scm-transfers/new'
@@ -66,6 +65,7 @@ import { Route as LayoutModifierGroupsMgIdRouteImport } from './routes/_layout/m
 import { Route as LayoutInventoryLedgerRouteImport } from './routes/_layout/inventory/ledger'
 import { Route as LayoutIngredientsIngIdRouteImport } from './routes/_layout/ingredients/$ingId'
 import { Route as LayoutFinanceReconciliationRouteImport } from './routes/_layout/finance/reconciliation'
+import { Route as LayoutFinanceBrokenStockRouteImport } from './routes/_layout/finance/broken-stock'
 import { Route as LayoutDeliveryNotesDnIdRouteImport } from './routes/_layout/delivery-notes/$dnId'
 import { Route as LayoutAnalyticsSalesRouteImport } from './routes/_layout/analytics/sales'
 import { Route as LayoutAnalyticsInventoryRouteImport } from './routes/_layout/analytics/inventory'
@@ -290,11 +290,6 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LayoutWasteBrokenStockRoute = LayoutWasteBrokenStockRouteImport.update({
-  id: '/waste/broken-stock',
-  path: '/waste/broken-stock',
-  getParentRoute: () => LayoutRoute,
-} as any)
 const LayoutStockTransfersTrIdRoute =
   LayoutStockTransfersTrIdRouteImport.update({
     id: '/stock-transfers/$trId',
@@ -377,6 +372,12 @@ const LayoutFinanceReconciliationRoute =
   LayoutFinanceReconciliationRouteImport.update({
     id: '/finance/reconciliation',
     path: '/finance/reconciliation',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutFinanceBrokenStockRoute =
+  LayoutFinanceBrokenStockRouteImport.update({
+    id: '/finance/broken-stock',
+    path: '/finance/broken-stock',
     getParentRoute: () => LayoutRoute,
   } as any)
 const LayoutDeliveryNotesDnIdRoute = LayoutDeliveryNotesDnIdRouteImport.update({
@@ -467,6 +468,7 @@ export interface FileRoutesByFullPath {
   '/analytics/inventory': typeof LayoutAnalyticsInventoryRoute
   '/analytics/sales': typeof LayoutAnalyticsSalesRoute
   '/delivery-notes/$dnId': typeof LayoutDeliveryNotesDnIdRoute
+  '/finance/broken-stock': typeof LayoutFinanceBrokenStockRoute
   '/finance/reconciliation': typeof LayoutFinanceReconciliationRoute
   '/ingredients/$ingId': typeof LayoutIngredientsIngIdRoute
   '/inventory/ledger': typeof LayoutInventoryLedgerRoute
@@ -482,7 +484,6 @@ export interface FileRoutesByFullPath {
   '/scm-transfers/new': typeof LayoutScmTransfersNewRoute
   '/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
-  '/waste/broken-stock': typeof LayoutWasteBrokenStockRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
@@ -536,6 +537,7 @@ export interface FileRoutesByTo {
   '/analytics/inventory': typeof LayoutAnalyticsInventoryRoute
   '/analytics/sales': typeof LayoutAnalyticsSalesRoute
   '/delivery-notes/$dnId': typeof LayoutDeliveryNotesDnIdRoute
+  '/finance/broken-stock': typeof LayoutFinanceBrokenStockRoute
   '/finance/reconciliation': typeof LayoutFinanceReconciliationRoute
   '/ingredients/$ingId': typeof LayoutIngredientsIngIdRoute
   '/inventory/ledger': typeof LayoutInventoryLedgerRoute
@@ -551,7 +553,6 @@ export interface FileRoutesByTo {
   '/scm-transfers/new': typeof LayoutScmTransfersNewRoute
   '/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
-  '/waste/broken-stock': typeof LayoutWasteBrokenStockRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
@@ -607,6 +608,7 @@ export interface FileRoutesById {
   '/_layout/analytics/inventory': typeof LayoutAnalyticsInventoryRoute
   '/_layout/analytics/sales': typeof LayoutAnalyticsSalesRoute
   '/_layout/delivery-notes/$dnId': typeof LayoutDeliveryNotesDnIdRoute
+  '/_layout/finance/broken-stock': typeof LayoutFinanceBrokenStockRoute
   '/_layout/finance/reconciliation': typeof LayoutFinanceReconciliationRoute
   '/_layout/ingredients/$ingId': typeof LayoutIngredientsIngIdRoute
   '/_layout/inventory/ledger': typeof LayoutInventoryLedgerRoute
@@ -622,7 +624,6 @@ export interface FileRoutesById {
   '/_layout/scm-transfers/new': typeof LayoutScmTransfersNewRoute
   '/_layout/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/_layout/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
-  '/_layout/waste/broken-stock': typeof LayoutWasteBrokenStockRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
@@ -678,6 +679,7 @@ export interface FileRouteTypes {
     | '/analytics/inventory'
     | '/analytics/sales'
     | '/delivery-notes/$dnId'
+    | '/finance/broken-stock'
     | '/finance/reconciliation'
     | '/ingredients/$ingId'
     | '/inventory/ledger'
@@ -693,7 +695,6 @@ export interface FileRouteTypes {
     | '/scm-transfers/new'
     | '/stock-opname/$soId'
     | '/stock-transfers/$trId'
-    | '/waste/broken-stock'
     | '/api/auth/$'
     | '/demo/form/address'
     | '/demo/form/simple'
@@ -747,6 +748,7 @@ export interface FileRouteTypes {
     | '/analytics/inventory'
     | '/analytics/sales'
     | '/delivery-notes/$dnId'
+    | '/finance/broken-stock'
     | '/finance/reconciliation'
     | '/ingredients/$ingId'
     | '/inventory/ledger'
@@ -762,7 +764,6 @@ export interface FileRouteTypes {
     | '/scm-transfers/new'
     | '/stock-opname/$soId'
     | '/stock-transfers/$trId'
-    | '/waste/broken-stock'
     | '/api/auth/$'
     | '/demo/form/address'
     | '/demo/form/simple'
@@ -817,6 +818,7 @@ export interface FileRouteTypes {
     | '/_layout/analytics/inventory'
     | '/_layout/analytics/sales'
     | '/_layout/delivery-notes/$dnId'
+    | '/_layout/finance/broken-stock'
     | '/_layout/finance/reconciliation'
     | '/_layout/ingredients/$ingId'
     | '/_layout/inventory/ledger'
@@ -832,7 +834,6 @@ export interface FileRouteTypes {
     | '/_layout/scm-transfers/new'
     | '/_layout/stock-opname/$soId'
     | '/_layout/stock-transfers/$trId'
-    | '/_layout/waste/broken-stock'
     | '/api/auth/$'
     | '/demo/form/address'
     | '/demo/form/simple'
@@ -1160,13 +1161,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_layout/waste/broken-stock': {
-      id: '/_layout/waste/broken-stock'
-      path: '/waste/broken-stock'
-      fullPath: '/waste/broken-stock'
-      preLoaderRoute: typeof LayoutWasteBrokenStockRouteImport
-      parentRoute: typeof LayoutRoute
-    }
     '/_layout/stock-transfers/$trId': {
       id: '/_layout/stock-transfers/$trId'
       path: '/stock-transfers/$trId'
@@ -1272,6 +1266,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutFinanceReconciliationRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/finance/broken-stock': {
+      id: '/_layout/finance/broken-stock'
+      path: '/finance/broken-stock'
+      fullPath: '/finance/broken-stock'
+      preLoaderRoute: typeof LayoutFinanceBrokenStockRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/delivery-notes/$dnId': {
       id: '/_layout/delivery-notes/$dnId'
       path: '/delivery-notes/$dnId'
@@ -1375,6 +1376,7 @@ interface LayoutRouteChildren {
   LayoutAnalyticsInventoryRoute: typeof LayoutAnalyticsInventoryRoute
   LayoutAnalyticsSalesRoute: typeof LayoutAnalyticsSalesRoute
   LayoutDeliveryNotesDnIdRoute: typeof LayoutDeliveryNotesDnIdRoute
+  LayoutFinanceBrokenStockRoute: typeof LayoutFinanceBrokenStockRoute
   LayoutFinanceReconciliationRoute: typeof LayoutFinanceReconciliationRoute
   LayoutIngredientsIngIdRoute: typeof LayoutIngredientsIngIdRoute
   LayoutInventoryLedgerRoute: typeof LayoutInventoryLedgerRoute
@@ -1390,7 +1392,6 @@ interface LayoutRouteChildren {
   LayoutScmTransfersNewRoute: typeof LayoutScmTransfersNewRoute
   LayoutStockOpnameSoIdRoute: typeof LayoutStockOpnameSoIdRoute
   LayoutStockTransfersTrIdRoute: typeof LayoutStockTransfersTrIdRoute
-  LayoutWasteBrokenStockRoute: typeof LayoutWasteBrokenStockRoute
   LayoutAdminIndexRoute: typeof LayoutAdminIndexRoute
   LayoutAnalyticsIndexRoute: typeof LayoutAnalyticsIndexRoute
   LayoutDeliveryNotesIndexRoute: typeof LayoutDeliveryNotesIndexRoute
@@ -1434,6 +1435,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAnalyticsInventoryRoute: LayoutAnalyticsInventoryRoute,
   LayoutAnalyticsSalesRoute: LayoutAnalyticsSalesRoute,
   LayoutDeliveryNotesDnIdRoute: LayoutDeliveryNotesDnIdRoute,
+  LayoutFinanceBrokenStockRoute: LayoutFinanceBrokenStockRoute,
   LayoutFinanceReconciliationRoute: LayoutFinanceReconciliationRoute,
   LayoutIngredientsIngIdRoute: LayoutIngredientsIngIdRoute,
   LayoutInventoryLedgerRoute: LayoutInventoryLedgerRoute,
@@ -1450,7 +1452,6 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutScmTransfersNewRoute: LayoutScmTransfersNewRoute,
   LayoutStockOpnameSoIdRoute: LayoutStockOpnameSoIdRoute,
   LayoutStockTransfersTrIdRoute: LayoutStockTransfersTrIdRoute,
-  LayoutWasteBrokenStockRoute: LayoutWasteBrokenStockRoute,
   LayoutAdminIndexRoute: LayoutAdminIndexRoute,
   LayoutAnalyticsIndexRoute: LayoutAnalyticsIndexRoute,
   LayoutDeliveryNotesIndexRoute: LayoutDeliveryNotesIndexRoute,
