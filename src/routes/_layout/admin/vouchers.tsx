@@ -6,6 +6,7 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
+import MoneyInput from "#/components/MoneyInput";
 import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
 import { toast } from "sonner";
@@ -119,6 +120,7 @@ function VouchersPage() {
   const [editing, setEditing] = useState<VoucherRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VoucherRow | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [discountType, setDiscountType] = useState<VoucherRow["discountType"]>("percentage");
 
   const { data: vouchers } = useQuery({
     queryKey: ["vouchers"],
@@ -129,12 +131,14 @@ function VouchersPage() {
   const openCreate = () => {
     setEditing(null);
     setFormError(null);
+    setDiscountType("percentage");
     setModalOpen(true);
   };
 
   const openEdit = (r: VoucherRow) => {
     setEditing(r);
     setFormError(null);
+    setDiscountType(r.discountType);
     setModalOpen(true);
   };
 
@@ -297,7 +301,8 @@ function VouchersPage() {
               <label className="text-sm font-medium">Tipe Diskon</label>
               <select
                 name="discountType"
-                defaultValue={editing?.discountType ?? "percentage"}
+                value={discountType}
+                onChange={(e) => setDiscountType(e.target.value as VoucherRow["discountType"])}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="percentage">Persen (%)</option>
@@ -308,25 +313,30 @@ function VouchersPage() {
               <label className="text-sm font-medium">
                 Nilai Diskon <span className="text-destructive">*</span>
               </label>
-              <input
-                name="discountValue"
-                type="number"
-                min={0}
-                step={1}
-                defaultValue={editing?.discountValue ?? 0}
-                required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
+              {discountType === "fixed" ? (
+                <MoneyInput
+                  name="discountValue"
+                  defaultValue={editing?.discountValue ?? 0}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              ) : (
+                <input
+                  name="discountValue"
+                  type="number"
+                  min={0}
+                  step={1}
+                  defaultValue={editing?.discountValue ?? 0}
+                  required
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              )}
             </div>
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Min. Order (Rp)</label>
-            <input
+            <MoneyInput
               name="minOrder"
-              type="number"
-              min={0}
-              step={1}
               defaultValue={editing?.minOrder ?? 0}
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
