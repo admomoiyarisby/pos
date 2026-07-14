@@ -7,6 +7,9 @@ import {
   recipeChildRecipes,
   recipeModifierGroups,
   recipeBranches,
+  recipeInventory,
+  stockLedger,
+  branches,
   ingredients,
   brands,
   modifierGroups,
@@ -496,4 +499,118 @@ export const deleteRecipe = createServerFn({ method: "POST" })
     );
 
     return { success: true, wasSoftDelete: true };
+  });
+
+// =============================================================================
+// ASSIGN RECIPE (FINISHED-GOOD) STOCK — production into a branch
+// =============================================================================
+//
+// Super Admin / Admin Pusat produce a new recipe's finished units and stock
+// them at a branch (typically Central Warehouse). This writes the movement to
+// Kartu Stok (stock_ledger) linked to the recipe so it is auditable alongside
+// the ingredient-level movements. See FRD §4.2 (produksi → Kartu Stok).
+
+export const assignRecipeStock = createServerFn({ method: "POST" })
+  .validator(
+    (data: { recipeId: string; quantity: number; branchId?: string; notes?: string }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    if (!Number.isFinite(data.quantity) || data.quantity <= 0) {
+      throw new Error("Jumlah stok harus lebih dari 0");
+    }
+
+    const [recipe] = await db
+      .select({ id: recipes.id, name: recipes.name, code: recipes.code })
+      .from(recipes)
+      .where(eq(recipes.id, data.recipeId))
+      .limit(1);
+    if (!recipe) throw new Error("Resep tidak ditemukan");
+
+    // Resolve target branch: explicit branchId, else the Central Warehouse.
+    let targetBranchId = data.branchId;
+    if (!targetBranchId) {
+      const [central] = await db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(eq(branches.type, "Central"))
+        .limit(1);
+      if (!central) throw new Error("Cabang Pusat (Central Warehouse) tidak ditemukan");
+      targetBranchId = central.id;
+    } else {
+      const [b] = await db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(eq(branches.id, targetBranchId))
+        .limit(1);
+      if (!b) throw new Error("Cabang tujuan tidak ditemukan");
+    }
+
+    // Upsert recipeInventory for (recipeId, branchId).
+    const [existing] = await db
+      .select()
+      .from(recipeInventory)
+      .where(
+        and(
+          eq(recipeInventory.recipeId, data.recipeId),
+          eq(recipeInventory.branchId, targetBranchId),
+        ),
+      )
+      .limit(1);
+
+    const newBalance = (existing?.quantity ?? 0) + data.quantity;
+    if (existing) {
+      await db
+        .update(recipeInventory)
+        .set({ quantity: newBalance, lastUpdated: new Date() })
+        .where(eq(recipeInventory.id, existing.id));
+    } else {
+      await db.insert(recipeInventory).values({
+        recipeId: data.recipeId,
+        branchId: targetBranchId,
+        quantity: data.quantity,
+      });
+    }
+
+    // Production note reference for Kartu Stok traceability.
+    const ref = `PROD-${recipe.code || recipe.id.slice(0, 4)}-${Date.now().toString(36).toUpperCase()}`;
+    const ledgerNotes = `Produksi ${recipe.name}${data.notes ? ` (${data.notes})` : ""}`;
+
+    await db.insert(stockLedger).values({
+      branchId: targetBranchId,
+      recipeId: data.recipeId,
+      type: "IN",
+      quantity: Math.round(data.quantity),
+      balance: Math.round(newBalance),
+      reference: ref,
+      notes: ledgerNotes,
+    });
+
+    await logSystemAction(
+      user,
+      "Assign Recipe Stock",
+      `Stok resep "${recipe.name}" +${data.quantity} di cabang ${targetBranchId} oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "recipeInventory",
+      `${data.recipeId}:${targetBranchId}`,
+      "CREATE",
+      undefined,
+      {
+        recipeId: data.recipeId,
+        branchId: targetBranchId,
+        quantity: data.quantity,
+        reference: ref,
+      },
+    );
+
+    return {
+      success: true,
+      recipeId: data.recipeId,
+      branchId: targetBranchId,
+      quantity: data.quantity,
+      reference: ref,
+    };
   });

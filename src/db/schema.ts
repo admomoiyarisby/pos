@@ -313,6 +313,30 @@ export const recipeIngredients = pgTable("recipe_ingredients", {
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
 
+// Finished-good (recipe) stock per branch. Unlike `inventory` (which is
+// ingredient-scoped), this tracks produced menu units (e.g. "50 pcs Ayam
+// Karage ready at Central Warehouse") so a recipe can be stocked and its
+// movements recorded in Kartu Stok (see stockLedger.recipeId).
+export const recipeInventory = pgTable(
+  "recipe_inventory",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    recipeId: uuid("recipe_id")
+      .notNull()
+      .references(() => recipes.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    quantity: real("quantity").notNull().default(0),
+    lastUpdated: timestamp("last_updated", { mode: "date" }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("recipe_inventory_branch_recipe_unique").on(t.branchId, t.recipeId),
+    index("recipe_inventory_branch_idx").on(t.branchId),
+    index("recipe_inventory_recipe_idx").on(t.recipeId),
+  ],
+);
+
 export const recipeChildRecipes = pgTable(
   "recipe_child_recipes",
   {
@@ -730,9 +754,10 @@ export const stockLedger = pgTable(
     branchId: uuid("branch_id")
       .notNull()
       .references(() => branches.id),
-    ingredientId: uuid("ingredient_id")
-      .notNull()
-      .references(() => ingredients.id),
+    ingredientId: uuid("ingredient_id").references(() => ingredients.id),
+    // Optional link to a finished-good (recipe) stock movement. When set, this
+    // ledger row tracks a recipe's produced units rather than a raw ingredient.
+    recipeId: uuid("recipe_id").references(() => recipes.id),
     type: stockLedgerTypeEnum("type").notNull(),
     quantity: integer("quantity").notNull(),
     balance: integer("balance").notNull(),
@@ -743,6 +768,7 @@ export const stockLedger = pgTable(
   (t) => [
     index("ledger_branch_idx").on(t.branchId),
     index("ledger_ingredient_idx").on(t.ingredientId),
+    index("ledger_recipe_idx").on(t.recipeId),
     index("ledger_ref_idx").on(t.reference),
     index("ledger_created_idx").on(t.createdAt),
   ],

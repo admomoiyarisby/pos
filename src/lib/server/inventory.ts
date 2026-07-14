@@ -5,6 +5,7 @@ import {
   stockLedger,
   ingredients,
   branches,
+  recipes,
   stockOpnames,
   stockOpnameItems,
   systemNotifications,
@@ -94,6 +95,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
     (data: {
       branchId?: string;
       ingredientId?: string;
+      recipeId?: string;
       dateFrom?: string;
       dateTo?: string;
       page?: number;
@@ -108,6 +110,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
         id: stockLedger.id,
         branchId: stockLedger.branchId,
         ingredientId: stockLedger.ingredientId,
+        recipeId: stockLedger.recipeId,
         type: stockLedger.type,
         quantity: stockLedger.quantity,
         balance: stockLedger.balance,
@@ -115,16 +118,19 @@ export const getStockLedger = createServerFn({ method: "GET" })
         notes: stockLedger.notes,
         createdAt: stockLedger.createdAt,
         ingredientName: ingredients.name,
+        recipeName: recipes.name,
         stockUnit: ingredients.stockUnit,
         branchName: branches.name,
       })
       .from(stockLedger)
       .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
+      .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
       .leftJoin(branches, eq(stockLedger.branchId, branches.id))
       .where(
         and(
           data.branchId ? eq(stockLedger.branchId, data.branchId) : undefined,
           data.ingredientId ? eq(stockLedger.ingredientId, data.ingredientId) : undefined,
+          data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
         ),
       )
       .orderBy(desc(stockLedger.createdAt))
