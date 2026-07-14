@@ -193,3 +193,125 @@
     }
   }
 }
+
+/* ============================================================
+   Markdown / Documentation styles
+   ============================================================ */
+.prose-docs {
+  @apply text-foreground leading-relaxed;
+  max-width: 72ch;
+}
+
+.prose-docs > * + * {
+  @apply mt-4;
+}
+
+.prose-docs h2 {
+  @apply text-lg font-semibold text-foreground mt-8 mb-3;
+  scroll-margin-top: 1.5rem;
+}
+
+.prose-docs h3 {
+  @apply text-base font-semibold text-foreground mt-6 mb-2;
+  scroll-margin-top: 1.5rem;
+}
+
+.prose-docs p {
+  @apply text-sm;
+}
+
+.prose-docs strong {
+  @apply font-semibold text-foreground;
+}
+
+.prose-docs a {
+  @apply text-primary underline underline-offset-2 hover:text-primary/80 transition-colors;
+}
+
+.prose-docs ul,
+.prose-docs ol {
+  @apply my-3 ml-5 space-y-1.5;
+}
+
+.prose-docs ul {
+  @apply list-disc;
+}
+
+.prose-docs ol {
+  @apply list-decimal;
+}
+
+.prose-docs li {
+  @apply text-sm;
+}
+
+.prose-docs li > ul,
+.prose-docs li > ol {
+  @apply mt-1.5;
+}
+
+.prose-docs code {
+  @apply rounded bg-muted px-1.5 py-0.5 text-xs font-mono text-foreground;
+}
+
+.prose-docs pre {
+  @apply rounded-xl border bg-muted p-4 overflow-x-auto;
+}
+
+.prose-docs pre code {
+  @apply bg-transparent p-0 text-sm;
+}
+
+.prose-docs blockquote {
+  @apply border-l-2 border-muted-foreground/25 pl-4 italic text-muted-foreground;
+}
+
+.prose-docs hr {
+  @apply border-border my-6;
+}
+
+.prose-docs table {
+  @apply w-full text-sm border-collapse;
+}
+
+.prose-docs thead {
+  @apply border-b bg-muted/50;
+}
+
+.prose-docs th {
+  @apply text-left p-3 font-medium text-foreground;
+}
+
+.prose-docs tbody tr {
+  @apply border-b last:border-0;
+}
+
+.prose-docs td {
+  @apply p-3 text-muted-foreground;
+}
+
+/* Callout / admonition boxes */
+.prose-docs .callout {
+  @apply rounded-xl border p-4 text-sm;
+}
+
+.prose-docs .callout-label {
+  @apply font-medium text-foreground;
+}
+
+.prose-docs .callout-content {
+  @apply mt-1 text-muted-foreground;
+}
+
+/* Example boxes */
+.prose-docs .example {
+  @apply rounded-xl border p-4;
+}
+
+.prose-docs .example-label {
+  @apply font-medium text-foreground text-sm;
+}
+
+.prose-docs .example-content {
+  @apply mt-2 text-sm text-muted-foreground space-y-1;
+}

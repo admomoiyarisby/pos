@@ -121,7 +121,7 @@ export const createUser = createServerFn({ method: "POST" })
         .where(and(eq(usersTable.pin, data.pin), eq(usersTable.branchId, data.branchId)))
         .limit(1);
       if (existing) {
-        throw new Error("PIN sudah digunakan oleh user lain di cabang ini");
+        throw new Error("PIN sudah digunakan oleh cabang/staf lain");
       }
     }
 
@@ -230,7 +230,7 @@ export const updateUser = createServerFn({ method: "POST" })
           )
           .limit(1);
         if (existing) {
-          throw new Error("PIN sudah digunakan oleh user lain di cabang ini");
+          throw new Error("PIN sudah digunakan oleh cabang/staf lain");
         }
       }
     }
@@ -357,7 +357,7 @@ export const updateMyPin = createServerFn({ method: "POST" })
       .limit(1);
 
     if (existingUser) {
-      throw new Error(`PIN sudah digunakan oleh staf "${existingUser.name}"`);
+      throw new Error("PIN sudah digunakan oleh cabang/staf lain");
     }
 
     // Validate uniqueness across branches.pin
@@ -368,7 +368,7 @@ export const updateMyPin = createServerFn({ method: "POST" })
       .limit(1);
 
     if (existingBranch) {
-      throw new Error(`PIN sudah digunakan oleh cabang "${existingBranch.name}"`);
+      throw new Error("PIN sudah digunakan oleh cabang/staf lain");
     }
 
     await db

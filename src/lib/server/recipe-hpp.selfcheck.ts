@@ -15,6 +15,8 @@
  * (needs DATABASE_URL in .env.local)
  */
 
+export {}; // treat as a module so tsc doesn't flag duplicate top-level `main`
+
 async function main() {
   // Load DATABASE_URL from .env.local BEFORE importing the DB module, since
   // ESM hoists static imports above any top-level code in this file.

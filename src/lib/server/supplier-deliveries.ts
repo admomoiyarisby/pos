@@ -357,3 +357,47 @@ export const deleteSupplierDelivery = createServerFn({ method: "POST" })
 
     return { success: true };
   });
+
+// ─── Mark Supplier Delivery as Completed ───
+
+export const completeSupplierDelivery = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    // Fetch existing delivery
+    const [existing] = await db
+      .select()
+      .from(supplierDeliveries)
+      .where(eq(supplierDeliveries.id, data.id))
+      .limit(1);
+
+    if (!existing) throw new Error("Supplier delivery not found");
+
+    if (existing.status === "Completed") {
+      throw new Error("Delivery already completed");
+    }
+
+    // Update status to Completed
+    const [updated] = await db
+      .update(supplierDeliveries)
+      .set({ status: "Completed" })
+      .where(eq(supplierDeliveries.id, data.id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Complete Supplier Delivery",
+      `Barang masuk "${data.id}" ditandai selesai oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "supplierDeliveries",
+      data.id,
+      "STATUS_CHANGE",
+      existing as Record<string, unknown>,
+      updated as Record<string, unknown>,
+    );
+
+    return { success: true };
+  });

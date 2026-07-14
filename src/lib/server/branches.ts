@@ -14,9 +14,9 @@ const branchInput = z.object({
   active: z.boolean().optional(),
   isOnline: z.boolean().optional(),
   pb1Rate: z.number().int().min(0).max(100).optional(),
-  pin: z.string().length(4).optional(),
-  phone: z.string().max(20).optional(),
-  complaintPhone: z.string().max(20).optional(),
+  pin: z.string().length(4).nullable().optional(),
+  phone: z.string().max(20).nullable().optional(),
+  complaintPhone: z.string().max(20).nullable().optional(),
 });
 
 /**
@@ -30,24 +30,24 @@ async function validatePinUnique(pin: string, excludeBranchId?: string) {
     : eq(branches.pin, pin);
 
   const [existingBranch] = await db
-    .select({ id: branches.id, name: branches.name })
+    .select({ id: branches.id })
     .from(branches)
     .where(branchCondition)
     .limit(1);
 
   if (existingBranch) {
-    throw new Error(`PIN sudah digunakan oleh cabang "${existingBranch.name}"`);
+    throw new Error("PIN sudah digunakan oleh cabang/staf lain");
   }
 
   // Check against users
   const [existingUser] = await db
-    .select({ id: users.id, name: users.name })
+    .select({ id: users.id })
     .from(users)
     .where(eq(users.pin, pin))
     .limit(1);
 
   if (existingUser) {
-    throw new Error(`PIN sudah digunakan oleh staf "${existingUser.name}"`);
+    throw new Error("PIN sudah digunakan oleh cabang/staf lain");
   }
 }
 
@@ -117,22 +117,46 @@ export const createBranch = createServerFn({ method: "POST" })
   });
 
 export const updateBranch = createServerFn({ method: "POST" })
-  .validator((data: unknown) => branchInput.partial().extend({ id: z.string().uuid() }).parse(data))
+  .validator((data: unknown) => {
+    // For updates, all fields except id are optional and can be null
+    const updateSchema = z.object({
+      id: z.string().uuid(),
+      code: z.string().min(1).max(20).nullable().optional(),
+      name: z.string().min(1).max(100).nullable().optional(),
+      location: z.string().min(1).max(200).nullable().optional(),
+      type: z.enum(["Central", "Outlet"]).nullable().optional(),
+      active: z.boolean().nullable().optional(),
+      isOnline: z.boolean().nullable().optional(),
+      pb1Rate: z.number().int().min(0).max(100).nullable().optional(),
+      pin: z.string().length(4).nullable().optional(),
+      phone: z.string().max(20).nullable().optional(),
+      complaintPhone: z.string().max(20).nullable().optional(),
+    });
+    return updateSchema.parse(data);
+  })
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
     const { id, ...updates } = data;
 
+    // Filter out null and undefined values - only update fields that were actually provided
+    const filteredUpdates: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(updates)) {
+      if (value !== null && value !== undefined) {
+        filteredUpdates[key] = value;
+      }
+    }
+
     // Validate PIN uniqueness if being updated
-    if (updates.pin) {
-      await validatePinUnique(updates.pin, id);
+    if (filteredUpdates.pin) {
+      await validatePinUnique(filteredUpdates.pin as string, id);
     }
 
     const [old] = await db.select().from(branches).where(eq(branches.id, id)).limit(1);
 
     const [result] = await db
       .update(branches)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...filteredUpdates, updatedAt: new Date() })
       .where(eq(branches.id, id))
       .returning();
 

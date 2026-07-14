@@ -9,11 +9,13 @@ import { getBranches } from "#/lib/server/branches";
 import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
+import { Factory } from "lucide-react";
 
 interface LedgerRow {
   id: string;
   createdAt: Date;
   ingredientName: string | null;
+  recipeName: string | null;
   type: "IN" | "OUT";
   quantity: number;
   balance: number;
@@ -65,7 +67,23 @@ function LedgerPage() {
           minute: "2-digit",
         }),
     },
-    { key: "ingredientName", header: "Bahan", sortable: true },
+    {
+      key: "ingredientName",
+      header: "Bahan/Resep",
+      sortable: true,
+      render: (r) => {
+        // Show recipe name for recipe-linked entries, ingredient name otherwise
+        if (r.recipeName) {
+          return (
+            <span className="flex items-center gap-1">
+              <Factory className="h-3 w-3 text-muted-foreground" />
+              <span className="font-medium">{r.recipeName}</span>
+            </span>
+          );
+        }
+        return r.ingredientName ?? "-";
+      },
+    },
     {
       key: "type",
       header: "Tipe",

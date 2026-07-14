@@ -34,12 +34,11 @@ export const getInventory = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
+    // Always use the provided branchId for filtering
+    // For branch_admin, override with their assigned branch
     let branchFilter = data.branchId;
     if (user.role === "branch_admin" && user.branchId) {
       branchFilter = user.branchId;
-    } else if (user.role === "admin_pusat") {
-      // Admin pusat sees central warehouse or all depending on preference
-      // Default to no filter (all) for now
     }
 
     const conditions = [
@@ -61,7 +60,7 @@ export const getInventory = createServerFn({ method: "GET" })
       .where(where);
 
     const total = totalResult?.total ?? 0;
-    const limit = Math.min(data.limit ?? 50, 100);
+    const limit = data.limit ? Math.min(data.limit, 1000) : 50;
     const offset = (data.page ?? 0) * limit;
 
     const result = await db
@@ -83,7 +82,27 @@ export const getInventory = createServerFn({ method: "GET" })
       .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
       .leftJoin(branches, eq(inventory.branchId, branches.id))
       .where(where)
-      .orderBy(data.sortOrder === "desc" ? desc(ingredients.name) : asc(ingredients.name))
+      .orderBy(
+        (() => {
+          const dir = data.sortOrder === "desc" ? desc : asc;
+          switch (data.sortBy) {
+            case "ingredientCode":
+              return dir(ingredients.code);
+            case "ingredientName":
+              return dir(ingredients.name);
+            case "ingredientSkuType":
+              return dir(ingredients.skuType);
+            case "ingredientCategory":
+              return dir(ingredients.category);
+            case "quantity":
+              return dir(inventory.quantity);
+            case "branchName":
+              return dir(branches.name);
+            default:
+              return asc(ingredients.name);
+          }
+        })(),
+      )
       .limit(limit)
       .offset(offset);
 

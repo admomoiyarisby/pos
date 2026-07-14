@@ -24,11 +24,14 @@ interface DataTableProps<T> {
   data: T[];
   keyExtractor: (row: T) => string;
   pageSize?: number;
+  pagination?: boolean;
   searchable?: boolean;
   searchKeys?: (keyof T)[];
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
   defaultSort?: { key: string; dir: "asc" | "desc" };
+  sort?: { key: string; dir: "asc" | "desc" } | null;
+  onSortChange?: (sort: { key: string; dir: "asc" | "desc" } | null) => void;
   rowClassName?: (row: T) => string;
   loading?: boolean;
   loadingRows?: number;
@@ -39,20 +42,26 @@ export default function DataTable<T>({
   data,
   keyExtractor,
   pageSize = 15,
+  pagination = true,
   searchable = true,
   searchKeys,
   emptyMessage = "Tidak ada data",
   onRowClick,
   defaultSort,
+  sort: externalSort,
+  onSortChange,
   rowClassName,
   loading = false,
   loadingRows = 5,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
-  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(
+  const [internalSort, setInternalSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(
     defaultSort ?? null,
   );
+
+  // Use external sort if provided, otherwise use internal sort
+  const sort = externalSort !== undefined ? externalSort : internalSort;
 
   const safeStr = (v: unknown) => {
     if (v instanceof Date) return v.toISOString();
@@ -97,12 +106,18 @@ export default function DataTable<T>({
   const paginated = sorted.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
 
   const handleSort = (key: string) => {
-    setSort((prev) => {
-      if (prev?.key === key) {
-        return prev.dir === "asc" ? { key, dir: "desc" } : null;
+    const newSort = (() => {
+      if (sort?.key === key) {
+        return sort.dir === "asc" ? { key, dir: "desc" as const } : null;
       }
-      return { key, dir: "asc" };
-    });
+      return { key, dir: "asc" as const };
+    })();
+
+    if (onSortChange) {
+      onSortChange(newSort);
+    } else {
+      setInternalSort(newSort);
+    }
   };
 
   const stickyClass = "sticky left-0 bg-background z-10 border-r border-border";
@@ -217,7 +232,7 @@ export default function DataTable<T>({
         </table>
       </div>
 
-      {totalPages > 1 && (
+      {pagination && totalPages > 1 && (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs text-muted-foreground">
             Halaman {currentPage + 1} dari {totalPages}

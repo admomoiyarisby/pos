@@ -137,7 +137,8 @@ export const pinAuth = () => ({
         }
 
         // 3. Get staff names for this branch
-        const staffNames = await db
+        // Combine staff from branchStaffNames table AND users table
+        const staffNameEntries = await db
           .select({
             id: branchStaffNames.id,
             name: branchStaffNames.name,
@@ -145,6 +146,36 @@ export const pinAuth = () => ({
           .from(branchStaffNames)
           .where(and(eq(branchStaffNames.branchId, branch.id), eq(branchStaffNames.active, true)))
           .orderBy(branchStaffNames.name);
+
+        // Also get users assigned to this branch
+        const branchUsers = await db
+          .select({
+            id: usersTable.id,
+            name: usersTable.name,
+          })
+          .from(usersTable)
+          .where(and(eq(usersTable.branchId, branch.id), eq(usersTable.status, "Active")))
+          .orderBy(usersTable.name);
+
+        // Merge and deduplicate by name
+        const nameSet = new Set<string>();
+        const staffNames: { id: string; name: string }[] = [];
+
+        // Add staff name entries first
+        for (const entry of staffNameEntries) {
+          if (!nameSet.has(entry.name)) {
+            nameSet.add(entry.name);
+            staffNames.push(entry);
+          }
+        }
+
+        // Add branch users that aren't already in the list
+        for (const user of branchUsers) {
+          if (!nameSet.has(user.name)) {
+            nameSet.add(user.name);
+            staffNames.push({ id: user.id, name: user.name });
+          }
+        }
 
         // 4. Return branch info + staff names
         return ctx.json({
@@ -265,6 +296,7 @@ export const pinAuth = () => ({
         }
 
         // 2. Verify staff name exists for this branch
+        // Check branchStaffNames table first
         const [staffEntry] = await db
           .select()
           .from(branchStaffNames)
@@ -277,7 +309,21 @@ export const pinAuth = () => ({
           )
           .limit(1);
 
-        if (!staffEntry) {
+        // Also check users table for existing users assigned to this branch
+        const [existingUser] = await db
+          .select()
+          .from(usersTable)
+          .where(
+            and(
+              eq(usersTable.branchId, branchId),
+              eq(usersTable.name, staffName),
+              eq(usersTable.status, "Active"),
+            ),
+          )
+          .limit(1);
+
+        // Staff must exist in at least one of the tables
+        if (!staffEntry && !existingUser) {
           throw APIError.from("NOT_FOUND", {
             code: "STAFF_NOT_FOUND",
             message: "Nama staff tidak ditemukan di cabang ini",
@@ -285,12 +331,13 @@ export const pinAuth = () => ({
         }
 
         // 3. Find or create a user account for this staff member
-        const email = `${branch.code.toLowerCase()}_${staffName.toLowerCase().replace(/\s+/g, "_")}@staff.omoiyari.net`;
-
-        let [user] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+        // If user already exists in users table, use that account
+        let user = existingUser;
 
         if (!user) {
           // Create a user account for this staff member
+          const email = `${branch.code.toLowerCase()}_${staffName.toLowerCase().replace(/\s+/g, "_")}@staff.omoiyari.net`;
+
           const [newUser] = await db
             .insert(usersTable)
             .values({

@@ -142,14 +142,14 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
 
     const result = await db
       .select({
-        tanggal: sql<string>`DATE(${orders.createdAt})`,
+        tanggal: sql<string>`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta')`,
         hpp: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
         omzet: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
       })
       .from(orders)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .groupBy(sql`DATE(${orders.createdAt})`)
-      .orderBy(sql`DATE(${orders.createdAt})`);
+      .groupBy(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta')`)
+      .orderBy(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta')`);
 
     // Fetch overrides for this branch/date range
     const overrideConditions = [];
@@ -194,7 +194,7 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
     const conditions = [];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
     if (data.channel) conditions.push(eq(orders.channel, data.channel as any));
-    conditions.push(sql`DATE(${orders.createdAt}) = ${data.date}`);
+    conditions.push(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') = ${data.date}`);
 
     const rows = await db
       .select({

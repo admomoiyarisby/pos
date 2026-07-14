@@ -13,12 +13,13 @@ import {
   createSupplierDelivery,
   updateSupplierDelivery,
   deleteSupplierDelivery,
+  completeSupplierDelivery,
   getSuppliers,
 } from "#/lib/server/supplier-deliveries";
 import { getIngredients } from "#/lib/server/ingredients";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
-import { Printer, Pencil, Trash2 } from "lucide-react";
+import { Printer, Pencil, Trash2, CheckCircle } from "lucide-react";
 
 interface DeliveryRow {
   id: string;
@@ -100,6 +101,17 @@ function SupplierDeliveriesPage() {
       setDeleteConfirm(null);
     },
   });
+
+  const completeMutation = useMutation({
+    mutationFn: completeSupplierDelivery,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["supplier-deliveries"] });
+    },
+  });
+
+  const handleComplete = (id: string) => {
+    void completeMutation.mutateAsync({ data: { id } });
+  };
 
   const openCreateModal = () => {
     setEditId(null);
@@ -274,7 +286,7 @@ function SupplierDeliveriesPage() {
     {
       key: "id",
       header: "Aksi",
-      width: "w-28",
+      width: "w-36",
       render: (r) => (
         <div className="flex items-center justify-end gap-1">
           <button
@@ -287,6 +299,18 @@ function SupplierDeliveriesPage() {
           >
             <Printer className="h-4 w-4" />
           </button>
+          {canWrite && r.status === "Pending Invoice" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleComplete(r.id);
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-success hover:bg-success/10"
+              title="Tandai Selesai"
+            >
+              <CheckCircle className="h-4 w-4" />
+            </button>
+          )}
           {canWrite && (
             <>
               <button

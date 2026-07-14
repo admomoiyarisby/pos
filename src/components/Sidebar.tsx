@@ -30,6 +30,7 @@ import {
   Printer,
   X,
   XCircle,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 import { authClient } from "#/lib/auth-client";
@@ -226,6 +227,18 @@ const navGroups: NavGroup[] = [
         to: "/pencatatan-manual",
         icon: ScrollText,
         roles: ["super_admin", "admin_pusat"],
+      },
+    ],
+  },
+  {
+    label: "Bantuan",
+    roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
+    items: [
+      {
+        label: "Panduan Alur",
+        to: "/docs",
+        icon: BookOpen,
+        roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
       },
     ],
   },

@@ -48,6 +48,7 @@ function InventoryPage() {
   const [branchId, setBranchId] = useState("");
   const [locationType, setLocationType] = useState<"" | "Central" | "Outlet">("");
   const [page, setPage] = useState(0);
+  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
   const pageSize = 25;
 
   const { data: branches } = useQuery({
@@ -62,7 +63,7 @@ function InventoryPage() {
   const negativeFilter = negativeParam === "true";
 
   const { data: result } = useQuery({
-    queryKey: ["inventory", search, category, branchId, locationType, page, negativeFilter],
+    queryKey: ["inventory", search, category, branchId, locationType, page, negativeFilter, sort],
     queryFn: () =>
       getInventory({
         data: {
@@ -73,6 +74,8 @@ function InventoryPage() {
           page,
           limit: pageSize,
           negative: negativeFilter || undefined,
+          sortBy: sort?.key || undefined,
+          sortOrder: sort?.dir || undefined,
         },
       }),
     initialData: { data: initialData, total: initialTotal },
@@ -194,7 +197,18 @@ function InventoryPage() {
         </div>
       </div>
 
-      <DataTable columns={columns} data={inventory} keyExtractor={(r) => r.id} pageSize={15} />
+      <DataTable
+        columns={columns}
+        data={inventory}
+        keyExtractor={(r) => r.id}
+        searchable={false}
+        pagination={false}
+        sort={sort}
+        onSortChange={(newSort) => {
+          setSort(newSort);
+          setPage(0);
+        }}
+      />
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-xs text-muted-foreground">

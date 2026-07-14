@@ -9,6 +9,7 @@ import {
   recipeBranches,
   recipeInventory,
   stockLedger,
+  inventory,
   branches,
   ingredients,
   brands,
@@ -566,23 +567,103 @@ export const assignRecipeStock = createServerFn({ method: "POST" })
       .limit(1);
     if (!recipe) throw new Error("Resep tidak ditemukan");
 
-    // Resolve target branch: explicit branchId, else the Central Warehouse.
-    let targetBranchId = data.branchId;
-    if (!targetBranchId) {
-      const [central] = await db
-        .select({ id: branches.id })
-        .from(branches)
-        .where(eq(branches.type, "Central"))
+    // Resolve target branch: must be Central Warehouse.
+    // This feature is restricted to Central Warehouse only.
+    const [central] = await db
+      .select({ id: branches.id, name: branches.name })
+      .from(branches)
+      .where(eq(branches.type, "Central"))
+      .limit(1);
+    if (!central) throw new Error("Cabang Pusat (Central Warehouse) tidak ditemukan");
+
+    // If branchId is provided, validate it's the Central Warehouse
+    if (data.branchId && data.branchId !== central.id) {
+      throw new Error(
+        "Produksi resep hanya bisa dilakukan di Central Warehouse. " +
+          "Gunakan Central Warehouse atau hapus branchId untuk menggunakan default.",
+      );
+    }
+
+    const targetBranchId = central.id;
+
+    // Fetch recipe BOM (ingredients list) to deduct from inventory
+    const bomItems = await db
+      .select({
+        ingredientId: recipeIngredients.ingredientId,
+        quantity: recipeIngredients.quantity,
+        ingredientName: ingredients.name,
+        stockUnit: ingredients.stockUnit,
+      })
+      .from(recipeIngredients)
+      .leftJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
+      .where(eq(recipeIngredients.recipeId, data.recipeId));
+
+    // Validate all ingredients have sufficient stock
+    const insufficientStock: string[] = [];
+    for (const bom of bomItems) {
+      const requiredQty = bom.quantity * data.quantity;
+      const [inv] = await db
+        .select({ quantity: inventory.quantity })
+        .from(inventory)
+        .where(
+          and(eq(inventory.branchId, targetBranchId), eq(inventory.ingredientId, bom.ingredientId)),
+        )
         .limit(1);
-      if (!central) throw new Error("Cabang Pusat (Central Warehouse) tidak ditemukan");
-      targetBranchId = central.id;
-    } else {
-      const [b] = await db
-        .select({ id: branches.id })
-        .from(branches)
-        .where(eq(branches.id, targetBranchId))
+
+      const currentQty = inv?.quantity ?? 0;
+      if (currentQty < requiredQty) {
+        insufficientStock.push(
+          `${bom.ingredientName}: perlu ${requiredQty}${bom.stockUnit ?? ""}, tersedia ${currentQty}${bom.stockUnit ?? ""}`,
+        );
+      }
+    }
+
+    if (insufficientStock.length > 0) {
+      throw new Error(
+        `Stok bahan tidak cukup di Central Warehouse:\n${insufficientStock.join("\n")}`,
+      );
+    }
+
+    // Production note reference for Kartu Stok traceability.
+    const ref = `PROD-${recipe.code || recipe.id.slice(0, 4)}-${Date.now().toString(36).toUpperCase()}`;
+    const ledgerNotes = `Produksi ${recipe.name}${data.notes ? ` (${data.notes})` : ""}`;
+
+    // Deduct ingredients from Central Warehouse inventory (OUT)
+    for (const bom of bomItems) {
+      const requiredQty = bom.quantity * data.quantity;
+
+      const [inv] = await db
+        .select()
+        .from(inventory)
+        .where(
+          and(eq(inventory.branchId, targetBranchId), eq(inventory.ingredientId, bom.ingredientId)),
+        )
         .limit(1);
-      if (!b) throw new Error("Cabang tujuan tidak ditemukan");
+
+      if (!inv) {
+        throw new Error(
+          `Inventory tidak ditemukan untuk ${bom.ingredientName} di Central Warehouse`,
+        );
+      }
+
+      const newIngredientBalance = inv.quantity - requiredQty;
+
+      // Update ingredient inventory
+      await db
+        .update(inventory)
+        .set({ quantity: newIngredientBalance, lastUpdated: new Date() })
+        .where(eq(inventory.id, inv.id));
+
+      // Write ingredient OUT entry to Kartu Stok
+      await db.insert(stockLedger).values({
+        branchId: targetBranchId,
+        ingredientId: bom.ingredientId,
+        type: "OUT",
+        quantity: Math.round(requiredQty),
+        balance: Math.round(newIngredientBalance),
+        reference: ref,
+        notes: `${ledgerNotes} - ${bom.ingredientName}`,
+      });
     }
 
     // Upsert recipeInventory for (recipeId, branchId).
@@ -597,11 +678,11 @@ export const assignRecipeStock = createServerFn({ method: "POST" })
       )
       .limit(1);
 
-    const newBalance = (existing?.quantity ?? 0) + data.quantity;
+    const newRecipeBalance = (existing?.quantity ?? 0) + data.quantity;
     if (existing) {
       await db
         .update(recipeInventory)
-        .set({ quantity: newBalance, lastUpdated: new Date() })
+        .set({ quantity: newRecipeBalance, lastUpdated: new Date() })
         .where(eq(recipeInventory.id, existing.id));
     } else {
       await db.insert(recipeInventory).values({
@@ -611,16 +692,13 @@ export const assignRecipeStock = createServerFn({ method: "POST" })
       });
     }
 
-    // Production note reference for Kartu Stok traceability.
-    const ref = `PROD-${recipe.code || recipe.id.slice(0, 4)}-${Date.now().toString(36).toUpperCase()}`;
-    const ledgerNotes = `Produksi ${recipe.name}${data.notes ? ` (${data.notes})` : ""}`;
-
+    // Write recipe IN entry to Kartu Stok
     await db.insert(stockLedger).values({
       branchId: targetBranchId,
       recipeId: data.recipeId,
       type: "IN",
       quantity: Math.round(data.quantity),
-      balance: Math.round(newBalance),
+      balance: Math.round(newRecipeBalance),
       reference: ref,
       notes: ledgerNotes,
     });
@@ -628,7 +706,7 @@ export const assignRecipeStock = createServerFn({ method: "POST" })
     await logSystemAction(
       user,
       "Assign Recipe Stock",
-      `Stok resep "${recipe.name}" +${data.quantity} di cabang ${targetBranchId} oleh ${user.name}`,
+      `Stok resep "${recipe.name}" +${data.quantity} di Central Warehouse oleh ${user.name}. Bahan: ${bomItems.map((b) => b.ingredientName).join(", ")}`,
     );
     await logAudit(
       user,
@@ -641,6 +719,11 @@ export const assignRecipeStock = createServerFn({ method: "POST" })
         branchId: targetBranchId,
         quantity: data.quantity,
         reference: ref,
+        ingredientsDeducted: bomItems.map((b) => ({
+          ingredientId: b.ingredientId,
+          name: b.ingredientName,
+          quantityUsed: b.quantity * data.quantity,
+        })),
       },
     );
 
@@ -650,5 +733,10 @@ export const assignRecipeStock = createServerFn({ method: "POST" })
       branchId: targetBranchId,
       quantity: data.quantity,
       reference: ref,
+      ingredientsDeducted: bomItems.map((b) => ({
+        ingredientId: b.ingredientId,
+        name: b.ingredientName,
+        quantityUsed: b.quantity * data.quantity,
+      })),
     };
   });
