@@ -16,7 +16,7 @@ import {
 import { eq, ilike, inArray, sql, and } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
-import { recalculateAllRecipeCosts as recalcAllCosts } from "./cost-rollup";
+import { recalculateAllRecipeCosts as recalcAllCosts, recalculateRecipeCosts } from "./cost-rollup";
 import { z } from "zod";
 
 const recipeIngredientInput = z.object({
@@ -292,6 +292,10 @@ export const createRecipe = createServerFn({ method: "POST" })
       // The query logic handles this via NULL branch_id
     }
 
+    // Compute HPP (totalCogs) immediately so the new recipe doesn't show Rp 0
+    // until a manual "Recalculate HPP" is triggered. The column defaults to 0.
+    await recalculateRecipeCosts([recipe.id]);
+
     await logSystemAction(user, "Create Recipe", `Resep "${recipe.name}" dibuat oleh ${user.name}`);
     await logAudit(
       user,
@@ -387,6 +391,10 @@ export const updateRecipe = createServerFn({ method: "POST" })
     }
 
     const [updated] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
+
+    // Recompute HPP (totalCogs) after any BOM edit — it would otherwise stay
+    // stale at its previous value (or 0) until a manual recalculation.
+    await recalculateRecipeCosts([id]);
 
     await logSystemAction(
       user,
