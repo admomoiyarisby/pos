@@ -6,6 +6,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
+import MoneyInput from "#/components/MoneyInput";
 import { Card } from "#/components/ui/card";
 import { Separator } from "#/components/ui/separator";
 import { Switch } from "#/components/ui/switch";
@@ -247,15 +248,14 @@ function ModifierGroupDetailPage() {
                     </div>
                     <div className="w-24 space-y-1">
                       <Label className="text-xs">Harga</Label>
-                      <Input
-                        type="number"
-                        min={0}
+                      <MoneyInput
                         value={mod.price}
-                        onChange={(e) => {
+                        onChange={(raw) => {
                           const next = [...modifiersInput];
-                          next[i] = { ...next[i], price: Number(e.target.value) };
+                          next[i] = { ...next[i], price: raw ?? 0 };
                           setModifiersInput(next);
                         }}
+                        className="h-8 w-24"
                       />
                     </div>
                     <div className="flex items-center gap-2 pt-5">
