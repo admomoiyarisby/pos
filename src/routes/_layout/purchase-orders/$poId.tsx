@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
+import MoneyInput from "#/components/MoneyInput";
 import {
   getPurchaseOrder,
   updatePurchaseOrder,
@@ -236,6 +237,7 @@ function PODetailPage() {
                   receivedQuantity?: number | null;
                 }) => {
                   const ing = ingredients.find((i) => i.id === item.ingredientId);
+                  const editItem = editItems.find((pi) => pi.ingredientId === item.ingredientId);
                   return (
                     <tr key={item.id} className="border-b">
                       <td className="px-4 py-3">
@@ -264,20 +266,18 @@ function PODetailPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         {isEditing ? (
-                          <input
-                            type="number"
-                            min={0}
-                            defaultValue={item.unitPrice ?? 0}
-                            onChange={(e) =>
+                          <MoneyInput
+                            value={editItem?.unitPrice ?? null}
+                            onChange={(raw) =>
                               setEditItems((prev) =>
                                 prev.map((pi) =>
                                   pi.ingredientId === item.ingredientId
-                                    ? { ...pi, unitPrice: Number(e.target.value) }
+                                    ? { ...pi, unitPrice: raw ?? undefined }
                                     : pi,
                                 ),
                               )
                             }
-                            className="h-8 w-24 rounded-md border border-input bg-background px-2 text-sm text-right"
+                            className="h-8 w-24 text-right"
                           />
                         ) : (
                           `Rp ${(item.unitPrice ?? 0).toLocaleString("id-ID")}`
