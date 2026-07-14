@@ -463,7 +463,7 @@ export function RecipeWizard({
                             </Label>
                             <input
                               type="number"
-                              min={0}
+                              min={0.1}
                               step={0.1}
                               value={si.quantity}
                               onChange={(e) =>

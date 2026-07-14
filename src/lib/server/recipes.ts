@@ -21,7 +21,9 @@ import { z } from "zod";
 
 const recipeIngredientInput = z.object({
   ingredientId: z.string().uuid(),
-  quantity: z.number().int().min(1),
+  // recipe_ingredients.quantity is real (float4) — recipe takaran can be fractional
+  // (e.g. 1.5 tsp), so decimals are allowed here. Must still be a positive number.
+  quantity: z.number().positive(),
 });
 
 const recipeChildInput = z.object({
