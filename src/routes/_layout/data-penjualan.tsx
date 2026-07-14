@@ -525,7 +525,7 @@ function OrderEditModal({
   onClose,
   onSaved,
 }: {
-  order: any | null;
+  order: any;
   recipes: { id: string; name: string; totalCogs: number }[];
   branches: { id: string; name: string }[];
   defaultDate?: string;

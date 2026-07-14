@@ -463,10 +463,12 @@ export async function seedDatabase() {
   }
 
   for (const r of RECIPES_DATA) {
-    if (!("childRecipes" in r) || !r.childRecipes) continue;
+    const childRecipes = (r as { childRecipes?: { recipeProtoId: string; quantity: number }[] })
+      .childRecipes;
+    if (!childRecipes) continue;
     const parentId = idMap.recipe.get(r.protoId);
     if (!parentId) continue;
-    for (const cr of r.childRecipes) {
+    for (const cr of childRecipes) {
       const childId = idMap.recipe.get(cr.recipeProtoId);
       if (!childId) continue;
       const existingCr = await db
@@ -530,7 +532,7 @@ export async function seedDatabase() {
       {
         code: "PROMO10",
         description: "Diskon 10% untuk semua menu",
-        discountType: "percentage",
+        discountType: "percentage" as const,
         discountValue: 10,
         minOrder: 50000,
         validUntil: new Date("2026-12-31"),
@@ -539,7 +541,7 @@ export async function seedDatabase() {
       {
         code: "FREESHIP",
         description: "Gratis ongkir minimal 100rb",
-        discountType: "fixed",
+        discountType: "fixed" as const,
         discountValue: 20000,
         minOrder: 100000,
         validUntil: new Date("2026-12-31"),

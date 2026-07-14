@@ -127,51 +127,54 @@ export async function fetchDashboardData(user: AppUser) {
   const soIdList = allStockOpnames.map((s) => s.id);
   const mrIdList = manualRevData.map((m) => m.id);
 
-  const [orderItemsData, recipeIngsData, childRecipes, recipeBrandsData, soItems, mrBrandBreakdowns] =
-    await Promise.all([
-      orderIdList.length > 0
-        ? db
-            .select({
-              id: orderItems.id,
-              orderId: orderItems.orderId,
-              recipeId: orderItems.recipeId,
-              quantity: orderItems.quantity,
-              price: orderItems.price,
-              cogsAtTransaction: orderItems.cogsAtTransaction,
-            })
-            .from(orderItems)
-            .where(inArray(orderItems.orderId, orderIdList))
-        : Promise.resolve([]),
+  const [
+    orderItemsData,
+    recipeIngsData,
+    childRecipes,
+    recipeBrandsData,
+    soItems,
+    mrBrandBreakdowns,
+  ] = await Promise.all([
+    orderIdList.length > 0
+      ? db
+          .select({
+            id: orderItems.id,
+            orderId: orderItems.orderId,
+            recipeId: orderItems.recipeId,
+            quantity: orderItems.quantity,
+            price: orderItems.price,
+            cogsAtTransaction: orderItems.cogsAtTransaction,
+          })
+          .from(orderItems)
+          .where(inArray(orderItems.orderId, orderIdList))
+      : Promise.resolve([]),
 
-      recipeIdList.length > 0
-        ? db.select().from(recipeIngredients).where(inArray(recipeIngredients.recipeId, recipeIdList))
-        : Promise.resolve([]),
+    recipeIdList.length > 0
+      ? db.select().from(recipeIngredients).where(inArray(recipeIngredients.recipeId, recipeIdList))
+      : Promise.resolve([]),
 
-      recipeIdList.length > 0
-        ? db
-            .select()
-            .from(recipeChildRecipes)
-            .where(inArray(recipeChildRecipes.parentRecipeId, recipeIdList))
-        : Promise.resolve([]),
+    recipeIdList.length > 0
+      ? db
+          .select()
+          .from(recipeChildRecipes)
+          .where(inArray(recipeChildRecipes.parentRecipeId, recipeIdList))
+      : Promise.resolve([]),
 
-      recipeIdList.length > 0
-        ? db.select().from(recipeBrands).where(inArray(recipeBrands.recipeId, recipeIdList))
-        : Promise.resolve([]),
+    recipeIdList.length > 0
+      ? db.select().from(recipeBrands).where(inArray(recipeBrands.recipeId, recipeIdList))
+      : Promise.resolve([]),
 
-      soIdList.length > 0
-        ? db
-            .select()
-            .from(stockOpnameItems)
-            .where(inArray(stockOpnameItems.stockOpnameId, soIdList))
-        : Promise.resolve([]),
+    soIdList.length > 0
+      ? db.select().from(stockOpnameItems).where(inArray(stockOpnameItems.stockOpnameId, soIdList))
+      : Promise.resolve([]),
 
-      mrIdList.length > 0
-        ? db
-            .select()
-            .from(manualRevenueBrandBreakdowns)
-            .where(inArray(manualRevenueBrandBreakdowns.manualRevenueId, mrIdList))
-        : Promise.resolve([]),
-    ]);
+    mrIdList.length > 0
+      ? db
+          .select()
+          .from(manualRevenueBrandBreakdowns)
+          .where(inArray(manualRevenueBrandBreakdowns.manualRevenueId, mrIdList))
+      : Promise.resolve([]),
+  ]);
 
   return {
     user: {

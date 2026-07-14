@@ -1,0 +1,146 @@
+◇ injected env (2) from .env.local,.env // tip: ⌘ suppress logs { quiet: true }
+
+=== BRANCHES ===
+  expected 7 outlet branches; DB has 7 non-CENTRAL
+
+=== INGREDIENTS ===
+  expected 126 unique ingredients (union central+tenant); DB has 127; missing 0
+
+=== INGREDIENT COSTS (Harga Invoice) ===
+  checked 62 ingredient costs against invoice; mismatches 0
+
+=== RECIPES (prices) ===
+  expected 35 recipes; DB has 35; missing 0
+
+=== RECIPE BOM (Rincian Menu) ===
+  checked 19 recipes' BOMs (98 ingredient-lines); mismatches 26
+
+=== CHANNEL REVENUES (Excel) ===
+  expected 90 (date,channel) rows from Excel; DB has 0; missing 90
+
+=== PLATFORM FEES ===
+
+======================================================================
+SUMMARY
+======================================================================
+Checks passed: 775/775
+Differences: 117  (MISSING=90, EXTRA=0, MISMATCH=27)
+
+--- DETAIL ---
+  [MISMATCH] recipe 'Gyumeshi': BOM 'Beras' qty 68 != expected 67.5
+  [MISMATCH] recipe 'Gyumeshi': BOM 'Beras Ketan' qty 8 != expected 7.5
+  [MISMATCH] recipe 'Gyumeshi': BOM 'Cuka Nasi' qty 1 != expected 1.25
+  [MISMATCH] recipe 'Karage Don': BOM 'Beras' qty 68 != expected 67.5
+  [MISMATCH] recipe 'Karage Don': BOM 'Beras Ketan' qty 8 != expected 7.5
+  [MISMATCH] recipe 'Karage Don': BOM 'Cuka Nasi' qty 1 != expected 1.25
+  [MISMATCH] recipe 'Hot Honey Karage Don': BOM 'Beras' qty 68 != expected 67.5
+  [MISMATCH] recipe 'Hot Honey Karage Don': BOM 'Beras Ketan' qty 8 != expected 7.5
+  [MISMATCH] recipe 'Hot Honey Karage Don': BOM 'Cuka Nasi' qty 1 != expected 1.25
+  [MISMATCH] recipe 'Curry Karage Don': BOM 'Beras' qty 68 != expected 67.5
+  [MISMATCH] recipe 'Curry Karage Don': BOM 'Beras Ketan' qty 8 != expected 7.5
+  [MISMATCH] recipe 'Curry Karage Don': BOM 'Cuka Nasi' qty 1 != expected 1.25
+  [MISMATCH] recipe 'Miso Sup': BOM 'Wakame' qty 1 != expected 0.5
+  [MISMATCH] recipe 'nasi putih': BOM 'Beras' qty 68 != expected 67.5
+  [MISMATCH] recipe 'nasi putih': BOM 'Beras Ketan' qty 8 != expected 7.5
+  [MISMATCH] recipe 'nasi putih': BOM 'Cuka Nasi' qty 1 != expected 1.25
+  [MISMATCH] recipe 'Chicken Katsu Don': BOM 'Beras' qty 68 != expected 67.5
+  [MISMATCH] recipe 'Chicken Katsu Don': BOM 'Beras Ketan' qty 8 != expected 7.5
+  [MISMATCH] recipe 'Chicken Katsu Don': BOM 'Cuka Nasi' qty 1 != expected 1.25
+  [MISMATCH] recipe 'Curry Katsu Don': BOM 'Beras' qty 68 != expected 67.5
+  [MISMATCH] recipe 'Curry Katsu Don': BOM 'Beras Ketan' qty 8 != expected 7.5
+  [MISMATCH] recipe 'Curry Katsu Don': BOM 'Cuka Nasi' qty 1 != expected 1.25
+  [MISMATCH] recipe 'Matcha Tea': BOM 'Bubuk Matcha latte' qty 2 != expected 1.5
+  [MISMATCH] recipe 'Ice Tea': BOM ingredient 'ice tea' not found in ingredients
+  [MISMATCH] recipe 'Japanese Beef Curry Rice': BOM 'Beras' qty 68 != expected 67.5
+  [MISMATCH] recipe 'Japanese Beef Curry Rice': BOM 'Beras Ketan' qty 8 != expected 7.5
+  [MISMATCH] recipe 'Japanese Beef Curry Rice': BOM 'Cuka Nasi' qty 1 != expected 1.25
+  [MISSING] channel_revenue 250626|ShopeeFood (Rp 1014574) not in DB
+  [MISSING] channel_revenue 250626|Grabfood (Rp 323442) not in DB
+  [MISSING] channel_revenue 250626|Gofood (Rp 19439) not in DB
+  [MISSING] channel_revenue 240626|ShopeeFood (Rp 561388) not in DB
+  [MISSING] channel_revenue 240626|Grabfood (Rp 169646) not in DB
+  [MISSING] channel_revenue 240626|Gofood (Rp 114232) not in DB
+  [MISSING] channel_revenue 230626|ShopeeFood (Rp 977502) not in DB
+  [MISSING] channel_revenue 230626|Grabfood (Rp 236017) not in DB
+  [MISSING] channel_revenue 230626|Gofood (Rp 162602) not in DB
+  [MISSING] channel_revenue 220626|ShopeeFood (Rp 971818) not in DB
+  [MISSING] channel_revenue 220626|Grabfood (Rp 1012498) not in DB
+  [MISSING] channel_revenue 220626|Gofood (Rp 61912) not in DB
+  [MISSING] channel_revenue 210626|ShopeeFood (Rp 1103513) not in DB
+  [MISSING] channel_revenue 210626|Grabfood (Rp 1052812) not in DB
+  [MISSING] channel_revenue 210626|Gofood (Rp 62872) not in DB
+  [MISSING] channel_revenue 200626|ShopeeFood (Rp 547221) not in DB
+  [MISSING] channel_revenue 200626|Grabfood (Rp 538745) not in DB
+  [MISSING] channel_revenue 200626|Gofood (Rp 74682) not in DB
+  [MISSING] channel_revenue 190626|ShopeeFood (Rp 921835) not in DB
+  [MISSING] channel_revenue 190626|Grabfood (Rp 100180) not in DB
+  [MISSING] channel_revenue 190626|Gofood (Rp 87717) not in DB
+  [MISSING] channel_revenue 190626|Dine-in (Rp 420000) not in DB
+  [MISSING] channel_revenue 180626|ShopeeFood (Rp 1072185) not in DB
+  [MISSING] channel_revenue 180626|Grabfood (Rp 547574) not in DB
+  [MISSING] channel_revenue 170626|ShopeeFood (Rp 907481) not in DB
+  [MISSING] channel_revenue 170626|Grabfood (Rp 469582) not in DB
+  [MISSING] channel_revenue 170626|Gofood (Rp 66475) not in DB
+  [MISSING] channel_revenue 160626|ShopeeFood (Rp 1301577) not in DB
+  [MISSING] channel_revenue 160626|Grabfood (Rp 583516) not in DB
+  [MISSING] channel_revenue 160626|Gofood (Rp 151000) not in DB
+  [MISSING] channel_revenue 150626|ShopeeFood (Rp 665818) not in DB
+  [MISSING] channel_revenue 150626|Grabfood (Rp 161316) not in DB
+  [MISSING] channel_revenue 150626|Gofood (Rp 127945) not in DB
+  [MISSING] channel_revenue 140626|ShopeeFood (Rp 865369) not in DB
+  [MISSING] channel_revenue 140626|Grabfood (Rp 480751) not in DB
+  [MISSING] channel_revenue 140626|Gofood (Rp 189434) not in DB
+  [MISSING] channel_revenue 130626|ShopeeFood (Rp 513337) not in DB
+  [MISSING] channel_revenue 130626|Grabfood (Rp 382521) not in DB
+  [MISSING] channel_revenue 130626|Gofood (Rp 169565) not in DB
+  [MISSING] channel_revenue 120626|ShopeeFood (Rp 462620) not in DB
+  [MISSING] channel_revenue 120626|Grabfood (Rp 982650) not in DB
+  [MISSING] channel_revenue 120626|Gofood (Rp 126268) not in DB
+  [MISSING] channel_revenue 110626|ShopeeFood (Rp 337446) not in DB
+  [MISSING] channel_revenue 110626|Grabfood (Rp 342083) not in DB
+  [MISSING] channel_revenue 110626|Gofood (Rp 273811) not in DB
+  [MISSING] channel_revenue 100626|ShopeeFood (Rp 611236) not in DB
+  [MISSING] channel_revenue 100626|Grabfood (Rp 328199) not in DB
+  [MISSING] channel_revenue 100626|Gofood (Rp 235384) not in DB
+  [MISSING] channel_revenue 090626|ShopeeFood (Rp 655146) not in DB
+  [MISSING] channel_revenue 090626|Grabfood (Rp 260818) not in DB
+  [MISSING] channel_revenue 090626|Gofood (Rp 118086) not in DB
+  [MISSING] channel_revenue 080626|ShopeeFood (Rp 721234) not in DB
+  [MISSING] channel_revenue 080626|Grabfood (Rp 403041) not in DB
+  [MISSING] channel_revenue 080626|Gofood (Rp 160296) not in DB
+  [MISSING] channel_revenue 070626|ShopeeFood (Rp 478753) not in DB
+  [MISSING] channel_revenue 070626|Grabfood (Rp 738037) not in DB
+  [MISSING] channel_revenue 070626|Gofood (Rp 225509) not in DB
+  [MISSING] channel_revenue 060626|ShopeeFood (Rp 630802) not in DB
+  [MISSING] channel_revenue 060626|Grabfood (Rp 730708) not in DB
+  [MISSING] channel_revenue 060626|Gofood (Rp 320004) not in DB
+  [MISSING] channel_revenue 050626|ShopeeFood (Rp 556397) not in DB
+  [MISSING] channel_revenue 050626|Grabfood (Rp 546454) not in DB
+  [MISSING] channel_revenue 050626|Gofood (Rp 225967) not in DB
+  [MISSING] channel_revenue 040626|ShopeeFood (Rp 486744) not in DB
+  [MISSING] channel_revenue 040626|Grabfood (Rp 664939) not in DB
+  [MISSING] channel_revenue 040626|Gofood (Rp 83328) not in DB
+  [MISSING] channel_revenue 030626|ShopeeFood (Rp 632655) not in DB
+  [MISSING] channel_revenue 030626|Grabfood (Rp 474916) not in DB
+  [MISSING] channel_revenue 030626|Gofood (Rp 143310) not in DB
+  [MISSING] channel_revenue 020626|ShopeeFood (Rp 357319) not in DB
+  [MISSING] channel_revenue 020626|Grabfood (Rp 699099) not in DB
+  [MISSING] channel_revenue 020626|Gofood (Rp 373163) not in DB
+  [MISSING] channel_revenue 010626|ShopeeFood (Rp 753719) not in DB
+  [MISSING] channel_revenue 010626|Grabfood (Rp 379060) not in DB
+  [MISSING] channel_revenue 010626|Gofood (Rp 131400) not in DB
+  [MISSING] channel_revenue 310526|ShopeeFood (Rp 518916) not in DB
+  [MISSING] channel_revenue 310526|Grabfood (Rp 566241) not in DB
+  [MISSING] channel_revenue 310526|Gofood (Rp 117897) not in DB
+  [MISSING] channel_revenue 300526|ShopeeFood (Rp 87537) not in DB
+  [MISSING] channel_revenue 300526|Grabfood (Rp 432112) not in DB
+  [MISSING] channel_revenue 300526|Gofood (Rp 269239) not in DB
+  [MISSING] channel_revenue 290526|ShopeeFood (Rp 329133) not in DB
+  [MISSING] channel_revenue 290526|Grabfood (Rp 357846) not in DB
+  [MISSING] channel_revenue 290526|Gofood (Rp 47951) not in DB
+  [MISSING] channel_revenue 280526|ShopeeFood (Rp 508157) not in DB
+  [MISSING] channel_revenue 280526|Grabfood (Rp 411591) not in DB
+  [MISSING] channel_revenue 280526|Gofood (Rp 226391) not in DB
+  [MISSING] channel_revenue 260526|ShopeeFood (Rp 415444) not in DB
+  [MISSING] channel_revenue 260526|Grabfood (Rp 817214) not in DB
+  [MISSING] channel_revenue 260526|Gofood (Rp 228704) not in DB

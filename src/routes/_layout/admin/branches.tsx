@@ -673,7 +673,7 @@ function BranchesPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<BranchRow | null>(null);
 
-  const { data: branches = [] } = useQuery({
+  const { data: branches } = useQuery({
     queryKey: ["branches"],
     queryFn: () => getBranches({ data: {} }),
     initialData: initial,

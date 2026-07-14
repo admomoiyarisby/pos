@@ -599,7 +599,7 @@ function StaffPage() {
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [mutationError, setMutationError] = useState("");
 
-  const { data: users = initialUsers } = useQuery({
+  const { data: users } = useQuery({
     queryKey: ["users"],
     queryFn: () => getUsers({ data: {} }),
     initialData: initialUsers,

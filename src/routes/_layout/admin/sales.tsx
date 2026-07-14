@@ -101,7 +101,13 @@ function SalesAdminPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["sales-admin"] });
       setCreateModal(false);
-      setNewOrder({ branchId: "", channel: "Gofood", totalAmount: "", customerName: "", orderCode: "" });
+      setNewOrder({
+        branchId: "",
+        channel: "Gofood",
+        totalAmount: "",
+        customerName: "",
+        orderCode: "",
+      });
       toast.success("Data penjualan berhasil ditambahkan");
     },
     onError: (err) => {
@@ -372,7 +378,12 @@ function SalesAdminPage() {
         </Modal>
 
         {/* Create Modal */}
-        <Modal open={createModal} onClose={() => setCreateModal(false)} title="Tambah Data Penjualan" size="sm">
+        <Modal
+          open={createModal}
+          onClose={() => setCreateModal(false)}
+          title="Tambah Data Penjualan"
+          size="sm"
+        >
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Cabang</label>
@@ -383,7 +394,9 @@ function SalesAdminPage() {
               >
                 <option value="">Pilih cabang</option>
                 {branches?.map((b: { id: string; name: string }) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -395,7 +408,9 @@ function SalesAdminPage() {
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 {Object.entries(channelLabels).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
                 ))}
               </select>
             </div>
@@ -439,7 +454,12 @@ function SalesAdminPage() {
                   void createMutation.mutateAsync({
                     data: {
                       branchId: newOrder.branchId,
-                      channel: newOrder.channel as "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok",
+                      channel: newOrder.channel as
+                        | "Gofood"
+                        | "Grabfood"
+                        | "ShopeeFood"
+                        | "Dine-in"
+                        | "TikTok",
                       totalAmount: Number(newOrder.totalAmount),
                       customerName: newOrder.customerName || undefined,
                       orderCode: newOrder.orderCode || undefined,

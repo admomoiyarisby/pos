@@ -77,9 +77,18 @@ function DNDetailPage() {
   });
 
   const receiveMutation = useMutation({
-    mutationFn: async (data) => {
+    mutationFn: async (data: {
+      dnId: string;
+      items: {
+        itemId: string;
+        receivedQuantity: number;
+        rejectedQuantity: number;
+        rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
+        discrepancyNote?: string;
+      }[];
+    }) => {
       try {
-        const result = await receiveDeliveryNote(data);
+        const result = await receiveDeliveryNote({ data });
         toast.success("Penerimaan Pengadaan berhasil. Stok telah diperbarui.");
         return result;
       } catch (error) {
@@ -156,7 +165,7 @@ function DNDetailPage() {
         discrepancyNote: receiveInputs[item.id]?.note || undefined,
       };
     });
-    void receiveMutation.mutateAsync({ data: { dnId, items } });
+    void receiveMutation.mutateAsync({ dnId, items });
   };
 
   return (

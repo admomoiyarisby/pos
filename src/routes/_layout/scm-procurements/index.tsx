@@ -165,9 +165,7 @@ function ProcurementsListPage() {
       key: "requestSource",
       header: "Sumber",
       render: (row) => (
-        <span className="text-xs text-muted-foreground">
-          {row.requestSource ?? "System"}
-        </span>
+        <span className="text-xs text-muted-foreground">{row.requestSource ?? "System"}</span>
       ),
     },
     {

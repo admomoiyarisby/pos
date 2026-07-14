@@ -30,6 +30,8 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   defaultSort?: { key: string; dir: "asc" | "desc" };
   rowClassName?: (row: T) => string;
+  loading?: boolean;
+  loadingRows?: number;
 }
 
 export default function DataTable<T>({

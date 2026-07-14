@@ -249,7 +249,7 @@ function AuditLog({ rows }: { rows: Array<Record<string, unknown>> }) {
             </span>
             {row.note ? (
               <span className="truncate text-xs italic text-muted-foreground">
-                {String(row.note)}
+                {row.note as string}
               </span>
             ) : null}
           </div>

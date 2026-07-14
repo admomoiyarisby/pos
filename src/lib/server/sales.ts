@@ -62,7 +62,12 @@ export const getSalesRecords = createServerFn({ method: "POST" })
       data.dateFrom ? gte(orders.createdAt, new Date(data.dateFrom)) : undefined,
       data.dateTo ? lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")) : undefined,
       data.branchId ? eq(orders.branchId, data.branchId) : undefined,
-      data.channel ? eq(orders.channel, data.channel as "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok") : undefined,
+      data.channel
+        ? eq(
+            orders.channel,
+            data.channel as "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok",
+          )
+        : undefined,
     );
 
     const page = data.page ?? 0;
