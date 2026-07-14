@@ -3,6 +3,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
+import MoneyInput from "#/components/MoneyInput";
 import Modal from "#/components/ui/Modal";
 import {
   getPosMenu,
@@ -1192,16 +1193,12 @@ function PosPage() {
         <div className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Modal Awal Laci (Rp)</label>
-            <input
-              type="number"
-              min={0}
-              value={cashFloat}
-              onChange={function (e) {
-                setCashFloat(e.target.value);
-              }}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            <MoneyInput
+              value={cashFloat ? Number(cashFloat) : null}
+              onChange={(raw) => setCashFloat(raw === null ? "" : String(raw))}
               placeholder="0"
               autoFocus
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
           <button
@@ -1236,16 +1233,12 @@ function PosPage() {
           )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Uang Fisik Aktual di Laci (Rp)</label>
-            <input
-              type="number"
-              min={0}
-              value={actualCash}
-              onChange={function (e) {
-                setActualCash(e.target.value);
-              }}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            <MoneyInput
+              value={actualCash ? Number(actualCash) : null}
+              onChange={(raw) => setActualCash(raw === null ? "" : String(raw))}
               placeholder="0"
               autoFocus
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
           <button
