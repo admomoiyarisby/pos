@@ -2,7 +2,13 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import { getRecipeDetail, updateRecipe, deleteRecipe } from "#/lib/server/recipes";
+import {
+  getRecipeDetail,
+  updateRecipe,
+  deleteRecipe,
+  assignRecipeStock,
+  getRecipeInventory,
+} from "#/lib/server/recipes";
 import { getBrands } from "#/lib/server/brands";
 import { getModifierGroups } from "#/lib/server/modifier-groups";
 import { getBranches } from "#/lib/server/branches";
@@ -11,6 +17,8 @@ import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Card } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
+import { Input } from "#/components/ui/input";
+import { Label } from "#/components/ui/label";
 import Modal from "#/components/ui/Modal";
 import { RecipeWizard } from "#/components/RecipeWizard";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -23,6 +31,7 @@ import {
   Package,
   Store,
   Tag,
+  Factory,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/recipes/$recipeId")({
@@ -72,6 +81,57 @@ function RecipeDetailPage() {
     queryKey: ["recipes"],
     queryFn: () => import("#/lib/server/recipes").then((m) => m.getRecipes({ data: {} })),
   });
+
+  // Current finished-good stock for this recipe (per branch).
+  const { data: recipeStock } = useQuery({
+    queryKey: ["recipe-stock", recipeId],
+    queryFn: () => getRecipeInventory({ data: { recipeId } }),
+    enabled: !!recipeId,
+  });
+
+  // Produce / assign stock modal state.
+  const [showProduceModal, setShowProduceModal] = useState(false);
+  const [produceQty, setProduceQty] = useState("1");
+  const [produceBranchId, setProduceBranchId] = useState("");
+  const [produceNotes, setProduceNotes] = useState("");
+
+  const produceMutation = useMutation({
+    mutationFn: assignRecipeStock,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["recipe-stock", recipeId] });
+      setShowProduceModal(false);
+      setProduceQty("1");
+      setProduceBranchId("");
+      setProduceNotes("");
+      toast.success("Stok resep berhasil ditambahkan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menambah stok resep", { description: error.message });
+    },
+  });
+
+  const openProduceModal = () => {
+    // Default target branch = first Central Warehouse.
+    const central = (allBranches ?? []).find((b: any) => b.type === "Central");
+    setProduceBranchId(central?.id ?? "");
+    setShowProduceModal(true);
+  };
+
+  const handleProduce = async () => {
+    const qty = Number(produceQty);
+    if (!recipeId || !Number.isFinite(qty) || qty <= 0) {
+      toast.error("Jumlah stok harus lebih dari 0");
+      return;
+    }
+    await produceMutation.mutateAsync({
+      data: {
+        recipeId,
+        quantity: qty,
+        branchId: produceBranchId || undefined,
+        notes: produceNotes.trim() || undefined,
+      },
+    });
+  };
 
   const updateMutation = useMutation({
     mutationFn: updateRecipe,
@@ -333,6 +393,68 @@ function RecipeDetailPage() {
               </Card>
             </div>
 
+            {/* Stok & Produksi (finished-good stock) */}
+            <Card>
+              <div className="px-6 py-4 border-b flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Stok &amp; Produksi</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Stok jadi resep per cabang (tercatat di Kartu Stok)
+                  </p>
+                </div>
+                <Button onClick={openProduceModal}>
+                  <Factory className="h-4 w-4 mr-2" />
+                  Produksi / Assign Stok
+                </Button>
+              </div>
+              {!recipeStock || recipeStock.length === 0 ? (
+                <div className="px-6 py-8 text-center">
+                  <Factory className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">Belum ada stok jadi</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Klik "Produksi / Assign Stok" untuk mencatat produksi ke Gudang Pusat
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b bg-muted/50">
+                      <tr>
+                        <th className="px-6 py-3 text-left font-medium">Cabang</th>
+                        <th className="px-6 py-3 text-right font-medium">Stok Jadi</th>
+                        <th className="px-6 py-3 text-left font-medium">Terakhir Update</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipeStock.map((s: any) => (
+                        <tr key={s.branchId} className="border-b last:border-0 hover:bg-muted/30">
+                          <td className="px-6 py-3">
+                            {s.branchName ?? s.branchId}
+                            {s.branchType === "Central" && (
+                              <Badge variant="outline" className="ml-2 text-xs">
+                                Pusat
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="px-6 py-3 text-right font-medium">
+                            {Number(s.quantity).toLocaleString("id-ID")}
+                          </td>
+                          <td className="px-6 py-3 text-muted-foreground">
+                            {new Date(s.lastUpdated).toLocaleString("id-ID", {
+                              day: "2-digit",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+
             {/* Ingredients (BOM) */}
             <Card>
               <div className="px-6 py-4 border-b">
@@ -456,6 +578,74 @@ function RecipeDetailPage() {
             )}
           </>
         )}
+
+        {/* Produce / Assign Stock Modal */}
+        <Modal
+          open={showProduceModal}
+          onClose={() => setShowProduceModal(false)}
+          title="Produksi / Assign Stok"
+          size="md"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Catat produksi resep <span className="font-medium">{recipe?.name}</span> ke cabang.
+              Pergerakan akan tercatat di Kartu Stok.
+            </p>
+
+            <div className="space-y-2">
+              <Label htmlFor="produce-branch">Cabang Tujuan</Label>
+              <select
+                id="produce-branch"
+                value={produceBranchId}
+                onChange={(e) => setProduceBranchId(e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="">— Pilih Cabang —</option>
+                {(allBranches ?? []).map((b: any) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                    {b.type === "Central" ? " (Pusat)" : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Kosongkan untuk default Gudang Pusat (Central).
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="produce-qty">Jumlah Stok Jadi</Label>
+              <Input
+                id="produce-qty"
+                type="number"
+                min={0.1}
+                step={1}
+                value={produceQty}
+                onChange={(e) => setProduceQty(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="produce-notes">Catatan (opsional)</Label>
+              <Input
+                id="produce-notes"
+                type="text"
+                placeholder="mis. Batch pagi"
+                value={produceNotes}
+                onChange={(e) => setProduceNotes(e.target.value)}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setShowProduceModal(false)}>
+                Batal
+              </Button>
+              <Button type="button" onClick={handleProduce} disabled={produceMutation.isPending}>
+                {produceMutation.isPending ? "Menyimpan..." : "Simpan Produksi"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
 
         {/* Delete Modal */}
         <Modal

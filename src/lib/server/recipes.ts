@@ -230,6 +230,44 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
     };
   });
 
+export interface RecipeStockRow {
+  recipeId: string;
+  branchId: string;
+  branchName: string | null;
+  branchType: "Central" | "Outlet" | null;
+  quantity: number;
+  lastUpdated: Date;
+}
+
+export const getRecipeInventory = createServerFn({ method: "GET" })
+  .validator((data: { recipeId: string }) => data)
+  .handler(async ({ data }): Promise<RecipeStockRow[]> => {
+    await requireAuth();
+
+    const rows = await db
+      .select({
+        recipeId: recipeInventory.recipeId,
+        branchId: recipeInventory.branchId,
+        branchName: branches.name,
+        branchType: branches.type,
+        quantity: recipeInventory.quantity,
+        lastUpdated: recipeInventory.lastUpdated,
+      })
+      .from(recipeInventory)
+      .leftJoin(branches, eq(recipeInventory.branchId, branches.id))
+      .where(eq(recipeInventory.recipeId, data.recipeId))
+      .orderBy(branches.name);
+
+    return rows.map((r) => ({
+      recipeId: r.recipeId,
+      branchId: r.branchId,
+      branchName: r.branchName,
+      branchType: r.branchType,
+      quantity: Number(r.quantity),
+      lastUpdated: r.lastUpdated,
+    }));
+  });
+
 export const createRecipe = createServerFn({ method: "POST" })
   .validator((data: unknown) => recipeInput.parse(data))
   .handler(async ({ data }) => {
