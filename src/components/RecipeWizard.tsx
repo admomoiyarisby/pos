@@ -4,6 +4,7 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Badge } from "#/components/ui/badge";
+import MoneyInput from "#/components/MoneyInput";
 import { getIngredients } from "#/lib/server/ingredients";
 import {
   ChevronLeft,
@@ -310,15 +311,11 @@ export function RecipeWizard({
                 <Label>
                   Harga Dasar <span className="text-destructive">*</span>
                 </Label>
-                <Input
-                  name="basePrice"
-                  type="number"
-                  min={0}
-                  required
+                <MoneyInput
                   value={basePrice}
-                  onChange={(e) => setBasePrice(Number(e.target.value))}
+                  onChange={(raw) => setBasePrice(raw ?? 0)}
+                  required
                   className="h-10 md:h-9"
-                  placeholder="0"
                 />
               </div>
             </div>
