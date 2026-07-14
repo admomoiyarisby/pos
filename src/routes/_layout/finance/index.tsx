@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import Modal from "#/components/ui/Modal";
+import MoneyInput from "#/components/MoneyInput";
 import {
   getDailyFinanceSummary,
   getDailyHppBreakdown,
@@ -108,10 +109,9 @@ function EditableOmzetCell({
 
   if (editing) {
     return (
-      <input
-        type="number"
+      <MoneyInput
         value={editValue}
-        onChange={(e) => setEditValue(Number(e.target.value) || 0)}
+        onChange={(raw) => setEditValue(raw ?? 0)}
         onBlur={handleSave}
         onKeyDown={(e) => {
           if (e.key === "Enter") handleSave();
@@ -802,10 +802,8 @@ function FinancePage() {
           )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Jumlah (Rp)</label>
-            <input
+            <MoneyInput
               name="amount"
-              type="number"
-              min={0}
               required
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
@@ -899,10 +897,8 @@ function FinancePage() {
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Jumlah (Rp)</label>
-            <input
+            <MoneyInput
               name="amount"
-              type="number"
-              min={0}
               required
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
