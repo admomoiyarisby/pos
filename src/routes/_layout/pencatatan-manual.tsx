@@ -13,6 +13,7 @@ import {
   saveFixedCosts,
 } from "#/lib/server/finance";
 import { formatRp } from "#/lib/utils";
+import MoneyInput from "#/components/MoneyInput";
 
 export const Route = createFileRoute("/_layout/pencatatan-manual")({
   component: PencatatanManualPage,
@@ -35,10 +36,10 @@ function PencatatanManualPage() {
   const [christopher, setChristopher] = useState<number>(0);
 
   // Editable fixed costs (local state)
-  const [editGaji, setEditGaji] = useState<string>("");
-  const [editListrikAir, setEditListrikAir] = useState<string>("");
-  const [editWifi, setEditWifi] = useState<string>("");
-  const [editSewa, setEditSewa] = useState<string>("");
+  const [editGaji, setEditGaji] = useState<number>(0);
+  const [editListrikAir, setEditListrikAir] = useState<number>(0);
+  const [editWifi, setEditWifi] = useState<number>(0);
+  const [editSewa, setEditSewa] = useState<number>(0);
   const [hasEdits, setHasEdits] = useState(false);
 
   const branchId = selectedBranchId || undefined;
@@ -80,10 +81,10 @@ function PencatatanManualPage() {
   // Initialize editable fields when summary loads
   useMemo(() => {
     if (summary && !hasEdits) {
-      setEditGaji(String(summary.biayaGaji));
-      setEditListrikAir(String(summary.biayaListrikAir));
-      setEditWifi(String(summary.biayaWifi));
-      setEditSewa(String(summary.biayaSewa));
+      setEditGaji(summary.biayaGaji);
+      setEditListrikAir(summary.biayaListrikAir);
+      setEditWifi(summary.biayaWifi);
+      setEditSewa(summary.biayaSewa);
     }
   }, [summary, hasEdits]);
 
@@ -95,10 +96,10 @@ function PencatatanManualPage() {
           branchId: branchId!,
           dateFrom,
           dateTo,
-          gaji: Number(editGaji) || 0,
-          listrikAir: Number(editListrikAir) || 0,
-          wifi: Number(editWifi) || 0,
-          sewa: Number(editSewa) || 0,
+          gaji: editGaji || 0,
+          listrikAir: editListrikAir || 0,
+          wifi: editWifi || 0,
+          sewa: editSewa || 0,
         },
       }),
     onSuccess: () => {
@@ -462,11 +463,9 @@ function PencatatanManualPage() {
               {/* Christopher input */}
               <div className="flex items-center justify-between py-1.5">
                 <label className="text-muted-foreground text-sm">Christopher</label>
-                <input
-                  type="number"
-                  value={christopher || ""}
-                  onChange={(e) => setChristopher(Number(e.target.value) || 0)}
-                  placeholder="0"
+                <MoneyInput
+                  value={christopher || null}
+                  onChange={(raw) => setChristopher(raw ?? 0)}
                   className="h-8 w-32 rounded border border-input bg-background px-2 text-sm text-right tabular-nums"
                 />
               </div>
@@ -502,17 +501,16 @@ function EditableCostRow({
   onChange,
 }: {
   label: string;
-  value: string;
-  onChange: (v: string) => void;
+  value: number;
+  onChange: (raw: number) => void;
 }) {
   return (
     <div className="flex items-center justify-between py-1.5">
       <label className="text-muted-foreground text-sm">{label}</label>
-      <input
-        type="number"
+      <MoneyInput
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 w-32 rounded border border-input bg-background px-2 text-sm text-right tabular-nums focus:border-primary focus:outline-none"
+        onChange={(raw) => onChange(raw ?? 0)}
+        className="h-8 w-32 rounded border border-input bg-background px-2 text-sm text-right tabular-nums"
       />
     </div>
   );

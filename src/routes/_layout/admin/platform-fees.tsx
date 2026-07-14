@@ -6,6 +6,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
+import MoneyInput from "#/components/MoneyInput";
 import { getPlatformFees, updatePlatformFee } from "#/lib/server/platform-fees";
 import type { Column } from "#/components/ui/DataTable";
 import { Trash2, Info } from "lucide-react";
@@ -138,10 +139,8 @@ function PlatformFeesPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Biaya Tetap (Rp)</label>
-              <input
+              <MoneyInput
                 name="fixedFee"
-                type="number"
-                min={0}
                 defaultValue={editing.fixedFee}
                 required
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
