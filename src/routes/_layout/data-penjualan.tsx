@@ -9,6 +9,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
 import { getBranches } from "#/lib/server/branches";
 import { getRecipesWithHpp } from "#/lib/server/finance";
+import MoneyInput from "#/components/MoneyInput";
 import {
   getSalesData,
   getSalesOrderDetail,
@@ -748,12 +749,9 @@ function OrderEditModal({
                           />
                         </td>
                         <td className="py-1.5 px-2">
-                          <input
-                            type="number"
-                            min={0}
+                          <MoneyInput
                             value={item.price}
-                            onChange={(e) => updateItem(i, "price", Number(e.target.value) || 0)}
-                            className="h-8 w-full rounded border border-input bg-background px-2 text-sm text-right tabular-nums"
+                            onChange={(raw) => updateItem(i, "price", raw ?? 0)}
                           />
                         </td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-sm">
