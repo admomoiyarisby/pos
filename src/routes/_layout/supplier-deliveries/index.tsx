@@ -3,6 +3,7 @@ import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
+import MoneyInput from "#/components/MoneyInput";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
@@ -397,13 +398,10 @@ function SupplierDeliveriesPage() {
           {/* Price */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Total Harga (Rp)</label>
-            <input
+            <MoneyInput
               name="price"
-              type="number"
-              min={0}
+              defaultValue={editingDelivery?.price ?? 0}
               required
-              defaultValue={editingDelivery?.price ?? ""}
-              placeholder="0"
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>

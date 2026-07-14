@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { getIngredient, updateIngredient } from "#/lib/server/ingredients";
 import { toast } from "sonner";
+import MoneyInput from "#/components/MoneyInput";
 
 export const Route = createFileRoute("/_layout/ingredients/$ingId")({
   component: IngredientDetailPage,
@@ -165,10 +166,8 @@ function IngredientDetailPage() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">HPP (Rp)</label>
-                <input
+                <MoneyInput
                   name="averageCost"
-                  type="number"
-                  min={0}
                   defaultValue={ingredient.averageCost}
                   required
                   className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"

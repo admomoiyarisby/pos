@@ -17,6 +17,7 @@ import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { toast } from "sonner";
 import { AlertCircle } from "lucide-react";
+import MoneyInput from "#/components/MoneyInput";
 
 export const Route = createFileRoute("/_layout/admin/sales")({
   component: SalesAdminPage,
@@ -416,10 +417,11 @@ function SalesAdminPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Total Amount (Rp)</label>
-              <input
-                type="number"
-                value={newOrder.totalAmount}
-                onChange={(e) => setNewOrder({ ...newOrder, totalAmount: e.target.value })}
+              <MoneyInput
+                value={newOrder.totalAmount ? Number(newOrder.totalAmount) : null}
+                onChange={(raw) =>
+                  setNewOrder({ ...newOrder, totalAmount: raw === null ? "" : String(raw) })
+                }
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>

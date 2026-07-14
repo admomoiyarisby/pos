@@ -7,6 +7,7 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
+import MoneyInput from "#/components/MoneyInput";
 import {
   getIngredients,
   createIngredient,
@@ -282,10 +283,9 @@ function IngredientsPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">HPP (Rp)</label>
-              <input
+              <MoneyInput
                 name="averageCost"
-                type="number"
-                min={0}
+                defaultValue={0}
                 required
                 className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
