@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Skenario 04 — Mutasi Stok Antar Cabang (FSM ADR 0006)</title>
+    <style>
+      :root {
+        --ink: #1a1a1a;
+        --paper: #fffff8;
+        --muted: #6b6256;
+        --faint: #b3a99a;
+        --rule: #d8cfbf;
+        --accent: #1f4e5f;
+        --accent2: #8a3324;
+        --warn: #b8860b;
+        --band: #f7f3e9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        font-size: 17px;
+      }
+      body {
+        background: var(--paper);
+        color: var(--ink);
+        font-family:
+          "ET Book", "Palatino Linotype", "Palatino", "Georgia", "Times New Roman", serif;
+        line-height: 1.5;
+        margin: 0;
+        padding: 0;
+        text-rendering: optimizeLegibility;
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 4rem 3.5rem 6rem;
+      }
+      header.masthead {
+        border-bottom: 3px double var(--ink);
+        padding-bottom: 1.2rem;
+        margin-bottom: 1.5rem;
+      }
+      header.masthead h1 {
+        font-size: 2.3rem;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        margin: 0 0 0.2rem;
+        line-height: 1.1;
+      }
+      header.masthead .sub {
+        font-style: italic;
+        color: var(--muted);
+        font-size: 1.02rem;
+      }
+      header.masthead .meta {
+        margin-top: 0.8rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: var(--faint);
+      }
+      h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 2.8rem 0 0.8rem;
+        padding-bottom: 0.3rem;
+        border-bottom: 1px solid var(--rule);
+        counter-increment: sec;
+      }
+      h2::before {
+        content: counter(sec) ". ";
+        color: var(--accent);
+      }
+      h3 {
+        font-size: 1.12rem;
+        font-weight: 600;
+        margin: 1.6rem 0 0.5rem;
+        color: var(--accent);
+      }
+      p {
+        margin: 0.6rem 0;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+        border-bottom: 1px solid var(--rule);
+      }
+      a:hover {
+        border-bottom-color: var(--accent);
+      }
+      code {
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 0.82em;
+        background: var(--band);
+        padding: 0.05em 0.35em;
+        border-radius: 2px;
+        color: var(--accent2);
+        white-space: nowrap;
+      }
+      .back {
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+      }
+      .lead {
+        font-size: 1.1rem;
+        max-width: 64ch;
+      }
+      .sidenote {
+        float: right;
+        clear: right;
+        width: 17rem;
+        margin-right: -20rem;
+        margin-top: 0.4rem;
+        margin-bottom: 1rem;
+        font-size: 0.78rem;
+        line-height: 1.4;
+        color: var(--muted);
+        border-left: 1px solid var(--rule);
+        padding-left: 0.8rem;
+      }
+      .sidenote .tag {
+        display: inline-block;
+        font-size: 0.66rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--accent2);
+        margin-bottom: 0.2rem;
+      }
+      @media (max-width: 1100px) {
+        .sidenote {
+          float: none;
+          width: auto;
+          margin: 0.6rem 0;
+          border-left: 3px solid var(--rule);
+        }
+        .wrap {
+          padding: 2.5rem 1.4rem 4rem;
+        }
+      }
+      .notice {
+        background: var(--band);
+        border-left: 4px solid var(--accent2);
+        padding: 0.7rem 1rem;
+        margin: 0.9rem 0;
+        font-size: 0.95rem;
+      }
+      .notice .h {
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 0.72rem;
+        color: var(--accent2);
+      }
+      .notice.warn {
+        border-left-color: var(--warn);
+      }
+      .notice.warn .h {
+        color: var(--warn);
+      }
+      ol.steps {
+        counter-reset: step;
+        list-style: none;
+        padding-left: 0;
+        margin-left: 0;
+      }
+      ol.steps > li {
+        counter-increment: step;
+        position: relative;
+        padding-left: 2.6rem;
+        margin: 0.9rem 0;
+      }
+      ol.steps > li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0.05rem;
+        width: 1.8rem;
+        height: 1.8rem;
+        background: var(--ink);
+        color: var(--paper);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-variant-numeric: tabular-nums;
+      }
+      ol.steps > li b {
+        color: var(--accent);
+      }
+      .pill {
+        display: inline-block;
+        font-size: 0.68rem;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        padding: 0.08rem 0.45rem;
+        border-radius: 999px;
+        margin-right: 0.3rem;
+        border: 1px solid var(--rule);
+        color: var(--muted);
+      }
+      .pill.auth {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .pill.inv {
+        border-color: var(--accent2);
+        color: var(--accent2);
+      }
+      .pill.fsm {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+      table.fsm {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 1rem 0 1.5rem;
+        font-size: 0.83rem;
+      }
+      table.fsm th,
+      table.fsm td {
+        border: 1px solid var(--rule);
+        padding: 0.4rem 0.6rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      table.fsm th {
+        background: var(--band);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.66rem;
+        letter-spacing: 0.5px;
+      }
+      table.fsm td.state {
+        font-weight: 600;
+        color: var(--accent);
+        white-space: nowrap;
+      }
+      table.fsm td.term {
+        color: var(--faint);
+        font-style: italic;
+      }
+      .cmd {
+        background: var(--band);
+        border: 1px solid var(--rule);
+        border-left: 4px solid var(--accent);
+        padding: 0.6rem 0.9rem;
+        font-family: "SF Mono", "Menlo", monospace;
+        font-size: 0.82rem;
+        margin: 0.8rem 0;
+      }
+      footer {
+        margin-top: 5rem;
+        border-top: 3px double var(--ink);
+        padding-top: 1rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      body {
+        counter-reset: sec;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <h1>Skenario 04 — Mutasi Stok Antar Cabang</h1>
+        <div class="sub">Surat jalan cabang→cabang (FSM, ADR 0006)</div>
+        <div class="meta">Bahasa Indonesia · gaya Tufte · sumber: scm-transfer-fsm.ts</div>
+      </header>
+      <p class="back"><a href="00-INDEKS.html">← Kembali ke indeks</a></p>
+
+      <p class="lead">
+        Berbeda dari Skenario 03 (beli dari supplier ke pusat), ini
+        <b>pergerakan stok antar dua outlet</b>. FSM-nya mirip tapi <b>matriks role berbeda</b> dan
+        — yang paling penting — ada <b>dua batas keamanan</b>: batas <em>role</em> (di FSM) dan
+        batas <em>cabang</em> (di server fn, di luar FSM). Skenario ini punya self-check nyata yang
+        harus Anda jalankan.
+      </p>
+
+      <h2 id="state">Tabel status &amp; transisi</h2>
+
+      <table class="fsm">
+        <tr>
+          <th>Status</th>
+          <th>Event → next</th>
+          <th>Actor</th>
+        </tr>
+        <tr>
+          <td class="state">SuratJalanDraft</td>
+          <td>submit→PendingAMReview · cancel</td>
+          <td>BA (pengirim)</td>
+        </tr>
+        <tr>
+          <td class="state">PendingAMReview</td>
+          <td>approve→Approved · reject→Rejected · withdraw→Draft · cancel</td>
+          <td>AM</td>
+        </tr>
+        <tr>
+          <td class="state">Approved</td>
+          <td>ship→InTransit · withdraw→Draft · cancel</td>
+          <td>BA (pengirim)</td>
+        </tr>
+        <tr>
+          <td class="state">InTransit</td>
+          <td>mark-delivered→Delivered · cancel</td>
+          <td>BA / AM cancel</td>
+        </tr>
+        <tr>
+          <td class="state">Delivered</td>
+          <td>open-receive→ReviewingSJ · cancel</td>
+          <td>AM cancel</td>
+        </tr>
+        <tr>
+          <td class="state">ReviewingSJ</td>
+          <td>finish-receive→WaitingForPayment · cancel</td>
+          <td>AM cancel</td>
+        </tr>
+        <tr>
+          <td class="state">WaitingForPayment</td>
+          <td>mark-paid→Finished · cancel</td>
+          <td>AM cancel</td>
+        </tr>
+        <tr>
+          <td class="term">Rejected / Finished / Cancelled</td>
+          <td colspan="2">terminal</td>
+        </tr>
+      </table>
+
+      <div class="notice">
+        <span class="h">Invarian — super_admin ya, admin_pusat TIDAK</span>
+        <code>transitionTransfer</code> (<code>scm-transfer-fsm.ts:248</code>) mengizinkan
+        <code>super_admin</code> di semua transisi, tapi <code>admin_pusat</code>
+        <strong>tidak pernah</strong> jadi actor di Mutasi (Q4/Q8). Self-check menegaskan ini.
+        Jangan samakan dengan Skenario 03 di mana admin_pusat ikut review.
+      </div>
+
+      <!-- ============ A ============ -->
+      <h2 id="a">A. Buat surat jalan (Draft)</h2>
+
+      <aside class="sidenote">
+        <span class="tag">Dua cabang</span>
+        <code>createStockTransfer</code> (<code>scm.ts:1676</code>) menuntut
+        <code>fromBranchId ≠ toBranchId</code> (<code>scm-transfers.ts:205</code>). Self-check
+        keamanan cabang ada di <code>assertTransferAccess</code>
+        (<code>scm-transfers.ts:361</code>): "sender" → BA di fromBranch, "receiver" → BA di
+        toBranch, "either" → salah satu.
+        <span class="tag" style="margin-top: 0.5rem">Lazy DB</span>
+        FSM Mutasi men-<em>lazy import</em> db (<code>scm-transfer-fsm.ts:29</code>) agar tabel
+        transisi bisa di-self-check tanpa DB.
+      </aside>
+
+      <ol class="steps">
+        <li>
+          BA cabang pengirim buat transfer: pilih cabang tujuan + items bahan →
+          <code>createStockTransfer</code>.
+        </li>
+        <li>
+          Server validasi cabang beda; insert <code>scmTransfers</code> status
+          <code>SuratJalanDraft</code> + items.
+        </li>
+        <li>
+          BA pengirim edit quantity item di Draft via
+          <code>updateTransferDraftItems</code> (terpisah dari transition).
+        </li>
+      </ol>
+
+      <!-- ============ B ============ -->
+      <h2 id="b">B. Submit → review area manager</h2>
+
+      <ol class="steps">
+        <li>BA klik submit → <code>submit</code> → SuratJalanDraft→PendingAMReview. Actor BA.</li>
+        <li>
+          Area Manager (yang memegang salah satu cabang) klik approve → <code>approve</code> →
+          PendingAMReview→Approved, catat <code>reviewingById</code> +
+          <code>approvedAt</code> (<code>scm-transfer-fsm.ts:261</code>). Atau reject → Rejected,
+          atau withdraw → Draft.
+        </li>
+      </ol>
+
+      <div class="notice warn">
+        <span class="h">Jebakan — batas cabang TIDAK di FSM</span>
+        FSM hanya cek <em>role</em> (AM). Apakah AM ini benar memegang cabang pengirim
+        <em>atau</em> tujuan dicek <strong>di luar</strong> FSM oleh
+        <code>assertTransferAccess</code> (<code>scm-transfer-fsm.ts:218</code>). Bila server fn
+        lupa memanggil guard ini, AM sembarang bisa setujui transfer antar cabang orang lain.
+        <b>Verifikasi setiap entrypoint memanggil guard.</b>
+      </div>
+
+      <!-- ============ C ============ -->
+      <h2 id="c">C. Kirim (Approved → InTransit)</h2>
+
+      <ol class="steps">
+        <li>
+          BA pengirim klik ship → <code>ship</code> → Approved→InTransit. Efek
+          <code>writeTransferInTransitInventory</code> (stok keluar dari gudang pengirim).
+        </li>
+        <li>AM dapat cancel → <code>reverseTransferInTransitOnCancel</code>.</li>
+      </ol>
+
+      <!-- ============ D ============ -->
+      <h2 id="d">D. Terima &amp; review SJ (Delivered → WaitingForPayment)</h2>
+
+      <ol class="steps">
+        <li>
+          BA pengirim klik "mark delivered" → <code>mark-delivered</code> → InTransit→Delivered
+          (efek <code>moveTransferToPendingReview</code>).
+        </li>
+        <li>
+          BA pengirim klik "open receive" → <code>open-receive</code> → Delivered→ReviewingSJ.
+        </li>
+        <li>
+          Isi received/rejected per item → <code>updateTransferItem</code> (hanya di
+          Delivered/ReviewingSJ, <code>scm-transfer-fsm.ts:376</code>).
+        </li>
+        <li>
+          BA klik "finish receive" → <code>finish-receive</code> → ReviewingSJ→WaitingForPayment.
+          Efek: setReceived + writeReceivedStock + writeRejectedWaste +
+          generateTransferInvoiceSnapshot (<code>scm-transfer-fsm.ts:162-171</code>).
+        </li>
+      </ol>
+
+      <!-- ============ E ============ -->
+      <h2 id="e">E. Bayar (WaitingForPayment → Finished)</h2>
+
+      <ol class="steps">
+        <li>
+          BA klik "mark paid" → <code>mark-paid</code> → WaitingForPayment→Finished. Efek
+          <code>markTransferInvoicePaid</code>, catat <code>paidById</code>.
+        </li>
+        <li>Terminal <code>Finished</code>.</li>
+      </ol>
+
+      <!-- ============ F ============ -->
+      <h2 id="f">F. Self-check (wajib jalankan)</h2>
+
+      <div class="cmd">npx tsx src/lib/server/scm-transfer-fsm.selfcheck.ts</div>
+
+      <ol class="steps">
+        <li>
+          Self-check memvalidasi: tiap (state,event) di SPEC ada di tabel dengan
+          <code>to</code>/<code>actors</code> benar; tidak ada transisi liar; state terminal tanpa
+          keluar; <code>availableTransferEvents</code> per (state,role) benar.
+        </li>
+        <li>
+          Khususnya menegaskan: <code>super_admin</code> lihat semua event;
+          <code>admin_pusat</code> tidak lihat satupun
+          (<code>scm-transfer-fsm.selfcheck.ts:147-173</code>).
+        </li>
+        <li>
+          Jika FAIL, jangan lanjut review sampai matriks role diperbaiki — self-check adalah
+          <b>spesifikasi tertulis</b> dari FSM ini.
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Invarian — jaga SPEC &amp; tabel sinkron</span>
+        Bila Anda mengubah matriks role di <code>transferTransitions</code>, Anda juga harus ubah
+        <code>SPEC</code> di self-check. Kalau tidak, self-check akan FAIL atau — lebih buruk —
+        lulus padahal spesifikasi sudah usang.
+      </div>
+
+      <!-- ============ G ============ -->
+      <h2 id="g">G. Mekanisme transitionTransfer()</h2>
+
+      <ol class="steps">
+        <li>
+          <code>transitionTransfer()</code> (<code>scm-transfer-fsm.ts:227</code>) buka tx,
+          <code>SELECT … FOR UPDATE</code> (<code>:236-240</code>).
+        </li>
+        <li>
+          Cari rule; bila tak ada → <code>InvalidTransferTransitionError</code>; actor tak diizinkan
+          (dan bukan super_admin) → <code>TransferUnauthorizedError</code> (<code>:244-252</code>).
+        </li>
+        <li>
+          Jalankan efek, update status + audit + (notifikasi dalam tx) (<code>:292-320</code>).
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Checklist akhir scenario 04</span>
+        <ul>
+          <li>Jalankan self-check → PASS.</li>
+          <li>
+            Setiap entrypoint Mutasi memanggil <code>assertTransferAccess</code> (batas cabang).
+          </li>
+          <li>admin_pusat tak pernah jadi actor; super_admin bisa semua.</li>
+          <li>Cancel reversal per titik arahnya benar.</li>
+          <li>Edit item transfer state-gated (Draft vs Delivered/ReviewingSJ).</li>
+        </ul>
+      </div>
+
+      <footer>
+        Skenario 04 · Mutasi Stok · <a href="00-INDEKS.html">indeks</a> · sebelumnya:
+        <a href="03-scm-procurement.html">03 SCM Procurement</a>. Ini skenario terakhir.
+      </footer>
+    </div>
+  </body>
+</html>

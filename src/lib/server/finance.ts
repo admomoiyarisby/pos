@@ -48,8 +48,12 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
 
     const conditions = [];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
-    if (data.dateFrom) conditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
-    if (data.dateTo) conditions.push(lte(orders.createdAt, new Date(data.dateTo)));
+    if (data.dateFrom)
+      conditions.push(
+        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
+    if (data.dateTo)
+      conditions.push(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`);
 
     const orderData = await db
       .select({
@@ -136,8 +140,12 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
 
     const conditions = [];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
-    if (data.dateFrom) conditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
-    if (data.dateTo) conditions.push(lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")));
+    if (data.dateFrom)
+      conditions.push(
+        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
+    if (data.dateTo)
+      conditions.push(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`);
     if (data.channel) conditions.push(eq(orders.channel, data.channel as any));
 
     const result = await db
@@ -502,8 +510,8 @@ export const getSalesAnalytics = createServerFn({ method: "GET" })
       .from(orders)
       .where(
         and(
-          gte(orders.createdAt, fromDate),
-          lte(orders.createdAt, toDate),
+          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
           data.branchId ? eq(orders.branchId, data.branchId) : undefined,
         ),
       )
@@ -520,8 +528,8 @@ export const getSalesAnalytics = createServerFn({ method: "GET" })
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .where(
         and(
-          gte(orders.createdAt, fromDate),
-          lte(orders.createdAt, toDate),
+          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
           data.branchId ? eq(orders.branchId, data.branchId) : undefined,
         ),
       )
@@ -872,13 +880,13 @@ export const getHourlyAnalytics = createServerFn({ method: "GET" })
       .from(orders)
       .where(
         and(
-          gte(orders.createdAt, fromDate),
-          lte(orders.createdAt, toDate),
+          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
           data.branchId ? eq(orders.branchId, data.branchId) : undefined,
         ),
       )
-      .groupBy(sql`EXTRACT(HOUR FROM ${orders.createdAt})`)
-      .orderBy(sql`EXTRACT(HOUR FROM ${orders.createdAt})`);
+      .groupBy(sql`EXTRACT(HOUR FROM ${orders.createdAt} AT TIME ZONE 'Asia/Jakarta')`)
+      .orderBy(sql`EXTRACT(HOUR FROM ${orders.createdAt} AT TIME ZONE 'Asia/Jakarta')`);
 
     return result.map((r) => ({
       hour: Number(r.hour),
@@ -909,8 +917,12 @@ export const printFinancePage = createServerFn({ method: "GET" })
 
     // Build conditions for channel breakdown
     const conds: ReturnType<typeof and> = and(
-      data.dateFrom ? gte(orders.createdAt, new Date(data.dateFrom)) : undefined,
-      data.dateTo ? lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")) : undefined,
+      data.dateFrom
+        ? sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
+        : undefined,
+      data.dateTo
+        ? sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
+        : undefined,
       data.branchId ? eq(orders.branchId, data.branchId) : undefined,
       data.channel ? eq(orders.channel, data.channel as any) : undefined,
     );
@@ -1075,9 +1087,14 @@ export const getEmployeeMealSummary = createServerFn({ method: "GET" })
 
     const conditions = [eq(wasteEntries.category, "Beban Makan")];
     if (data.branchId) conditions.push(eq(wasteEntries.branchId, data.branchId));
-    if (data.dateFrom) conditions.push(gte(wasteEntries.createdAt, new Date(data.dateFrom)));
+    if (data.dateFrom)
+      conditions.push(
+        sql`DATE(${wasteEntries.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
     if (data.dateTo)
-      conditions.push(lte(wasteEntries.createdAt, new Date(data.dateTo + "T23:59:59")));
+      conditions.push(
+        sql`DATE(${wasteEntries.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
 
     const result = await db
       .select({
@@ -1203,9 +1220,14 @@ export const getPencatatanManualSummary = createServerFn({ method: "GET" })
     // Get employee meal total from waste
     const wasteConditions = [eq(wasteEntries.category, "Beban Makan")];
     if (data.branchId) wasteConditions.push(eq(wasteEntries.branchId, data.branchId));
-    if (data.dateFrom) wasteConditions.push(gte(wasteEntries.createdAt, new Date(data.dateFrom)));
+    if (data.dateFrom)
+      wasteConditions.push(
+        sql`DATE(${wasteEntries.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
     if (data.dateTo)
-      wasteConditions.push(lte(wasteEntries.createdAt, new Date(data.dateTo + "T23:59:59")));
+      wasteConditions.push(
+        sql`DATE(${wasteEntries.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
 
     const [wasteResult] = await db
       .select({ total: sql<number>`COALESCE(SUM(${wasteEntries.valuation}), 0)` })
@@ -1215,9 +1237,14 @@ export const getPencatatanManualSummary = createServerFn({ method: "GET" })
     // Get order totals
     const orderConditions = [];
     if (data.branchId) orderConditions.push(eq(orders.branchId, data.branchId));
-    if (data.dateFrom) orderConditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
+    if (data.dateFrom)
+      orderConditions.push(
+        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
     if (data.dateTo)
-      orderConditions.push(lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")));
+      orderConditions.push(
+        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
 
     const [orderResult] = await db
       .select({

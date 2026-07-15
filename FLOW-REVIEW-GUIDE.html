@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>omoiyari-pos — Flow Review Guide (Tufte)</title>
+    <style>
+      :root {
+        --ink: #1a1a1a;
+        --paper: #fffff8;
+        --muted: #6b6256;
+        --faint: #b3a99a;
+        --rule: #d8cfbf;
+        --accent: #1f4e5f; /* muted teal, Tufte-ish */
+        --accent2: #8a3324; /* burnt sienna, Tufte's red */
+        --warn: #b8860b;
+        --band: #f7f3e9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        font-size: 17px;
+      }
+      body {
+        background: var(--paper);
+        color: var(--ink);
+        font-family:
+          "ET Book", "Palatino Linotype", "Palatino", "Georgia", "Times New Roman", serif;
+        line-height: 1.5;
+        margin: 0;
+        padding: 0;
+        text-rendering: optimizeLegibility;
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 4rem 3.5rem 6rem;
+      }
+      header.masthead {
+        border-bottom: 3px double var(--ink);
+        padding-bottom: 1.2rem;
+        margin-bottom: 2.5rem;
+      }
+      header.masthead h1 {
+        font-size: 2.6rem;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        margin: 0 0 0.3rem;
+        line-height: 1.1;
+      }
+      header.masthead .sub {
+        font-style: italic;
+        color: var(--muted);
+        font-size: 1.05rem;
+      }
+      header.masthead .meta {
+        margin-top: 0.9rem;
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: var(--faint);
+      }
+      /* Section numbering like a Tufte chapter */
+      h2.sec {
+        font-size: 1.55rem;
+        font-weight: 600;
+        margin: 3.5rem 0 1rem;
+        padding-bottom: 0.3rem;
+        border-bottom: 1px solid var(--rule);
+        counter-increment: sec;
+      }
+      h2.sec::before {
+        content: counter(sec) ". ";
+        color: var(--accent);
+        font-variant-numeric: tabular-nums;
+      }
+      h3 {
+        font-size: 1.12rem;
+        font-weight: 600;
+        margin: 1.8rem 0 0.5rem;
+        color: var(--accent);
+      }
+      p {
+        margin: 0.6rem 0;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+        border-bottom: 1px solid var(--rule);
+      }
+      a:hover {
+        border-bottom-color: var(--accent);
+      }
+      code {
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 0.82em;
+        background: var(--band);
+        padding: 0.05em 0.35em;
+        border-radius: 2px;
+        color: var(--accent2);
+        white-space: nowrap;
+      }
+      ul,
+      ol {
+        margin: 0.5rem 0 0.5rem 0;
+        padding-left: 1.4rem;
+      }
+      li {
+        margin: 0.3rem 0;
+      }
+      .lead {
+        font-size: 1.15rem;
+        max-width: 60ch;
+      }
+      sup.ref {
+        color: var(--accent2);
+        font-size: 0.7em;
+        cursor: pointer;
+      }
+
+      /* Side note — Tufte's signature */
+      .sidenote {
+        float: right;
+        clear: right;
+        width: 17rem;
+        margin-right: -20rem;
+        margin-top: 0.4rem;
+        margin-bottom: 1rem;
+        font-size: 0.78rem;
+        line-height: 1.4;
+        color: var(--muted);
+        border-left: 1px solid var(--rule);
+        padding-left: 0.8rem;
+      }
+      .sidenote .tag {
+        display: inline-block;
+        font-size: 0.66rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--accent2);
+        margin-bottom: 0.2rem;
+      }
+      @media (max-width: 1100px) {
+        .sidenote {
+          float: none;
+          width: auto;
+          margin: 0.6rem 0;
+          border-left: 3px solid var(--rule);
+        }
+        .wrap {
+          padding: 2.5rem 1.4rem 4rem;
+        }
+      }
+
+      /* Notice box (the "things to notice") */
+      .notice {
+        background: var(--band);
+        border-left: 4px solid var(--accent2);
+        padding: 0.7rem 1rem;
+        margin: 0.9rem 0;
+        font-size: 0.95rem;
+      }
+      .notice .h {
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 0.72rem;
+        color: var(--accent2);
+      }
+      .notice.warn {
+        border-left-color: var(--warn);
+      }
+      .notice.warn .h {
+        color: var(--warn);
+      }
+
+      /* State machine table */
+      table.fsm {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 1rem 0 1.5rem;
+        font-size: 0.85rem;
+      }
+      table.fsm th,
+      table.fsm td {
+        border: 1px solid var(--rule);
+        padding: 0.4rem 0.6rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      table.fsm th {
+        background: var(--band);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        letter-spacing: 0.5px;
+      }
+      table.fsm td.state {
+        font-weight: 600;
+        color: var(--accent);
+        white-space: nowrap;
+      }
+      table.fsm td.term {
+        color: var(--faint);
+        font-style: italic;
+      }
+
+      /* Flow steps list */
+      ol.steps {
+        counter-reset: step;
+        list-style: none;
+        padding-left: 0;
+        margin-left: 0;
+      }
+      ol.steps > li {
+        counter-increment: step;
+        position: relative;
+        padding-left: 2.6rem;
+        margin: 0.7rem 0;
+      }
+      ol.steps > li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0.05rem;
+        width: 1.8rem;
+        height: 1.8rem;
+        background: var(--ink);
+        color: var(--paper);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* Tag pills */
+      .pill {
+        display: inline-block;
+        font-size: 0.68rem;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        padding: 0.08rem 0.45rem;
+        border-radius: 999px;
+        margin-right: 0.3rem;
+        border: 1px solid var(--rule);
+        color: var(--muted);
+      }
+      .pill.auth {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .pill.inv {
+        border-color: var(--accent2);
+        color: var(--accent2);
+      }
+      .pill.fsm {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+
+      .col2 {
+        column-count: 2;
+        column-gap: 2rem;
+      }
+      @media (max-width: 800px) {
+        .col2 {
+          column-count: 1;
+        }
+      }
+
+      .card {
+        background: var(--band);
+        border: 1px solid var(--rule);
+        padding: 0.9rem 1.1rem;
+        margin: 1rem 0;
+      }
+      .card h4 {
+        margin: 0 0 0.4rem;
+        font-size: 1rem;
+        color: var(--accent);
+      }
+
+      footer {
+        margin-top: 5rem;
+        border-top: 3px double var(--ink);
+        padding-top: 1rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      .toc {
+        columns: 2;
+        column-gap: 2.5rem;
+        font-size: 0.92rem;
+        margin-top: 1rem;
+      }
+      .toc a {
+        border-bottom: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <h1>omoiyari-pos — Manual Flow Review Guide</h1>
+        <div class="sub">A companion for a line-by-line walkthrough of the codebase</div>
+        <div class="meta">
+          TanStack Start · React 19 · Drizzle/Postgres · Better-Auth · Generated for the
+          senior-engineer review pass
+        </div>
+      </header>
+
+      <p class="lead">
+        This document is a map of every primary business flow in the repository, with the exact
+        files to open and the invariants to check as you read. Each flow lists the steps in
+        execution order, the role gates, and a <span class="pill inv">trap</span>
+        you should specifically verify. The codebase is a restaurant POS + SCM (supply chain) system
+        for an Indonesian F&amp;B group, so amounts are integer Rupiah and several flows are
+        explicit finite-state machines.
+      </p>
+
+      <div class="card">
+        <h4>How to use this during review</h4>
+        <ol class="steps">
+          <li>Pick a flow below; open the <code>file:line</code> anchors in your editor.</li>
+          <li>
+            Trace each step in the order listed — most flows span a server file + a route file.
+          </li>
+          <li>
+            Check the <span class="pill inv">trap</span> /
+            <span class="pill fsm">invariant</span> call-outs; they are the historically fragile
+            spots.
+          </li>
+          <li>
+            Run the self-checks where they exist:
+            <code>npx tsx src/lib/server/scm-transfer-fsm.selfcheck.ts</code>.
+          </li>
+        </ol>
+      </div>
+
+      <div class="toc">
+        <a href="#s1">1. Auth &amp; login</a><br />
+        <a href="#s2">2. Role model &amp; navigation</a><br />
+        <a href="#s3">3. POS order creation</a><br />
+        <a href="#s4">4. Cancel-request lifecycle</a><br />
+        <a href="#s5">5. SCM Procurement FSM</a><br />
+        <a href="#s6">6. Mutasi (branch↔branch) transfer FSM</a><br />
+        <a href="#s7">7. Legacy SCM (PR→PO→DN→invoice)</a><br />
+        <a href="#s8">8. Inventory / stock opname / audit</a><br />
+        <a href="#s9">9. Finance &amp; period control</a><br />
+        <a href="#s10">10. Document codes &amp; master data</a><br />
+        <a href="#s11">11. Cross-cutting things to notice</a><br />
+      </div>
+
+      <!-- ============================ 1 ============================ -->
+      <h2 class="sec" id="s1">Authentication &amp; login flow</h2>
+
+      <p>
+        Login is a custom PIN layer bolted onto Better-Auth. There are <em>four</em>
+        distinct entrypoints, not one. This is the most security-sensitive code in the repo — review
+        it carefully.
+      </p>
+
+      <aside class="sidenote">
+        <span class="tag">File anchors</span>
+        <code>src/lib/auth.ts</code> — Better-Auth setup<br />
+        <code>src/lib/auth-plugins/pin-auth.ts</code> — PIN endpoints<br />
+        <code>src/routes/login.tsx</code> — the login UI<br />
+        <code>src/lib/auth-client.ts</code> — client calls<br />
+        <span class="tag" style="margin-top: 0.5rem">Self-check</span>
+        The <code>trustedOrigins</code> hack in <code>auth.ts:67</code> exists because of a signout
+        403 bug. Note it does weaken CSRF origin checks.
+      </aside>
+
+      <ol class="steps">
+        <li>
+          <strong>Branch login (two-step).</strong>
+          <code>/branch-pin-verify</code> (<code>pin-auth.ts:102</code>) validates the branch code +
+          4-digit PIN, then returns the branch's <em>staff names</em>. UI shows a name picker.
+        </li>
+        <li>
+          <strong>Staff selection.</strong>
+          <code>/branch-login</code> (<code>pin-auth.ts:241</code>) finds-or-creates a
+          <code>branch_admin</code> user from the chosen name (email
+          <code>&lt;branch&gt;_&lt;name&gt;@staff.omoiyari.net</code>) and sets the session cookie.
+        </li>
+        <li>
+          <strong>Non-branch PIN login.</strong>
+          <code>/non-branch-pin-login</code> (<code>pin-auth.ts:168</code>) for super_admin /
+          admin_pusat / central_kitchen / area_manager — a single globally-unique PIN identifies the
+          user directly (no name picker).
+        </li>
+        <li>
+          <strong>Email/password (Better-Auth native).</strong> <code>/api/auth/$.ts</code> —
+          standard sign-in, passkey supported.
+        </li>
+        <li>
+          <strong>Session resume.</strong> The browser session cookie is read on every server
+          function via <code>requireAuth()</code> / <code>requireRole()</code>.
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Trap — plaintext PINs</span>
+        Branch PINs are compared in plaintext (<code>pin-auth.ts:132</code>, marked
+        <code>TODO(security)</code>). User PINs (for non-branch roles) are stored on the
+        <code>users</code> table likewise. Verify no logging leaks the PIN and decide whether
+        hashing is in scope for this review.
+      </div>
+
+      <div class="notice warn">
+        <span class="h">Trap — role gate divergence</span>
+        <code>signInWithPin</code> (<code>pin-auth.ts:21</code>) exists but its role filter is
+        commented out (<code>pin-auth.ts:39</code>), so it accepts <em>any</em> active user by PIN.
+        Confirm it is actually unused, or it is an auth bypass.
+      </div>
+
+      <!-- ============================ 2 ============================ -->
+      <h2 class="sec" id="s2">Role model &amp; navigation</h2>
+
+      <p>
+        Roles (<code>userRoleEnum</code>): <code>super_admin</code>,
+        <code>admin_pusat</code> (central HQ), <code>area_manager</code>, <code>branch_admin</code>,
+        <code>central_kitchen</code>. Authorization is enforced in <em>two</em> layers and they are
+        not the same thing — keep that distinction in mind for every flow below.
+      </p>
+
+      <aside class="sidenote">
+        <span class="tag">Two boundaries</span>
+        <ul>
+          <li>
+            <strong>Role boundary</strong> — checked inside the FSMs (<code>rule.actors</code>).
+          </li>
+          <li>
+            <strong>Branch boundary</strong> — checked upstream by server fns
+            (<code>assertTransferAccess</code>, <code>requireBranch...</code>).
+          </li>
+        </ul>
+        A flow is only safe when <em>both</em> are reviewed. The transfer FSM comment at
+        <code>scm-transfer-fsm.ts:218</code> says so explicitly.
+      </aside>
+
+      <ul>
+        <li>
+          <code>super_admin</code> is silently added to every allowed-actor list at dispatch time —
+          FSM emergency override. Verify this is intended everywhere (e.g. it bypasses area_manager
+          review on Mutasi).
+        </li>
+        <li>
+          <code>admin_pusat</code> is <strong>never</strong> an actor on Mutasi transfers
+          (branch↔branch) — but <em>is</em> on SCM procurement. Easy to confuse the two.
+        </li>
+        <li>
+          Branch visibility of recipes uses a "no assignment = visible everywhere" rule
+          (<code>pos.ts:50-55</code>). Confirm this matches product intent.
+        </li>
+      </ul>
+
+      <!-- ============================ 3 ============================ -->
+      <h2 class="sec" id="s3">POS order creation</h2>
+
+      <p>
+        The money path. <code>src/lib/server/pos.ts</code> → <code>createOrder</code>. All mutations
+        run inside one <code>db.transaction</code> with <code>FOR UPDATE</code>
+        row locks on inventory to prevent double-spend.
+      </p>
+
+      <ol class="steps">
+        <li>
+          <strong>Validate &amp; resolve ingredients.</strong>
+          <code>resolveNewItemIngredients</code> walks each item's recipe BOM + selected modifiers +
+          exclusions to a flat ingredient list.
+        </li>
+        <li>
+          <strong>Compute COGS &amp; totals.</strong> Per-item COGS is stored as
+          <code>cogsAtTransaction</code> =
+          <code>round(totalCogs/qty)</code> (<code>pos.ts:419</code>). Watch integer rounding.
+        </li>
+        <li>
+          <strong>Insert order + order_items + modifiers + exclusions</strong> in the same tx
+          (<code>pos.ts:405-442</code>).
+        </li>
+        <li>
+          <strong>Deduct inventory with locks.</strong> Per-ingredient net delta is summed across
+          items; <code>FOR UPDATE</code> lock taken per ingredient (<code>pos.ts:444-493</code>); a
+          <code>stockLedger</code> row is written.
+        </li>
+        <li>
+          <strong>Negative-stock alert.</strong> If an ingredient would go negative, a
+          per-area-manager alert notification is queued <em>outside</em> the tx
+          (<code>pos.ts:498-515</code>).
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Trap — exclusion restore direction</span>
+        The stock ledger records exclusions as IN/restore (<code>pos.ts:482-489</code>). Confirm the
+        sign convention: an "exclude onion" should <em>not</em> deduct onion, and on void should
+        restore correctly. This is the single easiest place to get inventory math wrong.
+      </div>
+
+      <div class="notice warn">
+        <span class="h">Trap — negative stock is allowed</span>
+        The order is <em>not</em> blocked when inventory would go negative; it only raises an alert.
+        Decide whether that is correct business behaviour or a gap.
+      </div>
+
+      <!-- ============================ 4 ============================ -->
+      <h2 class="sec" id="s4">Cancel-request lifecycle (void)</h2>
+
+      <p>
+        Order cancellation is deliberately split into four states so a cashier cannot unilaterally
+        void: <code>Pending → Approved → Executed</code>, plus <code>Rejected</code>. See
+        <code>src/lib/server/pos.ts:993-1195</code>.
+      </p>
+
+      <ol class="steps">
+        <li><code>createCancelRequest</code> — cashier opens a request (<code>Pending</code>).</li>
+        <li>
+          <code>approveCancelRequest</code> — a manager approves; order is <em>not yet</em> voided,
+          cashier is notified to press "Batal".
+        </li>
+        <li><code>rejectCancelRequest</code> — manager rejects.</li>
+        <li>
+          <code>executeApprovedCancel</code> — cashier runs it; in one tx the
+          request→<code>Executed</code>, the order→<code>Void</code>, and
+          <code>restoreInventoryForVoid</code> puts stock back.
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Trap — double execute</span>
+        <code>executeApprovedCancel</code> guards on <code>status==="Approved"</code> and
+        <code>order.status!=="Void"</code> (<code>pos.ts:1154-1159</code>) but the two checks are
+        <em>separate</em> reads/updates, not a single locked tx around the status read. Confirm
+        there is no TOCTOU where two cashiers execute the same approved request concurrently. The
+        order status write is in the tx; the request status read is before it.
+      </div>
+
+      <!-- ============================ 5 ============================ -->
+      <h2 class="sec" id="s5">SCM Procurement FSM (ADR 0002)</h2>
+
+      <p>
+        The new central-kitchen procurement flow. The spec lives in a transition table at
+        <code>src/lib/server/scm-fsm.ts:91</code>; <code>transition()</code>
+        (<code>scm-fsm.ts:244</code>) is the only mutator and runs all effects + audit inside one
+        row-locked tx.
+      </p>
+
+      <table class="fsm">
+        <tr>
+          <th>State</th>
+          <th>Key events → next</th>
+          <th>Actors</th>
+        </tr>
+        <tr>
+          <td class="state">Draft</td>
+          <td>submit→Pending · cancel→Cancelled</td>
+          <td>BA, SA</td>
+        </tr>
+        <tr>
+          <td class="state">Pending</td>
+          <td>open-review→UnderReview · withdraw→Draft · cancel</td>
+          <td>AP/SA review</td>
+        </tr>
+        <tr>
+          <td class="state">UnderReview</td>
+          <td>reject→Rejected · accept-and-ship→InTransit (writes stock) · cancel</td>
+          <td>AP/SA</td>
+        </tr>
+        <tr>
+          <td class="state">InTransit</td>
+          <td>mark-delivered→Delivered · cancel (reverse in-transit)</td>
+          <td>BA/SA</td>
+        </tr>
+        <tr>
+          <td class="state">Delivered</td>
+          <td>open-receive→ReviewingSJ · cancel (reverse)</td>
+          <td>BA/SA</td>
+        </tr>
+        <tr>
+          <td class="state">ReviewingSJ</td>
+          <td>
+            finish-receive→WaitingForPayment (sets received qty, writes stock, waste, invoice
+            snapshot) · cancel
+          </td>
+          <td>BA/SA</td>
+        </tr>
+        <tr>
+          <td class="state">WaitingForPayment</td>
+          <td>mark-paid→Finished · cancel</td>
+          <td>AP/SA</td>
+        </tr>
+        <tr>
+          <td class="term">Rejected / Finished / Cancelled</td>
+          <td colspan="2">terminal — no outgoing transitions</td>
+        </tr>
+      </table>
+
+      <div class="notice">
+        <span class="h">Invariant — item edits are state-gated</span>
+        <code>updateItem</code> (<code>scm-fsm.ts:385</code>) enforces: CA fields only in
+        <code>UnderReview</code>; BA received/rejected fields only in
+        <code>Delivered</code>/<code>ReviewingSJ</code>; quantity only in <code>Draft</code>. Verify
+        the UI cannot reach these fields outside the allowed state (the guard is server-side but the
+        UX must also hide them).
+      </div>
+
+      <div class="notice warn">
+        <span class="h">Trap — cancel effect direction</span>
+        Different cancel points run different reversal effects (<code
+          >reverseInTransitOnCancel</code
+        >
+        vs <code>reversePendingReviewOnCancel</code>). Confirm each reversal exactly undoes the
+        forward effect for that entry point; a missed reversal silently corrupts inventory/ledger.
+      </div>
+
+      <!-- ============================ 6 ============================ -->
+      <h2 class="sec" id="s6">Mutasi — branch↔branch transfer FSM (ADR 0006)</h2>
+
+      <p>
+        Mirrors the procurement FSM but for stock movement between two outlets, and the role matrix
+        is different. Spec at <code>src/lib/server/scm-transfer-fsm.ts:114</code>. A pure-logic
+        <strong>self-check exists</strong>:
+        <code>src/lib/server/scm-transfer-fsm.selfcheck.ts</code> — run it.
+      </p>
+
+      <table class="fsm">
+        <tr>
+          <th>State</th>
+          <th>Key events → next</th>
+          <th>Actors</th>
+        </tr>
+        <tr>
+          <td class="state">SuratJalanDraft</td>
+          <td>submit→PendingAMReview · cancel</td>
+          <td>BA</td>
+        </tr>
+        <tr>
+          <td class="state">PendingAMReview</td>
+          <td>approve→Approved · reject→Rejected · withdraw→Draft · cancel</td>
+          <td>AM</td>
+        </tr>
+        <tr>
+          <td class="state">Approved</td>
+          <td>ship→InTransit (writes stock) · withdraw · cancel</td>
+          <td>BA</td>
+        </tr>
+        <tr>
+          <td class="state">InTransit</td>
+          <td>mark-delivered→Delivered · cancel (reverse)</td>
+          <td>AM cancels</td>
+        </tr>
+        <tr>
+          <td class="state">Delivered</td>
+          <td>open-receive→ReviewingSJ · cancel</td>
+          <td>AM cancels</td>
+        </tr>
+        <tr>
+          <td class="state">ReviewingSJ</td>
+          <td>finish-receive→WaitingForPayment · cancel</td>
+          <td>AM cancels</td>
+        </tr>
+        <tr>
+          <td class="state">WaitingForPayment</td>
+          <td>mark-paid→Finished · cancel</td>
+          <td>AM cancels</td>
+        </tr>
+        <tr>
+          <td class="term">Rejected / Finished / Cancelled</td>
+          <td colspan="2">terminal</td>
+        </tr>
+      </table>
+
+      <div class="notice">
+        <span class="h">Invariant — super_admin &amp; admin_pusat</span>
+        <code>transitionTransfer</code> (<code>scm-transfer-fsm.ts:248</code>) allows
+        <code>super_admin</code> on every transition but <strong>never</strong>
+        <code>admin_pusat</code>. The self-check asserts exactly this. If you change the role
+        matrix, update the SPEC in the self-check too.
+      </div>
+
+      <div class="notice warn">
+        <span class="h">Trap — branch boundary is NOT in the FSM</span>
+        The FSM only checks <em>role</em>. The <em>specific</em> branch_admin must be from the
+        Sender or Receiver branch, enforced by <code>assertTransferAccess</code>
+        upstream (<code>scm-transfers.ts:361</code>). If a server fn forgets to call it, a BA at
+        branch A could move branch B's stock. Verify every transfer entrypoint calls the guard.
+      </div>
+
+      <!-- ============================ 7 ============================ -->
+      <h2 class="sec" id="s7">Legacy SCM — PR → PO → DN → Invoice</h2>
+
+      <p>
+        The older supply-chain path in <code>src/lib/server/scm.ts</code> (distinct from the FSM
+        above). Status checks are inline <code>throw new Error(...)</code>
+        guards rather than a table. Review each transition's precondition:
+      </p>
+
+      <div class="col2">
+        <ul>
+          <li>
+            <code>processPR</code> — PR must be <code>Pending</code> or
+            <code>Approved</code> (<code>scm.ts:326</code>).
+          </li>
+          <li>
+            <code>receivePO</code> — PO must be <code>Sent</code> or
+            <code>Partial</code> (<code>scm.ts:619</code>).
+          </li>
+          <li>
+            <code>shipDN</code> — delivery note must be
+            <code>Picking</code> (<code>scm.ts:891</code>).
+          </li>
+          <li>
+            <code>receiveDN</code> — must be <code>In Transit</code> or
+            <code>Partial Received</code> (<code>scm.ts:995</code>).
+          </li>
+          <li>
+            Transfers (legacy <code>stock_transfers</code>) gates at
+            <code>scm.ts:1746/1796/1854/1947</code>.
+          </li>
+        </ul>
+      </div>
+
+      <div class="notice">
+        <span class="h">Trap — two SCM systems coexist</span>
+        There is a <em>new</em> FSM-based procurement (§5) and a <em>legacy</em> procurement in
+        <code>scm.ts</code>. Confirm which routes point at which, and that they don't both write the
+        same tables / stock. Double-counting here is a classic financial bug.
+      </div>
+
+      <!-- ============================ 8 ============================ -->
+      <h2 class="sec" id="s8">Inventory, stock opname &amp; audit</h2>
+
+      <ol class="steps">
+        <li>
+          <strong>Stock opname submit.</strong> Records counted quantities; on discrepancy flagged
+          <code>Under Investigation</code> (<code>inventory.ts:419</code>).
+        </li>
+        <li>
+          <strong>Audit inventory (theoretical).</strong>
+          <code>getAuditInventory</code> (<code>audit-inventory.ts:26</code>) recomputes expected
+          consumption from completed orders → BOM. Compare against actuals.
+        </li>
+        <li>
+          <strong>Approve / resolve.</strong>
+          <code>approveStockOpname</code> (<code>inventory.ts:453</code>) only proceeds from
+          <code>Under Investigation</code> (<code>inventory.ts:593</code>) and writes the
+          adjustment.
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Trap — "Completed" only</span>
+        The audit theoretical calc filters
+        <code>orders.status = "Completed"</code> (<code>audit-inventory.ts:34</code>) and ignores
+        voided/cancelled — but the order-create flow deducts inventory at <em>creation</em>, not
+        completion. If an order is voided, inventory was restored but it still won't be in
+        "Completed", so the theoretical-vs-actual gap must be read with that in mind.
+      </div>
+
+      <!-- ============================ 9 ============================ -->
+      <h2 class="sec" id="s9">Finance &amp; period control</h2>
+
+      <p>
+        <code>getFinanceSummary</code> (<code>finance.ts:44</code>) is gated to
+        <code>super_admin</code> only. It sums orders + manual revenues/expenses + waste +
+        transfers. Period control (<code>/period-control</code>) closes accounting periods.
+      </p>
+
+      <div class="notice warn">
+        <span class="h">Trap — role scope of finance</span>
+        Finance summary requires <code>super_admin</code>. Confirm admin_pusat / area managers have
+        no path to the same numbers through a different fn (e.g. a branch-scoped fn that aggregates
+        globally). Cross-check <code>finance.ts</code>
+        callers.
+      </div>
+
+      <div class="notice">
+        <span class="h">Invariant — integer currency</span>
+        All money is <code>integer</code> (Rupiah, no sen). <code>numeric</code> is deliberately
+        avoided per project convention. Verify no new column uses <code>numeric</code> (it maps to
+        <code>string</code> in Drizzle and breaks math).
+      </div>
+
+      <!-- ============================ 10 ============================ -->
+      <h2 class="sec" id="s10">Document codes &amp; master data</h2>
+
+      <p>
+        <code>generateDocumentCode</code> (<code>document-codes.ts:36</code>) produces
+        <code>&lt;PREFIX&gt;/&lt;BRANCH&gt;/&lt;ddmmyy&gt;/&lt;serial&gt;</code> using an atomic
+        <code>ON CONFLICT DO UPDATE</code> serial counter that resets daily.
+      </p>
+
+      <div class="notice">
+        <span class="h">Trap — preview vs generate</span>
+        <code>previewNextDocumentCode</code> (<code>document-codes.ts:72</code>) does
+        <em>not</em> increment. If the UI shows a preview and then the real generate runs, a
+        concurrent create could collide on the same serial — verify callers don't treat the preview
+        as reserved.
+      </div>
+
+      <ul>
+        <li>
+          <strong>Seeding:</strong> <code>vp run migrate-csv</code> is the source of truth;
+          <code>seed-data.ts</code> is deprecated/stale. On a live DB, several migrations
+          <code>TRUNCATE … CASCADE</code> and wipe operational data — never run full migrate-csv
+          against production without a <code>pg_dump</code> first.
+        </li>
+        <li>
+          <strong>Recipe branch visibility:</strong> <code>recipeBranches</code> governs which
+          outlet sees which menu item (no assignment = everywhere).
+        </li>
+      </ul>
+
+      <!-- ============================ 11 ============================ -->
+      <h2 class="sec" id="s11">Cross-cutting things to notice</h2>
+
+      <div class="card">
+        <h4>1 · Transactions &amp; locks</h4>
+        Every money/stock mutation should be in a <code>db.transaction</code> with
+        <code>FOR UPDATE</code> on the rows it reads-then-writes. Spot-check that new code paths
+        don't sneak an UPDATE outside the tx (notifications are intentionally outside, which is
+        fine).
+      </div>
+
+      <div class="card">
+        <h4>2 · Audit logging</h4>
+        FSM transitions and cancels write audit rows. Verify the audit column captures
+        <code>fromState</code>/<code>toState</code>/<code>actor</code> — it's the only forensic
+        trail for stock disputes.
+      </div>
+
+      <div class="card">
+        <h4>3 · Notifications are best-effort</h4>
+        Alerts/notifications are written <em>outside</em> the main tx, so a tx rollback won't leave
+        a dangling notification but a notification failure won't roll back the business action
+        either. Confirm that's acceptable per flow.
+      </div>
+
+      <div class="card">
+        <h4>4 · Server functions = the API</h4>
+        There are no separate REST controllers; each <code>createServerFn</code> in
+        <code>src/lib/server/*.ts</code> is an endpoint. Review authorization at the top of every
+        handler (<code>requireAuth</code> / <code>requireRole</code> / branch assert). A missing
+        guard = unauthenticated mutation.
+      </div>
+
+      <div class="card">
+        <h4>5 · Two FSMs, two self-checks</h4>
+        Procurement FSM has no self-check file (only the transfer one does). Consider writing a
+        parallel <code>scm-fsm.selfcheck.ts</code> so the procurement state matrix is locked the
+        same way.
+      </div>
+
+      <div class="notice warn">
+        <span class="h">Final reminder — verify, don't trust</span>
+        This guide was derived from reading the source on <span id="today"></span>. Line numbers
+        drift as the repo changes. If a cited line no longer matches, re-grep the symbol — the
+        behaviour, not the number, is what matters.
+      </div>
+
+      <footer>
+        omoiyari-pos flow review guide · Tufte-style · open alongside the source in your editor. Run
+        self-checks with <code>npx tsx src/lib/server/scm-transfer-fsm.selfcheck.ts</code>.
+      </footer>
+    </div>
+    <script>
+      document.getElementById("today").textContent = new Date().toISOString().slice(0, 10);
+    </script>
+  </body>
+</html>

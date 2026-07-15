@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Skenario 01 — Master Data: Bahan → Resep → Modifier</title>
+    <style>
+      :root {
+        --ink: #1a1a1a;
+        --paper: #fffff8;
+        --muted: #6b6256;
+        --faint: #b3a99a;
+        --rule: #d8cfbf;
+        --accent: #1f4e5f;
+        --accent2: #8a3324;
+        --warn: #b8860b;
+        --band: #f7f3e9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        font-size: 17px;
+      }
+      body {
+        background: var(--paper);
+        color: var(--ink);
+        font-family:
+          "ET Book", "Palatino Linotype", "Palatino", "Georgia", "Times New Roman", serif;
+        line-height: 1.5;
+        margin: 0;
+        padding: 0;
+        text-rendering: optimizeLegibility;
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 4rem 3.5rem 6rem;
+      }
+      header.masthead {
+        border-bottom: 3px double var(--ink);
+        padding-bottom: 1.2rem;
+        margin-bottom: 1.5rem;
+      }
+      header.masthead h1 {
+        font-size: 2.3rem;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        margin: 0 0 0.2rem;
+        line-height: 1.1;
+      }
+      header.masthead .sub {
+        font-style: italic;
+        color: var(--muted);
+        font-size: 1.02rem;
+      }
+      header.masthead .meta {
+        margin-top: 0.8rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: var(--faint);
+      }
+      h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 2.8rem 0 0.8rem;
+        padding-bottom: 0.3rem;
+        border-bottom: 1px solid var(--rule);
+        counter-increment: sec;
+      }
+      h2::before {
+        content: counter(sec) ". ";
+        color: var(--accent);
+      }
+      h3 {
+        font-size: 1.12rem;
+        font-weight: 600;
+        margin: 1.6rem 0 0.5rem;
+        color: var(--accent);
+      }
+      p {
+        margin: 0.6rem 0;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+        border-bottom: 1px solid var(--rule);
+      }
+      a:hover {
+        border-bottom-color: var(--accent);
+      }
+      code {
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 0.82em;
+        background: var(--band);
+        padding: 0.05em 0.35em;
+        border-radius: 2px;
+        color: var(--accent2);
+        white-space: nowrap;
+      }
+      .back {
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+      }
+      .lead {
+        font-size: 1.1rem;
+        max-width: 64ch;
+      }
+      .sidenote {
+        float: right;
+        clear: right;
+        width: 17rem;
+        margin-right: -20rem;
+        margin-top: 0.4rem;
+        margin-bottom: 1rem;
+        font-size: 0.78rem;
+        line-height: 1.4;
+        color: var(--muted);
+        border-left: 1px solid var(--rule);
+        padding-left: 0.8rem;
+      }
+      .sidenote .tag {
+        display: inline-block;
+        font-size: 0.66rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--accent2);
+        margin-bottom: 0.2rem;
+      }
+      @media (max-width: 1100px) {
+        .sidenote {
+          float: none;
+          width: auto;
+          margin: 0.6rem 0;
+          border-left: 3px solid var(--rule);
+        }
+        .wrap {
+          padding: 2.5rem 1.4rem 4rem;
+        }
+      }
+      .notice {
+        background: var(--band);
+        border-left: 4px solid var(--accent2);
+        padding: 0.7rem 1rem;
+        margin: 0.9rem 0;
+        font-size: 0.95rem;
+      }
+      .notice .h {
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 0.72rem;
+        color: var(--accent2);
+      }
+      .notice.warn {
+        border-left-color: var(--warn);
+      }
+      .notice.warn .h {
+        color: var(--warn);
+      }
+      ol.steps {
+        counter-reset: step;
+        list-style: none;
+        padding-left: 0;
+        margin-left: 0;
+      }
+      ol.steps > li {
+        counter-increment: step;
+        position: relative;
+        padding-left: 2.6rem;
+        margin: 0.9rem 0;
+      }
+      ol.steps > li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0.05rem;
+        width: 1.8rem;
+        height: 1.8rem;
+        background: var(--ink);
+        color: var(--paper);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-variant-numeric: tabular-nums;
+      }
+      ol.steps > li b {
+        color: var(--accent);
+      }
+      .pill {
+        display: inline-block;
+        font-size: 0.68rem;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        padding: 0.08rem 0.45rem;
+        border-radius: 999px;
+        margin-right: 0.3rem;
+        border: 1px solid var(--rule);
+        color: var(--muted);
+      }
+      .pill.auth {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .pill.inv {
+        border-color: var(--accent2);
+        color: var(--accent2);
+      }
+      .pill.fsm {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+      .card {
+        background: var(--band);
+        border: 1px solid var(--rule);
+        padding: 0.9rem 1.1rem;
+        margin: 1rem 0;
+      }
+      .card h4 {
+        margin: 0 0 0.4rem;
+        font-size: 1rem;
+        color: var(--accent);
+      }
+      table.fld {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 0.8rem 0 1.2rem;
+        font-size: 0.84rem;
+      }
+      table.fld th,
+      table.fld td {
+        border: 1px solid var(--rule);
+        padding: 0.35rem 0.6rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      table.fld th {
+        background: var(--band);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.68rem;
+        letter-spacing: 0.5px;
+      }
+      table.fld td.k {
+        font-weight: 600;
+        white-space: nowrap;
+        color: var(--accent);
+      }
+      footer {
+        margin-top: 5rem;
+        border-top: 3px double var(--ink);
+        padding-top: 1rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      body {
+        counter-reset: sec;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <h1>Skenario 01 — Master Data</h1>
+        <div class="sub">Tambah bahan baku → buat resep → pasang modifier &amp; visibility</div>
+        <div class="meta">Bahasa Indonesia · gaya Tufte · nomor baris dari sumber</div>
+      </header>
+      <p class="back"><a href="00-INDEKS.html">← Kembali ke indeks</a></p>
+
+      <p class="lead">
+        Skenario ini menelusuri rantai master data paling dasar: kita buat satu bahan baku, lalu
+        resep yang memakai bahan itu, lalu grup modifier dan aturan visibility cabang. Fokus review:
+        <b>siapa yang berhak</b>, <b>validasi Zod</b>, dan — yang paling penting —
+        <b>kapan HPP (totalCogs) benar-benar terhitung</b>.
+      </p>
+
+      <!-- ============ A ============ -->
+      <h2 id="a">A. Tambah bahan baku</h2>
+
+      <aside class="sidenote">
+        <span class="tag">Otorisasi</span>
+        Semua mutasi master bahan hanya untuk
+        <code>super_admin</code>, <code>admin_pusat</code>,
+        <code>central_kitchen</code> (<code>ingredients.ts:80</code>). Bukan
+        <code>branch_admin</code> dan bukan <code>area_manager</code>.
+        <span class="tag" style="margin-top: 0.5rem">UI</span>
+        <code>src/routes/_layout/ingredients/index.tsx</code> membungkus tombol "Tambah Bahan"
+        (baris ~201) dalam <code>RoleGuard</code> dengan role yang sama.
+      </aside>
+
+      <ol class="steps">
+        <li>
+          Buka <code>/ingredients</code>. Klik <b>Tambah Bahan</b> → modal form terbuka
+          (<code>ingredients/index.tsx:201,208</code>).
+        </li>
+        <li>
+          Isi field berikut (divalidasi oleh <code>ingredientInput</code> Zod di
+          <code>ingredients.ts:11</code>):
+          <table class="fld">
+            <tr>
+              <th>Field</th>
+              <th>Aturan Zod</th>
+              <th>Catatan</th>
+            </tr>
+            <tr>
+              <td class="k">code</td>
+              <td>string 1–30, wajib</td>
+              <td>Unik (constraint DB)</td>
+            </tr>
+            <tr>
+              <td class="k">name</td>
+              <td>string 1–100, wajib</td>
+              <td></td>
+            </tr>
+            <tr>
+              <td class="k">category</td>
+              <td>enum Fresh|Dry|Packaging</td>
+              <td></td>
+            </tr>
+            <tr>
+              <td class="k">skuType</td>
+              <td>enum RM|SFG|FG</td>
+              <td>RM=bahan mentah</td>
+            </tr>
+            <tr>
+              <td class="k">purchaseUnit / stockUnit</td>
+              <td>string wajib</td>
+              <td>Satuan beli vs satuan stok</td>
+            </tr>
+            <tr>
+              <td class="k">conversionFactor</td>
+              <td>int ≥ 1</td>
+              <td>1 beli = N stok</td>
+            </tr>
+            <tr>
+              <td class="k">averageCost</td>
+              <td>int ≥ 0</td>
+              <td>Ini HPP per unit stok</td>
+            </tr>
+            <tr>
+              <td class="k">plannedCost</td>
+              <td>int ≥ 0, opsional</td>
+              <td></td>
+            </tr>
+            <tr>
+              <td class="k">rop / roq</td>
+              <td>int ≥ 0 (default 0)</td>
+              <td>Reorder point/qty</td>
+            </tr>
+            <tr>
+              <td class="k">moq</td>
+              <td>int ≥ 1 (default 1)</td>
+              <td>Kelipatan saat PR</td>
+            </tr>
+            <tr>
+              <td class="k">countable</td>
+              <td>boolean (default true)</td>
+              <td></td>
+            </tr>
+          </table>
+        </li>
+        <li>
+          Submit → <code>createIngredient</code> (<code>ingredients.ts:77</code>). Server:
+          <code>requireRole(...)</code>, lalu <code>ingredientInput.parse(data)</code>, lalu
+          <code>insert</code> + audit log <code>CREATE</code>.
+        </li>
+        <li>Konfirmasi toast "Bahan baku berhasil ditambahkan" dan baris baru muncul di tabel.</li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Jebakan — tidak ada stok otomatis</span>
+        <code>createIngredient</code> hanya menyisipkan baris <code>ingredients</code>. Tidak ada
+        baris <code>inventory</code> yang dibuat. Artinya stok awal bahan = <b>0</b>
+        di semua cabang sampai ada pengiriman/opname yang menambahnya. Saat review, pastikan UI
+        tidak memberi kesan stok sudah ada.
+      </div>
+
+      <div class="notice warn">
+        <span class="h">Jebakan — hapus (soft delete)</span>
+        <code>deleteIngredient</code> (<code>ingredients.ts:144</code>) hanya soft-delete
+        (status→Inactive) kecuali <code>hardDelete:true</code>. Hard delete diblokir jika bahan
+        masih dirujuk di <code>recipeIngredients</code> (<code>ingredients.ts:162</code>). Periksa
+        apakah UI menawarkan hard delete dan apakah guard ini cukup.
+      </div>
+
+      <!-- ============ B ============ -->
+      <h2 id="b">B. Ubah HPP bahan → roll-up ke resep</h2>
+
+      <ol class="steps">
+        <li>
+          Buka <code>/ingredients/$ingId</code> (detail). Klik
+          <b>Edit</b> (<code>$ingId.tsx:78</code>).
+        </li>
+        <li>
+          Ubah <code>averageCost</code> (field "HPP (Rp)" di <code>$ingId.tsx:167</code>), lalu
+          <b>Simpan</b>.
+        </li>
+        <li>
+          Submit → <code>updateIngredient</code> (<code>ingredients.ts:101</code>). Server cek: jika
+          <code>"averageCost" in updates</code> (<code>ingredients.ts:119</code>), panggil
+          <code>recalculateRecipeCostsForIngredient(id)</code>.
+        </li>
+        <li>
+          <code>cost-rollup.ts:9</code> mencari semua <code>recipeIngredients</code> yang memakai
+          bahan ini, lalu per resep menjumlahkan <code>averageCost × quantity</code> dan menulis
+          <code>recipes.totalCogs</code> (<code>cost-rollup.ts:25-38</code>).
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Invarian — roll-up hanya level-1</span>
+        <code>recalculateRecipeCosts</code> (<code>cost-rollup.ts:25</code>) HANYA menjumlahkan
+        <code>recipeIngredients</code>. Ia <b>tidak</b> menelusuri <code>recipeChildRecipes</code>
+        (sub-resep). Jika resep induk memakai sub-resep, HPP sub-resep tidak masuk ke
+        <code>totalCogs</code> induk. Saat review, pastikan ini memang disengaja atau ada roll-up
+        rekursif di tempat lain.
+      </div>
+
+      <!-- ============ C ============ -->
+      <h2 id="c">C. Buat resep yang memakai bahan tadi</h2>
+
+      <aside class="sidenote">
+        <span class="tag">Otorisasi</span>
+        <code>createRecipe</code> butuh <code>super_admin</code> atau
+        <code>admin_pusat</code> (<code>recipes.ts:231</code>) — beda dari bahan yang mengizinkan
+        <code>central_kitchen</code>. Perhatikan ketidakselarasan ini.
+        <span class="tag" style="margin-top: 0.5rem">Skema input</span>
+        <code>recipeInput</code> (<code>recipes.ts:32</code>): <code>ingredients</code> tiap item
+        butuh <code>quantity: int ≥ 1</code> (<code>recipes.ts:24</code>).
+      </aside>
+
+      <ol class="steps">
+        <li>Buka <code>/recipes</code>, klik tambah resep (form wizard bersama).</li>
+        <li>
+          Isi <code>recipeInput</code> (<code>recipes.ts:32</code>):
+          <ul>
+            <li>
+              <code>code</code>, <code>name</code>,
+              <code>category</code> (makanan|minuman|snack|add_ons|paket_bundle),
+              <code>basePrice</code> (int ≥ 0).
+            </li>
+            <li>
+              <code>isSubRecipe</code> (default false), <code>isBOGO</code> (default false),
+              <code>isStaffMeal</code> tidak di input ini (di-set via update/flag lain).
+            </li>
+            <li><code>brandIds[]</code> — link ke brand.</li>
+            <li>
+              <code>ingredients[]</code> — pasang bahan dari langkah A dengan
+              <code>quantity</code> (int ≥ 1).
+            </li>
+            <li><code>childRecipes[]</code> (opsional) — sub-resep bersarang.</li>
+            <li><code>modifierGroupIds[]</code> (opsional) — grup modifier.</li>
+            <li><code>branchIds[]</code> (opsional, nullable) — visibility cabang.</li>
+          </ul>
+        </li>
+        <li>
+          Submit → <code>createRecipe</code> (<code>recipes.ts:228</code>). Urutan tulis:
+          <code>recipes</code> → <code>recipeBrands</code> → <code>recipeIngredients</code> →
+          <code>recipeChildRecipes</code> → <code>recipeModifierGroups</code> →
+          <code>recipeBranches</code> (<code>recipes.ts:234-293</code>).
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Jebakan — totalCogs = 0 saat create</span>
+        <code>createRecipe</code> <b>tidak</b> memanggil roll-up HPP. Kolom
+        <code>totalCogs</code> resep baru mengambil default skema =
+        <b>0</b> (<code>schema.ts</code>: <code>totalCogs: integer ... default 0</code>). HPP baru
+        terhitung saat (a) bahan diubah HPP-nya nanti, atau (b)
+        <code>recalculateAllRecipeCosts</code>
+        (<code>recipes.ts:408</code>, butuh super_admin) dijalankan. Saat review, cek apakah UI
+        menampilkan "HPP Rp 0" misleadingly setelah create.
+      </div>
+
+      <div class="notice warn">
+        <span class="h">Jebakan — semantic visibility cabang</span>
+        Jika <code>branchIds</code> diisi → resep HANYA muncul di cabang tersebut (<code
+          >recipeBranches</code
+        >
+        ada). Jika <code>branchIds</code> kosong/<code>null</code> → tidak ada baris
+        <code>recipeBranches</code> → "terlihat di semua cabang" (<code>recipes.ts:290</code>, dan
+        query <code>getPosMenu</code> di <code>pos.ts:50-55</code>). Kebalikannya mudah
+        terbolak-balik: "kosong = semua" bukan "kosong = tidak ada".
+      </div>
+
+      <!-- ============ D ============ -->
+      <h2 id="d">D. Grup modifier &amp; eksklusi (opsional tapi penting)</h2>
+
+      <ol class="steps">
+        <li>
+          Buka <code>/modifier-groups</code>. Buat grup (mis. "Level Gula") dengan
+          <code>minSelection</code>/<code>maxSelection</code>.
+        </li>
+        <li>
+          Tambah <code>modifiers</code> ke grup (mis. "Tanpa Gula", harga 0,
+          <code>isExclusion</code> bila ini pengurang).
+        </li>
+        <li>
+          Pasang grup ke resep via <code>modifierGroupIds</code> (langkah C) — link disimpan di
+          <code>recipeModifierGroups</code>.
+        </li>
+        <li>
+          Untuk eksklusi bahan (mis. "tanpa bawang"), entri <code>recipeModifierExclusions</code> /
+          <code>modifierIngredients</code> akan dipakai saat order oleh
+          <code>resolveNewItemIngredients</code> — lihat Skenario 02.
+        </li>
+      </ol>
+
+      <div class="card">
+        <h4>Kenapa ini penting untuk stok</h4>
+        Modifier &amp; eksklusi mengubah BOM per-item saat order. Jika eksklusi tidak dikelola
+        benar, stok bahan akan terpotong padahal seharusnya di-restore. Ini titik paling sering
+        salah di Skenario 02.
+      </div>
+
+      <!-- ============ E ============ -->
+      <h2 id="e">E. Verifikasi HPP &amp; lintasan</h2>
+
+      <ol class="steps">
+        <li>
+          Buka detail resep <code>/recipes/$recipeId</code> (<code>getRecipeDetail</code>,
+          <code>recipes.ts:148</code>) — periksa <code>totalCogs</code> sudah ≠ 0 setelah roll-up.
+        </li>
+        <li>
+          Bila perlu, jalankan <code>recalculateAllRecipeCosts</code> (<code>recipes.ts:408</code>,
+          super_admin) untuk hitung ulang semua.
+        </li>
+        <li>
+          Lacak di <code>system_logs</code> / audit: "Create Ingredient", "Update Ingredient",
+          "Create Recipe" — pastikan ada jejak audit untuk tiap langkah.
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Checklist akhir scenario 01</span>
+        <ul>
+          <li>Role guard benar di tiap server fn (bahan vs resep beda izin).</li>
+          <li>Validasi Zod sesuai (int, enum, min).</li>
+          <li><code>totalCogs</code> resep tidak dibiarkan 0 setelah alur normal.</li>
+          <li>Soft-delete bahan aman terhadap resep yang merujuk.</li>
+          <li>Visibility cabang: "kosong = semua cabang".</li>
+        </ul>
+      </div>
+
+      <footer>
+        Skenario 01 · Master Data · <a href="00-INDEKS.html">inde ks</a> · berikutnya:
+        <a href="02-penjualan-pos.html">02 Penjualan POS</a>.
+      </footer>
+    </div>
+  </body>
+</html>

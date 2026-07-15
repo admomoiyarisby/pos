@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Skenario 03 — SCM Procurement (FSM ADR 0002)</title>
+    <style>
+      :root {
+        --ink: #1a1a1a;
+        --paper: #fffff8;
+        --muted: #6b6256;
+        --faint: #b3a99a;
+        --rule: #d8cfbf;
+        --accent: #1f4e5f;
+        --accent2: #8a3324;
+        --warn: #b8860b;
+        --band: #f7f3e9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        font-size: 17px;
+      }
+      body {
+        background: var(--paper);
+        color: var(--ink);
+        font-family:
+          "ET Book", "Palatino Linotype", "Palatino", "Georgia", "Times New Roman", serif;
+        line-height: 1.5;
+        margin: 0;
+        padding: 0;
+        text-rendering: optimizeLegibility;
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 4rem 3.5rem 6rem;
+      }
+      header.masthead {
+        border-bottom: 3px double var(--ink);
+        padding-bottom: 1.2rem;
+        margin-bottom: 1.5rem;
+      }
+      header.masthead h1 {
+        font-size: 2.3rem;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        margin: 0 0 0.2rem;
+        line-height: 1.1;
+      }
+      header.masthead .sub {
+        font-style: italic;
+        color: var(--muted);
+        font-size: 1.02rem;
+      }
+      header.masthead .meta {
+        margin-top: 0.8rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: var(--faint);
+      }
+      h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 2.8rem 0 0.8rem;
+        padding-bottom: 0.3rem;
+        border-bottom: 1px solid var(--rule);
+        counter-increment: sec;
+      }
+      h2::before {
+        content: counter(sec) ". ";
+        color: var(--accent);
+      }
+      h3 {
+        font-size: 1.12rem;
+        font-weight: 600;
+        margin: 1.6rem 0 0.5rem;
+        color: var(--accent);
+      }
+      p {
+        margin: 0.6rem 0;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+        border-bottom: 1px solid var(--rule);
+      }
+      a:hover {
+        border-bottom-color: var(--accent);
+      }
+      code {
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 0.82em;
+        background: var(--band);
+        padding: 0.05em 0.35em;
+        border-radius: 2px;
+        color: var(--accent2);
+        white-space: nowrap;
+      }
+      .back {
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+      }
+      .lead {
+        font-size: 1.1rem;
+        max-width: 64ch;
+      }
+      .sidenote {
+        float: right;
+        clear: right;
+        width: 17rem;
+        margin-right: -20rem;
+        margin-top: 0.4rem;
+        margin-bottom: 1rem;
+        font-size: 0.78rem;
+        line-height: 1.4;
+        color: var(--muted);
+        border-left: 1px solid var(--rule);
+        padding-left: 0.8rem;
+      }
+      .sidenote .tag {
+        display: inline-block;
+        font-size: 0.66rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--accent2);
+        margin-bottom: 0.2rem;
+      }
+      @media (max-width: 1100px) {
+        .sidenote {
+          float: none;
+          width: auto;
+          margin: 0.6rem 0;
+          border-left: 3px solid var(--rule);
+        }
+        .wrap {
+          padding: 2.5rem 1.4rem 4rem;
+        }
+      }
+      .notice {
+        background: var(--band);
+        border-left: 4px solid var(--accent2);
+        padding: 0.7rem 1rem;
+        margin: 0.9rem 0;
+        font-size: 0.95rem;
+      }
+      .notice .h {
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 0.72rem;
+        color: var(--accent2);
+      }
+      .notice.warn {
+        border-left-color: var(--warn);
+      }
+      .notice.warn .h {
+        color: var(--warn);
+      }
+      ol.steps {
+        counter-reset: step;
+        list-style: none;
+        padding-left: 0;
+        margin-left: 0;
+      }
+      ol.steps > li {
+        counter-increment: step;
+        position: relative;
+        padding-left: 2.6rem;
+        margin: 0.9rem 0;
+      }
+      ol.steps > li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0.05rem;
+        width: 1.8rem;
+        height: 1.8rem;
+        background: var(--ink);
+        color: var(--paper);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-variant-numeric: tabular-nums;
+      }
+      ol.steps > li b {
+        color: var(--accent);
+      }
+      .pill {
+        display: inline-block;
+        font-size: 0.68rem;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        padding: 0.08rem 0.45rem;
+        border-radius: 999px;
+        margin-right: 0.3rem;
+        border: 1px solid var(--rule);
+        color: var(--muted);
+      }
+      .pill.auth {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .pill.inv {
+        border-color: var(--accent2);
+        color: var(--accent2);
+      }
+      .pill.fsm {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+      table.fsm {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 1rem 0 1.5rem;
+        font-size: 0.83rem;
+      }
+      table.fsm th,
+      table.fsm td {
+        border: 1px solid var(--rule);
+        padding: 0.4rem 0.6rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      table.fsm th {
+        background: var(--band);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.66rem;
+        letter-spacing: 0.5px;
+      }
+      table.fsm td.state {
+        font-weight: 600;
+        color: var(--accent);
+        white-space: nowrap;
+      }
+      table.fsm td.term {
+        color: var(--faint);
+        font-style: italic;
+      }
+      footer {
+        margin-top: 5rem;
+        border-top: 3px double var(--ink);
+        padding-top: 1rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      body {
+        counter-reset: sec;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <h1>Skenario 03 — SCM Procurement</h1>
+        <div class="sub">Alur procure-to-pay baru (FSM, ADR 0002)</div>
+        <div class="meta">Bahasa Indonesia · gaya Tufte · sumber: scm-fsm.ts</div>
+      </header>
+      <p class="back"><a href="00-INDEKS.html">← Kembali ke indeks</a></p>
+
+      <p class="lead">
+        Ini procurement pusat (bahan dari supplier ke Central Kitchen). Seluruh alur dikendalikan
+        oleh <b>tabel transisi</b> di <code>scm-fsm.ts:91</code>, dan
+        <code>transition()</code> (<code>scm-fsm.ts:244</code>) adalah satu-satunya pemutar status —
+        berjalan dalam satu tx terkunci baris. Fokus review: <b>actor per transisi</b>,
+        <b>efek per status</b>, dan <b>arah reversal saat cancel</b>.
+      </p>
+
+      <h2 id="state">Tabel status &amp; transisi (spesifikasi)</h2>
+
+      <table class="fsm">
+        <tr>
+          <th>Status</th>
+          <th>Event → next</th>
+          <th>Actor</th>
+          <th>Efek penting</th>
+        </tr>
+        <tr>
+          <td class="state">Draft</td>
+          <td>submit→Pending · cancel→Cancelled</td>
+          <td>BA, SA</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td class="state">Pending</td>
+          <td>open-review→UnderReview · withdraw→Draft · cancel</td>
+          <td>AP/SA review</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td class="state">UnderReview</td>
+          <td>reject→Rejected · accept-and-ship→InTransit · cancel</td>
+          <td>AP/SA</td>
+          <td>copyReadyToPicked + writeInTransitInventory</td>
+        </tr>
+        <tr>
+          <td class="state">InTransit</td>
+          <td>mark-delivered→Delivered · cancel</td>
+          <td>BA/SA</td>
+          <td>moveStockToPendingReview</td>
+        </tr>
+        <tr>
+          <td class="state">Delivered</td>
+          <td>open-receive→ReviewingSJ · cancel</td>
+          <td>BA/SA</td>
+          <td>reversePendingReviewOnCancel</td>
+        </tr>
+        <tr>
+          <td class="state">ReviewingSJ</td>
+          <td>finish-receive→WaitingForPayment · cancel</td>
+          <td>BA/SA</td>
+          <td>setReceived + writeReceivedStock + writeRejectedWaste + generateInvoiceSnapshot</td>
+        </tr>
+        <tr>
+          <td class="state">WaitingForPayment</td>
+          <td>mark-paid→Finished · cancel</td>
+          <td>AP/SA</td>
+          <td>markInvoicePaid</td>
+        </tr>
+        <tr>
+          <td class="term">Rejected / Finished / Cancelled</td>
+          <td colspan="3">terminal — tidak ada transisi keluar</td>
+        </tr>
+      </table>
+
+      <div class="notice">
+        <span class="h">Invarian — super_admin di mana saja</span>
+        <code>super_admin</code> diizinkan pada <em>setiap</em> transisi (override darurat). Ini
+        tidak tertulis di tabel tapi ditambahkan saat dispatch. Saat review, sadari bahwa
+        super_admin bisa lewati review area manager.
+      </div>
+
+      <!-- ============ A ============ -->
+      <h2 id="a">A. Buat procurement (Draft)</h2>
+
+      <aside class="sidenote">
+        <span class="tag">Otorisasi</span>
+        <code>createProcurement</code> (<code>scm-queries.ts:36</code>) butuh
+        <code>branch_admin</code> atau <code>super_admin</code>. Bukan admin_pusat di sini (beda
+        dari Mutasi!).
+        <span class="tag" style="margin-top: 0.5rem">Kode dokumen</span>
+        Kode otomatis <code>PR/&lt;branch&gt;/ddmmyy/serial</code> via
+        <code>generateDocumentCode("PR", branch.code)</code> (<code>scm-queries.ts:47</code>).
+      </aside>
+
+      <ol class="steps">
+        <li>
+          Di UI procurement, BA isi items (ingredientId + quantity) →
+          <code>createProcurement</code> (<code>scm-queries.ts:22</code>).
+        </li>
+        <li>
+          Server generate kode, insert <code>scmProcurements</code> status <code>Draft</code>,
+          insert <code>scmProcurementItems</code> dengan <code>unitPrice</code> di-snapshot dari
+          <code>ingredients.averageCost</code> (<code>scm-queries.ts:64-84</code>).
+        </li>
+        <li>
+          Tulis audit <code>create</code> (fromState=null → toState=Draft)
+          (<code>scm-queries.ts:88</code>).
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Jebakan — unitPrice snapshot</span>
+        Harga di-snapshot saat create. Bila <code>averageCost</code> bahan berubah nanti,
+        <code>unitPrice</code> di item procurement <b>tidak</b> ikut berubah
+        (<code>scm-queries.ts:82</code>). Saat review, pastikan invoice memakai snapshot ini (bukan
+        live cost) — dan itu memang yang diinginkan.
+      </div>
+
+      <!-- ============ B ============ -->
+      <h2 id="b">B. Submit → Pending → review</h2>
+
+      <ol class="steps">
+        <li>
+          BA klik submit → <code>transition(id, "submit", …)</code> → Draft→Pending. Actor BA/SA.
+          Tanpa efek stok.
+        </li>
+        <li>
+          Admin Pusat/SA klik "open review" → event <code>open-review</code> → Pending→UnderReview,
+          catat <code>reviewingById</code> (<code>scm-fsm.ts:274</code>).
+        </li>
+      </ol>
+
+      <!-- ============ C ============ -->
+      <h2 id="c">C. Accept &amp; ship (UnderReview → InTransit)</h2>
+
+      <ol class="steps">
+        <li>
+          AP/SA klik "accept and ship" → <code>accept-and-ship</code> → UnderReview→InTransit.
+        </li>
+        <li>
+          <b>Efek</b> (<code>scm-fsm.ts:115-118</code>): <code>copyReadyToPicked</code> +
+          <code>writeInTransitInventory</code> (stok dipindah ke posisi in-transit). Berjalan dalam
+          tx yang sama dengan perubahan status.
+        </li>
+        <li>
+          Edit item (CA): <code>updateItem</code> dengan <code>caDecision</code>/<code
+            >readyQuantity</code
+          >
+          hanya diizinkan saat <code>UnderReview</code> (<code>scm-fsm.ts:408</code>).
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Invarian — edit item state-gated</span>
+        <code>updateItem</code> (<code>scm-fsm.ts:385</code>) memaksa: field CA hanya di
+        UnderReview; field BA (received/rejected) hanya di Delivered/ReviewingSJ; field quantity
+        hanya di Draft. UI harus menyembunyikan field di luar status yang benar.
+      </div>
+
+      <!-- ============ D ============ -->
+      <h2 id="d">D. Terima &amp; invoice (Delivered → WaitingForPayment)</h2>
+
+      <ol class="steps">
+        <li>
+          BA klik "mark delivered" → <code>mark-delivered</code> → InTransit→Delivered (efek
+          <code>moveStockToPendingReview</code>).
+        </li>
+        <li>
+          BA klik "open receive" → <code>open-receive</code> → Delivered→ReviewingSJ (catat
+          <code>receivingById</code>).
+        </li>
+        <li>
+          BA isi received/rejected per item → <code>updateItem</code> (BA fields, status
+          ReviewingSJ/Delivered).
+        </li>
+        <li>
+          BA klik "finish receive" → <code>finish-receive</code> → ReviewingSJ→WaitingForPayment.
+          <b>Efek</b> (<code>scm-fsm.ts:146-156</code>): <code>setReceivedQuantities</code> +
+          <code>writeReceivedStock</code> + <code>writeRejectedWaste</code> +
+          <code>generateInvoiceSnapshot</code>.
+        </li>
+      </ol>
+
+      <!-- ============ E ============ -->
+      <h2 id="e">E. Bayar (WaitingForPayment → Finished)</h2>
+
+      <ol class="steps">
+        <li>
+          AP/SA klik "mark paid" → <code>mark-paid</code> → WaitingForPayment→Finished. Efek
+          <code>markInvoicePaid</code>.
+        </li>
+        <li>Status terminal <code>Finished</code> — tidak ada transisi keluar.</li>
+      </ol>
+
+      <!-- ============ F ============ -->
+      <h2 id="f">F. Cancel di setiap titik (paling kritis)</h2>
+
+      <ol class="steps">
+        <li>
+          Setiap status punya event <code>cancel</code>, tapi
+          <b>efek reversal berbeda</b> tergantung titik:
+          <ul>
+            <li>
+              Draft/Pending/UnderReview (belum stok bergerak): <code>noopOnCancel</code> — hanya
+              ubah status.
+            </li>
+            <li>InTransit: <code>reverseInTransitOnCancel</code> — kembalikan stok in-transit.</li>
+            <li>
+              Delivered / ReviewingSJ / WaitingForPayment:
+              <code>reversePendingReviewOnCancel</code>.
+            </li>
+          </ul>
+        </li>
+        <li>
+          Semua cancel menulis audit fromState→Cancelled +
+          <code>cancelledBy</code>/<code>cancelledAt</code>/<code>cancellationReason</code>
+          (<code>scm-fsm.ts:293-297</code>).
+        </li>
+      </ol>
+
+      <div class="notice warn">
+        <span class="h">Jebakan — arah reversal cancel</span>
+        Pastikan tiap <code>reverse*</code> tepat membatalkan efek forward untuk titik itu. Bila
+        salah pasang (mis. InTransit dipakai <code>noopOnCancel</code>), stok yang sudah dipindah ke
+        in-transit akan <b>tertinggal</b> dan merusak saldo. Ini celah finansial diam.
+      </div>
+
+      <!-- ============ G ============ -->
+      <h2 id="g">G. Mekanisme transition() (inti keamanan)</h2>
+
+      <ol class="steps">
+        <li>
+          <code>transition()</code> (<code>scm-fsm.ts:244</code>) membuka tx,
+          <code>SELECT … FOR UPDATE</code> pada procurement (<code>scm-fsm.ts:252-256</code>).
+        </li>
+        <li>
+          Cari rule di tabel; bila tak ada → <code>InvalidTransitionError</code>; bila actor tak
+          diizinkan → <code>UnauthorizedError</code> (<code>scm-fsm.ts:260-265</code>).
+        </li>
+        <li>
+          Jalankan semua efek dalam tx, update status + audit + notifikasi
+          (<code>scm-fsm.ts:300-341</code>). Semua commit bersama atau rollback bersama.
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Checklist akhir scenario 03</span>
+        <ul>
+          <li>
+            Self-check untuk FSM ini <b>tidak ada</b> (hanya Mutasi yang punya). Pertimbangkan
+            menulis <code>scm-fsm.selfcheck.ts</code> paralel.
+          </li>
+          <li>Setiap (status, event) punya actor &amp; efek yang sesuai spec.</li>
+          <li>Cancel reversal arahnya benar per titik.</li>
+          <li>Edit item state-gated; UI menyembunyikan field di luar status.</li>
+          <li>super_admin bypass review — disengaja?</li>
+        </ul>
+      </div>
+
+      <footer>
+        Skenario 03 · SCM Procurement · <a href="00-INDEKS.html">indeks</a> · sebelumnya:
+        <a href="02-penjualan-pos.html">02 Penjualan POS</a> · berikutnya:
+        <a href="04-mutasi-stock.html">04 Mutasi Stok</a>.
+      </footer>
+    </div>
+  </body>
+</html>

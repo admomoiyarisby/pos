@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Skenario 02 — Penjualan POS &amp; Pembatalan</title>
+    <style>
+      :root {
+        --ink: #1a1a1a;
+        --paper: #fffff8;
+        --muted: #6b6256;
+        --faint: #b3a99a;
+        --rule: #d8cfbf;
+        --accent: #1f4e5f;
+        --accent2: #8a3324;
+        --warn: #b8860b;
+        --band: #f7f3e9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        font-size: 17px;
+      }
+      body {
+        background: var(--paper);
+        color: var(--ink);
+        font-family:
+          "ET Book", "Palatino Linotype", "Palatino", "Georgia", "Times New Roman", serif;
+        line-height: 1.5;
+        margin: 0;
+        padding: 0;
+        text-rendering: optimizeLegibility;
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 4rem 3.5rem 6rem;
+      }
+      header.masthead {
+        border-bottom: 3px double var(--ink);
+        padding-bottom: 1.2rem;
+        margin-bottom: 1.5rem;
+      }
+      header.masthead h1 {
+        font-size: 2.3rem;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        margin: 0 0 0.2rem;
+        line-height: 1.1;
+      }
+      header.masthead .sub {
+        font-style: italic;
+        color: var(--muted);
+        font-size: 1.02rem;
+      }
+      header.masthead .meta {
+        margin-top: 0.8rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: var(--faint);
+      }
+      h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 2.8rem 0 0.8rem;
+        padding-bottom: 0.3rem;
+        border-bottom: 1px solid var(--rule);
+        counter-increment: sec;
+      }
+      h2::before {
+        content: counter(sec) ". ";
+        color: var(--accent);
+      }
+      h3 {
+        font-size: 1.12rem;
+        font-weight: 600;
+        margin: 1.6rem 0 0.5rem;
+        color: var(--accent);
+      }
+      p {
+        margin: 0.6rem 0;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+        border-bottom: 1px solid var(--rule);
+      }
+      a:hover {
+        border-bottom-color: var(--accent);
+      }
+      code {
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 0.82em;
+        background: var(--band);
+        padding: 0.05em 0.35em;
+        border-radius: 2px;
+        color: var(--accent2);
+        white-space: nowrap;
+      }
+      .back {
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+      }
+      .lead {
+        font-size: 1.1rem;
+        max-width: 64ch;
+      }
+      .sidenote {
+        float: right;
+        clear: right;
+        width: 17rem;
+        margin-right: -20rem;
+        margin-top: 0.4rem;
+        margin-bottom: 1rem;
+        font-size: 0.78rem;
+        line-height: 1.4;
+        color: var(--muted);
+        border-left: 1px solid var(--rule);
+        padding-left: 0.8rem;
+      }
+      .sidenote .tag {
+        display: inline-block;
+        font-size: 0.66rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--accent2);
+        margin-bottom: 0.2rem;
+      }
+      @media (max-width: 1100px) {
+        .sidenote {
+          float: none;
+          width: auto;
+          margin: 0.6rem 0;
+          border-left: 3px solid var(--rule);
+        }
+        .wrap {
+          padding: 2.5rem 1.4rem 4rem;
+        }
+      }
+      .notice {
+        background: var(--band);
+        border-left: 4px solid var(--accent2);
+        padding: 0.7rem 1rem;
+        margin: 0.9rem 0;
+        font-size: 0.95rem;
+      }
+      .notice .h {
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 0.72rem;
+        color: var(--accent2);
+      }
+      .notice.warn {
+        border-left-color: var(--warn);
+      }
+      .notice.warn .h {
+        color: var(--warn);
+      }
+      ol.steps {
+        counter-reset: step;
+        list-style: none;
+        padding-left: 0;
+        margin-left: 0;
+      }
+      ol.steps > li {
+        counter-increment: step;
+        position: relative;
+        padding-left: 2.6rem;
+        margin: 0.9rem 0;
+      }
+      ol.steps > li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0.05rem;
+        width: 1.8rem;
+        height: 1.8rem;
+        background: var(--ink);
+        color: var(--paper);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-variant-numeric: tabular-nums;
+      }
+      ol.steps > li b {
+        color: var(--accent);
+      }
+      .pill {
+        display: inline-block;
+        font-size: 0.68rem;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        padding: 0.08rem 0.45rem;
+        border-radius: 999px;
+        margin-right: 0.3rem;
+        border: 1px solid var(--rule);
+        color: var(--muted);
+      }
+      .pill.auth {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .pill.inv {
+        border-color: var(--accent2);
+        color: var(--accent2);
+      }
+      .pill.fsm {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+      .card {
+        background: var(--band);
+        border: 1px solid var(--rule);
+        padding: 0.9rem 1.1rem;
+        margin: 1rem 0;
+      }
+      .card h4 {
+        margin: 0 0 0.4rem;
+        font-size: 1rem;
+        color: var(--accent);
+      }
+      table.fld {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 0.8rem 0 1.2rem;
+        font-size: 0.84rem;
+      }
+      table.fld th,
+      table.fld td {
+        border: 1px solid var(--rule);
+        padding: 0.35rem 0.6rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      table.fld th {
+        background: var(--band);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.68rem;
+        letter-spacing: 0.5px;
+      }
+      table.fld td.k {
+        font-weight: 600;
+        white-space: nowrap;
+        color: var(--accent);
+      }
+      footer {
+        margin-top: 5rem;
+        border-top: 3px double var(--ink);
+        padding-top: 1rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      body {
+        counter-reset: sec;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <h1>Skenario 02 — Penjualan POS &amp; Pembatalan</h1>
+        <div class="sub">Jual resep (potong stok terkunci) → cancel request → void + restore</div>
+        <div class="meta">Bahasa Indonesia · gaya Tufte · nomor baris dari sumber</div>
+      </header>
+      <p class="back"><a href="00-INDEKS.html">← Kembali ke indeks</a></p>
+
+      <p class="lead">
+        Lanjutan Skenario 01: resep yang sudah dibuat dijual di kasir. Alur ini adalah
+        <b>jalur uang dan jalur stok</b>. Semua mutasi berjalan dalam satu transaksi terkunci (<code
+          >FOR UPDATE</code
+        >) agar tidak ada <em>double-spend</em>. Fokus review: keamanan stok, arah restore eksklusi,
+        dan alur pembatalan 3-langkah.
+      </p>
+
+      <!-- ============ A ============ -->
+      <h2 id="a">A. Persiapan kasir &amp; menu</h2>
+
+      <aside class="sidenote">
+        <span class="tag">Otorisasi</span>
+        POS memakai <code>requireAuth()</code> (bukan role spesifik) — siapa pun yang punya sesi
+        bisa order. Branch dibatasi dari sisi UI: kasir cabang hanya melihat menu cabangnya lewat
+        <code>getPosMenu</code>.
+        <span class="tag" style="margin-top: 0.5rem">Visibility</span>
+        <code>getPosMenu</code> (<code>pos.ts:39</code>) menyembunyikan resep yang di-assign ke
+        cabang lain tapi <em>bukan</em> cabang ini; resep tanpa assignment tampil di semua cabang
+        (<code>pos.ts:50-55</code>).
+      </aside>
+
+      <ol class="steps">
+        <li>
+          Kasir login PIN cabang → dapat sesi <code>branch_admin</code> dengan
+          <code>branchId</code>.
+        </li>
+        <li>
+          Buka <code>/pos</code>. Loader memanggil <code>getPosMenu</code> (<code>pos.ts:39</code>)
+          + <code>getBranches</code>, <code>getVouchers</code>,
+          <code>getInventory</code> (<code>pos.ts:58-61</code>).
+        </li>
+        <li>
+          Pilih channel (Dine-in / Gofood / Grabfood / ShopeeFood / TikTok —
+          <code>pos.ts:48</code>).
+        </li>
+        <li>
+          Tambah item dari menu → <code>MenuGrid</code> memanggil <code>createOrder</code> saat
+          checkout.
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Invarian — menu hanya resep Active</span>
+        <code>getPosMenu</code> memfilter
+        <code>recipes.status = "Active"</code> (<code>pos.ts:48</code>). Resep yang di-soft-delete
+        (Inactive) tak akan muncul di kasir meski <code>recipeBranches</code> mengizinkan.
+      </div>
+
+      <!-- ============ B ============ -->
+      <h2 id="b">B. Buat order (createOrder)</h2>
+
+      <ol class="steps">
+        <li>
+          <code>createOrder</code> (<code>pos.ts:294</code>) menerima <code>branchId</code>,
+          <code>channel</code>, <code>items[]</code> (tiap item: <code>recipeId</code>,
+          <code>quantity</code> int≥1, <code>price</code>, <code>selectedModifiers[]</code>,
+          <code>notes</code>), <code>voucherCode</code>, <code>taxAmount</code>,
+          <code>shiftId</code> (<code>pos.ts:295-309</code>).
+        </li>
+        <li>
+          <b>Resolve bahan.</b> Untuk tiap item,
+          <code>resolveNewItemIngredients</code> (<code>pos.ts:323</code>) menelusuri resep → BOM +
+          modifier + eksklusi jadi daftar bahan datar beserta <code>cost</code>.
+        </li>
+        <li>
+          <b>Soft stock check (read-only).</b> Loop per bahan (<code>pos.ts:348-368</code>): bila
+          stok cabang &lt; kebutuhan → push <code>negativeStockAlerts</code>.
+          <em>Tidak memblokir order.</em>
+        </li>
+        <li>
+          <b>Hitung total.</b> <code>subtotal = Σ price×qty</code>; <code>totalCogs = Σ cost</code>;
+          <code>totalAmount = subtotal − voucherDiscount + tax</code>; MDR dari
+          <code>platformFees</code> (<code>pos.ts:342-379</code>).
+        </li>
+        <li>
+          <b>Semua tulis dalam 1 tx.</b> (<code>pos.ts:382</code>):
+          <ul>
+            <li>
+              Insert <code>orders</code> dengan <code>totalCogs</code>, <code>mdrFee</code>,
+              <code>netSales</code>.
+            </li>
+            <li>
+              Insert <code>orderItems</code> —
+              <code>cogsAtTransaction = round(totalCogs/qty)</code> (<code>pos.ts:419</code>).
+            </li>
+            <li>
+              Insert <code>orderItemModifiers</code> &amp;
+              <code>orderItemExclusions</code> (<code>pos.ts:425-441</code>).
+            </li>
+            <li>
+              <b>Potong stok terkunci:</b> per bahan unik,
+              <code>SELECT … FOR UPDATE</code> (<code>pos.ts:461</code>), hitung net delta lintas
+              item, <code>UPDATE inventory</code> + tulis
+              <code>stockLedger</code> (<code>pos.ts:444-493</code>).
+            </li>
+          </ul>
+        </li>
+        <li>
+          Di luar tx: bila ada alert stok minus → notifikasi ke area manager
+          (<code>pos.ts:498-515</code>).
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Jebakan — arah restore eksklusi</span>
+        Stok ledger mencatat eksklusi sebagai <code>IN</code> (restore) saat order
+        (<code>pos.ts:482-489</code>). Artinya: "tanpa bawang" → bawang <b>tidak</b> dipotong. Saat
+        review, konfirmasi <code>resolveNewItemIngredients</code> benar-benar mengurangi bawang dari
+        <code>ingredients</code> net item, supaya ledger tidak menggandakan atau salah memulihkan.
+        Ini titik paling sering salah.
+      </div>
+
+      <div class="notice warn">
+        <span class="h">Jebakan — stok minus diizinkan</span>
+        Order <b>tidak</b> diblokir walau stok negatif; hanya alarm. Tentukan apakah ini memang
+        perilaku bisnis yang diinginkan, atau celah. Di lintasan konkuren, dua order hampir
+        bersamaan bisa sama-sama lolos soft-check lalu memotong stok via row-lock — aman secara DB,
+        tapi saldo bisa jadi sangat negatif.
+      </div>
+
+      <!-- ============ C ============ -->
+      <h2 id="c">C. Pembatalan — request (kasir)</h2>
+
+      <aside class="sidenote">
+        <span class="tag">Kenapa 3 langkah?</span>
+        Agar kasir <b>tidak</b> bisa membatalkan sepihak. Request → Manager approve → kasir eksekusi
+        void. Status: <code>Pending → Approved → Executed</code>, plus <code>Rejected</code>.
+      </aside>
+
+      <ol class="steps">
+        <li>
+          Di <code>/pos</code> (history), kasir klik batalkan order →
+          <code>createCancelRequest</code> (<code>pos.ts:993</code>). Menyisipkan baris
+          <code>cancelRequests</code> status <code>Pending</code>.
+        </li>
+        <li>
+          <code>getActiveRequestsForOrders</code> (<code>pos.ts:1199</code>) melakukan polling
+          status (Pending/Approved) per order untuk badge di UI.
+        </li>
+      </ol>
+
+      <!-- ============ D ============ -->
+      <h2 id="d">D. Pembatalan — approve (manager)</h2>
+
+      <ol class="steps">
+        <li>
+          Manager (role berwenang) buka daftar cancel request →
+          <code>getCancelRequests</code> (<code>pos.ts:1024</code>).
+        </li>
+        <li>
+          Klik approve → <code>approveCancelRequest</code> (<code>pos.ts:1059</code>):
+          <ul>
+            <li>
+              Cek <code>old.status === "Pending"</code> else "sudah diproses"
+              (<code>pos.ts:1071</code>).
+            </li>
+            <li>
+              Set status <code>Approved</code>, <code>approvedBy</code>, <code>approvedAt</code>.
+            </li>
+            <li>
+              Notifikasi ke kasir peminta: "klik tombol Batal untuk menjalankan"
+              (<code>pos.ts:1080</code>).
+            </li>
+          </ul>
+        </li>
+        <li><b>Order belum void</b> pada tahap ini — hanya request yang berubah jadi Approved.</li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Invarian — belum void di approve</span>
+        Pemisahan ini krusial: approve hanya mengizinkan, eksekusi yang mengubah stok. Saat review,
+        pastikan tidak ada jalur (tombol/API) yang memanggil void langsung tanpa approve.
+      </div>
+
+      <!-- ============ E ============ -->
+      <h2 id="e">E. Pembatalan — execute void (kasir)</h2>
+
+      <ol class="steps">
+        <li>
+          Kasir klik "Batal" → <code>executeApprovedCancel</code> (<code>pos.ts:1142</code>):
+          <ul>
+            <li>
+              Cek <code>status === "Approved"</code> (<code>pos.ts:1154</code>) — tolak bila
+              belum/disudah eksekusi.
+            </li>
+            <li>Cek <code>order.status !== "Void"</code> (<code>pos.ts:1159</code>).</li>
+            <li>
+              <b>Dalam 1 tx</b> (<code>pos.ts:1161</code>): set request→<code>Executed</code>, set
+              order→<code>Void</code> (dengan <code>voidReason</code>), lalu
+              <code>restoreInventoryForVoid</code> mengembalikan stok + tulis ledger.
+            </li>
+          </ul>
+        </li>
+        <li>
+          Audit <code>STATUS_CHANGE</code> pada <code>orders</code> +
+          <code>cancelRequests</code> (<code>pos.ts:1180-1192</code>).
+        </li>
+      </ol>
+
+      <div class="notice warn">
+        <span class="h">Jebakan — TOCTOU eksekusi ganda</span>
+        Pengecekan <code>status==="Approved"</code> (<code>pos.ts:1154</code>) dan penulisan status
+        request terjadi <em>di luar</em> lock baris order. Dua kasir menekan "Ba tal" bersamaan pada
+        request Approved yang sama bisa membaca status sama, lalu keduanya menjalankan void → stok
+        ke-restore dua kali. Periksa apakah <code>restoreInventoryForVoid</code> atau tx memegang
+        lock yang mencegah ini (lock ada di tx, tapi baca status di atas tx).
+      </div>
+
+      <!-- ============ F ============ -->
+      <h2 id="f">F. Verifikasi &amp; lintasan</h2>
+
+      <ol class="steps">
+        <li>Cek <code>orders</code>: status <code>Void</code>, <code>voidReason</code> terisi.</li>
+        <li>
+          Cek <code>inventory</code> cabang: stok bahan kembali seperti sebelum order (termasuk
+          eksklusi benar arahnya).
+        </li>
+        <li>Cek <code>stockLedger</code>: ada baris pemulihan (IN) ber-referensi order.</li>
+        <li>
+          Cek <code>cancelRequests</code>: status <code>Executed</code>,
+          <code>approvedBy</code> &amp; eksekutor tercatat.
+        </li>
+      </ol>
+
+      <div class="notice">
+        <span class="h">Checklist akhir scenario 02</span>
+        <ul>
+          <li>Order dalam 1 tx + <code>FOR UPDATE</code> per bahan.</li>
+          <li>Eksklusi restore arahnya benar (tidak potong &amp; tidak ganda).</li>
+          <li>Stok minus hanya alarm (konfirmasi disengaja).</li>
+          <li>Cancel = 3 langkah; void hanya di execute setelah Approved.</li>
+          <li>Tidak ada TOCTOU eksekusi ganda.</li>
+        </ul>
+      </div>
+
+      <footer>
+        Skenario 02 · Penjualan POS · <a href="00-INDEKS.html">indeks</a> · sebelumnya:
+        <a href="01-master-data.html">01 Master Data</a> · berikutnya:
+        <a href="03-scm-procurement.html">03 SCM Procurement</a>.
+      </footer>
+    </div>
+  </body>
+</html>

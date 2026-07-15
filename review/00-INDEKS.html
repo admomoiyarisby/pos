@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>omoiyari-pos — Panduan Review Alur (Indeks)</title>
+    <style>
+      :root {
+        --ink: #1a1a1a;
+        --paper: #fffff8;
+        --muted: #6b6256;
+        --faint: #b3a99a;
+        --rule: #d8cfbf;
+        --accent: #1f4e5f;
+        --accent2: #8a3324;
+        --warn: #b8860b;
+        --band: #f7f3e9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        font-size: 17px;
+      }
+      body {
+        background: var(--paper);
+        color: var(--ink);
+        font-family:
+          "ET Book", "Palatino Linotype", "Palatino", "Georgia", "Times New Roman", serif;
+        line-height: 1.5;
+        margin: 0;
+        padding: 0;
+        text-rendering: optimizeLegibility;
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 4rem 3.5rem 6rem;
+      }
+      header.masthead {
+        border-bottom: 3px double var(--ink);
+        padding-bottom: 1.2rem;
+        margin-bottom: 2.5rem;
+      }
+      header.masthead h1 {
+        font-size: 2.6rem;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        margin: 0 0 0.3rem;
+        line-height: 1.1;
+      }
+      header.masthead .sub {
+        font-style: italic;
+        color: var(--muted);
+        font-size: 1.05rem;
+      }
+      header.masthead .meta {
+        margin-top: 0.9rem;
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: var(--faint);
+      }
+      h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 2.5rem 0 1rem;
+        color: var(--accent);
+      }
+      p {
+        margin: 0.6rem 0;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+        border-bottom: 1px solid var(--rule);
+      }
+      a:hover {
+        border-bottom-color: var(--accent);
+      }
+      code {
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 0.82em;
+        background: var(--band);
+        padding: 0.05em 0.35em;
+        border-radius: 2px;
+        color: var(--accent2);
+        white-space: nowrap;
+      }
+      .lead {
+        font-size: 1.15rem;
+        max-width: 62ch;
+      }
+      .sidenote {
+        float: right;
+        clear: right;
+        width: 17rem;
+        margin-right: -20rem;
+        margin-top: 0.4rem;
+        margin-bottom: 1rem;
+        font-size: 0.78rem;
+        line-height: 1.4;
+        color: var(--muted);
+        border-left: 1px solid var(--rule);
+        padding-left: 0.8rem;
+      }
+      .sidenote .tag {
+        display: inline-block;
+        font-size: 0.66rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--accent2);
+        margin-bottom: 0.2rem;
+      }
+      @media (max-width: 1100px) {
+        .sidenote {
+          float: none;
+          width: auto;
+          margin: 0.6rem 0;
+          border-left: 3px solid var(--rule);
+        }
+      }
+      @media (max-width: 1100px) {
+        .wrap {
+          padding: 2.5rem 1.4rem 4rem;
+        }
+      }
+      .notice {
+        background: var(--band);
+        border-left: 4px solid var(--accent2);
+        padding: 0.7rem 1rem;
+        margin: 0.9rem 0;
+        font-size: 0.95rem;
+      }
+      .notice .h {
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 0.72rem;
+        color: var(--accent2);
+      }
+      .notice.warn {
+        border-left-color: var(--warn);
+      }
+      .notice.warn .h {
+        color: var(--warn);
+      }
+      ol.steps {
+        counter-reset: step;
+        list-style: none;
+        padding-left: 0;
+        margin-left: 0;
+      }
+      ol.steps > li {
+        counter-increment: step;
+        position: relative;
+        padding-left: 2.6rem;
+        margin: 0.9rem 0;
+      }
+      ol.steps > li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0.05rem;
+        width: 1.8rem;
+        height: 1.8rem;
+        background: var(--ink);
+        color: var(--paper);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-variant-numeric: tabular-nums;
+      }
+      ol.steps > li b {
+        color: var(--accent);
+      }
+      .pill {
+        display: inline-block;
+        font-size: 0.68rem;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        padding: 0.08rem 0.45rem;
+        border-radius: 999px;
+        margin-right: 0.3rem;
+        border: 1px solid var(--rule);
+        color: var(--muted);
+      }
+      .pill.auth {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .pill.inv {
+        border-color: var(--accent2);
+        color: var(--accent2);
+      }
+      .pill.fsm {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+      .idxgrid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.2rem;
+        margin-top: 2rem;
+      }
+      .idxcard {
+        border: 1px solid var(--rule);
+        background: var(--band);
+        padding: 1rem 1.2rem;
+      }
+      .idxcard h3 {
+        margin: 0 0 0.3rem;
+        font-size: 1.1rem;
+        color: var(--accent);
+      }
+      .idxcard .num {
+        font-size: 0.72rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .idxcard a {
+        font-size: 1.05rem;
+        border-bottom: none;
+        font-weight: 600;
+      }
+      .idxcard p {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin: 0.3rem 0 0;
+      }
+      footer {
+        margin-top: 5rem;
+        border-top: 3px double var(--ink);
+        padding-top: 1rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <h1>Panduan Review Alur omoiyari-pos</h1>
+        <div class="sub">Kumpulan skenario end-to-end berbahasa Indonesia, gaya Tufte</div>
+        <div class="meta">TanStack Start · React 19 · Drizzle/Postgres · Better-Auth</div>
+      </header>
+
+      <p class="lead">
+        Setiap berkas di bawah ini adalah <b>satu skenario bisnis utuh</b> yang ditelusuri langkah
+        demi langkah: dari layar yang dilihat kasir/admin, hingga server function
+        (<code>createServerFn</code>) yang dipanggil, validasi yang berjalan, dan hal-hal yang harus
+        Anda curigai saat mereview. Buka berkas sesuai alur yang sedang Anda telusuri, lalu cocokkan
+        nomor baris dengan kode sumber di editor Anda.
+      </p>
+
+      <div class="notice">
+        <span class="h">Cara pakai saat review</span>
+        <ol class="steps">
+          <li>
+            Pilih skenario. Tiap langkah berisi <code>file:baris</code> sebagai jangkar — buka di
+            editor.
+          </li>
+          <li>
+            Lakukan persis urutan langkah; sebagian besar alur melintasi <em>file server</em> +
+            <em>route/UI</em>.
+          </li>
+          <li>
+            Periksa kotak <span class="pill inv">jebakan</span> /
+            <span class="pill fsm">invarian</span> — itu titik yang secara historis rapuh.
+          </li>
+          <li>
+            Jalankan self-check bila ada:
+            <code>npx tsx src/lib/server/scm-transfer-fsm.selfcheck.ts</code>.
+          </li>
+        </ol>
+      </div>
+
+      <h2>Daftar skenario</h2>
+      <div class="idxgrid">
+        <div class="idxcard">
+          <div class="num">Skenario 01</div>
+          <h3><a href="01-master-data.html">Master Data: Bahan → Resep → Modifier</a></h3>
+          <p>
+            Tambah bahan baku, buat resep yang memakai bahan itu, pasang modifier &amp; visibility
+            cabang, lalu lihat HPP teroll-up otomatis.
+          </p>
+        </div>
+
+        <div class="idxcard">
+          <div class="num">Skenario 02</div>
+          <h3><a href="02-penjualan-pos.html">Penjualan POS &amp; Pembatalan</a></h3>
+          <p>
+            Jual resep di kasir (potong stok terkunci), lalu alur cancel request: Pending → Approved
+            → Executed (void + restore stok).
+          </p>
+        </div>
+
+        <div class="idxcard">
+          <div class="num">Skenario 03</div>
+          <h3><a href="03-scm-procurement.html">SCM Procurement (FSM ADR 0002)</a></h3>
+          <p>
+            Alur procure-to-pay baru: Draft → … → Finished dengan tabel transisi &amp; efek per
+            status.
+          </p>
+        </div>
+
+        <div class="idxcard">
+          <div class="num">Skenario 04</div>
+          <h3><a href="04-mutasi-stock.html">Mutasi Stok Antar Cabang (FSM ADR 0006)</a></h3>
+          <p>
+            Surat jalan cabang → review area manager → kirim → terima → bayar. Serta peringatan
+            batas otorisasi cabang.
+          </p>
+        </div>
+      </div>
+
+      <div class="notice warn">
+        <span class="h">Peringatan — verifikasi, jangan percaya buta</span>
+        Panduan ini diturunkan dari pembacaan sumber pada <span id="today"></span>. Nomor baris
+        bergeser seiring perubahan repo. Jika baris yang dikutip tak lagi cocok, cukup grep
+        simbolnya — <em>perilaku</em>, bukan angkanya, yang penting.
+      </div>
+
+      <footer>
+        omoiyari-pos · panduan review alur · gaya Tufte · bahasa Indonesia. Self-check:
+        <code>npx tsx src/lib/server/scm-transfer-fsm.selfcheck.ts</code>.
+      </footer>
+    </div>
+    <script>
+      document.getElementById("today").textContent = new Date().toISOString().slice(0, 10);
+    </script>
+  </body>
+</html>

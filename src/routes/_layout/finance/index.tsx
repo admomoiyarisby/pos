@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo, useCallback, Fragment } from "react";
+import { useState, useMemo, useCallback, Fragment, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -236,14 +236,30 @@ function FinancePage() {
   // Period + filter state
   const [periodType, setPeriodType] = useState<PeriodType>("bulanan");
   const [selectedMonth, setSelectedMonth] = useState(() => {
+    // Default to current month - will be corrected on client side
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
+
+  // Update month on client side to handle timezone correctly
+  useEffect(() => {
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    setSelectedMonth(currentMonth);
+  }, []);
   const [selectedWeek, setSelectedWeek] = useState(0);
   const [selectedDate, setSelectedDate] = useState(() => {
+    // Default to today's date - will be corrected on client side
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   });
+
+  // Update date on client side to handle timezone correctly
+  useEffect(() => {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    setSelectedDate(today);
+  }, []);
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [selectedChannel, setSelectedChannel] = useState<string>("");
 
