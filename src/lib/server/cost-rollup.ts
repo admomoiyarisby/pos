@@ -33,7 +33,9 @@ export async function recalculateRecipeCosts(recipeIds: string[]): Promise<void>
       .leftJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
       .where(eq(recipeIngredients.recipeId, rid));
 
-    const totalCogs = ings.reduce((sum, i) => sum + (i.averageCost ?? 0) * i.quantity, 0);
+    const totalCogs = Math.round(
+      ings.reduce((sum, i) => sum + (i.averageCost ?? 0) * i.quantity, 0),
+    );
 
     await db.update(recipes).set({ totalCogs }).where(eq(recipes.id, rid));
   }
