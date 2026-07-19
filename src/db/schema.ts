@@ -384,6 +384,7 @@ export const modifiers = pgTable("modifiers", {
   name: text("name").notNull(),
   price: integer("price").notNull().default(0),
   isExclusion: boolean("is_exclusion").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
 

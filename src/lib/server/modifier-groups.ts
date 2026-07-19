@@ -1,7 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { modifierGroups, modifiers, modifierIngredients } from "#/db/schema";
-import { eq, ilike, inArray } from "drizzle-orm";
+import {
+  modifierGroups,
+  modifiers,
+  modifierIngredients,
+  recipes,
+  recipeModifierGroups,
+} from "#/db/schema";
+import { eq, ilike, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -10,6 +16,7 @@ const modifierInput = z.object({
   name: z.string().min(1).max(100),
   price: z.number().int().min(0).default(0),
   isExclusion: z.boolean().default(false),
+  sortOrder: z.number().int().min(0).default(0),
   ingredientId: z.string().uuid().optional(),
   ingredientQty: z.number().int().min(1).optional(),
 });
@@ -34,14 +41,35 @@ export const getModifierGroups = createServerFn({ method: "GET" })
       .orderBy(modifierGroups.name);
 
     const groupIds = groups.map((g) => g.id);
-    const allModifiers =
+
+    const [allModifiers, recipeCounts] = await Promise.all([
       groupIds.length > 0
-        ? await db.select().from(modifiers).where(inArray(modifiers.modifierGroupId, groupIds))
-        : [];
+        ? db
+            .select()
+            .from(modifiers)
+            .where(inArray(modifiers.modifierGroupId, groupIds))
+            .orderBy(modifiers.sortOrder)
+        : Promise.resolve([] as (typeof modifiers.$inferSelect)[]),
+      groupIds.length > 0
+        ? db
+            .select({
+              modifierGroupId: recipeModifierGroups.modifierGroupId,
+              count: sql<number>`count(*)`,
+            })
+            .from(recipeModifierGroups)
+            .where(inArray(recipeModifierGroups.modifierGroupId, groupIds))
+            .groupBy(recipeModifierGroups.modifierGroupId)
+        : Promise.resolve([] as { modifierGroupId: string; count: number }[]),
+    ]);
+
+    const countMap = Object.fromEntries(
+      recipeCounts.map((r) => [r.modifierGroupId, Number(r.count)]),
+    );
 
     return groups.map((g) => ({
       ...g,
       modifiers: allModifiers.filter((m) => m.modifierGroupId === g.id),
+      recipeCount: countMap[g.id] ?? 0,
     }));
   });
 
@@ -56,15 +84,30 @@ export const getModifierGroup = createServerFn({ method: "GET" })
       .limit(1);
     if (!group) return null;
 
-    const mods = await db.select().from(modifiers).where(eq(modifiers.modifierGroupId, data.id));
+    const mods = await db
+      .select()
+      .from(modifiers)
+      .where(eq(modifiers.modifierGroupId, data.id))
+      .orderBy(modifiers.sortOrder);
     const modIds = mods.map((m) => m.id);
-    const modIngs =
+    const [modIngs, linkedRecipes] = await Promise.all([
       modIds.length > 0
-        ? await db
+        ? db
             .select()
             .from(modifierIngredients)
             .where(inArray(modifierIngredients.modifierId, modIds))
-        : [];
+        : Promise.resolve([] as (typeof modifierIngredients.$inferSelect)[]),
+      db
+        .select({
+          id: recipes.id,
+          code: recipes.code,
+          name: recipes.name,
+          category: recipes.category,
+        })
+        .from(recipeModifierGroups)
+        .innerJoin(recipes, eq(recipeModifierGroups.recipeId, recipes.id))
+        .where(eq(recipeModifierGroups.modifierGroupId, data.id)),
+    ]);
 
     return {
       ...group,
@@ -72,6 +115,7 @@ export const getModifierGroup = createServerFn({ method: "GET" })
         ...m,
         ingredients: modIngs.filter((mi) => mi.modifierId === m.id),
       })),
+      recipes: linkedRecipes,
     };
   });
 
@@ -90,7 +134,7 @@ export const createModifierGroup = createServerFn({ method: "POST" })
       })
       .returning();
 
-    for (const mod of data.modifiers) {
+    for (const [idx, mod] of data.modifiers.entries()) {
       const [createdMod] = await db
         .insert(modifiers)
         .values({
@@ -99,6 +143,7 @@ export const createModifierGroup = createServerFn({ method: "POST" })
           name: mod.name,
           price: mod.price,
           isExclusion: mod.isExclusion,
+          sortOrder: mod.sortOrder ?? idx,
         })
         .returning();
 
@@ -152,7 +197,7 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
       await db.delete(modifiers).where(eq(modifiers.modifierGroupId, id));
 
       // Re-create
-      for (const mod of mods) {
+      for (const [idx, mod] of mods.entries()) {
         const [createdMod] = await db
           .insert(modifiers)
           .values({
@@ -161,6 +206,7 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
             name: mod.name,
             price: mod.price,
             isExclusion: mod.isExclusion,
+            sortOrder: idx,
           })
           .returning();
 
@@ -193,6 +239,60 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
       old as Record<string, unknown>,
       updated as Record<string, unknown>,
     );
+
+    return { success: true };
+  });
+
+export const linkRecipesToModifierGroup = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({ modifierGroupId: z.string().uuid(), recipeIds: z.array(z.string().uuid()) })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    // Replace all recipe links for this modifier group
+    await db
+      .delete(recipeModifierGroups)
+      .where(eq(recipeModifierGroups.modifierGroupId, data.modifierGroupId));
+
+    if (data.recipeIds.length > 0) {
+      await db.insert(recipeModifierGroups).values(
+        data.recipeIds.map((recipeId) => ({
+          recipeId,
+          modifierGroupId: data.modifierGroupId,
+        })),
+      );
+    }
+
+    await logSystemAction(
+      user,
+      "Link Recipes to Modifier Group",
+      `Modifier group ${data.modifierGroupId} dihubungkan ke ${data.recipeIds.length} menu oleh ${user.name}`,
+    );
+
+    return { success: true };
+  });
+
+export const reorderModifiers = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        modifierGroupId: z.string().uuid(),
+        modifierIds: z.array(z.string().uuid()),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    await requireRole("super_admin", "admin_pusat");
+
+    // Update sort_order based on array position
+    await db.transaction(async (tx) => {
+      for (const [idx, modifierId] of data.modifierIds.entries()) {
+        await tx.update(modifiers).set({ sortOrder: idx }).where(eq(modifiers.id, modifierId));
+      }
+    });
 
     return { success: true };
   });

@@ -12,21 +12,118 @@ import { Separator } from "#/components/ui/separator";
 import { Switch } from "#/components/ui/switch";
 import { Label } from "#/components/ui/label";
 import Modal from "#/components/ui/Modal";
+import { Checkbox } from "#/components/ui/checkbox";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   getModifierGroup,
   updateModifierGroup,
   deleteModifierGroup,
+  linkRecipesToModifierGroup,
+  reorderModifiers,
 } from "#/lib/server/modifier-groups";
-import { X, Plus, Pencil, Trash2 } from "lucide-react";
+import { X, Plus, Pencil, Trash2, Link2, GripVertical } from "lucide-react";
 
 interface ModifierFormInput {
   name: string;
   price: number;
   isExclusion: boolean;
+  sortOrder: number;
   ingredientId?: string;
   ingredientQty?: number;
+}
+
+function SortableCard({
+  id,
+  mod,
+  index,
+  canRemove,
+  onRemove,
+  onChange,
+}: {
+  id: string;
+  mod: ModifierFormInput;
+  index: number;
+  canRemove: boolean;
+  onRemove: () => void;
+  onChange: (updated: ModifierFormInput) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <Card ref={setNodeRef} style={style} className="p-3 mb-2">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          className="cursor-grab touch-none text-muted-foreground hover:text-foreground shrink-0"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-muted-foreground">Opsi #{index + 1}</span>
+            {canRemove && (
+              <Button type="button" variant="ghost" size="sm" onClick={onRemove}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 space-y-1">
+              <Label className="text-xs">Nama</Label>
+              <Input
+                value={mod.name}
+                onChange={(e) => onChange({ ...mod, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="w-24 space-y-1">
+              <Label className="text-xs">Harga</Label>
+              <MoneyInput
+                value={mod.price}
+                onChange={(raw) => onChange({ ...mod, price: raw ?? 0 })}
+                className="h-8 w-24"
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-5">
+              <Switch
+                checked={mod.isExclusion}
+                onCheckedChange={(checked) => onChange({ ...mod, isExclusion: checked === true })}
+              />
+              <Label className="text-xs">Exclusion</Label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 export const Route = createFileRoute("/_layout/modifier-groups/$mgId")({
@@ -43,6 +140,8 @@ function ModifierGroupDetailPage() {
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [selectedRecipeIds, setSelectedRecipeIds] = useState<string[]>([]);
 
   const { data: group } = useQuery({
     queryKey: ["modifier-group", mgId],
@@ -60,6 +159,7 @@ function ModifierGroupDetailPage() {
           name: m.name,
           price: m.price,
           isExclusion: m.isExclusion,
+          sortOrder: m.sortOrder ?? 0,
         })),
       );
     }
@@ -98,6 +198,71 @@ function ModifierGroupDetailPage() {
       toast.error("Gagal menghapus grup modifier", { description: error.message });
     },
   });
+
+  const { data: allRecipes } = useQuery({
+    queryKey: ["recipes"],
+    queryFn: () => import("#/lib/server/recipes").then((m) => m.getRecipes({ data: {} })),
+  });
+
+  const linkMutation = useMutation({
+    mutationFn: linkRecipesToModifierGroup,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["modifier-group", mgId] });
+      void queryClient.invalidateQueries({ queryKey: ["modifier-groups"] });
+      setLinkModalOpen(false);
+      toast.success("Menu berhasil ditautkan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menautkan menu", { description: error.message });
+    },
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const reorderMutation = useMutation({
+    mutationFn: reorderModifiers,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["modifier-group", mgId] });
+      void queryClient.invalidateQueries({ queryKey: ["modifier-groups"] });
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal mengurutkan opsi", { description: error.message });
+    },
+  });
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = modifiersInput.findIndex((m) => m.name === active.id);
+    const newIndex = modifiersInput.findIndex((m) => m.name === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(modifiersInput, oldIndex, newIndex);
+    setModifiersInput(reordered);
+
+    // Persist reorder to server immediately
+    if (!group) return;
+    // Build the reordered ID list by matching names in the new order
+    const nameToId = Object.fromEntries(group.modifiers.map((m: any) => [m.name, m.id]));
+    const orderedIds = reordered.filter((m) => nameToId[m.name]).map((m) => nameToId[m.name]);
+    if (orderedIds.length > 0) {
+      void reorderMutation.mutateAsync({
+        data: {
+          modifierGroupId: mgId,
+          modifierIds: orderedIds,
+        },
+      });
+    }
+  };
+
+  const openLinkModal = () => {
+    setSelectedRecipeIds(group?.recipes?.map((r: any) => r.id) ?? []);
+    setLinkModalOpen(true);
+  };
 
   const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -210,6 +375,7 @@ function ModifierGroupDetailPage() {
                         price: 0,
                         isExclusion: false,
                         ingredientId: undefined,
+                        sortOrder: modifiersInput.length,
                         ingredientQty: undefined,
                       },
                     ])
@@ -218,60 +384,32 @@ function ModifierGroupDetailPage() {
                   <Plus className="h-3 w-3 mr-1" /> Tambah Opsi
                 </Button>
               </div>
-              {modifiersInput.map((mod, i) => (
-                <Card key={i} className="p-3 mb-2">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-muted-foreground">Opsi #{i + 1}</span>
-                    {modifiersInput.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setModifiersInput(modifiersInput.filter((_, j) => j !== i))}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 space-y-1">
-                      <Label className="text-xs">Nama</Label>
-                      <Input
-                        value={mod.name}
-                        onChange={(e) => {
-                          const next = [...modifiersInput];
-                          next[i] = { ...next[i], name: e.target.value };
-                          setModifiersInput(next);
-                        }}
-                        required
-                      />
-                    </div>
-                    <div className="w-24 space-y-1">
-                      <Label className="text-xs">Harga</Label>
-                      <MoneyInput
-                        value={mod.price}
-                        onChange={(raw) => {
-                          const next = [...modifiersInput];
-                          next[i] = { ...next[i], price: raw ?? 0 };
-                          setModifiersInput(next);
-                        }}
-                        className="h-8 w-24"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2 pt-5">
-                      <Switch
-                        checked={mod.isExclusion}
-                        onCheckedChange={(checked) => {
-                          const next = [...modifiersInput];
-                          next[i] = { ...next[i], isExclusion: checked };
-                          setModifiersInput(next);
-                        }}
-                      />
-                      <Label className="text-xs">Exclusion</Label>
-                    </div>
-                  </div>
-                </Card>
-              ))}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={modifiersInput.map((m) => m.name)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {modifiersInput.map((mod, i) => (
+                    <SortableCard
+                      key={mod.name || `new-${i}`}
+                      id={mod.name || `new-${i}`}
+                      mod={mod}
+                      index={i}
+                      canRemove={modifiersInput.length > 1}
+                      onRemove={() => setModifiersInput(modifiersInput.filter((_, j) => j !== i))}
+                      onChange={(updated) => {
+                        const next = [...modifiersInput];
+                        next[i] = updated;
+                        setModifiersInput(next);
+                      }}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
@@ -355,8 +493,108 @@ function ModifierGroupDetailPage() {
                 </div>
               )}
             </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Menu Terkait</h2>
+                <Button variant="outline" size="sm" onClick={openLinkModal}>
+                  <Link2 className="h-3.5 w-3.5 mr-1.5" />
+                  Atur Menu
+                </Button>
+              </div>
+              {!group.recipes || group.recipes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Belum ada menu yang menggunakan grup modifier ini
+                </p>
+              ) : (
+                <div className="rounded-md border overflow-x-auto">
+                  <table className="w-full text-sm min-w-[400px]">
+                    <thead className="border-b bg-muted/50">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-medium">Kode</th>
+                        <th className="px-4 py-2 text-left font-medium">Nama Menu</th>
+                        <th className="px-4 py-2 text-left font-medium">Kategori</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.recipes.map((recipe: any) => (
+                        <tr key={recipe.id} className="border-b hover:bg-muted/30">
+                          <td className="px-4 py-2 text-muted-foreground">{recipe.code}</td>
+                          <td className="px-4 py-2 font-medium">{recipe.name}</td>
+                          <td className="px-4 py-2 capitalize">{recipe.category}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </>
         )}
+
+        {/* Link recipes modal */}
+        <Modal
+          open={linkModalOpen}
+          onClose={() => setLinkModalOpen(false)}
+          title="Atur Menu Terkait"
+          size="lg"
+        >
+          <p className="text-sm text-muted-foreground mb-4">
+            Pilih menu yang akan menggunakan grup modifier "{group.name}"
+          </p>
+          {!allRecipes ? (
+            <p className="text-sm text-muted-foreground">Memuat menu...</p>
+          ) : (
+            <div className="max-h-80 overflow-y-auto space-y-1 border rounded-md p-2">
+              {allRecipes.map((recipe: any) => {
+                const isChecked = selectedRecipeIds.includes(recipe.id);
+                return (
+                  <label
+                    key={recipe.id}
+                    className="flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer hover:bg-accent"
+                  >
+                    <Checkbox
+                      checked={isChecked}
+                      onCheckedChange={(checked) => {
+                        setSelectedRecipeIds(
+                          checked === true
+                            ? [...selectedRecipeIds, recipe.id]
+                            : selectedRecipeIds.filter((id) => id !== recipe.id),
+                        );
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{recipe.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {recipe.code} — {recipe.category}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 mt-4">
+            <Button type="button" variant="outline" onClick={() => setLinkModalOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={() => {
+                void linkMutation.mutateAsync({
+                  data: {
+                    modifierGroupId: mgId,
+                    recipeIds: selectedRecipeIds,
+                  },
+                });
+              }}
+              disabled={linkMutation.isPending}
+            >
+              {linkMutation.isPending ? "Menyimpan..." : "Simpan"}
+            </Button>
+          </div>
+        </Modal>
 
         {/* Delete confirmation modal */}
         <Modal

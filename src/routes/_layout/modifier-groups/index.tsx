@@ -34,7 +34,8 @@ interface MGRow {
   name: string;
   minSelection: number;
   maxSelection: number;
-  modifiers: { id: string; name: string; price: number; isExclusion: boolean }[];
+  modifiers: { id: string; name: string; price: number; isExclusion: boolean; sortOrder: number }[];
+  recipeCount: number;
 }
 
 const columns: Column<MGRow>[] = [
@@ -54,6 +55,14 @@ const columns: Column<MGRow>[] = [
     align: "center",
     sortable: true,
     render: (r) => <Badge variant="secondary">{r.modifiers.length}</Badge>,
+  },
+  {
+    key: "recipeCount",
+    header: "Menu Terkait",
+    width: "w-24",
+    align: "center",
+    sortable: true,
+    render: (r) => <Badge variant="outline">{r.recipeCount}</Badge>,
   },
   {
     key: "id",

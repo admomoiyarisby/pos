@@ -180,6 +180,12 @@ const navGroups: NavGroup[] = [
         icon: Tag,
         roles: ["super_admin", "admin_pusat"],
       },
+      {
+        label: "Kategori Menu",
+        to: "/categories",
+        icon: Tag,
+        roles: ["super_admin", "admin_pusat"],
+      },
       { label: "Merek", to: "/admin/brands", icon: Tag, roles: ["super_admin", "admin_pusat"] },
       { label: "Voucher", to: "/admin/vouchers", icon: Percent, roles: ["super_admin"] },
     ],

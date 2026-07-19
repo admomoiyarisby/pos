@@ -46,6 +46,7 @@ import { Route as LayoutIngredientsIndexRouteImport } from "./routes/_layout/ing
 import { Route as LayoutFinanceIndexRouteImport } from "./routes/_layout/finance/index";
 import { Route as LayoutDocsIndexRouteImport } from "./routes/_layout/docs/index";
 import { Route as LayoutDeliveryNotesIndexRouteImport } from "./routes/_layout/delivery-notes/index";
+import { Route as LayoutCategoriesIndexRouteImport } from "./routes/_layout/categories/index";
 import { Route as LayoutAnalyticsIndexRouteImport } from "./routes/_layout/analytics/index";
 import { Route as LayoutAdminIndexRouteImport } from "./routes/_layout/admin/index";
 import { Route as DemoFormSimpleRouteImport } from "./routes/demo/form.simple";
@@ -75,6 +76,7 @@ import { Route as LayoutDocsMutasiStokRouteImport } from "./routes/_layout/docs/
 import { Route as LayoutDocsKartuStokRouteImport } from "./routes/_layout/docs/kartu-stok";
 import { Route as LayoutDocsBarangMasukRouteImport } from "./routes/_layout/docs/barang-masuk";
 import { Route as LayoutDeliveryNotesDnIdRouteImport } from "./routes/_layout/delivery-notes/$dnId";
+import { Route as LayoutCategoriesCategoryIdRouteImport } from "./routes/_layout/categories/$categoryId";
 import { Route as LayoutAnalyticsSalesRouteImport } from "./routes/_layout/analytics/sales";
 import { Route as LayoutAnalyticsInventoryRouteImport } from "./routes/_layout/analytics/inventory";
 import { Route as LayoutAdminVouchersRouteImport } from "./routes/_layout/admin/vouchers";
@@ -270,6 +272,11 @@ const LayoutDeliveryNotesIndexRoute = LayoutDeliveryNotesIndexRouteImport.update
   path: "/delivery-notes/",
   getParentRoute: () => LayoutRoute,
 } as any);
+const LayoutCategoriesIndexRoute = LayoutCategoriesIndexRouteImport.update({
+  id: "/categories/",
+  path: "/categories/",
+  getParentRoute: () => LayoutRoute,
+} as any);
 const LayoutAnalyticsIndexRoute = LayoutAnalyticsIndexRouteImport.update({
   id: "/analytics/",
   path: "/analytics/",
@@ -416,6 +423,11 @@ const LayoutDeliveryNotesDnIdRoute = LayoutDeliveryNotesDnIdRouteImport.update({
   path: "/delivery-notes/$dnId",
   getParentRoute: () => LayoutRoute,
 } as any);
+const LayoutCategoriesCategoryIdRoute = LayoutCategoriesCategoryIdRouteImport.update({
+  id: "/categories/$categoryId",
+  path: "/categories/$categoryId",
+  getParentRoute: () => LayoutRoute,
+} as any);
 const LayoutAnalyticsSalesRoute = LayoutAnalyticsSalesRouteImport.update({
   id: "/analytics/sales",
   path: "/analytics/sales",
@@ -497,6 +509,7 @@ export interface FileRoutesByFullPath {
   "/admin/vouchers": typeof LayoutAdminVouchersRoute;
   "/analytics/inventory": typeof LayoutAnalyticsInventoryRoute;
   "/analytics/sales": typeof LayoutAnalyticsSalesRoute;
+  "/categories/$categoryId": typeof LayoutCategoriesCategoryIdRoute;
   "/delivery-notes/$dnId": typeof LayoutDeliveryNotesDnIdRoute;
   "/docs/barang-masuk": typeof LayoutDocsBarangMasukRoute;
   "/docs/kartu-stok": typeof LayoutDocsKartuStokRoute;
@@ -526,6 +539,7 @@ export interface FileRoutesByFullPath {
   "/demo/form/simple": typeof DemoFormSimpleRoute;
   "/admin/": typeof LayoutAdminIndexRoute;
   "/analytics/": typeof LayoutAnalyticsIndexRoute;
+  "/categories/": typeof LayoutCategoriesIndexRoute;
   "/delivery-notes/": typeof LayoutDeliveryNotesIndexRoute;
   "/docs/": typeof LayoutDocsIndexRoute;
   "/finance/": typeof LayoutFinanceIndexRoute;
@@ -574,6 +588,7 @@ export interface FileRoutesByTo {
   "/admin/vouchers": typeof LayoutAdminVouchersRoute;
   "/analytics/inventory": typeof LayoutAnalyticsInventoryRoute;
   "/analytics/sales": typeof LayoutAnalyticsSalesRoute;
+  "/categories/$categoryId": typeof LayoutCategoriesCategoryIdRoute;
   "/delivery-notes/$dnId": typeof LayoutDeliveryNotesDnIdRoute;
   "/docs/barang-masuk": typeof LayoutDocsBarangMasukRoute;
   "/docs/kartu-stok": typeof LayoutDocsKartuStokRoute;
@@ -603,6 +618,7 @@ export interface FileRoutesByTo {
   "/demo/form/simple": typeof DemoFormSimpleRoute;
   "/admin": typeof LayoutAdminIndexRoute;
   "/analytics": typeof LayoutAnalyticsIndexRoute;
+  "/categories": typeof LayoutCategoriesIndexRoute;
   "/delivery-notes": typeof LayoutDeliveryNotesIndexRoute;
   "/docs": typeof LayoutDocsIndexRoute;
   "/finance": typeof LayoutFinanceIndexRoute;
@@ -653,6 +669,7 @@ export interface FileRoutesById {
   "/_layout/admin/vouchers": typeof LayoutAdminVouchersRoute;
   "/_layout/analytics/inventory": typeof LayoutAnalyticsInventoryRoute;
   "/_layout/analytics/sales": typeof LayoutAnalyticsSalesRoute;
+  "/_layout/categories/$categoryId": typeof LayoutCategoriesCategoryIdRoute;
   "/_layout/delivery-notes/$dnId": typeof LayoutDeliveryNotesDnIdRoute;
   "/_layout/docs/barang-masuk": typeof LayoutDocsBarangMasukRoute;
   "/_layout/docs/kartu-stok": typeof LayoutDocsKartuStokRoute;
@@ -682,6 +699,7 @@ export interface FileRoutesById {
   "/demo/form/simple": typeof DemoFormSimpleRoute;
   "/_layout/admin/": typeof LayoutAdminIndexRoute;
   "/_layout/analytics/": typeof LayoutAnalyticsIndexRoute;
+  "/_layout/categories/": typeof LayoutCategoriesIndexRoute;
   "/_layout/delivery-notes/": typeof LayoutDeliveryNotesIndexRoute;
   "/_layout/docs/": typeof LayoutDocsIndexRoute;
   "/_layout/finance/": typeof LayoutFinanceIndexRoute;
@@ -732,6 +750,7 @@ export interface FileRouteTypes {
     | "/admin/vouchers"
     | "/analytics/inventory"
     | "/analytics/sales"
+    | "/categories/$categoryId"
     | "/delivery-notes/$dnId"
     | "/docs/barang-masuk"
     | "/docs/kartu-stok"
@@ -761,6 +780,7 @@ export interface FileRouteTypes {
     | "/demo/form/simple"
     | "/admin/"
     | "/analytics/"
+    | "/categories/"
     | "/delivery-notes/"
     | "/docs/"
     | "/finance/"
@@ -809,6 +829,7 @@ export interface FileRouteTypes {
     | "/admin/vouchers"
     | "/analytics/inventory"
     | "/analytics/sales"
+    | "/categories/$categoryId"
     | "/delivery-notes/$dnId"
     | "/docs/barang-masuk"
     | "/docs/kartu-stok"
@@ -838,6 +859,7 @@ export interface FileRouteTypes {
     | "/demo/form/simple"
     | "/admin"
     | "/analytics"
+    | "/categories"
     | "/delivery-notes"
     | "/docs"
     | "/finance"
@@ -887,6 +909,7 @@ export interface FileRouteTypes {
     | "/_layout/admin/vouchers"
     | "/_layout/analytics/inventory"
     | "/_layout/analytics/sales"
+    | "/_layout/categories/$categoryId"
     | "/_layout/delivery-notes/$dnId"
     | "/_layout/docs/barang-masuk"
     | "/_layout/docs/kartu-stok"
@@ -916,6 +939,7 @@ export interface FileRouteTypes {
     | "/demo/form/simple"
     | "/_layout/admin/"
     | "/_layout/analytics/"
+    | "/_layout/categories/"
     | "/_layout/delivery-notes/"
     | "/_layout/docs/"
     | "/_layout/finance/"
@@ -1211,6 +1235,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutDeliveryNotesIndexRouteImport;
       parentRoute: typeof LayoutRoute;
     };
+    "/_layout/categories/": {
+      id: "/_layout/categories/";
+      path: "/categories";
+      fullPath: "/categories/";
+      preLoaderRoute: typeof LayoutCategoriesIndexRouteImport;
+      parentRoute: typeof LayoutRoute;
+    };
     "/_layout/analytics/": {
       id: "/_layout/analytics/";
       path: "/analytics";
@@ -1414,6 +1445,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutDeliveryNotesDnIdRouteImport;
       parentRoute: typeof LayoutRoute;
     };
+    "/_layout/categories/$categoryId": {
+      id: "/_layout/categories/$categoryId";
+      path: "/categories/$categoryId";
+      fullPath: "/categories/$categoryId";
+      preLoaderRoute: typeof LayoutCategoriesCategoryIdRouteImport;
+      parentRoute: typeof LayoutRoute;
+    };
     "/_layout/analytics/sales": {
       id: "/_layout/analytics/sales";
       path: "/analytics/sales";
@@ -1509,6 +1547,7 @@ interface LayoutRouteChildren {
   LayoutAdminVouchersRoute: typeof LayoutAdminVouchersRoute;
   LayoutAnalyticsInventoryRoute: typeof LayoutAnalyticsInventoryRoute;
   LayoutAnalyticsSalesRoute: typeof LayoutAnalyticsSalesRoute;
+  LayoutCategoriesCategoryIdRoute: typeof LayoutCategoriesCategoryIdRoute;
   LayoutDeliveryNotesDnIdRoute: typeof LayoutDeliveryNotesDnIdRoute;
   LayoutDocsBarangMasukRoute: typeof LayoutDocsBarangMasukRoute;
   LayoutDocsKartuStokRoute: typeof LayoutDocsKartuStokRoute;
@@ -1535,6 +1574,7 @@ interface LayoutRouteChildren {
   LayoutStockTransfersTrIdRoute: typeof LayoutStockTransfersTrIdRoute;
   LayoutAdminIndexRoute: typeof LayoutAdminIndexRoute;
   LayoutAnalyticsIndexRoute: typeof LayoutAnalyticsIndexRoute;
+  LayoutCategoriesIndexRoute: typeof LayoutCategoriesIndexRoute;
   LayoutDeliveryNotesIndexRoute: typeof LayoutDeliveryNotesIndexRoute;
   LayoutDocsIndexRoute: typeof LayoutDocsIndexRoute;
   LayoutFinanceIndexRoute: typeof LayoutFinanceIndexRoute;
@@ -1576,6 +1616,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAdminVouchersRoute: LayoutAdminVouchersRoute,
   LayoutAnalyticsInventoryRoute: LayoutAnalyticsInventoryRoute,
   LayoutAnalyticsSalesRoute: LayoutAnalyticsSalesRoute,
+  LayoutCategoriesCategoryIdRoute: LayoutCategoriesCategoryIdRoute,
   LayoutDeliveryNotesDnIdRoute: LayoutDeliveryNotesDnIdRoute,
   LayoutDocsBarangMasukRoute: LayoutDocsBarangMasukRoute,
   LayoutDocsKartuStokRoute: LayoutDocsKartuStokRoute,
@@ -1602,6 +1643,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutStockTransfersTrIdRoute: LayoutStockTransfersTrIdRoute,
   LayoutAdminIndexRoute: LayoutAdminIndexRoute,
   LayoutAnalyticsIndexRoute: LayoutAnalyticsIndexRoute,
+  LayoutCategoriesIndexRoute: LayoutCategoriesIndexRoute,
   LayoutDeliveryNotesIndexRoute: LayoutDeliveryNotesIndexRoute,
   LayoutDocsIndexRoute: LayoutDocsIndexRoute,
   LayoutFinanceIndexRoute: LayoutFinanceIndexRoute,
