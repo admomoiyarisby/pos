@@ -52,11 +52,19 @@ async function validatePinUnique(pin: string, excludeBranchId?: string) {
 }
 
 export const getBranches = createServerFn({ method: "GET" })
-  .validator((data: { search?: string; type?: "Central" | "Outlet" | null }) => data)
+  .validator(
+    (data: { search?: string; type?: "Central" | "Outlet" | null; showInactive?: boolean }) => data,
+  )
   .handler(async ({ data }) => {
     await requireAuth();
 
     const conditions = [];
+
+    // Exclude soft-deleted branches unless explicitly requested
+    if (!data.showInactive) {
+      conditions.push(eq(branches.active, true));
+    }
+
     if (data.search) {
       conditions.push(
         or(

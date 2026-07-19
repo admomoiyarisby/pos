@@ -16,7 +16,7 @@ import {
   SheetDescription,
 } from "#/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "#/components/ui/tabs";
-import { getBranches, createBranch, updateBranch } from "#/lib/server/branches";
+import { getBranches, createBranch, updateBranch, deleteBranch } from "#/lib/server/branches";
 import { getBranchUsers, createUser, updateUser } from "#/lib/server/users";
 import {
   Store,
@@ -128,6 +128,7 @@ function BranchSheet({
   const [deleteStaffTarget, setDeleteStaffTarget] = useState<BranchUser | null>(null);
   const [reactivateStaffTarget, setReactivateStaffTarget] = useState<BranchUser | null>(null);
   const [generatedPassword, setGeneratedPassword] = useState("");
+  const [deleteBranchOpen, setDeleteBranchOpen] = useState(false);
 
   const generatePassword = () => {
     const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
@@ -192,6 +193,19 @@ function BranchSheet({
       void queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success("Staf diaktifkan kembali");
       setReactivateStaffTarget(null);
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const deleteBranchMutation = useMutation({
+    mutationFn: deleteBranch,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["branches"] });
+      setDeleteBranchOpen(false);
+      onClose();
+      toast.success("Cabang berhasil dinonaktifkan");
     },
     onError: (err) => {
       toast.error(err.message);
@@ -295,30 +309,16 @@ function BranchSheet({
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Tipe</label>
-                      <select
-                        name="type"
-                        defaultValue={branch.type}
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        <option value="Central">Central</option>
-                        <option value="Outlet">Outlet</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Status</label>
-                      <select
-                        name="status"
-                        defaultValue={branch.active ? "Active" : "Inactive"}
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        <option value="Active">Aktif</option>
-                        <option value="Inactive">Nonaktif</option>
-                      </select>
-                    </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Tipe</label>
+                    <select
+                      name="type"
+                      defaultValue={branch.type}
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="Central">Central</option>
+                      <option value="Outlet">Outlet</option>
+                    </select>
                   </div>
 
                   {updateMutation.isError && (
@@ -331,6 +331,21 @@ function BranchSheet({
                     {updateMutation.isPending ? "Menyimpan..." : "Simpan Info Dasar"}
                   </Button>
                 </form>
+
+                <div className="border-t pt-4 mt-6">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="w-full"
+                    onClick={() => setDeleteBranchOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Nonaktifkan Cabang
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    Menonaktifkan akan menghapus cabang dari daftar aktif
+                  </p>
+                </div>
               </TabsContent>
 
               {/* Kontak & PIN Tab */}
@@ -662,6 +677,39 @@ function BranchSheet({
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Delete Branch Confirmation Modal */}
+      <Modal
+        open={deleteBranchOpen}
+        onClose={() => setDeleteBranchOpen(false)}
+        title="Nonaktifkan Cabang"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">Nonaktifkan cabang "{branch.name}"?</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Cabang yang dinonaktifkan tidak akan muncul di daftar aktif. Staf cabang tidak akan
+                bisa login. Tindakan ini dapat dibalik dengan mengaktifkan kembali.
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setDeleteBranchOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void deleteBranchMutation.mutateAsync({ data: { id: branch.id } })}
+              disabled={deleteBranchMutation.isPending}
+            >
+              {deleteBranchMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </>
   );

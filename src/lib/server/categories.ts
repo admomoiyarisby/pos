@@ -61,23 +61,39 @@ export const assignRecipesToCategory = createServerFn({ method: "POST" })
       .object({
         category: z.enum(["makanan", "minuman", "snack", "add_ons", "paket_bundle"]),
         recipeIds: z.array(z.string().uuid()),
+        // Recipes removed from this category must be moved somewhere
+        removedRecipeIds: z.array(z.string().uuid()).default([]),
+        destinationCategory: z
+          .enum(["makanan", "minuman", "snack", "add_ons", "paket_bundle"])
+          .optional(),
       })
       .parse(data),
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
-    if (data.recipeIds.length > 0) {
-      await db
-        .update(recipes)
-        .set({ category: data.category })
-        .where(inArray(recipes.id, data.recipeIds));
-    }
+    await db.transaction(async (tx) => {
+      // Assign selected recipes to this category
+      if (data.recipeIds.length > 0) {
+        await tx
+          .update(recipes)
+          .set({ category: data.category })
+          .where(inArray(recipes.id, data.recipeIds));
+      }
+
+      // Move unlinked recipes to destination category
+      if (data.removedRecipeIds.length > 0 && data.destinationCategory) {
+        await tx
+          .update(recipes)
+          .set({ category: data.destinationCategory })
+          .where(inArray(recipes.id, data.removedRecipeIds));
+      }
+    });
 
     await logSystemAction(
       user,
       "Assign Recipes to Category",
-      `${data.recipeIds.length} menu dipindahkan ke kategori "${data.category}" oleh ${user.name}`,
+      `${data.recipeIds.length} menu ke "${data.category}"${data.removedRecipeIds.length > 0 && data.destinationCategory ? `, ${data.removedRecipeIds.length} menu pindah ke "${data.destinationCategory}"` : ""} oleh ${user.name}`,
     );
 
     return { success: true };

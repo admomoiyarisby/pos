@@ -8,6 +8,7 @@ import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
 import { Checkbox } from "#/components/ui/checkbox";
 import Modal from "#/components/ui/Modal";
+import { Label } from "#/components/ui/label";
 import { toast } from "sonner";
 import {
   getCategories,
@@ -42,6 +43,8 @@ function CategoryDetailPage() {
   const queryClient = useQueryClient();
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [selectedRecipeIds, setSelectedRecipeIds] = useState<string[]>([]);
+  const [originalRecipeIds, setOriginalRecipeIds] = useState<string[]>([]);
+  const [destCategory, setDestCategory] = useState<string>("");
 
   const categoryName = CATEGORY_LABELS[categoryId] ?? categoryId;
   const categoryInfo = categories.find((c) => c.code === categoryId);
@@ -72,10 +75,17 @@ function CategoryDetailPage() {
   });
 
   const openLinkModal = () => {
-    // Pre-select recipes already in this category
-    setSelectedRecipeIds(recipes.map((r) => r.id));
+    const currentIds = recipes.map((r) => r.id);
+    setOriginalRecipeIds(currentIds);
+    setSelectedRecipeIds(currentIds);
+    setDestCategory("");
     setLinkModalOpen(true);
   };
+
+  const removedIds = originalRecipeIds.filter((id) => !selectedRecipeIds.includes(id));
+  const hasRemovals = removedIds.length > 0;
+
+  const otherCategories = categories.filter((c) => c.code !== categoryId);
 
   usePageTitle(categoryName, `Kelola menu dalam kategori ${categoryName}`);
 
@@ -206,12 +216,40 @@ function CategoryDetailPage() {
               })}
             </div>
           )}
+          {hasRemovals && (
+            <div className="mt-4 p-4 border rounded-md bg-amber-50 dark:bg-amber-950/20 space-y-2">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                {removedIds.length} menu akan dipindahkan dari "{categoryName}"
+              </p>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Pindahkan ke kategori</Label>
+                <select
+                  value={destCategory}
+                  onChange={(e) => setDestCategory(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="" disabled>
+                    Pilih kategori tujuan
+                  </option>
+                  {otherCategories.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
           <div className="flex justify-end gap-2 mt-4">
             <Button type="button" variant="outline" onClick={() => setLinkModalOpen(false)}>
               Batal
             </Button>
             <Button
               onClick={() => {
+                if (hasRemovals && !destCategory) {
+                  toast.error("Pilih kategori tujuan untuk menu yang dipindahkan");
+                  return;
+                }
                 void assignMutation.mutateAsync({
                   data: {
                     category: categoryId as
@@ -221,10 +259,19 @@ function CategoryDetailPage() {
                       | "add_ons"
                       | "paket_bundle",
                     recipeIds: selectedRecipeIds,
+                    removedRecipeIds: removedIds,
+                    destinationCategory: hasRemovals
+                      ? (destCategory as
+                          | "makanan"
+                          | "minuman"
+                          | "snack"
+                          | "add_ons"
+                          | "paket_bundle")
+                      : undefined,
                   },
                 });
               }}
-              disabled={assignMutation.isPending}
+              disabled={assignMutation.isPending || (hasRemovals && !destCategory)}
             >
               {assignMutation.isPending ? "Menyimpan..." : "Simpan"}
             </Button>
