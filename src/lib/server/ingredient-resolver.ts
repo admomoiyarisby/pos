@@ -2,6 +2,7 @@ import { db } from "#/lib/server/db";
 import type * as schema from "#/db/schema";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import {
+  recipes,
   recipeIngredients,
   recipeChildRecipes,
   recipeModifierExclusions,
@@ -155,18 +156,26 @@ export async function resolveNewItemIngredients(
   const conn = tx ?? db;
   const modifiers = selectedModifiers ?? [];
 
-  // 1. Resolve child recipes for bundling
+  // 1. Check if the recipe is BOGO — effective quantity is doubled
+  const [recipe] = await conn
+    .select({ isBOGO: recipes.isBOGO })
+    .from(recipes)
+    .where(eq(recipes.id, recipeId))
+    .limit(1);
+  const effectiveQuantity = recipe?.isBOGO ? quantity * 2 : quantity;
+
+  // 2. Resolve child recipes for bundling
   const childLinks = await conn
     .select()
     .from(recipeChildRecipes)
     .where(eq(recipeChildRecipes.parentRecipeId, recipeId));
 
-  // 2. Build BOM entries: parent + children
+  // 3. Build BOM entries: parent + children, using effective quantity
   const bomEntries: BOMEntry[] = [
-    { recipeId, quantity },
+    { recipeId, quantity: effectiveQuantity },
     ...childLinks.map((link) => ({
       recipeId: link.childRecipeId,
-      quantity: link.quantity * quantity,
+      quantity: link.quantity * effectiveQuantity,
     })),
   ];
 
@@ -196,7 +205,7 @@ export async function resolveNewItemIngredients(
       );
 
     for (const ex of exclusions) {
-      const totalQty = ex.quantity * quantity;
+      const totalQty = ex.quantity * effectiveQuantity;
       exclusionRecords.push({
         ingredientId: ex.ingredientId,
         quantity: totalQty,
@@ -262,7 +271,15 @@ export async function resolvePersistedItemIngredients(
 
   const { recipeId, quantity } = orderItem;
 
-  // 2. Get modifiers and exclusions from persisted tables
+  // 2. Check BOGO — effective quantity is doubled
+  const [recipe] = await conn
+    .select({ isBOGO: recipes.isBOGO })
+    .from(recipes)
+    .where(eq(recipes.id, recipeId))
+    .limit(1);
+  const effectiveQuantity = recipe?.isBOGO ? quantity * 2 : quantity;
+
+  // 3. Get modifiers and exclusions from persisted tables
   const [persistedMods, persistedExclusions] = await Promise.all([
     conn
       .select({ modifierId: orderItemModifiers.modifierId })
@@ -271,21 +288,21 @@ export async function resolvePersistedItemIngredients(
     conn.select().from(orderItemExclusions).where(eq(orderItemExclusions.orderItemId, orderItemId)),
   ]);
 
-  // 3. Build BOM: parent recipe + children
+  // 4. Build BOM: parent recipe + children, using effective quantity
   const childLinks = await conn
     .select()
     .from(recipeChildRecipes)
     .where(eq(recipeChildRecipes.parentRecipeId, recipeId));
 
   const bomEntries: BOMEntry[] = [
-    { recipeId, quantity },
+    { recipeId, quantity: effectiveQuantity },
     ...childLinks.map((link) => ({
       recipeId: link.childRecipeId,
-      quantity: link.quantity * quantity,
+      quantity: link.quantity * effectiveQuantity,
     })),
   ];
 
-  // 4. Resolve add-on modifier IDs (all persisted modifiers are assumed to be add-ons)
+  // 5. Resolve add-on modifier IDs (all persisted modifiers are assumed to be add-ons)
   const addonModifierIds = persistedMods.map((m) => m.modifierId);
 
   // 5. Resolve BOM

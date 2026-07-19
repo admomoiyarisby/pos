@@ -169,9 +169,26 @@ export const getPosMenu = createServerFn({ method: "GET" })
                   : null,
               })),
           })),
-        ingredientIds: allRecipeIngredients
-          .filter((ri) => ri.recipeId === r.id)
-          .map((ri) => ({ ingredientId: ri.ingredientId, quantity: ri.quantity })),
+        ingredientIds: (() => {
+          // Collect ingredients: parent recipe + child recipes (for bundles)
+          const recipeIdsForStock = [r.id];
+          for (const cl of childLinks.filter((c) => c.parentRecipeId === r.id)) {
+            recipeIdsForStock.push(cl.childRecipeId);
+          }
+          // Aggregate quantities by ingredientId across all relevant recipes
+          const agg = new Map<string, number>();
+          for (const ri of allRecipeIngredients.filter((rri) =>
+            recipeIdsForStock.includes(rri.recipeId),
+          )) {
+            agg.set(ri.ingredientId, (agg.get(ri.ingredientId) ?? 0) + ri.quantity);
+          }
+          // Double all quantities for BOGO items
+          const factor = r.isBOGO ? 2 : 1;
+          return [...agg.entries()].map(([ingredientId, quantity]) => ({
+            ingredientId,
+            quantity: quantity * factor,
+          }));
+        })(),
         isBundle: childLinks.some((c) => c.parentRecipeId === r.id),
         childRecipes: childLinks
           .filter((c) => c.parentRecipeId === r.id)
