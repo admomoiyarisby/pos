@@ -106,3 +106,7 @@ _Avoid_: transfer cost, mutasi cost
 **Procurement Unit Price**:
 The price per unit (in IDR) that the destination branch pays the central warehouse for an ingredient in a specific procurement. Snapshotted from `ingredients.averageCost` at procurement-item-creation time (in `createProcurement`). The price is frozen on the item row — subsequent changes to `averageCost` do not affect existing procurements. The CA review form shows the price + per-line subtotal + grand subtotal (read-only); the BA's request form shows the price as a transparency aid (also read-only); the invoice is generated as `receivedQuantity * unitPrice`. The CA cannot override the price in the current flow — if a different price is needed, CA adjusts `ingredients.averageCost` first. See ADR 0003.
 _Avoid_: cost, harga, procurement cost (reserved for the per-recipe manufacturing cost tracked in COGS)
+
+**Recipe Category**:
+A grouping label for recipes (e.g., Makanan, Minuman, Snack). Categories are mutable — stored in the `categories` table (ADR 0007), referenced by `recipes.categoryId`. Created and deleted by `super_admin` / `admin_pusat`. Deleting a category requires a destination category for orphaned recipes.
+_Avoid_: hardcoded enum (legacy), menu group

@@ -190,6 +190,14 @@ export const scmTransferStatusEnum = pgEnum("scm_transfer_status", [
 // MODULE 1 — MASTER DATA
 // =============================================================================
 
+export const categories = pgTable("categories", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+});
+
 export const users = pgTable(
   "users",
   {
@@ -277,6 +285,7 @@ export const recipes = pgTable("recipes", {
   description: text("description"),
   imageUrl: text("image_url"),
   category: recipeCategoryEnum("category").notNull().default("makanan"),
+  categoryId: uuid("category_id").references(() => categories.id, { onDelete: "restrict" }),
   isSubRecipe: boolean("is_sub_recipe").notNull().default(false),
   basePrice: integer("base_price").notNull(),
   totalCogs: integer("total_cogs").notNull().default(0),

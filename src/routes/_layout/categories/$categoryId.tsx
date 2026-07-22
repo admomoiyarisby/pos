@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -14,23 +14,16 @@ import {
   getCategories,
   getCategoryRecipes,
   assignRecipesToCategory,
+  deleteCategory,
 } from "#/lib/server/categories";
 import { getRecipes } from "#/lib/server/recipes";
-import { ArrowLeft, Link2, Tag } from "lucide-react";
-
-const CATEGORY_LABELS: Record<string, string> = {
-  makanan: "Makanan",
-  minuman: "Minuman",
-  snack: "Snack",
-  add_ons: "Add-Ons",
-  paket_bundle: "Paket / Bundle",
-};
+import { ArrowLeft, Link2, Tag, Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/categories/$categoryId")({
   component: CategoryDetailPage,
   loader: async ({ params }) => {
     const [recipes, categories] = await Promise.all([
-      getCategoryRecipes({ data: { category: params.categoryId } }),
+      getCategoryRecipes({ data: { categoryId: params.categoryId } }),
       getCategories({}),
     ]);
     return { recipes, categories };
@@ -41,17 +34,21 @@ function CategoryDetailPage() {
   const { categoryId } = Route.useParams();
   const { recipes: initialRecipes, categories } = Route.useLoaderData();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [selectedRecipeIds, setSelectedRecipeIds] = useState<string[]>([]);
   const [originalRecipeIds, setOriginalRecipeIds] = useState<string[]>([]);
   const [destCategory, setDestCategory] = useState<string>("");
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteDestCategory, setDeleteDestCategory] = useState<string>("");
 
-  const categoryName = CATEGORY_LABELS[categoryId] ?? categoryId;
-  const categoryInfo = categories.find((c) => c.code === categoryId);
+  const categoryInfo = categories.find((c) => c.id === categoryId);
+  const categoryName = categoryInfo?.name ?? "Kategori";
+  const otherCategories = categories.filter((c) => c.id !== categoryId);
 
   const { data: recipes } = useQuery({
     queryKey: ["category-recipes", categoryId],
-    queryFn: () => getCategoryRecipes({ data: { category: categoryId } }),
+    queryFn: () => getCategoryRecipes({ data: { categoryId } }),
     initialData: initialRecipes,
   });
 
@@ -74,6 +71,20 @@ function CategoryDetailPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: deleteCategory,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["categories"] });
+      void queryClient.invalidateQueries({ queryKey: ["recipes"] });
+      setDeleteModalOpen(false);
+      toast.success("Kategori berhasil dihapus");
+      void router.navigate({ to: "/categories" });
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus kategori", { description: error.message });
+    },
+  });
+
   const openLinkModal = () => {
     const currentIds = recipes.map((r) => r.id);
     setOriginalRecipeIds(currentIds);
@@ -82,10 +93,13 @@ function CategoryDetailPage() {
     setLinkModalOpen(true);
   };
 
+  const openDeleteModal = () => {
+    setDeleteDestCategory("");
+    setDeleteModalOpen(true);
+  };
+
   const removedIds = originalRecipeIds.filter((id) => !selectedRecipeIds.includes(id));
   const hasRemovals = removedIds.length > 0;
-
-  const otherCategories = categories.filter((c) => c.code !== categoryId);
 
   usePageTitle(categoryName, `Kelola menu dalam kategori ${categoryName}`);
 
@@ -114,10 +128,16 @@ function CategoryDetailPage() {
               </p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={openLinkModal}>
-            <Link2 className="h-3.5 w-3.5 mr-1.5" />
-            Atur Menu
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="destructive" size="sm" onClick={openDeleteModal}>
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              Hapus Kategori
+            </Button>
+            <Button variant="outline" size="sm" onClick={openLinkModal}>
+              <Link2 className="h-3.5 w-3.5 mr-1.5" />
+              Atur Menu
+            </Button>
+          </div>
         </div>
 
         <Separator />
@@ -207,8 +227,7 @@ function CategoryDetailPage() {
                       <p className="text-sm font-medium truncate">{recipe.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {recipe.code}
-                        {recipe.category &&
-                          ` — ${CATEGORY_LABELS[recipe.category] ?? recipe.category}`}
+                        {recipe.category ? ` — ${recipe.category}` : ""}
                       </p>
                     </div>
                   </label>
@@ -232,7 +251,7 @@ function CategoryDetailPage() {
                     Pilih kategori tujuan
                   </option>
                   {otherCategories.map((c) => (
-                    <option key={c.code} value={c.code}>
+                    <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
                   ))}
@@ -252,22 +271,10 @@ function CategoryDetailPage() {
                 }
                 void assignMutation.mutateAsync({
                   data: {
-                    category: categoryId as
-                      | "makanan"
-                      | "minuman"
-                      | "snack"
-                      | "add_ons"
-                      | "paket_bundle",
+                    categoryId,
                     recipeIds: selectedRecipeIds,
                     removedRecipeIds: removedIds,
-                    destinationCategory: hasRemovals
-                      ? (destCategory as
-                          | "makanan"
-                          | "minuman"
-                          | "snack"
-                          | "add_ons"
-                          | "paket_bundle")
-                      : undefined,
+                    destinationCategoryId: hasRemovals ? destCategory : undefined,
                   },
                 });
               }}
@@ -275,6 +282,60 @@ function CategoryDetailPage() {
             >
               {assignMutation.isPending ? "Menyimpan..." : "Simpan"}
             </Button>
+          </div>
+        </Modal>
+
+        {/* Delete Category Modal */}
+        <Modal
+          open={deleteModalOpen}
+          onClose={() => setDeleteModalOpen(false)}
+          title={`Hapus Kategori "${categoryName}"`}
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Kategori "{categoryName}" akan dihapus. Pilih kategori tujuan untuk menu yang saat ini
+              berada dalam kategori ini.
+            </p>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Pindahkan menu ke kategori</Label>
+              <select
+                value={deleteDestCategory}
+                onChange={(e) => setDeleteDestCategory(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="" disabled>
+                  Pilih kategori tujuan
+                </option>
+                {otherCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setDeleteModalOpen(false)}>
+                Batal
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (!deleteDestCategory) {
+                    toast.error("Pilih kategori tujuan untuk menu yang dipindahkan");
+                    return;
+                  }
+                  void deleteMutation.mutateAsync({
+                    data: {
+                      categoryId,
+                      destinationCategoryId: deleteDestCategory,
+                    },
+                  });
+                }}
+                disabled={deleteMutation.isPending || !deleteDestCategory}
+              >
+                {deleteMutation.isPending ? "Menghapus..." : "Hapus Kategori"}
+              </Button>
+            </div>
           </div>
         </Modal>
       </div>
