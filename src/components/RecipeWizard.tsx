@@ -31,6 +31,9 @@ export interface WizardData {
   modifierGroupIds: string[];
   isBundling: boolean;
   childRecipes: { recipeId: string; quantity: number }[];
+  imageUrl?: string | null;
+  pendingFile?: File | null;
+  removeImage?: boolean;
 }
 
 interface IngredientOption {
@@ -132,6 +135,9 @@ export function RecipeWizard({
   const [childRecipes, setChildRecipes] = useState<{ recipeId: string; quantity: number }[]>(
     initialData?.childRecipes ?? [],
   );
+  const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.imageUrl ?? null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   // Fetch ingredients
@@ -188,6 +194,8 @@ export function RecipeWizard({
       modifierGroupIds: linkedModifierGroupIds,
       isBundling,
       childRecipes,
+      pendingFile,
+      removeImage,
     };
     onSubmit(data);
   };
@@ -261,6 +269,55 @@ export function RecipeWizard({
         {/* Step 1: Info Dasar */}
         {currentStep === 0 && (
           <div className="space-y-4">
+            {/* Recipe image */}
+            <div className="space-y-2">
+              <Label>Gambar Resep</Label>
+              <div className="flex items-center gap-4">
+                <div className="h-24 w-24 shrink-0 rounded-md border bg-muted overflow-hidden flex items-center justify-center">
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt="Pratinjau resep"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Belum ada</span>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        setPendingFile(f);
+                        setPreviewUrl(URL.createObjectURL(f));
+                        setRemoveImage(false);
+                      }
+                    }}
+                    className="block w-full max-w-xs text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:opacity-90"
+                  />
+                  {(previewUrl || pendingFile) && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setRemoveImage(true);
+                        setPendingFile(null);
+                        setPreviewUrl(null);
+                      }}
+                    >
+                      Hapus Gambar
+                    </Button>
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    JPEG / PNG / WebP, maks 2 MB
+                  </span>
+                </div>
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">

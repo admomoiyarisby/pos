@@ -9,6 +9,7 @@ import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { RecipeWizard } from "#/components/RecipeWizard";
 import { getRecipes, createRecipe, recalculateAllRecipeCosts } from "#/lib/server/recipes";
+import { uploadRecipeImage } from "#/lib/server/recipe-images";
 import { getBrands } from "#/lib/server/brands";
 import { getBranches } from "#/lib/server/branches";
 import { getModifierGroups } from "#/lib/server/modifier-groups";
@@ -194,8 +195,13 @@ function RecipesPage() {
           branches={branches}
           modifierGroups={allModifierGroups ?? []}
           recipes={recipes ?? []}
-          onSubmit={(data) => {
-            void createMutation.mutateAsync({ data });
+          onSubmit={async (data) => {
+            const { pendingFile, removeImage, imageUrl, ...recipeData } = data;
+            const created = await createMutation.mutateAsync({ data: recipeData });
+            if (pendingFile && created?.id) {
+              await uploadRecipeImage({ data: { recipeId: created.id, file: pendingFile } });
+            }
+            void queryClient.invalidateQueries({ queryKey: ["recipes"] });
           }}
           onCancel={() => setModalOpen(false)}
           isPending={createMutation.isPending}

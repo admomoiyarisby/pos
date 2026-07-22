@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { getRecipeDetail, updateRecipe, deleteRecipe } from "#/lib/server/recipes";
+import { uploadRecipeImage, deleteRecipeImage } from "#/lib/server/recipe-images";
 import { getBrands } from "#/lib/server/brands";
 import { getModifierGroups } from "#/lib/server/modifier-groups";
 import { getBranches } from "#/lib/server/branches";
@@ -181,6 +182,7 @@ function RecipeDetailPage() {
               initialData={{
                 code: recipe.code,
                 name: recipe.name,
+                imageUrl: recipe.imageUrl,
                 category: recipe.category,
                 basePrice: recipe.basePrice,
                 brandIds: recipe.brands?.map((b: any) => b.brandId) ?? [],
@@ -203,13 +205,16 @@ function RecipeDetailPage() {
               branches={allBranches ?? []}
               modifierGroups={allModifierGroups ?? []}
               recipes={allRecipes ?? []}
-              onSubmit={(data) => {
-                void updateMutation.mutateAsync({
-                  data: {
-                    id: recipeId,
-                    ...data,
-                  },
-                });
+              onSubmit={async (data) => {
+                const { pendingFile, removeImage, imageUrl, ...recipeData } = data;
+                await updateMutation.mutateAsync({ data: { id: recipeId, ...recipeData } });
+                if (pendingFile) {
+                  await uploadRecipeImage({ data: { recipeId, file: pendingFile } });
+                } else if (removeImage) {
+                  await deleteRecipeImage({ data: { recipeId } });
+                }
+                void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
+                void queryClient.invalidateQueries({ queryKey: ["recipes"] });
               }}
               onCancel={() => setIsEditing(false)}
               isPending={updateMutation.isPending}
