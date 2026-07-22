@@ -13,6 +13,7 @@ import { Badge } from "#/components/ui/badge";
 import { Card } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
 import Modal from "#/components/ui/Modal";
+import { Label } from "#/components/ui/label";
 import { RecipeWizard } from "#/components/RecipeWizard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import {
@@ -24,6 +25,8 @@ import {
   Package,
   Store,
   Tag,
+  Image as ImageIcon,
+  Upload,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/recipes/$recipeId")({
@@ -44,6 +47,10 @@ function RecipeDetailPage() {
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [isImagePending, setIsImagePending] = useState(false);
 
   const { data: recipe } = useQuery({
     queryKey: ["recipe", recipeId],
@@ -100,6 +107,46 @@ function RecipeDetailPage() {
     },
   });
 
+  const openImageModal = () => {
+    setImageFile(null);
+    setImagePreviewUrl(recipe?.imageUrl ?? null);
+    setShowImageModal(true);
+  };
+
+  const handleUploadImage = async () => {
+    if (!imageFile) return;
+    setIsImagePending(true);
+    try {
+      const fd = new FormData();
+      fd.set("recipeId", recipeId);
+      fd.set("file", imageFile);
+      await uploadRecipeImage({ data: fd });
+      void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
+      void queryClient.invalidateQueries({ queryKey: ["recipes"] });
+      setShowImageModal(false);
+      toast.success("Gambar resep berhasil diperbarui");
+    } catch (err) {
+      toast.error("Gagal mengunggah gambar", { description: (err as Error).message });
+    } finally {
+      setIsImagePending(false);
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    setIsImagePending(true);
+    try {
+      await deleteRecipeImage({ data: { recipeId } });
+      void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
+      void queryClient.invalidateQueries({ queryKey: ["recipes"] });
+      setShowImageModal(false);
+      toast.success("Gambar resep dihapus");
+    } catch (err) {
+      toast.error("Gagal menghapus gambar", { description: (err as Error).message });
+    } finally {
+      setIsImagePending(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (recipeId) {
       await deleteMutation.mutateAsync({
@@ -134,14 +181,35 @@ function RecipeDetailPage() {
         </Link>
 
         {/* Header with Actions */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{recipe.name}</h1>
-            <p className="text-muted-foreground mt-1">
-              {recipe.code} • {recipe.category}
-            </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border bg-muted">
+              {recipe.imageUrl ? (
+                <img
+                  src={recipe.imageUrl}
+                  alt={recipe.name}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                  Belum ada
+                </div>
+              )}
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">{recipe.name}</h1>
+              <p className="text-muted-foreground mt-1">
+                {recipe.code} • {recipe.category}
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {!isEditing && (
+              <Button variant="outline" size="sm" onClick={openImageModal}>
+                <ImageIcon className="h-4 w-4" />
+                {recipe.imageUrl ? "Ganti Gambar" : "Tambah Gambar"}
+              </Button>
+            )}
             {!isEditing && (
               <Button
                 variant="outline"
@@ -155,10 +223,8 @@ function RecipeDetailPage() {
             <Button
               onClick={() => {
                 if (!isEditing) {
-                  // Entering edit mode - wizard will use recipe data
                   setIsEditing(true);
                 } else {
-                  // Cancelling edit
                   setIsEditing(false);
                 }
               }}
@@ -182,7 +248,6 @@ function RecipeDetailPage() {
               initialData={{
                 code: recipe.code,
                 name: recipe.name,
-                imageUrl: recipe.imageUrl,
                 category: recipe.category,
                 basePrice: recipe.basePrice,
                 brandIds: recipe.brands?.map((b: any) => b.brandId) ?? [],
@@ -206,13 +271,7 @@ function RecipeDetailPage() {
               modifierGroups={allModifierGroups ?? []}
               recipes={allRecipes ?? []}
               onSubmit={async (data) => {
-                const { pendingFile, removeImage, imageUrl, ...recipeData } = data;
-                await updateMutation.mutateAsync({ data: { id: recipeId, ...recipeData } });
-                if (pendingFile) {
-                  await uploadRecipeImage({ data: { recipeId, file: pendingFile } });
-                } else if (removeImage) {
-                  await deleteRecipeImage({ data: { recipeId } });
-                }
+                await updateMutation.mutateAsync({ data: { id: recipeId, ...data } });
                 void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
                 void queryClient.invalidateQueries({ queryKey: ["recipes"] });
               }}
@@ -493,6 +552,79 @@ function RecipeDetailPage() {
               >
                 {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
               </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Recipe image modal — dedicated image management, separate from editing recipe info */}
+        <Modal
+          open={showImageModal}
+          onClose={() => setShowImageModal(false)}
+          title="Gambar Resep"
+          size="md"
+        >
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="h-28 w-28 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                {imagePreviewUrl ? (
+                  <img
+                    src={imagePreviewUrl}
+                    alt={recipe.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                    Belum ada
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Pilih Gambar</Label>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      setImageFile(f);
+                      setImagePreviewUrl(URL.createObjectURL(f));
+                    } else {
+                      setImageFile(null);
+                      setImagePreviewUrl(recipe.imageUrl ?? null);
+                    }
+                  }}
+                  className="block w-full max-w-xs text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:opacity-90"
+                />
+                <span className="block text-xs text-muted-foreground">
+                  JPEG / PNG / WebP, maks 2 MB
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t pt-4">
+              <div>
+                {recipe.imageUrl && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive border-destructive hover:bg-destructive/10"
+                    onClick={handleRemoveImage}
+                    disabled={isImagePending}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Hapus Gambar
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => setShowImageModal(false)}>
+                  Batal
+                </Button>
+                <Button onClick={handleUploadImage} disabled={!imageFile || isImagePending}>
+                  <Upload className="h-4 w-4" />
+                  {isImagePending ? "Menyimpan..." : "Unggah"}
+                </Button>
+              </div>
             </div>
           </div>
         </Modal>

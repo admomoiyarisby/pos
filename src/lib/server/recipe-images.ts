@@ -141,16 +141,30 @@ export async function deleteRecipeImageFromStorage(
 
 type RecipeImageUploadInput = { recipeId: string; file: File };
 
-// NOTE: `file` is a runtime `File` (sent via the framework's FormData path),
-// but the framework's `Serializable` type constraint rejects `File`'s methods.
-// We type the validator input as `unknown` (passes the serializability check)
-// and assert the shape on output, so the handler stays fully typed.
+/**
+ * Extract the recipe id + image `File` from a multipart `FormData`.
+ *
+ * The client must send a `FormData` (built in the recipe routes): a bare
+ * `File` cannot survive the server-fn JSON payload because TanStack Start's
+ * default seroval plugins have no File/Blob/FormData serializer — the upload
+ * would throw on the client before the request is even made. The framework
+ * reconstructs the `File` server-side from the raw multipart body.
+ */
+export function parseRecipeImageFormData(data: unknown): RecipeImageUploadInput {
+  if (!(data instanceof FormData)) {
+    throw new Error("Expected a multipart FormData payload for image upload.");
+  }
+  const recipeId = data.get("recipeId");
+  const file = data.get("file");
+  z.string().uuid().parse(recipeId);
+  if (!(file instanceof File) || !file.type) {
+    throw new Error("No image file provided");
+  }
+  return { recipeId: recipeId as string, file: file as File };
+}
+
 export const uploadRecipeImage = createServerFn({ method: "POST" })
-  .validator((data: unknown) => {
-    const input = data as RecipeImageUploadInput;
-    z.string().uuid().parse(input.recipeId);
-    return input;
-  })
+  .validator((data: unknown) => parseRecipeImageFormData(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
     return uploadRecipeImageToStorage(data.recipeId, data.file, user);

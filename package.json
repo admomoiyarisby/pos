@@ -96,7 +96,7 @@
     "typescript": "^6.0.3",
     "vite": "npm:@voidzero-dev/vite-plus-core@latest",
     "vite-plus": "latest",
-    "vitest": "npm:@voidzero-dev/vite-plus-test@^0.1.19"
+    "vitest": "4.1.9"
   },
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
@@ -106,7 +106,7 @@
     ],
     "overrides": {
       "vite": "npm:@voidzero-dev/vite-plus-core@latest",
-      "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+      "vitest": "4.1.9"
     },
     "peerDependencyRules": {
       "allowAny": [
