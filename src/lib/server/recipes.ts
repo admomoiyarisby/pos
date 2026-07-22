@@ -20,6 +20,7 @@ import {
 import { eq, ilike, inArray, sql, and } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+import { deleteRecipeImageFromStorage } from "./recipe-images";
 import { recalculateAllRecipeCosts as recalcAllCosts, recalculateRecipeCosts } from "./cost-rollup";
 import { z } from "zod";
 
@@ -526,6 +527,12 @@ export const deleteRecipe = createServerFn({ method: "POST" })
       .set({ status: "Inactive", updatedAt: new Date() })
       .where(eq(recipes.id, id))
       .returning();
+
+    // On hard delete, also reclaim the Storage image (soft delete keeps it so a
+    // reactivated recipe retains its picture). See #77.
+    if (hardDelete && old?.imageUrl) {
+      await deleteRecipeImageFromStorage(id, user);
+    }
 
     await logSystemAction(user, "Delete Recipe", `Resep "${old.name}" dihapus oleh ${user.name}`);
     await logAudit(
