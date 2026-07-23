@@ -92,7 +92,9 @@ function RecipesPage() {
     {
       key: "image",
       header: "",
-      width: "w-14",
+      width: "w-9",
+      align: "center",
+      cellClassName: "!p-0 !min-w-0",
       render: (r) =>
         r.imageUrl ? (
           <img
@@ -103,7 +105,7 @@ function RecipesPage() {
             className="h-8 w-8 rounded-lg border bg-muted object-cover"
           />
         ) : (
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-muted">
+          <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg border bg-muted">
             <ImageIcon className="h-4 w-4 text-muted-foreground" />
           </div>
         ),

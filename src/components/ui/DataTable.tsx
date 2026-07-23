@@ -15,6 +15,8 @@ export interface Column<T> {
   header: string;
   width?: string;
   align?: "left" | "right" | "center";
+  /** Extra classes for the cell (<th>/<td>); use `!` important utilities to override defaults. */
+  cellClassName?: string;
   render?: (row: T) => React.ReactNode;
   sortable?: boolean;
 }
@@ -158,6 +160,8 @@ export default function DataTable<T>({
                     (col.sortable ? "cursor-pointer select-none " : " ") +
                     (colIdx === 0 ? stickyClass : "") +
                     " " +
+                    (col.cellClassName ?? "") +
+                    " " +
                     (col.sortable && sort?.key === col.key
                       ? "text-foreground"
                       : "text-muted-foreground")
@@ -214,7 +218,8 @@ export default function DataTable<T>({
                       key={col.key}
                       className={
                         "p-3 align-middle whitespace-nowrap min-w-[80px] max-w-[300px] " +
-                        (colIdx === 0 ? stickyClass : "")
+                        (colIdx === 0 ? stickyClass : "") +
+                        (col.cellClassName ?? "")
                       }
                       style={{ textAlign: col.align ?? "left" }}
                     >
