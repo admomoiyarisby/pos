@@ -163,7 +163,6 @@ export function RecipeWizard({
         return;
       }
       if (!name.trim()) return;
-      if (basePrice <= 0) return;
     }
     setCurrentStep((s) => Math.min(s + 1, steps.length - 1));
   };

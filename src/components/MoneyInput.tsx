@@ -40,7 +40,7 @@ function parseRupiahInput(s: string): number | null {
 }
 
 function formatRupiahInput(value: number | null): string {
-  if (value === null || value <= 0) return "";
+  if (value === null) return "";
   return `${PREFIX}${value.toLocaleString("id-ID")}`;
 }
 
