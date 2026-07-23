@@ -94,6 +94,20 @@ function RecipeDetailPage() {
     },
   });
 
+  // Per-page save in edit mode: partial update, invalidate, toast — but do NOT
+  // close the wizard (the user stays on the page they just saved).
+  const savePageMutation = useMutation({
+    mutationFn: updateRecipe,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
+      void queryClient.invalidateQueries({ queryKey: ["recipes"] });
+      toast.success("Perubahan tersimpan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menyimpan perubahan", { description: error.message });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: ({ data }: { data: { id: string; hardDelete: boolean } }) => deleteRecipe({ data }),
     onSuccess: () => {
@@ -270,13 +284,15 @@ function RecipeDetailPage() {
               branches={allBranches ?? []}
               modifierGroups={allModifierGroups ?? []}
               recipes={allRecipes ?? []}
+              isEditMode={isEditing}
               onSubmit={async (data) => {
                 await updateMutation.mutateAsync({ data: { id: recipeId, ...data } });
-                void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
-                void queryClient.invalidateQueries({ queryKey: ["recipes"] });
+              }}
+              onSavePage={async (partial) => {
+                await savePageMutation.mutateAsync({ data: { id: recipeId, ...partial } });
               }}
               onCancel={() => setIsEditing(false)}
-              isPending={updateMutation.isPending}
+              isPending={savePageMutation.isPending}
               submitLabel="Simpan Perubahan"
             />
           </Card>

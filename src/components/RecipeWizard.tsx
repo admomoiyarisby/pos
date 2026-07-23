@@ -84,6 +84,10 @@ interface RecipeWizardProps {
   recipes: RecipeOption[];
   // Callbacks
   onSubmit: (data: WizardData) => void;
+  /** Edit-mode only: persist just the current step's fields (partial update), staying in the wizard. */
+  onSavePage?: (partial: Partial<WizardData>) => void;
+  /** When true (edit mode), every step shows a per-page "Simpan" button instead of the final submit. */
+  isEditMode?: boolean;
   onCancel: () => void;
   isPending?: boolean;
   submitLabel?: string;
@@ -103,6 +107,8 @@ export function RecipeWizard({
   modifierGroups,
   recipes,
   onSubmit,
+  onSavePage,
+  isEditMode = false,
   onCancel,
   isPending = false,
   submitLabel = "Tambah",
@@ -189,6 +195,24 @@ export function RecipeWizard({
       childRecipes,
     };
     onSubmit(data);
+  };
+
+  const handleSavePage = () => {
+    if (!onSavePage) return;
+    const patch: Partial<WizardData> =
+      currentStep === 0
+        ? { code, name, category, basePrice, brandIds: selectedBrandIds }
+        : currentStep === 1
+          ? {
+              ingredients: enrichedSelectedIngredients.map((si) => ({
+                ingredientId: si.ingredient?.id ?? si.ingredientId,
+                quantity: si.quantity,
+              })),
+            }
+          : currentStep === 2
+            ? { branchIds: selectedBranchIds }
+            : { isBOGO, modifierGroupIds: linkedModifierGroupIds, isBundling, childRecipes };
+    onSavePage(patch);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
@@ -741,7 +765,12 @@ export function RecipeWizard({
                 Kembali
               </Button>
             )}
-            {currentStep < steps.length - 1 ? (
+            {isEditMode ? (
+              <Button type="button" onClick={handleSavePage} disabled={isPending}>
+                <Check className="h-4 w-4 mr-1" />
+                {isPending ? "Menyimpan..." : "Simpan"}
+              </Button>
+            ) : currentStep < steps.length - 1 ? (
               <Button type="button" onClick={handleNext}>
                 Selanjutnya
                 <ChevronRight className="h-4 w-4 ml-1" />
@@ -750,6 +779,13 @@ export function RecipeWizard({
               <Button type="button" onClick={handleSubmit} disabled={isPending}>
                 <Check className="h-4 w-4 mr-1" />
                 {isPending ? "Menyimpan..." : submitLabel}
+              </Button>
+            )}
+
+            {isEditMode && currentStep < steps.length - 1 && (
+              <Button type="button" onClick={handleNext}>
+                Selanjutnya
+                <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             )}
           </div>
