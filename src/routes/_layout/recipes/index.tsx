@@ -15,7 +15,7 @@ import { getModifierGroups } from "#/lib/server/modifier-groups";
 import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
-import { ArrowRight, RefreshCw, Zap, Package } from "lucide-react";
+import { ArrowRight, RefreshCw, Zap, Package, Image as ImageIcon } from "lucide-react";
 
 interface RecipeRow {
   id: string;
@@ -29,6 +29,7 @@ interface RecipeRow {
   hasChildren: boolean;
   status: "Active" | "Inactive";
   brands: { id: string; name: string | null }[];
+  imageUrl?: string | null;
 }
 
 const catLabels: Record<string, string> = {
@@ -88,6 +89,25 @@ function RecipesPage() {
   usePageTitle("Menu / Resep", "Kelola master menu, BOM, dan bundling");
 
   const columns: Column<RecipeRow>[] = [
+    {
+      key: "image",
+      header: "",
+      width: "w-14",
+      render: (r) =>
+        r.imageUrl ? (
+          <img
+            src={r.imageUrl}
+            alt={r.name}
+            loading="lazy"
+            decoding="async"
+            className="h-8 w-8 rounded-lg border bg-muted object-cover"
+          />
+        ) : (
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-muted">
+            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+          </div>
+        ),
+    },
     { key: "code", header: "Kode", width: "w-24", sortable: true },
     { key: "name", header: "Nama Menu", sortable: true },
     {
