@@ -7,6 +7,7 @@ import { getPurchaseOrders } from "#/lib/server/scm";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { ArrowRight } from "lucide-react";
 
 interface PORow {
@@ -38,6 +39,7 @@ export const Route = createFileRoute("/_layout/purchase-orders/")({
 });
 
 function POPage() {
+  const [search, setSearch] = useTableSearch();
   const { pos: initial } = Route.useLoaderData();
 
   const { data: pos } = useQuery({
@@ -99,7 +101,13 @@ function POPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
-      <DataTable columns={columns} data={pos} keyExtractor={(r) => r.id} />
+      <DataTable
+        columns={columns}
+        data={pos}
+        keyExtractor={(r) => r.id}
+        search={search}
+        onSearchChange={setSearch}
+      />
     </RoleGuard>
   );
 }

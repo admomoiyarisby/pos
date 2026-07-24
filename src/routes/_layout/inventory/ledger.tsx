@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -34,6 +35,7 @@ export const Route = createFileRoute("/_layout/inventory/ledger")({
 });
 
 function LedgerPage() {
+  const [search, setSearch] = useTableSearch();
   const { ledger: initial } = Route.useLoaderData();
   const user = useAuth().user;
   const [page, setPage] = useState(0);
@@ -157,7 +159,14 @@ function LedgerPage() {
         )}
       </div>
 
-      <DataTable columns={columns} data={ledger} keyExtractor={(r) => r.id} pageSize={15} />
+      <DataTable
+        columns={columns}
+        data={ledger}
+        keyExtractor={(r) => r.id}
+        pageSize={15}
+        search={search}
+        onSearchChange={setSearch}
+      />
 
       <div className="flex items-center justify-between mt-4">
         <button

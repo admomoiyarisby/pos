@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -47,6 +48,7 @@ export const Route = createFileRoute("/_layout/admin/brands")({
 });
 
 function BrandsPage() {
+  const [search, setSearch] = useTableSearch();
   const { brands: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -152,6 +154,8 @@ function BrandsPage() {
           setEditing(r);
           setModalOpen(true);
         }}
+        search={search}
+        onSearchChange={setSearch}
       />
 
       <Modal

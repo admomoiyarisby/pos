@@ -8,7 +8,8 @@ import {
   inventory,
   operationalExpenses,
 } from "#/db/schema";
-import { eq, and, desc, ilike, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
+import { fuzzySearch } from "./fuzzy";
 import { requireAuth } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -72,7 +73,7 @@ export const getWasteEntries = createServerFn({ method: "GET" })
               ? inArray(wasteEntries.branchId, user.assignedBranches)
               : undefined,
           data.category ? eq(wasteEntries.category, data.category) : undefined,
-          data.search ? ilike(ingredients.name, `%${data.search}%`) : undefined,
+          data.search ? fuzzySearch(ingredients.name, data.search) : undefined,
         ),
       )
       .orderBy(desc(wasteEntries.createdAt));

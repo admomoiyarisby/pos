@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { vouchers } from "#/db/schema";
-import { eq, ilike, gte } from "drizzle-orm";
+import { eq, gte } from "drizzle-orm";
+import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -23,7 +24,7 @@ export const getVouchers = createServerFn({ method: "GET" })
 
     const conditions = [];
     if (data.search) {
-      conditions.push(ilike(vouchers.code, `%${data.search}%`));
+      conditions.push(fuzzySearch(vouchers.code, data.search));
     }
     if (data.activeOnly) {
       conditions.push(eq(vouchers.isActive, true));
@@ -34,7 +35,7 @@ export const getVouchers = createServerFn({ method: "GET" })
       .select()
       .from(vouchers)
       .where(conditions.length > 0 ? conditions[0] : undefined)
-      .orderBy(vouchers.code);
+      .orderBy(data.search ? fuzzyRank(vouchers.code, data.search) : vouchers.code);
 
     return result;
   });

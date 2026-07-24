@@ -10,6 +10,7 @@ import { getPeriods, openPeriod, closePeriod } from "#/lib/server/finance";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { ArrowRight, Lock, Unlock, AlertTriangle } from "lucide-react";
 
 interface PeriodRow {
@@ -31,6 +32,7 @@ export const Route = createFileRoute("/_layout/period-control/")({
 });
 
 function PeriodControlPage() {
+  const [search, setSearch] = useTableSearch();
   const { periods: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [openModal, setOpenModal] = useState(false);
@@ -128,7 +130,13 @@ function PeriodControlPage() {
           </div>
         )}
 
-        <DataTable columns={columns} data={periods} keyExtractor={(r) => r.id} />
+        <DataTable
+          columns={columns}
+          data={periods}
+          keyExtractor={(r) => r.id}
+          search={search}
+          onSearchChange={setSearch}
+        />
 
         {/* Open Period Modal */}
         <Modal open={openModal} onClose={() => setOpenModal(false)} title="Buka Periode Baru">

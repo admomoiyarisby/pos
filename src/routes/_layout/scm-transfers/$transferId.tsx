@@ -145,7 +145,9 @@ function TransferDetailPage() {
         <div className="flex items-center justify-between gap-2">
           <Button
             variant="ghost"
-            onClick={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
+            onClick={() =>
+              navigate({ to: "/scm-transfers", search: { status: undefined, search: undefined } })
+            }
             className="gap-1"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -188,7 +190,9 @@ function TransferDetailPage() {
           isReceiverBa={isReceiverBa}
           isAm={isAm}
           amInJurisdiction={amInJurisdiction}
-          onBack={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
+          onBack={() =>
+            navigate({ to: "/scm-transfers", search: { status: undefined, search: undefined } })
+          }
         />
       </div>
     </RoleGuard>

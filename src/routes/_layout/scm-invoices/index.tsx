@@ -17,6 +17,7 @@ import { getDeliveryNotes } from "#/lib/server/scm";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { ArrowRight, Printer } from "lucide-react";
 import { printSCMInvoice } from "#/lib/pos-print";
 
@@ -44,6 +45,7 @@ export const Route = createFileRoute("/_layout/scm-invoices/")({
 });
 
 function SCMInvoicePage() {
+  const [search, setSearch] = useTableSearch();
   const { user } = useAuth();
   const { invoices: initial, dns } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -193,7 +195,13 @@ function SCMInvoicePage() {
         }
       />
 
-      <DataTable columns={columns} data={filteredInvoices} keyExtractor={(r) => r.id} />
+      <DataTable
+        columns={columns}
+        data={filteredInvoices}
+        keyExtractor={(r) => r.id}
+        search={search}
+        onSearchChange={setSearch}
+      />
 
       <div
         className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 ${generateModal ? "" : "hidden"}`}

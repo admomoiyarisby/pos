@@ -144,7 +144,7 @@ function ProcurementDetailPage() {
     <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
       <div className="space-y-4 p-4 md:p-6">
         <div className="flex items-center justify-between gap-2">
-          <Link to="/scm-procurements" search={() => ({ status: undefined })}>
+          <Link to="/scm-procurements" search={() => ({ status: undefined, search: undefined })}>
             <Button variant="ghost" className="gap-1">
               <ArrowLeft className="h-4 w-4" />
               Kembali

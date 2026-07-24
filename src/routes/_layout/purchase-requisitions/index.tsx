@@ -29,6 +29,7 @@ import { generateReorderRecommendations } from "#/lib/server/reorder";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { ArrowRight, Plus, Package, RefreshCw, Truck } from "lucide-react";
 
 interface PRRow {
@@ -62,6 +63,7 @@ export const Route = createFileRoute("/_layout/purchase-requisitions/")({
 });
 
 function PRPage() {
+  const [search, setSearch] = useTableSearch();
   const { user } = useAuth();
   const { prs: initial, ingredients, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -304,7 +306,13 @@ function PRPage() {
         )}
       </div>
 
-      <DataTable columns={columns} data={filteredPrs} keyExtractor={(r) => r.id} />
+      <DataTable
+        columns={columns}
+        data={filteredPrs}
+        keyExtractor={(r) => r.id}
+        search={search}
+        onSearchChange={setSearch}
+      />
 
       {/* Create PR Modal */}
       <Modal

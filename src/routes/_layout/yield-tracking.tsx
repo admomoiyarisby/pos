@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -43,6 +44,7 @@ export const Route = createFileRoute("/_layout/yield-tracking")({
 });
 
 function YieldTrackingPage() {
+  const [search, setSearch] = useTableSearch();
   const { conversions: initial, ingredients, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -280,7 +282,14 @@ function YieldTrackingPage() {
           </div>
         </div>
 
-        <DataTable columns={columns} data={conversions} keyExtractor={(r) => r.id} pageSize={15} />
+        <DataTable
+          columns={columns}
+          data={conversions}
+          keyExtractor={(r) => r.id}
+          pageSize={15}
+          search={search}
+          onSearchChange={setSearch}
+        />
 
         <Modal
           open={modalOpen}

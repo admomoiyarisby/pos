@@ -59,6 +59,7 @@
     "cmdk": "^1.1.1",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
+    "fuse.js": "^7.5.0",
     "lucide-react": "^0.577.0",
     "marked": "^15.0.12",
     "nitro": "npm:nitro-nightly@3.0.1-20260426-013439-feebdc1e",

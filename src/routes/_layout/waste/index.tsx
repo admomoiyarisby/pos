@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useTableSearch } from "#/hooks/useTableSearch";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -81,8 +82,7 @@ function WastePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [ingredientError, setIngredientError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
   const [investigationModalOpen, setInvestigationModalOpen] = useState(false);
   const [investigationEntryId, setInvestigationEntryId] = useState<string | null>(null);
   const [investigationNoteText, setInvestigationNoteText] = useState("");
@@ -196,7 +196,7 @@ function WastePage() {
   const [ingredientInputValue, setIngredientInputValue] = useState("");
 
   const { data: entries } = useQuery({
-    queryKey: ["waste-entries", selectedCategory, debouncedSearch],
+    queryKey: ["waste-entries", selectedCategory, committedSearch],
     queryFn: () =>
       getWasteEntries({
         data: {
@@ -206,7 +206,7 @@ function WastePage() {
             | "Spoiled"
             | "Denda"
             | null,
-          search: debouncedSearch || undefined,
+          search: committedSearch || undefined,
         },
       }),
     initialData: initial,
@@ -248,13 +248,6 @@ function WastePage() {
 
     return result;
   }, [entries, noInvestigation, dateFrom, dateTo, sortBy, sortDir]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
 
   const createMutation = useMutation({
     mutationFn: createWasteEntry,
@@ -541,8 +534,8 @@ function WastePage() {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Cari bahan..."
             className="h-11 md:h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm"
           />

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -43,6 +44,7 @@ function formatRupiah(value: number): string {
 }
 
 function SalesAdminPage() {
+  const [search, setSearch] = useTableSearch();
   const queryClient = useQueryClient();
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -280,6 +282,8 @@ function SalesAdminPage() {
           data={records ?? []}
           keyExtractor={(r) => r.id}
           pageSize={25}
+          search={search}
+          onSearchChange={setSearch}
         />
 
         {/* Edit Modal */}

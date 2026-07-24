@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -56,6 +57,7 @@ export const Route = createFileRoute("/_layout/supplier-deliveries/")({
 });
 
 function SupplierDeliveriesPage() {
+  const [search, setSearch] = useTableSearch();
   const { user } = useAuth();
   const { deliveries: initial, ingredients, suppliersList } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -356,6 +358,8 @@ function SupplierDeliveriesPage() {
         data={deliveries}
         keyExtractor={(r) => r.id}
         searchKeys={["supplierName", "ingredientName", "receivedByName"] as (keyof DeliveryRow)[]}
+        search={search}
+        onSearchChange={setSearch}
       />
 
       {/* Create / Edit Modal */}

@@ -19,6 +19,7 @@ import { getIngredients } from "#/lib/server/ingredients";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { ArrowRight, Truck, CheckCircle, DollarSign, AlertCircle } from "lucide-react";
 
 interface DNRow {
@@ -55,6 +56,7 @@ export const Route = createFileRoute("/_layout/delivery-notes/")({
 });
 
 function DNPage() {
+  const [search, setSearch] = useTableSearch();
   const { user } = useAuth();
   const { dns: initial, branches, ingredients } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -254,7 +256,13 @@ function DNPage() {
         </div>
       )}
 
-      <DataTable columns={columns} data={filteredDns} keyExtractor={(r) => r.id} />
+      <DataTable
+        columns={columns}
+        data={filteredDns}
+        keyExtractor={(r) => r.id}
+        search={search}
+        onSearchChange={setSearch}
+      />
 
       {/* Review SJ Modal */}
       <Modal

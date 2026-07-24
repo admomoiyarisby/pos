@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { brands } from "#/db/schema";
-import { eq, ilike } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -20,8 +21,8 @@ export const getBrands = createServerFn({ method: "GET" })
     const result = await db
       .select()
       .from(brands)
-      .where(data.search ? ilike(brands.name, `%${data.search}%`) : undefined)
-      .orderBy(brands.name);
+      .where(data.search ? fuzzySearch(brands.name, data.search) : undefined)
+      .orderBy(data.search ? fuzzyRank(brands.name, data.search) : brands.name);
 
     return result;
   });

@@ -185,7 +185,9 @@ function NewMutasiPage() {
           <Button
             type="button"
             variant="ghost"
-            onClick={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
+            onClick={() =>
+              navigate({ to: "/scm-transfers", search: { status: undefined, search: undefined } })
+            }
             className="gap-1"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -452,7 +454,9 @@ function NewMutasiPage() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => navigate({ to: "/scm-transfers", search: { status: undefined } })}
+            onClick={() =>
+              navigate({ to: "/scm-transfers", search: { status: undefined, search: undefined } })
+            }
             disabled={isSubmitting}
           >
             Batal

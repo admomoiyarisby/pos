@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -16,12 +17,11 @@ import { getBranches } from "#/lib/server/branches";
 
 export const Route = createFileRoute("/_layout/scm-transfers/")({
   component: TransfersListPage,
-  validateSearch: (search: Record<string, unknown>) => {
-    const raw = search.status;
-    return {
-      status: typeof raw === "string" && raw.length > 0 ? raw : undefined,
-    };
-  },
+  validateSearch: (search: Record<string, unknown>) => ({
+    status: typeof search.status === "string" ? search.status : undefined,
+    search:
+      typeof search.search === "string" && search.search.length > 0 ? search.search : undefined,
+  }),
   loaderDeps: ({ search: { status } }) => ({ status }),
   loader: async ({ deps: { status } }) => {
     const [allRows, branches] = await Promise.all([
@@ -116,6 +116,7 @@ const FILTER_TABS: { key: FilterKey; label: string; annotation?: string }[] = [
 ];
 
 function TransfersListPage() {
+  const [search, setSearch] = useTableSearch();
   const { user } = useAuth();
   const { status: statusFilter } = Route.useSearch();
   const { initialRows, initialAllRows, initialBranches } = Route.useLoaderData();
@@ -148,7 +149,7 @@ function TransfersListPage() {
 
   const setFilter = (next: FilterKey) => {
     void navigate({
-      search: { status: next === "all" ? undefined : next },
+      search: { status: next === "all" ? undefined : next, search: undefined },
       replace: true,
     });
   };
@@ -321,6 +322,8 @@ function TransfersListPage() {
           columns={columns}
           data={rows as unknown as TransferRow[]}
           keyExtractor={(r) => r.id}
+          search={search}
+          onSearchChange={setSearch}
         />
       </div>
     </RoleGuard>

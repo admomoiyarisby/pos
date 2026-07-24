@@ -17,7 +17,8 @@ import {
   modifiers,
   orderItems,
 } from "#/db/schema";
-import { eq, ilike, inArray, sql, and } from "drizzle-orm";
+import { eq, inArray, sql, and } from "drizzle-orm";
+import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { deleteRecipeImageFromStorage } from "./recipe-images";
@@ -65,7 +66,7 @@ export const getRecipes = createServerFn({ method: "GET" })
     const whereConditions: import("drizzle-orm").SQL[] = [];
 
     if (data.search) {
-      whereConditions.push(ilike(recipes.name, `%${data.search}%`));
+      whereConditions.push(fuzzySearch(recipes.name, data.search));
     }
 
     // Filter recipes based on branch visibility
@@ -98,7 +99,7 @@ export const getRecipes = createServerFn({ method: "GET" })
       .from(recipes)
       .leftJoin(recipeBranches, eq(recipeBranches.recipeId, recipes.id))
       .where(and(...whereConditions))
-      .orderBy(recipes.name);
+      .orderBy(data.search ? fuzzyRank(recipes.name, data.search) : recipes.name);
 
     // Get brands for each recipe
     const recipeIds = result.map((r) => r.id);

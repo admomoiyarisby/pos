@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -58,6 +59,7 @@ export const Route = createFileRoute("/_layout/admin/platform-fees")({
 });
 
 function PlatformFeesPage() {
+  const [search, setSearch] = useTableSearch();
   const { fees: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<FeeRow | null>(null);
@@ -116,6 +118,8 @@ function PlatformFeesPage() {
         data={fees}
         keyExtractor={(r) => r.id}
         onRowClick={(r) => setEditing(r)}
+        search={search}
+        onSearchChange={setSearch}
       />
 
       <Modal

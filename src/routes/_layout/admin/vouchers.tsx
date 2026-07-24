@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -114,6 +115,7 @@ export const Route = createFileRoute("/_layout/admin/vouchers")({
 });
 
 function VouchersPage() {
+  const [search, setSearch] = useTableSearch();
   const { vouchers: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -258,6 +260,8 @@ function VouchersPage() {
         searchKeys={["code", "description"]}
         onRowClick={(r) => openEdit(r)}
         emptyMessage="Belum ada voucher"
+        search={search}
+        onSearchChange={setSearch}
       />
 
       <Modal

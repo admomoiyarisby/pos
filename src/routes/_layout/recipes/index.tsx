@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -51,6 +52,7 @@ export const Route = createFileRoute("/_layout/recipes/")({
 });
 
 function RecipesPage() {
+  const [search, setSearch] = useTableSearch();
   const { recipes: initial, brands, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -208,7 +210,13 @@ function RecipesPage() {
         )}
       </div>
 
-      <DataTable columns={columns} data={recipes} keyExtractor={(r) => r.id} />
+      <DataTable
+        columns={columns}
+        data={recipes}
+        keyExtractor={(r) => r.id}
+        search={search}
+        onSearchChange={setSearch}
+      />
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Tambah Menu" size="3xl">
         <RecipeWizard

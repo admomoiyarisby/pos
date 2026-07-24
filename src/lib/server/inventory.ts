@@ -11,7 +11,8 @@ import {
   systemNotifications,
   areaManagerBranches,
 } from "#/db/schema";
-import { eq, and, ilike, desc, asc, count, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, asc, count, inArray, sql } from "drizzle-orm";
+import { fuzzySearch } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, buildPrintHtml } from "./html-utils";
@@ -43,7 +44,7 @@ export const getInventory = createServerFn({ method: "GET" })
 
     const conditions = [
       branchFilter ? eq(inventory.branchId, branchFilter) : undefined,
-      data.search ? ilike(ingredients.name, `%${data.search}%`) : undefined,
+      data.search ? fuzzySearch(ingredients.name, data.search) : undefined,
       data.category ? eq(ingredients.category, data.category) : undefined,
       data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
       data.locationType ? eq(branches.type, data.locationType) : undefined, // ID18

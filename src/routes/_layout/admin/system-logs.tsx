@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -32,6 +33,7 @@ export const Route = createFileRoute("/_layout/admin/system-logs")({
 });
 
 function SystemLogsPage() {
+  const [search, setSearch] = useTableSearch();
   const { logs: initial } = Route.useLoaderData();
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState("");
@@ -105,7 +107,14 @@ function SystemLogsPage() {
           </select>
         </div>
 
-        <DataTable columns={columns} data={logs} keyExtractor={(r) => r.id} pageSize={15} />
+        <DataTable
+          columns={columns}
+          data={logs}
+          keyExtractor={(r) => r.id}
+          pageSize={15}
+          search={search}
+          onSearchChange={setSearch}
+        />
 
         <div className="flex items-center justify-between">
           <button

@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { branches, users } from "#/db/schema";
-import { eq, ilike, or, and, ne } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
+import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -66,13 +67,7 @@ export const getBranches = createServerFn({ method: "GET" })
     }
 
     if (data.search) {
-      conditions.push(
-        or(
-          ilike(branches.code, `%${data.search}%`),
-          ilike(branches.name, `%${data.search}%`),
-          ilike(branches.location, `%${data.search}%`),
-        ),
-      );
+      conditions.push(fuzzySearch([branches.code, branches.name, branches.location], data.search));
     }
     if (data.type) {
       conditions.push(eq(branches.type, data.type));
@@ -82,7 +77,11 @@ export const getBranches = createServerFn({ method: "GET" })
       .select()
       .from(branches)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(branches.code);
+      .orderBy(
+        data.search
+          ? fuzzyRank([branches.code, branches.name, branches.location], data.search)
+          : branches.code,
+      );
 
     return result;
   });

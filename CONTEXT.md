@@ -114,3 +114,15 @@ _Avoid_: cost, harga, procurement cost (reserved for the per-recipe manufacturin
 **Recipe Category**:
 A grouping label for recipes (e.g., Makanan, Minuman, Snack). Categories are mutable — stored in the `categories` table (ADR 0007), referenced by `recipes.categoryId`. Created and deleted by `super_admin` / `admin_pusat`. Deleting a category requires a destination category for orphaned recipes.
 _Avoid_: hardcoded enum (legacy), menu group
+
+**Table Search (Pencarian Tabel)**:
+The free-text, fuzzy, URL-persisted query box on a `DataTable` list page (e.g. `/categories`, `/modifier-groups`). Distinct from a Filter — it matches across row text with typo tolerance and stores its value in `?search=` so it survives reload and is shareable. Client pages use Fuse.js; server-backed searches use Postgres `pg_trgm` (ADR 0008).
+_Avoid_: search box (too generic), query, find
+
+**Filter (Filter)**:
+Structured narrowing of a list via dedicated URL params — e.g. `status`, `negative`, `noInvestigation` — as opposed to the free-text Table Search. A Filter selects a known dimension; a Table Search matches arbitrary text.
+_Avoid_: search (when referring to the free-text box), query
+
+**Fuzzy Search**:
+Typo-tolerant matching used by Table Search. Client side: Fuse.js (threshold `0.3`, `ignoreLocation`). Server side: Postgres `pg_trgm` `similarity()` > `0.3`, re-ranked by score (ADR 0008). Contrast with exact substring/ILIKE matching.
+_Avoid_: search (bare), contains

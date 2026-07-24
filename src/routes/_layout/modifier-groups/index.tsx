@@ -1,4 +1,5 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -81,12 +82,6 @@ const columns: Column<MGRow>[] = [
 
 export const Route = createFileRoute("/_layout/modifier-groups/")({
   component: ModifierGroupsPage,
-  validateSearch: (search: Record<string, unknown>) => {
-    const raw = search.search;
-    return {
-      search: typeof raw === "string" && raw.length > 0 ? raw : undefined,
-    };
-  },
   loader: async () => {
     const groups = await getModifierGroups({ data: {} });
     return { groups };
@@ -95,8 +90,7 @@ export const Route = createFileRoute("/_layout/modifier-groups/")({
 
 function ModifierGroupsPage() {
   const { groups: initial } = Route.useLoaderData();
-  const { search: searchParam } = Route.useSearch();
-  const navigate = useNavigate({ from: Route.fullPath });
+  const [search, setSearch] = useTableSearch();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [modifiersInput, setModifiersInput] = useState<ModifierFormInput[]>([
@@ -160,10 +154,8 @@ function ModifierGroupsPage() {
         columns={columns}
         data={groups}
         keyExtractor={(r) => r.id}
-        search={searchParam ?? ""}
-        onSearchChange={(value) =>
-          navigate({ search: { search: value || undefined }, replace: true })
-        }
+        search={search}
+        onSearchChange={setSearch}
       />
 
       <Modal

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -48,6 +49,7 @@ export const Route = createFileRoute("/_layout/ingredients/")({
 });
 
 function IngredientsPage() {
+  const [search, setSearch] = useTableSearch();
   const { ingredients: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -201,7 +203,13 @@ function IngredientsPage() {
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "central_kitchen"]}>
       <PageHeader action={{ label: "Tambah Bahan", onClick: () => setModalOpen(true) }} />
 
-      <DataTable columns={columns} data={ingredients} keyExtractor={(r) => r.id} />
+      <DataTable
+        columns={columns}
+        data={ingredients}
+        keyExtractor={(r) => r.id}
+        search={search}
+        onSearchChange={setSearch}
+      />
 
       <Modal
         open={modalOpen}

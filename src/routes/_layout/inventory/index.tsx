@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -43,7 +44,7 @@ export const Route = createFileRoute("/_layout/inventory/")({
 function InventoryPage() {
   const { user } = useAuth();
   const { inventory: initialData, total: initialTotal } = Route.useLoaderData();
-  const [search, setSearch] = useState("");
+  const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
   const [category, setCategory] = useState<"Fresh" | "Dry" | "Packaging" | "">("");
   const [branchId, setBranchId] = useState("");
   const [locationType, setLocationType] = useState<"" | "Central" | "Outlet">("");
@@ -63,11 +64,20 @@ function InventoryPage() {
   const negativeFilter = negativeParam === "true";
 
   const { data: result } = useQuery({
-    queryKey: ["inventory", search, category, branchId, locationType, page, negativeFilter, sort],
+    queryKey: [
+      "inventory",
+      committedSearch,
+      category,
+      branchId,
+      locationType,
+      page,
+      negativeFilter,
+      sort,
+    ],
     queryFn: () =>
       getInventory({
         data: {
-          search: search || undefined,
+          search: committedSearch || undefined,
           category: category || null,
           branchId: branchId || undefined,
           locationType: locationType || null,

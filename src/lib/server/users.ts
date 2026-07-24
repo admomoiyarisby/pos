@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { users as usersTable, areaManagerBranches, branches } from "#/db/schema";
-import { eq, ilike, and, ne, inArray } from "drizzle-orm";
+import { eq, and, ne, inArray } from "drizzle-orm";
+import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -22,10 +23,7 @@ export const getUsers = createServerFn({ method: "GET" })
 
     const conditions = [];
     if (data.search) {
-      conditions.push(
-        ilike(usersTable.name, `%${data.search}%`),
-        ilike(usersTable.email, `%${data.search}%`),
-      );
+      conditions.push(fuzzySearch([usersTable.name, usersTable.email], data.search));
     }
     if (data.role) {
       conditions.push(eq(usersTable.role, data.role as typeof usersTable.$inferSelect.role));
@@ -45,7 +43,9 @@ export const getUsers = createServerFn({ method: "GET" })
       .from(usersTable)
       .leftJoin(branches, eq(usersTable.branchId, branches.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(usersTable.name);
+      .orderBy(
+        data.search ? fuzzyRank([usersTable.name, usersTable.email], data.search) : usersTable.name,
+      );
 
     // Fetch assigned branches for area managers
     const userIds = result.map((u) => u.id);

@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { ingredients, recipeIngredients } from "#/db/schema";
-import { eq, ilike, and } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
@@ -38,10 +39,7 @@ export const getIngredients = createServerFn({ method: "GET" })
 
     const conditions = [];
     if (data.search) {
-      conditions.push(
-        ilike(ingredients.name, `%${data.search}%`),
-        ilike(ingredients.code, `%${data.search}%`),
-      );
+      conditions.push(fuzzySearch([ingredients.name, ingredients.code], data.search));
     }
     if (data.category) {
       conditions.push(eq(ingredients.category, data.category));
@@ -57,7 +55,11 @@ export const getIngredients = createServerFn({ method: "GET" })
       .select()
       .from(ingredients)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(ingredients.name);
+      .orderBy(
+        data.search
+          ? fuzzyRank([ingredients.name, ingredients.code], data.search)
+          : ingredients.name,
+      );
 
     return result;
   });

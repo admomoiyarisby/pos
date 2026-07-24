@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import Fuse from "fuse.js";
 import {
   ChevronLeft,
   ChevronRight,
@@ -82,7 +83,7 @@ export default function DataTable<T>({
   };
 
   // Deduplicate by keyExtractor to prevent duplicate-key React warnings
-  const deduped = (() => {
+  const deduped = useMemo(() => {
     const seen = new Set<string>();
     return data.filter((row) => {
       const key = keyExtractor(row);
@@ -90,18 +91,31 @@ export default function DataTable<T>({
       seen.add(key);
       return true;
     });
-  })();
+  }, [data, keyExtractor]);
 
-  const filtered =
-    searchable && searchValue.trim()
-      ? deduped.filter((row) => {
-          const keys = searchKeys ?? Object.keys(row as object);
-          return keys.some((k) => {
-            const val = (row as Record<string, unknown>)[k as string];
-            return safeStr(val).toLowerCase().includes(searchValue.toLowerCase());
-          });
-        })
-      : deduped;
+  // Fuzzy (Fuse.js) search — ADR 0008: threshold 0.3, ignoreLocation (match
+  // anywhere, like ILIKE), re-ranked by score. When a column sort is active the
+  // downstream `sorted` overrides this order; otherwise results stay score-ranked.
+  const searchKeysKey = searchKeys ? (searchKeys as readonly (keyof T)[]).join(",") : "*";
+  const fuse = useMemo(() => {
+    const keys = searchKeys
+      ? (searchKeys as string[])
+      : deduped[0]
+        ? (Object.keys(deduped[0] as object) as string[])
+        : [];
+    return new Fuse(deduped, {
+      keys,
+      threshold: 0.3,
+      ignoreLocation: true,
+      includeScore: true,
+      minMatchCharLength: 1,
+    });
+  }, [deduped, searchKeysKey]);
+
+  const filtered = useMemo(() => {
+    if (!(searchable && searchValue.trim())) return deduped;
+    return fuse.search(searchValue.trim()).map((r) => r.item);
+  }, [searchable, searchValue, deduped, fuse]);
 
   const sorted = sort
     ? [...filtered].sort((a, b) => {

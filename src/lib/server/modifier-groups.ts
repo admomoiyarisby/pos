@@ -7,7 +7,8 @@ import {
   recipes,
   recipeModifierGroups,
 } from "#/db/schema";
-import { eq, ilike, inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
+import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -37,8 +38,8 @@ export const getModifierGroups = createServerFn({ method: "GET" })
     const groups = await db
       .select()
       .from(modifierGroups)
-      .where(data.search ? ilike(modifierGroups.name, `%${data.search}%`) : undefined)
-      .orderBy(modifierGroups.name);
+      .where(data.search ? fuzzySearch(modifierGroups.name, data.search) : undefined)
+      .orderBy(data.search ? fuzzyRank(modifierGroups.name, data.search) : modifierGroups.name);
 
     const groupIds = groups.map((g) => g.id);
 

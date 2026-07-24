@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -79,6 +80,7 @@ export const Route = createFileRoute("/_layout/stock-opname/")({
 });
 
 function StockOpnamePage() {
+  const [search, setSearch] = useTableSearch();
   const { user } = useAuth();
   const { opnames: initial, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -151,7 +153,13 @@ function StockOpnamePage() {
         }
       />
 
-      <DataTable columns={columns} data={filteredOpnames} keyExtractor={(r) => r.id} />
+      <DataTable
+        columns={columns}
+        data={filteredOpnames}
+        keyExtractor={(r) => r.id}
+        search={search}
+        onSearchChange={setSearch}
+      />
 
       {filteredOpnames.length === 0 && (
         <div className="rounded-md border p-8 text-center">

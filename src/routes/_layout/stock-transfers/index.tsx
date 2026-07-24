@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -55,6 +56,11 @@ const statusColors: Record<
 };
 
 export const Route = createFileRoute("/_layout/stock-transfers/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    status: typeof search.status === "string" ? search.status : undefined,
+    search:
+      typeof search.search === "string" && search.search.length > 0 ? search.search : undefined,
+  }),
   component: TransferPage,
   loader: async () => {
     const transfers = await getStockTransfers({ data: {} });
@@ -65,6 +71,7 @@ export const Route = createFileRoute("/_layout/stock-transfers/")({
 });
 
 function TransferPage() {
+  const [search, setSearch] = useTableSearch();
   const { user } = useAuth();
   const { transfers: initial, branches, ingredients } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -330,7 +337,7 @@ function TransferPage() {
             (mirip Pengadaan). Buat mutasi baru di{" "}
             <Link
               to="/scm-transfers"
-              search={{ status: undefined }}
+              search={{ status: undefined, search: undefined }}
               className="underline font-medium"
             >
               /scm-transfers
@@ -355,7 +362,13 @@ function TransferPage() {
         </div>
       )}
 
-      <DataTable columns={columns} data={filteredTransfers} keyExtractor={(r) => r.id} />
+      <DataTable
+        columns={columns}
+        data={filteredTransfers}
+        keyExtractor={(r) => r.id}
+        search={search}
+        onSearchChange={setSearch}
+      />
 
       <Modal
         open={modalOpen}
