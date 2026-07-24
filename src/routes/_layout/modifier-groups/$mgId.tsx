@@ -39,7 +39,7 @@ import {
   linkRecipesToModifierGroup,
   reorderModifiers,
 } from "#/lib/server/modifier-groups";
-import { X, Plus, Pencil, Trash2, Link2, GripVertical } from "lucide-react";
+import { X, Plus, Pencil, Trash2, Link2, GripVertical, Search, ArrowLeft } from "lucide-react";
 
 interface ModifierFormInput {
   name: string;
@@ -142,6 +142,7 @@ function ModifierGroupDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [selectedRecipeIds, setSelectedRecipeIds] = useState<string[]>([]);
+  const [recipeSearch, setRecipeSearch] = useState("");
 
   const { data: group } = useQuery({
     queryKey: ["modifier-group", mgId],
@@ -173,6 +174,18 @@ function ModifierGroupDetailPage() {
 
   const navigate = useNavigate();
 
+  const goBack = () => {
+    const state = window.history.state as { idx?: number } | null;
+    const idx = state?.idx;
+    if (typeof idx === "number" && idx > 0) {
+      window.history.back();
+    } else if (idx === 0) {
+      void navigate({ to: "/modifier-groups", search: { search: undefined } });
+    } else {
+      window.history.back();
+    }
+  };
+
   const updateMutation = useMutation({
     mutationFn: updateModifierGroup,
     onSuccess: () => {
@@ -192,7 +205,7 @@ function ModifierGroupDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["modifier-groups"] });
       setDeleteOpen(false);
       toast.success("Grup modifier berhasil dihapus");
-      void navigate({ to: "/modifier-groups" });
+      void navigate({ to: "/modifier-groups", search: { search: undefined } });
     },
     onError: (error: Error) => {
       toast.error("Gagal menghapus grup modifier", { description: error.message });
@@ -202,6 +215,17 @@ function ModifierGroupDetailPage() {
   const { data: allRecipes } = useQuery({
     queryKey: ["recipes"],
     queryFn: () => import("#/lib/server/recipes").then((m) => m.getRecipes({ data: {} })),
+  });
+
+  const filteredRecipes = (allRecipes ?? []).filter((r: any) => {
+    const q = recipeSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      r.name.toLowerCase().includes(q) ||
+      String(r.code ?? "")
+        .toLowerCase()
+        .includes(q)
+    );
   });
 
   const linkMutation = useMutation({
@@ -261,6 +285,7 @@ function ModifierGroupDetailPage() {
 
   const openLinkModal = () => {
     setSelectedRecipeIds(group?.recipes?.map((r: any) => r.id) ?? []);
+    setRecipeSearch("");
     setLinkModalOpen(true);
   };
 
@@ -295,9 +320,16 @@ function ModifierGroupDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="space-y-6">
+        <button
+          onClick={goBack}
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Kembali
+        </button>
+
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{group.name}</h1>
             <p className="text-sm text-muted-foreground">Kode: {group.code}</p>
           </div>
           <div className="flex gap-2">
@@ -547,34 +579,54 @@ function ModifierGroupDetailPage() {
           {!allRecipes ? (
             <p className="text-sm text-muted-foreground">Memuat menu...</p>
           ) : (
-            <div className="max-h-80 overflow-y-auto space-y-1 border rounded-md p-2">
-              {allRecipes.map((recipe: any) => {
-                const isChecked = selectedRecipeIds.includes(recipe.id);
-                return (
-                  <label
-                    key={recipe.id}
-                    className="flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer hover:bg-accent"
-                  >
-                    <Checkbox
-                      checked={isChecked}
-                      onCheckedChange={(checked) => {
-                        setSelectedRecipeIds(
-                          checked === true
-                            ? [...selectedRecipeIds, recipe.id]
-                            : selectedRecipeIds.filter((id) => id !== recipe.id),
-                        );
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{recipe.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {recipe.code} — {recipe.category}
-                      </p>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
+            <>
+              <div className="relative mb-3">
+                <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={recipeSearch}
+                  onChange={(e) => setRecipeSearch(e.target.value)}
+                  placeholder="Cari menu..."
+                  className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mb-2">
+                {selectedRecipeIds.length} menu dipilih
+              </p>
+              <div className="max-h-80 overflow-y-auto space-y-1 border rounded-md p-2">
+                {filteredRecipes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground px-3 py-2">
+                    Tidak ada menu yang cocok
+                  </p>
+                ) : (
+                  filteredRecipes.map((recipe: any) => {
+                    const isChecked = selectedRecipeIds.includes(recipe.id);
+                    return (
+                      <label
+                        key={recipe.id}
+                        className="flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer hover:bg-accent"
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(checked) => {
+                            setSelectedRecipeIds(
+                              checked === true
+                                ? [...selectedRecipeIds, recipe.id]
+                                : selectedRecipeIds.filter((id) => id !== recipe.id),
+                            );
+                          }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{recipe.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {recipe.code} — {recipe.category}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </>
           )}
           <div className="flex justify-end gap-2 mt-4">
             <Button type="button" variant="outline" onClick={() => setLinkModalOpen(false)}>

@@ -35,6 +35,10 @@ _Avoid_: Raw material, stock item, component
 A module that traverses a recipe's BOM — including child recipes (bundles) and modifier ingredients — to produce a flat list of ingredient deltas with signed quantities (positive = consumed, negative = excluded/restored). Used by the Order Intake module for stock checking, COGS calculation, inventory deduction, and void restoration.
 _Avoid_: BOM resolver, ingredient flattener, stock calculator
 
+**Modifier Group (Grup Modifier)**:
+A named, ordered collection of Modifiers (options) with a min/max selection constraint, linked to one or more Recipes so they can be offered at the POS. The relationship is managed through the "Menu Terkait" (related recipes) linking UI; the same group can be reused across multiple Recipes.
+_Avoid_: Option group, add-on group, modifier set
+
 **Modifier**:
 An optional add-on or exclusion attached to an order item. A modifier can add ingredients (add-on BOM) or remove ingredients (exclusion, via `recipeModifierExclusions`).
 _Avoid_: Add-on, option, up-sell

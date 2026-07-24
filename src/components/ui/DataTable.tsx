@@ -37,6 +37,10 @@ interface DataTableProps<T> {
   rowClassName?: (row: T) => string;
   loading?: boolean;
   loadingRows?: number;
+  /** External search value (controlled mode). When provided, the component will not manage its own search state. */
+  search?: string;
+  /** Called when the search input changes (controlled mode). */
+  onSearchChange?: (value: string) => void;
 }
 
 export default function DataTable<T>({
@@ -52,6 +56,8 @@ export default function DataTable<T>({
   defaultSort,
   sort: externalSort,
   onSortChange,
+  search: externalSearch,
+  onSearchChange,
   rowClassName,
   loading = false,
   loadingRows = 5,
@@ -64,6 +70,9 @@ export default function DataTable<T>({
 
   // Use external sort if provided, otherwise use internal sort
   const sort = externalSort !== undefined ? externalSort : internalSort;
+
+  // Use external search if provided, otherwise use internal search
+  const searchValue = externalSearch !== undefined ? externalSearch : search;
 
   const safeStr = (v: unknown) => {
     if (v instanceof Date) return v.toISOString();
@@ -84,12 +93,12 @@ export default function DataTable<T>({
   })();
 
   const filtered =
-    searchable && search.trim()
+    searchable && searchValue.trim()
       ? deduped.filter((row) => {
           const keys = searchKeys ?? Object.keys(row as object);
           return keys.some((k) => {
             const val = (row as Record<string, unknown>)[k as string];
-            return safeStr(val).toLowerCase().includes(search.toLowerCase());
+            return safeStr(val).toLowerCase().includes(searchValue.toLowerCase());
           });
         })
       : deduped;
@@ -133,9 +142,14 @@ export default function DataTable<T>({
             <input
               type="text"
               placeholder="Cari..."
-              value={search}
+              value={searchValue}
               onChange={(e) => {
-                setSearch(e.target.value);
+                const next = e.target.value;
+                if (onSearchChange) {
+                  onSearchChange(next);
+                } else {
+                  setSearch(next);
+                }
                 setPage(0);
               }}
               aria-label="Cari data"

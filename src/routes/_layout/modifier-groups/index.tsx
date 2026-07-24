@@ -1,7 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -82,6 +81,12 @@ const columns: Column<MGRow>[] = [
 
 export const Route = createFileRoute("/_layout/modifier-groups/")({
   component: ModifierGroupsPage,
+  validateSearch: (search: Record<string, unknown>) => {
+    const raw = search.search;
+    return {
+      search: typeof raw === "string" && raw.length > 0 ? raw : undefined,
+    };
+  },
   loader: async () => {
     const groups = await getModifierGroups({ data: {} });
     return { groups };
@@ -90,6 +95,8 @@ export const Route = createFileRoute("/_layout/modifier-groups/")({
 
 function ModifierGroupsPage() {
   const { groups: initial } = Route.useLoaderData();
+  const { search: searchParam } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [modifiersInput, setModifiersInput] = useState<ModifierFormInput[]>([
@@ -149,7 +156,15 @@ function ModifierGroupsPage() {
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <PageHeader action={{ label: "Tambah Group", onClick: () => setModalOpen(true) }} />
 
-      <DataTable columns={columns} data={groups} keyExtractor={(r) => r.id} />
+      <DataTable
+        columns={columns}
+        data={groups}
+        keyExtractor={(r) => r.id}
+        search={searchParam ?? ""}
+        onSearchChange={(value) =>
+          navigate({ search: { search: value || undefined }, replace: true })
+        }
+      />
 
       <Modal
         open={modalOpen}
