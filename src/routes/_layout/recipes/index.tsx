@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useSearch, useNavigate } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -28,7 +28,7 @@ interface RecipeRow {
   totalCogs: number;
   isBOGO: boolean;
   hasChildren: boolean;
-  status: "Active" | "Inactive";
+  status: "Active" | "Inactive" | "Deleted";
   brands: { id: string; name: string | null }[];
   imageUrl?: string | null;
 }
@@ -53,14 +53,35 @@ export const Route = createFileRoute("/_layout/recipes/")({
 
 function RecipesPage() {
   const [search, setSearch] = useTableSearch();
+  // Status Filter (ADR 0008): read loosely from the URL like useTableSearch does,
+  // so we never declare a route-level search schema (which would force every
+  // /recipes Link to pass it). Absent = "All".
+  const urlSearch = useSearch({ strict: false });
+  const statusParam = (urlSearch as Record<string, unknown>).status;
+  const statusFilter = (typeof statusParam === "string" ? statusParam : "All") as
+    | "Active"
+    | "Inactive"
+    | "All";
+  const navigate = useNavigate();
+  const setStatusFilter = (next: string) => {
+    void navigate({
+      search: (prev) =>
+        ({
+          ...(prev as Record<string, unknown>),
+          status: next === "All" ? undefined : next,
+        }) as never,
+      replace: true,
+    });
+  };
   const { recipes: initial, brands, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const user = useAuth().user;
 
   const { data: recipes } = useQuery({
-    queryKey: ["recipes"],
-    queryFn: () => getRecipes({ data: {} }),
+    queryKey: ["recipes", statusFilter],
+    queryFn: () =>
+      getRecipes({ data: { status: statusFilter === "All" ? undefined : statusFilter } }),
     initialData: initial,
   });
 
@@ -196,8 +217,19 @@ function RecipesPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
-      <div className="flex items-center justify-between">
-        <PageHeader action={{ label: "Tambah Menu", onClick: () => setModalOpen(true) }} />
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <PageHeader action={{ label: "Tambah Menu", onClick: () => setModalOpen(true) }} />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+          >
+            <option value="All">Semua Status</option>
+            <option value="Active">Aktif</option>
+            <option value="Inactive">Nonaktif</option>
+          </select>
+        </div>
         {user?.role === "super_admin" && (
           <button
             onClick={() => recalcMutation.mutateAsync({})}

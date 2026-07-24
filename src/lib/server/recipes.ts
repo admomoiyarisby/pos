@@ -17,11 +17,10 @@ import {
   modifiers,
   orderItems,
 } from "#/db/schema";
-import { eq, inArray, sql, and } from "drizzle-orm";
+import { eq, inArray, sql, and, ne } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
-import { deleteRecipeImageFromStorage } from "./recipe-images";
 import { recalculateAllRecipeCosts as recalcAllCosts, recalculateRecipeCosts } from "./cost-rollup";
 import { z } from "zod";
 
@@ -54,7 +53,9 @@ const recipeInput = z.object({
 });
 
 export const getRecipes = createServerFn({ method: "GET" })
-  .validator((data: { search?: string; category?: string; brandId?: string }) => data)
+  .validator(
+    (data: { search?: string; category?: string; brandId?: string; status?: string }) => data,
+  )
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -67,6 +68,13 @@ export const getRecipes = createServerFn({ method: "GET" })
 
     if (data.search) {
       whereConditions.push(fuzzySearch(recipes.name, data.search));
+    }
+
+    // ADR-0009: tombstoned (Deleted) recipes never appear in the UI. An optional
+    // `status` filter narrows to Active/Inactive; otherwise both are returned.
+    whereConditions.push(ne(recipes.status, "Deleted"));
+    if (data.status === "Active" || data.status === "Inactive") {
+      whereConditions.push(eq(recipes.status, data.status));
     }
 
     // Filter recipes based on branch visibility
@@ -474,78 +482,208 @@ export const recalculateAllRecipeCosts = createServerFn({ method: "POST" }).hand
 });
 
 // =============================================================================
-// DELETE RECIPE (SOFT DELETE)
+// RECIPE LIFECYCLE (ADR-0009): Active ⇄ Inactive → Deleted
 // =============================================================================
 
-export const deleteRecipe = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z.object({ id: z.string().uuid(), hardDelete: z.boolean().default(false) }).parse(data),
-  )
+// Deactivate: Active → Inactive. Reversible; both admin roles.
+export const deactivateRecipe = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
-    const { id, hardDelete } = data;
+    const [old] = await db.select().from(recipes).where(eq(recipes.id, data.id)).limit(1);
+    if (!old) throw new Error("Recipe not found");
 
-    // Check if recipe is referenced in any orders
-    const [orderRefCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(orderItems)
-      .where(eq(orderItems.recipeId, id))
-      .limit(1);
-
-    const referencedInOrders = orderRefCount?.count ?? 0;
-
-    if (hardDelete && referencedInOrders > 0) {
-      throw new Error(
-        `Cannot hard delete recipe referenced in ${referencedInOrders} order(s). Use soft delete or remove from orders first.`,
-      );
-    }
-
-    // Check if recipe is used as child recipe in other bundles
-    const [childRefCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(recipeChildRecipes)
-      .where(eq(recipeChildRecipes.childRecipeId, id))
-      .limit(1);
-
-    const usedInBundles = childRefCount?.count ?? 0;
-
-    if (hardDelete && usedInBundles > 0) {
-      throw new Error(
-        `Cannot hard delete recipe used in ${usedInBundles} bundle recipe(s). Remove from bundles first or use soft delete.`,
-      );
-    }
-
-    const [old] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
-
-    if (!old) {
-      throw new Error("Recipe not found");
-    }
-
-    // Soft delete by setting status to Inactive
-    const [result] = await db
+    const [updated] = await db
       .update(recipes)
       .set({ status: "Inactive", updatedAt: new Date() })
-      .where(eq(recipes.id, id))
+      .where(eq(recipes.id, data.id))
       .returning();
 
-    // On hard delete, also reclaim the Storage image (soft delete keeps it so a
-    // reactivated recipe retains its picture). See #77.
-    if (hardDelete && old?.imageUrl) {
-      await deleteRecipeImageFromStorage(id, user);
-    }
-
-    await logSystemAction(user, "Delete Recipe", `Resep "${old.name}" dihapus oleh ${user.name}`);
+    await logSystemAction(
+      user,
+      "Deactivate Recipe",
+      `Resep "${old.name}" dinonaktifkan oleh ${user.name}`,
+    );
     await logAudit(
       user,
       "recipes",
-      id,
+      data.id,
+      "STATUS_CHANGE",
+      old as Record<string, unknown>,
+      updated as Record<string, unknown>,
+    );
+
+    return { success: true };
+  });
+
+// Reactivate: Inactive → Active. Reversible; both admin roles.
+export const reactivateRecipe = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [old] = await db.select().from(recipes).where(eq(recipes.id, data.id)).limit(1);
+    if (!old) throw new Error("Recipe not found");
+
+    const [updated] = await db
+      .update(recipes)
+      .set({ status: "Active", updatedAt: new Date() })
+      .where(eq(recipes.id, data.id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Activate Recipe",
+      `Resep "${old.name}" diaktifkan oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "recipes",
+      data.id,
+      "STATUS_CHANGE",
+      old as Record<string, unknown>,
+      updated as Record<string, unknown>,
+    );
+
+    return { success: true };
+  });
+
+export interface RecipeDeleteImpact {
+  orderCount: number;
+  bundleCount: number;
+  /** Child of an Active parent bundle — blocks deletion (would break a live BOM). */
+  activeBundleCount: number;
+  modifierGroupCount: number;
+  branchStockCount: number;
+}
+
+// Reference counts powering the delete-confirmation warnings (ADR-0009).
+export const getRecipeDeleteImpact = createServerFn({ method: "GET" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }): Promise<RecipeDeleteImpact> => {
+    await requireRole("super_admin");
+
+    const [[orderRow], [bundleRow], [activeBundleRow], [modRow], [stockRow]] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(orderItems)
+        .where(eq(orderItems.recipeId, data.id))
+        .limit(1),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(recipeChildRecipes)
+        .where(eq(recipeChildRecipes.childRecipeId, data.id))
+        .limit(1),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(recipeChildRecipes)
+        .innerJoin(recipes, eq(recipeChildRecipes.parentRecipeId, recipes.id))
+        .where(and(eq(recipeChildRecipes.childRecipeId, data.id), eq(recipes.status, "Active")))
+        .limit(1),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(recipeModifierGroups)
+        .where(eq(recipeModifierGroups.recipeId, data.id))
+        .limit(1),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(recipeInventory)
+        .where(eq(recipeInventory.recipeId, data.id))
+        .limit(1),
+    ]);
+
+    return {
+      orderCount: Number(orderRow?.count ?? 0),
+      bundleCount: Number(bundleRow?.count ?? 0),
+      activeBundleCount: Number(activeBundleRow?.count ?? 0),
+      modifierGroupCount: Number(modRow?.count ?? 0),
+      branchStockCount: Number(stockRow?.count ?? 0),
+    };
+  });
+
+export interface RecipeReactivateImpact {
+  deletedChildCount: number;
+  inactiveChildCount: number;
+}
+
+// For reactivate warnings: does this (bundle) recipe contain Deleted/Inactive children?
+export const getRecipeReactivateImpact = createServerFn({ method: "GET" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }): Promise<RecipeReactivateImpact> => {
+    await requireRole("super_admin", "admin_pusat");
+
+    const [[delRow], [inactRow]] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(recipeChildRecipes)
+        .innerJoin(recipes, eq(recipeChildRecipes.childRecipeId, recipes.id))
+        .where(and(eq(recipeChildRecipes.parentRecipeId, data.id), eq(recipes.status, "Deleted")))
+        .limit(1),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(recipeChildRecipes)
+        .innerJoin(recipes, eq(recipeChildRecipes.childRecipeId, recipes.id))
+        .where(and(eq(recipeChildRecipes.parentRecipeId, data.id), eq(recipes.status, "Inactive")))
+        .limit(1),
+    ]);
+
+    return {
+      deletedChildCount: Number(delRow?.count ?? 0),
+      inactiveChildCount: Number(inactRow?.count ?? 0),
+    };
+  });
+
+// Delete (soft tombstone): → Deleted. super_admin only; UI-irreversible (restore is
+// DB-only). Blocked only when the recipe is a child of an Active bundle — that would
+// silently break a live, sellable product's BOM. All other references are warnings,
+// surfaced by getRecipeDeleteImpact in the confirm modal.
+export const deleteRecipe = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin");
+
+    const [old] = await db.select().from(recipes).where(eq(recipes.id, data.id)).limit(1);
+    if (!old) throw new Error("Recipe not found");
+
+    const [activeBundleRow] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(recipeChildRecipes)
+      .innerJoin(recipes, eq(recipeChildRecipes.parentRecipeId, recipes.id))
+      .where(and(eq(recipeChildRecipes.childRecipeId, data.id), eq(recipes.status, "Active")))
+      .limit(1);
+
+    const activeBundleCount = Number(activeBundleRow?.count ?? 0);
+    if (activeBundleCount > 0) {
+      throw new Error(
+        `Tidak dapat menghapus resep yang digunakan dalam ${activeBundleCount} paket aktif. Nonaktifkan paket terlebih dahulu.`,
+      );
+    }
+
+    // Soft delete → tombstone. Row + history (orders, COGS, audit) preserved.
+    // Restore is DB-only (ADR-0009); the Storage image is kept so a DB restore
+    // retains the picture.
+    const [result] = await db
+      .update(recipes)
+      .set({ status: "Deleted", updatedAt: new Date() })
+      .where(eq(recipes.id, data.id))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Recipe",
+      `Resep "${old.name}" dihapus secara permanen oleh ${user.name}`,
+    );
+    await logAudit(
+      user,
+      "recipes",
+      data.id,
       "DELETE",
       old as Record<string, unknown>,
       result as Record<string, unknown>,
     );
 
-    return { success: true, wasSoftDelete: true };
+    return { success: true };
   });
 
 // =============================================================================

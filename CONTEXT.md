@@ -27,6 +27,10 @@ The customer's name as entered at the POS. Always displayed on receipts and bill
 A product that can be sold. Recipes may have a Bill of Materials (BOM) — a list of ingredients with quantities. Recipes may also reference child recipes (for bundles/packages) and optional modifiers.
 _Avoid_: Menu item, SKU, product
 
+**Recipe Status**:
+The lifecycle of a Recipe, one of three states. `Active` — sellable, listed normally. `Inactive` — deactivated; reversible, still listed (with a badge) and reactivatable. `Deleted` — a soft-delete tombstone: the row and all history (orders, COGS, audit) are preserved, but the recipe is invisible to the entire UI and restorable only via database. Deletion is `super_admin`-only and UI-irreversible; reactivation is available to `super_admin` and `admin_pusat`.
+_Avoid_: disabled, archived, removed
+
 **Ingredient**:
 A raw material, semi-finished good (SFG), or finished good (FG) tracked in inventory. Ingredients have an `averageCost` that feeds into recipe COGS calculations.
 _Avoid_: Raw material, stock item, component

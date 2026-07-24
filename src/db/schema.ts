@@ -45,6 +45,11 @@ export const recipeCategoryEnum = pgEnum("recipe_category", [
   "paket_bundle",
 ]);
 
+// Recipe lifecycle (ADR-0009): Active ⇄ Inactive → Deleted. Deliberately
+// independent from ingredient_status so a future ingredient-status change can't
+// silently affect recipes.
+export const recipeStatusEnum = pgEnum("recipe_status", ["Active", "Inactive", "Deleted"]);
+
 export const orderChannelEnum = pgEnum("order_channel", [
   "Gofood",
   "Grabfood",
@@ -291,7 +296,7 @@ export const recipes = pgTable("recipes", {
   totalCogs: integer("total_cogs").notNull().default(0),
   isBOGO: boolean("is_bogo").notNull().default(false),
   isStaffMeal: boolean("is_staff_meal").notNull().default(false), // ID6: Staff meals display as Rp 0
-  status: ingredientStatusEnum("status").notNull().default("Active"),
+  status: recipeStatusEnum("status").notNull().default("Active"),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });

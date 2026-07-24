@@ -2,7 +2,15 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import { getRecipeDetail, updateRecipe, deleteRecipe } from "#/lib/server/recipes";
+import {
+  getRecipeDetail,
+  updateRecipe,
+  deleteRecipe,
+  deactivateRecipe,
+  reactivateRecipe,
+  getRecipeDeleteImpact,
+  getRecipeReactivateImpact,
+} from "#/lib/server/recipes";
 import { uploadRecipeImage, deleteRecipeImage } from "#/lib/server/recipe-images";
 import { getBrands } from "#/lib/server/brands";
 import { getModifierGroups } from "#/lib/server/modifier-groups";
@@ -16,11 +24,14 @@ import Modal from "#/components/ui/Modal";
 import { Label } from "#/components/ui/label";
 import { RecipeWizard } from "#/components/RecipeWizard";
 import { usePageTitle } from "#/hooks/usePageTitle";
+import { useAuth } from "#/lib/auth-context";
 import {
   ArrowLeft,
   Pencil,
   Trash2,
   AlertTriangle,
+  EyeOff,
+  RotateCcw,
   TrendingUp,
   Package,
   Store,
@@ -45,8 +56,12 @@ function RecipeDetailPage() {
   const { recipeId } = Route.useParams();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+  const [showReactivateModal, setShowReactivateModal] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -109,17 +124,58 @@ function RecipeDetailPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: ({ data }: { data: { id: string; hardDelete: boolean } }) => deleteRecipe({ data }),
+    mutationFn: ({ data }: { data: { id: string } }) => deleteRecipe({ data }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["recipes"] });
       setShowDeleteModal(false);
-      toast.success("Menu berhasil dinonaktifkan");
+      toast.success("Menu dihapus secara permanen");
       void navigate({ to: "/recipes" });
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus menu", { description: error.message });
+    },
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: ({ data }: { data: { id: string } }) => deactivateRecipe({ data }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
+      void queryClient.invalidateQueries({ queryKey: ["recipes"] });
+      setShowDeactivateModal(false);
+      toast.success("Menu dinonaktifkan");
     },
     onError: (error: Error) => {
       toast.error("Gagal menonaktifkan menu", { description: error.message });
     },
   });
+
+  const reactivateMutation = useMutation({
+    mutationFn: ({ data }: { data: { id: string } }) => reactivateRecipe({ data }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
+      void queryClient.invalidateQueries({ queryKey: ["recipes"] });
+      setShowReactivateModal(false);
+      toast.success("Menu diaktifkan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal mengaktifkan menu", { description: error.message });
+    },
+  });
+
+  // ADR-0009: impact data for the confirm modals.
+  const deleteImpactQuery = useQuery({
+    queryKey: ["recipe-delete-impact", recipeId],
+    queryFn: () => getRecipeDeleteImpact({ data: { id: recipeId } }),
+    enabled: showDeleteModal,
+  });
+  const reactivateImpactQuery = useQuery({
+    queryKey: ["recipe-reactivate-impact", recipeId],
+    queryFn: () => getRecipeReactivateImpact({ data: { id: recipeId } }),
+    enabled: showReactivateModal,
+  });
+  const impact = deleteImpactQuery.data;
+  const reactivateImpact = reactivateImpactQuery.data;
+  const blocked = (impact?.activeBundleCount ?? 0) > 0;
 
   const openImageModal = () => {
     setImageFile(null);
@@ -163,9 +219,19 @@ function RecipeDetailPage() {
 
   const handleDelete = async () => {
     if (recipeId) {
-      await deleteMutation.mutateAsync({
-        data: { id: recipeId, hardDelete: false },
-      });
+      await deleteMutation.mutateAsync({ data: { id: recipeId } });
+    }
+  };
+
+  const handleDeactivate = async () => {
+    if (recipeId) {
+      await deactivateMutation.mutateAsync({ data: { id: recipeId } });
+    }
+  };
+
+  const handleReactivate = async () => {
+    if (recipeId) {
+      await reactivateMutation.mutateAsync({ data: { id: recipeId } });
     }
   };
 
@@ -223,15 +289,33 @@ function RecipeDetailPage() {
                 {recipe.imageUrl ? "Ganti Gambar" : "Tambah Gambar"}
               </Button>
             )}
-            {!isEditing && (
+            {!isEditing && recipe.status === "Active" && (
               <Button
                 variant="outline"
-                onClick={() => setShowDeleteModal(true)}
-                className="text-destructive border-destructive hover:bg-destructive/10"
+                onClick={() => setShowDeactivateModal(true)}
+                className="text-muted-foreground"
               >
-                <Trash2 className="h-4 w-4 mr-2" />
+                <EyeOff className="h-4 w-4 mr-2" />
                 Nonaktifkan
               </Button>
+            )}
+            {!isEditing && recipe.status === "Inactive" && (
+              <>
+                <Button variant="outline" onClick={() => setShowReactivateModal(true)}>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Aktifkan
+                </Button>
+                {isSuperAdmin && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowDeleteModal(true)}
+                    className="text-destructive border-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Hapus
+                  </Button>
+                )}
+              </>
             )}
             <Button
               onClick={() => {
@@ -536,25 +620,66 @@ function RecipeDetailPage() {
           </>
         )}
 
-        {/* Delete Modal */}
+        {/* Delete Modal — heavy confirm (ADR-0009) */}
         <Modal
           open={showDeleteModal}
           onClose={() => setShowDeleteModal(false)}
-          title="Nonaktifkan Menu"
-          size="sm"
+          title="Hapus Menu"
+          size="md"
         >
           <div className="space-y-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
               <div>
-                <p className="font-medium">Nonaktifkan menu "{recipe?.name}"?</p>
+                <p className="font-medium">Hapus menu "{recipe?.name}"?</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Status menu akan diubah menjadi{" "}
-                  <code className="mx-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>. Menu tidak
-                  akan muncul di daftar aktif, tetapi data historis tetap tersimpan.
+                  Resep akan dihapus secara permanen dari antarmuka. Tindakan ini{" "}
+                  <span className="font-medium text-foreground">
+                    tidak dapat dibatalkan lewat UI
+                  </span>{" "}
+                  (pemulihan hanya via database). Data historis — pesanan, HPP, dan log audit —
+                  tetap tersimpan.
                 </p>
               </div>
             </div>
+
+            {impact &&
+              (impact.orderCount > 0 ||
+                impact.bundleCount > 0 ||
+                impact.modifierGroupCount > 0 ||
+                impact.branchStockCount > 0) && (
+                <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+                  <p className="font-medium text-muted-foreground">Resep masih terkait dengan:</p>
+                  <ul className="list-disc pl-5 space-y-0.5">
+                    {impact.orderCount > 0 && <li>{impact.orderCount} pesanan historis</li>}
+                    {impact.bundleCount > 0 && (
+                      <li>
+                        {impact.bundleCount} paket
+                        {impact.activeBundleCount > 0 && (
+                          <span className="text-destructive">
+                            {" "}
+                            ({impact.activeBundleCount} aktif — penghapusan diblokir)
+                          </span>
+                        )}
+                      </li>
+                    )}
+                    {impact.modifierGroupCount > 0 && (
+                      <li>{impact.modifierGroupCount} grup modifier</li>
+                    )}
+                    {impact.branchStockCount > 0 && (
+                      <li>stok di {impact.branchStockCount} cabang</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+            {blocked && (
+              <p className="text-sm text-destructive">
+                Tidak dapat dihapus: resep digunakan dalam {impact?.activeBundleCount} paket aktif.
+                Nonaktifkan paket tersebut terlebih dahulu.
+              </p>
+            )}
+
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setShowDeleteModal(false)}>
                 Batal
@@ -563,9 +688,76 @@ function RecipeDetailPage() {
                 type="button"
                 variant="destructive"
                 onClick={handleDelete}
-                disabled={deleteMutation.isPending}
+                disabled={deleteMutation.isPending || blocked}
               >
-                {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
+                {deleteMutation.isPending ? "Menghapus..." : "Hapus"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Deactivate Modal — light confirm */}
+        <Modal
+          open={showDeactivateModal}
+          onClose={() => setShowDeactivateModal(false)}
+          title="Nonaktifkan Menu"
+          size="sm"
+        >
+          <div className="space-y-4">
+            <p className="text-sm">
+              Nonaktifkan menu "{recipe?.name}"? Menu tetap ditampilkan dengan badge{" "}
+              <code className="mx-1 bg-muted px-1.5 py-0.5 rounded">Nonaktif</code> dan dapat
+              diaktifkan kembali kapan saja.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setShowDeactivateModal(false)}>
+                Batal
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDeactivate}
+                disabled={deactivateMutation.isPending}
+              >
+                {deactivateMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Reactivate Modal — light confirm with optional bundle warning (ADR-0009) */}
+        <Modal
+          open={showReactivateModal}
+          onClose={() => setShowReactivateModal(false)}
+          title="Aktifkan Menu"
+          size="sm"
+        >
+          <div className="space-y-4">
+            <p className="text-sm">
+              Aktifkan kembali menu "{recipe?.name}"? Menu akan kembali dapat dijual.
+            </p>
+            {reactivateImpact &&
+              (reactivateImpact.deletedChildCount > 0 ||
+                reactivateImpact.inactiveChildCount > 0) && (
+                <div className="flex items-start gap-3 rounded-md border border-warning/40 bg-warning/10 p-3">
+                  <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                  <p className="text-sm">
+                    Perhatian: paket ini berisi {reactivateImpact.deletedChildCount} resep yang
+                    dihapus dan {reactivateImpact.inactiveChildCount} yang nonaktif. Resep tersebut
+                    tidak akan tersedia saat paket dipesan.
+                  </p>
+                </div>
+              )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setShowReactivateModal(false)}>
+                Batal
+              </Button>
+              <Button
+                type="button"
+                onClick={handleReactivate}
+                disabled={reactivateMutation.isPending}
+              >
+                {reactivateMutation.isPending ? "Mengaktifkan..." : "Aktifkan"}
               </Button>
             </div>
           </div>
