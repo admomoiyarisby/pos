@@ -18,6 +18,9 @@ import { createMutasiTransfer } from "#/lib/server/scm-transfers";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getInventory } from "#/lib/server/inventory";
+import { useUnsavedDraft } from "#/hooks/useUnsavedDraft";
+import { RestoreDraftBanner } from "#/components/draft/RestoreDraftBanner";
+import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 
 export const Route = createFileRoute("/_layout/scm-transfers/new")({
@@ -45,17 +48,57 @@ interface ItemRow {
   inputValue: string;
 }
 
+interface MutasiDraft {
+  items: ItemRow[];
+  fromBranchId: string;
+  toBranchId: string;
+  notes: string;
+}
+
 function NewMutasiPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { branches, ingredients } = Route.useLoaderData();
 
-  const [fromBranchId, setFromBranchId] = useState<string>(user?.branchId ?? "");
-  const [toBranchId, setToBranchId] = useState<string>("");
-  const [items, setItems] = useState<ItemRow[]>([]);
-  const [notes, setNotes] = useState<string>("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ADR 0011: persist the in-progress draft so a crash / tab-close doesn't lose it.
+  // Creation form -> prompt-restore (never silently re-apply a stale draft).
+  const draftKey = `draft:${user?.id ?? ""}:scm-transfers/new`;
+  const {
+    state: draft,
+    setState: setDraft,
+    clear: clearDraft,
+    hasPendingDraft,
+    pendingDraft,
+    restorePending,
+    discardPending,
+  } = useUnsavedDraft<MutasiDraft>(
+    draftKey,
+    { items: [], fromBranchId: user?.branchId ?? "", toBranchId: "", notes: "" },
+    {
+      restoreMode: "prompt",
+      isDirty: (s) => {
+        const d = s as MutasiDraft;
+        return (
+          d.items.length > 0 ||
+          !!d.notes ||
+          d.toBranchId !== "" ||
+          d.fromBranchId !== (user?.branchId ?? "")
+        );
+      },
+    },
+  );
+  const items = draft.items;
+  const setItems = (next: ItemRow[] | ((prev: ItemRow[]) => ItemRow[])) =>
+    setDraft((prev) => ({ ...prev, items: typeof next === "function" ? next(prev.items) : next }));
+  const fromBranchId = draft.fromBranchId;
+  const setFromBranchId = (v: string) => setDraft((prev) => ({ ...prev, fromBranchId: v }));
+  const toBranchId = draft.toBranchId;
+  const setToBranchId = (v: string) => setDraft((prev) => ({ ...prev, toBranchId: v }));
+  const notes = draft.notes;
+  const setNotes = (v: string) => setDraft((prev) => ({ ...prev, notes: v }));
 
   const createMut = useServerFn(createMutasiTransfer);
   const queryClient = useQueryClient();
@@ -159,6 +202,7 @@ function NewMutasiPage() {
           notes: notes || undefined,
         },
       });
+      clearDraft();
 
       void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
       void queryClient.invalidateQueries({ queryKey: ["inventory-branch"] });
@@ -172,6 +216,25 @@ function NewMutasiPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleRestoreDraft = () => {
+    if (!pendingDraft) return;
+    const kept = pendingDraft.items.filter((it) => ingredientById.has(it.ingredientId));
+    const dropped = pendingDraft.items.filter((it) => !ingredientById.has(it.ingredientId));
+    if (dropped.length > 0) {
+      toast.warning(
+        `${dropped.length} bahan dari draft sebelumnya tidak lagi tersedia dan dihapus: ${dropped
+          .map((d) => ingredientById.get(d.ingredientId)?.name ?? d.ingredientId)
+          .join(", ")}`,
+      );
+    }
+    restorePending({
+      items: kept,
+      fromBranchId: pendingDraft.fromBranchId,
+      toBranchId: pendingDraft.toBranchId,
+      notes: pendingDraft.notes,
+    });
   };
 
   usePageTitle("Buat Mutasi Stok", "Surat Jalan baru antar cabang");
@@ -195,6 +258,10 @@ function NewMutasiPage() {
           </Button>
           <h1 className="text-lg font-semibold">Buat Mutasi Stok</h1>
         </div>
+
+        {hasPendingDraft ? (
+          <RestoreDraftBanner onRestore={handleRestoreDraft} onDiscard={discardPending} />
+        ) : null}
 
         {submitError && (
           <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">

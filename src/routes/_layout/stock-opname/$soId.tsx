@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -19,33 +19,7 @@ import { cn } from "#/lib/utils";
 import { toast } from "sonner";
 import { calculateNasiConversion } from "#/lib/server/nasi-conversion";
 import { usePageTitle } from "#/hooks/usePageTitle";
-
-function loadSoCache(key: string) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    return JSON.parse(raw) as { physicalInputs: Record<string, string>; touchedItems: string[] };
-  } catch {
-    return null;
-  }
-}
-
-function saveSoCache(key: string, physicalInputs: Record<string, string>, touchedItems: string[]) {
-  try {
-    localStorage.setItem(key, JSON.stringify({ physicalInputs, touchedItems }));
-  } catch {
-    // Storage full or unavailable — silently ignore
-  }
-}
-
-function clearSoCache(key: string) {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // Ignore
-  }
-}
-
+import { useUnsavedDraft } from "#/hooks/useUnsavedDraft";
 const statusColors: Record<string, "default" | "warning" | "success"> = {
   Submitted: "default",
   Approved: "success",
@@ -66,27 +40,30 @@ function StockOpnameDetailPage() {
   const { soId } = Route.useParams();
   const queryClient = useQueryClient();
   const cacheKey = `so-edit-${soId}`;
-  const cached = loadSoCache(cacheKey);
-  const [physicalInputs, setPhysicalInputs] = useState<Record<string, string>>(
-    cached?.physicalInputs ?? {},
+  // ADR 0011: silent local persistence of in-progress physical counts. The SO is an
+  // entity-detail screen, so the draft is unambiguously "our work on this SO" — restore
+  // silently. Legacy caches (pre-wrapper format) are dropped by the hook's read guard.
+  const {
+    state: draft,
+    setState: setDraft,
+    clear: clearDraft,
+  } = useUnsavedDraft(
+    cacheKey,
+    { physicalInputs: {} as Record<string, string>, touchedItems: [] as string[] },
+    {
+      restoreMode: "silent",
+      isDirty: (s) => {
+        const d = s as { physicalInputs: Record<string, string>; touchedItems: string[] };
+        return Object.keys(d.physicalInputs).length > 0 || d.touchedItems.length > 0;
+      },
+    },
   );
-  const [touchedItems, setTouchedItems] = useState<Set<string>>(
-    () => new Set(cached?.touchedItems ?? []),
-  );
+  const physicalInputs = draft.physicalInputs;
+  const touchedItems = draft.touchedItems;
   const [investigationNote, setInvestigationNote] = useState("");
   const [approveModal, setApproveModal] = useState(false);
   const [investigationModal, setInvestigationModal] = useState(false);
   const [submitError, setSubmitError] = useState("");
-
-  // Debounced save edit state to localStorage
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => {
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      saveSoCache(cacheKey, physicalInputs, [...touchedItems]);
-    }, 300);
-    return () => clearTimeout(saveTimer.current);
-  }, [cacheKey, physicalInputs, touchedItems]);
 
   const { data: detail } = useQuery({
     queryKey: ["stock-opname", soId],
@@ -97,7 +74,7 @@ function StockOpnameDetailPage() {
   const submitMutation = useMutation({
     mutationFn: submitStockOpname,
     onSuccess: () => {
-      clearSoCache(`so-edit-${soId}`);
+      clearDraft();
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setSubmitError("");
@@ -111,7 +88,7 @@ function StockOpnameDetailPage() {
   const approveMutation = useMutation({
     mutationFn: approveStockOpname,
     onSuccess: () => {
-      clearSoCache(cacheKey);
+      clearDraft();
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setApproveModal(false);
@@ -125,7 +102,7 @@ function StockOpnameDetailPage() {
   const updateCountsMutation = useMutation({
     mutationFn: updateStockOpnameCounts,
     onSuccess: () => {
-      clearSoCache(cacheKey);
+      clearDraft();
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setSubmitError("");
@@ -139,7 +116,7 @@ function StockOpnameDetailPage() {
   const markInvestigationMutation = useMutation({
     mutationFn: markStockOpnameInvestigation,
     onSuccess: () => {
-      clearSoCache(cacheKey);
+      clearDraft();
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setInvestigationModal(false);
@@ -190,8 +167,13 @@ function StockOpnameDetailPage() {
     !detail.realizedAt;
 
   const handleInputChange = (itemId: string, value: string) => {
-    setPhysicalInputs((prev) => ({ ...prev, [itemId]: value }));
-    setTouchedItems((prev) => new Set(prev).add(itemId));
+    setDraft((prev) => ({
+      ...prev,
+      physicalInputs: { ...prev.physicalInputs, [itemId]: value },
+      touchedItems: prev.touchedItems.includes(itemId)
+        ? prev.touchedItems
+        : [...prev.touchedItems, itemId],
+    }));
   };
 
   const buildItems = () => {
@@ -243,16 +225,15 @@ function StockOpnameDetailPage() {
   // Dev-only: auto-fill stock numbers for testing
   const handleDebugFill = () => {
     const newInputs: Record<string, string> = {};
-    const newTouched = new Set<string>();
+    const newTouched: string[] = [];
     for (const item of detail.items) {
       // Generate truly random positive number (0 to 2x system stock)
       const maxStock = Math.max(item.systemStock * 2, 100);
       const physicalStock = Math.floor(Math.random() * maxStock);
       newInputs[item.id] = String(physicalStock);
-      newTouched.add(item.id);
+      newTouched.push(item.id);
     }
-    setPhysicalInputs(newInputs);
-    setTouchedItems(newTouched);
+    setDraft({ physicalInputs: newInputs, touchedItems: newTouched });
     toast.info("Debug: Angka stok diisi secara random");
   };
 
@@ -368,7 +349,7 @@ function StockOpnameDetailPage() {
                         aria-label={`${item.ingredientName} stok fisik`}
                         className={cn(
                           "h-8 w-24 rounded-md border bg-background px-2 text-sm text-right disabled:opacity-50",
-                          !touchedItems.has(item.id) && detail.status !== "Approved"
+                          !touchedItems.includes(item.id) && detail.status !== "Approved"
                             ? "border-warning/40 bg-warning/10"
                             : "border-input",
                         )}

@@ -39,6 +39,18 @@ _Avoid_: Raw material, stock item, component
 A module that traverses a recipe's BOM — including child recipes (bundles) and modifier ingredients — to produce a flat list of ingredient deltas with signed quantities (positive = consumed, negative = excluded/restored). Used by the Order Intake module for stock checking, COGS calculation, inventory deduction, and void restoration.
 _Avoid_: BOM resolver, ingredient flattener, stock calculator
 
+**Production (Produksi)**:
+The act of transforming inventory at the Central Kitchen: a set of ingredients is consumed (Barang Keluar / "out") and a set of ingredients is created (Barang Dihasilkan / "produced"). A production record is a **documentation-only event** — it records the out and produced items as history but does **NOT** change stock and does **NOT** write to the stock ledger. Stock adjustments (when needed) are made separately via Stock Opname or manual adjustment. It does NOT recompute HPP or yield; produced-item cost is set manually on the ingredient master.
+_Avoid_: Yield conversion, BOM, manufacturing order
+
+**Barang Keluar (out)**:
+An ingredient listed as consumed by a production record (documented only — stock is not actually deducted by the record).
+_Avoid_: source, input, raw
+
+**Barang Dihasilkan (produced)**:
+An ingredient listed as created by a production record (documented only — stock is not actually added by the record).
+_Avoid_: target, output, finished
+
 **Modifier Group (Grup Modifier)**:
 A named, ordered collection of Modifiers (options) with a min/max selection constraint, linked to one or more Recipes so they can be offered at the POS. The relationship is managed through the "Menu Terkait" (related recipes) linking UI; the same group can be reused across multiple Recipes.
 _Avoid_: Option group, add-on group, modifier set
@@ -130,3 +142,7 @@ _Avoid_: search (when referring to the free-text box), query
 **Fuzzy Search**:
 Typo-tolerant matching used by Table Search. Client side: Fuse.js (threshold `0.3`, `ignoreLocation`). Server side: Postgres `pg_trgm` `similarity()` > `0.3`, re-ranked by score (ADR 0008). Contrast with exact substring/ILIKE matching.
 _Avoid_: search (bare), contains
+
+**Unsaved Draft (Draft Belum Tersimpan)**:
+A screen where the user enters a large body of data that exists only in client state until an explicit submit, and that data is **costly or impossible to reconstruct** if lost (e.g. physical stock counts, hand-keyed line items before the first server save). A screen qualifies only if it meets both tests: (1) bulk client-only entry — many rows or a large form held only in component state until submit, and (2) non-reconstructable — the data cannot be re-fetched or re-derived (physical counts, hand observations) the way a procurement draft's quantities could be re-entered from a paper list. Qualifying screens get client-side persistence (localStorage); screens where each edit is already server-backed (e.g. procurement detail review, where `readyQuantity` persists per-keystroke) or where the entry is a single quick record (e.g. waste entry, manual adjustment) do not.
+_Avoid_: long-time-needed process, autosave, draft (bare — "Draft" is already a Procurement FSM state; reusing it blurs the server-side state with the client-side concept)

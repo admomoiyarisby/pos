@@ -19,12 +19,29 @@ import {
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import { createProcurement, transitionProcurement } from "#/lib/server/scm-queries";
 import { getIngredients } from "#/lib/server/ingredients";
+import { useUnsavedDraft } from "#/hooks/useUnsavedDraft";
+import { RestoreDraftBanner } from "#/components/draft/RestoreDraftBanner";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_layout/scm-procurements/new")({
   component: NewProcurementPage,
 });
 
 type IngredientRow = { id: string; name: string; stockUnit: string; averageCost: number };
+
+type ProcurementDraftItem = {
+  ingredientId: string;
+  ingredientName: string;
+  quantity: number;
+  unitPrice: number;
+  unitPriceUnit: string;
+};
+
+type ProcurementDraft = {
+  items: ProcurementDraftItem[];
+  notes: string;
+  requestSource: string;
+};
 
 function NewProcurementPage() {
   const navigate = useNavigate();
@@ -39,19 +56,40 @@ function NewProcurementPage() {
   // Local draft state. Persisted to the server on "Simpan sebagai Draft"
   // (which creates a Draft procurement and navigates to the detail page);
   // subsequent edits happen on the detail page's DraftForm. (ADR 0004 §3)
-  const [items, setItems] = useState<
-    Array<{
-      ingredientId: string;
-      ingredientName: string;
-      quantity: number;
-      unitPrice: number;
-      unitPriceUnit: string;
-    }>
-  >([]);
-  const [notes, setNotes] = useState("");
-  const [requestSource, setRequestSource] = useState("");
   const [selectedIngredient, setSelectedIngredient] = useState("");
   const [quantity, setQuantity] = useState(1);
+
+  // ADR 0011: persist the in-progress draft so a crash / tab-close doesn't lose it.
+  // Creation form -> prompt-restore (never silently re-apply a stale draft).
+  const draftKey = `draft:${user?.id ?? ""}:scm-procurements/new`;
+  const {
+    state: draft,
+    setState: setDraft,
+    clear: clearDraft,
+    hasPendingDraft,
+    pendingDraft,
+    restorePending,
+    discardPending,
+  } = useUnsavedDraft<ProcurementDraft>(
+    draftKey,
+    { items: [], notes: "", requestSource: "" },
+    {
+      restoreMode: "prompt",
+      isDirty: (s) => {
+        const d = s as ProcurementDraft;
+        return d.items.length > 0 || !!d.notes || !!d.requestSource;
+      },
+    },
+  );
+  const items = draft.items;
+  const setItems = (
+    next: ProcurementDraftItem[] | ((prev: ProcurementDraftItem[]) => ProcurementDraftItem[]),
+  ) =>
+    setDraft((prev) => ({ ...prev, items: typeof next === "function" ? next(prev.items) : next }));
+  const notes = draft.notes;
+  const setNotes = (v: string) => setDraft((prev) => ({ ...prev, notes: v }));
+  const requestSource = draft.requestSource;
+  const setRequestSource = (v: string) => setDraft((prev) => ({ ...prev, requestSource: v }));
 
   const showPrices = user?.role !== "branch_admin";
 
@@ -74,6 +112,7 @@ function NewProcurementPage() {
       });
     },
     onSuccess: (result) => {
+      clearDraft();
       void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
       // After a successful save, jump straight to the detail page so any
       // further edits (add/remove items, change quantities) go through
@@ -93,6 +132,7 @@ function NewProcurementPage() {
       });
     },
     onSuccess: (_d, id) => {
+      clearDraft();
       void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
       void navigate({ to: "/scm-procurements/$procurementId", params: { procurementId: id } });
     },
@@ -136,6 +176,25 @@ function NewProcurementPage() {
     });
   }
 
+  const handleRestoreDraft = () => {
+    if (!pendingDraft) return;
+    const validIds = new Set((ingredients as IngredientRow[]).map((i) => i.id));
+    const kept = pendingDraft.items.filter((it) => validIds.has(it.ingredientId));
+    const dropped = pendingDraft.items.filter((it) => !validIds.has(it.ingredientId));
+    if (dropped.length > 0) {
+      toast.warning(
+        `${dropped.length} bahan dari draft sebelumnya tidak lagi tersedia dan dihapus: ${dropped
+          .map((d) => d.ingredientName)
+          .join(", ")}`,
+      );
+    }
+    restorePending({
+      items: kept,
+      notes: pendingDraft.notes,
+      requestSource: pendingDraft.requestSource,
+    });
+  };
+
   usePageTitle(
     "Buat Pengadaan",
     "Isi item yang diminta. Simpan sebagai Draft untuk melanjutkan nanti, atau langsung Submit untuk masuk antrian review Admin Pusat.",
@@ -152,6 +211,10 @@ function NewProcurementPage() {
             </Button>
           </Link>
         </div>
+
+        {hasPendingDraft ? (
+          <RestoreDraftBanner onRestore={handleRestoreDraft} onDiscard={discardPending} />
+        ) : null}
 
         <Card>
           <CardContent className="space-y-4 pt-6">
