@@ -2108,7 +2108,7 @@ export const MODIFIER_GROUPS_DATA = [
         name: "Extra Telur Mata Sapi",
         price: 5000,
         isExclusion: false,
-        ingredients: [{ ingredientProtoId: "ing-sfg-012", quantity: 1 }],
+        ingredients: [{ ingredientProtoId: "ing115", quantity: 1 }],
       },
       {
         protoId: "mod-06",
@@ -2116,7 +2116,7 @@ export const MODIFIER_GROUPS_DATA = [
         name: "Extra Daging Ayam",
         price: 10000,
         isExclusion: false,
-        ingredients: [{ ingredientProtoId: "ing-sfg-002", quantity: 50 }],
+        ingredients: [{ ingredientProtoId: "ing108", quantity: 50 }],
       },
       {
         protoId: "mod-07",
@@ -3500,62 +3500,26 @@ export const CHANNEL_REVENUES_DATA = (() => {
 export const YIELD_CONVERSIONS_DATA = (() => {
   const ycs: {
     branchCode: string;
-    sourceIngredientProtoId: string;
-    sourceQuantity: number;
-    targetIngredientProtoId: string;
-    targetQuantity: number;
-    yieldPercentage: string;
-    shrinkageQuantity: number;
+    out: { ingredientProtoId: string; quantity: number }[];
+    produced: { ingredientProtoId: string; quantity: number }[];
     notes?: string;
     processedByEmail: string;
     createdAt: Date;
   }[] = [];
   const conversions = [
-    {
-      source: "ing001",
-      target: "ing-sfg-001",
-      srcQty: 5000,
-      tgtQty: 4500,
-      yield: "90.00",
-      shrink: 500,
-    },
-    {
-      source: "ing002",
-      target: "ing-sfg-002",
-      srcQty: 3000,
-      tgtQty: 2700,
-      yield: "90.00",
-      shrink: 300,
-    },
-    {
-      source: "ing003",
-      target: "ing-sfg-003",
-      srcQty: 2000,
-      tgtQty: 1700,
-      yield: "85.00",
-      shrink: 300,
-    },
-    { source: "ing007", target: "ing-sfg-012", srcQty: 30, tgtQty: 28, yield: "93.33", shrink: 2 },
-    {
-      source: "ing018",
-      target: "ing-sfg-001",
-      srcQty: 1200,
-      tgtQty: 1000,
-      yield: "83.33",
-      shrink: 200,
-    },
+    { out: [{ p: "ing001", q: 5000 }], produced: [{ p: "ing107", q: 4500 }] },
+    { out: [{ p: "ing002", q: 3000 }], produced: [{ p: "ing108", q: 2700 }] },
+    { out: [{ p: "ing003", q: 2000 }], produced: [{ p: "ing109", q: 1700 }] },
+    { out: [{ p: "ing007", q: 30 }], produced: [{ p: "ing115", q: 28 }] },
+    { out: [{ p: "ing018", q: 1200 }], produced: [{ p: "ing107", q: 1000 }] },
   ];
   for (let i = 1; i <= 20; i++) {
     const conv = conversions[i % conversions.length];
     ycs.push({
       branchCode: BRANCH_CODES[i % BRANCH_CODES.length],
-      sourceIngredientProtoId: conv.source,
-      sourceQuantity: conv.srcQty + i * 100,
-      targetIngredientProtoId: conv.target,
-      targetQuantity: conv.tgtQty + i * 90,
-      yieldPercentage: conv.yield,
-      shrinkageQuantity: conv.shrink + i * 10,
-      notes: `Yield processing batch ${i}`,
+      out: conv.out.map((o) => ({ ingredientProtoId: o.p, quantity: o.q + i * 100 })),
+      produced: conv.produced.map((p) => ({ ingredientProtoId: p.p, quantity: p.q + i * 90 })),
+      notes: `Processing batch ${i}`,
       processedByEmail: i % 2 === 0 ? "ck@omoiyari.net" : "andi.wiyung@omoiyari.net",
       createdAt: nDaysAgo((i % 20) + 1),
     });
@@ -4110,125 +4074,88 @@ export const RECIPE_BRANCHES_DATA: { recipeProtoId: string; branchProtoId: strin
 })();
 
 // ──────────────────────────────────────────
-// YIELD CONVERSION SOURCES (multi-source yield BOMs)
+// YIELD CONVERSION MULTI (multi out / multi produced)
 // ──────────────────────────────────────────
-// 6 realistic multi-source yield cases (Q4, option A). The first source
-// in each `sources` array populates the legacy single-source columns
-// on `yield_conversions` (mirrors production behavior in yield.ts).
-// All sources populate the `yield_conversion_sources` junction.
+// Realistic production records with multiple "out" (consumed) ingredients
+// and one or more "produced" outputs. Demonstrates the generalized model.
 
-export const YIELD_CONVERSION_SOURCES_DATA: {
+export const YIELD_CONVERSION_MULTI_DATA: {
   branchCode: string;
-  sourceIngredientProtoId: string;
-  sourceQuantity: number;
-  targetIngredientProtoId: string;
-  targetQuantity: number;
-  yieldPercentage: string;
-  shrinkageQuantity: number;
+  out: { ingredientProtoId: string; quantity: number }[];
+  produced: { ingredientProtoId: string; quantity: number }[];
   notes?: string;
   processedByEmail: string;
   createdAt: Date;
-  sources: { ingredientProtoId: string; quantity: number }[];
 }[] = [
   {
     branchCode: "CENTRAL",
-    sourceIngredientProtoId: "ing008", // tulang ayam
-    sourceQuantity: 2000,
-    targetIngredientProtoId: "ing-sfg-012", // kaldu ayam
-    targetQuantity: 4800,
-    yieldPercentage: "80.00",
-    shrinkageQuantity: 1200,
-    notes: "Kaldu ayam: tulang + air + bawang merah (multi-source)",
+    notes: "Kaldu ayam: tulang + air + bawang merah",
     processedByEmail: "ck@omoiyari.net",
     createdAt: nDaysAgo(28),
-    sources: [
+    out: [
       { ingredientProtoId: "ing008", quantity: 2000 }, // tulang ayam
       { ingredientProtoId: "ing013", quantity: 4000 }, // air
       { ingredientProtoId: "ing023", quantity: 200 }, // bawang merah
     ],
+    produced: [{ ingredientProtoId: "ing115", quantity: 4800 }], // kaldu ayam
   },
   {
     branchCode: "CENTRAL",
-    sourceIngredientProtoId: "ing004", // kecap
-    sourceQuantity: 800,
-    targetIngredientProtoId: "ing-sfg-004", // teriyaki base
-    targetQuantity: 1900,
-    yieldPercentage: "79.17",
-    shrinkageQuantity: 500,
-    notes: "Teriyaki base: kecap + mirin + saus (multi-source)",
+    notes: "Teriyaki base: kecap + mirin + saus",
     processedByEmail: "ck@omoiyari.net",
     createdAt: nDaysAgo(21),
-    sources: [
+    out: [
       { ingredientProtoId: "ing004", quantity: 800 }, // kecap
       { ingredientProtoId: "ing006", quantity: 600 }, // mirin
       { ingredientProtoId: "ing005", quantity: 500 }, // saus
     ],
+    produced: [{ ingredientProtoId: "ing110", quantity: 1900 }], // teriyaki base
   },
   {
     branchCode: "CENTRAL",
-    sourceIngredientProtoId: "ing028", // udang
-    sourceQuantity: 1000,
-    targetIngredientProtoId: "ing-sfg-015", // seafood mix
-    targetQuantity: 2400,
-    yieldPercentage: "80.00",
-    shrinkageQuantity: 600,
-    notes: "Mixed seafood: udang + cumi + ikan (multi-source)",
+    notes: "Mixed seafood: udang + cumi + ikan",
     processedByEmail: "ck@omoiyari.net",
     createdAt: nDaysAgo(14),
-    sources: [
+    out: [
       { ingredientProtoId: "ing028", quantity: 1000 }, // udang
       { ingredientProtoId: "ing029", quantity: 1000 }, // cumi
       { ingredientProtoId: "ing030", quantity: 1000 }, // ikan
     ],
+    produced: [{ ingredientProtoId: "ing124", quantity: 2400 }], // seafood mix
   },
   {
     branchCode: "CENTRAL",
-    sourceIngredientProtoId: "ing021", // bawang putih
-    sourceQuantity: 500,
-    targetIngredientProtoId: "ing-sfg-010", // bumbu halus
-    targetQuantity: 1000,
-    yieldPercentage: "83.33",
-    shrinkageQuantity: 200,
-    notes: "Bumbu halus: bawang putih + jahe + bawang merah (multi-source)",
+    notes: "Bumbu halus: bawang putih + jahe + bawang merah",
     processedByEmail: "ck@omoiyari.net",
     createdAt: nDaysAgo(7),
-    sources: [
+    out: [
       { ingredientProtoId: "ing021", quantity: 500 }, // bawang putih
       { ingredientProtoId: "ing022", quantity: 300 }, // jahe
       { ingredientProtoId: "ing023", quantity: 400 }, // bawang merah
     ],
+    produced: [{ ingredientProtoId: "ing111", quantity: 1000 }], // bumbu halus
   },
   {
     branchCode: "WYG-01",
-    sourceIngredientProtoId: "ing024", // wortel
-    sourceQuantity: 600,
-    targetIngredientProtoId: "ing-sfg-011", // slaw mix
-    targetQuantity: 1100,
-    yieldPercentage: "78.57",
-    shrinkageQuantity: 300,
-    notes: "Coleslaw mix: wortel + kol (multi-source)",
+    notes: "Coleslaw mix: wortel + kol",
     processedByEmail: "andi.wiyung@omoiyari.net",
     createdAt: nDaysAgo(5),
-    sources: [
+    out: [
       { ingredientProtoId: "ing024", quantity: 600 }, // wortel
       { ingredientProtoId: "ing025", quantity: 800 }, // kol
     ],
+    produced: [{ ingredientProtoId: "ing112", quantity: 1100 }], // slaw mix
   },
   {
     branchCode: "WYG-01",
-    sourceIngredientProtoId: "ing014", // garam
-    sourceQuantity: 200,
-    targetIngredientProtoId: "ing-sfg-013", // sachet bumbu
-    targetQuantity: 1500,
-    yieldPercentage: "83.33",
-    shrinkageQuantity: 300,
-    notes: "Seasoning sachet: garam + gula + kecap (multi-source)",
+    notes: "Seasoning sachet: garam + gula + kecap",
     processedByEmail: "andi.wiyung@omoiyari.net",
     createdAt: nDaysAgo(2),
-    sources: [
+    out: [
       { ingredientProtoId: "ing014", quantity: 200 }, // garam
       { ingredientProtoId: "ing015", quantity: 800 }, // gula
       { ingredientProtoId: "ing004", quantity: 500 }, // kecap
     ],
+    produced: [{ ingredientProtoId: "ing123", quantity: 1500 }], // sachet bumbu
   },
 ];

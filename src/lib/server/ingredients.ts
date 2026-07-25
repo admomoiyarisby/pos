@@ -58,15 +58,21 @@ export const getIngredients = createServerFn({ method: "GET" })
     // Branch visibility gate (mirrors getRecipes): a branch-scoped caller sees
     // only ingredients allowed at their branch; an ingredient with no
     // ingredient_branches rows is visible everywhere (NULL = all branches).
+    // Both disjuncts are self-contained subqueries so `ingredient_branches` is
+    // always in scope (referencing it in the outer WHERE without a LEFT JOIN is
+    // invalid SQL: "missing FROM-clause entry for table ingredient_branches").
     if (currentBranchId) {
       conditions.push(
         sql`
-          EXISTS (
+          NOT EXISTS (
+            SELECT 1 FROM ingredient_branches
+            WHERE ingredient_branches.ingredient_id = ingredients.id
+          )
+          OR EXISTS (
             SELECT 1 FROM ingredient_branches
             WHERE ingredient_branches.ingredient_id = ingredients.id
               AND ingredient_branches.branch_id = ${currentBranchId}
           )
-          OR ingredient_branches.id IS NULL
         `,
       );
     }

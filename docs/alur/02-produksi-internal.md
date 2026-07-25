@@ -2,11 +2,11 @@
 
 ## Kapan Digunakan?
 
-Ketika Gudang Pusat (Central Kitchen) mengolah bahan mentah (RM) menjadi bahan setengah jadi (SFG). Contoh:
+Ketika Gudang Pusat (Central Kitchen) mengolah bahan menjadi bahan lain — misalnya bahan mentah (RM) menjadi bahan setengah jadi (SFG), atau menggabung beberapa bahan menjadi satu hasil. Contoh:
 
 - Ayam mentah → Ayam marinasi
 - Tepung + telur + gula → Adonan kue
-- Sayuran mentah → Sayuran yang sudah dicuci dan dipotong
+- Tulang ayam + air + bawang → Kaldu ayam
 
 ## Siapa yang Melakukan?
 
@@ -25,60 +25,49 @@ Ketika Gudang Pusat (Central Kitchen) mengolah bahan mentah (RM) menjadi bahan s
 2. Klik tombol **"Input Produksi"**
 3. Isi form:
 
-   **Bagian Bahan Mentah (Input):**
+   **Bagian Cabang & Tanggal:**
    - **Cabang / Gudang**: Otomatis terisi "Gudang Pusat" (tidak bisa diubah)
    - **Tanggal Produksi**: Tanggal produksi dilakukan
-   - **Bahan**: Pilih bahan mentah yang diolah
-   - **Jumlah**: Masukkan jumlah bahan mentah yang digunakan
 
-   > Jika menggunakan beberapa bahan mentah, klik **"+ Tambah Bahan"** untuk menambah baris baru
+   **Bagian Barang Keluar (Out):**
+   - Klik **"+ Tambah"** untuk menambah baris bahan yang dikeluarkan
+   - Pilih **Bahan** dan isi **Jumlah** untuk setiap baris
+   - Bisa lebih dari satu bahan (misal: tulang ayam + air + bawang)
 
-   **Bagian Hasil Produksi (Output):**
-   - **Hasil Matang (SFG/FG)**: Pilih bahan hasil produksi
-   - **Jumlah Hasil**: Masukkan jumlah yang dihasilkan
+   **Bagian Barang Dihasilkan (Produced):**
+   - Klik **"+ Tambah"** untuk menambah baris hasil produksi
+   - Pilih **Hasil** dan isi **Jumlah** untuk setiap baris
+   - Bisa lebih dari satu hasil
 
    **Catatan:**
-   - **Catatan Produksi**: Keterangan opsional (contoh: "Pengolahan batch pagi")
+   - **Catatan Produksi**: Keterangan opsional
 
 4. Klik **"Catat Produksi"**
 
+> Satu bahan tidak boleh menjadi "keluar" sekaligus "dihasilkan" dalam produksi yang sama.
+
 ### 2. Apa yang Terjadi di Sistem?
 
-Setelah Anda menyimpan, sistem otomatis:
+Setelah disimpan, sistem **hanya mencatat** produksi sebagai histori (record):
 
-1. **Mengurangi stok** bahan mentah di Gudang Pusat
-2. **Menambah stok** bahan hasil (SFG/FG) di Gudang Pusat
-3. **Mencatat di Kartu Stok**:
-   - Bahan mentah: mutasi "OUT" (keluar)
-   - Bahan hasil: mutasi "IN" (masuk)
-4. **Menghitung HPP** bahan hasil berdasarkan:
-   ```
-   HPP Baru = Total Biaya Bahan Mentah ÷ Jumlah Hasil
-   ```
-5. **Menghitung ulang HPP** semua resep yang menggunakan bahan hasil
-6. **Menghitung yield dan shrinkage**
+1. Menyimpan catatan produksi (Barang Keluar + Barang Dihasilkan) di halaman riwayat
+2. **Tidak mengubah stok** sama sekali — stok bahan keluar maupun dihasilkan tetap utuh
+3. **Tidak menulis Kartu Stok** — tidak ada mutasi "OUT"/"IN" yang dibuat oleh pencatatan ini
 
-### 3. Memahami Yield dan Shrinkage
+Pencatatan produksi murni sebagai dokumentasi. Penyesuaian stok (jika diperlukan) dilakukan terpisah, misalnya melalui Stock Opname atau penyesuaian manual. Sistem **tidak** menghitung ulang HPP (harga pokok) bahan hasil secara otomatis — HPP diatur secara manual pada master bahan.
 
-- **Yield (Persentase Hasil)**: Berapa persen bahan mentah yang menjadi hasil
-  - Contoh: 1000g ayam mentah → 800g ayam matang = Yield 80%
-- **Shrinkage (Susut)**: Berapa banyak bahan yang hilang dalam proses
-  - Contoh: 1000g - 800g = 200g shrinkage
-
-**Tips**: Yield yang rendah (< 80%) perlu diteliti. Mungkin ada masalah dalam proses produksi.
-
-### 4. Melihat Riwayat Produksi
+### 3. Melihat Riwayat Produksi
 
 Halaman Tracking Produksi menampilkan:
 
 - **Total Produksi**: Jumlah catatan produksi
-- **Rata-rata Yield**: Persentase yield rata-rata
-- **Total Shrinkage**: Total susut keseluruhan
-- **Tabel Riwayat**: Semua catatan produksi dengan detail
+- **Total Barang Keluar**: Total unit bahan yang dikeluarkan
+- **Total Barang Dihasilkan**: Total unit bahan yang dihasilkan
+- **Tabel Riwayat**: Semua catatan produksi dengan detail Barang Keluar, Barang Dihasilkan, dan Catatan
 
 ## Contoh Kasus
 
-**Kasus**: Central Kitchen mengolah 5kg ayam mentah menjadi ayam marinasi
+**Kasus**: Central Kitchen memproduksi kaldu ayam dari tulang + air + bawang
 
 **Langkah**:
 
@@ -86,38 +75,31 @@ Halaman Tracking Produksi menampilkan:
 2. Klik "Input Produksi"
 3. Isi:
    - Tanggal Produksi: Hari ini
-   - Bahan Mentah: `Ayam Mentah (RM)` — Jumlah: `5000`
-   - Hasil Matang: `Ayam Marinasi (SFG)` — Jumlah Hasil: `4500`
-   - Catatan: `Marinasi batch pagi`
+   - Barang Keluar: `Tulang Ayam` — 2000, `Air` — 4000, `Bawang Merah` — 200
+   - Barang Dihasilkan: `Kaldu Ayam (SFG)` — 4800
+   - Catatan: `Kaldu batch pagi`
 4. Klik "Catat Produksi"
 
 **Hasil**:
 
-- Stok ayam mentah berkurang 5000
-- Stok ayam marinasi bertambah 4500
-- Kartu Stok mencatat:
-  - `OUT 5000 — Yield: Ayam Mentah → produksi`
-  - `IN 4500 — Yield: produksi → Ayam Marinasi`
-- HPP ayam marinasi dihitung ulang: (HPP ayam mentah × 5000) ÷ 4500
-- Yield: 90%, Shrinkage: 500
+- Satu catatan produksi baru tersimpan di riwayat dengan Barang Keluar (tulang ayam, air, bawang merah) dan Barang Dihasilkan (kaldu ayam 4800)
+- Stok **tidak berubah** — pencatatan ini hanya histori
+- Kartu Stok **tidak** mencatat mutasi apa pun dari pencatatan produksi ini
 
 ## Pertanyaan Umum
 
 **Q: Apa bedanya RM, SFG, dan FG?**
 A:
 
-- **RM (Raw Material)**: Bahan mentah, belum diolah (contoh: ayam mentah, tepung)
-- **SFG (Semi-Finished Good)**: Bahan setengah jadi, sudah diolah tapi belum siap jual (contoh: ayam marinasi, adonan)
-- **FG (Finished Good)**: Produk jadi siap jual (contoh: nasi goreng jadi)
+- **RM (Raw Material)**: Bahan mentah, belum diolah
+- **SFG (Semi-Finished Good)**: Bahan setengah jadi
+- **FG (Finished Good)**: Produk jadi siap jual
 
 **Q: Bisa produksi di cabang (bukan Gudang Pusat)?**
 A: Tidak. Produksi internal hanya bisa dilakukan di Gudang Pusat (Central Kitchen).
 
-**Q: Bagaimana kalau hasil produksi lebih banyak dari bahan mentah?**
-A: Itu tidak mungkin secara fisik. Jumlah hasil pasti lebih kecil atau sama dengan jumlah bahan mentah (ada susut/shrinkage).
+**Q: Apakah HPP bahan hasil dihitung otomatis?**
+A: Tidak. Pencatatan produksi hanya menyimpan histori Barang Keluar & Barang Dihasilkan; tidak mengubah stok maupun menghitung HPP. HPP diatur manual pada master bahan.
 
-**Q: Kenapa HPP berubah setelah produksi?**
-A: Karena HPP bahan hasil = total biaya bahan mentah ÷ jumlah hasil. Jika yield rendah, HPP per unit akan lebih tinggi.
-
-**Q: Apa yang terjadi dengan resep yang menggunakan bahan hasil?**
-A: HPP semua resep tersebut dihitung ulang otomatis. Harga jual resep tidak berubah, tapi margin keuntungan bisa berubah.
+**Q: Boleh satu produksi menghasilkan lebih dari satu bahan?**
+A: Boleh. Bagian "Barang Dihasilkan" mendukung beberapa baris, begitu juga "Barang Keluar".

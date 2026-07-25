@@ -46,6 +46,7 @@ import {
   manualRevenues as manualRevenuesTable,
   channelRevenues as channelRevenuesTable,
   yieldConversions as yieldConversionsTable,
+  yieldConversionItems as yieldConversionItemsTable,
   operationalExpenses as operationalExpensesTable,
   inTransitInventory as inTransitInventoryTable,
 } from "#/db/schema";
@@ -1475,10 +1476,22 @@ export async function seedChannelRevenues(idMap: IdMap) {
 export async function seedYieldConversions(idMap: IdMap) {
   for (const yc of YIELD_CONVERSIONS_DATA) {
     const branchId = idMap.branch.get(`br-${yc.branchCode.toLowerCase().replace("-", "-")}`);
-    const sourceId = idMap.ingredient.get(yc.sourceIngredientProtoId);
-    const targetId = idMap.ingredient.get(yc.targetIngredientProtoId);
     const processedById = idMap.user.get(yc.processedByEmail);
-    if (!branchId || !sourceId || !targetId || !processedById) continue;
+    if (!branchId || !processedById) continue;
+
+    const outItems = yc.out
+      .map((o) => ({
+        ingredientId: idMap.ingredient.get(o.ingredientProtoId),
+        quantity: o.quantity,
+      }))
+      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+    const producedItems = yc.produced
+      .map((p) => ({
+        ingredientId: idMap.ingredient.get(p.ingredientProtoId),
+        quantity: p.quantity,
+      }))
+      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+    if (outItems.length === 0 || producedItems.length === 0) continue;
 
     const existing = await db
       .select()
@@ -1486,25 +1499,36 @@ export async function seedYieldConversions(idMap: IdMap) {
       .where(
         and(
           eq(yieldConversionsTable.branchId, branchId),
-          eq(yieldConversionsTable.sourceIngredientId, sourceId),
           eq(yieldConversionsTable.createdAt, yc.createdAt),
         ),
       )
       .limit(1);
     if (existing[0]) continue;
 
-    await db.insert(yieldConversionsTable).values({
-      branchId,
-      sourceIngredientId: sourceId,
-      sourceQuantity: yc.sourceQuantity,
-      targetIngredientId: targetId,
-      targetQuantity: yc.targetQuantity,
-      yieldPercentage: yc.yieldPercentage,
-      shrinkageQuantity: yc.shrinkageQuantity,
-      notes: yc.notes,
-      processedBy: processedById,
-      createdAt: yc.createdAt,
-    });
+    const [conv] = await db
+      .insert(yieldConversionsTable)
+      .values({
+        branchId,
+        notes: yc.notes,
+        processedBy: processedById,
+        createdAt: yc.createdAt,
+      })
+      .returning({ id: yieldConversionsTable.id });
+
+    await db.insert(yieldConversionItemsTable).values([
+      ...outItems.map((o) => ({
+        conversionId: conv.id,
+        ingredientId: o.ingredientId,
+        quantity: o.quantity,
+        direction: "OUT" as const,
+      })),
+      ...producedItems.map((p) => ({
+        conversionId: conv.id,
+        ingredientId: p.ingredientId,
+        quantity: p.quantity,
+        direction: "PRODUCED" as const,
+      })),
+    ]);
   }
 }
 

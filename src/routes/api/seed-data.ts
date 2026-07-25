@@ -49,7 +49,7 @@ import {
   manualRevenues as manualRevenuesTable,
   channelRevenues as channelRevenuesTable,
   yieldConversions as yieldConversionsTable,
-  yieldConversionSources as yieldConversionSourcesTable,
+  yieldConversionItems as yieldConversionItemsTable,
   operationalExpenses as operationalExpensesTable,
 } from "#/db/schema";
 
@@ -76,7 +76,7 @@ import {
   MANUAL_REVENUES_DATA,
   CHANNEL_REVENUES_DATA,
   YIELD_CONVERSIONS_DATA,
-  YIELD_CONVERSION_SOURCES_DATA,
+  YIELD_CONVERSION_MULTI_DATA,
   WASTE_ENTRIES_DATA,
   OPERATIONAL_EXPENSES_DATA,
   STOCK_TRANSFERS_DATA,
@@ -1412,61 +1412,92 @@ export async function seedDatabase() {
   console.log("[seed] Seeding yield conversions...");
   for (const yc of YIELD_CONVERSIONS_DATA) {
     const branchId = idMap.branch.get(`br-${yc.branchCode.toLowerCase().replace("-", "-")}`);
-    const sourceId = idMap.ingredient.get(yc.sourceIngredientProtoId);
-    const targetId = idMap.ingredient.get(yc.targetIngredientProtoId);
     const processedById = idMap.user.get(yc.processedByEmail);
-    if (!branchId || !sourceId || !targetId || !processedById) continue;
+    if (!branchId || !processedById) continue;
+
+    const outItems = yc.out
+      .map((o) => ({
+        ingredientId: idMap.ingredient.get(o.ingredientProtoId),
+        quantity: o.quantity,
+      }))
+      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+    const producedItems = yc.produced
+      .map((p) => ({
+        ingredientId: idMap.ingredient.get(p.ingredientProtoId),
+        quantity: p.quantity,
+      }))
+      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+    if (outItems.length === 0 || producedItems.length === 0) continue;
+
     const existing = await db
       .select()
       .from(yieldConversionsTable)
       .where(
         and(
           eq(yieldConversionsTable.branchId, branchId),
-          eq(yieldConversionsTable.sourceIngredientId, sourceId),
           eq(yieldConversionsTable.createdAt, yc.createdAt),
         ),
       )
       .limit(1);
-    if (!existing[0]) {
-      await db.insert(yieldConversionsTable).values({
+    if (existing[0]) continue;
+
+    const [inserted] = await db
+      .insert(yieldConversionsTable)
+      .values({
         branchId,
-        sourceIngredientId: sourceId,
-        sourceQuantity: yc.sourceQuantity,
-        targetIngredientId: targetId,
-        targetQuantity: yc.targetQuantity,
-        yieldPercentage: yc.yieldPercentage,
-        shrinkageQuantity: yc.shrinkageQuantity,
         notes: yc.notes,
         processedBy: processedById,
         createdAt: yc.createdAt,
-      });
-    }
+      })
+      .returning({ id: yieldConversionsTable.id });
+
+    await db.insert(yieldConversionItemsTable).values([
+      ...outItems.map((o) => ({
+        conversionId: inserted.id,
+        ingredientId: o.ingredientId,
+        quantity: o.quantity,
+        direction: "OUT" as const,
+      })),
+      ...producedItems.map((p) => ({
+        conversionId: inserted.id,
+        ingredientId: p.ingredientId,
+        quantity: p.quantity,
+        direction: "PRODUCED" as const,
+      })),
+    ]);
   }
 
-  console.log("[seed] Seeding multi-source yield conversion sources...");
-  // For each new multi-source yield conversion, insert one yield_conversion
-  // (parent) and N yield_conversion_sources (junction) rows. The first source
-  // in the data populates the legacy single-source columns on the parent,
-  // mirroring the production code path in src/lib/server/yield.ts.
-  for (const msy of YIELD_CONVERSION_SOURCES_DATA) {
+  console.log("[seed] Seeding multi-item yield conversions...");
+  for (const msy of YIELD_CONVERSION_MULTI_DATA) {
     const branchId = idMap.branch.get(
       msy.branchCode === "CENTRAL"
         ? "br-central"
         : `br-${msy.branchCode.toLowerCase().replace("-", "-")}`,
     );
-    const firstSourceId = idMap.ingredient.get(msy.sourceIngredientProtoId);
-    const targetId = idMap.ingredient.get(msy.targetIngredientProtoId);
     const processedById = idMap.user.get(msy.processedByEmail);
-    if (!branchId || !firstSourceId || !targetId || !processedById) continue;
+    if (!branchId || !processedById) continue;
 
-    // Skip if this exact (branch, source, createdAt) parent conversion already exists
+    const outItems = msy.out
+      .map((o) => ({
+        ingredientId: idMap.ingredient.get(o.ingredientProtoId),
+        quantity: o.quantity,
+      }))
+      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+    const producedItems = msy.produced
+      .map((p) => ({
+        ingredientId: idMap.ingredient.get(p.ingredientProtoId),
+        quantity: p.quantity,
+      }))
+      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+    if (outItems.length === 0 || producedItems.length === 0) continue;
+
+    // Skip if this exact (branch, createdAt) conversion already exists
     const existingParent = await db
       .select()
       .from(yieldConversionsTable)
       .where(
         and(
           eq(yieldConversionsTable.branchId, branchId),
-          eq(yieldConversionsTable.sourceIngredientId, firstSourceId),
           eq(yieldConversionsTable.createdAt, msy.createdAt),
         ),
       )
@@ -1477,27 +1508,26 @@ export async function seedDatabase() {
       .insert(yieldConversionsTable)
       .values({
         branchId,
-        sourceIngredientId: firstSourceId,
-        sourceQuantity: msy.sourceQuantity,
-        targetIngredientId: targetId,
-        targetQuantity: msy.targetQuantity,
-        yieldPercentage: msy.yieldPercentage,
-        shrinkageQuantity: msy.shrinkageQuantity,
         notes: msy.notes,
         processedBy: processedById,
         createdAt: msy.createdAt,
       })
       .returning({ id: yieldConversionsTable.id });
 
-    if (msy.sources.length > 0) {
-      await db.insert(yieldConversionSourcesTable).values(
-        msy.sources.map((s) => ({
-          yieldConversionId: insertedParent.id,
-          ingredientId: idMap.ingredient.get(s.ingredientProtoId) ?? firstSourceId,
-          quantity: s.quantity,
-        })),
-      );
-    }
+    await db.insert(yieldConversionItemsTable).values([
+      ...outItems.map((o) => ({
+        conversionId: insertedParent.id,
+        ingredientId: o.ingredientId,
+        quantity: o.quantity,
+        direction: "OUT" as const,
+      })),
+      ...producedItems.map((p) => ({
+        conversionId: insertedParent.id,
+        ingredientId: p.ingredientId,
+        quantity: p.quantity,
+        direction: "PRODUCED" as const,
+      })),
+    ]);
   }
 
   console.log("[seed] Done!");

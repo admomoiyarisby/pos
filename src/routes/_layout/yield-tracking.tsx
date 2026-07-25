@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
@@ -11,26 +12,228 @@ import { getYieldConversions, createYieldConversion } from "#/lib/server/yield";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
-import { Badge } from "#/components/ui/badge";
-import { ArrowRightLeft, TrendingDown, TrendingUp, Plus, X } from "lucide-react";
+import { AlertCircle, ArrowRightLeft, PackageMinus, PackagePlus, X } from "lucide-react";
 
-interface YieldRow {
+interface ProductionItem {
+  ingredientId: string;
+  quantity: number;
+}
+
+interface ProductionRow {
   id: string;
   createdAt: Date;
   productionDate?: Date;
-  sourceName: string | null;
-  sourceQuantity: number | null;
-  targetName: string | null;
-  targetQuantity: number;
-  yieldPercentage: string | null;
-  shrinkageQuantity: number;
   notes: string | null;
-  sources?: { ingredientId: string; quantity: number; ingredientName: string | null }[];
+  out: { ingredientId: string; quantity: number; ingredientName: string | null }[];
+  produced: { ingredientId: string; quantity: number; ingredientName: string | null }[];
 }
 
-interface SourceItem {
-  ingredientId: string;
-  quantity: number;
+type IngredientLike = {
+  id: string;
+  name: string;
+  stockUnit: string | null;
+  category: string | null;
+};
+
+/**
+ * SidePicker — grouped, collapsible checkbox selection for one side of a
+ * production record (Barang Keluar / Barang Dihasilkan). Mirrors the
+ * "Sesuaikan Stok" modal in /inventory: ingredients are grouped by category
+ * with a per-category select-all (indeterminate) and a selected list with
+ * quantity inputs. An ingredient already chosen on the OTHER side is disabled
+ * here so it can't appear in both sides of one record.
+ */
+function SidePicker({
+  title,
+  icon,
+  items,
+  allIngredients,
+  pickerOpen,
+  setPickerOpen,
+  openCats,
+  setOpenCats,
+  otherSelectedIds,
+  onToggle,
+  onToggleCat,
+  onUpdateQty,
+  onRemove,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  items: ProductionItem[];
+  allIngredients: IngredientLike[];
+  pickerOpen: boolean;
+  setPickerOpen: (v: boolean) => void;
+  openCats: Set<string>;
+  setOpenCats: Dispatch<SetStateAction<Set<string>>>;
+  otherSelectedIds: Set<string>;
+  onToggle: (ing: IngredientLike) => void;
+  onToggleCat: (cat: string) => void;
+  onUpdateQty: (ingredientId: string, qty: number) => void;
+  onRemove: (ingredientId: string) => void;
+}) {
+  const grouped = useMemo(() => {
+    const m: Record<string, IngredientLike[]> = {};
+    for (const ing of allIngredients) {
+      const cat = ing.category ?? "Lainnya";
+      (m[cat] ??= []).push(ing);
+    }
+    return m;
+  }, [allIngredients]);
+  const categoryOrder = ["Fresh", "Dry", "Packaging", "Lainnya"];
+  const isIncluded = (id: string) => items.some((i) => i.ingredientId === id);
+
+  return (
+    <div className="rounded-md border p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          {icon}
+          {title}
+        </h3>
+        <span className="text-xs text-muted-foreground">{items.length} dipilih</span>
+      </div>
+
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={() => setPickerOpen(!pickerOpen)}
+          className="flex items-center gap-2 text-sm font-medium"
+        >
+          <span>Pilih Bahan (centang per tipe)</span>
+          <span className="text-muted-foreground">{pickerOpen ? "▾" : "▸"}</span>
+        </button>
+        {pickerOpen && (
+          <div className="rounded-md border max-h-[34vh] overflow-y-auto">
+            {categoryOrder
+              .filter((c) => grouped[c]?.length)
+              .map((cat) => {
+                const opts = grouped[cat] ?? [];
+                const catAll = opts.length > 0 && opts.every((o) => isIncluded(o.id));
+                const catSome = opts.some((o) => isIncluded(o.id));
+                return (
+                  <div key={cat} className="border-b last:border-b-0">
+                    <div className="flex w-full items-center justify-between px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          aria-label={`Pilih semua ${cat}`}
+                          className="h-4 w-4 cursor-pointer"
+                          ref={(el) => {
+                            if (el) el.indeterminate = catSome && !catAll;
+                          }}
+                          checked={catAll}
+                          onChange={() => onToggleCat(cat)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenCats((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(cat)) next.delete(cat);
+                              else next.add(cat);
+                              return next;
+                            })
+                          }
+                          className="text-sm font-medium hover:underline"
+                        >
+                          {cat}
+                          <span className="text-muted-foreground text-xs"> ({opts.length})</span>
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenCats((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(cat)) next.delete(cat);
+                            else next.add(cat);
+                            return next;
+                          })
+                        }
+                        className="text-muted-foreground"
+                        aria-label={openCats.has(cat) ? "Tutup" : "Buka"}
+                      >
+                        {openCats.has(cat) ? "▾" : "▸"}
+                      </button>
+                    </div>
+                    {openCats.has(cat) && (
+                      <div className="divide-y">
+                        {opts.map((opt) => {
+                          const disabled = otherSelectedIds.has(opt.id);
+                          return (
+                            <label
+                              key={opt.id}
+                              className={
+                                "flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted/50 cursor-pointer" +
+                                (disabled ? " opacity-50" : "")
+                              }
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 cursor-pointer"
+                                disabled={disabled}
+                                checked={isIncluded(opt.id)}
+                                onChange={() => onToggle(opt)}
+                              />
+                              <span className="flex-1 truncate">{opt.name}</span>
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                {opt.stockUnit}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <span className="text-xs text-muted-foreground">Daftar bahan ({items.length})</span>
+        {items.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-3">
+            Belum ada bahan dipilih. Centang bahan di atas.
+          </p>
+        ) : (
+          items.map((item) => {
+            const ing = allIngredients.find((i) => i.id === item.ingredientId);
+            return (
+              <div
+                key={item.ingredientId}
+                className="flex items-center gap-3 rounded-md border p-2"
+              >
+                <span className="flex-1 truncate text-sm">{ing?.name ?? item.ingredientId}</span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {ing?.stockUnit}
+                </span>
+                <input
+                  value={item.quantity > 0 ? item.quantity : ""}
+                  onChange={(e) => onUpdateQty(item.ingredientId, Number(e.target.value))}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  required
+                  className="h-9 w-28 rounded-md border border-input bg-background px-2 text-sm"
+                  placeholder="Jumlah"
+                />
+                <button
+                  type="button"
+                  onClick={() => onRemove(item.ingredientId)}
+                  className="h-9 w-9 rounded-md border text-muted-foreground hover:bg-muted flex items-center justify-center"
+                  title="Hapus"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
 }
 
 export const Route = createFileRoute("/_layout/yield-tracking")({
@@ -48,12 +251,17 @@ function YieldTrackingPage() {
   const { conversions: initial, ingredients, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
-  const [result, setResult] = useState<{
-    newTargetCost: number;
-    yieldPercentage: number;
-    shrinkageQuantity: number;
-  } | null>(null);
-  const [sourceItems, setSourceItems] = useState<SourceItem[]>([{ ingredientId: "", quantity: 0 }]);
+  const [result, setResult] = useState<{ outCount: number; producedCount: number } | null>(null);
+  const [outItems, setOutItems] = useState<ProductionItem[]>([]);
+  const [producedItems, setProducedItems] = useState<ProductionItem[]>([]);
+  const [outPickerOpen, setOutPickerOpen] = useState(true);
+  const [producedPickerOpen, setProducedPickerOpen] = useState(true);
+  const [openOutCats, setOpenOutCats] = useState<Set<string>>(
+    new Set(["Fresh", "Dry", "Packaging"]),
+  );
+  const [openProducedCats, setOpenProducedCats] = useState<Set<string>>(
+    new Set(["Fresh", "Dry", "Packaging"]),
+  );
 
   const { data: rawConversions } = useQuery({
     queryKey: ["yield-conversions"],
@@ -61,55 +269,102 @@ function YieldTrackingPage() {
     initialData: initial,
   });
 
-  // Sort by Waktu descending (newest first)
   const conversions = [...rawConversions].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 
   const createMutation = useMutation({
     mutationFn: createYieldConversion,
-    onSuccess: (data) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["yield-conversions"] });
-      void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
-      void queryClient.invalidateQueries({ queryKey: ["inventory"] });
       setModalOpen(false);
+      const v = createMutation.variables?.data;
       setResult({
-        newTargetCost: data.newTargetCost,
-        yieldPercentage: data.yieldPercentage,
-        shrinkageQuantity: data.shrinkageQuantity,
+        outCount: v?.out?.length ?? 0,
+        producedCount: v?.produced?.length ?? 0,
       });
-      setSourceItems([{ ingredientId: "", quantity: 0 }]);
+      setOutItems([{ ingredientId: "", quantity: 0 }]);
+      setProducedItems([{ ingredientId: "", quantity: 0 }]);
       setTimeout(() => setResult(null), 5000);
     },
   });
 
-  const addSourceRow = () => {
-    setSourceItems((prev) => [...prev, { ingredientId: "", quantity: 0 }]);
-  };
+  // ── Barang Keluar (Out) — checkbox selection
+  const outIds = useMemo(() => new Set(outItems.map((i) => i.ingredientId)), [outItems]);
+  const producedIds = useMemo(
+    () => new Set(producedItems.map((i) => i.ingredientId)),
+    [producedItems],
+  );
+  const grouped = useMemo(() => {
+    const m: Record<string, IngredientLike[]> = {};
+    for (const ing of ingredients as IngredientLike[]) {
+      const cat = ing.category ?? "Lainnya";
+      (m[cat] ??= []).push(ing);
+    }
+    return m;
+  }, [ingredients]);
 
-  const removeSourceRow = (idx: number) => {
-    setSourceItems((prev) => prev.filter((_, i) => i !== idx));
+  const toggleOutInclude = (ing: IngredientLike) => {
+    if (outIds.has(ing.id)) setOutItems((p) => p.filter((i) => i.ingredientId !== ing.id));
+    else setOutItems((p) => [...p, { ingredientId: ing.id, quantity: 0 }]);
   };
-
-  const updateSourceItem = (idx: number, field: keyof SourceItem, value: string | number) => {
-    setSourceItems((prev) =>
-      prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)),
+  const toggleOutCatAll = (cat: string) => {
+    const opts = grouped[cat] ?? [];
+    const allIn = opts.length > 0 && opts.every((o) => outIds.has(o.id));
+    if (allIn) {
+      const ids = new Set(opts.map((o) => o.id));
+      setOutItems((p) => p.filter((i) => !ids.has(i.ingredientId)));
+    } else {
+      const toAdd = opts
+        .filter((o) => !outIds.has(o.id) && !producedIds.has(o.id))
+        .map((o) => ({ ingredientId: o.id, quantity: 0 }));
+      setOutItems((p) => [...p, ...toAdd]);
+    }
+  };
+  const updateOutItem = (ingredientId: string, qty: number) =>
+    setOutItems((p) =>
+      p.map((i) => (i.ingredientId === ingredientId ? { ...i, quantity: qty } : i)),
     );
+  const removeOutItem = (ingredientId: string) =>
+    setOutItems((p) => p.filter((i) => i.ingredientId !== ingredientId));
+
+  // ── Barang Dihasilkan (Produced) — checkbox selection
+  const toggleProducedInclude = (ing: IngredientLike) => {
+    if (producedIds.has(ing.id))
+      setProducedItems((p) => p.filter((i) => i.ingredientId !== ing.id));
+    else setProducedItems((p) => [...p, { ingredientId: ing.id, quantity: 0 }]);
   };
+  const toggleProducedCatAll = (cat: string) => {
+    const opts = grouped[cat] ?? [];
+    const allIn = opts.length > 0 && opts.every((o) => producedIds.has(o.id));
+    if (allIn) {
+      const ids = new Set(opts.map((o) => o.id));
+      setProducedItems((p) => p.filter((i) => !ids.has(i.ingredientId)));
+    } else {
+      const toAdd = opts
+        .filter((o) => !producedIds.has(o.id) && !outIds.has(o.id))
+        .map((o) => ({ ingredientId: o.id, quantity: 0 }));
+      setProducedItems((p) => [...p, ...toAdd]);
+    }
+  };
+  const updateProducedItem = (ingredientId: string, qty: number) =>
+    setProducedItems((p) =>
+      p.map((i) => (i.ingredientId === ingredientId ? { ...i, quantity: qty } : i)),
+    );
+  const removeProducedItem = (ingredientId: string) =>
+    setProducedItems((p) => p.filter((i) => i.ingredientId !== ingredientId));
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-
-    // Build multi-source payload
-    const validSources = sourceItems.filter((s) => s.ingredientId && s.quantity > 0);
+    const out = outItems.filter((s) => s.ingredientId && s.quantity > 0);
+    const produced = producedItems.filter((s) => s.ingredientId && s.quantity > 0);
 
     void createMutation.mutateAsync({
       data: {
         branchId: fd.get("branchId") as string,
-        sources: validSources,
-        targetIngredientId: fd.get("targetIngredientId") as string,
-        targetQuantity: Number(fd.get("targetQuantity")),
+        out,
+        produced,
         notes: (fd.get("notes") as string) || undefined,
         productionDate: (fd.get("productionDate") as string) || undefined,
       },
@@ -117,13 +372,39 @@ function YieldTrackingPage() {
   };
 
   const resetForm = () => {
-    setSourceItems([{ ingredientId: "", quantity: 0 }]);
+    setOutItems([]);
+    setProducedItems([]);
   };
 
-  const rmIngredients = ingredients.filter((i) => i.skuType === "RM");
-  const sfgFgIngredients = ingredients.filter((i) => i.skuType === "SFG" || i.skuType === "FG");
+  const totalOut = conversions.reduce(
+    (sum, c) => sum + c.out.reduce((a, i) => a + i.quantity, 0),
+    0,
+  );
+  const totalProduced = conversions.reduce(
+    (sum, c) => sum + c.produced.reduce((a, i) => a + i.quantity, 0),
+    0,
+  );
 
-  const columns: Column<YieldRow>[] = [
+  const itemList = (
+    items: { ingredientId: string; quantity: number; ingredientName: string | null }[],
+  ) => (
+    <div className="space-y-0.5">
+      {items.length === 0 ? (
+        <span className="text-muted-foreground">—</span>
+      ) : (
+        items.map((s, i) => (
+          <div key={i}>
+            <span className="font-medium">{s.ingredientName}</span>
+            <span className="text-muted-foreground ml-2">
+              {s.quantity.toLocaleString("id-ID")} unit
+            </span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+
+  const columns: Column<ProductionRow>[] = [
     {
       key: "productionDate",
       header: "Tanggal Produksi",
@@ -142,89 +423,24 @@ function YieldTrackingPage() {
       width: "w-24",
       sortable: true,
       render: (r) =>
-        new Date(r.createdAt).toLocaleString("id-ID", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
+        new Date(r.createdAt).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+    },
+    { key: "out", header: "Barang Keluar", sortable: false, render: (r) => itemList(r.out) },
+    {
+      key: "produced",
+      header: "Barang Dihasilkan",
+      sortable: false,
+      render: (r) => itemList(r.produced),
     },
     {
-      key: "sourceName",
-      header: "Bahan Mentah",
-      sortable: true,
-      render: (r) => {
-        const hasSources = r.sources && r.sources.length > 0;
-        return (
-          <div>
-            {hasSources && r.sources!.length > 1 ? (
-              <div className="space-y-0.5">
-                {r.sources!.map((s, i) => (
-                  <div key={i}>
-                    <span className="font-medium">{s.ingredientName}</span>
-                    <span className="text-muted-foreground ml-2">
-                      {s.quantity.toLocaleString("id-ID")} unit
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <>
-                <span className="font-medium">{r.sourceName}</span>
-                <span className="text-muted-foreground ml-2">
-                  {(r.sourceQuantity ?? 0).toLocaleString("id-ID")} unit
-                </span>
-              </>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      key: "targetName",
-      header: "Hasil Produksi",
-      sortable: true,
-      render: (r) => (
-        <div>
-          <span className="font-medium">{r.targetName}</span>
-          <span className="text-muted-foreground ml-2">
-            {r.targetQuantity.toLocaleString("id-ID")} unit
-          </span>
-        </div>
-      ),
-    },
-    {
-      key: "yieldPercentage",
-      header: "Yield",
-      width: "w-24",
-      align: "right",
-      sortable: true,
-      render: (r) => (
-        <Badge
-          variant={
-            Number(r.yieldPercentage) >= 80
-              ? "success"
-              : Number(r.yieldPercentage) >= 50
-                ? "warning"
-                : "destructive"
-          }
-        >
-          {r.yieldPercentage}%
-        </Badge>
-      ),
-    },
-    {
-      key: "shrinkageQuantity",
-      header: "Shrinkage",
-      align: "right",
-      width: "w-24",
-      sortable: true,
-      render: (r) => (
-        <span className="text-destructive font-medium">
-          -{r.shrinkageQuantity.toLocaleString("id-ID")}
-        </span>
-      ),
+      key: "notes",
+      header: "Catatan",
+      sortable: false,
+      render: (r) => <span className="text-muted-foreground">{r.notes ?? "-"}</span>,
     },
   ];
-  usePageTitle("Tracking Produksi", "Tracking produksi & yield bahan mentah ke matang");
+
+  usePageTitle("Tracking Produksi", "Pencatatan produksi: barang keluar & barang dihasilkan");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "central_kitchen"]}>
@@ -235,12 +451,8 @@ function YieldTrackingPage() {
           <div className="rounded-lg border border-success/30 bg-success/10 p-4 text-sm text-success-foreground">
             <p className="font-medium">Produksi berhasil dicatat!</p>
             <p>
-              HPP hasil baru: Rp {result.newTargetCost.toLocaleString("id-ID")} / unit · Yield:{" "}
-              {result.yieldPercentage}% · Shrinkage:{" "}
-              {result.shrinkageQuantity.toLocaleString("id-ID")} unit
-            </p>
-            <p className="text-xs mt-1">
-              Semua resep yang menggunakan bahan hasil telah di-update secara otomatis.
+              {result.outCount} bahan keluar · {result.producedCount} bahan dihasilkan dicatat
+              sebagai histori (stok tidak berubah).
             </p>
           </div>
         )}
@@ -256,29 +468,19 @@ function YieldTrackingPage() {
           </div>
           <div className="rounded-lg border p-4">
             <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-success" />
-              <span className="text-xs text-muted-foreground uppercase">Avg Yield</span>
+              <PackageMinus className="h-4 w-4 text-destructive" />
+              <span className="text-xs text-muted-foreground uppercase">Total Barang Keluar</span>
             </div>
-            <p className="text-2xl font-bold mt-2">
-              {conversions.length > 0
-                ? (
-                    conversions.reduce((sum, c) => sum + Number(c.yieldPercentage ?? 0), 0) /
-                    conversions.length
-                  ).toFixed(1)
-                : 0}
-              %
-            </p>
+            <p className="text-2xl font-bold mt-2">{totalOut.toLocaleString("id-ID")}</p>
           </div>
           <div className="rounded-lg border p-4">
             <div className="flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-destructive" />
-              <span className="text-xs text-muted-foreground uppercase">Total Shrinkage</span>
+              <PackagePlus className="h-4 w-4 text-success" />
+              <span className="text-xs text-muted-foreground uppercase">
+                Total Barang Dihasilkan
+              </span>
             </div>
-            <p className="text-2xl font-bold mt-2">
-              {conversions
-                .reduce((sum, c) => sum + Math.max(0, c.shrinkageQuantity ?? 0), 0)
-                .toLocaleString("id-ID")}
-            </p>
+            <p className="text-2xl font-bold mt-2">{totalProduced.toLocaleString("id-ID")}</p>
           </div>
         </div>
 
@@ -296,11 +498,22 @@ function YieldTrackingPage() {
           onClose={() => {
             setModalOpen(false);
             resetForm();
+            createMutation.reset();
           }}
-          title="Input Produksi (Yield)"
-          size="lg"
+          title="Input Produksi"
+          size="3xl"
         >
           <form onSubmit={handleSubmit} className="space-y-4">
+            {createMutation.isError && (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>
+                  {createMutation.error instanceof Error
+                    ? createMutation.error.message
+                    : "Gagal mencatat produksi"}
+                </span>
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium">Cabang / Gudang</label>
               <select
@@ -328,61 +541,21 @@ function YieldTrackingPage() {
               />
             </div>
 
-            <div className="rounded-md border p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Input Bahan Mentah (RM)</h3>
-                <button
-                  type="button"
-                  onClick={addSourceRow}
-                  className="h-7 px-2 rounded-md border text-xs flex items-center gap-1 hover:bg-muted"
-                >
-                  <Plus className="h-3 w-3" />
-                  Tambah Bahan
-                </button>
-              </div>
-              {sourceItems.map((item, idx) => (
-                <div key={idx} className="flex items-start gap-3">
-                  <div className="flex-1 space-y-2">
-                    {idx === 0 && <label className="text-xs text-muted-foreground">Bahan</label>}
-                    <select
-                      value={item.ingredientId}
-                      onChange={(e) => updateSourceItem(idx, "ingredientId", e.target.value)}
-                      required
-                      className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="">Pilih bahan mentah...</option>
-                      {rmIngredients.map((i) => (
-                        <option key={i.id} value={i.id}>
-                          {i.name} (HPP: Rp {i.averageCost.toLocaleString("id-ID")} / {i.stockUnit})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="w-36 space-y-2">
-                    {idx === 0 && <label className="text-xs text-muted-foreground">Jumlah</label>}
-                    <input
-                      value={item.quantity > 0 ? item.quantity : ""}
-                      onChange={(e) => updateSourceItem(idx, "quantity", Number(e.target.value))}
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      required
-                      className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      placeholder="Contoh: 5000"
-                    />
-                  </div>
-                  {sourceItems.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeSourceRow(idx)}
-                      className="mt-6 min-h-[44px] min-w-[44px] rounded-md border flex items-center justify-center text-muted-foreground hover:bg-muted"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <SidePicker
+              title="Barang Keluar (Out)"
+              icon={<PackageMinus className="h-4 w-4 text-destructive" />}
+              items={outItems}
+              allIngredients={ingredients as IngredientLike[]}
+              pickerOpen={outPickerOpen}
+              setPickerOpen={setOutPickerOpen}
+              openCats={openOutCats}
+              setOpenCats={setOpenOutCats}
+              otherSelectedIds={producedIds}
+              onToggle={toggleOutInclude}
+              onToggleCat={toggleOutCatAll}
+              onUpdateQty={updateOutItem}
+              onRemove={removeOutItem}
+            />
 
             <div className="flex items-center justify-center">
               <div className="rounded-full bg-muted p-2">
@@ -390,54 +563,34 @@ function YieldTrackingPage() {
               </div>
             </div>
 
-            <div className="rounded-md border p-4 space-y-4">
-              <h3 className="text-sm font-semibold">Output Hasil Produksi</h3>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Hasil Matang (SFG/FG)</label>
-                <select
-                  name="targetIngredientId"
-                  required
-                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="">Pilih hasil produksi...</option>
-                  {sfgFgIngredients.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name} (HPP saat ini: Rp {i.averageCost.toLocaleString("id-ID")} /{" "}
-                      {i.stockUnit})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Jumlah Hasil ({sfgFgIngredients[0]?.stockUnit ?? "unit"})
-                </label>
-                <input
-                  name="targetQuantity"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  required
-                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  placeholder="Contoh: 8000"
-                />
-              </div>
-            </div>
+            <SidePicker
+              title="Barang Dihasilkan (Produced)"
+              icon={<PackagePlus className="h-4 w-4 text-success" />}
+              items={producedItems}
+              allIngredients={ingredients as IngredientLike[]}
+              pickerOpen={producedPickerOpen}
+              setPickerOpen={setProducedPickerOpen}
+              openCats={openProducedCats}
+              setOpenCats={setOpenProducedCats}
+              otherSelectedIds={outIds}
+              onToggle={toggleProducedInclude}
+              onToggleCat={toggleProducedCatAll}
+              onUpdateQty={updateProducedItem}
+              onRemove={removeProducedItem}
+            />
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Catatan Produksi</label>
               <textarea
                 name="notes"
-                placeholder="Contoh: Pengolahan 10kg ayam mentah..."
+                placeholder="Contoh: Pengolahan batch pagi"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[80px] md:min-h-[60px] resize-none"
               />
             </div>
 
-            <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
-              <p className="font-medium">Perhitungan Otomatis</p>
+            <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
               <p>
-                Sistem akan menghitung ulang HPP hasil berdasarkan: Total Biaya Semua Bahan / Jumlah
-                Hasil. Semua resep yang menggunakan bahan hasil akan di-update otomatis.
+                Pencatatan ini murni histori — stok barang keluar maupun dihasilkan tidak berubah.
               </p>
             </div>
 
@@ -447,6 +600,7 @@ function YieldTrackingPage() {
                 onClick={() => {
                   setModalOpen(false);
                   resetForm();
+                  createMutation.reset();
                 }}
                 className="h-10 md:h-9 px-4 rounded-md border text-sm"
               >

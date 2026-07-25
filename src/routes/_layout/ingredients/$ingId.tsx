@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -6,6 +6,8 @@ import { getIngredient, updateIngredient } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { toast } from "sonner";
 import MoneyInput from "#/components/MoneyInput";
+import { Separator } from "#/components/ui/separator";
+import { ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/ingredients/$ingId")({
   component: IngredientDetailPage,
@@ -77,10 +79,18 @@ function IngredientDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "central_kitchen"]}>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link
+          to="/ingredients"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Kembali ke Daftar Bahan
+        </Link>
+
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold">{ingredient.name}</h1>
-            <p className="text-sm text-muted-foreground">Kode: {ingredient.code}</p>
+            <h1 className="text-2xl font-bold tracking-tight">{ingredient.name}</h1>
+            <p className="text-sm text-muted-foreground mt-1">Kode: {ingredient.code}</p>
           </div>
           <button
             onClick={() => setIsEditing(!isEditing)}
@@ -90,8 +100,10 @@ function IngredientDetailPage() {
           </button>
         </div>
 
+        <Separator />
+
         {isEditing ? (
-          <form onSubmit={handleSubmit} className="space-y-4 max-w-xl">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Kode</label>
@@ -158,7 +170,7 @@ function IngredientDetailPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Konversi</label>
                 <input
@@ -189,16 +201,16 @@ function IngredientDetailPage() {
                   className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">MOQ</label>
-              <input
-                name="moq"
-                type="number"
-                min={1}
-                defaultValue={ingredient.moq}
-                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
+              <div className="space-y-2">
+                <label className="text-sm font-medium">MOQ</label>
+                <input
+                  name="moq"
+                  type="number"
+                  min={1}
+                  defaultValue={ingredient.moq}
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Ketersediaan Cabang</label>
@@ -228,7 +240,7 @@ function IngredientDetailPage() {
               {selectedBranchIds.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Pilih cabang:</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     {branches.map((b) => (
                       <label
                         key={b.id}
@@ -263,42 +275,66 @@ function IngredientDetailPage() {
             </div>
           </form>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl">
-            <div className="rounded-lg border p-4">
-              <p className="text-xs text-muted-foreground uppercase">Tipe SKU</p>
-              <p className="font-medium mt-1">{skuLabels[ingredient.skuType]}</p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">Tipe SKU</p>
+                <p className="font-medium mt-1">{skuLabels[ingredient.skuType]}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">Kategori</p>
+                <p className="font-medium mt-1">{ingredient.category}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">Satuan Beli</p>
+                <p className="font-medium mt-1">{ingredient.purchaseUnit}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">Satuan Stok</p>
+                <p className="font-medium mt-1">{ingredient.stockUnit}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">Konversi</p>
+                <p className="font-medium mt-1">
+                  1 {ingredient.purchaseUnit} = {ingredient.conversionFactor} {ingredient.stockUnit}
+                </p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">HPP</p>
+                <p className="font-medium mt-1">
+                  Rp {ingredient.averageCost.toLocaleString("id-ID")}
+                </p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">ROP</p>
+                <p className="font-medium mt-1">{ingredient.rop}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground uppercase">MOQ</p>
+                <p className="font-medium mt-1">{ingredient.moq}</p>
+              </div>
             </div>
+
             <div className="rounded-lg border p-4">
-              <p className="text-xs text-muted-foreground uppercase">Kategori</p>
-              <p className="font-medium mt-1">{ingredient.category}</p>
-            </div>
-            <div className="rounded-lg border p-4">
-              <p className="text-xs text-muted-foreground uppercase">Satuan Beli</p>
-              <p className="font-medium mt-1">{ingredient.purchaseUnit}</p>
-            </div>
-            <div className="rounded-lg border p-4">
-              <p className="text-xs text-muted-foreground uppercase">Satuan Stok</p>
-              <p className="font-medium mt-1">{ingredient.stockUnit}</p>
-            </div>
-            <div className="rounded-lg border p-4">
-              <p className="text-xs text-muted-foreground uppercase">Konversi</p>
-              <p className="font-medium mt-1">
-                1 {ingredient.purchaseUnit} = {ingredient.conversionFactor} {ingredient.stockUnit}
-              </p>
-            </div>
-            <div className="rounded-lg border p-4">
-              <p className="text-xs text-muted-foreground uppercase">HPP</p>
-              <p className="font-medium mt-1">
-                Rp {ingredient.averageCost.toLocaleString("id-ID")}
-              </p>
-            </div>
-            <div className="rounded-lg border p-4">
-              <p className="text-xs text-muted-foreground uppercase">ROP</p>
-              <p className="font-medium mt-1">{ingredient.rop}</p>
-            </div>
-            <div className="rounded-lg border p-4">
-              <p className="text-xs text-muted-foreground uppercase">MOQ</p>
-              <p className="font-medium mt-1">{ingredient.moq}</p>
+              <p className="text-xs text-muted-foreground uppercase">Ketersediaan Cabang</p>
+              {ingredient.branchIds.length === 0 ? (
+                <p className="font-medium mt-1">Semua cabang</p>
+              ) : (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {ingredient.branchIds.map((id) => {
+                    const branch = branches.find((b) => b.id === id);
+                    if (!branch) return null;
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium"
+                      >
+                        {branch.name}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
