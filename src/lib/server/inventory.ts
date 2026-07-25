@@ -923,3 +923,199 @@ export const printStockOpname = createServerFn({ method: "GET" })
 
     return { html: buildPrintHtml(`Stock Opname ${branch?.name ?? ""}`, body, "landscape") };
   });
+
+// Super Admin manual stock adjustment (batch) — adjust stock across one or many
+// branches in one atomic action. Each line is a signed IN/OUT; the whole batch
+// shares a single `reference` (one adjustment event, many ledger rows) and one
+// reason, and is applied to every selected branch.
+// Does NOT touch ingredients.averageCost (the global COGS basis). A line for an
+// ingredient the branch has never stocked is auto-created on IN; OUT on a
+// missing line is rejected so stock cannot be fabricated.
+export const adjustBranchStockBatch = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      branchIds: string[];
+      reason: string;
+      items: { ingredientId: string; direction: "IN" | "OUT"; quantity: number }[];
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin");
+
+    const branchIds = (data.branchIds ?? []).filter(Boolean);
+    if (branchIds.length === 0) {
+      throw new Error("Minimal satu cabang harus dipilih");
+    }
+    const reason = (data.reason ?? "").trim();
+    if (!reason) {
+      throw new Error("Alasan penyesuaian wajib diisi");
+    }
+    if (!Array.isArray(data.items) || data.items.length === 0) {
+      throw new Error("Minimal satu bahan harus dipilih");
+    }
+
+    const seen = new Set<string>();
+    for (const it of data.items) {
+      if (!it.ingredientId) {
+        throw new Error("Setiap baris harus memilih bahan");
+      }
+      if (!Number.isFinite(it.quantity) || it.quantity <= 0) {
+        throw new Error("Jumlah setiap baris harus lebih dari 0");
+      }
+      if (seen.has(it.ingredientId)) {
+        throw new Error("Bahan duplikat dalam satu penyesuaian");
+      }
+      seen.add(it.ingredientId);
+    }
+
+    const reference = `ADJ-${Date.now().toString(36).toUpperCase()}${Math.random()
+      .toString(36)
+      .slice(2, 6)
+      .toUpperCase()}`;
+
+    const results: {
+      inventoryId: string;
+      branchId: string;
+      ingredientId: string;
+      oldQuantity: number;
+      newQuantity: number;
+      direction: "IN" | "OUT";
+    }[] = [];
+
+    await db.transaction(async (tx) => {
+      for (const branchId of branchIds) {
+        for (const it of data.items) {
+          const signedDelta = it.direction === "IN" ? it.quantity : -it.quantity;
+
+          const [existing] = await tx
+            .select()
+            .from(inventory)
+            .where(
+              and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, it.ingredientId)),
+            )
+            .limit(1);
+
+          let inventoryId: string;
+          const oldQuantity = existing?.quantity ?? 0;
+
+          if (existing) {
+            inventoryId = existing.id;
+          } else {
+            if (it.direction === "OUT") {
+              throw new Error(`Bahan belum ada di cabang ${branchId}; tidak dapat mengurangi`);
+            }
+            const [inserted] = await tx
+              .insert(inventory)
+              .values({
+                branchId,
+                ingredientId: it.ingredientId,
+                quantity: 0,
+              })
+              .returning();
+            inventoryId = inserted.id;
+          }
+
+          const newQuantity = oldQuantity + signedDelta;
+
+          await tx
+            .update(inventory)
+            .set({ quantity: newQuantity, lastUpdated: new Date() })
+            .where(eq(inventory.id, inventoryId));
+
+          await tx.insert(stockLedger).values({
+            branchId,
+            ingredientId: it.ingredientId,
+            type: it.direction,
+            quantity: it.quantity,
+            balance: newQuantity,
+            reference,
+            notes: reason,
+          });
+
+          results.push({
+            inventoryId,
+            branchId,
+            ingredientId: it.ingredientId,
+            oldQuantity,
+            newQuantity,
+            direction: it.direction,
+          });
+        }
+      }
+    });
+
+    for (const r of results) {
+      await logAudit(
+        user,
+        "inventory",
+        r.inventoryId,
+        "UPDATE",
+        { quantity: r.oldQuantity } as Record<string, unknown>,
+        {
+          quantity: r.newQuantity,
+          direction: r.direction,
+          reason,
+          reference,
+          branchId: r.branchId,
+        } as Record<string, unknown>,
+      );
+    }
+
+    await logSystemAction(
+      user,
+      "Penyesuaian Stok Manual (Batch)",
+      `Super Admin ${user.name} menyesuaikan ${data.items.length} bahan di ${branchIds.length} cabang (ref ${reference}). Alasan: ${reason}`,
+    );
+
+    return {
+      success: true,
+      reference,
+      count: data.items.length,
+      branchCount: branchIds.length,
+      results,
+    };
+  });
+
+// Super Admin "Clean Slate" — delete inventory rows (the items) for a single
+// branch or for every branch, resetting stock to empty. This is destructive: it
+// removes the rows entirely (not just zeroes quantity). stockLedger and
+// ingredients.averageCost are intentionally left intact for audit/COGS. Pass
+// `branchId: null` (or omit) to wipe ALL branches.
+export const cleanSlateInventory = createServerFn({ method: "POST" })
+  .validator((data: { branchId?: string | null }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin");
+    const branchId = data.branchId || undefined;
+    const scopeCondition = branchId ? eq(inventory.branchId, branchId) : undefined;
+
+    const [{ count: deleted } = { count: 0 }] = await db
+      .select({ count: sql<number>`cast(count(*) as int)` })
+      .from(inventory)
+      .where(scopeCondition ?? sql`1=1`);
+
+    await db.transaction(async (tx) => {
+      if (branchId) {
+        await tx.delete(inventory).where(eq(inventory.branchId, branchId));
+      } else {
+        await tx.delete(inventory);
+      }
+    });
+
+    await logSystemAction(
+      user,
+      "Clean Slate Inventori",
+      `Super Admin ${user.name} menghapus seluruh baris inventori${
+        branchId ? ` di cabang ${branchId}` : " (SEMUA cabang)"
+      }. ${deleted} baris dihapus.`,
+    );
+    await logAudit(
+      user,
+      "inventory",
+      branchId ?? "ALL",
+      "DELETE",
+      { deleted } as Record<string, unknown>,
+      undefined,
+    );
+
+    return { success: true, deleted, branchId: branchId ?? null };
+  });

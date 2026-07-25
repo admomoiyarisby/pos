@@ -13,7 +13,7 @@ import {
 
 export interface Column<T> {
   key: string;
-  header: string;
+  header: React.ReactNode;
   width?: string;
   align?: "left" | "right" | "center";
   /** Extra classes for the cell (<th>/<td>); use `!` important utilities to override defaults. */

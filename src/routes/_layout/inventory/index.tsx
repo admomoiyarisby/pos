@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getInventory } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
+import { getIngredients } from "#/lib/server/ingredients";
+import StockAdjustmentModal from "#/components/inventory/StockAdjustmentModal";
+import CleanSlateModal from "#/components/inventory/CleanSlateModal";
+import type { IngredientOption } from "#/components/inventory/StockAdjustmentModal";
 import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
@@ -93,6 +97,56 @@ function InventoryPage() {
 
   const inventory = result?.data ?? [];
   const total = result?.total ?? 0;
+
+  // Stock-adjustment support: the "Sesuaikan Stok" modal operates on the
+  // currently-selected (or first) branch and needs the full branch stock map
+  // plus the master ingredient list.
+  const effectiveBranchId = branchId || branches?.[0]?.id || "";
+  const branchName =
+    branches?.find((b) => b.id === effectiveBranchId)?.name ?? (effectiveBranchId || "—");
+
+  const { data: ingredients } = useQuery({
+    queryKey: ["ingredients", "all"],
+    queryFn: () => getIngredients({ data: { excludeNasi: true } }),
+  });
+
+  const { data: fullInventory } = useQuery({
+    queryKey: ["inventory", "all-for-adjust", effectiveBranchId],
+    queryFn: () =>
+      getInventory({ data: { branchId: effectiveBranchId || undefined, limit: 1000 } }),
+    enabled: !!effectiveBranchId,
+  });
+
+  const stockByIngredient = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const inv of fullInventory?.data ?? []) {
+      m.set(inv.ingredientId, inv.quantity);
+    }
+    return m;
+  }, [fullInventory]);
+
+  const ingredientOptions = useMemo<IngredientOption[]>(() => {
+    return (ingredients ?? [])
+      .map((i) => {
+        const stockQty = stockByIngredient.get(i.id) ?? 0;
+        const hasRow = stockByIngredient.has(i.id);
+        return {
+          id: i.id,
+          name: i.name,
+          code: i.code,
+          stockUnit: i.stockUnit,
+          category: i.category,
+          label: `${i.name} (${i.stockUnit})`,
+          stockQty,
+          hasInventory: hasRow,
+          keywords: [i.code ?? "", i.stockUnit],
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [ingredients, stockByIngredient]);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [cleanSlateOpen, setCleanSlateOpen] = useState(false);
 
   const totalPages = Math.ceil(total / pageSize) || 1;
 
@@ -205,6 +259,22 @@ function InventoryPage() {
             className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm"
           />
         </div>
+        {user?.role === "super_admin" && (
+          <>
+            <button
+              onClick={() => setModalOpen(true)}
+              className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+            >
+              Sesuaikan Stok
+            </button>
+            <button
+              onClick={() => setCleanSlateOpen(true)}
+              className="h-8 px-3 rounded-md border border-destructive text-destructive text-sm font-medium hover:bg-destructive/10"
+            >
+              Clean Slate
+            </button>
+          </>
+        )}
       </div>
 
       <DataTable
@@ -244,6 +314,22 @@ function InventoryPage() {
           </div>
         </div>
       )}
+
+      <StockAdjustmentModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        branches={branches ?? []}
+        defaultBranchId={effectiveBranchId}
+        ingredientOptions={ingredientOptions}
+        stockByIngredient={stockByIngredient}
+      />
+
+      <CleanSlateModal
+        open={cleanSlateOpen}
+        onClose={() => setCleanSlateOpen(false)}
+        branchId={branchId}
+        branchName={branchId ? branchName : "SEMUA CABANG"}
+      />
     </RoleGuard>
   );
 }
