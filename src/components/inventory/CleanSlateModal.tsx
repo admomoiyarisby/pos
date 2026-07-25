@@ -19,6 +19,7 @@ export default function CleanSlateModal({
 }: CleanSlateModalProps) {
   const queryClient = useQueryClient();
   const [confirmed, setConfirmed] = useState(false);
+  const [alsoLedger, setAlsoLedger] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isAll = !branchId;
@@ -26,6 +27,7 @@ export default function CleanSlateModal({
   useEffect(() => {
     if (open) {
       setConfirmed(false);
+      setAlsoLedger(false);
       setError(null);
     }
   }, [open]);
@@ -41,7 +43,7 @@ export default function CleanSlateModal({
 
   function handleConfirm() {
     if (!confirmed) return;
-    void mutation.mutateAsync({ data: { branchId: branchId || null } });
+    void mutation.mutateAsync({ data: { branchId: branchId || null, alsoLedger } });
   }
 
   return (
@@ -52,8 +54,18 @@ export default function CleanSlateModal({
           <span>
             Tindakan ini akan <strong>menghapus seluruh baris inventori</strong>{" "}
             {isAll ? <strong>di SEMUA cabang</strong> : `di cabang ${branchName}`}. Baris dihapus
-            secara permanen (bukan di-set ke 0). <code>stockLedger</code> tetap tersimpan sebagai
-            audit dan <code>averageCost</code> bahan tidak berubah.
+            secara permanen (bukan di-set ke 0).{" "}
+            {alsoLedger ? (
+              <>
+                <strong>stockLedger juga akan dihapus</strong> — jejak audit stok akan hilang
+                seluruhnya.{" "}
+              </>
+            ) : (
+              <>
+                <code>stockLedger</code> tetap tersimpan sebagai audit dan{" "}
+              </>
+            )}
+            <code>averageCost</code> bahan tidak berubah.
           </span>
         </div>
 
@@ -69,6 +81,19 @@ export default function CleanSlateModal({
           <span>
             Saya mengerti dan yakin ingin menghapus semua stok
             {isAll ? " di semua cabang" : ` di ${branchName}`}.
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="h-4 w-4 mt-0.5 cursor-pointer"
+            checked={alsoLedger}
+            onChange={(e) => setAlsoLedger(e.target.checked)}
+          />
+          <span>
+            Juga hapus semua <code>stockLedger</code>{" "}
+            {isAll ? "(semua cabang)" : `di ${branchName}`} — jejak audit stok ikut terhapus.
           </span>
         </label>
 

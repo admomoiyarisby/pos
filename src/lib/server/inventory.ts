@@ -1082,10 +1082,11 @@ export const adjustBranchStockBatch = createServerFn({ method: "POST" })
 // ingredients.averageCost are intentionally left intact for audit/COGS. Pass
 // `branchId: null` (or omit) to wipe ALL branches.
 export const cleanSlateInventory = createServerFn({ method: "POST" })
-  .validator((data: { branchId?: string | null }) => data)
+  .validator((data: { branchId?: string | null; alsoLedger?: boolean }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
     const branchId = data.branchId || undefined;
+    const alsoLedger = !!data.alsoLedger;
     const scopeCondition = branchId ? eq(inventory.branchId, branchId) : undefined;
 
     const [{ count: deleted } = { count: 0 }] = await db
@@ -1099,6 +1100,13 @@ export const cleanSlateInventory = createServerFn({ method: "POST" })
       } else {
         await tx.delete(inventory);
       }
+      if (alsoLedger) {
+        if (branchId) {
+          await tx.delete(stockLedger).where(eq(stockLedger.branchId, branchId));
+        } else {
+          await tx.delete(stockLedger);
+        }
+      }
     });
 
     await logSystemAction(
@@ -1106,16 +1114,16 @@ export const cleanSlateInventory = createServerFn({ method: "POST" })
       "Clean Slate Inventori",
       `Super Admin ${user.name} menghapus seluruh baris inventori${
         branchId ? ` di cabang ${branchId}` : " (SEMUA cabang)"
-      }. ${deleted} baris dihapus.`,
+      }. ${deleted} baris dihapus${alsoLedger ? "; stockLedger ikut dihapus" : ""}.`,
     );
     await logAudit(
       user,
       "inventory",
       branchId ?? "ALL",
       "DELETE",
-      { deleted } as Record<string, unknown>,
+      { deleted, alsoLedger } as Record<string, unknown>,
       undefined,
     );
 
-    return { success: true, deleted, branchId: branchId ?? null };
+    return { success: true, deleted, alsoLedger, branchId: branchId ?? null };
   });

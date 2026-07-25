@@ -57,7 +57,9 @@ Two facts shaped the design:
    (or _every_ branch when the page filter is “Semua Cabang”) — not just zeroing
    quantities. It is guarded behind a confirm checkbox, runs in a transaction,
    and is logged. `stockLedger` and `ingredients.averageCost` are deliberately
-   preserved (audit history stays; global COGS is not touched).
+   preserved (audit history stays; global COGS is not touched). An opt-in
+   (default-off) checkbox additionally purges `stockLedger` for the same
+   scope — only when a full audit wipe is genuinely intended.
 
 ## Considered Options
 
