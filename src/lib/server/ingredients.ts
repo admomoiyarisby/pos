@@ -1,9 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { ingredients, recipeIngredients } from "#/db/schema";
+import { ingredients, recipeIngredients, ingredientBranches } from "#/db/schema";
 import { eq, and } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
-import { requireAuth, requireRole } from "./auth";
+import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import { z } from "zod";
@@ -23,6 +23,7 @@ const ingredientInput = z.object({
   roq: z.number().int().min(0).default(0),
   moq: z.number().int().min(1).default(1),
   countable: z.boolean().default(true),
+  branchIds: z.array(z.string().uuid()).optional().nullable(),
 });
 
 export const getIngredients = createServerFn({ method: "GET" })
@@ -37,6 +38,9 @@ export const getIngredients = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     await requireAuth();
 
+    const user = await getCurrentUserRaw();
+    const currentBranchId = user?.branchId;
+
     const conditions = [];
     if (data.search) {
       conditions.push(fuzzySearch([ingredients.name, ingredients.code], data.search));
@@ -49,6 +53,22 @@ export const getIngredients = createServerFn({ method: "GET" })
     }
     if (data.excludeNasi) {
       conditions.push(eq(ingredients.isNasi, false));
+    }
+
+    // Branch visibility gate (mirrors getRecipes): a branch-scoped caller sees
+    // only ingredients allowed at their branch; an ingredient with no
+    // ingredient_branches rows is visible everywhere (NULL = all branches).
+    if (currentBranchId) {
+      conditions.push(
+        sql`
+          EXISTS (
+            SELECT 1 FROM ingredient_branches
+            WHERE ingredient_branches.ingredient_id = ingredients.id
+              AND ingredient_branches.branch_id = ${currentBranchId}
+          )
+          OR ingredient_branches.id IS NULL
+        `,
+      );
     }
 
     const result = await db
@@ -73,7 +93,14 @@ export const getIngredient = createServerFn({ method: "GET" })
       .from(ingredients)
       .where(eq(ingredients.id, data.id))
       .limit(1);
-    return result ?? null;
+    if (!result) return null;
+
+    const branchLinks = await db
+      .select({ branchId: ingredientBranches.branchId })
+      .from(ingredientBranches)
+      .where(eq(ingredientBranches.ingredientId, data.id));
+
+    return { ...result, branchIds: branchLinks.map((b) => b.branchId) };
   });
 
 export const createIngredient = createServerFn({ method: "POST" })
@@ -81,7 +108,14 @@ export const createIngredient = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat", "central_kitchen");
 
-    const [result] = await db.insert(ingredients).values(data).returning();
+    const { branchIds, ...ingredientValues } = data;
+    const [result] = await db.insert(ingredients).values(ingredientValues).returning();
+
+    if (branchIds?.length) {
+      await db
+        .insert(ingredientBranches)
+        .values(branchIds.map((branchId) => ({ ingredientId: result.id, branchId })));
+    }
 
     await logSystemAction(
       user,
@@ -107,7 +141,7 @@ export const updateIngredient = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat", "central_kitchen");
 
-    const { id, ...updates } = data;
+    const { id, branchIds, ...updates } = data;
 
     const [old] = await db.select().from(ingredients).where(eq(ingredients.id, id)).limit(1);
 
@@ -116,6 +150,16 @@ export const updateIngredient = createServerFn({ method: "POST" })
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(ingredients.id, id))
       .returning();
+
+    // Update branch visibility (mirrors updateRecipe): empty array = all branches.
+    if (branchIds !== undefined && branchIds !== null) {
+      await db.delete(ingredientBranches).where(eq(ingredientBranches.ingredientId, id));
+      if (branchIds.length > 0) {
+        await db
+          .insert(ingredientBranches)
+          .values(branchIds.map((branchId) => ({ ingredientId: id, branchId })));
+      }
+    }
 
     // Trigger BOM cost roll-up if averageCost changed
     if ("averageCost" in updates) {

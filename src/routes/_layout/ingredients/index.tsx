@@ -15,6 +15,7 @@ import {
   updateIngredient,
   deleteIngredient,
 } from "#/lib/server/ingredients";
+import { getBranches } from "#/lib/server/branches";
 import { toast } from "sonner";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
@@ -43,18 +44,22 @@ const skuLabels: Record<string, string> = {
 export const Route = createFileRoute("/_layout/ingredients/")({
   component: IngredientsPage,
   loader: async () => {
-    const ingredients = await getIngredients({ data: {} });
-    return { ingredients };
+    const [ingredients, branches] = await Promise.all([
+      getIngredients({ data: {} }),
+      getBranches({ data: {} }),
+    ]);
+    return { ingredients, branches };
   },
 });
 
 function IngredientsPage() {
   const [search, setSearch] = useTableSearch();
-  const { ingredients: initial } = Route.useLoaderData();
+  const { ingredients: initial, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [ingredientToDelete, setIngredientToDelete] = useState<string | null>(null);
+  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
 
   const { data: ingredients } = useQuery({
     queryKey: ["ingredients"],
@@ -126,6 +131,7 @@ function IngredientsPage() {
       averageCost: Number(fd.get("averageCost")),
       rop: Number(fd.get("rop")),
       moq: Number(fd.get("moq")),
+      branchIds: selectedBranchIds,
     };
     void createMutation.mutateAsync({ data });
   };
@@ -318,6 +324,59 @@ function IngredientsPage() {
               defaultValue={1}
               className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Ketersediaan Cabang</label>
+            <p className="text-xs text-muted-foreground">
+              Pilih cabang yang boleh melihat & memilih bahan ini. Kosong = semua cabang.
+            </p>
+            <div className="rounded-lg border p-4 space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedBranchIds.length === 0}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedBranchIds([]);
+                    } else {
+                      setSelectedBranchIds(branches.map((b) => b.id));
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <div>
+                  <span className="text-sm font-medium">Semua cabang</span>
+                  <p className="text-xs text-muted-foreground">Bahan tersedia di semua cabang</p>
+                </div>
+              </label>
+            </div>
+            {selectedBranchIds.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Pilih cabang:</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {branches.map((b) => (
+                    <label
+                      key={b.id}
+                      className="flex items-center gap-2 rounded-md border p-3 text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedBranchIds.includes(b.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedBranchIds([...selectedBranchIds, b.id]);
+                          } else {
+                            setSelectedBranchIds(selectedBranchIds.filter((id) => id !== b.id));
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      {b.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button

@@ -283,6 +283,26 @@ export const ingredients = pgTable("ingredients", {
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
 
+// MODULE — INGREDIENT BRANCH VISIBILITY
+// -----------------------------------------------------------------------------
+// Mirrors `recipe_branches` (MODULE 9): an ingredient with zero rows here is
+// visible in ALL branches; rows restrict it to the listed branches. Enforced by
+// a single gate in `getIngredients` keyed on the caller's currentBranchId.
+export const ingredientBranches = pgTable(
+  "ingredient_branches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    ingredientId: uuid("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (t) => [unique("ingredient_branch_unique").on(t.ingredientId, t.branchId)],
+);
+
 export const recipes = pgTable("recipes", {
   id: uuid("id").defaultRandom().primaryKey(),
   code: text("code").notNull().unique(),
@@ -796,15 +816,6 @@ export const yieldConversions = pgTable(
     branchId: uuid("branch_id")
       .notNull()
       .references(() => branches.id),
-    // Single source — kept for backward compat; use yieldConversionSources for multi-source
-    sourceIngredientId: uuid("source_ingredient_id").references(() => ingredients.id),
-    sourceQuantity: integer("source_quantity"),
-    targetIngredientId: uuid("target_ingredient_id")
-      .notNull()
-      .references(() => ingredients.id),
-    targetQuantity: integer("target_quantity").notNull(),
-    yieldPercentage: numeric("yield_percentage").notNull(),
-    shrinkageQuantity: integer("shrinkage_quantity").notNull().default(0),
     notes: text("notes"),
     processedBy: uuid("processed_by")
       .notNull()
@@ -812,29 +823,30 @@ export const yieldConversions = pgTable(
     productionDate: timestamp("production_date", { mode: "date" }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
-  (t) => [
-    index("yc_branch_idx").on(t.branchId),
-    index("yc_source_idx").on(t.sourceIngredientId),
-    index("yc_target_idx").on(t.targetIngredientId),
-  ],
+  (t) => [index("yc_branch_idx").on(t.branchId)],
 );
 
-// Junction table for multiple source ingredients per yield conversion
-export const yieldConversionSources = pgTable(
-  "yield_conversion_sources",
+// One row per ingredient movement within a production record.
+// direction 'OUT' = consumed (barang keluar); 'PRODUCED' = output (barang dihasilkan).
+// Replaces the legacy single source/target columns and the yield_conversion_sources junction.
+export const yieldItemDirectionEnum = pgEnum("yield_item_direction", ["OUT", "PRODUCED"]);
+
+export const yieldConversionItems = pgTable(
+  "yield_conversion_items",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    yieldConversionId: uuid("yield_conversion_id")
+    conversionId: uuid("conversion_id")
       .notNull()
       .references(() => yieldConversions.id, { onDelete: "cascade" }),
     ingredientId: uuid("ingredient_id")
       .notNull()
       .references(() => ingredients.id),
     quantity: integer("quantity").notNull(),
+    direction: yieldItemDirectionEnum("direction").notNull(),
   },
   (t) => [
-    index("ycs_conversion_idx").on(t.yieldConversionId),
-    index("ycs_ingredient_idx").on(t.ingredientId),
+    index("yci_conversion_idx").on(t.conversionId),
+    index("yci_ingredient_idx").on(t.ingredientId),
   ],
 );
 
@@ -1916,6 +1928,7 @@ export const ingredientsRelations = relations(ingredients, ({ many }) => ({
   recipeIngredients: many(recipeIngredients),
   modifierIngredients: many(modifierIngredients),
   recipeModifierExclusions: many(recipeModifierExclusions),
+  visibleBranches: many(ingredientBranches),
   inventory: many(inventory),
   inTransitInventory: many(inTransitInventory),
   stockLedger: many(stockLedger),
@@ -1926,8 +1939,7 @@ export const ingredientsRelations = relations(ingredients, ({ many }) => ({
   purchaseOrderItems: many(purchaseOrderItems),
   deliveryNoteItems: many(deliveryNoteItems),
   scmInvoiceItems: many(scmInvoiceItems),
-  yieldConversionsSource: many(yieldConversions, { relationName: "source" }),
-  yieldConversionsTarget: many(yieldConversions, { relationName: "target" }),
+  yieldConversionItems: many(yieldConversionItems),
   supplierDeliveries: many(supplierDeliveries),
   orderItemExclusions: many(orderItemExclusions),
   periodBalances: many(periodBalances),
@@ -2171,29 +2183,8 @@ export const stockLedgerRelations = relations(stockLedger, ({ one }) => ({
 
 export const yieldConversionsRelations = relations(yieldConversions, ({ one, many }) => ({
   branch: one(branches, { fields: [yieldConversions.branchId], references: [branches.id] }),
-  sourceIngredient: one(ingredients, {
-    fields: [yieldConversions.sourceIngredientId],
-    references: [ingredients.id],
-    relationName: "source",
-  }),
-  targetIngredient: one(ingredients, {
-    fields: [yieldConversions.targetIngredientId],
-    references: [ingredients.id],
-    relationName: "target",
-  }),
-  sources: many(yieldConversionSources),
+  items: many(yieldConversionItems),
   processedByUser: one(users, { fields: [yieldConversions.processedBy], references: [users.id] }),
-}));
-
-export const yieldConversionSourcesRelations = relations(yieldConversionSources, ({ one }) => ({
-  yieldConversion: one(yieldConversions, {
-    fields: [yieldConversionSources.yieldConversionId],
-    references: [yieldConversions.id],
-  }),
-  ingredient: one(ingredients, {
-    fields: [yieldConversionSources.ingredientId],
-    references: [ingredients.id],
-  }),
 }));
 
 // ─── SCM ───

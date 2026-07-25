@@ -32,3 +32,13 @@ Create a GitHub issue.
 ## When a skill says "fetch the relevant ticket"
 
 Run `gh issue view <number> --comments`.
+
+## Wayfinding operations
+
+This repo uses GitHub issues for wayfinder maps and tickets. GitHub here supports **native** sub-issues and blocking, so use them directly (no body convention needed).
+
+- **Map**: a single issue labelled `wayfinder:map`. Body uses the wayfinder map template (Destination / Notes / Decisions so far / Not yet specified / Out of scope). Open child tickets are found by query — do not list them in the body.
+- **Tickets**: child issues of the map, labelled `wayfinder:<type>` (`research` | `prototype` | `grilling` | `task`). Each body starts with `## Question`. Create with `--parent <map>` to attach as a sub-issue.
+- **Blocking**: use native blocking — `--blocked-by <csv>` (comma-separated numbers) when creating, or `gh issue edit <n> --add-blocked-by <csv>` afterward. A ticket is on the frontier when every ticket blocking it is closed.
+- **Claiming**: assign the ticket to the dev driving it (`gh issue edit <n> --add-assignee <user>` or `--assignee @me` on create). An open, unassigned ticket is unclaimed.
+- **Resolve**: post the answer as a comment, close with `gh issue close <n> --comment "..."`, then append a one-line gist (linking the ticket) to the map's **Decisions so far** via `gh issue edit <map> --body-file ...`.
