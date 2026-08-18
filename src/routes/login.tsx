@@ -11,15 +11,30 @@ export const Route = createFileRoute("/login")({
 
 // Demo users for quick access (email mode only)
 const demoUsers = [
-  { name: "Super Admin", email: "superadmin@omoiyari.net", role: "super_admin", pin: "1111" },
-  { name: "Admin Pusat", email: "pusat@omoiyari.net", role: "admin_pusat", pin: "2222" },
+  {
+    name: "Super Admin",
+    email: "superadmin@omoiyari.net",
+    role: "super_admin",
+    pin: "1111",
+  },
+  {
+    name: "Admin Pusat",
+    email: "pusat@omoiyari.net",
+    role: "admin_pusat",
+    pin: "2222",
+  },
   {
     name: "Area Mgr East Java",
     email: "manager.east@omoiyari.net",
     role: "area_manager",
     pin: "3333",
   },
-  { name: "Andi (Wiyung)", email: "andi.wiyung@omoiyari.net", role: "branch_admin", pin: "1234" },
+  {
+    name: "Andi (Wiyung)",
+    email: "andi.wiyung@omoiyari.net",
+    role: "branch_admin",
+    pin: "1234",
+  },
   {
     name: "Budi (Darmo Permai)",
     email: "budi.darmo@omoiyari.net",
@@ -44,14 +59,24 @@ const demoUsers = [
     role: "branch_admin",
     pin: "5678",
   },
-  { name: "Fitri (Pucang)", email: "fitri.pucang@omoiyari.net", role: "branch_admin", pin: "6789" },
+  {
+    name: "Fitri (Pucang)",
+    email: "fitri.pucang@omoiyari.net",
+    role: "branch_admin",
+    pin: "6789",
+  },
   {
     name: "Gilang (Siwalankerto)",
     email: "gilang.siwalankerto@omoiyari.net",
     role: "branch_admin",
     pin: "7890",
   },
-  { name: "Central Kitchen", email: "ck@omoiyari.net", role: "central_kitchen", pin: "0000" },
+  {
+    name: "Central Kitchen",
+    email: "ck@omoiyari.net",
+    role: "central_kitchen",
+    pin: "0000",
+  },
 ];
 
 type BranchPinStep = "branch-select" | "pin-entry" | "name-picker";
@@ -73,7 +98,10 @@ function LoginPage() {
     };
     updateTheme();
     const observer = new MutationObserver(updateTheme);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
     return () => observer.disconnect();
   }, []);
 
@@ -85,9 +113,11 @@ function LoginPage() {
   const [branchPin, setBranchPin] = useState("");
   const [branchPinError, setBranchPinError] = useState("");
   const [branchPinLoading, setBranchPinLoading] = useState(false);
-  const [branchInfo, setBranchInfo] = useState<{ id: string; code: string; name: string } | null>(
-    null,
-  );
+  const [branchInfo, setBranchInfo] = useState<{
+    id: string;
+    code: string;
+    name: string;
+  } | null>(null);
   const [staffNames, setStaffNames] = useState<{ id: string; name: string }[]>([]);
   const [selectedStaffName, setSelectedStaffName] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
@@ -146,7 +176,10 @@ function LoginPage() {
       const res = await fetch("/api/auth/branch-pin-verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branchCode: selectedBranchCode, pin: enteredPin }),
+        body: JSON.stringify({
+          branchCode: selectedBranchCode,
+          pin: enteredPin,
+        }),
       });
       const data = await res.json();
 
@@ -332,7 +365,7 @@ function LoginPage() {
                   <div className="text-left">
                     <div className="font-bold">Staf Non-Cabang</div>
                     <div className="text-xs text-muted-foreground">
-                      Superadmin, Admin Pusat, Central Kitchen, Area Manager
+                      Superadmin, Admin Pusat, Area Manager
                     </div>
                   </div>
                 </button>
@@ -407,7 +440,7 @@ function LoginPage() {
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground text-center">
-                  Untuk Superadmin, Admin Pusat, Central Kitchen, dan Area Manager
+                  Untuk Superadmin, Admin Pusat, dan Area Manager
                 </p>
               </div>
             )}
