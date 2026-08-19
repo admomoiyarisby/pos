@@ -17,10 +17,10 @@ void (async function () {
 
     const mod = await import("./ingredient-resolver");
 
-    if (typeof mod.resolveNewItemIngredients !== "function") {
+    if (!("resolveNewItemIngredients" in mod)) {
       throw new Error("resolveNewItemIngredients is not exported as a function");
     }
-    if (typeof mod.resolvePersistedItemIngredients !== "function") {
+    if (!("resolvePersistedItemIngredients" in mod)) {
       throw new Error("resolvePersistedItemIngredients is not exported as a function");
     }
 

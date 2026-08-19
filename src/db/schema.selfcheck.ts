@@ -32,36 +32,28 @@
     const schema = await import("./schema");
 
     // ID3: employeePenalties table
-    check("employeePenalties is exported", typeof schema.employeePenalties === "object");
+    check("employeePenalties is exported", "employeePenalties" in schema);
 
     // ID4: stockOpnames has realizedAt and realizedBy
-    check("stockOpnames is exported", typeof schema.stockOpnames === "object");
+    check("stockOpnames is exported", "stockOpnames" in schema);
 
     // ID5: scmProcurements has requestSource
-    check("scmProcurements is exported", typeof schema.scmProcurements === "object");
+    check("scmProcurements is exported", "scmProcurements" in schema);
 
     // ID5: scmTransfers has requestSource
-    check("scmTransfers is exported", typeof schema.scmTransfers === "object");
+    check("scmTransfers is exported", "scmTransfers" in schema);
 
     // ID6: recipes has isStaffMeal
-    check("recipes is exported", typeof schema.recipes === "object");
+    check("recipes is exported", "recipes" in schema);
 
     // ID7: systemNotifications has priority
-    check("systemNotifications is exported", typeof schema.systemNotifications === "object");
+    check("systemNotifications is exported", "systemNotifications" in schema);
 
     // ID7: notificationPriorityEnum is exported
-    check(
-      "notificationPriorityEnum is exported",
-      typeof schema.notificationPriorityEnum === "function" ||
-        typeof schema.notificationPriorityEnum === "object",
-    );
+    check("notificationPriorityEnum is exported", "notificationPriorityEnum" in schema);
 
     // Relations
-    check(
-      "employeePenaltiesRelations is exported",
-      typeof schema.employeePenaltiesRelations === "object" ||
-        typeof schema.employeePenaltiesRelations === "function",
-    );
+    check("employeePenaltiesRelations is exported", "employeePenaltiesRelations" in schema);
   }
 
   // =============================================================================

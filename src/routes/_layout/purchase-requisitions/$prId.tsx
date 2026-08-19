@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
+import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useAuth } from "#/lib/auth-context";
+import { lookupLabel } from "#/lib/label-lookup";
 import RoleGuard from "#/components/RoleGuard";
 import Modal from "#/components/ui/Modal";
 import {
@@ -48,7 +50,7 @@ function PRDetailPage() {
     if (pr && isEditing) {
       const qtyMap: Record<string, number> = {};
       for (const item of pr.items) {
-        qtyMap[(item as any).id] = (item as any).quantity;
+        qtyMap[item.id] = item.quantity;
       }
       setEditedQuantities(qtyMap);
       setEditError(null);
@@ -101,17 +103,14 @@ function PRDetailPage() {
   const canReject = isApprover && ["Pending", "Approved"].includes(pr.status);
   const canEdit = isBranchAdmin && ["Draft", "Pending"].includes(pr.status);
 
-  const statusColors: Record<
-    string,
-    "default" | "warning" | "success" | "destructive" | "secondary"
-  > = {
+  const statusColors = {
     Draft: "secondary",
     Pending: "warning",
     Approved: "default",
     Processed: "success",
     Rejected: "destructive",
     Fulfilled: "success",
-  };
+  } satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
@@ -128,7 +127,7 @@ function PRDetailPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Badge variant={statusColors[pr.status] ?? "default"}>{pr.status}</Badge>
+            <Badge variant={lookupLabel(statusColors, pr.status) ?? "default"}>{pr.status}</Badge>
             {canProcess && (
               <button
                 onClick={() => setShowProcessModal(true)}
@@ -322,7 +321,7 @@ function PRDetailPage() {
               data: {
                 id: prId,
                 status: "Rejected",
-                rejectionReason: fd.get("reason") as string,
+                rejectionReason: formText(fd, "reason"),
               },
             });
           }}

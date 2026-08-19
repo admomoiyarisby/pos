@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { badgeVariant } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -46,11 +47,11 @@ function SCMInvoiceDetailPage() {
   const canAct =
     invoice.status === "Unpaid" && ["super_admin", "admin_pusat"].includes(user?.role ?? "");
 
-  const statusColors: Record<string, "default" | "warning" | "success" | "destructive"> = {
+  const statusColors = {
     Unpaid: "warning",
     Paid: "success",
     Cancelled: "destructive",
-  };
+  } satisfies Record<string, "default" | "warning" | "success" | "destructive">;
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
@@ -61,17 +62,7 @@ function SCMInvoiceDetailPage() {
             <p className="text-sm text-muted-foreground">Invoice SCM</p>
           </div>
           <div className="flex items-center gap-3">
-            <Badge
-              variant={
-                (statusColors[invoice.status] ?? "default") as
-                  | "default"
-                  | "success"
-                  | "warning"
-                  | "destructive"
-              }
-            >
-              {invoice.status}
-            </Badge>
+            <Badge variant={badgeVariant(statusColors[invoice.status])}>{invoice.status}</Badge>
             {canAct && (
               <>
                 <button

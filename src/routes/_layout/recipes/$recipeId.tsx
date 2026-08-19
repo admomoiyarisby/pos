@@ -196,7 +196,9 @@ function RecipeDetailPage() {
       setShowImageModal(false);
       toast.success("Gambar resep berhasil diperbarui");
     } catch (err) {
-      toast.error("Gagal mengunggah gambar", { description: (err as Error).message });
+      toast.error("Gagal mengunggah gambar", {
+        description: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setIsImagePending(false);
     }
@@ -211,7 +213,9 @@ function RecipeDetailPage() {
       setShowImageModal(false);
       toast.success("Gambar resep dihapus");
     } catch (err) {
-      toast.error("Gagal menghapus gambar", { description: (err as Error).message });
+      toast.error("Gagal menghapus gambar", {
+        description: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setIsImagePending(false);
     }

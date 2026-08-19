@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Bell, Check, AlertTriangle, Info } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getNotifications, markNotificationRead } from "#/lib/server/system";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useAuth } from "#/lib/auth-context";
 import type { systemNotifications } from "#/db/schema";
 import type { InferSelectModel } from "drizzle-orm";
@@ -16,7 +17,9 @@ export default function NotificationBell() {
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      // SAFETY: mousedown targets are always DOM Nodes inside the document;
+      // contains() accepts Node and non-Node targets simply fall through.
+      if (ref.current && e.target instanceof Node && !ref.current.contains(e.target)) {
         setOpen(false);
       }
     };
@@ -26,10 +29,7 @@ export default function NotificationBell() {
 
   const { data } = useQuery<Notification[]>({
     queryKey: ["notifications"],
-    queryFn: async () => {
-      const result = await getNotifications({ data: {} });
-      return result as Notification[];
-    },
+    queryFn: async () => getNotifications({ data: {} }),
     enabled: !!user,
     refetchInterval: 30000,
   });
@@ -95,7 +95,7 @@ export default function NotificationBell() {
                         : "bg-muted/30"
                   }`}
                 >
-                  {typeIcons[n.type as keyof typeof typeIcons] ?? <Info className="h-4 w-4" />}
+                  {lookupLabel(typeIcons, n.type) ?? <Info className="h-4 w-4" />}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium">{n.title}</p>

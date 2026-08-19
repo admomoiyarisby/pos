@@ -16,10 +16,10 @@ export function MarkdownRenderer({ content, className = "" }: MarkdownRendererPr
   const html = useMemo(() => {
     const result = marked.parse(content);
     // Handle both sync and async marked.parse
-    if (typeof result === "string") {
-      return result;
+    if (result instanceof Promise) {
+      return "";
     }
-    return "";
+    return result;
   }, [content]);
 
   return <div className={`prose-docs ${className}`} dangerouslySetInnerHTML={{ __html: html }} />;

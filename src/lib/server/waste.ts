@@ -10,6 +10,7 @@ import {
 } from "#/db/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { fuzzySearch } from "./fuzzy";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import { requireAuth } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
@@ -81,19 +82,17 @@ export const getWasteEntries = createServerFn({ method: "GET" })
     return result;
   });
 
+const createWasteEntryInput = z.object({
+  branchId: z.string().uuid(),
+  ingredientId: z.string().uuid(),
+  quantity: z.number().int().min(1),
+  category: z.enum(["Beban Makan", "Biaya Operasional", "Spoiled", "Denda"]),
+  staffName: z.string().optional(),
+  notes: z.string().optional(),
+});
+
 export const createWasteEntry = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        branchId: z.string().uuid(),
-        ingredientId: z.string().uuid(),
-        quantity: z.number().int().min(1),
-        category: z.enum(["Beban Makan", "Biaya Operasional", "Spoiled", "Denda"]),
-        staffName: z.string().optional(),
-        notes: z.string().optional(),
-      })
-      .parse(data),
-  )
+  .validator((data: z.input<typeof createWasteEntryInput>) => createWasteEntryInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -167,26 +166,19 @@ export const createWasteEntry = createServerFn({ method: "POST" })
       "Create Waste Entry",
       `Waste entry untuk "${ing?.name ?? data.ingredientId}" (${data.quantity} ${ing?.stockUnit ?? ""}, nilai: Rp${valuation.toLocaleString()}) dicatat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "wasteEntries",
-      entry.id,
-      "CREATE",
-      undefined,
-      entry as Record<string, unknown>,
-    );
+    await logAudit(user, "wasteEntries", entry.id, "CREATE", undefined, entry);
 
     return entry;
   });
 
+const addInvestigationNoteInput = z.object({
+  wasteEntryId: z.string().uuid(),
+  investigationNote: z.string().min(1),
+});
+
 export const addInvestigationNote = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        wasteEntryId: z.string().uuid(),
-        investigationNote: z.string().min(1),
-      })
-      .parse(data),
+  .validator((data: z.input<typeof addInvestigationNoteInput>) =>
+    addInvestigationNoteInput.parse(data),
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
@@ -228,16 +220,14 @@ export const addInvestigationNote = createServerFn({ method: "POST" })
     return updated;
   });
 
+const updateWasteEntryInput = z.object({
+  wasteEntryId: z.string().uuid(),
+  notes: z.string().optional(),
+  investigationNote: z.string().optional(),
+});
+
 export const updateWasteEntry = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        wasteEntryId: z.string().uuid(),
-        notes: z.string().optional(),
-        investigationNote: z.string().optional(),
-      })
-      .parse(data),
-  )
+  .validator((data: z.input<typeof updateWasteEntryInput>) => updateWasteEntryInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -253,7 +243,7 @@ export const updateWasteEntry = createServerFn({ method: "POST" })
       throw new Error("Unauthorized: hanya dapat mengedit waste entry sendiri");
     }
 
-    const updates: Record<string, unknown> = {};
+    const updates: UnknownRecord = {};
     if (data.notes !== undefined) updates.notes = data.notes;
     if (data.investigationNote !== undefined) updates.investigationNote = data.investigationNote;
 
@@ -276,14 +266,7 @@ export const updateWasteEntry = createServerFn({ method: "POST" })
       "Update Waste Entry",
       `Waste entry ${data.wasteEntryId} diperbarui oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "wasteEntries",
-      data.wasteEntryId,
-      "UPDATE",
-      existing as Record<string, unknown>,
-      updated as Record<string, unknown>,
-    );
+    await logAudit(user, "wasteEntries", data.wasteEntryId, "UPDATE", existing, updated);
 
     return updated;
   });

@@ -149,8 +149,7 @@ ReviewingSJ → WaitingForPayment            (BA confirms review)
 WaitingForPayment → Finished               (CA marks "Telah Dibayar")
 
 Rejected → [*]
-Finished → [*]</pre
-      >
+Finished → [*]</pre>
 
       <h2>Transition Table</h2>
       <table>
@@ -343,8 +342,7 @@ async function transition(prId, event, user) {
   for (const fx of (rule.effects ?? [])) await applyEffect(fx, pr, user)
   await updatePR(prId, { status: rule.to, lastEvent: event, updatedBy: user.id })
   await logAudit({ ... })
-}</pre
-      >
+}</pre>
 
       <div class="note">
         <strong>Key principle:</strong> One <code>transition()</code> function replaces all ad-hoc

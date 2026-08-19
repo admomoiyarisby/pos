@@ -10,14 +10,14 @@ interface ModalProps {
   size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl";
 }
 
-const sizeClasses: Record<string, string> = {
+const sizeClasses = {
   sm: "sm:max-w-sm",
   md: "sm:max-w-md",
   lg: "sm:max-w-lg",
   xl: "sm:max-w-xl",
   "2xl": "sm:max-w-2xl",
   "3xl": "sm:max-w-3xl",
-};
+} satisfies Record<string, string>;
 
 /**
  * Modal — accessible dialog backed by Radix Dialog primitive.

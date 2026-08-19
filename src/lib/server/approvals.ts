@@ -79,14 +79,7 @@ export const approvePrintRequest = createServerFn({ method: "POST" })
       "Approve Print Request",
       `Print request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "printRequests",
-      data.requestId,
-      "STATUS_CHANGE",
-      old as Record<string, unknown>,
-      req as Record<string, unknown>,
-    );
+    await logAudit(user, "printRequests", data.requestId, "STATUS_CHANGE", old, req);
 
     return req;
   });

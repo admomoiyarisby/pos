@@ -55,16 +55,16 @@ export const getCategoryRecipes = createServerFn({ method: "GET" })
     return rows;
   });
 
+const assignRecipesToCategoryInput = z.object({
+  categoryId: z.string().uuid(),
+  recipeIds: z.array(z.string().uuid()),
+  removedRecipeIds: z.array(z.string().uuid()).default([]),
+  destinationCategoryId: z.string().uuid().optional(),
+});
+
 export const assignRecipesToCategory = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        categoryId: z.string().uuid(),
-        recipeIds: z.array(z.string().uuid()),
-        removedRecipeIds: z.array(z.string().uuid()).default([]),
-        destinationCategoryId: z.string().uuid().optional(),
-      })
-      .parse(data),
+  .validator((data: z.input<typeof assignRecipesToCategoryInput>) =>
+    assignRecipesToCategoryInput.parse(data),
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
@@ -108,15 +108,13 @@ export const assignRecipesToCategory = createServerFn({ method: "POST" })
     return { success: true };
   });
 
+const createCategoryInput = z.object({
+  code: z.string().min(1).max(50),
+  name: z.string().min(1).max(100),
+});
+
 export const createCategory = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        code: z.string().min(1).max(50),
-        name: z.string().min(1).max(100),
-      })
-      .parse(data),
-  )
+  .validator((data: z.input<typeof createCategoryInput>) => createCategoryInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -134,15 +132,13 @@ export const createCategory = createServerFn({ method: "POST" })
     return { category: cat };
   });
 
+const deleteCategoryInput = z.object({
+  categoryId: z.string().uuid(),
+  destinationCategoryId: z.string().uuid(),
+});
+
 export const deleteCategory = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        categoryId: z.string().uuid(),
-        destinationCategoryId: z.string().uuid(),
-      })
-      .parse(data),
-  )
+  .validator((data: z.input<typeof deleteCategoryInput>) => deleteCategoryInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 

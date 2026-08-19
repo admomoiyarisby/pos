@@ -28,27 +28,22 @@ export const getBrands = createServerFn({ method: "GET" })
   });
 
 export const createBrand = createServerFn({ method: "POST" })
-  .validator((data: unknown) => brandInput.parse(data))
+  .validator((data: z.input<typeof brandInput>) => brandInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
     const [result] = await db.insert(brands).values(data).returning();
 
     await logSystemAction(user, "Create Brand", `Brand "${result.name}" dibuat oleh ${user.name}`);
-    await logAudit(
-      user,
-      "brands",
-      result.id,
-      "CREATE",
-      undefined,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "brands", result.id, "CREATE", undefined, result);
 
     return result;
   });
 
+const updateBrandInput = brandInput.partial().extend({ id: z.string().uuid() });
+
 export const updateBrand = createServerFn({ method: "POST" })
-  .validator((data: unknown) => brandInput.partial().extend({ id: z.string().uuid() }).parse(data))
+  .validator((data: z.input<typeof updateBrandInput>) => updateBrandInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -63,14 +58,7 @@ export const updateBrand = createServerFn({ method: "POST" })
       "Update Brand",
       `Brand "${result.name}" diperbarui oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "brands",
-      id,
-      "UPDATE",
-      old as Record<string, unknown>,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "brands", id, "UPDATE", old, result);
 
     return result;
   });
@@ -94,14 +82,7 @@ export const deleteBrand = createServerFn({ method: "POST" })
       "Delete Brand",
       `Brand "${result.name}" dinonaktifkan oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "brands",
-      data.id,
-      "DELETE",
-      old as Record<string, unknown>,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "brands", data.id, "DELETE", old, result);
 
     return { success: true };
   });

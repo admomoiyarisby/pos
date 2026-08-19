@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { badgeVariant } from "#/lib/utils";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -24,12 +26,12 @@ interface AuditRow {
   newValues: unknown;
 }
 
-const actionColors: Record<string, "default" | "success" | "warning" | "destructive"> = {
+const actionColors = {
   CREATE: "success",
   UPDATE: "warning",
   DELETE: "destructive",
   INSERT: "success",
-};
+} satisfies Record<string, "default" | "success" | "warning" | "destructive">;
 
 export const Route = createFileRoute("/_layout/admin/audit-logs")({
   component: AuditLogsPage,
@@ -78,17 +80,7 @@ function AuditLogsPage() {
       width: "w-24",
       sortable: true,
       render: (r) => (
-        <Badge
-          variant={
-            (actionColors[r.action] ?? "default") as
-              | "default"
-              | "success"
-              | "warning"
-              | "destructive"
-          }
-        >
-          {r.action}
-        </Badge>
+        <Badge variant={badgeVariant(lookupLabel(actionColors, r.action))}>{r.action}</Badge>
       ),
     },
     {
@@ -196,15 +188,7 @@ function AuditLogsPage() {
                 </div>
                 <div className="rounded-md border p-3">
                   <p className="text-xs text-muted-foreground uppercase">Aksi</p>
-                  <Badge
-                    variant={
-                      (actionColors[selectedLog.action] ?? "default") as
-                        | "default"
-                        | "success"
-                        | "warning"
-                        | "destructive"
-                    }
-                  >
+                  <Badge variant={badgeVariant(lookupLabel(actionColors, selectedLog.action))}>
                     {selectedLog.action}
                   </Badge>
                 </div>

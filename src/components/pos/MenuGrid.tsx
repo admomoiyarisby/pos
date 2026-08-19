@@ -10,7 +10,9 @@ import type { MenuItem } from "#/lib/pos-types";
 const CATEGORY_ORDER = ["makanan", "minuman", "snack", "add_ons", "paket_bundle"];
 
 // Fallback labels for categories not in the passed categories prop
-const CATEGORY_LABELS: Record<string, string> = {
+import { lookupLabel } from "#/lib/label-lookup";
+
+const CATEGORY_LABELS = {
   makanan: "Makanan",
   minuman: "Minuman",
   snack: "Snack",
@@ -241,7 +243,7 @@ export default function MenuGrid({
         <div className="space-y-6">
           {orderedCategories.map(function (catKey) {
             const items = groups.get(catKey)!;
-            const label = labelLookup[catKey] ?? CATEGORY_LABELS[catKey] ?? catKey;
+            const label = labelLookup[catKey] ?? lookupLabel(CATEGORY_LABELS, catKey) ?? catKey;
             return (
               <div key={catKey}>
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">

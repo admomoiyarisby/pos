@@ -36,14 +36,14 @@ function SystemLogsPage() {
   const [search, setSearch] = useTableSearch();
   const { logs: initial } = Route.useLoaderData();
   const [page, setPage] = useState(0);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"" | "Success" | "Warning" | "Error">("");
 
   const { data: logs } = useQuery({
     queryKey: ["system-logs", page, statusFilter],
     queryFn: () =>
       getSystemLogs({
         data: {
-          status: statusFilter as "Success" | "Warning" | "Error" | undefined,
+          status: statusFilter || undefined,
           page,
           limit: 15,
         },
@@ -97,7 +97,10 @@ function SystemLogsPage() {
         <div className="flex items-center gap-3">
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) =>
+              // SAFETY: the select only offers the four status options below.
+              setStatusFilter(e.target.value as "" | "Success" | "Warning" | "Error")
+            }
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="">Semua Status</option>

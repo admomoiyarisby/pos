@@ -1,4 +1,6 @@
 import { createFileRoute, Link, useSearch, useNavigate } from "@tanstack/react-router";
+import { z } from "zod";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -33,13 +35,13 @@ interface RecipeRow {
   imageUrl?: string | null;
 }
 
-const catLabels: Record<string, string> = {
+const catLabels = {
   makanan: "Makanan",
   minuman: "Minuman",
   snack: "Snack",
   add_ons: "Add-on",
   paket_bundle: "Paket Bundle",
-};
+} satisfies Record<string, string>;
 
 export const Route = createFileRoute("/_layout/recipes/")({
   component: RecipesPage,
@@ -57,19 +59,14 @@ function RecipesPage() {
   // so we never declare a route-level search schema (which would force every
   // /recipes Link to pass it). Absent = "All".
   const urlSearch = useSearch({ strict: false });
-  const statusParam = (urlSearch as Record<string, unknown>).status;
-  const statusFilter = (typeof statusParam === "string" ? statusParam : "All") as
-    | "Active"
-    | "Inactive"
-    | "All";
+  const statusParam = urlSearch.status;
+  const statusFilter = z.enum(["Active", "Inactive", "All"]).catch("All").parse(statusParam);
   const navigate = useNavigate();
   const setStatusFilter = (next: string) => {
+    // SAFETY: the updater merges the existing search object with the new
+    // `status` key; navigate accepts the widened shape.
     void navigate({
-      search: (prev) =>
-        ({
-          ...(prev as Record<string, unknown>),
-          status: next === "All" ? undefined : next,
-        }) as never,
+      search: (prev) => ({ ...prev, status: next === "All" ? undefined : next }) as never,
       replace: true,
     });
   };
@@ -139,7 +136,9 @@ function RecipesPage() {
       key: "category",
       header: "Kategori",
       sortable: true,
-      render: (r) => <Badge variant="secondary">{catLabels[r.category] ?? r.category}</Badge>,
+      render: (r) => (
+        <Badge variant="secondary">{lookupLabel(catLabels, r.category) ?? r.category}</Badge>
+      ),
     },
     {
       key: "type",

@@ -1,4 +1,5 @@
 import { Input } from "#/components/ui/input";
+import { lookupLabel } from "#/lib/label-lookup";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 
@@ -40,22 +41,19 @@ export interface ScmItemTableProps {
   showPrices?: boolean; // ID15: Hide prices for branch_admin
 }
 
-const decisionLabels: Record<string, string> = {
+const decisionLabels = {
   pending: "Menunggu",
   approved: "Disetujui",
   rejected: "Ditolak",
   accepted: "Diterima",
-};
+} satisfies Record<string, string>;
 
-const decisionColors: Record<
-  string,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const decisionColors = {
   pending: "warning",
   approved: "success",
   accepted: "success",
   rejected: "destructive",
-};
+} satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
 export function ScmItemTable({
   mode,
@@ -322,13 +320,19 @@ export function ScmItemTable({
                 {it.rejectedQuantity ?? "-"}
               </td>
               <td className="px-3 py-2 text-center">
-                <Badge variant={decisionColors[it.caDecision] ?? "secondary"} className="text-xs">
-                  {decisionLabels[it.caDecision] ?? it.caDecision}
+                <Badge
+                  variant={lookupLabel(decisionColors, it.caDecision) ?? "secondary"}
+                  className="text-xs"
+                >
+                  {lookupLabel(decisionLabels, it.caDecision) ?? it.caDecision}
                 </Badge>
               </td>
               <td className="hidden md:table-cell px-3 py-2 text-center">
-                <Badge variant={decisionColors[it.baDecision] ?? "secondary"} className="text-xs">
-                  {decisionLabels[it.baDecision] ?? it.baDecision}
+                <Badge
+                  variant={lookupLabel(decisionColors, it.baDecision) ?? "secondary"}
+                  className="text-xs"
+                >
+                  {lookupLabel(decisionLabels, it.baDecision) ?? it.baDecision}
                 </Badge>
               </td>
             </tr>

@@ -192,14 +192,7 @@ export const createSupplierDelivery = createServerFn({ method: "POST" })
       "Create Supplier Delivery",
       `Barang masuk dari "${data.supplierName}" (${data.ingredientId} ${data.quantity}) dicatat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "supplierDeliveries",
-      delivery.id,
-      "CREATE",
-      undefined,
-      delivery as Record<string, unknown>,
-    );
+    await logAudit(user, "supplierDeliveries", delivery.id, "CREATE", undefined, delivery);
 
     // Trigger BOM cost roll-up for affected ingredient
     await recalculateRecipeCostsForIngredient(data.ingredientId);
@@ -299,14 +292,7 @@ export const updateSupplierDelivery = createServerFn({ method: "POST" })
       "Update Supplier Delivery",
       `Barang masuk "${data.id}" diperbarui oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "supplierDeliveries",
-      data.id,
-      "UPDATE",
-      existing as Record<string, unknown>,
-      updated as Record<string, unknown>,
-    );
+    await logAudit(user, "supplierDeliveries", data.id, "UPDATE", existing, updated);
 
     return updated;
   });
@@ -346,14 +332,7 @@ export const deleteSupplierDelivery = createServerFn({ method: "POST" })
       "Delete Supplier Delivery",
       `Barang masuk "${data.id}" dihapus oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "supplierDeliveries",
-      data.id,
-      "DELETE",
-      existing as Record<string, unknown>,
-      undefined,
-    );
+    await logAudit(user, "supplierDeliveries", data.id, "DELETE", existing, undefined);
 
     return { success: true };
   });
@@ -390,14 +369,7 @@ export const completeSupplierDelivery = createServerFn({ method: "POST" })
       "Complete Supplier Delivery",
       `Barang masuk "${data.id}" ditandai selesai oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "supplierDeliveries",
-      data.id,
-      "STATUS_CHANGE",
-      existing as Record<string, unknown>,
-      updated as Record<string, unknown>,
-    );
+    await logAudit(user, "supplierDeliveries", data.id, "STATUS_CHANGE", existing, updated);
 
     return { success: true };
   });

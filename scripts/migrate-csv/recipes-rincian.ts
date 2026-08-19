@@ -73,7 +73,7 @@ async function loadIngredientCodesByName(
  * DB. Lets the dry-run accurately flag "this recipe line references an
  * ingredient we don't know about".
  */
-function loadIngredientCodesFromCsvs(): Map<string, { code: string }> {
+function loadIngredientCodesFromCsvs(): Map<string, { id: string; code: string }> {
   const names = new Set<string>();
   for (const path of [
     "docs/csv/Detail POS - List Item Central Kitchen.csv",
@@ -91,11 +91,16 @@ function loadIngredientCodesFromCsvs(): Map<string, { code: string }> {
       if (canonical) names.add(canonical);
     }
   }
-  const m = new Map<string, { code: string }>();
+  const m = new Map<string, { id: string; code: string }>();
   let seq = 0;
   for (const name of names) {
     seq += 1;
-    m.set(name.toLowerCase(), { code: `ING-${String(seq).padStart(3, "0")}` });
+    // SAFETY: dry-run placeholders never reach the DB; real runs use the
+    // id/code map loaded from the ingredients table.
+    m.set(name.toLowerCase(), {
+      id: `ING-${String(seq).padStart(3, "0")}`,
+      code: `ING-${String(seq).padStart(3, "0")}`,
+    });
   }
   return m;
 }
@@ -225,9 +230,7 @@ export async function migrateRecipesRincian(options: RecipesRincianOptions = {})
           warnings.push(`${g.menu}: skip "${line.rawName}" (non-ingredient)`);
           continue;
         }
-        const ing = ingByCanonical.get(line.canonical.toLowerCase()) as
-          | { id: string; code: string }
-          | undefined;
+        const ing = ingByCanonical.get(line.canonical.toLowerCase());
         if (!ing) {
           warnings.push(
             `${g.menu}: skip "${line.rawName}" (no ingredient with canonical "${line.canonical}")`,

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import {
   ingredients,
   scmProcurementAuditLog,
@@ -11,8 +12,14 @@ import {
   branches,
   users,
 } from "#/db/schema";
-import type { ScmProcurementStatus } from "./scm-fsm";
+import {
+  SCM_PROCUREMENT_EVENT_VALUES,
+  UpdateItemPatchSchema,
+  type ScmProcurementStatus,
+} from "./scm-fsm";
 import { availableEvents, transition, updateItem } from "./scm-fsm";
+import { FsmPayloadSchema } from "./scm-effects";
+import { z } from "zod";
 import { generateDocumentCode } from "./document-codes";
 
 // =============================================================================
@@ -109,8 +116,6 @@ export interface ListProcurementsFilters {
   limit?: number;
 }
 
-type FsmRole = "branch_admin" | "admin_pusat" | "super_admin" | "area_manager";
-
 export const listProcurements = createServerFn({ method: "GET" })
   .validator((data: ListProcurementsFilters) => data)
   .handler(async ({ data }) => {
@@ -155,7 +160,7 @@ export const listProcurements = createServerFn({ method: "GET" })
 
     return rows.map((r) => ({
       ...r,
-      availableEvents: availableEvents(r.status, user.role as FsmRole),
+      availableEvents: availableEvents(r.status, user.role),
     }));
   });
 
@@ -210,7 +215,7 @@ export const getProcurement = createServerFn({ method: "GET" })
 
     return {
       ...proc,
-      availableEvents: availableEvents(proc.status, user.role as FsmRole),
+      availableEvents: availableEvents(proc.status, user.role),
     };
   });
 
@@ -269,18 +274,7 @@ export const getProcurementAuditLog = createServerFn({ method: "GET" })
       .from(scmProcurementAuditLog)
       .where(eq(scmProcurementAuditLog.scmProcurementId, data.procurementId));
     return {
-      entries: rows as Array<{
-        id: string;
-        scmProcurementId: string;
-        event: string;
-        fromState: string | null;
-        toState: string | null;
-        itemId: string | null;
-        actorId: string;
-        actorRole: string;
-        timestamp: Date | string;
-        note: string | null;
-      }>,
+      entries: rows,
       total: Number(total),
       limit,
       offset,
@@ -310,27 +304,29 @@ export interface ScmProcurementInvoiceLineItem {
  * returns either { success: true, status } or { success: false, error }.
  */
 export const transitionProcurement = createServerFn({ method: "POST" })
-  .validator(
-    (data: { procurementId: string; event: string; payload?: Record<string, unknown> }) => data,
-  )
+  .validator((data: { procurementId: string; event: string; payload?: UnknownRecord }) => ({
+    procurementId: data.procurementId,
+    event: z.enum(SCM_PROCUREMENT_EVENT_VALUES).parse(data.event),
+    payload: FsmPayloadSchema.parse(data.payload ?? {}),
+  }))
   .handler(async ({ data }) => {
     const user = await requireAuth();
-    const result = await transition(
-      data.procurementId,
-      data.event as never,
-      (data.payload ?? {}) as never,
-      { id: user.id, role: user.role },
-    );
+    const result = await transition(data.procurementId, data.event, data.payload, {
+      id: user.id,
+      role: user.role,
+    });
     return result;
   });
 
 export const updateProcurementItem = createServerFn({ method: "POST" })
-  .validator(
-    (data: { procurementId: string; itemId: string; patch: Record<string, unknown> }) => data,
-  )
+  .validator((data: { procurementId: string; itemId: string; patch: UnknownRecord }) => ({
+    procurementId: data.procurementId,
+    itemId: data.itemId,
+    patch: UpdateItemPatchSchema.parse(data.patch),
+  }))
   .handler(async ({ data }) => {
     const user = await requireAuth();
-    const result = await updateItem(data.procurementId, data.itemId, data.patch as never, {
+    const result = await updateItem(data.procurementId, data.itemId, data.patch, {
       id: user.id,
       role: user.role,
     });

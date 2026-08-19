@@ -26,7 +26,7 @@
 
 import { config } from "dotenv";
 import { Client } from "pg";
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import * as schema from "../../src/db/schema";
 
@@ -309,7 +309,7 @@ export async function migrateMenuShopeefood(options: MenuShopeefoodOptions = {})
 
     const telurModId = await upsertModifier(
       client,
-      db as any,
+      db,
       modByCode,
       groupId,
       TAMBAH_TELUR_CODE,
@@ -322,7 +322,7 @@ export async function migrateMenuShopeefood(options: MenuShopeefoodOptions = {})
     );
     const cabeModId = await upsertModifier(
       client,
-      db as any,
+      db,
       modByCode,
       groupId,
       TAMBAH_CABE_CODE,
@@ -343,13 +343,13 @@ export async function migrateMenuShopeefood(options: MenuShopeefoodOptions = {})
       );
       for (const row of result.rows) existingLinks.set(row.recipe_id, row.recipe_id);
     }
-    const allRecipes = await client.query<{ id: string; category: string }>(
+    const allRecipes = await client.query<{ id: string; category: RecipeCategory }>(
       `SELECT id, category FROM recipes`,
     );
     const links: (typeof schema.recipeModifierGroups.$inferInsert)[] = [];
     for (const r of allRecipes.rows) {
       if (existingLinks.has(r.id)) continue;
-      const cat = r.category as RecipeCategory;
+      const cat = r.category;
       if (!TAMBAHAN_CATEGORIES.has(cat)) continue;
       links.push({ recipeId: r.id, modifierGroupId: groupId });
     }
@@ -376,7 +376,7 @@ export async function migrateMenuShopeefood(options: MenuShopeefoodOptions = {})
 
 async function upsertModifier(
   client: Client,
-  db: any,
+  db: NodePgDatabase<typeof schema>,
   modByCode: Map<string, string>,
   groupId: string,
   code: string,

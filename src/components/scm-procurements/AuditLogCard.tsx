@@ -25,14 +25,15 @@ export function AuditLogCard({ procurementId }: { procurementId: string }) {
 
   useEffect(() => {
     if (!data) return;
+    // SAFETY: the server's audit rows are a superset of AuditLogEntry
+    // (extra scmProcurementId/actorId columns), so the cast only widens.
+    const entries = data.entries as AuditLogEntry[];
     if (offset === 0) {
-      setAllEntries(data.entries as unknown as AuditLogEntry[]);
+      setAllEntries(entries);
     } else {
       setAllEntries((prev) => {
         const seen = new Set(prev.map((e) => e.id));
-        const additions = (data.entries as unknown as AuditLogEntry[]).filter(
-          (e) => !seen.has(e.id),
-        );
+        const additions = entries.filter((e) => !seen.has(e.id));
         return [...prev, ...additions];
       });
     }

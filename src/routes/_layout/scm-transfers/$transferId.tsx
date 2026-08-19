@@ -1,4 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { badgeVariant } from "#/lib/utils";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -51,7 +53,7 @@ const TRANSFER_STEPS = [
   { key: "Finished", label: "Lunas" },
 ];
 
-const statusLabels: Record<string, string> = {
+const statusLabels = {
   SuratJalanDraft: "Draft SJ",
   PendingAMReview: "Menunggu AM",
   Approved: "Disetujui",
@@ -62,12 +64,9 @@ const statusLabels: Record<string, string> = {
   Finished: "Lunas",
   Rejected: "Ditolak",
   Cancelled: "Dibatalkan",
-};
+} satisfies Record<string, string>;
 
-const statusColors: Record<
-  string,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const statusColors = {
   SuratJalanDraft: "secondary",
   PendingAMReview: "warning",
   Approved: "default",
@@ -78,7 +77,7 @@ const statusColors: Record<
   Finished: "success",
   Rejected: "destructive",
   Cancelled: "secondary",
-};
+} satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
 function TransferDetailPage() {
   const { user } = useAuth();
@@ -153,17 +152,8 @@ function TransferDetailPage() {
             <ArrowLeft className="h-4 w-4" />
             Kembali
           </Button>
-          <Badge
-            variant={
-              (statusColors[transfer.status] ?? "default") as
-                | "default"
-                | "success"
-                | "warning"
-                | "destructive"
-                | "secondary"
-            }
-          >
-            {statusLabels[transfer.status] ?? transfer.status}
+          <Badge variant={badgeVariant(lookupLabel(statusColors, transfer.status))}>
+            {lookupLabel(statusLabels, transfer.status) ?? transfer.status}
           </Badge>
         </div>
 
@@ -180,10 +170,10 @@ function TransferDetailPage() {
         />
 
         <DispatchView
-          transfer={transfer as unknown as Record<string, unknown>}
-          items={items as unknown as Array<Record<string, unknown>>}
-          invoice={invoice as unknown as Record<string, unknown> | null}
-          auditLog={(auditLog ?? []) as unknown as Array<Record<string, unknown>>}
+          transfer={transfer}
+          items={items}
+          invoice={invoice}
+          auditLog={auditLog ?? []}
           branchById={branchById}
           ingredientById={ingredientById}
           isSenderBa={isSenderBa}
@@ -199,9 +189,9 @@ function TransferDetailPage() {
   );
 }
 
-function DispatchView(props: TransferViewProps & { transfer: Record<string, unknown> }) {
+function DispatchView(props: TransferViewProps) {
   const { transfer, isSenderBa, isReceiverBa, isAm } = props;
-  const status = transfer.status as string;
+  const status = transfer.status;
 
   if (status === "SuratJalanDraft") {
     if (isSenderBa) return <DraftSenderForm {...props} />;

@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { badgeVariant } from "#/lib/utils";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -30,17 +32,14 @@ interface DNItem {
   discrepancyNote: string | null;
 }
 
-const statusColors: Record<
-  string,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const statusColors = {
   Draft: "secondary",
   Picking: "default",
   "In Transit": "warning",
   "Partial Received": "warning",
   Received: "success",
   Cancelled: "destructive",
-};
+} satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
 export const Route = createFileRoute("/_layout/delivery-notes/$dnId")({
   component: DNDetailPage,
@@ -200,18 +199,7 @@ function DNDetailPage() {
               <Printer className="h-4 w-4" />
               Cetak
             </button>
-            <Badge
-              variant={
-                (statusColors[dn.status] ?? "default") as
-                  | "default"
-                  | "success"
-                  | "warning"
-                  | "destructive"
-                  | "secondary"
-              }
-            >
-              {dn.status}
-            </Badge>
+            <Badge variant={badgeVariant(lookupLabel(statusColors, dn.status))}>{dn.status}</Badge>
             {canReview && (
               <button
                 onClick={() => void reviewMutation.mutateAsync({ data: { dnId } })}
@@ -343,10 +331,10 @@ function DNDetailPage() {
                                 ...prev,
                                 [item.id]: {
                                   ...prev[item.id],
-                                  disposition: e.target.value as
-                                    | "Return to Source"
-                                    | "Scrap"
-                                    | "Quarantine",
+                                  disposition:
+                                    e.target.value === "Scrap" || e.target.value === "Quarantine"
+                                      ? e.target.value
+                                      : "Return to Source",
                                 },
                               }))
                             }

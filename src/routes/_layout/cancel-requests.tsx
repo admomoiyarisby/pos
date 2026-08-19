@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { searchStringParam } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
+import { lookupLabel } from "#/lib/label-lookup";
 import { Badge } from "#/components/ui/badge";
 import Modal from "#/components/ui/Modal";
 import { getCancelRequests, approveCancelRequest, rejectCancelRequest } from "#/lib/server/pos";
@@ -24,7 +26,7 @@ export const Route = createFileRoute("/_layout/cancel-requests")({
   component: CancelRequestsPage,
 });
 
-const reasonLabels: Record<string, string> = {
+const reasonLabels = {
   "Stok Habis": "Stok Habis",
   "Salah Input": "Salah Input",
   "Customer Cancel": "Customer Cancel",
@@ -67,7 +69,7 @@ function CancelRequestsPage() {
 
   const requests: CancelRequest[] = data ?? [];
 
-  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const statusFilter = searchStringParam(Route.useSearch(), "status");
   const filteredRequests = statusFilter
     ? requests.filter((r) => r.status === statusFilter)
     : requests;
@@ -139,7 +141,9 @@ function CancelRequestsPage() {
                     #{r.orderId.slice(0, 8).toUpperCase()}
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant="outline">{reasonLabels[r.reason] ?? r.reason}</Badge>
+                    <Badge variant="outline">
+                      {lookupLabel(reasonLabels, r.reason) ?? r.reason}
+                    </Badge>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate">
                     {r.detail ?? "-"}

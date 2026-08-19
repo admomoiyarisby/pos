@@ -32,6 +32,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
 import * as schema from "../../src/db/schema";
+import { lookupLabel } from "../../src/lib/label-lookup";
 import { parseCsv, findColumns } from "./csv";
 
 config({ path: [".env.local", ".env"] });
@@ -41,18 +42,18 @@ const CSV_PATH = resolve(process.cwd(), "docs/csv/Detail POS - List Menu Kasir.c
 type RecipeInsert = typeof schema.recipes.$inferInsert;
 type RecipeCategory = "makanan" | "minuman" | "snack" | "add_ons" | "paket_bundle";
 
-const ALIAS_RECIPES: Record<string, string> = {
+const ALIAS_RECIPES = {
   "japanese curry karaage don": "Curry Karage Don",
   "japanese curry katsu don": "Curry Katsu Don",
   gohan: "nasi putih",
   "es teh": "Ice Tea",
   "caramel puding": "Caramel Pudding",
   "extra curry sauce": "Curry Sauce",
-};
+} satisfies Record<string, string>;
 
 function canonicalRecipeName(raw: string): string {
   const norm = raw.trim().toLowerCase().replace(/\s+/g, " ");
-  if (norm in ALIAS_RECIPES) return ALIAS_RECIPES[norm]!;
+  if (norm in ALIAS_RECIPES) return lookupLabel(ALIAS_RECIPES, norm)!;
   return raw.trim();
 }
 
@@ -297,7 +298,7 @@ export async function migrateMenuKasir(options: MenuKasirOptions = {}): Promise<
           id: existing.id,
           basePrice: item.price,
           totalCogs: item.hpp,
-          ...(item.isBOGO ? { isBOGO: true } : {}),
+          isBOGO: item.isBOGO ? true : undefined,
         });
       } else {
         seq += 1;

@@ -103,7 +103,7 @@ async function findExisting<T extends { id: string }>(
   value: string,
 ): Promise<T | undefined> {
   const rows = await db.select().from(table).where(eq(field, value)).limit(1);
-  return rows[0] as T | undefined;
+  return rows[0];
 }
 
 async function createUserViaAuth(
@@ -116,23 +116,31 @@ async function createUserViaAuth(
   pin?: string,
 ): Promise<boolean> {
   // Build additionalFields body for Better Auth
-  const body: any = { email, password, name, role, status: "Active" };
-  if (branchCode && branchIdMap) {
-    body.branchId = branchIdMap!.get(branchCode);
-  }
-  if (pin) {
-    body.pin = pin;
-  }
+  const body = {
+    email,
+    password,
+    name,
+    role,
+    status: "Active",
+    branchId: branchCode && branchIdMap ? branchIdMap.get(branchCode) : undefined,
+    pin,
+  };
   try {
     // Go through Better Auth so it creates the user AND a credential account row
     // (account table stays empty otherwise because we bypassed the auth flow).
-    await auth.api.signUpEmail({ body: body as never });
+    await auth.api.signUpEmail({ body });
     return true;
   } catch {
     // User already exists — just sync the role/status/branchId/pin fields
-    const updateData: any = { name, role, status: "Active" };
+    const updateData: Partial<typeof usersTable.$inferInsert> = {
+      name,
+      // SAFETY: callers pass role strings from the known role set (validated
+      // at the seeding boundary before this helper runs).
+      role: role as typeof usersTable.$inferInsert.role,
+      status: "Active",
+    };
     if (branchCode && branchIdMap) {
-      updateData.branchId = branchIdMap!.get(branchCode);
+      updateData.branchId = branchIdMap.get(branchCode);
     }
     if (pin) {
       updateData.pin = pin;
@@ -398,7 +406,7 @@ export async function seedDatabase() {
 
     if (!recId) continue;
 
-    for (const bpId of (r as any).brandProtoIds || []) {
+    for (const bpId of r.brandProtoIds || []) {
       const brandId = idMap.brand.get(bpId);
       if (!brandId) continue;
       const existingRb = await db
@@ -439,7 +447,7 @@ export async function seedDatabase() {
       }
     }
 
-    if ("modifierGroupProtoIds" in r && r.modifierGroupProtoIds) {
+    if (r.modifierGroupProtoIds) {
       for (const mgpId of r.modifierGroupProtoIds) {
         const mgId = idMap.modifierGroup.get(mgpId);
         if (!mgId) continue;
@@ -463,8 +471,7 @@ export async function seedDatabase() {
   }
 
   for (const r of RECIPES_DATA) {
-    const childRecipes = (r as { childRecipes?: { recipeProtoId: string; quantity: number }[] })
-      .childRecipes;
+    const childRecipes = r.childRecipes;
     if (!childRecipes) continue;
     const parentId = idMap.recipe.get(r.protoId);
     if (!parentId) continue;
@@ -1420,13 +1427,13 @@ export async function seedDatabase() {
         ingredientId: idMap.ingredient.get(o.ingredientProtoId),
         quantity: o.quantity,
       }))
-      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+      .filter((x): x is { ingredientId: string; quantity: number } => x.ingredientId !== undefined);
     const producedItems = yc.produced
       .map((p) => ({
         ingredientId: idMap.ingredient.get(p.ingredientProtoId),
         quantity: p.quantity,
       }))
-      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+      .filter((x): x is { ingredientId: string; quantity: number } => x.ingredientId !== undefined);
     if (outItems.length === 0 || producedItems.length === 0) continue;
 
     const existing = await db
@@ -1482,13 +1489,13 @@ export async function seedDatabase() {
         ingredientId: idMap.ingredient.get(o.ingredientProtoId),
         quantity: o.quantity,
       }))
-      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+      .filter((x): x is { ingredientId: string; quantity: number } => x.ingredientId !== undefined);
     const producedItems = msy.produced
       .map((p) => ({
         ingredientId: idMap.ingredient.get(p.ingredientProtoId),
         quantity: p.quantity,
       }))
-      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+      .filter((x): x is { ingredientId: string; quantity: number } => x.ingredientId !== undefined);
     if (outItems.length === 0 || producedItems.length === 0) continue;
 
     // Skip if this exact (branch, createdAt) conversion already exists

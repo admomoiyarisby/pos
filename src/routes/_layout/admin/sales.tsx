@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -13,6 +14,7 @@ import {
   deleteSalesRecord,
   type SalesRow,
 } from "#/lib/server/sales";
+import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { getBranches } from "#/lib/server/branches";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
@@ -24,20 +26,20 @@ export const Route = createFileRoute("/_layout/admin/sales")({
   component: SalesAdminPage,
 });
 
-const channelLabels: Record<string, string> = {
+const channelLabels = {
   Gofood: "Gofood",
   Grabfood: "Grabfood",
   ShopeeFood: "ShopeeFood",
   "Dine-in": "Dine-in",
   TikTok: "TikTok",
-};
+} satisfies Record<string, string>;
 
-const statusColors: Record<string, "default" | "success" | "destructive" | "secondary"> = {
+const statusColors = {
   Completed: "success",
   Processing: "default",
   Void: "destructive",
   "Cancel Requested": "secondary",
-};
+} satisfies Record<string, "default" | "success" | "destructive" | "secondary">;
 
 function formatRupiah(value: number): string {
   return `Rp${value.toLocaleString("id-ID")}`;
@@ -120,7 +122,13 @@ function SalesAdminPage() {
 
   // Create modal state
   const [createModal, setCreateModal] = useState(false);
-  const [newOrder, setNewOrder] = useState({
+  const [newOrder, setNewOrder] = useState<{
+    branchId: string;
+    channel: (typeof ORDER_CHANNEL_VALUES)[number];
+    totalAmount: string;
+    customerName: string;
+    orderCode: string;
+  }>({
     branchId: "",
     channel: "Gofood",
     totalAmount: "",
@@ -149,7 +157,9 @@ function SalesAdminPage() {
       header: "Channel",
       width: "w-24",
       sortable: true,
-      render: (r) => <Badge variant="outline">{channelLabels[r.channel] ?? r.channel}</Badge>,
+      render: (r) => (
+        <Badge variant="outline">{lookupLabel(channelLabels, r.channel) ?? r.channel}</Badge>
+      ),
     },
     {
       key: "customerName",
@@ -177,7 +187,9 @@ function SalesAdminPage() {
       header: "Status",
       width: "w-24",
       sortable: true,
-      render: (r) => <Badge variant={statusColors[r.status] ?? "default"}>{r.status}</Badge>,
+      render: (r) => (
+        <Badge variant={lookupLabel(statusColors, r.status) ?? "default"}>{r.status}</Badge>
+      ),
     },
     {
       key: "actions",
@@ -298,7 +310,7 @@ function SalesAdminPage() {
               <>
                 <div className="text-sm text-muted-foreground">
                   Order: {selectedOrder.orderCode ?? "-"} · {selectedOrder.branchName} ·{" "}
-                  {channelLabels[selectedOrder.channel]}
+                  {lookupLabel(channelLabels, selectedOrder.channel)}
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Total Amount (Rp)</label>
@@ -409,7 +421,14 @@ function SalesAdminPage() {
               <label className="text-sm font-medium">Channel</label>
               <select
                 value={newOrder.channel}
-                onChange={(e) => setNewOrder({ ...newOrder, channel: e.target.value })}
+                onChange={(e) =>
+                  setNewOrder({
+                    ...newOrder,
+                    // SAFETY: the channel select only offers the five literal
+                    // channel options rendered below.
+                    channel: e.target.value as (typeof ORDER_CHANNEL_VALUES)[number],
+                  })
+                }
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 {Object.entries(channelLabels).map(([key, label]) => (
@@ -460,12 +479,7 @@ function SalesAdminPage() {
                   void createMutation.mutateAsync({
                     data: {
                       branchId: newOrder.branchId,
-                      channel: newOrder.channel as
-                        | "Gofood"
-                        | "Grabfood"
-                        | "ShopeeFood"
-                        | "Dine-in"
-                        | "TikTok",
+                      channel: newOrder.channel,
                       totalAmount: Number(newOrder.totalAmount),
                       customerName: newOrder.customerName || undefined,
                       orderCode: newOrder.orderCode || undefined,

@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { badgeVariant } from "#/lib/utils";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -19,16 +21,13 @@ interface PORow {
   createdAt: Date;
 }
 
-const statusColors: Record<
-  string,
-  "default" | "secondary" | "warning" | "success" | "destructive"
-> = {
+const statusColors = {
   Draft: "secondary",
   Sent: "warning",
   Partial: "default",
   Completed: "success",
   Cancelled: "destructive",
-};
+} satisfies Record<string, "default" | "secondary" | "warning" | "success" | "destructive">;
 
 export const Route = createFileRoute("/_layout/purchase-orders/")({
   component: POPage,
@@ -62,17 +61,7 @@ function POPage() {
       header: "Status",
       sortable: true,
       render: (r) => (
-        <Badge
-          variant={
-            (statusColors[r.status] ?? "default") as
-              | "default"
-              | "success"
-              | "warning"
-              | "destructive"
-          }
-        >
-          {r.status}
-        </Badge>
+        <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status}</Badge>
       ),
     },
     {

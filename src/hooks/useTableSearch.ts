@@ -5,12 +5,9 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
  * Read the free-text Table Search term out of a loosely-typed search object.
  * See ADR 0008 — the term lives under the `search` key, normalised to "".
  */
-function readSearch(search: unknown): string {
-  if (search && typeof search === "object" && "search" in search) {
-    const v = (search as Record<string, unknown>).search;
-    return typeof v === "string" ? v : "";
-  }
-  return "";
+function readSearch(search: { search?: unknown }): string {
+  const v = search.search;
+  return v === undefined || v === null ? "" : String(v);
 }
 
 export interface UseTableSearchOptions {
@@ -62,10 +59,10 @@ export function useTableSearch(options: UseTableSearchOptions = {}) {
       setValue(next);
       if (timer.current) clearTimeout(timer.current);
       const commit = () => {
-        void navigate({
-          search: { ...(urlSearch as Record<string, unknown>), search: next || undefined } as never,
-          replace: true,
-        });
+        // SAFETY: the merged object preserves every existing search param and
+        // only updates the `search` key; navigate accepts the widened shape.
+        const nextSearch = { ...urlSearch, search: next || undefined } as never;
+        void navigate({ search: nextSearch, replace: true });
       };
       if (debounceMs > 0) {
         timer.current = setTimeout(commit, debounceMs);
@@ -83,9 +80,9 @@ export function useTableSearch(options: UseTableSearchOptions = {}) {
  * Shared `validateSearch` factory for table-list routes. Empty string is
  * normalised to `undefined` so `?search=` is omitted from the URL when empty.
  */
-export function tableSearchValidation(search: Record<string, unknown>) {
+export function tableSearchValidation(search: { search?: unknown }) {
   const raw = search.search;
   return {
-    search: typeof raw === "string" && raw.length > 0 ? raw : undefined,
+    search: raw === undefined || raw === null ? undefined : String(raw) || undefined,
   };
 }

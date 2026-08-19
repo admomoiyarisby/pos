@@ -5,6 +5,7 @@ import { eq, and, ne } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import { z } from "zod";
 
 const branchInput = z.object({
@@ -95,7 +96,7 @@ export const getBranch = createServerFn({ method: "GET" })
   });
 
 export const createBranch = createServerFn({ method: "POST" })
-  .validator((data: unknown) => branchInput.parse(data))
+  .validator((data: z.input<typeof branchInput>) => branchInput.parse(data))
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat");
 
@@ -123,31 +124,30 @@ export const createBranch = createServerFn({ method: "POST" })
     return result;
   });
 
+// For updates, all fields except id are optional and can be null
+const updateBranchInput = z.object({
+  id: z.string().uuid(),
+  code: z.string().min(1).max(20).nullable().optional(),
+  name: z.string().min(1).max(100).nullable().optional(),
+  location: z.string().min(1).max(200).nullable().optional(),
+  type: z.enum(["Central", "Outlet"]).nullable().optional(),
+  active: z.boolean().nullable().optional(),
+  isOnline: z.boolean().nullable().optional(),
+  pb1Rate: z.number().int().min(0).max(100).nullable().optional(),
+  pin: z.string().length(4).nullable().optional(),
+  phone: z.string().max(20).nullable().optional(),
+  complaintPhone: z.string().max(20).nullable().optional(),
+});
+
 export const updateBranch = createServerFn({ method: "POST" })
-  .validator((data: unknown) => {
-    // For updates, all fields except id are optional and can be null
-    const updateSchema = z.object({
-      id: z.string().uuid(),
-      code: z.string().min(1).max(20).nullable().optional(),
-      name: z.string().min(1).max(100).nullable().optional(),
-      location: z.string().min(1).max(200).nullable().optional(),
-      type: z.enum(["Central", "Outlet"]).nullable().optional(),
-      active: z.boolean().nullable().optional(),
-      isOnline: z.boolean().nullable().optional(),
-      pb1Rate: z.number().int().min(0).max(100).nullable().optional(),
-      pin: z.string().length(4).nullable().optional(),
-      phone: z.string().max(20).nullable().optional(),
-      complaintPhone: z.string().max(20).nullable().optional(),
-    });
-    return updateSchema.parse(data);
-  })
+  .validator((data: z.input<typeof updateBranchInput>) => updateBranchInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
     const { id, ...updates } = data;
 
     // Filter out null and undefined values - only update fields that were actually provided
-    const filteredUpdates: Record<string, unknown> = {};
+    const filteredUpdates: UnknownRecord = {};
     for (const [key, value] of Object.entries(updates)) {
       if (value !== null && value !== undefined) {
         filteredUpdates[key] = value;
@@ -155,8 +155,9 @@ export const updateBranch = createServerFn({ method: "POST" })
     }
 
     // Validate PIN uniqueness if being updated
-    if (filteredUpdates.pin) {
-      await validatePinUnique(filteredUpdates.pin as string, id);
+    const pin = z.string().optional().catch(undefined).parse(filteredUpdates.pin);
+    if (pin) {
+      await validatePinUnique(pin, id);
     }
 
     const [old] = await db.select().from(branches).where(eq(branches.id, id)).limit(1);
@@ -172,14 +173,7 @@ export const updateBranch = createServerFn({ method: "POST" })
       "Update Branch",
       `Cabang "${result.name}" diperbarui oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "branches",
-      id,
-      "UPDATE",
-      old as Record<string, unknown>,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "branches", id, "UPDATE", old, result);
 
     return result;
   });
@@ -203,14 +197,7 @@ export const deleteBranch = createServerFn({ method: "POST" })
       "Delete Branch",
       `Cabang "${result.name}" dinonaktifkan oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "branches",
-      data.id,
-      "DELETE",
-      old as Record<string, unknown>,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "branches", data.id, "DELETE", old, result);
 
     return { success: true };
   });

@@ -1,8 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { z } from "zod";
+import { badgeVariant, searchStringParam } from "#/lib/utils";
+import { lookupLabel } from "#/lib/label-lookup";
+import { formText } from "#/lib/utils";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -43,23 +48,19 @@ interface TRRow {
   createdAt: Date;
 }
 
-const statusColors: Record<
-  string,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const statusColors = {
   "Pending Approval": "warning",
   Approved: "default",
   Rejected: "destructive",
   "In Transit": "warning",
   Completed: "success",
   Cancelled: "destructive",
-};
+} satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
 export const Route = createFileRoute("/_layout/stock-transfers/")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    status: typeof search.status === "string" ? search.status : undefined,
-    search:
-      typeof search.search === "string" && search.search.length > 0 ? search.search : undefined,
+  validateSearch: (search: UnknownRecord) => ({
+    status: z.string().optional().catch(undefined).parse(search.status),
+    search: z.string().optional().catch(undefined).parse(search.search),
   }),
   component: TransferPage,
   loader: async () => {
@@ -88,7 +89,7 @@ function TransferPage() {
     initialData: initial,
   });
 
-  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const statusFilter = searchStringParam(Route.useSearch(), "status");
   const filteredTransfers = statusFilter
     ? transfers.filter((t) => t.status === statusFilter)
     : transfers;
@@ -169,10 +170,10 @@ function TransferPage() {
     const fd = new FormData(e.currentTarget);
     void createMutation.mutateAsync({
       data: {
-        code: fd.get("code") as string,
-        fromBranchId: fd.get("fromBranchId") as string,
-        toBranchId: fd.get("toBranchId") as string,
-        ingredientId: fd.get("ingredientId") as string,
+        code: formText(fd, "code"),
+        fromBranchId: formText(fd, "fromBranchId"),
+        toBranchId: formText(fd, "toBranchId"),
+        ingredientId: formText(fd, "ingredientId"),
         quantity: Number(fd.get("quantity")),
       },
     });
@@ -213,18 +214,7 @@ function TransferPage() {
       header: "Status",
       sortable: true,
       render: (r) => (
-        <Badge
-          variant={
-            (statusColors[r.status] ?? "default") as
-              | "default"
-              | "success"
-              | "warning"
-              | "destructive"
-              | "secondary"
-          }
-        >
-          {r.status}
-        </Badge>
+        <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status}</Badge>
       ),
     },
     {

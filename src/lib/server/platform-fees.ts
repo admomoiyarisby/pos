@@ -20,7 +20,7 @@ export const getPlatformFees = createServerFn({ method: "GET" }).handler(async (
 });
 
 export const updatePlatformFee = createServerFn({ method: "POST" })
-  .validator((data: unknown) => feeInput.parse(data))
+  .validator((data: z.input<typeof feeInput>) => feeInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
@@ -40,14 +40,7 @@ export const updatePlatformFee = createServerFn({ method: "POST" })
       "Update Platform Fee",
       `Platform fee "${result.channel}" diperbarui oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "platformFees",
-      data.id,
-      "UPDATE",
-      old as Record<string, unknown>,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "platformFees", data.id, "UPDATE", old, result);
 
     return result;
   });

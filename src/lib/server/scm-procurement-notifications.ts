@@ -21,7 +21,7 @@
 
 import { inArray } from "drizzle-orm";
 import { db } from "./db";
-import { systemNotifications, users } from "#/db/schema";
+import { systemNotifications, users, USER_ROLE_VALUES } from "#/db/schema";
 import type { ScmProcurementEvent } from "./scm-fsm";
 
 type NotificationEvent = ScmProcurementEvent;
@@ -203,10 +203,7 @@ export async function insertNotifications(
 /**
  * Return all user IDs with one of the given roles.
  */
-async function userIdsForRoles(roles: string[]): Promise<string[]> {
-  const rows = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(inArray(users.role, roles as any[]));
+async function userIdsForRoles(roles: (typeof USER_ROLE_VALUES)[number][]): Promise<string[]> {
+  const rows = await db.select({ id: users.id }).from(users).where(inArray(users.role, roles));
   return rows.map((r) => r.id);
 }

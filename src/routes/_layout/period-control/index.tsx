@@ -276,6 +276,9 @@ function PeriodControlPage() {
                           {linkTo && (
                             <Link
                               to={linkTo.to}
+                              // SAFETY: linkTo.search is a small literal
+                              // Record<string, string>; the typed Link search
+                              // prop accepts the widened object.
                               search={linkTo.search as any}
                               className="shrink-0 h-7 px-2 rounded-md bg-primary/10 text-primary text-[10px] font-medium flex items-center gap-1 hover:bg-primary/20"
                             >

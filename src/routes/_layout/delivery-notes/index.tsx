@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { lookupLabel } from "#/lib/label-lookup";
+import { badgeVariant, searchStringParam } from "#/lib/utils";
 import { useState } from "react";
+import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -33,17 +36,14 @@ interface DNRow {
   createdAt: Date;
 }
 
-const statusColors: Record<
-  string,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const statusColors = {
   Draft: "secondary",
   Picking: "default",
   "In Transit": "warning",
   "Partial Received": "warning",
   Received: "success",
   Cancelled: "destructive",
-};
+} satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
 export const Route = createFileRoute("/_layout/delivery-notes/")({
   component: DNPage,
@@ -74,7 +74,7 @@ function DNPage() {
     initialData: initial,
   });
 
-  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const statusFilter = searchStringParam(Route.useSearch(), "status");
   const filteredDns = statusFilter ? dns.filter((d) => d.status === statusFilter) : dns;
 
   const createMutation = useMutation({
@@ -129,11 +129,11 @@ function DNPage() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const data = {
-      code: fd.get("code") as string,
-      fromBranchId: fd.get("fromBranchId") as string,
-      toBranchId: fd.get("toBranchId") as string,
-      driverName: fd.get("driverName") as string,
-      vehicleNumber: fd.get("vehicleNumber") as string,
+      code: formText(fd, "code"),
+      fromBranchId: formText(fd, "fromBranchId"),
+      toBranchId: formText(fd, "toBranchId"),
+      driverName: formText(fd, "driverName"),
+      vehicleNumber: formText(fd, "vehicleNumber"),
       items: dnItems,
     };
     void createMutation.mutateAsync({ data });
@@ -160,18 +160,7 @@ function DNPage() {
       header: "Status",
       sortable: true,
       render: (r) => (
-        <Badge
-          variant={
-            (statusColors[r.status] ?? "default") as
-              | "default"
-              | "success"
-              | "warning"
-              | "destructive"
-              | "secondary"
-          }
-        >
-          {r.status}
-        </Badge>
+        <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status}</Badge>
       ),
     },
     {
@@ -426,8 +415,13 @@ function DNPage() {
               <button
                 type="button"
                 onClick={() => {
+                  // SAFETY: the three fields are rendered right above this
+                  // button; getElementById returns Element, narrowed to the
+                  // concrete control types for the .value read.
                   const ing = (document.getElementById("dn-ing") as HTMLSelectElement).value;
+                  // SAFETY: same DOM boundary — the qty input exists above.
                   const qty = (document.getElementById("dn-qty") as HTMLInputElement).value;
+                  // SAFETY: same DOM boundary — the ready input exists above.
                   const ready = (document.getElementById("dn-ready") as HTMLInputElement).value;
                   if (ing && qty) {
                     setDnItems([

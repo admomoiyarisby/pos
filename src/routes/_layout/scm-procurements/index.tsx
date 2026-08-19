@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { z } from "zod";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -11,25 +12,25 @@ import { Button } from "#/components/ui/button";
 import { Plus, Eye, FileText } from "lucide-react";
 import { listProcurements } from "#/lib/server/scm-queries";
 import type { Column } from "#/components/ui/DataTable";
-import type { ScmProcurementStatus } from "#/lib/server/scm-fsm";
+import { SCM_PROCUREMENT_STATUS_VALUES, type ScmProcurementStatus } from "#/lib/server/scm-fsm";
+import type { UnknownRecord } from "#/lib/unknown-record";
 
 export const Route = createFileRoute("/_layout/scm-procurements/")({
   component: ProcurementsListPage,
-  validateSearch: (search: Record<string, unknown>) => ({
-    status: typeof search.status === "string" ? search.status : undefined,
-    search:
-      typeof search.search === "string" && search.search.length > 0 ? search.search : undefined,
+  validateSearch: (search: UnknownRecord) => ({
+    status: z.enum(SCM_PROCUREMENT_STATUS_VALUES).optional().catch(undefined).parse(search.status),
+    search: z.string().optional().catch(undefined).parse(search.search),
   }),
   loaderDeps: ({ search: { status } }) => ({ status }),
   loader: async ({ deps: { status } }) => {
     const rows = await listProcurements({
-      data: status ? { status: status as ScmProcurementStatus } : {},
+      data: status ? { status } : {},
     });
     return { initialRows: rows, status };
   },
 });
 
-interface ProcurementRow extends Record<string, unknown> {
+interface ProcurementRow extends UnknownRecord {
   id: string;
   code: string;
   branchId: string;
@@ -42,7 +43,7 @@ interface ProcurementRow extends Record<string, unknown> {
   availableEvents?: string[];
 }
 
-const statusLabels: Record<ScmProcurementStatus, string> = {
+const statusLabels = {
   Draft: "Draft",
   Pending: "Menunggu Review",
   UnderReview: "Sedang Direview",
@@ -53,12 +54,9 @@ const statusLabels: Record<ScmProcurementStatus, string> = {
   WaitingForPayment: "Menunggu Pembayaran",
   Finished: "Lunas",
   Cancelled: "Dibatalkan",
-};
+} satisfies Record<ScmProcurementStatus, string>;
 
-const statusColors: Record<
-  ScmProcurementStatus,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const statusColors = {
   Draft: "secondary",
   Pending: "warning",
   UnderReview: "default",
@@ -69,7 +67,10 @@ const statusColors: Record<
   WaitingForPayment: "warning",
   Finished: "success",
   Cancelled: "secondary",
-};
+} satisfies Record<
+  ScmProcurementStatus,
+  "default" | "warning" | "success" | "destructive" | "secondary"
+>;
 
 // Events that count as "actionable" for badge counts.
 // Excludes escape-hatch / destructive-only events (cancel, withdraw)
@@ -119,7 +120,7 @@ function ProcurementsListPage() {
     queryKey,
     queryFn: () =>
       listProcurements({
-        data: statusFilter ? { status: statusFilter as ScmProcurementStatus } : {},
+        data: statusFilter ? { status: statusFilter } : {},
       }),
     initialData: initialRows,
   });
@@ -193,20 +194,20 @@ function ProcurementsListPage() {
     },
   ];
 
-  const activeTab: FilterKey = (statusFilter as FilterKey | undefined) ?? "all";
+  const activeTab: FilterKey = statusFilter ?? "all";
 
   // Compute per-status actionable counts from ALL rows (unfiltered).
   // Each row includes `availableEvents` from the server (filtered by role);
   // we count a row as actionable if it has at least one forward-progress event.
   const actionableCounts = useMemo(() => {
-    const source = (allRows ?? rows) as ProcurementRow[];
+    const source = allRows ?? rows;
     const counts: Partial<Record<FilterKey, number>> = {};
     let total = 0;
     for (const row of source) {
-      const events = (row.availableEvents as string[] | undefined) ?? [];
+      const events = row.availableEvents ?? [];
       const isActionable = events.some((e) => FORWARD_EVENTS.has(e));
       if (isActionable) {
-        const key = row.status as FilterKey;
+        const key: FilterKey = row.status;
         counts[key] = (counts[key] ?? 0) + 1;
         total++;
       }
@@ -303,7 +304,7 @@ function ProcurementsListPage() {
           </div>
         ) : (
           <DataTable
-            data={rows as ProcurementRow[]}
+            data={rows}
             columns={columns}
             keyExtractor={(row) => row.id}
             searchable

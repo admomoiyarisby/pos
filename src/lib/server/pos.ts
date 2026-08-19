@@ -244,7 +244,7 @@ export const openShift = createServerFn({ method: "POST" })
       "Open Shift",
       `Shift dibuka di cabang "${branch?.name ?? data.branchId}" oleh ${user.name}`,
     );
-    await logAudit(user, "shifts", shift.id, "CREATE", undefined, shift as Record<string, unknown>);
+    await logAudit(user, "shifts", shift.id, "CREATE", undefined, shift);
 
     return shift;
   });
@@ -278,14 +278,7 @@ export const closeShift = createServerFn({ method: "POST" })
       "Close Shift",
       `Shift ditutup di cabang "${branch?.name ?? shift.branchId}" oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "shifts",
-      data.shiftId,
-      "UPDATE",
-      oldShift as Record<string, unknown>,
-      shift as Record<string, unknown>,
-    );
+    await logAudit(user, "shifts", data.shiftId, "UPDATE", oldShift, shift);
 
     return shift;
   });
@@ -536,7 +529,7 @@ export const createOrder = createServerFn({ method: "POST" })
       "Create Order",
       `Order #${order.orderCode ?? order.id.slice(0, 8)} (${data.channel}) Rp${totalAmount.toLocaleString()} dibuat oleh ${user.name}`,
     );
-    await logAudit(user, "orders", order.id, "CREATE", undefined, order as Record<string, unknown>);
+    await logAudit(user, "orders", order.id, "CREATE", undefined, order);
 
     return order;
   });
@@ -652,14 +645,7 @@ export const completeOrder = createServerFn({ method: "POST" })
       "Complete Order",
       `Order #${order.orderCode ?? order.id.slice(0, 8)} diselesaikan oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "orders",
-      data.orderId,
-      "STATUS_CHANGE",
-      old as Record<string, unknown>,
-      order as Record<string, unknown>,
-    );
+    await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, order);
 
     return order;
   });
@@ -740,14 +726,7 @@ export const voidOrder = createServerFn({ method: "POST" })
       `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name}. Alasan: ${data.reason}`,
       "Warning",
     );
-    await logAudit(
-      user,
-      "orders",
-      data.orderId,
-      "STATUS_CHANGE",
-      old as Record<string, unknown>,
-      order as Record<string, unknown>,
-    );
+    await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, order);
 
     return order;
   });
@@ -768,18 +747,11 @@ export const updateOrderStatus = createServerFn({ method: "POST" })
 
     const [updated] = await db
       .update(orders)
-      .set({ status: data.newStatus as any })
+      .set({ status: data.newStatus })
       .where(eq(orders.id, data.orderId))
       .returning();
 
-    await logAudit(
-      user,
-      "orders",
-      data.orderId,
-      "STATUS_CHANGE",
-      old as Record<string, unknown>,
-      updated as Record<string, unknown>,
-    );
+    await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, updated);
 
     return updated;
   });
@@ -913,14 +885,7 @@ export const approveReprint = createServerFn({ method: "POST" })
       "Approve Reprint",
       `Print request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "printRequests",
-      data.requestId,
-      "STATUS_CHANGE",
-      old as Record<string, unknown>,
-      req as Record<string, unknown>,
-    );
+    await logAudit(user, "printRequests", data.requestId, "STATUS_CHANGE", old, req);
 
     return req;
   });
@@ -993,14 +958,7 @@ export const consumePrintRequest = createServerFn({ method: "POST" })
       "Consume Print Request",
       `Print request #${data.requestId.slice(0, 8)} telah digunakan oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "printRequests",
-      data.requestId,
-      "STATUS_CHANGE",
-      old as Record<string, unknown>,
-      req as Record<string, unknown>,
-    );
+    await logAudit(user, "printRequests", data.requestId, "STATUS_CHANGE", old, req);
 
     return req;
   });
@@ -1039,15 +997,20 @@ export const createCancelRequest = createServerFn({ method: "POST" })
   });
 
 export const getCancelRequests = createServerFn({ method: "GET" })
-  .validator((data: { status?: string; branchId?: string }) => data)
+  .validator((data: { status?: string; branchId?: string }) => ({
+    status: z
+      .enum(["Pending", "Approved", "Rejected"])
+      .optional()
+      .catch(undefined)
+      .parse(data.status),
+    branchId: data.branchId,
+  }))
   .handler(async ({ data }) => {
     await requireAuth();
 
     const conditions = [];
     if (data.status) {
-      conditions.push(
-        eq(cancelRequests.status, data.status as typeof cancelRequests.$inferSelect.status),
-      );
+      conditions.push(eq(cancelRequests.status, data.status));
     }
     if (data.branchId) {
       conditions.push(eq(orders.branchId, data.branchId));
@@ -1106,14 +1069,7 @@ export const approveCancelRequest = createServerFn({ method: "POST" })
       "Approve Cancel Request",
       `Cancel request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "cancelRequests",
-      data.requestId,
-      "STATUS_CHANGE",
-      old as Record<string, unknown>,
-      req as Record<string, unknown>,
-    );
+    await logAudit(user, "cancelRequests", data.requestId, "STATUS_CHANGE", old, req);
 
     return req;
   });
@@ -1199,14 +1155,7 @@ export const executeApprovedCancel = createServerFn({ method: "POST" })
       "Execute Cancel",
       `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name} (cancel request #${data.requestId.slice(0, 8)}). Alasan: ${old.reason}`,
     );
-    await logAudit(
-      user,
-      "orders",
-      old.orderId,
-      "STATUS_CHANGE",
-      order as Record<string, unknown>,
-      voidedOrder as Record<string, unknown>,
-    );
+    await logAudit(user, "orders", old.orderId, "STATUS_CHANGE", order, voidedOrder);
 
     return voidedOrder;
   });

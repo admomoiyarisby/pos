@@ -1,4 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { badgeVariant } from "#/lib/utils";
+import { z } from "zod";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -12,15 +15,15 @@ import { Plus, ArrowRight, Lock } from "lucide-react";
 import { getMutasiTransfers } from "#/lib/server/scm-transfers";
 import { canAmAct } from "#/lib/server/scm-transfer-queries";
 import type { Column } from "#/components/ui/DataTable";
-import type { ScmTransferStatus } from "#/lib/server/scm-transfer-fsm";
+import { SCM_TRANSFER_STATUS_VALUES, type ScmTransferStatus } from "#/lib/server/scm-transfer-fsm";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import { getBranches } from "#/lib/server/branches";
 
 export const Route = createFileRoute("/_layout/scm-transfers/")({
   component: TransfersListPage,
-  validateSearch: (search: Record<string, unknown>) => ({
-    status: typeof search.status === "string" ? search.status : undefined,
-    search:
-      typeof search.search === "string" && search.search.length > 0 ? search.search : undefined,
+  validateSearch: (search: UnknownRecord) => ({
+    status: z.enum(SCM_TRANSFER_STATUS_VALUES).optional().catch(undefined).parse(search.status),
+    search: z.string().optional().catch(undefined).parse(search.search),
   }),
   loaderDeps: ({ search: { status } }) => ({ status }),
   loader: async ({ deps: { status } }) => {
@@ -39,14 +42,13 @@ interface TransferRow {
   code: string;
   fromBranchId: string;
   toBranchId: string;
-  status: string;
+  status: ScmTransferStatus;
   createdAt: Date | string;
   requestedById: string;
   availableEvents?: string[];
-  [key: string]: unknown;
 }
 
-const statusLabels: Record<string, string> = {
+const statusLabels = {
   SuratJalanDraft: "Draft SJ",
   PendingAMReview: "Menunggu AM",
   Approved: "Disetujui",
@@ -57,12 +59,9 @@ const statusLabels: Record<string, string> = {
   Finished: "Lunas",
   Rejected: "Ditolak",
   Cancelled: "Dibatalkan",
-};
+} satisfies Record<string, string>;
 
-const statusColors: Record<
-  string,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const statusColors = {
   SuratJalanDraft: "secondary",
   PendingAMReview: "warning",
   Approved: "default",
@@ -73,7 +72,7 @@ const statusColors: Record<
   Finished: "success",
   Rejected: "destructive",
   Cancelled: "secondary",
-};
+} satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
 // Events that count as "actionable" for badge counts.
 // Excludes escape-hatch events (cancel, withdraw) so the badge reflects
@@ -154,21 +153,21 @@ function TransfersListPage() {
     });
   };
 
-  const activeTab: FilterKey = (statusFilter as FilterKey | undefined) ?? "all";
+  const activeTab: FilterKey = statusFilter ?? "all";
 
   // Compute per-status actionable counts from ALL rows (unfiltered).
   // Each row includes `availableEvents` from the server (filtered by role +
   // branch); we count a row as actionable if it has at least one
   // forward-progress event.
   const actionableCounts = useMemo(() => {
-    const source = (allRows ?? rows) as TransferRow[];
+    const source = allRows ?? rows;
     const counts: Partial<Record<FilterKey, number>> = {};
     let total = 0;
     for (const row of source) {
-      const events = (row.availableEvents as string[] | undefined) ?? [];
+      const events = row.availableEvents ?? [];
       const isActionable = events.some((e) => FORWARD_EVENTS.has(e));
       if (isActionable) {
-        const key = row.status as FilterKey;
+        const key: FilterKey = row.status;
         counts[key] = (counts[key] ?? 0) + 1;
         total++;
       }
@@ -198,17 +197,8 @@ function TransfersListPage() {
       header: "Status",
       sortable: true,
       render: (r) => (
-        <Badge
-          variant={
-            (statusColors[r.status] ?? "default") as
-              | "default"
-              | "success"
-              | "warning"
-              | "destructive"
-              | "secondary"
-          }
-        >
-          {statusLabels[r.status] ?? r.status}
+        <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>
+          {lookupLabel(statusLabels, r.status) ?? r.status}
         </Badge>
       ),
     },
@@ -320,7 +310,9 @@ function TransfersListPage() {
 
         <DataTable
           columns={columns}
-          data={rows as unknown as TransferRow[]}
+          // SAFETY: server transfer rows carry every TransferRow field (status
+          // enum widens to string; the index signature absorbs extras).
+          data={rows}
           keyExtractor={(r) => r.id}
           search={search}
           onSearchChange={setSearch}

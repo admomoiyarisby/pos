@@ -19,13 +19,15 @@ import { relations, sql } from "drizzle-orm";
 // ENUMS
 // =============================================================================
 
-export const userRoleEnum = pgEnum("user_role", [
+export const USER_ROLE_VALUES = [
   "super_admin",
   "admin_pusat",
   "area_manager",
   "branch_admin",
   "central_kitchen",
-]);
+] as const;
+
+export const userRoleEnum = pgEnum("user_role", USER_ROLE_VALUES);
 
 export const userStatusEnum = pgEnum("user_status", ["Active", "Inactive"]);
 
@@ -50,13 +52,15 @@ export const recipeCategoryEnum = pgEnum("recipe_category", [
 // silently affect recipes.
 export const recipeStatusEnum = pgEnum("recipe_status", ["Active", "Inactive", "Deleted"]);
 
-export const orderChannelEnum = pgEnum("order_channel", [
+export const ORDER_CHANNEL_VALUES = [
   "Gofood",
   "Grabfood",
   "ShopeeFood",
   "Dine-in",
   "TikTok",
-]);
+] as const;
+
+export const orderChannelEnum = pgEnum("order_channel", ORDER_CHANNEL_VALUES);
 
 export const orderStatusEnum = pgEnum("order_status", [
   "New",
@@ -93,14 +97,16 @@ export const stockTransferStatusEnum = pgEnum("stock_transfer_status", [
   "Cancelled",
 ]);
 
-export const prStatusEnum = pgEnum("pr_status", [
+export const PR_STATUS_VALUES = [
   "Draft",
   "Pending",
   "Approved",
   "Processed",
   "Rejected",
   "Fulfilled",
-]);
+] as const;
+
+export const prStatusEnum = pgEnum("pr_status", PR_STATUS_VALUES);
 
 export const poStatusEnum = pgEnum("po_status", [
   "Draft",

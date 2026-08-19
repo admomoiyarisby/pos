@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -98,7 +99,7 @@ function PosPage() {
   let _e = useState<CartItem[]>([]);
   let cart = _e[0];
   let setCart = _e[1];
-  let _f = useState("Dine-in");
+  let _f = useState<(typeof ORDER_CHANNEL_VALUES)[number]>("Dine-in");
   let channel = _f[0];
   let setChannel = _f[1];
   let _g = useState("");
@@ -165,7 +166,7 @@ function PosPage() {
   let activeBranch = allBranches.find(function (b) {
     return b.id === activeBranchId;
   });
-  if (activeBranch && typeof activeBranch.pb1Rate === "number") {
+  if (activeBranch) {
     pb1Rate = activeBranch.pb1Rate;
   }
 
@@ -293,7 +294,9 @@ function PosPage() {
   let createOrderMutation = useMutation({
     mutationFn: createOrder,
     onSuccess: function (order) {
-      setSuccessOrder(order as unknown as OrderResult);
+      // SAFETY: createOrder returns the created order row, which carries every
+      // OrderResult field (channel enum widens to string).
+      setSuccessOrder(order as OrderResult);
       setMobileCartOpen(false);
       void queryClient.invalidateQueries({ queryKey: ["pos-recent-orders"] });
       void queryClient.invalidateQueries({ queryKey: ["inventory"] });
@@ -336,6 +339,8 @@ function PosPage() {
         // Enter to checkout
         if (e.key === "Enter" && cart.length > 0 && activeShift && !createOrderMutation.isPending) {
           // Don't intercept if focus is in an input
+          // SAFETY: keyboard events on the page originate from a DOM element;
+          // non-Element targets simply don't match the tag checks below.
           var target = e.target as HTMLElement;
           if (
             target &&
@@ -673,7 +678,7 @@ function PosPage() {
       await createOrderMutation.mutateAsync({
         data: {
           branchId: activeBranchId,
-          channel: channel as "Dine-in" | "Gofood" | "Grabfood" | "ShopeeFood" | "TikTok",
+          channel,
           customerName: channel === "Dine-in" ? customerName : undefined,
           orderCode: channel !== "Dine-in" ? orderCode : undefined,
           items: items,
@@ -740,6 +745,8 @@ function PosPage() {
       });
     } else if (voidModal.mode === "request") {
       // Cashier requesting cancel approval
+      // SAFETY: the reason select is required and only offers the three
+      // literal options; the submit button is disabled until one is chosen.
       void cancelRequestMutation.mutateAsync({
         data: {
           orderId: voidModal.orderId,
@@ -810,7 +817,9 @@ function PosPage() {
             <select
               value={channel}
               onChange={function (e) {
-                setChannel(e.target.value);
+                // SAFETY: the select only renders the ORDER_CHANNEL_VALUES
+                // options below, so the value is always one of them.
+                setChannel(e.target.value as (typeof ORDER_CHANNEL_VALUES)[number]);
                 setCheckoutError(null);
               }}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"

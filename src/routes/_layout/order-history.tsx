@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { lookupLabel } from "#/lib/label-lookup";
+import { badgeVariant, searchStringParam } from "#/lib/utils";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -23,21 +25,21 @@ interface OrderRow {
   createdAt: Date;
 }
 
-const channelLabels: Record<string, string> = {
+const channelLabels = {
   Gofood: "Gofood",
   Grabfood: "Grabfood",
   ShopeeFood: "ShopeeFood",
   "Dine-in": "Dine-in",
   TikTok: "TikTok",
-};
+} satisfies Record<string, string>;
 
-const statusColors: Record<string, string> = {
+const statusColors = {
   Completed: "success",
   New: "default",
   Processing: "warning",
   Void: "secondary",
   "Cancel Requested": "destructive",
-};
+} satisfies Record<string, string>;
 
 const columns: Column<OrderRow>[] = [
   {
@@ -57,7 +59,9 @@ const columns: Column<OrderRow>[] = [
     key: "channel",
     header: "Channel",
     sortable: true,
-    render: (r) => <Badge variant="outline">{channelLabels[r.channel] ?? r.channel}</Badge>,
+    render: (r) => (
+      <Badge variant="outline">{lookupLabel(channelLabels, r.channel) ?? r.channel}</Badge>
+    ),
   },
   {
     key: "orderCode",
@@ -77,28 +81,17 @@ const columns: Column<OrderRow>[] = [
     header: "Status",
     sortable: true,
     render: (r) => (
-      <Badge
-        variant={
-          (statusColors[r.status] ?? "default") as
-            | "default"
-            | "success"
-            | "warning"
-            | "destructive"
-            | "secondary"
-        }
-      >
-        {r.status || "-"}
-      </Badge>
+      <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status || "-"}</Badge>
     ),
   },
 ];
 
-const allowedStatusLabels: Record<string, string> = {
+const allowedStatusLabels = {
   New: "New",
   Processing: "Processing",
   "In Delivery": "In Delivery",
   Completed: "Completed",
-};
+} satisfies Record<string, string>;
 
 export const Route = createFileRoute("/_layout/order-history")({
   component: OrderHistoryPage,
@@ -115,7 +108,9 @@ function OrderHistoryPage() {
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
 
   const [statusModalOrder, setStatusModalOrder] = useState<OrderRow | null>(null);
-  const [targetStatus, setTargetStatus] = useState<string>("");
+  const [targetStatus, setTargetStatus] = useState<
+    "" | "New" | "Processing" | "In Delivery" | "Completed"
+  >("");
 
   const { data: rawOrders } = useQuery({
     queryKey: ["orders"],
@@ -133,7 +128,7 @@ function OrderHistoryPage() {
     });
   }, [rawOrders]);
 
-  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const statusFilter = searchStringParam(Route.useSearch(), "status");
   const filteredOrders = statusFilter ? orders.filter((o) => o.status === statusFilter) : orders;
 
   const updateStatusMutation = useMutation({
@@ -173,7 +168,7 @@ function OrderHistoryPage() {
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground uppercase">Channel</p>
                 <p className="font-medium">
-                  {channelLabels[selectedOrder.channel] ?? selectedOrder.channel}
+                  {lookupLabel(channelLabels, selectedOrder.channel) ?? selectedOrder.channel}
                 </p>
               </div>
               <div className="rounded-md border p-3">
@@ -185,23 +180,23 @@ function OrderHistoryPage() {
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground uppercase">Status</p>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <Badge
-                    variant={
-                      (statusColors[selectedOrder.status] ?? "default") as
-                        | "default"
-                        | "success"
-                        | "warning"
-                        | "destructive"
-                        | "secondary"
-                    }
-                  >
+                  <Badge variant={badgeVariant(lookupLabel(statusColors, selectedOrder.status))}>
                     {selectedOrder.status}
                   </Badge>
                   <button
                     onClick={function (e: any) {
                       e.stopPropagation();
                       setStatusModalOrder(selectedOrder);
-                      setTargetStatus(selectedOrder.status);
+                      // SAFETY: only orders in one of the four mutable statuses
+                      // open the change-status modal (allowedStatusLabels keys).
+                      setTargetStatus(
+                        selectedOrder.status as
+                          | ""
+                          | "New"
+                          | "Processing"
+                          | "In Delivery"
+                          | "Completed",
+                      );
                     }}
                     title="Ubah status"
                     className="h-5 w-5 inline-flex items-center justify-center rounded border text-muted-foreground hover:bg-accent"
@@ -259,7 +254,7 @@ function OrderHistoryPage() {
                     completedAt: orderData.completedAt,
                   };
                   printReceipt({
-                    order: printOrder as any,
+                    order: printOrder,
                     cartItems,
                     branchName: "",
                   });
@@ -306,7 +301,11 @@ function OrderHistoryPage() {
                       value={val}
                       checked={targetStatus === val}
                       onChange={function () {
-                        setTargetStatus(val);
+                        // SAFETY: val iterates allowedStatusLabels keys, which
+                        // are exactly the four mutable order statuses.
+                        setTargetStatus(
+                          val as "" | "New" | "Processing" | "In Delivery" | "Completed",
+                        );
                       }}
                       className="text-primary"
                     />
@@ -331,7 +330,7 @@ function OrderHistoryPage() {
                   updateStatusMutation.mutate({
                     data: {
                       orderId: statusModalOrder.id,
-                      newStatus: targetStatus as "New" | "Processing" | "In Delivery" | "Completed",
+                      newStatus: targetStatus,
                     },
                   });
                 }}

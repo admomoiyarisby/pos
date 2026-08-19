@@ -17,7 +17,8 @@ import {
 import { getBrokenStock } from "#/lib/server/waste";
 import { getBranches } from "#/lib/server/branches";
 import { ChevronRight, Lock, Pencil, Printer, Package } from "lucide-react";
-import { formatRp } from "#/lib/utils";
+import { z } from "zod";
+import { formatRp, formText } from "#/lib/utils";
 import { openPrintWindow } from "#/lib/print-window";
 import { toast } from "sonner";
 
@@ -368,20 +369,22 @@ function FinancePage() {
     if (revenueType === "manual") {
       void createManualMutation.mutateAsync({
         data: {
-          branchId: fd.get("branchId") as string,
-          date: fd.get("date") as string,
-          amount: Number(fd.get("amount")),
-          notes: (fd.get("notes") as string) || undefined,
+          branchId: formText(fd, "branchId"),
+          date: formText(fd, "date"),
+          amount: Number(formText(fd, "amount")),
+          notes: formText(fd, "notes") || undefined,
         },
       });
     } else {
       void createChannelMutation.mutateAsync({
         data: {
-          branchId: fd.get("branchId") as string,
-          date: fd.get("date") as string,
-          channel: fd.get("channel") as "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok",
-          amount: Number(fd.get("amount")),
-          notes: (fd.get("notes") as string) || undefined,
+          branchId: formText(fd, "branchId"),
+          date: formText(fd, "date"),
+          channel: z
+            .enum(["Gofood", "Grabfood", "ShopeeFood", "Dine-in", "TikTok"])
+            .parse(formText(fd, "channel")),
+          amount: Number(formText(fd, "amount")),
+          notes: formText(fd, "notes") || undefined,
         },
       });
     }
@@ -429,7 +432,9 @@ function FinancePage() {
               });
               openPrintWindow(result.html);
             } catch (err) {
-              toast.error("Gagal mencetak", { description: (err as Error).message });
+              toast.error("Gagal mencetak", {
+                description: err instanceof Error ? err.message : String(err),
+              });
             }
           }}
           className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted transition-colors inline-flex items-center gap-2"
@@ -469,20 +474,24 @@ function FinancePage() {
       <div className="flex flex-wrap items-end gap-3 mb-4 p-4 rounded-lg border">
         {/* Period segmented control */}
         <div className="flex rounded-md border overflow-hidden">
-          {(["harian", "mingguan", "bulanan"] as PeriodType[]).map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPeriodType(p)}
-              className={`h-9 px-4 text-sm font-medium transition-colors ${
-                periodType === p
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-background hover:bg-muted"
-              }`}
-            >
-              {p === "harian" ? "Harian" : p === "mingguan" ? "Mingguan" : "Bulanan"}
-            </button>
-          ))}
+          {
+            // SAFETY: the three literal periods are exactly the PeriodType
+            // union values; the annotation only asserts that for .map().
+            (["harian", "mingguan", "bulanan"] as PeriodType[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPeriodType(p)}
+                className={`h-9 px-4 text-sm font-medium transition-colors ${
+                  periodType === p
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background hover:bg-muted"
+                }`}
+              >
+                {p === "harian" ? "Harian" : p === "mingguan" ? "Mingguan" : "Bulanan"}
+              </button>
+            ))
+          }
         </div>
 
         {/* Contextual date picker */}
@@ -862,11 +871,11 @@ function FinancePage() {
             const fd = new FormData(e.currentTarget);
             void createExpenseMutation.mutateAsync({
               data: {
-                branchId: fd.get("branchId") as string,
-                date: fd.get("date") as string,
-                category: fd.get("category") as string,
-                amount: Number(fd.get("amount")),
-                notes: (fd.get("notes") as string) || undefined,
+                branchId: formText(fd, "branchId"),
+                date: formText(fd, "date"),
+                category: formText(fd, "category"),
+                amount: Number(formText(fd, "amount")),
+                notes: formText(fd, "notes") || undefined,
               },
             });
           }}

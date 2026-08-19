@@ -24,6 +24,12 @@ import type { RankingInfo } from "@tanstack/match-sorter-utils";
 
 import type { Person } from "#/data/demo-table-data";
 
+// SAFETY: getIsSorted() returns "asc" | "desc" | false; the ternary maps the
+// two truthy values to arrows and false to null.
+function getSortArrow(sorted: string | false): string | null {
+  return sorted === "asc" ? " 🔼" : sorted === "desc" ? " 🔽" : null;
+}
+
 export const Route = createFileRoute("/demo/table")({
   component: TableDemo,
 });
@@ -168,10 +174,7 @@ function TableDemo() {
                             }}
                           >
                             {flexRender(header.column.columnDef.header, header.getContext())}
-                            {{
-                              asc: " 🔼",
-                              desc: " 🔽",
-                            }[header.column.getIsSorted() as string] ?? null}
+                            {getSortArrow(header.column.getIsSorted())}
                           </div>
                           {header.column.getCanFilter() ? (
                             <div className="mt-2">
@@ -300,6 +303,8 @@ function Filter({ column }: { column: Column<any, unknown> }) {
   return (
     <DebouncedInput
       type="text"
+      // SAFETY: filter values for text columns are strings; other types are
+      // normalized to "" via the ?? above.
       value={(columnFilterValue ?? "") as string}
       onChange={(value) => column.setFilterValue(value)}
       placeholder={`Search...`}

@@ -717,8 +717,7 @@ async function handleAction(prId, action, user) {
     // ... even more logic, also creates SJ
   }
   // ... every action has its own state guard
-}</pre
-        >
+}</pre>
 
         <p>With a formal FSM, it becomes:</p>
         <pre>
@@ -745,8 +744,7 @@ async function transition(prId, event, user) {
   }
   await updatePR(prId, { status: rule.to, lastEvent: event, updatedBy: user.id });
   await logAudit({ action: event, from: pr.status, to: rule.to, userId: user.id });
-}</pre
-        >
+}</pre>
 
         <div class="callout-good">
           <strong>This is the pattern you want.</strong> A lookup table of
@@ -820,8 +818,7 @@ async function transition(prId, event, user) {
        : 'read-only'}
   items={items}
   onItemChange={handler}
-/&gt;</pre
-        >
+/&gt;</pre>
       </section>
 
       <!-- ============================================================ -->

@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useRef } from "react";
+import { searchStringParam } from "#/lib/utils";
+import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
+import { lookupLabel } from "#/lib/label-lookup";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -40,17 +43,14 @@ interface PRRow {
   createdAt: Date;
 }
 
-const statusColors: Record<
-  string,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const statusColors = {
   Draft: "secondary",
   Pending: "warning",
   Approved: "default",
   Processed: "success",
   Rejected: "destructive",
   Fulfilled: "success",
-};
+} satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
 export const Route = createFileRoute("/_layout/purchase-requisitions/")({
   component: PRPage,
@@ -99,7 +99,7 @@ function PRPage() {
     initialData: initial,
   });
 
-  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const statusFilter = searchStringParam(Route.useSearch(), "status");
   const filteredPrs = statusFilter ? prs.filter((p) => p.status === statusFilter) : prs;
 
   const createMutation = useMutation({
@@ -183,8 +183,8 @@ function PRPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const code = fd.get("code") as string;
-    const branchId = fd.get("branchId") as string;
+    const code = formText(fd, "code");
+    const branchId = formText(fd, "branchId");
     if (prItems.length === 0) return;
     void createMutation.mutateAsync({ data: { code, branchId, items: prItems } });
   };
@@ -219,7 +219,9 @@ function PRPage() {
       key: "status",
       header: "Status",
       sortable: true,
-      render: (r) => <Badge variant={statusColors[r.status] ?? "default"}>{r.status}</Badge>,
+      render: (r) => (
+        <Badge variant={lookupLabel(statusColors, r.status) ?? "default"}>{r.status}</Badge>
+      ),
     },
     {
       key: "createdAt",
@@ -422,6 +424,8 @@ function PRPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    // SAFETY: the qty input is rendered right above this
+                    // button; getElementById returns Element, narrowed here.
                     const qtyEl = document.getElementById("pr-qty") as HTMLInputElement;
                     if (selectedIngredient && qtyEl.value) {
                       setPrItems([
@@ -561,7 +565,7 @@ function PRPage() {
             onSubmit={(e) => {
               e.preventDefault();
               const fd = new FormData(e.currentTarget);
-              confirmReject(fd.get("reason") as string);
+              confirmReject(formText(fd, "reason"));
             }}
             className="space-y-4"
           >

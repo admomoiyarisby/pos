@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { lookupLabel } from "#/lib/label-lookup";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { Badge } from "#/components/ui/badge";
@@ -84,13 +85,13 @@ function PrintRequestsPage() {
     void rejectMutation.mutateAsync({ data: { requestId } });
   }
 
-  const channelLabels: Record<string, string> = {
+  const channelLabels = {
     Gofood: "Gofood",
     Grabfood: "Grabfood",
     ShopeeFood: "ShopeeFood",
     "Dine-in": "Dine-in",
     TikTok: "TikTok",
-  };
+  } satisfies Record<string, string>;
 
   return (
     <RoleGuard allowedRoles={["super_admin", "area_manager"]}>
@@ -139,7 +140,9 @@ function PrintRequestsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant="outline">
-                        {r.orderChannel ? (channelLabels[r.orderChannel] ?? r.orderChannel) : "-"}
+                        {r.orderChannel
+                          ? (lookupLabel(channelLabels, r.orderChannel) ?? r.orderChannel)
+                          : "-"}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 font-medium">

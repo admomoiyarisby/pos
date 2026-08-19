@@ -95,14 +95,12 @@ function parseRevenue(): RevenueRow[] {
     // Platform blocks live at the top; a second (inventory) section follows
     // with Uang Masuk empty. We only take rows where col A is a platform
     // label AND Uang Masuk (col 9) is a finite number.
-    for (const raw of grid) {
-      const row = raw as unknown[];
-      const label = row[0];
-      const uang = row[9];
-      if (typeof label !== "string" || !label.trim()) continue;
+    for (const row of grid) {
+      const label = String(row[0] ?? "");
+      if (!label.trim()) continue;
       const mapped = mapPlatform(label);
       if (!mapped) continue; // skip inventory-section rows / unknown labels
-      const amount = typeof uang === "number" ? uang : Number(uang);
+      const amount = Number(row[9]);
       if (!Number.isFinite(amount)) continue;
       rows.push({
         date,

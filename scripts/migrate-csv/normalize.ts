@@ -20,10 +20,12 @@
  * future migration uncovers a new variant or wrong classification.
  */
 
+import { lookupLabel } from "../../src/lib/label-lookup";
+
 // ─── Aliases: variant → canonical ─────────────────────────────────────────
 // Keyed by lowercased, single-spaced input. Value is the canonical name.
 // Returning null means "this is not an ingredient" (operational supply).
-const ALIASES: Record<string, string | null> = {
+const ALIASES = {
   // ─── Drink / powder / sauce variants ────────────────────────────────────
   "bubuk matcha": "Bubuk Matcha latte",
   "bubuk matcha latte": "Bubuk Matcha latte",
@@ -153,7 +155,7 @@ const ALIASES: Record<string, string | null> = {
   "tutup bowl 650 ml": "Tutup Bowl 650 ml",
   "paper bowl 650 ml": "Paper Bowl 650 ml",
   "tray bento": "Bento Tray",
-};
+} satisfies Record<string, string | null>;
 
 const FG_ITEMS = new Set<string>(
   [
@@ -334,7 +336,7 @@ const CANONICAL_FORMS = new Map<string, string>();
  */
 export function canonicalName(raw: string): string | null {
   const norm = raw.trim().toLowerCase().replace(/\s+/g, " ");
-  if (norm in ALIASES) return ALIASES[norm];
+  if (norm in ALIASES) return lookupLabel(ALIASES, norm) ?? null;
   // Known classification → return its proper-cased canonical form.
   if (CANONICAL_FORMS.has(norm)) return CANONICAL_FORMS.get(norm)!;
   // Pass-through: trim but keep original casing.

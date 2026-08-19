@@ -164,14 +164,7 @@ export const createYieldConversion = createServerFn({ method: "POST" })
       "Create Production Record",
       `Produksi "${outNames} → ${producedNames}" dicatat (catatan produksi, tidak mengubah stok) oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "yieldConversions",
-      conversion.id,
-      "CREATE",
-      undefined,
-      conversion as Record<string, unknown>,
-    );
+    await logAudit(user, "yieldConversions", conversion.id, "CREATE", undefined, conversion);
 
     return { success: true, conversion, out, produced };
   });

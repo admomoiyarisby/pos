@@ -23,8 +23,10 @@ import {
   stockTransfers,
   deliveryNotes,
   dailyOverrides,
+  ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
+import { z } from "zod";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, formatRupiah } from "./html-utils";
@@ -93,8 +95,7 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
         ),
       );
 
-    const toNum = (v: string | number | null | undefined): number =>
-      typeof v === "string" ? Number(v) : (v ?? 0);
+    const toNum = (v: string | number | null | undefined): number => Number(v ?? 0);
     const totalSales = toNum(orderData[0]?.totalSales);
     const totalMerchantDiscount = toNum(orderData[0]?.totalMerchantDiscount);
     const totalCogs = toNum(orderData[0]?.totalCogs);
@@ -133,7 +134,10 @@ export interface HppBreakdownRow {
 
 export const getDailyFinanceSummary = createServerFn({ method: "GET" })
   .validator(
-    (data: { branchId?: string; dateFrom?: string; dateTo?: string; channel?: string }) => data,
+    (data: { branchId?: string; dateFrom?: string; dateTo?: string; channel?: string }) => ({
+      ...data,
+      channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+    }),
   )
   .handler(async ({ data }): Promise<DailyFinanceRow[]> => {
     await requireRole("super_admin");
@@ -146,7 +150,7 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
       );
     if (data.dateTo)
       conditions.push(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`);
-    if (data.channel) conditions.push(eq(orders.channel, data.channel as any));
+    if (data.channel) conditions.push(eq(orders.channel, data.channel));
 
     const result = await db
       .select({
@@ -195,13 +199,16 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
   });
 
 export const getDailyHppBreakdown = createServerFn({ method: "GET" })
-  .validator((data: { branchId?: string; date: string; channel?: string }) => data)
+  .validator((data: { branchId?: string; date: string; channel?: string }) => ({
+    ...data,
+    channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+  }))
   .handler(async ({ data }): Promise<HppBreakdownRow[]> => {
     await requireRole("super_admin");
 
     const conditions = [];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
-    if (data.channel) conditions.push(eq(orders.channel, data.channel as any));
+    if (data.channel) conditions.push(eq(orders.channel, data.channel));
     conditions.push(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') = ${data.date}`);
 
     const rows = await db
@@ -304,14 +311,7 @@ export const createManualRevenue = createServerFn({ method: "POST" })
       "Create Manual Revenue",
       `Manual revenue Rp${data.amount.toLocaleString()} (${data.branchId}) dicatat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "revenues",
-      revenue.id,
-      "CREATE",
-      undefined,
-      revenue as Record<string, unknown>,
-    );
+    await logAudit(user, "revenues", revenue.id, "CREATE", undefined, revenue);
 
     return revenue;
   });
@@ -365,14 +365,7 @@ export const createChannelRevenue = createServerFn({ method: "POST" })
       "Create Channel Revenue",
       `Channel revenue Rp${data.amount.toLocaleString()} (${data.channel}) dicatat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "revenues",
-      revenue.id,
-      "CREATE",
-      undefined,
-      revenue as Record<string, unknown>,
-    );
+    await logAudit(user, "revenues", revenue.id, "CREATE", undefined, revenue);
 
     return revenue;
   });
@@ -433,14 +426,7 @@ export const createManualExpense = createServerFn({ method: "POST" })
       "Create Manual Expense",
       `Manual expense Rp${data.amount.toLocaleString()} (${data.category}) dicatat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "expenses",
-      expense.id,
-      "CREATE",
-      undefined,
-      expense as Record<string, unknown>,
-    );
+    await logAudit(user, "expenses", expense.id, "CREATE", undefined, expense);
 
     return expense;
   });
@@ -467,14 +453,7 @@ export const deleteManualExpense = createServerFn({ method: "POST" })
       "Delete Manual Expense",
       `Manual expense Rp${expense.amount.toLocaleString()} (${expense.category}) dihapus oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "expenses",
-      expense.id,
-      "DELETE",
-      expense as Record<string, unknown>,
-      undefined,
-    );
+    await logAudit(user, "expenses", expense.id, "DELETE", expense, undefined);
 
     return { success: true };
   });
@@ -637,14 +616,7 @@ export const openPeriod = createServerFn({ method: "POST" })
       "Open Period",
       `Periode "${data.periodName}" dibuka oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "periodLogs",
-      period.id,
-      "CREATE",
-      undefined,
-      period as Record<string, unknown>,
-    );
+    await logAudit(user, "periodLogs", period.id, "CREATE", undefined, period);
 
     return period;
   });
@@ -843,14 +815,7 @@ export const closePeriod = createServerFn({ method: "POST" })
       "Close Period",
       `Periode "${period.periodName}" ditutup oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "periodLogs",
-      data.periodId,
-      "UPDATE",
-      period as Record<string, unknown>,
-      updatedPeriod as Record<string, unknown>,
-    );
+    await logAudit(user, "periodLogs", data.periodId, "UPDATE", period, updatedPeriod);
 
     return { success: true, checks, message: "Periode berhasil ditutup" };
   });
@@ -898,7 +863,10 @@ export const getHourlyAnalytics = createServerFn({ method: "GET" })
 // ID13: Print Finance page to PDF (HTML + browser print)
 export const printFinancePage = createServerFn({ method: "GET" })
   .validator(
-    (data: { dateFrom?: string; dateTo?: string; branchId?: string; channel?: string }) => data,
+    (data: { dateFrom?: string; dateTo?: string; branchId?: string; channel?: string }) => ({
+      ...data,
+      channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+    }),
   )
   .handler(async ({ data }) => {
     await requireAuth();
@@ -924,7 +892,7 @@ export const printFinancePage = createServerFn({ method: "GET" })
         ? sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
         : undefined,
       data.branchId ? eq(orders.branchId, data.branchId) : undefined,
-      data.channel ? eq(orders.channel, data.channel as any) : undefined,
+      data.channel ? eq(orders.channel, data.channel) : undefined,
     );
 
     const channelBreakdown = await db

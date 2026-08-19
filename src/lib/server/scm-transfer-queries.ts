@@ -19,7 +19,7 @@ import {
 } from "#/db/schema";
 import type { FsmActor } from "./scm-effects";
 import { availableTransferEvents } from "./scm-transfer-fsm";
-import type { ScmTransferEvent, ScmTransferStatus, TransferActorRole } from "./scm-transfer-fsm";
+import type { ScmTransferEvent, ScmTransferStatus } from "./scm-transfer-fsm";
 
 // -----------------------------------------------------------------------------
 // Authorization helpers (Q8)
@@ -107,7 +107,7 @@ export interface TransferListRow {
   code: string;
   fromBranchId: string;
   toBranchId: string;
-  status: string;
+  status: ScmTransferStatus;
   createdAt: Date;
   requestedById: string;
   availableEvents: ScmTransferEvent[];
@@ -173,10 +173,7 @@ export async function listTransfersForUser(user: {
   // transfer (sender vs receiver). area_manager and super_admin are filtered
   // by role only.
   return rows.map((row) => {
-    const roleEvents = availableTransferEvents(
-      row.status as ScmTransferStatus,
-      user.role as TransferActorRole,
-    );
+    const roleEvents = availableTransferEvents(row.status, user.role);
 
     let availableEvents: ScmTransferEvent[];
     if (user.role === "branch_admin" && user.branchId) {

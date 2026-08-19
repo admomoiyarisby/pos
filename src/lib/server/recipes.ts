@@ -280,7 +280,7 @@ export const getRecipeInventory = createServerFn({ method: "GET" })
   });
 
 export const createRecipe = createServerFn({ method: "POST" })
-  .validator((data: unknown) => recipeInput.parse(data))
+  .validator((data: z.input<typeof recipeInput>) => recipeInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -351,20 +351,15 @@ export const createRecipe = createServerFn({ method: "POST" })
     await recalculateRecipeCosts([recipe.id]);
 
     await logSystemAction(user, "Create Recipe", `Resep "${recipe.name}" dibuat oleh ${user.name}`);
-    await logAudit(
-      user,
-      "recipes",
-      recipe.id,
-      "CREATE",
-      undefined,
-      recipe as Record<string, unknown>,
-    );
+    await logAudit(user, "recipes", recipe.id, "CREATE", undefined, recipe);
 
     return recipe;
   });
 
+const updateRecipeInput = recipeInput.partial().extend({ id: z.string().uuid() });
+
 export const updateRecipe = createServerFn({ method: "POST" })
-  .validator((data: unknown) => recipeInput.partial().extend({ id: z.string().uuid() }).parse(data))
+  .validator((data: z.input<typeof updateRecipeInput>) => updateRecipeInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -455,14 +450,7 @@ export const updateRecipe = createServerFn({ method: "POST" })
       "Update Recipe",
       `Resep "${updated?.name}" diperbarui oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "recipes",
-      id,
-      "UPDATE",
-      old as Record<string, unknown>,
-      updated as Record<string, unknown>,
-    );
+    await logAudit(user, "recipes", id, "UPDATE", old, updated);
 
     return { success: true };
   });
@@ -505,14 +493,7 @@ export const deactivateRecipe = createServerFn({ method: "POST" })
       "Deactivate Recipe",
       `Resep "${old.name}" dinonaktifkan oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "recipes",
-      data.id,
-      "STATUS_CHANGE",
-      old as Record<string, unknown>,
-      updated as Record<string, unknown>,
-    );
+    await logAudit(user, "recipes", data.id, "STATUS_CHANGE", old, updated);
 
     return { success: true };
   });
@@ -537,14 +518,7 @@ export const reactivateRecipe = createServerFn({ method: "POST" })
       "Activate Recipe",
       `Resep "${old.name}" diaktifkan oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "recipes",
-      data.id,
-      "STATUS_CHANGE",
-      old as Record<string, unknown>,
-      updated as Record<string, unknown>,
-    );
+    await logAudit(user, "recipes", data.id, "STATUS_CHANGE", old, updated);
 
     return { success: true };
   });
@@ -674,14 +648,7 @@ export const deleteRecipe = createServerFn({ method: "POST" })
       "Delete Recipe",
       `Resep "${old.name}" dihapus secara permanen oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "recipes",
-      data.id,
-      "DELETE",
-      old as Record<string, unknown>,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "recipes", data.id, "DELETE", old, result);
 
     return { success: true };
   });

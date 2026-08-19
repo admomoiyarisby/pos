@@ -79,20 +79,16 @@ function NewMutasiPage() {
     { items: [], fromBranchId: user?.branchId ?? "", toBranchId: "", notes: "" },
     {
       restoreMode: "prompt",
-      isDirty: (s) => {
-        const d = s as MutasiDraft;
-        return (
-          d.items.length > 0 ||
-          !!d.notes ||
-          d.toBranchId !== "" ||
-          d.fromBranchId !== (user?.branchId ?? "")
-        );
-      },
+      isDirty: (s) =>
+        s.items.length > 0 ||
+        !!s.notes ||
+        s.toBranchId !== "" ||
+        s.fromBranchId !== (user?.branchId ?? ""),
     },
   );
   const items = draft.items;
   const setItems = (next: ItemRow[] | ((prev: ItemRow[]) => ItemRow[])) =>
-    setDraft((prev) => ({ ...prev, items: typeof next === "function" ? next(prev.items) : next }));
+    setDraft((prev) => ({ ...prev, items: Array.isArray(next) ? next : next(prev.items) }));
   const fromBranchId = draft.fromBranchId;
   const setFromBranchId = (v: string) => setDraft((prev) => ({ ...prev, fromBranchId: v }));
   const toBranchId = draft.toBranchId;
@@ -389,6 +385,8 @@ function NewMutasiPage() {
                     <Combobox
                       value={selected ?? null}
                       onValueChange={(val) => {
+                        // SAFETY: the combobox is fed ingredientOptions, so a
+                        // non-null value is always one of those IngredientOptions.
                         const o = val as IngredientOption | null;
                         updateItem(it.id, {
                           ingredientId: o?.id ?? "",

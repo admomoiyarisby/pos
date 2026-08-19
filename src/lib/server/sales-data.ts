@@ -7,6 +7,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
+import { z } from "zod";
 import {
   orders,
   orderItems,
@@ -14,6 +15,7 @@ import {
   systemNotifications,
   users,
   areaManagerBranches,
+  ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { requireAuth, requireRole } from "#/lib/server/auth";
 import { eq, and, gte, lte, sql, desc, count } from "drizzle-orm";
@@ -31,7 +33,10 @@ export const getSalesData = createServerFn({ method: "GET" })
       dateTo?: string;
       page?: number;
       limit?: number;
-    }) => data,
+    }) => ({
+      ...data,
+      channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+    }),
   )
   .handler(async ({ data }) => {
     await requireAuth();
@@ -45,8 +50,8 @@ export const getSalesData = createServerFn({ method: "GET" })
     if (data.branchId) {
       conditions.push(eq(orders.branchId, data.branchId));
     }
-    if (data.channel && data.channel !== "all") {
-      conditions.push(eq(orders.channel, data.channel as any));
+    if (data.channel) {
+      conditions.push(eq(orders.channel, data.channel));
     }
     if (data.dateFrom) {
       conditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
@@ -297,7 +302,7 @@ export const updateSalesOrder = createServerFn({ method: "POST" })
 
     await db.transaction(async (tx) => {
       // Update order
-      let createdAt = undefined;
+      let createdAt: Date | undefined;
       if (data.date) {
         createdAt = new Date(data.date + "T12:00:00");
       }
@@ -314,7 +319,8 @@ export const updateSalesOrder = createServerFn({ method: "POST" })
           totalCogs,
           netSales,
           notes: data.notes,
-          ...(createdAt ? { createdAt, completedAt: createdAt } : {}),
+          createdAt,
+          completedAt: createdAt,
         })
         .where(eq(orders.id, data.id));
 

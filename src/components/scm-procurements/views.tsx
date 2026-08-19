@@ -17,10 +17,12 @@ import {
   updateProcurementItem,
   addProcurementItem,
   removeProcurementItem,
+  type ScmProcurementInvoiceLineItem,
 } from "#/lib/server/scm-queries";
 import { getIngredients } from "#/lib/server/ingredients";
 import { printSuratJalan, printInvoice } from "#/lib/server/scm-print";
 import { openPrintWindow } from "#/lib/print-window";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -48,21 +50,34 @@ function SectionDivider() {
   return <hr className="border-border" />;
 }
 
+/** Procurement row fields rendered by these views. */
+export interface ProcurementRow {
+  id: string;
+  rejectionReason: string | null;
+  cancellationReason: string | null;
+}
+
+/** Procurement invoice fields rendered by these views. */
+export interface ProcurementInvoiceRow {
+  totalAmount: number;
+  lineItems: Array<ScmProcurementInvoiceLineItem> | null;
+}
+
 /**
  * Shared props for all state views. The detail page passes the procurement
  * row and items. Audit log is fetched by the view itself via AuditLogCard
  * (paginated), so it's not in the props.
  */
 export interface StateViewProps {
-  procurement: Record<string, unknown>;
-  items: Array<Record<string, unknown>>;
+  procurement: ProcurementRow;
+  items: ScmItemRow[];
   auditLog?: never; // no longer passed; use AuditLogCard
-  invoice?: Record<string, unknown> | null;
+  invoice?: ProcurementInvoiceRow | null;
   showPrices?: boolean; // ID15: Hide prices for branch_admin
 }
 
-function rowsToItems(items: Array<Record<string, unknown>>): ScmItemRow[] {
-  return (items as unknown as ScmItemRow[]).map((it) => ({
+function rowsToItems(items: ScmItemRow[]): ScmItemRow[] {
+  return items.map((it) => ({
     ...it,
     // CA's caDecision: leave as-is. The DB starts every item at "pending"
     // and the CA must explicitly click Setujui/Tolak on each row before
@@ -91,20 +106,20 @@ function rowsToItems(items: Array<Record<string, unknown>>): ScmItemRow[] {
  * frozen). Using the snapshot here keeps the detail page in sync with
  * the print window, which also reads from lineItems.
  */
-function invoiceLineItemsToRows(lineItems: Array<Record<string, unknown>>): ScmItemRow[] {
+function invoiceLineItemsToRows(lineItems: Array<ScmProcurementInvoiceLineItem>): ScmItemRow[] {
   return lineItems.map((li) => ({
-    id: (li.itemId as string) ?? "",
-    ingredientId: (li.ingredientId as string) ?? "",
-    ingredientName: (li.ingredientName as string) ?? "",
+    id: li.itemId,
+    ingredientId: li.ingredientId,
+    ingredientName: li.ingredientName,
     quantity: 0,
     readyQuantity: null,
     pickedQuantity: null,
-    receivedQuantity: (li.receivedQuantity as number) ?? null,
-    rejectedQuantity: (li.rejectedQuantity as number) ?? null,
-    caDecision: (li.caDecision as "pending" | "approved" | "rejected") ?? "pending",
-    baDecision: (li.baDecision as "pending" | "accepted" | "rejected") ?? "pending",
-    unitPrice: (li.unitPrice as number) ?? null,
-    reason: (li.reason as string) ?? null,
+    receivedQuantity: li.receivedQuantity,
+    rejectedQuantity: li.rejectedQuantity,
+    caDecision: li.caDecision,
+    baDecision: li.baDecision,
+    unitPrice: li.unitPrice,
+    reason: li.reason,
   }));
 }
 
@@ -143,7 +158,7 @@ function SuratJalanButton({
       const html = await printSuratJalan({ data: { procurementId } });
       openPrintWindow(html);
     } catch (err) {
-      alert(`Gagal mencetak: ${(err as Error).message}`);
+      alert(`Gagal mencetak: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setLoading(false);
     }
@@ -172,7 +187,7 @@ function InvoiceButton({
       const html = await printInvoice({ data: { procurementId } });
       openPrintWindow(html);
     } catch (err) {
-      alert(`Gagal mencetak: ${(err as Error).message}`);
+      alert(`Gagal mencetak: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setLoading(false);
     }
@@ -187,11 +202,7 @@ function InvoiceButton({
 function useTransitionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: {
-      procurementId: string;
-      event: string;
-      payload?: Record<string, unknown>;
-    }) =>
+    mutationFn: async (vars: { procurementId: string; event: string; payload?: UnknownRecord }) =>
       transitionProcurement({
         data: {
           procurementId: vars.procurementId,
@@ -231,7 +242,7 @@ function useTransitionMutation() {
       });
     },
     onError: (err) => {
-      toast.error((err as Error).message);
+      toast.error(err instanceof Error ? err.message : String(err));
     },
   });
 }
@@ -239,11 +250,7 @@ function useTransitionMutation() {
 function useUpdateItemMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: {
-      procurementId: string;
-      itemId: string;
-      patch: Record<string, unknown>;
-    }) =>
+    mutationFn: async (vars: { procurementId: string; itemId: string; patch: UnknownRecord }) =>
       updateProcurementItem({
         data: { procurementId: vars.procurementId, itemId: vars.itemId, patch: vars.patch },
       }),
@@ -288,7 +295,7 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
   const persistQuantity = async (itemId: string, quantity: number | null | undefined) => {
     if (quantity === null || quantity === undefined) return;
     await updateM.mutateAsync({
-      procurementId: procurement.id as string,
+      procurementId: procurement.id,
       itemId,
       patch: { quantity },
     });
@@ -298,7 +305,7 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
     mutationFn: async (vars: { ingredientId: string; quantity: number }) =>
       addProcurementItem({
         data: {
-          procurementId: procurement.id as string,
+          procurementId: procurement.id,
           ingredientId: vars.ingredientId,
           quantity: vars.quantity,
         },
@@ -311,7 +318,7 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
   const removeM = useMutation({
     mutationFn: async (itemId: string) =>
       removeProcurementItem({
-        data: { procurementId: procurement.id as string, itemId },
+        data: { procurementId: procurement.id, itemId },
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["scm-procurement-items", procurement.id] });
@@ -326,9 +333,9 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
     queryFn: () => getIngredients({ data: {} }),
   });
 
-  const availableToAdd = (
-    allIngredients as Array<{ id: string; name: string; stockUnit: string; averageCost: number }>
-  ).filter((ing) => !editableItems.some((it) => it.ingredientId === ing.id));
+  const availableToAdd = allIngredients.filter(
+    (ing) => !editableItems.some((it) => it.ingredientId === ing.id),
+  );
 
   function handleAdd() {
     if (!newIngredientId || newQuantity <= 0) return;
@@ -428,7 +435,9 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
           </Button>
         </div>
         {addM.isError ? (
-          <p className="mt-2 text-sm text-destructive">{(addM.error as Error).message}</p>
+          <p className="mt-2 text-sm text-destructive">
+            {addM.error instanceof Error ? addM.error.message : String(addM.error)}
+          </p>
         ) : null}
       </div>
 
@@ -436,24 +445,20 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
 
       <ActionBar>
         <Button
-          onClick={() =>
-            transitionM.mutate({ procurementId: procurement.id as string, event: "cancel" })
-          }
+          onClick={() => transitionM.mutate({ procurementId: procurement.id, event: "cancel" })}
           variant="ghost"
           disabled={transitionM.isPending}
         >
           Batalkan
         </Button>
         <Button
-          onClick={() =>
-            transitionM.mutate({ procurementId: procurement.id as string, event: "submit" })
-          }
+          onClick={() => transitionM.mutate({ procurementId: procurement.id, event: "submit" })}
           disabled={transitionM.isPending || editableItems.length === 0}
         >
           {transitionM.isPending ? "Menyimpan..." : "Submit Pengadaan"}
         </Button>
       </ActionBar>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </Section>
   );
 }
@@ -481,23 +486,19 @@ export function PendingBaView({ procurement, items }: StateViewProps) {
         <Button
           variant="ghost"
           disabled={transitionM.isPending}
-          onClick={() =>
-            transitionM.mutate({ procurementId: procurement.id as string, event: "withdraw" })
-          }
+          onClick={() => transitionM.mutate({ procurementId: procurement.id, event: "withdraw" })}
         >
           Tarik Kembali
         </Button>
         <Button
           variant="ghost"
           disabled={transitionM.isPending}
-          onClick={() =>
-            transitionM.mutate({ procurementId: procurement.id as string, event: "cancel" })
-          }
+          onClick={() => transitionM.mutate({ procurementId: procurement.id, event: "cancel" })}
         >
           Batalkan
         </Button>
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -527,13 +528,13 @@ export function PendingCaView({ procurement, items }: StateViewProps) {
         <Button
           disabled={transitionM.isPending}
           onClick={() =>
-            transitionM.mutate({ procurementId: procurement.id as string, event: "open-review" })
+            transitionM.mutate({ procurementId: procurement.id, event: "open-review" })
           }
         >
           {transitionM.isPending ? "Membuka Review..." : "Buka Review"}
         </Button>
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -561,16 +562,16 @@ export function UnderReviewCaReview({ procurement, items, showPrices }: StateVie
     // row is still "pending", so this loop only runs explicit decisions.
     for (const it of editableItems) {
       await updateM.mutateAsync({
-        procurementId: procurement.id as string,
+        procurementId: procurement.id,
         itemId: it.id,
         patch: {
           caDecision: it.caDecision,
           readyQuantity: it.readyQuantity,
-        } as Record<string, unknown>,
+        },
       });
     }
     await transitionM.mutateAsync({
-      procurementId: procurement.id as string,
+      procurementId: procurement.id,
       event: "accept-and-ship",
     });
   };
@@ -616,7 +617,7 @@ export function UnderReviewCaReview({ procurement, items, showPrices }: StateVie
             disabled={!rejectionReason || transitionM.isPending || updateM.isPending}
             onClick={() =>
               transitionM.mutate({
-                procurementId: procurement.id as string,
+                procurementId: procurement.id,
                 event: "reject",
                 payload: { reason: rejectionReason },
               })
@@ -643,7 +644,7 @@ export function UnderReviewCaReview({ procurement, items, showPrices }: StateVie
           </Button>
         </ActionBar>
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </Section>
   );
 }
@@ -663,7 +664,7 @@ export function UnderReviewBaLive({ procurement, items }: StateViewProps) {
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -681,12 +682,12 @@ export function RejectedView({ procurement, items }: StateViewProps) {
         <CardContent>
           <p className="mb-3 text-sm">
             Pengadaan ini ditolak saat review. <strong>Alasan:</strong>{" "}
-            {(procurement.rejectionReason as string) || "-"}
+            {procurement.rejectionReason || "-"}
           </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -715,17 +716,17 @@ export function InTransitBaTracking({ procurement, items }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end gap-2">
-        <SuratJalanButton procurementId={procurement.id as string} />
+        <SuratJalanButton procurementId={procurement.id} />
         <Button
           disabled={transitionM.isPending}
           onClick={() =>
-            transitionM.mutate({ procurementId: procurement.id as string, event: "mark-delivered" })
+            transitionM.mutate({ procurementId: procurement.id, event: "mark-delivered" })
           }
         >
           Tandai Sudah Dikirim
         </Button>
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -762,7 +763,7 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
             disabled={!cancellationReason || transitionM.isPending}
             onClick={() =>
               transitionM.mutate({
-                procurementId: procurement.id as string,
+                procurementId: procurement.id,
                 event: "cancel",
                 payload: { reason: cancellationReason },
               })
@@ -770,10 +771,10 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
           >
             Batalkan
           </Button>
-          <SuratJalanButton procurementId={procurement.id as string} label="Cetak Surat Jalan" />
+          <SuratJalanButton procurementId={procurement.id} label="Cetak Surat Jalan" />
         </div>
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -798,17 +799,17 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
     // Save all item-level changes via updateItem, then transition.
     for (const it of editableItems) {
       await updateM.mutateAsync({
-        procurementId: procurement.id as string,
+        procurementId: procurement.id,
         itemId: it.id,
         patch: {
           receivedQuantity: it.receivedQuantity,
           rejectedQuantity: it.rejectedQuantity,
           reason: it.reason,
-        } as Record<string, unknown>,
+        },
       });
     }
     await transitionM.mutateAsync({
-      procurementId: procurement.id as string,
+      procurementId: procurement.id,
       event: "open-receive",
     });
   };
@@ -833,7 +834,7 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end gap-2">
-        <SuratJalanButton procurementId={procurement.id as string} />
+        <SuratJalanButton procurementId={procurement.id} />
         <Button disabled={transitionM.isPending || updateM.isPending} onClick={handleOpenReceive}>
           {updateM.isPending
             ? "Menyimpan..."
@@ -842,7 +843,7 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
               : "Lanjut ke Review"}
         </Button>
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -862,9 +863,9 @@ export function DeliveredCaWaiting({ procurement, items }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end">
-        <SuratJalanButton procurementId={procurement.id as string} />
+        <SuratJalanButton procurementId={procurement.id} />
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -889,7 +890,7 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
     // Use local state in the transition payload — no separate save step
     // (the FSM's finish-receive effect reads the values from the payload).
     await transitionM.mutateAsync({
-      procurementId: procurement.id as string,
+      procurementId: procurement.id,
       event: "finish-receive",
       payload: {
         items: editableItems.map((it) => ({
@@ -935,7 +936,7 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
             disabled={!cancellationReason || transitionM.isPending}
             onClick={() =>
               transitionM.mutate({
-                procurementId: procurement.id as string,
+                procurementId: procurement.id,
                 event: "cancel",
                 payload: { reason: cancellationReason },
               })
@@ -948,7 +949,7 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
           </Button>
         </ActionBar>
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </Section>
   );
 }
@@ -968,9 +969,9 @@ export function ReviewingSjCaLive({ procurement, items }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end">
-        <SuratJalanButton procurementId={procurement.id as string} />
+        <SuratJalanButton procurementId={procurement.id} />
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -984,13 +985,12 @@ export function WaitingForPaymentBaInvoice({
   invoice,
   showPrices,
 }: StateViewProps) {
-  const total = (invoice?.totalAmount as number) ?? 0;
+  const total = invoice?.totalAmount ?? 0;
   // Prefer the invoice's frozen lineItems over the live procurement items
   // so the detail page matches the print window. The procurement items
   // can drift (eg reject reversals on cancel) after the invoice snapshot
   // is taken at finish-receive time.
-  const invoiceLineItems =
-    (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
+  const invoiceLineItems = invoice?.lineItems ?? null;
   const previewItems = invoiceLineItems
     ? invoiceLineItemsToRows(invoiceLineItems)
     : rowsToItems(items);
@@ -1011,9 +1011,9 @@ export function WaitingForPaymentBaInvoice({
         </CardContent>
       </Card>
       <div className="flex justify-end">
-        <InvoiceButton procurementId={procurement.id as string} />
+        <InvoiceButton procurementId={procurement.id} />
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -1025,9 +1025,8 @@ export function WaitingForPaymentCaInvoice({
   showPrices,
 }: StateViewProps) {
   const transitionM = useTransitionMutation();
-  const total = (invoice?.totalAmount as number) ?? 0;
-  const invoiceLineItems =
-    (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
+  const total = invoice?.totalAmount ?? 0;
+  const invoiceLineItems = invoice?.lineItems ?? null;
   const previewItems = invoiceLineItems
     ? invoiceLineItemsToRows(invoiceLineItems)
     : rowsToItems(items);
@@ -1045,17 +1044,15 @@ export function WaitingForPaymentCaInvoice({
         </CardContent>
       </Card>
       <div className="flex justify-end gap-2">
-        <InvoiceButton procurementId={procurement.id as string} label="Cetak Invoice" />
+        <InvoiceButton procurementId={procurement.id} label="Cetak Invoice" />
         <Button
           disabled={transitionM.isPending}
-          onClick={() =>
-            transitionM.mutate({ procurementId: procurement.id as string, event: "mark-paid" })
-          }
+          onClick={() => transitionM.mutate({ procurementId: procurement.id, event: "mark-paid" })}
         >
           Tandai Telah Dibayar
         </Button>
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -1064,9 +1061,8 @@ export function WaitingForPaymentCaInvoice({
 // Finished — read-only "Lunas"
 // =============================================================================
 export function FinishedView({ procurement, items, invoice }: StateViewProps) {
-  const total = (invoice?.totalAmount as number) ?? 0;
-  const invoiceLineItems =
-    (invoice?.lineItems as Array<Record<string, unknown>> | undefined) ?? null;
+  const total = invoice?.totalAmount ?? 0;
+  const invoiceLineItems = invoice?.lineItems ?? null;
   const previewItems = invoiceLineItems
     ? invoiceLineItemsToRows(invoiceLineItems)
     : rowsToItems(items);
@@ -1085,9 +1081,9 @@ export function FinishedView({ procurement, items, invoice }: StateViewProps) {
         </CardContent>
       </Card>
       <div className="flex justify-end">
-        <InvoiceButton procurementId={procurement.id as string} />
+        <InvoiceButton procurementId={procurement.id} />
       </div>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }
@@ -1105,12 +1101,12 @@ export function CancelledView({ procurement, items }: StateViewProps) {
         <CardContent>
           <p className="mb-3 text-sm">
             Pengadaan ini dibatalkan. <strong>Alasan:</strong>{" "}
-            {(procurement.cancellationReason as string) || "-"}
+            {procurement.cancellationReason || "-"}
           </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <AuditLogSection procurementId={procurement.id as string} />
+      <AuditLogSection procurementId={procurement.id} />
     </div>
   );
 }

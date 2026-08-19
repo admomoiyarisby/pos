@@ -38,7 +38,7 @@ export const Route = createFileRoute("/_layout/scm-procurements/$procurementId")
   component: ProcurementDetailPage,
 });
 
-const statusLabels: Record<ScmProcurementStatus, string> = {
+const statusLabels = {
   Draft: "Draft",
   Pending: "Menunggu Review",
   UnderReview: "Sedang Direview",
@@ -49,12 +49,9 @@ const statusLabels: Record<ScmProcurementStatus, string> = {
   WaitingForPayment: "Menunggu Pembayaran",
   Finished: "Lunas",
   Cancelled: "Dibatalkan",
-};
+} satisfies Record<ScmProcurementStatus, string>;
 
-const statusColors: Record<
-  ScmProcurementStatus,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const statusColors = {
   Draft: "secondary",
   Pending: "warning",
   UnderReview: "default",
@@ -65,7 +62,10 @@ const statusColors: Record<
   WaitingForPayment: "warning",
   Finished: "success",
   Cancelled: "secondary",
-};
+} satisfies Record<
+  ScmProcurementStatus,
+  "default" | "warning" | "success" | "destructive" | "secondary"
+>;
 
 const PROCUREMENT_STEPS = [
   { key: "Draft", label: "Draft" },
@@ -108,9 +108,9 @@ function ProcurementDetailPage() {
   // the loading skeleton; the real code arrives once procurementQ
   // resolves.
   usePageTitle(
-    procurementQ.data ? (procurementQ.data.code as string) : "Pengadaan",
+    procurementQ.data ? procurementQ.data.code : "Pengadaan",
     procurementQ.data
-      ? `Pengadaan ke cabang • dibuat ${new Date(procurementQ.data.createdAt as unknown as string | Date).toLocaleString("id-ID")}`
+      ? `Pengadaan ke cabang • dibuat ${new Date(procurementQ.data.createdAt).toLocaleString("id-ID")}`
       : undefined,
   );
 
@@ -128,7 +128,10 @@ function ProcurementDetailPage() {
   if (procurementQ.error) {
     return (
       <div className="p-6 text-destructive">
-        Gagal memuat pengadaan: {(procurementQ.error as Error).message}
+        Gagal memuat pengadaan:{" "}
+        {procurementQ.error instanceof Error
+          ? procurementQ.error.message
+          : String(procurementQ.error)}
       </div>
     );
   }
@@ -137,8 +140,8 @@ function ProcurementDetailPage() {
   }
 
   const proc = procurementQ.data;
-  const items = (itemsQ.data ?? []) as Array<Record<string, unknown>>;
-  const invoice = (invoiceQ.data ?? null) as Record<string, unknown> | null;
+  const items = itemsQ.data ?? [];
+  const invoice = invoiceQ.data ?? null;
 
   return (
     <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
@@ -150,14 +153,12 @@ function ProcurementDetailPage() {
               Kembali
             </Button>
           </Link>
-          <Badge variant={statusColors[proc.status as ScmProcurementStatus]}>
-            {statusLabels[proc.status as ScmProcurementStatus]}
-          </Badge>
+          <Badge variant={statusColors[proc.status]}>{statusLabels[proc.status]}</Badge>
         </div>
 
         <ScmStepper
           steps={PROCUREMENT_STEPS}
-          currentKey={proc.status as string}
+          currentKey={proc.status}
           offRampKeys={["Rejected", "Cancelled"]}
           offRampAttach={{ Rejected: 2 }}
           ariaLabel="Procurement lifecycle progress"
@@ -171,22 +172,17 @@ function ProcurementDetailPage() {
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
           <span>
             Pemohon:{" "}
-            <span className="font-medium text-foreground">
-              {(proc.requestedByName as string) ?? "-"}
-            </span>
+            <span className="font-medium text-foreground">{proc.requestedByName ?? "-"}</span>
           </span>
           <span>
-            Sumber:{" "}
-            <span className="font-medium text-foreground">
-              {(proc.requestSource as string) ?? "-"}
-            </span>
+            Sumber: <span className="font-medium text-foreground">{proc.requestSource ?? "-"}</span>
           </span>
         </div>
 
         <DispatchView
-          status={proc.status as ScmProcurementStatus}
+          status={proc.status}
           actorRole={user.role}
-          procurement={proc as unknown as Record<string, unknown>}
+          procurement={proc}
           items={items}
           invoice={invoice}
         />

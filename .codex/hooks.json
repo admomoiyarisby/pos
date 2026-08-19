@@ -7,9 +7,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/home/edward/.agents/skills/impeccable/scripts/hook.mjs\"",
+            "command": "[ ! -f '/root/.agents/skills/impeccable/scripts/hook.mjs' ] || node '/root/.agents/skills/impeccable/scripts/hook.mjs'",
             "timeout": 5,
-            "statusMessage": "Checking UI changes"
+            "statusMessage": "Checking UI changes",
+            "commandWindows": "if exist \"/root/.agents/skills/impeccable/scripts/hook.mjs\" (node \"/root/.agents/skills/impeccable/scripts/hook.mjs\" & exit /b)"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f '/root/.agents/skills/impeccable/scripts/hook.mjs' ] || node '/root/.agents/skills/impeccable/scripts/hook.mjs'",
+            "timeout": 30,
+            "statusMessage": "Design deep pass",
+            "commandWindows": "if exist \"/root/.agents/skills/impeccable/scripts/hook.mjs\" (node \"/root/.agents/skills/impeccable/scripts/hook.mjs\" & exit /b)"
           }
         ]
       }

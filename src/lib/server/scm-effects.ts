@@ -1,4 +1,5 @@
 import { and, eq, sum } from "drizzle-orm";
+import { z } from "zod";
 import type { db as DbType } from "./db";
 import {
   inTransitInventory,
@@ -69,6 +70,32 @@ export interface FsmPayload {
     rejectionNote?: string;
   }>;
 }
+
+export const FsmPayloadSchema = z.object({
+  reason: z.string().optional(),
+  notes: z.string().optional(),
+  invoiceCode: z.string().optional(),
+  items: z
+    .array(
+      z.object({
+        id: z.string(),
+        receivedQuantity: z.number().optional(),
+        rejectedQuantity: z.number().optional(),
+        reason: z.string().optional(),
+      }),
+    )
+    .optional(),
+  caDecisions: z
+    .array(
+      z.object({
+        id: z.string(),
+        caDecision: z.enum(["approved", "rejected"]),
+        readyQuantity: z.number().optional(),
+        rejectionNote: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
 
 // -----------------------------------------------------------------------------
 // accept-and-ship

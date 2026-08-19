@@ -1,6 +1,7 @@
 import { db } from "#/lib/server/db";
 import { systemLogs, auditLogs } from "#/db/schema";
 import type { AppUser } from "./auth";
+import type { UnknownRecord } from "#/lib/unknown-record";
 
 export async function logSystemAction(
   user: AppUser | null,
@@ -22,8 +23,8 @@ export async function logAudit(
   tableName: string,
   recordId: string,
   action: "CREATE" | "UPDATE" | "DELETE" | "STATUS_CHANGE",
-  oldValues?: Record<string, unknown>,
-  newValues?: Record<string, unknown>,
+  oldValues?: UnknownRecord,
+  newValues?: UnknownRecord,
 ) {
   await db.insert(auditLogs).values({
     tableName,

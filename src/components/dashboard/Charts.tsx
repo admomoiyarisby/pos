@@ -24,13 +24,11 @@ const CHANNEL_COLORS = [
 
 type FormatterFn = NonNullable<TooltipProps<ValueType, NameType>["formatter"]>;
 
-const orderCountFormatter: FormatterFn = (_value, _name) =>
-  [_value, "Pesanan"] as unknown as ReturnType<FormatterFn>;
-const revenueFormatter: FormatterFn = (_value, _name) =>
-  [
-    `Rp ${Number(_value).toLocaleString("id-ID")}`,
-    "Pendapatan",
-  ] as unknown as ReturnType<FormatterFn>;
+const orderCountFormatter: FormatterFn = (_value, _name) => [String(_value), "Pesanan"];
+const revenueFormatter: FormatterFn = (_value, _name) => [
+  `Rp ${Number(_value).toLocaleString("id-ID")}`,
+  "Pendapatan",
+];
 
 interface Order {
   id: string;

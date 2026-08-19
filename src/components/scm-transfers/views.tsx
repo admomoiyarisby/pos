@@ -31,17 +31,53 @@ import {
 } from "#/lib/server/scm-transfers";
 import { printMutasiSuratJalan, printMutasiInvoice } from "#/lib/server/scm-transfer-print";
 import { openPrintWindow } from "#/lib/print-window";
+import { lookupLabel } from "#/lib/label-lookup";
 import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
+/** Sender/receiver/AM view of a transfer row — the fields these views render. */
+export interface TransferRow {
+  id: string;
+  code: string;
+  status: string;
+}
+
+/** Transfer line item as rendered by these views. */
+export interface TransferItemRow {
+  id: string;
+  ingredientId: string;
+  quantity: number;
+  receivedQuantity: number | null;
+  rejectedQuantity: number | null;
+  unitPrice: number;
+  reason: string | null;
+}
+
+/** Transfer invoice header — fields these views render. */
+export interface TransferInvoiceRow {
+  code: string;
+  totalAmount: number;
+  paidAt: Date | string | null;
+}
+
+/** Transfer audit log entry — fields these views render. */
+export interface TransferAuditRow {
+  id: string;
+  event: string;
+  fromState: string | null;
+  toState: string | null;
+  note: string | null;
+  createdAt: Date | string;
+}
+
 export interface TransferViewProps {
-  transfer: Record<string, unknown>;
-  items: Array<Record<string, unknown>>;
-  invoice: Record<string, unknown> | null;
-  auditLog: Array<Record<string, unknown>>;
+  transfer: TransferRow;
+  items: TransferItemRow[];
+  invoice: TransferInvoiceRow | null;
+  auditLog: TransferAuditRow[];
   branchById: Map<string, { id: string; name: string }>;
   ingredientById: Map<string, { id: string; name: string; stockUnit: string }>;
   /** Whether the current user is the sender branch_admin */
@@ -77,7 +113,7 @@ function useTransferActions(transferId: string) {
   const printSJ = useServerFn(printMutasiSuratJalan);
   const printInv = useServerFn(printMutasiInvoice);
 
-  async function run(fn: () => Promise<unknown>) {
+  async function run<T>(fn: () => Promise<T>) {
     setError(null);
     try {
       await fn();
@@ -151,7 +187,7 @@ function ReadOnlyItems({
   items,
   ingredientById,
 }: {
-  items: Array<Record<string, unknown>>;
+  items: TransferItemRow[];
   ingredientById: Map<string, { id: string; name: string; stockUnit: string }>;
 }) {
   if (items.length === 0) {
@@ -166,26 +202,26 @@ function ReadOnlyItems({
     <div className="rounded-md border">
       <div className="divide-y">
         {items.map((it) => {
-          const ing = ingredientById.get(it.ingredientId as string);
+          const ing = ingredientById.get(it.ingredientId);
           return (
-            <div key={it.id as string} className="flex items-center gap-4 p-4">
+            <div key={it.id} className="flex items-center gap-4 p-4">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
-                  {ing?.name ?? (it.ingredientId as string).slice(0, 8) + "..."}
+                  {ing?.name ?? it.ingredientId.slice(0, 8) + "..."}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Qty janji: {it.quantity as number} {ing?.stockUnit ?? ""}
+                  Qty janji: {it.quantity} {ing?.stockUnit ?? ""}
                 </p>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-sm">
-                  Diterima: <strong>{(it.receivedQuantity as number) ?? "—"}</strong>
+                  Diterima: <strong>{it.receivedQuantity ?? "—"}</strong>
                 </p>
                 <p className="text-sm">
-                  Ditolak: <strong>{(it.rejectedQuantity as number) ?? "—"}</strong>
+                  Ditolak: <strong>{it.rejectedQuantity ?? "—"}</strong>
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  @ Rp {(it.unitPrice as number).toLocaleString("id-ID")}/{ing?.stockUnit ?? "unit"}
+                  @ Rp {it.unitPrice.toLocaleString("id-ID")}/{ing?.stockUnit ?? "unit"}
                 </p>
               </div>
             </div>
@@ -197,7 +233,7 @@ function ReadOnlyItems({
 }
 
 /** Status labels for audit log display */
-const auditStatusLabels: Record<string, string> = {
+const auditStatusLabels = {
   SuratJalanDraft: "Draft SJ",
   PendingAMReview: "Menunggu AM",
   Approved: "Disetujui",
@@ -211,7 +247,7 @@ const auditStatusLabels: Record<string, string> = {
 };
 
 /** Event labels for audit log display */
-const auditEventLabels: Record<string, string> = {
+const auditEventLabels = {
   submit: "Diajukan",
   approve: "Disetujui",
   reject: "Ditolak",
@@ -226,7 +262,7 @@ const auditEventLabels: Record<string, string> = {
 };
 
 /** Render the audit log */
-function AuditLog({ rows }: { rows: Array<Record<string, unknown>> }) {
+function AuditLog({ rows }: { rows: TransferAuditRow[] }) {
   if (!rows || rows.length === 0) return null;
   return (
     <div className="rounded-md border">
@@ -235,22 +271,20 @@ function AuditLog({ rows }: { rows: Array<Record<string, unknown>> }) {
       </div>
       <div className="divide-y">
         {rows.map((row) => (
-          <div key={row.id as string} className="flex items-center gap-3 p-3 text-sm">
+          <div key={row.id} className="flex items-center gap-3 p-3 text-sm">
             <span className="w-32 text-xs text-muted-foreground">
-              {new Date(row.createdAt as string).toLocaleString("id-ID")}
+              {new Date(row.createdAt).toLocaleString("id-ID")}
             </span>
             <span className="font-medium">
-              {auditEventLabels[String(row.event)] ?? String(row.event)}
+              {lookupLabel(auditEventLabels, String(row.event)) ?? String(row.event)}
             </span>
             <span className="text-muted-foreground">
-              {auditStatusLabels[String(row.fromState)] ?? String(row.fromState)}
+              {lookupLabel(auditStatusLabels, String(row.fromState)) ?? String(row.fromState)}
               {" → "}
-              {auditStatusLabels[String(row.toState)] ?? String(row.toState)}
+              {lookupLabel(auditStatusLabels, String(row.toState)) ?? String(row.toState)}
             </span>
             {row.note ? (
-              <span className="truncate text-xs italic text-muted-foreground">
-                {row.note as string}
-              </span>
+              <span className="truncate text-xs italic text-muted-foreground">{row.note}</span>
             ) : null}
           </div>
         ))}
@@ -367,7 +401,7 @@ export function CancelledView(props: TransferViewProps) {
 // Invoice card (used by WaitingForPayment and Finished)
 // ---------------------------------------------------------------------------
 
-function InvoiceCard({ invoice }: { invoice: Record<string, unknown> }) {
+function InvoiceCard({ invoice }: { invoice: TransferInvoiceRow }) {
   return (
     <div className="rounded-md border">
       <div className="flex items-center justify-between border-b p-4">
@@ -378,12 +412,10 @@ function InvoiceCard({ invoice }: { invoice: Record<string, unknown> }) {
       </div>
       <div className="p-4">
         <p className="text-sm">Kode: {String(invoice.code)}</p>
-        <p className="text-2xl font-bold">
-          Rp {(invoice.totalAmount as number).toLocaleString("id-ID")}
-        </p>
+        <p className="text-2xl font-bold">Rp {invoice.totalAmount.toLocaleString("id-ID")}</p>
         {invoice.paidAt ? (
           <p className="text-xs text-muted-foreground">
-            Dibayar: {new Date(invoice.paidAt as string).toLocaleDateString("id-ID")}
+            Dibayar: {new Date(invoice.paidAt).toLocaleDateString("id-ID")}
           </p>
         ) : null}
       </div>
@@ -397,7 +429,7 @@ function InvoiceCard({ invoice }: { invoice: Record<string, unknown> }) {
 
 export function DraftSenderForm(props: TransferViewProps) {
   const { transfer, items, ingredientById, auditLog } = props;
-  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const { error, setError, actions } = useTransferActions(transfer.id);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
 
@@ -444,7 +476,7 @@ export function DraftSenderForm(props: TransferViewProps) {
 
       {cancelOpen && (
         <CancelModal
-          code={transfer.code as string}
+          code={transfer.code}
           reason={cancelReason}
           onReasonChange={setCancelReason}
           onCancel={() => {
@@ -461,7 +493,7 @@ export function DraftSenderForm(props: TransferViewProps) {
             setCancelReason("");
             toast.success("Mutasi dibatalkan.");
           }}
-          status={transfer.status as string}
+          status={transfer.status}
         />
       )}
     </Section>
@@ -470,7 +502,7 @@ export function DraftSenderForm(props: TransferViewProps) {
 
 export function PendingSenderWaiting(props: TransferViewProps) {
   const { transfer, items, ingredientById, auditLog } = props;
-  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const { error, setError, actions } = useTransferActions(transfer.id);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
 
@@ -518,7 +550,7 @@ export function PendingSenderWaiting(props: TransferViewProps) {
 
       {cancelOpen && (
         <CancelModal
-          code={transfer.code as string}
+          code={transfer.code}
           reason={cancelReason}
           onReasonChange={setCancelReason}
           onCancel={() => {
@@ -535,7 +567,7 @@ export function PendingSenderWaiting(props: TransferViewProps) {
             setCancelReason("");
             toast.success("Mutasi dibatalkan.");
           }}
-          status={transfer.status as string}
+          status={transfer.status}
         />
       )}
     </Section>
@@ -544,7 +576,7 @@ export function PendingSenderWaiting(props: TransferViewProps) {
 
 export function ApprovedSenderShip(props: TransferViewProps) {
   const { transfer, items, ingredientById, invoice, auditLog } = props;
-  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const { error, setError, actions } = useTransferActions(transfer.id);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
 
@@ -602,7 +634,7 @@ export function ApprovedSenderShip(props: TransferViewProps) {
 
       {cancelOpen && (
         <CancelModal
-          code={transfer.code as string}
+          code={transfer.code}
           reason={cancelReason}
           onReasonChange={setCancelReason}
           onCancel={() => {
@@ -619,7 +651,7 @@ export function ApprovedSenderShip(props: TransferViewProps) {
             setCancelReason("");
             toast.success("Mutasi dibatalkan.");
           }}
-          status={transfer.status as string}
+          status={transfer.status}
         />
       )}
     </Section>
@@ -632,7 +664,7 @@ export function ApprovedSenderShip(props: TransferViewProps) {
 
 export function PendingAmReview(props: TransferViewProps) {
   const { transfer, items, ingredientById, auditLog } = props;
-  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const { error, setError, actions } = useTransferActions(transfer.id);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
@@ -682,7 +714,7 @@ export function PendingAmReview(props: TransferViewProps) {
           <div className="w-full max-w-md rounded-lg border bg-background p-6 shadow-lg">
             <h3 className="text-lg font-semibold">Tolak Mutasi</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              Tolak mutasi <strong>{transfer.code as string}</strong>?
+              Tolak mutasi <strong>{transfer.code}</strong>?
             </p>
             <textarea
               value={rejectReason}
@@ -730,7 +762,7 @@ export function PendingAmReview(props: TransferViewProps) {
 
 export function InTransitReceiverTracking(props: TransferViewProps) {
   const { transfer, items, ingredientById, auditLog } = props;
-  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const { error, setError, actions } = useTransferActions(transfer.id);
 
   return (
     <Section>
@@ -774,7 +806,7 @@ export function InTransitReceiverTracking(props: TransferViewProps) {
 
 export function DeliveredReceiverForm(props: TransferViewProps) {
   const { transfer, items, ingredientById, auditLog } = props;
-  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const { error, setError, actions } = useTransferActions(transfer.id);
 
   return (
     <Section>
@@ -818,7 +850,7 @@ export function DeliveredReceiverForm(props: TransferViewProps) {
 
 export function ReviewingReceiverInteractive(props: TransferViewProps) {
   const { transfer, items, ingredientById, auditLog } = props;
-  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const { error, setError, actions } = useTransferActions(transfer.id);
   const [reviewEdits, setReviewEdits] = useState<
     Record<string, { received: number; rejected: number; reason: string }>
   >({});
@@ -844,21 +876,21 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
         </div>
         <div className="divide-y">
           {items.map((it) => {
-            const ing = ingredientById.get(it.ingredientId as string);
-            const edit = reviewEdits[it.id as string] ?? {
-              received: (it.receivedQuantity as number) ?? (it.quantity as number),
-              rejected: (it.rejectedQuantity as number) ?? 0,
-              reason: (it.reason as string) ?? "",
+            const ing = ingredientById.get(it.ingredientId);
+            const edit = reviewEdits[it.id] ?? {
+              received: it.receivedQuantity ?? it.quantity,
+              rejected: it.rejectedQuantity ?? 0,
+              reason: it.reason ?? "",
             };
-            const sumOk = edit.received + edit.rejected === (it.quantity as number);
+            const sumOk = edit.received + edit.rejected === it.quantity;
             return (
-              <div key={it.id as string} className="space-y-2 p-4">
+              <div key={it.id} className="space-y-2 p-4">
                 <div className="flex items-center gap-2">
                   <p className="flex-1 text-sm font-medium">
-                    {ing?.name ?? (it.ingredientId as string).slice(0, 8) + "..."}
+                    {ing?.name ?? it.ingredientId.slice(0, 8) + "..."}
                   </p>
                   <span className="text-xs text-muted-foreground">
-                    Janji: {it.quantity as number} {ing?.stockUnit ?? ""}
+                    Janji: {it.quantity} {ing?.stockUnit ?? ""}
                   </span>
                 </div>
                 <div className="flex items-center gap-4">
@@ -872,7 +904,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                         const val = Number(e.target.value);
                         setReviewEdits((prev) => ({
                           ...prev,
-                          [it.id as string]: { ...(prev[it.id as string] ?? edit), received: val },
+                          [it.id]: { ...(prev[it.id] ?? edit), received: val },
                         }));
                       }}
                       className="h-8 w-20 rounded-md border border-input bg-background px-2 text-right text-sm"
@@ -888,7 +920,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                         const val = Number(e.target.value);
                         setReviewEdits((prev) => ({
                           ...prev,
-                          [it.id as string]: { ...(prev[it.id as string] ?? edit), rejected: val },
+                          [it.id]: { ...(prev[it.id] ?? edit), rejected: val },
                         }));
                       }}
                       className="h-8 w-20 rounded-md border border-input bg-background px-2 text-right text-sm"
@@ -902,8 +934,8 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                         onChange={(e) =>
                           setReviewEdits((prev) => ({
                             ...prev,
-                            [it.id as string]: {
-                              ...(prev[it.id as string] ?? edit),
+                            [it.id]: {
+                              ...(prev[it.id] ?? edit),
                               reason: e.target.value,
                             },
                           }))
@@ -915,7 +947,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                   )}
                   {!sumOk && (
                     <span className="text-xs text-destructive">
-                      {edit.received + edit.rejected} ≠ {it.quantity as number}
+                      {edit.received + edit.rejected} ≠ {it.quantity}
                     </span>
                   )}
                 </div>
@@ -929,17 +961,14 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
             <span className="text-muted-foreground">Total: {items.length} item</span>
             <div className="flex items-center gap-4">
               <span>
-                Janji: <strong>{items.reduce((s, it) => s + (it.quantity as number), 0)}</strong>
+                Janji: <strong>{items.reduce((s, it) => s + it.quantity, 0)}</strong>
               </span>
               <span>
                 Diterima:{" "}
                 <strong>
                   {items.reduce((s, it) => {
-                    const edit = reviewEdits[it.id as string];
-                    return (
-                      s +
-                      (edit?.received ?? (it.receivedQuantity as number) ?? (it.quantity as number))
-                    );
+                    const edit = reviewEdits[it.id];
+                    return s + (edit?.received ?? it.receivedQuantity ?? it.quantity);
                   }, 0)}
                 </strong>
               </span>
@@ -947,8 +976,8 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                 Ditolak:{" "}
                 <strong>
                   {items.reduce((s, it) => {
-                    const edit = reviewEdits[it.id as string];
-                    return s + (edit?.rejected ?? (it.rejectedQuantity as number) ?? 0);
+                    const edit = reviewEdits[it.id];
+                    return s + (edit?.rejected ?? it.rejectedQuantity ?? 0);
                   }, 0)}
                 </strong>
               </span>
@@ -969,27 +998,27 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                 reason?: string;
               }> = [];
               for (const it of items) {
-                const edit = reviewEdits[it.id as string] ?? {
-                  received: (it.receivedQuantity as number) ?? (it.quantity as number),
-                  rejected: (it.rejectedQuantity as number) ?? 0,
-                  reason: (it.reason as string) ?? "",
+                const edit = reviewEdits[it.id] ?? {
+                  received: it.receivedQuantity ?? it.quantity,
+                  rejected: it.rejectedQuantity ?? 0,
+                  reason: it.reason ?? "",
                 };
-                if (edit.received + edit.rejected !== (it.quantity as number)) {
-                  const ing = ingredientById.get(it.ingredientId as string);
+                if (edit.received + edit.rejected !== it.quantity) {
+                  const ing = ingredientById.get(it.ingredientId);
                   setReviewError(
-                    `${ing?.name ?? (it.ingredientId as string).slice(0, 8)}: diterima + ditolak harus = ${it.quantity as number}`,
+                    `${ing?.name ?? it.ingredientId.slice(0, 8)}: diterima + ditolak harus = ${it.quantity}`,
                   );
                   return;
                 }
                 if (edit.rejected > 0 && !edit.reason.trim()) {
-                  const ing = ingredientById.get(it.ingredientId as string);
+                  const ing = ingredientById.get(it.ingredientId);
                   setReviewError(
-                    `${ing?.name ?? (it.ingredientId as string).slice(0, 8)}: alasan penolakan wajib diisi`,
+                    `${ing?.name ?? it.ingredientId.slice(0, 8)}: alasan penolakan wajib diisi`,
                   );
                   return;
                 }
                 payload.push({
-                  id: it.id as string,
+                  id: it.id,
                   receivedQuantity: edit.received,
                   rejectedQuantity: edit.rejected,
                   reason: edit.reason || undefined,
@@ -1029,7 +1058,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
 
 export function WaitingInvoice(props: TransferViewProps) {
   const { transfer, items, ingredientById, invoice, auditLog } = props;
-  const { error, setError, actions } = useTransferActions(transfer.id as string);
+  const { error, setError, actions } = useTransferActions(transfer.id);
 
   return (
     <Section>
@@ -1082,8 +1111,8 @@ export function WaitingInvoice(props: TransferViewProps) {
           <div>
             <SectionHeading>Aksi AM</SectionHeading>
             <CancelAction
-              code={transfer.code as string}
-              status={transfer.status as string}
+              code={transfer.code}
+              status={transfer.status}
               onCancel={async (reason) => {
                 await actions.cancel(reason);
                 toast.success("Mutasi dibatalkan.");

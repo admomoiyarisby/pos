@@ -33,9 +33,7 @@ interface LineItem {
 }
 
 function makeId() {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random()}`;
+  return "randomUUID" in globalThis ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
 
 export interface StockAdjustmentModalProps {
@@ -145,7 +143,9 @@ export default function StockAdjustmentModal({
       setLines((prev) => prev.filter((l) => !(l.ingredient && ids.has(l.ingredient.id))));
     } else {
       setLines((prev) => {
-        const existing = new Set(prev.map((l) => l.ingredient?.id).filter(Boolean) as string[]);
+        const existing = new Set(
+          prev.map((l) => l.ingredient?.id).filter((id): id is string => id !== undefined),
+        );
         const toAdd = opts
           .filter((o) => !existing.has(o.id))
           .map((o) => ({
@@ -460,7 +460,7 @@ export default function StockAdjustmentModal({
                 <select
                   value={line.direction}
                   onChange={(e) =>
-                    updateLine(line.id, { direction: e.target.value as "IN" | "OUT" })
+                    updateLine(line.id, { direction: e.target.value === "OUT" ? "OUT" : "IN" })
                   }
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                 >

@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { searchStringParam } from "#/lib/utils";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -23,11 +24,11 @@ interface SORow {
   createdAt: Date;
 }
 
-const statusColors: Record<string, "default" | "warning" | "success"> = {
+const statusColors = {
   Submitted: "default",
   Approved: "success",
   "Under Investigation": "warning",
-};
+} satisfies Record<string, "default" | "warning" | "success">;
 
 const columns: Column<SORow>[] = [
   { key: "date", header: "Tanggal", sortable: true },
@@ -133,7 +134,7 @@ function StockOpnamePage() {
       data: { branchId: selectedBranch, date: selectedDate },
     });
   };
-  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const statusFilter = searchStringParam(Route.useSearch(), "status");
   const filteredOpnames = statusFilter ? opnames.filter((o) => o.status === statusFilter) : opnames;
   usePageTitle("Opname Stok", "Verifikasi fisik stok per cabang");
 

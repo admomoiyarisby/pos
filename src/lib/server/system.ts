@@ -97,6 +97,7 @@ export const getNotifications = createServerFn({ method: "GET" })
         title: systemNotifications.title,
         message: systemNotifications.message,
         type: systemNotifications.type,
+        priority: systemNotifications.priority,
         isRead: systemNotifications.isRead,
         metadata: sql<string>`${systemNotifications.metadata}`,
         createdAt: systemNotifications.createdAt,

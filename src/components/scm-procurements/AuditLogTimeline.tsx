@@ -17,7 +17,9 @@ export interface AuditLogEntry {
   note: string | null;
 }
 
-const eventLabels: Record<string, string> = {
+import { lookupLabel } from "#/lib/label-lookup";
+
+const eventLabels = {
   create: "Dibuat",
   submit: "Disubmit",
   "open-review": "Review Dibuka",
@@ -59,7 +61,7 @@ export function AuditLogTimeline({
     <div className="space-y-2">
       <ol className="space-y-2">
         {entries.map((e) => {
-          const label = eventLabels[e.event] ?? e.event;
+          const label = lookupLabel(eventLabels, e.event) ?? e.event;
           const from = e.fromState ? stateLabel(e.fromState) : null;
           const to = e.toState ? stateLabel(e.toState) : null;
           return (
@@ -97,7 +99,7 @@ export function AuditLogTimeline({
   );
 }
 
-const STATE_LABELS: Record<string, string> = {
+const STATE_LABELS = {
   Draft: "Draft",
   Pending: "Menunggu Review",
   UnderReview: "Sedang Direview",
@@ -117,7 +119,8 @@ const STATE_LABELS: Record<string, string> = {
  * in routes/_layout/scm-procurements/{index,$procurementId}.tsx. (ADR 0004)
  */
 function stateLabel(s: string): string {
-  if (STATE_LABELS[s]) return STATE_LABELS[s];
+  const label = lookupLabel(STATE_LABELS, s);
+  if (label) return label;
   return s
     .replace(/([A-Z])/g, " $1")
     .trim()

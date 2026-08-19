@@ -1,6 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { orders, orderItems, recipes, ingredients, recipeIngredients } from "#/db/schema";
+import { z } from "zod";
+import {
+  orders,
+  orderItems,
+  recipes,
+  ingredients,
+  recipeIngredients,
+  ORDER_CHANNEL_VALUES,
+} from "#/db/schema";
 import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
 import { requireRole } from "./auth";
 
@@ -25,7 +33,10 @@ export interface AuditInventoryRecipe {
  */
 export const getAuditInventory = createServerFn({ method: "GET" })
   .validator(
-    (data: { dateFrom?: string; dateTo?: string; branchId?: string; channel?: string }) => data,
+    (data: { dateFrom?: string; dateTo?: string; branchId?: string; channel?: string }) => ({
+      ...data,
+      channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+    }),
   )
   .handler(async ({ data }): Promise<AuditInventoryRecipe[]> => {
     await requireRole("super_admin", "admin_pusat");
@@ -33,7 +44,7 @@ export const getAuditInventory = createServerFn({ method: "GET" })
     // Only count completed orders (exclude voided/cancelled)
     const conditions = [eq(orders.status, "Completed")];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
-    if (data.channel) conditions.push(eq(orders.channel, data.channel as any));
+    if (data.channel) conditions.push(eq(orders.channel, data.channel));
     if (data.dateFrom) conditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
     if (data.dateTo) conditions.push(lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")));
 

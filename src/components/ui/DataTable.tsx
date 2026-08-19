@@ -75,11 +75,12 @@ export default function DataTable<T>({
   // Use external search if provided, otherwise use internal search
   const searchValue = externalSearch !== undefined ? externalSearch : search;
 
-  const safeStr = (v: unknown) => {
-    if (v instanceof Date) return v.toISOString();
-    if (typeof v === "string") return v;
-    if (typeof v === "number" || typeof v === "boolean") return String(v);
-    return "";
+  // Sortable cells are display values: dates, primitives, or nothing. Anything
+  // else (e.g. an object cell) sorts as "" for stability.
+  type SortableCellValue = Date | string | number | boolean | null | undefined;
+  const safeStr = (v: SortableCellValue): string => {
+    if (v === null || v === undefined) return "";
+    return v instanceof Date ? v.toISOString() : String(v);
   };
 
   // Deduplicate by keyExtractor to prevent duplicate-key React warnings
@@ -96,12 +97,12 @@ export default function DataTable<T>({
   // Fuzzy (Fuse.js) search — ADR 0008: threshold 0.3, ignoreLocation (match
   // anywhere, like ILIKE), re-ranked by score. When a column sort is active the
   // downstream `sorted` overrides this order; otherwise results stay score-ranked.
-  const searchKeysKey = searchKeys ? (searchKeys as readonly (keyof T)[]).join(",") : "*";
+  const searchKeysKey = searchKeys ? searchKeys.join(",") : "*";
   const fuse = useMemo(() => {
     const keys = searchKeys
-      ? (searchKeys as string[])
+      ? searchKeys.map((k) => String(k))
       : deduped[0]
-        ? (Object.keys(deduped[0] as object) as string[])
+        ? Object.keys(deduped[0] ?? {})
         : [];
     return new Fuse(deduped, {
       keys,
@@ -119,8 +120,12 @@ export default function DataTable<T>({
 
   const sorted = sort
     ? [...filtered].sort((a, b) => {
-        const aVal = safeStr((a as Record<string, unknown>)[sort.key]);
-        const bVal = safeStr((b as Record<string, unknown>)[sort.key]);
+        // SAFETY: sorting only runs on columns declared `sortable`, whose cells
+        // are display values (Date | string | number | boolean | null | undefined).
+        // The Record index read is a widened view over the row object.
+        const aVal = safeStr((a as Record<string, SortableCellValue>)[sort.key]);
+        // SAFETY: same invariant as above — the sort key is a declared column.
+        const bVal = safeStr((b as Record<string, SortableCellValue>)[sort.key]);
         const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
         return sort.dir === "asc" ? cmp : -cmp;
       })
@@ -254,7 +259,9 @@ export default function DataTable<T>({
                       <div className="truncate min-w-0">
                         {col.render
                           ? col.render(row)
-                          : safeStr((row as Record<string, unknown>)[col.key]) || "-"}
+                          : // SAFETY: non-rendered cells are display values
+                            // (Date | string | number | boolean | null | undefined).
+                            safeStr((row as Record<string, SortableCellValue>)[col.key]) || "-"}
                       </div>
                     </td>
                   ))}

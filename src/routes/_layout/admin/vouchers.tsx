@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { formText } from "#/lib/utils";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -22,15 +24,15 @@ interface VoucherRow {
   discountType: "percentage" | "fixed";
   discountValue: number;
   minOrder: number;
-  validUntil: string;
+  validUntil: Date | string;
   isActive: boolean;
-  createdAt: string;
+  createdAt: Date | string;
 }
 
 /** Convert a Date (or ISO string) to the value expected by <input type="datetime-local"> (local wall-clock). */
 function toLocalInputValue(d: string | Date | null | undefined): string {
   if (!d) return "";
-  const date = typeof d === "string" ? new Date(d) : d;
+  const date = new Date(d);
   if (Number.isNaN(date.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -49,10 +51,12 @@ function formatDiscount(r: VoucherRow): string {
     : `Rp ${r.discountValue.toLocaleString("id-ID")}`;
 }
 
-function voucherStatus(r: VoucherRow): {
+type VoucherStatusBadge = {
   label: string;
   variant: "success" | "warning" | "secondary";
-} {
+};
+
+function voucherStatus(r: VoucherRow): VoucherStatusBadge {
   if (!r.isActive) return { label: "Nonaktif", variant: "secondary" };
   if (new Date(r.validUntil).getTime() < Date.now())
     return { label: "Kadaluarsa", variant: "warning" };
@@ -110,7 +114,9 @@ export const Route = createFileRoute("/_layout/admin/vouchers")({
   component: VouchersPage,
   loader: async () => {
     const vouchers = await getVouchers({ data: {} });
-    return { vouchers: vouchers as unknown as VoucherRow[] };
+    // SAFETY: the server row type is assignable to VoucherRow (its timestamps
+    // are Date, covered by the Date | string union here).
+    return { vouchers: vouchers as VoucherRow[] };
   },
 });
 
@@ -126,7 +132,9 @@ function VouchersPage() {
 
   const { data: vouchers } = useQuery({
     queryKey: ["vouchers"],
-    queryFn: () => getVouchers({ data: {} }) as unknown as Promise<VoucherRow[]>,
+    // SAFETY: server rows are assignable to VoucherRow (Date timestamps are
+    // covered by the Date | string union).
+    queryFn: () => getVouchers({ data: {} }) as Promise<VoucherRow[]>,
     initialData: initial,
   });
 
@@ -186,12 +194,12 @@ function VouchersPage() {
     e.preventDefault();
     setFormError(null);
     const fd = new FormData(e.currentTarget);
-    const code = (fd.get("code") as string).trim().toUpperCase();
-    const description = (fd.get("description") as string).trim();
-    const discountType = fd.get("discountType") as "percentage" | "fixed";
-    const discountValue = Number(fd.get("discountValue"));
-    const minOrder = Number(fd.get("minOrder") || 0);
-    const validUntilRaw = (fd.get("validUntil") as string).trim();
+    const code = formText(fd, "code").trim().toUpperCase();
+    const description = formText(fd, "description").trim();
+    const discountType = z.enum(["percentage", "fixed"]).parse(formText(fd, "discountType"));
+    const discountValue = Number(formText(fd, "discountValue"));
+    const minOrder = Number(formText(fd, "minOrder") || 0);
+    const validUntilRaw = formText(fd, "validUntil").trim();
     const isActive = fd.get("isActive") === "on";
 
     if (!code) return setFormError("Kode voucher wajib diisi");
@@ -306,7 +314,9 @@ function VouchersPage() {
               <select
                 name="discountType"
                 value={discountType}
-                onChange={(e) => setDiscountType(e.target.value as VoucherRow["discountType"])}
+                onChange={(e) =>
+                  setDiscountType(e.target.value === "fixed" ? "fixed" : "percentage")
+                }
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="percentage">Persen (%)</option>

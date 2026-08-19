@@ -1,7 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { z } from "zod";
 import { useState } from "react";
+import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
+import { lookupLabel } from "#/lib/label-lookup";
 import { getIngredient, updateIngredient } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { toast } from "sonner";
@@ -51,12 +54,12 @@ function IngredientDetailPage() {
     const fd = new FormData(e.currentTarget);
     const data = {
       id: ingId,
-      code: fd.get("code") as string,
-      name: fd.get("name") as string,
-      category: fd.get("category") as "Fresh" | "Dry" | "Packaging",
-      skuType: fd.get("skuType") as "RM" | "SFG" | "FG",
-      purchaseUnit: fd.get("purchaseUnit") as string,
-      stockUnit: fd.get("stockUnit") as string,
+      code: formText(fd, "code"),
+      name: formText(fd, "name"),
+      category: z.enum(["Fresh", "Dry", "Packaging"]).parse(formText(fd, "category")),
+      skuType: z.enum(["RM", "SFG", "FG"]).parse(formText(fd, "skuType")),
+      purchaseUnit: formText(fd, "purchaseUnit"),
+      stockUnit: formText(fd, "stockUnit"),
       conversionFactor: Number(fd.get("conversionFactor")),
       averageCost: Number(fd.get("averageCost")),
       rop: Number(fd.get("rop")),
@@ -70,11 +73,11 @@ function IngredientDetailPage() {
     return <div className="text-muted-foreground">Bahan tidak ditemukan</div>;
   }
 
-  const skuLabels: Record<string, string> = {
+  const skuLabels = {
     RM: "Raw Material",
     SFG: "Semi-Finished",
     FG: "Finished Goods",
-  };
+  } satisfies Record<string, string>;
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "central_kitchen"]}>
@@ -279,7 +282,9 @@ function IngredientDetailPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="rounded-lg border p-4">
                 <p className="text-xs text-muted-foreground uppercase">Tipe SKU</p>
-                <p className="font-medium mt-1">{skuLabels[ingredient.skuType]}</p>
+                <p className="font-medium mt-1">
+                  {lookupLabel(skuLabels, ingredient.skuType) ?? "-"}
+                </p>
               </div>
               <div className="rounded-lg border p-4">
                 <p className="text-xs text-muted-foreground uppercase">Kategori</p>

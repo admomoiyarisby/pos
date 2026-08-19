@@ -39,6 +39,8 @@ function parseUser(baUser: {
   pin?: string;
   status: string;
 }): AppUser {
+  // SAFETY: baUser.role is a session string; the includes() check right
+  // before this guarantees it is one of the literal UserRole values.
   if (!baUser.role || !validRoles.includes(baUser.role as UserRole)) {
     // Fail loudly instead of silently downgrading to branch_admin.
     // A missing role means the session is corrupt or the user row is broken.
@@ -55,6 +57,7 @@ function parseUser(baUser: {
     id: baUser.id,
     email: baUser.email,
     name: baUser.name,
+    // SAFETY: role was validated against validRoles above (throws otherwise).
     role: baUser.role as UserRole,
     branchId: baUser.branchId,
     pin: baUser.pin,
@@ -75,10 +78,9 @@ export const getCurrentUserRaw = createServerOnlyFn(async (): Promise<AppUser | 
   // session.user already contains all columns from the `users` table
   // (because `users` IS the better-auth user table after the merge).
   // Custom fields like role, branchId, pin, status are available directly.
-  const baUser = session.user as unknown as {
-    id: string;
-    email: string | null;
-    name: string | null;
+  // SAFETY: the merged users table adds these columns to better-auth's User;
+  // the intersection keeps the base User fields while exposing the extras.
+  const baUser = session.user as typeof session.user & {
     role: string | undefined;
     branchId?: string;
     pin?: string;

@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { searchStringParam } from "#/lib/utils";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -29,13 +31,13 @@ interface InvRow {
   branchName: string | null;
 }
 
-const catColors: Record<string, "default" | "destructive" | "secondary"> = {
+const catColors = {
   Fresh: "destructive",
   Dry: "secondary",
   Packaging: "default",
-};
+} satisfies Record<string, "default" | "destructive" | "secondary">;
 
-const skuLabels: Record<string, string> = { RM: "RM", SFG: "SFG", FG: "FG" };
+const skuLabels = { RM: "RM", SFG: "SFG", FG: "FG" } satisfies Record<string, string>;
 
 export const Route = createFileRoute("/_layout/inventory/")({
   component: InventoryPage,
@@ -64,7 +66,7 @@ function InventoryPage() {
   const canFilterBranches =
     user?.role === "super_admin" || user?.role === "admin_pusat" || user?.role === "area_manager";
 
-  const { negative: negativeParam } = Route.useSearch() as { negative?: string };
+  const negativeParam = searchStringParam(Route.useSearch(), "negative");
   const negativeFilter = negativeParam === "true";
 
   const { data: result } = useQuery({
@@ -161,7 +163,9 @@ function InventoryPage() {
       header: "SKU",
       width: "w-16",
       sortable: true,
-      render: (r) => <Badge variant="outline">{skuLabels[r.ingredientSkuType ?? ""] ?? "-"}</Badge>,
+      render: (r) => (
+        <Badge variant="outline">{lookupLabel(skuLabels, r.ingredientSkuType ?? "") ?? "-"}</Badge>
+      ),
     },
     {
       key: "ingredientCategory",

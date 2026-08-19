@@ -20,11 +20,11 @@ import { toast } from "sonner";
 import { calculateNasiConversion } from "#/lib/server/nasi-conversion";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { useUnsavedDraft } from "#/hooks/useUnsavedDraft";
-const statusColors: Record<string, "default" | "warning" | "success"> = {
+const statusColors = {
   Submitted: "default",
   Approved: "success",
   "Under Investigation": "warning",
-};
+} satisfies Record<string, "default" | "warning" | "success">;
 
 export const Route = createFileRoute("/_layout/stock-opname/$soId")({
   component: StockOpnameDetailPage,
@@ -33,6 +33,11 @@ export const Route = createFileRoute("/_layout/stock-opname/$soId")({
     return { detail };
   },
 });
+
+interface StockOpnameDraft {
+  physicalInputs: Record<string, string>;
+  touchedItems: string[];
+}
 
 function StockOpnameDetailPage() {
   const { user } = useAuth();
@@ -43,21 +48,21 @@ function StockOpnameDetailPage() {
   // ADR 0011: silent local persistence of in-progress physical counts. The SO is an
   // entity-detail screen, so the draft is unambiguously "our work on this SO" — restore
   // silently. Legacy caches (pre-wrapper format) are dropped by the hook's read guard.
+  const initialDraft: StockOpnameDraft = {
+    // SAFETY: empty collections are seeded as the starting draft value; the
+    // shape is pinned by the named StockOpnameDraft contract below.
+    physicalInputs: {} as Record<string, string>,
+    // SAFETY: same — the empty array is the fresh-draft seed.
+    touchedItems: [] as string[],
+  };
   const {
     state: draft,
     setState: setDraft,
     clear: clearDraft,
-  } = useUnsavedDraft(
-    cacheKey,
-    { physicalInputs: {} as Record<string, string>, touchedItems: [] as string[] },
-    {
-      restoreMode: "silent",
-      isDirty: (s) => {
-        const d = s as { physicalInputs: Record<string, string>; touchedItems: string[] };
-        return Object.keys(d.physicalInputs).length > 0 || d.touchedItems.length > 0;
-      },
-    },
-  );
+  } = useUnsavedDraft(cacheKey, initialDraft, {
+    restoreMode: "silent",
+    isDirty: (s) => Object.keys(s.physicalInputs).length > 0 || s.touchedItems.length > 0,
+  });
   const physicalInputs = draft.physicalInputs;
   const touchedItems = draft.touchedItems;
   const [investigationNote, setInvestigationNote] = useState("");
@@ -277,7 +282,9 @@ function StockOpnameDetailPage() {
                   const result = await printStockOpname({ data: { soId } });
                   openPrintWindow(result.html);
                 } catch (err) {
-                  toast.error("Gagal mencetak", { description: (err as Error).message });
+                  toast.error("Gagal mencetak", {
+                    description: err instanceof Error ? err.message : String(err),
+                  });
                 }
               }}
               className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-muted transition-colors"

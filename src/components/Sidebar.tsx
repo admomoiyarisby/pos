@@ -43,13 +43,13 @@ interface SidebarProps {
   onClose: () => void;
 }
 
-const roleLabels: Record<UserRole, string> = {
+const roleLabels = {
   super_admin: "Super Admin",
   admin_pusat: "Admin Pusat",
   area_manager: "Area Manager",
   branch_admin: "Branch Admin",
   central_kitchen: "Central Kitchen",
-};
+} satisfies Record<UserRole, string>;
 
 interface NavItem {
   label: string;

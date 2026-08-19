@@ -17,7 +17,10 @@ const userRoleEnum = z.enum([
 ]);
 
 export const getUsers = createServerFn({ method: "GET" })
-  .validator((data: { search?: string; role?: string }) => data)
+  .validator((data: { search?: string; role?: string }) => ({
+    search: data.search,
+    role: userRoleEnum.optional().catch(undefined).parse(data.role),
+  }))
   .handler(async ({ data }) => {
     await requireAuth();
 
@@ -26,7 +29,7 @@ export const getUsers = createServerFn({ method: "GET" })
       conditions.push(fuzzySearch([usersTable.name, usersTable.email], data.search));
     }
     if (data.role) {
-      conditions.push(eq(usersTable.role, data.role as typeof usersTable.$inferSelect.role));
+      conditions.push(eq(usersTable.role, data.role));
     }
 
     const result = await db
@@ -95,21 +98,19 @@ export const getBranchUsers = createServerFn({ method: "GET" })
     return result;
   });
 
+const createUserInput = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  name: z.string().min(1),
+  role: userRoleEnum,
+  branchId: z.string().uuid().optional(),
+  pin: z.string().length(4).optional(),
+  status: z.enum(["Active", "Inactive"]).optional(),
+  assignedBranches: z.array(z.string().uuid()).optional(),
+});
+
 export const createUser = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        email: z.string().email(),
-        password: z.string().min(8),
-        name: z.string().min(1),
-        role: userRoleEnum,
-        branchId: z.string().uuid().optional(),
-        pin: z.string().length(4).optional(),
-        status: z.enum(["Active", "Inactive"]).optional(),
-        assignedBranches: z.array(z.string().uuid()).optional(),
-      })
-      .parse(data),
-  )
+  .validator((data: z.input<typeof createUserInput>) => createUserInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
@@ -134,10 +135,10 @@ export const createUser = createServerFn({ method: "POST" })
       id: userId,
       email: data.email,
       name: data.name,
-      role: data.role as typeof usersTable.$inferSelect.role,
+      role: data.role,
       branchId: data.branchId,
       pin: data.pin,
-      status: (data.status ?? "Active") as typeof usersTable.$inferSelect.status,
+      status: data.status ?? "Active",
     });
 
     // Create credential account (better-auth stores passwords in the account table)
@@ -181,20 +182,18 @@ export const createUser = createServerFn({ method: "POST" })
     return { success: true, userId };
   });
 
+const updateUserInput = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).optional(),
+  role: userRoleEnum.optional(),
+  branchId: z.string().uuid().optional(),
+  pin: z.string().length(4).optional(),
+  status: z.enum(["Active", "Inactive"]).optional(),
+  assignedBranches: z.array(z.string().uuid()).optional(),
+});
+
 export const updateUser = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        id: z.string().uuid(),
-        name: z.string().min(1).optional(),
-        role: userRoleEnum.optional(),
-        branchId: z.string().uuid().optional(),
-        pin: z.string().length(4).optional(),
-        status: z.enum(["Active", "Inactive"]).optional(),
-        assignedBranches: z.array(z.string().uuid()).optional(),
-      })
-      .parse(data),
-  )
+  .validator((data: z.input<typeof updateUserInput>) => updateUserInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
@@ -235,7 +234,7 @@ export const updateUser = createServerFn({ method: "POST" })
       }
     }
 
-    const setData: Record<string, unknown> = { ...updates };
+    const setData = { ...updates };
     if (updates.branchId === undefined && "branchId" in data) {
       // If branchId was explicitly passed as undefined, keep it
     }
@@ -243,8 +242,8 @@ export const updateUser = createServerFn({ method: "POST" })
     await db.update(usersTable).set(setData).where(eq(usersTable.id, id));
 
     // Build new user data for audit
-    const newUserData: Record<string, unknown> = { ...oldUser, ...setData };
-    const nameHint = (newUserData.name as string) || oldUser.name;
+    const newUserData = { ...oldUser, ...setData };
+    const nameHint = newUserData.name || oldUser.name;
 
     // Log user update
     await logSystemAction(user, "Update User", `User "${nameHint}" diperbarui oleh ${user.name}`);
@@ -277,7 +276,7 @@ export const updateUser = createServerFn({ method: "POST" })
       );
     }
 
-    await logAudit(user, "users", id, "UPDATE", oldUser as Record<string, unknown>, newUserData);
+    await logAudit(user, "users", id, "UPDATE", oldUser, newUserData);
 
     // Update area manager branches
     if (assignedBranches !== undefined) {
@@ -297,15 +296,13 @@ export const updateUser = createServerFn({ method: "POST" })
 /**
  * Update the current user's profile (name and email).
  */
+const updateMyProfileInput = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+});
+
 export const updateMyProfile = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        name: z.string().min(1),
-        email: z.string().email(),
-      })
-      .parse(data),
-  )
+  .validator((data: z.input<typeof updateMyProfileInput>) => updateMyProfileInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -335,17 +332,15 @@ export const updateMyProfile = createServerFn({ method: "POST" })
  * Update the current user's PIN.
  * Validates global uniqueness across users.pin and branches.pin.
  */
+const updateMyPinInput = z.object({
+  pin: z
+    .string()
+    .length(4)
+    .regex(/^\d{4}$/, "PIN harus 4 digit"),
+});
+
 export const updateMyPin = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        pin: z
-          .string()
-          .length(4)
-          .regex(/^\d{4}$/, "PIN harus 4 digit"),
-      })
-      .parse(data),
-  )
+  .validator((data: z.input<typeof updateMyPinInput>) => updateMyPinInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
@@ -385,15 +380,13 @@ export const updateMyPin = createServerFn({ method: "POST" })
  * Update the current user's password.
  * Verifies current password before allowing change.
  */
+const updateMyPasswordInput = z.object({
+  currentPassword: z.string().min(1, "Password saat ini wajib diisi"),
+  newPassword: z.string().min(8, "Password baru minimal 8 karakter"),
+});
+
 export const updateMyPassword = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        currentPassword: z.string().min(1, "Password saat ini wajib diisi"),
-        newPassword: z.string().min(8, "Password baru minimal 8 karakter"),
-      })
-      .parse(data),
-  )
+  .validator((data: z.input<typeof updateMyPasswordInput>) => updateMyPasswordInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireAuth();
 

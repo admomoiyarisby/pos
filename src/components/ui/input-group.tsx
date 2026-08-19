@@ -65,7 +65,9 @@ function InputGroupAddon({
       data-align={align}
       className={cn(inputGroupAddonVariants({ align }), className)}
       onClick={(e) => {
-        if ((e.target as HTMLElement).closest("button")) {
+        // SAFETY: clicks land on DOM elements; non-Element targets (text nodes)
+        // simply don't match the closest() query.
+        if (e.target instanceof HTMLElement && e.target.closest("button")) {
           return;
         }
         e.currentTarget.parentElement?.querySelector("input")?.focus();

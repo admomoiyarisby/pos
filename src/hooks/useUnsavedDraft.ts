@@ -23,8 +23,10 @@ function readDraft<T>(key: string, ttlMs: number): DraftRecord<T> | null {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
+    // SAFETY: the shape is validated immediately below (updatedAt finite,
+    // `state` present); malformed payloads are treated as no draft.
     const rec = JSON.parse(raw) as DraftRecord<T>;
-    if (rec == null || typeof rec.updatedAt !== "number" || !("state" in rec)) {
+    if (rec == null || Number.isFinite(rec.updatedAt) === false || !("state" in rec)) {
       // Legacy / malformed payload — treat as no draft.
       return null;
     }
@@ -64,7 +66,7 @@ function clearDraftKey(key: string): void {
 
 export type RestoreMode = "silent" | "prompt";
 
-export interface UseUnsavedDraftOptions {
+export interface UseUnsavedDraftOptions<T> {
   /** TTL before a stored draft is silently evicted. Default 7 days. */
   ttlMs?: number;
   /** Debounce (ms) before committing to localStorage. Default 300. */
@@ -85,7 +87,7 @@ export interface UseUnsavedDraftOptions {
    * visiting a creation form never seeds a spurious "restore?" prompt. If omitted,
    * every state is considered dirty.
    */
-  isDirty?: (state: unknown) => boolean;
+  isDirty?: (state: T) => boolean;
 }
 
 export interface UseUnsavedDraftResult<T> {
@@ -109,7 +111,7 @@ export interface UseUnsavedDraftResult<T> {
 export function useUnsavedDraft<T>(
   key: string,
   fallback: T,
-  options: UseUnsavedDraftOptions = {},
+  options: UseUnsavedDraftOptions<T> = {},
 ): UseUnsavedDraftResult<T> {
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
@@ -117,7 +119,7 @@ export function useUnsavedDraft<T>(
   const resolvedKey = `draft-resolved:${key}`;
 
   // Read the stored draft exactly once per mount.
-  const initRef = useRef<DraftRecord<T> | null>(undefined as unknown as DraftRecord<T> | null);
+  const initRef = useRef<DraftRecord<T> | null | undefined>(undefined);
   if (initRef.current === undefined) {
     initRef.current = readDraft<T>(key, ttlMs);
   }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Search } from "lucide-react";
+import { lookupLabel } from "#/lib/label-lookup";
 import { Badge } from "#/components/ui/badge";
 import { Pagination } from "#/components/ui/Pagination";
 
@@ -182,11 +183,7 @@ export function OrderHistoryTable({
                       Rp {order.totalAmount.toLocaleString("id-ID")}
                     </td>
                     <td className="whitespace-nowrap px-4 py-4 text-center">
-                      <Badge
-                        variant={badgeVariant as "success" | "destructive" | "warning" | "default"}
-                      >
-                        {order.status}
-                      </Badge>
+                      <Badge variant={badgeVariant}>{order.status}</Badge>
                     </td>
                   </tr>
                 );
@@ -203,7 +200,7 @@ export function OrderHistoryTable({
 // Small color dot beside the channel name — replaces the banned side-stripe border.
 // Keeps the channel distinguishable without decorative color blocks.
 function ChannelDot({ channel }: { channel: string }) {
-  const colorByChannel: Record<string, string> = {
+  const colorByChannel = {
     Gofood: "bg-rose-500",
     Grabfood: "bg-emerald-500",
     ShopeeFood: "bg-orange-500",
@@ -212,7 +209,7 @@ function ChannelDot({ channel }: { channel: string }) {
   return (
     <span
       aria-hidden
-      className={`h-1.5 w-1.5 shrink-0 rounded-full ${colorByChannel[channel] ?? "bg-slate-400"}`}
+      className={`h-1.5 w-1.5 shrink-0 rounded-full ${lookupLabel(colorByChannel, channel) ?? "bg-slate-400"}`}
     />
   );
 }

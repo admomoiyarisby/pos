@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { searchStringParam } from "#/lib/utils";
+import { formText } from "#/lib/utils";
 import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -41,12 +44,12 @@ interface WasteRow {
   stockUnit: string | null;
 }
 
-const catColors: Record<string, "default" | "warning" | "destructive" | "secondary"> = {
+const catColors = {
   "Beban Makan": "default",
   "Biaya Operasional": "warning",
   Spoiled: "destructive",
   Denda: "secondary",
-};
+} satisfies Record<string, "default" | "warning" | "destructive" | "secondary">;
 
 function formatRupiah(value: number): string {
   return `Rp${value.toLocaleString("id-ID")}`;
@@ -81,7 +84,9 @@ function WastePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [ingredientError, setIngredientError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<
+    "Beban Makan" | "Biaya Operasional" | "Spoiled" | "Denda" | null
+  >(null);
   const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
   const [investigationModalOpen, setInvestigationModalOpen] = useState(false);
   const [investigationEntryId, setInvestigationEntryId] = useState<string | null>(null);
@@ -200,19 +205,14 @@ function WastePage() {
     queryFn: () =>
       getWasteEntries({
         data: {
-          category: selectedCategory as
-            | "Beban Makan"
-            | "Biaya Operasional"
-            | "Spoiled"
-            | "Denda"
-            | null,
+          category: selectedCategory,
           search: committedSearch || undefined,
         },
       }),
     initialData: initial,
   });
 
-  const { noInvestigation } = Route.useSearch() as { noInvestigation?: string };
+  const noInvestigation = searchStringParam(Route.useSearch(), "noInvestigation");
 
   // Filter and sort entries
   const filteredEntries = useMemo(() => {
@@ -306,12 +306,14 @@ function WastePage() {
     }
 
     const data = {
-      branchId: (fd.get("branchId") as string | null) ?? user?.branchId ?? "",
+      branchId: formText(fd, "branchId") || (user?.branchId ?? ""),
       ingredientId: selectedIngredient.id,
       quantity,
-      category: fd.get("category") as "Beban Makan" | "Biaya Operasional" | "Spoiled" | "Denda",
-      staffName: (fd.get("staffName") as string) || undefined,
-      notes: (fd.get("notes") as string) || undefined,
+      category: z
+        .enum(["Beban Makan", "Biaya Operasional", "Spoiled", "Denda"])
+        .parse(formText(fd, "category")),
+      staffName: formText(fd, "staffName") || undefined,
+      notes: formText(fd, "notes") || undefined,
     };
     void createMutation.mutateAsync({ data });
   };
@@ -503,7 +505,17 @@ function WastePage() {
         </div>
         <select
           value={selectedCategory ?? ""}
-          onChange={(e) => setSelectedCategory(e.target.value || null)}
+          onChange={(e) =>
+            // SAFETY: the category select only offers the four literals below.
+            setSelectedCategory(
+              (e.target.value || null) as
+                | "Beban Makan"
+                | "Biaya Operasional"
+                | "Spoiled"
+                | "Denda"
+                | null,
+            )
+          }
           className="h-11 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="">Semua Kategori</option>
@@ -515,7 +527,10 @@ function WastePage() {
         <div className="flex gap-2">
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as "date" | "category")}
+            onChange={(e) =>
+              // SAFETY: the sort select only offers "date" and "category".
+              setSortBy(e.target.value as "date" | "category")
+            }
             className="h-11 md:h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="date">Urut: Tanggal</option>

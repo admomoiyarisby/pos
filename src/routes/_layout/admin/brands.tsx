@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { formText } from "#/lib/utils";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -103,8 +104,8 @@ function BrandsPage() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const data = {
-      code: fd.get("code") as string,
-      name: fd.get("name") as string,
+      code: formText(fd, "code"),
+      name: formText(fd, "name"),
     };
     if (editing) {
       void updateMutation.mutateAsync({ data: { id: editing.id, ...data } });

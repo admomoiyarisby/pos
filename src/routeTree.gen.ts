@@ -9,89 +9,88 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as AboutRouteImport } from './routes/about'
 import { Route as LayoutRouteImport } from './routes/_layout'
+import { Route as AboutRouteImport } from './routes/about'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
-import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
-import { Route as DemoTableRouteImport } from './routes/demo/table'
-import { Route as DemoBetterAuthRouteImport } from './routes/demo/better-auth'
-import { Route as ApiSetupRouteImport } from './routes/api/setup'
-import { Route as ApiSeedDataRouteImport } from './routes/api/seed-data'
-import { Route as ApiSeedRouteImport } from './routes/api/seed'
-import { Route as ApiKeepaliveRouteImport } from './routes/api/keepalive'
-import { Route as LayoutYieldTrackingRouteImport } from './routes/_layout/yield-tracking'
-import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
-import { Route as LayoutPrintRequestsRouteImport } from './routes/_layout/print-requests'
-import { Route as LayoutPosRouteImport } from './routes/_layout/pos'
-import { Route as LayoutPencatatanManualRouteImport } from './routes/_layout/pencatatan-manual'
-import { Route as LayoutOrderHistoryRouteImport } from './routes/_layout/order-history'
-import { Route as LayoutDataPenjualanRouteImport } from './routes/_layout/data-penjualan'
-import { Route as LayoutDashboardRouteImport } from './routes/_layout/dashboard'
-import { Route as LayoutCancelRequestsRouteImport } from './routes/_layout/cancel-requests'
 import { Route as LayoutAuditInventoryRouteImport } from './routes/_layout/audit-inventory'
-import { Route as LayoutWasteIndexRouteImport } from './routes/_layout/waste/index'
-import { Route as LayoutSupplierDeliveriesIndexRouteImport } from './routes/_layout/supplier-deliveries/index'
-import { Route as LayoutStockTransfersIndexRouteImport } from './routes/_layout/stock-transfers/index'
-import { Route as LayoutStockOpnameIndexRouteImport } from './routes/_layout/stock-opname/index'
-import { Route as LayoutScmTransfersIndexRouteImport } from './routes/_layout/scm-transfers/index'
-import { Route as LayoutScmProcurementsIndexRouteImport } from './routes/_layout/scm-procurements/index'
-import { Route as LayoutScmInvoicesIndexRouteImport } from './routes/_layout/scm-invoices/index'
-import { Route as LayoutRecipesIndexRouteImport } from './routes/_layout/recipes/index'
-import { Route as LayoutPurchaseRequisitionsIndexRouteImport } from './routes/_layout/purchase-requisitions/index'
-import { Route as LayoutPurchaseOrdersIndexRouteImport } from './routes/_layout/purchase-orders/index'
-import { Route as LayoutPeriodControlIndexRouteImport } from './routes/_layout/period-control/index'
-import { Route as LayoutModifierGroupsIndexRouteImport } from './routes/_layout/modifier-groups/index'
-import { Route as LayoutInventoryIndexRouteImport } from './routes/_layout/inventory/index'
-import { Route as LayoutIngredientsIndexRouteImport } from './routes/_layout/ingredients/index'
-import { Route as LayoutFinanceIndexRouteImport } from './routes/_layout/finance/index'
-import { Route as LayoutDocsIndexRouteImport } from './routes/_layout/docs/index'
-import { Route as LayoutDeliveryNotesIndexRouteImport } from './routes/_layout/delivery-notes/index'
-import { Route as LayoutCategoriesIndexRouteImport } from './routes/_layout/categories/index'
-import { Route as LayoutAnalyticsIndexRouteImport } from './routes/_layout/analytics/index'
+import { Route as LayoutCancelRequestsRouteImport } from './routes/_layout/cancel-requests'
+import { Route as LayoutDashboardRouteImport } from './routes/_layout/dashboard'
+import { Route as LayoutDataPenjualanRouteImport } from './routes/_layout/data-penjualan'
+import { Route as LayoutOrderHistoryRouteImport } from './routes/_layout/order-history'
+import { Route as LayoutPencatatanManualRouteImport } from './routes/_layout/pencatatan-manual'
+import { Route as LayoutPosRouteImport } from './routes/_layout/pos'
+import { Route as LayoutPrintRequestsRouteImport } from './routes/_layout/print-requests'
+import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
+import { Route as LayoutYieldTrackingRouteImport } from './routes/_layout/yield-tracking'
+import { Route as ApiKeepaliveRouteImport } from './routes/api/keepalive'
+import { Route as ApiSeedRouteImport } from './routes/api/seed'
+import { Route as ApiSeedDataRouteImport } from './routes/api/seed-data'
+import { Route as ApiSetupRouteImport } from './routes/api/setup'
+import { Route as DemoBetterAuthRouteImport } from './routes/demo/better-auth'
+import { Route as DemoTableRouteImport } from './routes/demo/table'
+import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as LayoutAdminIndexRouteImport } from './routes/_layout/admin/index'
-import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
-import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
-import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as LayoutStockTransfersTrIdRouteImport } from './routes/_layout/stock-transfers/$trId'
-import { Route as LayoutStockOpnameSoIdRouteImport } from './routes/_layout/stock-opname/$soId'
-import { Route as LayoutScmTransfersNewRouteImport } from './routes/_layout/scm-transfers/new'
-import { Route as LayoutScmTransfersTransferIdRouteImport } from './routes/_layout/scm-transfers/$transferId'
-import { Route as LayoutScmProcurementsNewRouteImport } from './routes/_layout/scm-procurements/new'
-import { Route as LayoutScmProcurementsProcurementIdRouteImport } from './routes/_layout/scm-procurements/$procurementId'
-import { Route as LayoutScmInvoicesInvIdRouteImport } from './routes/_layout/scm-invoices/$invId'
-import { Route as LayoutRecipesRecipeIdRouteImport } from './routes/_layout/recipes/$recipeId'
-import { Route as LayoutPurchaseRequisitionsPrIdRouteImport } from './routes/_layout/purchase-requisitions/$prId'
-import { Route as LayoutPurchaseOrdersPoIdRouteImport } from './routes/_layout/purchase-orders/$poId'
-import { Route as LayoutPeriodControlPeriodIdRouteImport } from './routes/_layout/period-control/$periodId'
-import { Route as LayoutModifierGroupsMgIdRouteImport } from './routes/_layout/modifier-groups/$mgId'
-import { Route as LayoutInventoryLedgerRouteImport } from './routes/_layout/inventory/ledger'
-import { Route as LayoutIngredientsIngIdRouteImport } from './routes/_layout/ingredients/$ingId'
-import { Route as LayoutFinanceReconciliationRouteImport } from './routes/_layout/finance/reconciliation'
-import { Route as LayoutFinanceBrokenStockRouteImport } from './routes/_layout/finance/broken-stock'
-import { Route as LayoutDocsStokOpnameRouteImport } from './routes/_layout/docs/stok-opname'
-import { Route as LayoutDocsResepDanPosRouteImport } from './routes/_layout/docs/resep-dan-pos'
-import { Route as LayoutDocsProduksiInternalRouteImport } from './routes/_layout/docs/produksi-internal'
-import { Route as LayoutDocsPengadaanRouteImport } from './routes/_layout/docs/pengadaan'
-import { Route as LayoutDocsMutasiStokRouteImport } from './routes/_layout/docs/mutasi-stok'
-import { Route as LayoutDocsKartuStokRouteImport } from './routes/_layout/docs/kartu-stok'
-import { Route as LayoutDocsBarangMasukRouteImport } from './routes/_layout/docs/barang-masuk'
-import { Route as LayoutDeliveryNotesDnIdRouteImport } from './routes/_layout/delivery-notes/$dnId'
-import { Route as LayoutCategoriesCategoryIdRouteImport } from './routes/_layout/categories/$categoryId'
-import { Route as LayoutAnalyticsSalesRouteImport } from './routes/_layout/analytics/sales'
-import { Route as LayoutAnalyticsInventoryRouteImport } from './routes/_layout/analytics/inventory'
-import { Route as LayoutAdminVouchersRouteImport } from './routes/_layout/admin/vouchers'
-import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin/users'
-import { Route as LayoutAdminSystemLogsRouteImport } from './routes/_layout/admin/system-logs'
-import { Route as LayoutAdminSalesRouteImport } from './routes/_layout/admin/sales'
-import { Route as LayoutAdminPlatformFeesRouteImport } from './routes/_layout/admin/platform-fees'
-import { Route as LayoutAdminBrandsRouteImport } from './routes/_layout/admin/brands'
-import { Route as LayoutAdminBranchesRouteImport } from './routes/_layout/admin/branches'
 import { Route as LayoutAdminAuditLogsRouteImport } from './routes/_layout/admin/audit-logs'
+import { Route as LayoutAdminBranchesRouteImport } from './routes/_layout/admin/branches'
+import { Route as LayoutAdminBrandsRouteImport } from './routes/_layout/admin/brands'
+import { Route as LayoutAdminPlatformFeesRouteImport } from './routes/_layout/admin/platform-fees'
+import { Route as LayoutAdminSalesRouteImport } from './routes/_layout/admin/sales'
+import { Route as LayoutAdminSystemLogsRouteImport } from './routes/_layout/admin/system-logs'
+import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin/users'
+import { Route as LayoutAdminVouchersRouteImport } from './routes/_layout/admin/vouchers'
+import { Route as LayoutAnalyticsIndexRouteImport } from './routes/_layout/analytics/index'
+import { Route as LayoutAnalyticsInventoryRouteImport } from './routes/_layout/analytics/inventory'
+import { Route as LayoutAnalyticsSalesRouteImport } from './routes/_layout/analytics/sales'
+import { Route as LayoutCategoriesIndexRouteImport } from './routes/_layout/categories/index'
+import { Route as LayoutCategoriesCategoryIdRouteImport } from './routes/_layout/categories/$categoryId'
+import { Route as LayoutDeliveryNotesIndexRouteImport } from './routes/_layout/delivery-notes/index'
+import { Route as LayoutDeliveryNotesDnIdRouteImport } from './routes/_layout/delivery-notes/$dnId'
+import { Route as LayoutDocsIndexRouteImport } from './routes/_layout/docs/index'
+import { Route as LayoutDocsBarangMasukRouteImport } from './routes/_layout/docs/barang-masuk'
+import { Route as LayoutDocsKartuStokRouteImport } from './routes/_layout/docs/kartu-stok'
+import { Route as LayoutDocsMutasiStokRouteImport } from './routes/_layout/docs/mutasi-stok'
+import { Route as LayoutDocsPengadaanRouteImport } from './routes/_layout/docs/pengadaan'
+import { Route as LayoutDocsProduksiInternalRouteImport } from './routes/_layout/docs/produksi-internal'
+import { Route as LayoutDocsResepDanPosRouteImport } from './routes/_layout/docs/resep-dan-pos'
+import { Route as LayoutDocsStokOpnameRouteImport } from './routes/_layout/docs/stok-opname'
+import { Route as LayoutFinanceIndexRouteImport } from './routes/_layout/finance/index'
+import { Route as LayoutFinanceBrokenStockRouteImport } from './routes/_layout/finance/broken-stock'
+import { Route as LayoutFinanceReconciliationRouteImport } from './routes/_layout/finance/reconciliation'
+import { Route as LayoutIngredientsIndexRouteImport } from './routes/_layout/ingredients/index'
+import { Route as LayoutIngredientsIngIdRouteImport } from './routes/_layout/ingredients/$ingId'
+import { Route as LayoutInventoryIndexRouteImport } from './routes/_layout/inventory/index'
+import { Route as LayoutInventoryLedgerRouteImport } from './routes/_layout/inventory/ledger'
+import { Route as LayoutModifierGroupsIndexRouteImport } from './routes/_layout/modifier-groups/index'
+import { Route as LayoutModifierGroupsMgIdRouteImport } from './routes/_layout/modifier-groups/$mgId'
+import { Route as LayoutPeriodControlIndexRouteImport } from './routes/_layout/period-control/index'
+import { Route as LayoutPeriodControlPeriodIdRouteImport } from './routes/_layout/period-control/$periodId'
+import { Route as LayoutPurchaseOrdersIndexRouteImport } from './routes/_layout/purchase-orders/index'
+import { Route as LayoutPurchaseOrdersPoIdRouteImport } from './routes/_layout/purchase-orders/$poId'
+import { Route as LayoutPurchaseRequisitionsIndexRouteImport } from './routes/_layout/purchase-requisitions/index'
+import { Route as LayoutPurchaseRequisitionsPrIdRouteImport } from './routes/_layout/purchase-requisitions/$prId'
+import { Route as LayoutRecipesIndexRouteImport } from './routes/_layout/recipes/index'
+import { Route as LayoutRecipesRecipeIdRouteImport } from './routes/_layout/recipes/$recipeId'
+import { Route as LayoutScmInvoicesIndexRouteImport } from './routes/_layout/scm-invoices/index'
+import { Route as LayoutScmInvoicesInvIdRouteImport } from './routes/_layout/scm-invoices/$invId'
+import { Route as LayoutScmProcurementsIndexRouteImport } from './routes/_layout/scm-procurements/index'
+import { Route as LayoutScmProcurementsProcurementIdRouteImport } from './routes/_layout/scm-procurements/$procurementId'
+import { Route as LayoutScmProcurementsNewRouteImport } from './routes/_layout/scm-procurements/new'
+import { Route as LayoutScmTransfersIndexRouteImport } from './routes/_layout/scm-transfers/index'
+import { Route as LayoutScmTransfersTransferIdRouteImport } from './routes/_layout/scm-transfers/$transferId'
+import { Route as LayoutScmTransfersNewRouteImport } from './routes/_layout/scm-transfers/new'
+import { Route as LayoutStockOpnameIndexRouteImport } from './routes/_layout/stock-opname/index'
+import { Route as LayoutStockOpnameSoIdRouteImport } from './routes/_layout/stock-opname/$soId'
+import { Route as LayoutStockTransfersIndexRouteImport } from './routes/_layout/stock-transfers/index'
+import { Route as LayoutStockTransfersTrIdRouteImport } from './routes/_layout/stock-transfers/$trId'
+import { Route as LayoutSupplierDeliveriesIndexRouteImport } from './routes/_layout/supplier-deliveries/index'
+import { Route as LayoutWasteIndexRouteImport } from './routes/_layout/waste/index'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
+import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
 
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const LayoutRoute = LayoutRouteImport.update({
+  id: '/_layout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -99,8 +98,9 @@ const AboutRoute = AboutRouteImport.update({
   path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LayoutRoute = LayoutRouteImport.update({
-  id: '/_layout',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LayoutIndexRoute = LayoutIndexRouteImport.update({
@@ -108,79 +108,9 @@ const LayoutIndexRoute = LayoutIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LayoutRoute,
 } as any)
-const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
-  id: '/demo/tanstack-query',
-  path: '/demo/tanstack-query',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoTableRoute = DemoTableRouteImport.update({
-  id: '/demo/table',
-  path: '/demo/table',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoBetterAuthRoute = DemoBetterAuthRouteImport.update({
-  id: '/demo/better-auth',
-  path: '/demo/better-auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSetupRoute = ApiSetupRouteImport.update({
-  id: '/api/setup',
-  path: '/api/setup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSeedDataRoute = ApiSeedDataRouteImport.update({
-  id: '/api/seed-data',
-  path: '/api/seed-data',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSeedRoute = ApiSeedRouteImport.update({
-  id: '/api/seed',
-  path: '/api/seed',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiKeepaliveRoute = ApiKeepaliveRouteImport.update({
-  id: '/api/keepalive',
-  path: '/api/keepalive',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LayoutYieldTrackingRoute = LayoutYieldTrackingRouteImport.update({
-  id: '/yield-tracking',
-  path: '/yield-tracking',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutPrintRequestsRoute = LayoutPrintRequestsRouteImport.update({
-  id: '/print-requests',
-  path: '/print-requests',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutPosRoute = LayoutPosRouteImport.update({
-  id: '/pos',
-  path: '/pos',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutPencatatanManualRoute = LayoutPencatatanManualRouteImport.update({
-  id: '/pencatatan-manual',
-  path: '/pencatatan-manual',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutOrderHistoryRoute = LayoutOrderHistoryRouteImport.update({
-  id: '/order-history',
-  path: '/order-history',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutDataPenjualanRoute = LayoutDataPenjualanRouteImport.update({
-  id: '/data-penjualan',
-  path: '/data-penjualan',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutDashboardRoute = LayoutDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
+const LayoutAuditInventoryRoute = LayoutAuditInventoryRouteImport.update({
+  id: '/audit-inventory',
+  path: '/audit-inventory',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutCancelRequestsRoute = LayoutCancelRequestsRouteImport.update({
@@ -188,274 +118,129 @@ const LayoutCancelRequestsRoute = LayoutCancelRequestsRouteImport.update({
   path: '/cancel-requests',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAuditInventoryRoute = LayoutAuditInventoryRouteImport.update({
-  id: '/audit-inventory',
-  path: '/audit-inventory',
+const LayoutDashboardRoute = LayoutDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutWasteIndexRoute = LayoutWasteIndexRouteImport.update({
-  id: '/waste/',
-  path: '/waste/',
+const LayoutDataPenjualanRoute = LayoutDataPenjualanRouteImport.update({
+  id: '/data-penjualan',
+  path: '/data-penjualan',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutSupplierDeliveriesIndexRoute =
-  LayoutSupplierDeliveriesIndexRouteImport.update({
-    id: '/supplier-deliveries/',
-    path: '/supplier-deliveries/',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutStockTransfersIndexRoute =
-  LayoutStockTransfersIndexRouteImport.update({
-    id: '/stock-transfers/',
-    path: '/stock-transfers/',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutStockOpnameIndexRoute = LayoutStockOpnameIndexRouteImport.update({
-  id: '/stock-opname/',
-  path: '/stock-opname/',
+const LayoutOrderHistoryRoute = LayoutOrderHistoryRouteImport.update({
+  id: '/order-history',
+  path: '/order-history',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutScmTransfersIndexRoute = LayoutScmTransfersIndexRouteImport.update({
-  id: '/scm-transfers/',
-  path: '/scm-transfers/',
+const LayoutPencatatanManualRoute = LayoutPencatatanManualRouteImport.update({
+  id: '/pencatatan-manual',
+  path: '/pencatatan-manual',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutScmProcurementsIndexRoute =
-  LayoutScmProcurementsIndexRouteImport.update({
-    id: '/scm-procurements/',
-    path: '/scm-procurements/',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutScmInvoicesIndexRoute = LayoutScmInvoicesIndexRouteImport.update({
-  id: '/scm-invoices/',
-  path: '/scm-invoices/',
+const LayoutPosRoute = LayoutPosRouteImport.update({
+  id: '/pos',
+  path: '/pos',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutRecipesIndexRoute = LayoutRecipesIndexRouteImport.update({
-  id: '/recipes/',
-  path: '/recipes/',
+const LayoutPrintRequestsRoute = LayoutPrintRequestsRouteImport.update({
+  id: '/print-requests',
+  path: '/print-requests',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutPurchaseRequisitionsIndexRoute =
-  LayoutPurchaseRequisitionsIndexRouteImport.update({
-    id: '/purchase-requisitions/',
-    path: '/purchase-requisitions/',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutPurchaseOrdersIndexRoute =
-  LayoutPurchaseOrdersIndexRouteImport.update({
-    id: '/purchase-orders/',
-    path: '/purchase-orders/',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutPeriodControlIndexRoute =
-  LayoutPeriodControlIndexRouteImport.update({
-    id: '/period-control/',
-    path: '/period-control/',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutModifierGroupsIndexRoute =
-  LayoutModifierGroupsIndexRouteImport.update({
-    id: '/modifier-groups/',
-    path: '/modifier-groups/',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutInventoryIndexRoute = LayoutInventoryIndexRouteImport.update({
-  id: '/inventory/',
-  path: '/inventory/',
+const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutIngredientsIndexRoute = LayoutIngredientsIndexRouteImport.update({
-  id: '/ingredients/',
-  path: '/ingredients/',
+const LayoutYieldTrackingRoute = LayoutYieldTrackingRouteImport.update({
+  id: '/yield-tracking',
+  path: '/yield-tracking',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutFinanceIndexRoute = LayoutFinanceIndexRouteImport.update({
-  id: '/finance/',
-  path: '/finance/',
-  getParentRoute: () => LayoutRoute,
+const ApiKeepaliveRoute = ApiKeepaliveRouteImport.update({
+  id: '/api/keepalive',
+  path: '/api/keepalive',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const LayoutDocsIndexRoute = LayoutDocsIndexRouteImport.update({
-  id: '/docs/',
-  path: '/docs/',
-  getParentRoute: () => LayoutRoute,
+const ApiSeedRoute = ApiSeedRouteImport.update({
+  id: '/api/seed',
+  path: '/api/seed',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const LayoutDeliveryNotesIndexRoute =
-  LayoutDeliveryNotesIndexRouteImport.update({
-    id: '/delivery-notes/',
-    path: '/delivery-notes/',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutCategoriesIndexRoute = LayoutCategoriesIndexRouteImport.update({
-  id: '/categories/',
-  path: '/categories/',
-  getParentRoute: () => LayoutRoute,
+const ApiSeedDataRoute = ApiSeedDataRouteImport.update({
+  id: '/api/seed-data',
+  path: '/api/seed-data',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const LayoutAnalyticsIndexRoute = LayoutAnalyticsIndexRouteImport.update({
-  id: '/analytics/',
-  path: '/analytics/',
-  getParentRoute: () => LayoutRoute,
+const ApiSetupRoute = ApiSetupRouteImport.update({
+  id: '/api/setup',
+  path: '/api/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoBetterAuthRoute = DemoBetterAuthRouteImport.update({
+  id: '/demo/better-auth',
+  path: '/demo/better-auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoTableRoute = DemoTableRouteImport.update({
+  id: '/demo/table',
+  path: '/demo/table',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
+  id: '/demo/tanstack-query',
+  path: '/demo/tanstack-query',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const LayoutAdminIndexRoute = LayoutAdminIndexRouteImport.update({
   id: '/admin/',
   path: '/admin/',
   getParentRoute: () => LayoutRoute,
 } as any)
-const DemoFormSimpleRoute = DemoFormSimpleRouteImport.update({
-  id: '/demo/form/simple',
-  path: '/demo/form/simple',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoFormAddressRoute = DemoFormAddressRouteImport.update({
-  id: '/demo/form/address',
-  path: '/demo/form/address',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
-  id: '/api/auth/$',
-  path: '/api/auth/$',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LayoutStockTransfersTrIdRoute =
-  LayoutStockTransfersTrIdRouteImport.update({
-    id: '/stock-transfers/$trId',
-    path: '/stock-transfers/$trId',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutStockOpnameSoIdRoute = LayoutStockOpnameSoIdRouteImport.update({
-  id: '/stock-opname/$soId',
-  path: '/stock-opname/$soId',
+const LayoutAdminAuditLogsRoute = LayoutAdminAuditLogsRouteImport.update({
+  id: '/admin/audit-logs',
+  path: '/admin/audit-logs',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutScmTransfersNewRoute = LayoutScmTransfersNewRouteImport.update({
-  id: '/scm-transfers/new',
-  path: '/scm-transfers/new',
+const LayoutAdminBranchesRoute = LayoutAdminBranchesRouteImport.update({
+  id: '/admin/branches',
+  path: '/admin/branches',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutScmTransfersTransferIdRoute =
-  LayoutScmTransfersTransferIdRouteImport.update({
-    id: '/scm-transfers/$transferId',
-    path: '/scm-transfers/$transferId',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutScmProcurementsNewRoute =
-  LayoutScmProcurementsNewRouteImport.update({
-    id: '/scm-procurements/new',
-    path: '/scm-procurements/new',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutScmProcurementsProcurementIdRoute =
-  LayoutScmProcurementsProcurementIdRouteImport.update({
-    id: '/scm-procurements/$procurementId',
-    path: '/scm-procurements/$procurementId',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutScmInvoicesInvIdRoute = LayoutScmInvoicesInvIdRouteImport.update({
-  id: '/scm-invoices/$invId',
-  path: '/scm-invoices/$invId',
+const LayoutAdminBrandsRoute = LayoutAdminBrandsRouteImport.update({
+  id: '/admin/brands',
+  path: '/admin/brands',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutRecipesRecipeIdRoute = LayoutRecipesRecipeIdRouteImport.update({
-  id: '/recipes/$recipeId',
-  path: '/recipes/$recipeId',
+const LayoutAdminPlatformFeesRoute = LayoutAdminPlatformFeesRouteImport.update({
+  id: '/admin/platform-fees',
+  path: '/admin/platform-fees',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutPurchaseRequisitionsPrIdRoute =
-  LayoutPurchaseRequisitionsPrIdRouteImport.update({
-    id: '/purchase-requisitions/$prId',
-    path: '/purchase-requisitions/$prId',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutPurchaseOrdersPoIdRoute =
-  LayoutPurchaseOrdersPoIdRouteImport.update({
-    id: '/purchase-orders/$poId',
-    path: '/purchase-orders/$poId',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutPeriodControlPeriodIdRoute =
-  LayoutPeriodControlPeriodIdRouteImport.update({
-    id: '/period-control/$periodId',
-    path: '/period-control/$periodId',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutModifierGroupsMgIdRoute =
-  LayoutModifierGroupsMgIdRouteImport.update({
-    id: '/modifier-groups/$mgId',
-    path: '/modifier-groups/$mgId',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutInventoryLedgerRoute = LayoutInventoryLedgerRouteImport.update({
-  id: '/inventory/ledger',
-  path: '/inventory/ledger',
+const LayoutAdminSalesRoute = LayoutAdminSalesRouteImport.update({
+  id: '/admin/sales',
+  path: '/admin/sales',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutIngredientsIngIdRoute = LayoutIngredientsIngIdRouteImport.update({
-  id: '/ingredients/$ingId',
-  path: '/ingredients/$ingId',
+const LayoutAdminSystemLogsRoute = LayoutAdminSystemLogsRouteImport.update({
+  id: '/admin/system-logs',
+  path: '/admin/system-logs',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutFinanceReconciliationRoute =
-  LayoutFinanceReconciliationRouteImport.update({
-    id: '/finance/reconciliation',
-    path: '/finance/reconciliation',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutFinanceBrokenStockRoute =
-  LayoutFinanceBrokenStockRouteImport.update({
-    id: '/finance/broken-stock',
-    path: '/finance/broken-stock',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutDocsStokOpnameRoute = LayoutDocsStokOpnameRouteImport.update({
-  id: '/docs/stok-opname',
-  path: '/docs/stok-opname',
+const LayoutAdminUsersRoute = LayoutAdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutDocsResepDanPosRoute = LayoutDocsResepDanPosRouteImport.update({
-  id: '/docs/resep-dan-pos',
-  path: '/docs/resep-dan-pos',
+const LayoutAdminVouchersRoute = LayoutAdminVouchersRouteImport.update({
+  id: '/admin/vouchers',
+  path: '/admin/vouchers',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutDocsProduksiInternalRoute =
-  LayoutDocsProduksiInternalRouteImport.update({
-    id: '/docs/produksi-internal',
-    path: '/docs/produksi-internal',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutDocsPengadaanRoute = LayoutDocsPengadaanRouteImport.update({
-  id: '/docs/pengadaan',
-  path: '/docs/pengadaan',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutDocsMutasiStokRoute = LayoutDocsMutasiStokRouteImport.update({
-  id: '/docs/mutasi-stok',
-  path: '/docs/mutasi-stok',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutDocsKartuStokRoute = LayoutDocsKartuStokRouteImport.update({
-  id: '/docs/kartu-stok',
-  path: '/docs/kartu-stok',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutDocsBarangMasukRoute = LayoutDocsBarangMasukRouteImport.update({
-  id: '/docs/barang-masuk',
-  path: '/docs/barang-masuk',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutDeliveryNotesDnIdRoute = LayoutDeliveryNotesDnIdRouteImport.update({
-  id: '/delivery-notes/$dnId',
-  path: '/delivery-notes/$dnId',
-  getParentRoute: () => LayoutRoute,
-} as any)
-const LayoutCategoriesCategoryIdRoute =
-  LayoutCategoriesCategoryIdRouteImport.update({
-    id: '/categories/$categoryId',
-    path: '/categories/$categoryId',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-const LayoutAnalyticsSalesRoute = LayoutAnalyticsSalesRouteImport.update({
-  id: '/analytics/sales',
-  path: '/analytics/sales',
+const LayoutAnalyticsIndexRoute = LayoutAnalyticsIndexRouteImport.update({
+  id: '/analytics/',
+  path: '/analytics/',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutAnalyticsInventoryRoute =
@@ -464,45 +249,260 @@ const LayoutAnalyticsInventoryRoute =
     path: '/analytics/inventory',
     getParentRoute: () => LayoutRoute,
   } as any)
-const LayoutAdminVouchersRoute = LayoutAdminVouchersRouteImport.update({
-  id: '/admin/vouchers',
-  path: '/admin/vouchers',
+const LayoutAnalyticsSalesRoute = LayoutAnalyticsSalesRouteImport.update({
+  id: '/analytics/sales',
+  path: '/analytics/sales',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAdminUsersRoute = LayoutAdminUsersRouteImport.update({
-  id: '/admin/users',
-  path: '/admin/users',
+const LayoutCategoriesIndexRoute = LayoutCategoriesIndexRouteImport.update({
+  id: '/categories/',
+  path: '/categories/',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAdminSystemLogsRoute = LayoutAdminSystemLogsRouteImport.update({
-  id: '/admin/system-logs',
-  path: '/admin/system-logs',
+const LayoutCategoriesCategoryIdRoute =
+  LayoutCategoriesCategoryIdRouteImport.update({
+    id: '/categories/$categoryId',
+    path: '/categories/$categoryId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutDeliveryNotesIndexRoute =
+  LayoutDeliveryNotesIndexRouteImport.update({
+    id: '/delivery-notes/',
+    path: '/delivery-notes/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutDeliveryNotesDnIdRoute = LayoutDeliveryNotesDnIdRouteImport.update({
+  id: '/delivery-notes/$dnId',
+  path: '/delivery-notes/$dnId',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAdminSalesRoute = LayoutAdminSalesRouteImport.update({
-  id: '/admin/sales',
-  path: '/admin/sales',
+const LayoutDocsIndexRoute = LayoutDocsIndexRouteImport.update({
+  id: '/docs/',
+  path: '/docs/',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAdminPlatformFeesRoute = LayoutAdminPlatformFeesRouteImport.update({
-  id: '/admin/platform-fees',
-  path: '/admin/platform-fees',
+const LayoutDocsBarangMasukRoute = LayoutDocsBarangMasukRouteImport.update({
+  id: '/docs/barang-masuk',
+  path: '/docs/barang-masuk',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAdminBrandsRoute = LayoutAdminBrandsRouteImport.update({
-  id: '/admin/brands',
-  path: '/admin/brands',
+const LayoutDocsKartuStokRoute = LayoutDocsKartuStokRouteImport.update({
+  id: '/docs/kartu-stok',
+  path: '/docs/kartu-stok',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAdminBranchesRoute = LayoutAdminBranchesRouteImport.update({
-  id: '/admin/branches',
-  path: '/admin/branches',
+const LayoutDocsMutasiStokRoute = LayoutDocsMutasiStokRouteImport.update({
+  id: '/docs/mutasi-stok',
+  path: '/docs/mutasi-stok',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAdminAuditLogsRoute = LayoutAdminAuditLogsRouteImport.update({
-  id: '/admin/audit-logs',
-  path: '/admin/audit-logs',
+const LayoutDocsPengadaanRoute = LayoutDocsPengadaanRouteImport.update({
+  id: '/docs/pengadaan',
+  path: '/docs/pengadaan',
   getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutDocsProduksiInternalRoute =
+  LayoutDocsProduksiInternalRouteImport.update({
+    id: '/docs/produksi-internal',
+    path: '/docs/produksi-internal',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutDocsResepDanPosRoute = LayoutDocsResepDanPosRouteImport.update({
+  id: '/docs/resep-dan-pos',
+  path: '/docs/resep-dan-pos',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutDocsStokOpnameRoute = LayoutDocsStokOpnameRouteImport.update({
+  id: '/docs/stok-opname',
+  path: '/docs/stok-opname',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutFinanceIndexRoute = LayoutFinanceIndexRouteImport.update({
+  id: '/finance/',
+  path: '/finance/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutFinanceBrokenStockRoute =
+  LayoutFinanceBrokenStockRouteImport.update({
+    id: '/finance/broken-stock',
+    path: '/finance/broken-stock',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutFinanceReconciliationRoute =
+  LayoutFinanceReconciliationRouteImport.update({
+    id: '/finance/reconciliation',
+    path: '/finance/reconciliation',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutIngredientsIndexRoute = LayoutIngredientsIndexRouteImport.update({
+  id: '/ingredients/',
+  path: '/ingredients/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutIngredientsIngIdRoute = LayoutIngredientsIngIdRouteImport.update({
+  id: '/ingredients/$ingId',
+  path: '/ingredients/$ingId',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutInventoryIndexRoute = LayoutInventoryIndexRouteImport.update({
+  id: '/inventory/',
+  path: '/inventory/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutInventoryLedgerRoute = LayoutInventoryLedgerRouteImport.update({
+  id: '/inventory/ledger',
+  path: '/inventory/ledger',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutModifierGroupsIndexRoute =
+  LayoutModifierGroupsIndexRouteImport.update({
+    id: '/modifier-groups/',
+    path: '/modifier-groups/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutModifierGroupsMgIdRoute =
+  LayoutModifierGroupsMgIdRouteImport.update({
+    id: '/modifier-groups/$mgId',
+    path: '/modifier-groups/$mgId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutPeriodControlIndexRoute =
+  LayoutPeriodControlIndexRouteImport.update({
+    id: '/period-control/',
+    path: '/period-control/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutPeriodControlPeriodIdRoute =
+  LayoutPeriodControlPeriodIdRouteImport.update({
+    id: '/period-control/$periodId',
+    path: '/period-control/$periodId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutPurchaseOrdersIndexRoute =
+  LayoutPurchaseOrdersIndexRouteImport.update({
+    id: '/purchase-orders/',
+    path: '/purchase-orders/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutPurchaseOrdersPoIdRoute =
+  LayoutPurchaseOrdersPoIdRouteImport.update({
+    id: '/purchase-orders/$poId',
+    path: '/purchase-orders/$poId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutPurchaseRequisitionsIndexRoute =
+  LayoutPurchaseRequisitionsIndexRouteImport.update({
+    id: '/purchase-requisitions/',
+    path: '/purchase-requisitions/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutPurchaseRequisitionsPrIdRoute =
+  LayoutPurchaseRequisitionsPrIdRouteImport.update({
+    id: '/purchase-requisitions/$prId',
+    path: '/purchase-requisitions/$prId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutRecipesIndexRoute = LayoutRecipesIndexRouteImport.update({
+  id: '/recipes/',
+  path: '/recipes/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutRecipesRecipeIdRoute = LayoutRecipesRecipeIdRouteImport.update({
+  id: '/recipes/$recipeId',
+  path: '/recipes/$recipeId',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutScmInvoicesIndexRoute = LayoutScmInvoicesIndexRouteImport.update({
+  id: '/scm-invoices/',
+  path: '/scm-invoices/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutScmInvoicesInvIdRoute = LayoutScmInvoicesInvIdRouteImport.update({
+  id: '/scm-invoices/$invId',
+  path: '/scm-invoices/$invId',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutScmProcurementsIndexRoute =
+  LayoutScmProcurementsIndexRouteImport.update({
+    id: '/scm-procurements/',
+    path: '/scm-procurements/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutScmProcurementsProcurementIdRoute =
+  LayoutScmProcurementsProcurementIdRouteImport.update({
+    id: '/scm-procurements/$procurementId',
+    path: '/scm-procurements/$procurementId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutScmProcurementsNewRoute =
+  LayoutScmProcurementsNewRouteImport.update({
+    id: '/scm-procurements/new',
+    path: '/scm-procurements/new',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutScmTransfersIndexRoute = LayoutScmTransfersIndexRouteImport.update({
+  id: '/scm-transfers/',
+  path: '/scm-transfers/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutScmTransfersTransferIdRoute =
+  LayoutScmTransfersTransferIdRouteImport.update({
+    id: '/scm-transfers/$transferId',
+    path: '/scm-transfers/$transferId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutScmTransfersNewRoute = LayoutScmTransfersNewRouteImport.update({
+  id: '/scm-transfers/new',
+  path: '/scm-transfers/new',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutStockOpnameIndexRoute = LayoutStockOpnameIndexRouteImport.update({
+  id: '/stock-opname/',
+  path: '/stock-opname/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutStockOpnameSoIdRoute = LayoutStockOpnameSoIdRouteImport.update({
+  id: '/stock-opname/$soId',
+  path: '/stock-opname/$soId',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutStockTransfersIndexRoute =
+  LayoutStockTransfersIndexRouteImport.update({
+    id: '/stock-transfers/',
+    path: '/stock-transfers/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutStockTransfersTrIdRoute =
+  LayoutStockTransfersTrIdRouteImport.update({
+    id: '/stock-transfers/$trId',
+    path: '/stock-transfers/$trId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutSupplierDeliveriesIndexRoute =
+  LayoutSupplierDeliveriesIndexRouteImport.update({
+    id: '/supplier-deliveries/',
+    path: '/supplier-deliveries/',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutWasteIndexRoute = LayoutWasteIndexRouteImport.update({
+  id: '/waste/',
+  path: '/waste/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoFormAddressRoute = DemoFormAddressRouteImport.update({
+  id: '/demo/form/address',
+  path: '/demo/form/address',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoFormSimpleRoute = DemoFormSimpleRouteImport.update({
+  id: '/demo/form/simple',
+  path: '/demo/form/simple',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -1009,11 +1009,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/_layout': {
+      id: '/_layout'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof LayoutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -1023,11 +1023,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_layout': {
-      id: '/_layout'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof LayoutRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_layout/': {
@@ -1037,109 +1037,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutIndexRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/demo/tanstack-query': {
-      id: '/demo/tanstack-query'
-      path: '/demo/tanstack-query'
-      fullPath: '/demo/tanstack-query'
-      preLoaderRoute: typeof DemoTanstackQueryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/table': {
-      id: '/demo/table'
-      path: '/demo/table'
-      fullPath: '/demo/table'
-      preLoaderRoute: typeof DemoTableRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/better-auth': {
-      id: '/demo/better-auth'
-      path: '/demo/better-auth'
-      fullPath: '/demo/better-auth'
-      preLoaderRoute: typeof DemoBetterAuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/setup': {
-      id: '/api/setup'
-      path: '/api/setup'
-      fullPath: '/api/setup'
-      preLoaderRoute: typeof ApiSetupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/seed-data': {
-      id: '/api/seed-data'
-      path: '/api/seed-data'
-      fullPath: '/api/seed-data'
-      preLoaderRoute: typeof ApiSeedDataRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/seed': {
-      id: '/api/seed'
-      path: '/api/seed'
-      fullPath: '/api/seed'
-      preLoaderRoute: typeof ApiSeedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/keepalive': {
-      id: '/api/keepalive'
-      path: '/api/keepalive'
-      fullPath: '/api/keepalive'
-      preLoaderRoute: typeof ApiKeepaliveRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_layout/yield-tracking': {
-      id: '/_layout/yield-tracking'
-      path: '/yield-tracking'
-      fullPath: '/yield-tracking'
-      preLoaderRoute: typeof LayoutYieldTrackingRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/settings': {
-      id: '/_layout/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof LayoutSettingsRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/print-requests': {
-      id: '/_layout/print-requests'
-      path: '/print-requests'
-      fullPath: '/print-requests'
-      preLoaderRoute: typeof LayoutPrintRequestsRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/pos': {
-      id: '/_layout/pos'
-      path: '/pos'
-      fullPath: '/pos'
-      preLoaderRoute: typeof LayoutPosRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/pencatatan-manual': {
-      id: '/_layout/pencatatan-manual'
-      path: '/pencatatan-manual'
-      fullPath: '/pencatatan-manual'
-      preLoaderRoute: typeof LayoutPencatatanManualRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/order-history': {
-      id: '/_layout/order-history'
-      path: '/order-history'
-      fullPath: '/order-history'
-      preLoaderRoute: typeof LayoutOrderHistoryRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/data-penjualan': {
-      id: '/_layout/data-penjualan'
-      path: '/data-penjualan'
-      fullPath: '/data-penjualan'
-      preLoaderRoute: typeof LayoutDataPenjualanRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/dashboard': {
-      id: '/_layout/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof LayoutDashboardRouteImport
+    '/_layout/audit-inventory': {
+      id: '/_layout/audit-inventory'
+      path: '/audit-inventory'
+      fullPath: '/audit-inventory'
+      preLoaderRoute: typeof LayoutAuditInventoryRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/cancel-requests': {
@@ -1149,145 +1051,110 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutCancelRequestsRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/audit-inventory': {
-      id: '/_layout/audit-inventory'
-      path: '/audit-inventory'
-      fullPath: '/audit-inventory'
-      preLoaderRoute: typeof LayoutAuditInventoryRouteImport
+    '/_layout/dashboard': {
+      id: '/_layout/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof LayoutDashboardRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/waste/': {
-      id: '/_layout/waste/'
-      path: '/waste'
-      fullPath: '/waste/'
-      preLoaderRoute: typeof LayoutWasteIndexRouteImport
+    '/_layout/data-penjualan': {
+      id: '/_layout/data-penjualan'
+      path: '/data-penjualan'
+      fullPath: '/data-penjualan'
+      preLoaderRoute: typeof LayoutDataPenjualanRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/supplier-deliveries/': {
-      id: '/_layout/supplier-deliveries/'
-      path: '/supplier-deliveries'
-      fullPath: '/supplier-deliveries/'
-      preLoaderRoute: typeof LayoutSupplierDeliveriesIndexRouteImport
+    '/_layout/order-history': {
+      id: '/_layout/order-history'
+      path: '/order-history'
+      fullPath: '/order-history'
+      preLoaderRoute: typeof LayoutOrderHistoryRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/stock-transfers/': {
-      id: '/_layout/stock-transfers/'
-      path: '/stock-transfers'
-      fullPath: '/stock-transfers/'
-      preLoaderRoute: typeof LayoutStockTransfersIndexRouteImport
+    '/_layout/pencatatan-manual': {
+      id: '/_layout/pencatatan-manual'
+      path: '/pencatatan-manual'
+      fullPath: '/pencatatan-manual'
+      preLoaderRoute: typeof LayoutPencatatanManualRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/stock-opname/': {
-      id: '/_layout/stock-opname/'
-      path: '/stock-opname'
-      fullPath: '/stock-opname/'
-      preLoaderRoute: typeof LayoutStockOpnameIndexRouteImport
+    '/_layout/pos': {
+      id: '/_layout/pos'
+      path: '/pos'
+      fullPath: '/pos'
+      preLoaderRoute: typeof LayoutPosRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/scm-transfers/': {
-      id: '/_layout/scm-transfers/'
-      path: '/scm-transfers'
-      fullPath: '/scm-transfers/'
-      preLoaderRoute: typeof LayoutScmTransfersIndexRouteImport
+    '/_layout/print-requests': {
+      id: '/_layout/print-requests'
+      path: '/print-requests'
+      fullPath: '/print-requests'
+      preLoaderRoute: typeof LayoutPrintRequestsRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/scm-procurements/': {
-      id: '/_layout/scm-procurements/'
-      path: '/scm-procurements'
-      fullPath: '/scm-procurements/'
-      preLoaderRoute: typeof LayoutScmProcurementsIndexRouteImport
+    '/_layout/settings': {
+      id: '/_layout/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof LayoutSettingsRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/scm-invoices/': {
-      id: '/_layout/scm-invoices/'
-      path: '/scm-invoices'
-      fullPath: '/scm-invoices/'
-      preLoaderRoute: typeof LayoutScmInvoicesIndexRouteImport
+    '/_layout/yield-tracking': {
+      id: '/_layout/yield-tracking'
+      path: '/yield-tracking'
+      fullPath: '/yield-tracking'
+      preLoaderRoute: typeof LayoutYieldTrackingRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/recipes/': {
-      id: '/_layout/recipes/'
-      path: '/recipes'
-      fullPath: '/recipes/'
-      preLoaderRoute: typeof LayoutRecipesIndexRouteImport
-      parentRoute: typeof LayoutRoute
+    '/api/keepalive': {
+      id: '/api/keepalive'
+      path: '/api/keepalive'
+      fullPath: '/api/keepalive'
+      preLoaderRoute: typeof ApiKeepaliveRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_layout/purchase-requisitions/': {
-      id: '/_layout/purchase-requisitions/'
-      path: '/purchase-requisitions'
-      fullPath: '/purchase-requisitions/'
-      preLoaderRoute: typeof LayoutPurchaseRequisitionsIndexRouteImport
-      parentRoute: typeof LayoutRoute
+    '/api/seed': {
+      id: '/api/seed'
+      path: '/api/seed'
+      fullPath: '/api/seed'
+      preLoaderRoute: typeof ApiSeedRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_layout/purchase-orders/': {
-      id: '/_layout/purchase-orders/'
-      path: '/purchase-orders'
-      fullPath: '/purchase-orders/'
-      preLoaderRoute: typeof LayoutPurchaseOrdersIndexRouteImport
-      parentRoute: typeof LayoutRoute
+    '/api/seed-data': {
+      id: '/api/seed-data'
+      path: '/api/seed-data'
+      fullPath: '/api/seed-data'
+      preLoaderRoute: typeof ApiSeedDataRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_layout/period-control/': {
-      id: '/_layout/period-control/'
-      path: '/period-control'
-      fullPath: '/period-control/'
-      preLoaderRoute: typeof LayoutPeriodControlIndexRouteImport
-      parentRoute: typeof LayoutRoute
+    '/api/setup': {
+      id: '/api/setup'
+      path: '/api/setup'
+      fullPath: '/api/setup'
+      preLoaderRoute: typeof ApiSetupRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_layout/modifier-groups/': {
-      id: '/_layout/modifier-groups/'
-      path: '/modifier-groups'
-      fullPath: '/modifier-groups/'
-      preLoaderRoute: typeof LayoutModifierGroupsIndexRouteImport
-      parentRoute: typeof LayoutRoute
+    '/demo/better-auth': {
+      id: '/demo/better-auth'
+      path: '/demo/better-auth'
+      fullPath: '/demo/better-auth'
+      preLoaderRoute: typeof DemoBetterAuthRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_layout/inventory/': {
-      id: '/_layout/inventory/'
-      path: '/inventory'
-      fullPath: '/inventory/'
-      preLoaderRoute: typeof LayoutInventoryIndexRouteImport
-      parentRoute: typeof LayoutRoute
+    '/demo/table': {
+      id: '/demo/table'
+      path: '/demo/table'
+      fullPath: '/demo/table'
+      preLoaderRoute: typeof DemoTableRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_layout/ingredients/': {
-      id: '/_layout/ingredients/'
-      path: '/ingredients'
-      fullPath: '/ingredients/'
-      preLoaderRoute: typeof LayoutIngredientsIndexRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/finance/': {
-      id: '/_layout/finance/'
-      path: '/finance'
-      fullPath: '/finance/'
-      preLoaderRoute: typeof LayoutFinanceIndexRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/docs/': {
-      id: '/_layout/docs/'
-      path: '/docs'
-      fullPath: '/docs/'
-      preLoaderRoute: typeof LayoutDocsIndexRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/delivery-notes/': {
-      id: '/_layout/delivery-notes/'
-      path: '/delivery-notes'
-      fullPath: '/delivery-notes/'
-      preLoaderRoute: typeof LayoutDeliveryNotesIndexRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/categories/': {
-      id: '/_layout/categories/'
-      path: '/categories'
-      fullPath: '/categories/'
-      preLoaderRoute: typeof LayoutCategoriesIndexRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/analytics/': {
-      id: '/_layout/analytics/'
-      path: '/analytics'
-      fullPath: '/analytics/'
-      preLoaderRoute: typeof LayoutAnalyticsIndexRouteImport
-      parentRoute: typeof LayoutRoute
+    '/demo/tanstack-query': {
+      id: '/demo/tanstack-query'
+      path: '/demo/tanstack-query'
+      fullPath: '/demo/tanstack-query'
+      preLoaderRoute: typeof DemoTanstackQueryRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_layout/admin/': {
       id: '/_layout/admin/'
@@ -1296,256 +1163,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminIndexRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/demo/form/simple': {
-      id: '/demo/form/simple'
-      path: '/demo/form/simple'
-      fullPath: '/demo/form/simple'
-      preLoaderRoute: typeof DemoFormSimpleRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/form/address': {
-      id: '/demo/form/address'
-      path: '/demo/form/address'
-      fullPath: '/demo/form/address'
-      preLoaderRoute: typeof DemoFormAddressRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/$': {
-      id: '/api/auth/$'
-      path: '/api/auth/$'
-      fullPath: '/api/auth/$'
-      preLoaderRoute: typeof ApiAuthSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_layout/stock-transfers/$trId': {
-      id: '/_layout/stock-transfers/$trId'
-      path: '/stock-transfers/$trId'
-      fullPath: '/stock-transfers/$trId'
-      preLoaderRoute: typeof LayoutStockTransfersTrIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/stock-opname/$soId': {
-      id: '/_layout/stock-opname/$soId'
-      path: '/stock-opname/$soId'
-      fullPath: '/stock-opname/$soId'
-      preLoaderRoute: typeof LayoutStockOpnameSoIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/scm-transfers/new': {
-      id: '/_layout/scm-transfers/new'
-      path: '/scm-transfers/new'
-      fullPath: '/scm-transfers/new'
-      preLoaderRoute: typeof LayoutScmTransfersNewRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/scm-transfers/$transferId': {
-      id: '/_layout/scm-transfers/$transferId'
-      path: '/scm-transfers/$transferId'
-      fullPath: '/scm-transfers/$transferId'
-      preLoaderRoute: typeof LayoutScmTransfersTransferIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/scm-procurements/new': {
-      id: '/_layout/scm-procurements/new'
-      path: '/scm-procurements/new'
-      fullPath: '/scm-procurements/new'
-      preLoaderRoute: typeof LayoutScmProcurementsNewRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/scm-procurements/$procurementId': {
-      id: '/_layout/scm-procurements/$procurementId'
-      path: '/scm-procurements/$procurementId'
-      fullPath: '/scm-procurements/$procurementId'
-      preLoaderRoute: typeof LayoutScmProcurementsProcurementIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/scm-invoices/$invId': {
-      id: '/_layout/scm-invoices/$invId'
-      path: '/scm-invoices/$invId'
-      fullPath: '/scm-invoices/$invId'
-      preLoaderRoute: typeof LayoutScmInvoicesInvIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/recipes/$recipeId': {
-      id: '/_layout/recipes/$recipeId'
-      path: '/recipes/$recipeId'
-      fullPath: '/recipes/$recipeId'
-      preLoaderRoute: typeof LayoutRecipesRecipeIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/purchase-requisitions/$prId': {
-      id: '/_layout/purchase-requisitions/$prId'
-      path: '/purchase-requisitions/$prId'
-      fullPath: '/purchase-requisitions/$prId'
-      preLoaderRoute: typeof LayoutPurchaseRequisitionsPrIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/purchase-orders/$poId': {
-      id: '/_layout/purchase-orders/$poId'
-      path: '/purchase-orders/$poId'
-      fullPath: '/purchase-orders/$poId'
-      preLoaderRoute: typeof LayoutPurchaseOrdersPoIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/period-control/$periodId': {
-      id: '/_layout/period-control/$periodId'
-      path: '/period-control/$periodId'
-      fullPath: '/period-control/$periodId'
-      preLoaderRoute: typeof LayoutPeriodControlPeriodIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/modifier-groups/$mgId': {
-      id: '/_layout/modifier-groups/$mgId'
-      path: '/modifier-groups/$mgId'
-      fullPath: '/modifier-groups/$mgId'
-      preLoaderRoute: typeof LayoutModifierGroupsMgIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/inventory/ledger': {
-      id: '/_layout/inventory/ledger'
-      path: '/inventory/ledger'
-      fullPath: '/inventory/ledger'
-      preLoaderRoute: typeof LayoutInventoryLedgerRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/ingredients/$ingId': {
-      id: '/_layout/ingredients/$ingId'
-      path: '/ingredients/$ingId'
-      fullPath: '/ingredients/$ingId'
-      preLoaderRoute: typeof LayoutIngredientsIngIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/finance/reconciliation': {
-      id: '/_layout/finance/reconciliation'
-      path: '/finance/reconciliation'
-      fullPath: '/finance/reconciliation'
-      preLoaderRoute: typeof LayoutFinanceReconciliationRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/finance/broken-stock': {
-      id: '/_layout/finance/broken-stock'
-      path: '/finance/broken-stock'
-      fullPath: '/finance/broken-stock'
-      preLoaderRoute: typeof LayoutFinanceBrokenStockRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/docs/stok-opname': {
-      id: '/_layout/docs/stok-opname'
-      path: '/docs/stok-opname'
-      fullPath: '/docs/stok-opname'
-      preLoaderRoute: typeof LayoutDocsStokOpnameRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/docs/resep-dan-pos': {
-      id: '/_layout/docs/resep-dan-pos'
-      path: '/docs/resep-dan-pos'
-      fullPath: '/docs/resep-dan-pos'
-      preLoaderRoute: typeof LayoutDocsResepDanPosRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/docs/produksi-internal': {
-      id: '/_layout/docs/produksi-internal'
-      path: '/docs/produksi-internal'
-      fullPath: '/docs/produksi-internal'
-      preLoaderRoute: typeof LayoutDocsProduksiInternalRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/docs/pengadaan': {
-      id: '/_layout/docs/pengadaan'
-      path: '/docs/pengadaan'
-      fullPath: '/docs/pengadaan'
-      preLoaderRoute: typeof LayoutDocsPengadaanRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/docs/mutasi-stok': {
-      id: '/_layout/docs/mutasi-stok'
-      path: '/docs/mutasi-stok'
-      fullPath: '/docs/mutasi-stok'
-      preLoaderRoute: typeof LayoutDocsMutasiStokRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/docs/kartu-stok': {
-      id: '/_layout/docs/kartu-stok'
-      path: '/docs/kartu-stok'
-      fullPath: '/docs/kartu-stok'
-      preLoaderRoute: typeof LayoutDocsKartuStokRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/docs/barang-masuk': {
-      id: '/_layout/docs/barang-masuk'
-      path: '/docs/barang-masuk'
-      fullPath: '/docs/barang-masuk'
-      preLoaderRoute: typeof LayoutDocsBarangMasukRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/delivery-notes/$dnId': {
-      id: '/_layout/delivery-notes/$dnId'
-      path: '/delivery-notes/$dnId'
-      fullPath: '/delivery-notes/$dnId'
-      preLoaderRoute: typeof LayoutDeliveryNotesDnIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/categories/$categoryId': {
-      id: '/_layout/categories/$categoryId'
-      path: '/categories/$categoryId'
-      fullPath: '/categories/$categoryId'
-      preLoaderRoute: typeof LayoutCategoriesCategoryIdRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/analytics/sales': {
-      id: '/_layout/analytics/sales'
-      path: '/analytics/sales'
-      fullPath: '/analytics/sales'
-      preLoaderRoute: typeof LayoutAnalyticsSalesRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/analytics/inventory': {
-      id: '/_layout/analytics/inventory'
-      path: '/analytics/inventory'
-      fullPath: '/analytics/inventory'
-      preLoaderRoute: typeof LayoutAnalyticsInventoryRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/admin/vouchers': {
-      id: '/_layout/admin/vouchers'
-      path: '/admin/vouchers'
-      fullPath: '/admin/vouchers'
-      preLoaderRoute: typeof LayoutAdminVouchersRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/admin/users': {
-      id: '/_layout/admin/users'
-      path: '/admin/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof LayoutAdminUsersRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/admin/system-logs': {
-      id: '/_layout/admin/system-logs'
-      path: '/admin/system-logs'
-      fullPath: '/admin/system-logs'
-      preLoaderRoute: typeof LayoutAdminSystemLogsRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/admin/sales': {
-      id: '/_layout/admin/sales'
-      path: '/admin/sales'
-      fullPath: '/admin/sales'
-      preLoaderRoute: typeof LayoutAdminSalesRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/admin/platform-fees': {
-      id: '/_layout/admin/platform-fees'
-      path: '/admin/platform-fees'
-      fullPath: '/admin/platform-fees'
-      preLoaderRoute: typeof LayoutAdminPlatformFeesRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/admin/brands': {
-      id: '/_layout/admin/brands'
-      path: '/admin/brands'
-      fullPath: '/admin/brands'
-      preLoaderRoute: typeof LayoutAdminBrandsRouteImport
+    '/_layout/admin/audit-logs': {
+      id: '/_layout/admin/audit-logs'
+      path: '/admin/audit-logs'
+      fullPath: '/admin/audit-logs'
+      preLoaderRoute: typeof LayoutAdminAuditLogsRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/admin/branches': {
@@ -1555,12 +1177,390 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminBranchesRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/admin/audit-logs': {
-      id: '/_layout/admin/audit-logs'
-      path: '/admin/audit-logs'
-      fullPath: '/admin/audit-logs'
-      preLoaderRoute: typeof LayoutAdminAuditLogsRouteImport
+    '/_layout/admin/brands': {
+      id: '/_layout/admin/brands'
+      path: '/admin/brands'
+      fullPath: '/admin/brands'
+      preLoaderRoute: typeof LayoutAdminBrandsRouteImport
       parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/platform-fees': {
+      id: '/_layout/admin/platform-fees'
+      path: '/admin/platform-fees'
+      fullPath: '/admin/platform-fees'
+      preLoaderRoute: typeof LayoutAdminPlatformFeesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/sales': {
+      id: '/_layout/admin/sales'
+      path: '/admin/sales'
+      fullPath: '/admin/sales'
+      preLoaderRoute: typeof LayoutAdminSalesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/system-logs': {
+      id: '/_layout/admin/system-logs'
+      path: '/admin/system-logs'
+      fullPath: '/admin/system-logs'
+      preLoaderRoute: typeof LayoutAdminSystemLogsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/users': {
+      id: '/_layout/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof LayoutAdminUsersRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/vouchers': {
+      id: '/_layout/admin/vouchers'
+      path: '/admin/vouchers'
+      fullPath: '/admin/vouchers'
+      preLoaderRoute: typeof LayoutAdminVouchersRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/analytics/': {
+      id: '/_layout/analytics/'
+      path: '/analytics'
+      fullPath: '/analytics/'
+      preLoaderRoute: typeof LayoutAnalyticsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/analytics/inventory': {
+      id: '/_layout/analytics/inventory'
+      path: '/analytics/inventory'
+      fullPath: '/analytics/inventory'
+      preLoaderRoute: typeof LayoutAnalyticsInventoryRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/analytics/sales': {
+      id: '/_layout/analytics/sales'
+      path: '/analytics/sales'
+      fullPath: '/analytics/sales'
+      preLoaderRoute: typeof LayoutAnalyticsSalesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/categories/': {
+      id: '/_layout/categories/'
+      path: '/categories'
+      fullPath: '/categories/'
+      preLoaderRoute: typeof LayoutCategoriesIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/categories/$categoryId': {
+      id: '/_layout/categories/$categoryId'
+      path: '/categories/$categoryId'
+      fullPath: '/categories/$categoryId'
+      preLoaderRoute: typeof LayoutCategoriesCategoryIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/delivery-notes/': {
+      id: '/_layout/delivery-notes/'
+      path: '/delivery-notes'
+      fullPath: '/delivery-notes/'
+      preLoaderRoute: typeof LayoutDeliveryNotesIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/delivery-notes/$dnId': {
+      id: '/_layout/delivery-notes/$dnId'
+      path: '/delivery-notes/$dnId'
+      fullPath: '/delivery-notes/$dnId'
+      preLoaderRoute: typeof LayoutDeliveryNotesDnIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/docs/': {
+      id: '/_layout/docs/'
+      path: '/docs'
+      fullPath: '/docs/'
+      preLoaderRoute: typeof LayoutDocsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/docs/barang-masuk': {
+      id: '/_layout/docs/barang-masuk'
+      path: '/docs/barang-masuk'
+      fullPath: '/docs/barang-masuk'
+      preLoaderRoute: typeof LayoutDocsBarangMasukRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/docs/kartu-stok': {
+      id: '/_layout/docs/kartu-stok'
+      path: '/docs/kartu-stok'
+      fullPath: '/docs/kartu-stok'
+      preLoaderRoute: typeof LayoutDocsKartuStokRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/docs/mutasi-stok': {
+      id: '/_layout/docs/mutasi-stok'
+      path: '/docs/mutasi-stok'
+      fullPath: '/docs/mutasi-stok'
+      preLoaderRoute: typeof LayoutDocsMutasiStokRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/docs/pengadaan': {
+      id: '/_layout/docs/pengadaan'
+      path: '/docs/pengadaan'
+      fullPath: '/docs/pengadaan'
+      preLoaderRoute: typeof LayoutDocsPengadaanRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/docs/produksi-internal': {
+      id: '/_layout/docs/produksi-internal'
+      path: '/docs/produksi-internal'
+      fullPath: '/docs/produksi-internal'
+      preLoaderRoute: typeof LayoutDocsProduksiInternalRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/docs/resep-dan-pos': {
+      id: '/_layout/docs/resep-dan-pos'
+      path: '/docs/resep-dan-pos'
+      fullPath: '/docs/resep-dan-pos'
+      preLoaderRoute: typeof LayoutDocsResepDanPosRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/docs/stok-opname': {
+      id: '/_layout/docs/stok-opname'
+      path: '/docs/stok-opname'
+      fullPath: '/docs/stok-opname'
+      preLoaderRoute: typeof LayoutDocsStokOpnameRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/finance/': {
+      id: '/_layout/finance/'
+      path: '/finance'
+      fullPath: '/finance/'
+      preLoaderRoute: typeof LayoutFinanceIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/finance/broken-stock': {
+      id: '/_layout/finance/broken-stock'
+      path: '/finance/broken-stock'
+      fullPath: '/finance/broken-stock'
+      preLoaderRoute: typeof LayoutFinanceBrokenStockRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/finance/reconciliation': {
+      id: '/_layout/finance/reconciliation'
+      path: '/finance/reconciliation'
+      fullPath: '/finance/reconciliation'
+      preLoaderRoute: typeof LayoutFinanceReconciliationRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/ingredients/': {
+      id: '/_layout/ingredients/'
+      path: '/ingredients'
+      fullPath: '/ingredients/'
+      preLoaderRoute: typeof LayoutIngredientsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/ingredients/$ingId': {
+      id: '/_layout/ingredients/$ingId'
+      path: '/ingredients/$ingId'
+      fullPath: '/ingredients/$ingId'
+      preLoaderRoute: typeof LayoutIngredientsIngIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/inventory/': {
+      id: '/_layout/inventory/'
+      path: '/inventory'
+      fullPath: '/inventory/'
+      preLoaderRoute: typeof LayoutInventoryIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/inventory/ledger': {
+      id: '/_layout/inventory/ledger'
+      path: '/inventory/ledger'
+      fullPath: '/inventory/ledger'
+      preLoaderRoute: typeof LayoutInventoryLedgerRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/modifier-groups/': {
+      id: '/_layout/modifier-groups/'
+      path: '/modifier-groups'
+      fullPath: '/modifier-groups/'
+      preLoaderRoute: typeof LayoutModifierGroupsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/modifier-groups/$mgId': {
+      id: '/_layout/modifier-groups/$mgId'
+      path: '/modifier-groups/$mgId'
+      fullPath: '/modifier-groups/$mgId'
+      preLoaderRoute: typeof LayoutModifierGroupsMgIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/period-control/': {
+      id: '/_layout/period-control/'
+      path: '/period-control'
+      fullPath: '/period-control/'
+      preLoaderRoute: typeof LayoutPeriodControlIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/period-control/$periodId': {
+      id: '/_layout/period-control/$periodId'
+      path: '/period-control/$periodId'
+      fullPath: '/period-control/$periodId'
+      preLoaderRoute: typeof LayoutPeriodControlPeriodIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/purchase-orders/': {
+      id: '/_layout/purchase-orders/'
+      path: '/purchase-orders'
+      fullPath: '/purchase-orders/'
+      preLoaderRoute: typeof LayoutPurchaseOrdersIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/purchase-orders/$poId': {
+      id: '/_layout/purchase-orders/$poId'
+      path: '/purchase-orders/$poId'
+      fullPath: '/purchase-orders/$poId'
+      preLoaderRoute: typeof LayoutPurchaseOrdersPoIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/purchase-requisitions/': {
+      id: '/_layout/purchase-requisitions/'
+      path: '/purchase-requisitions'
+      fullPath: '/purchase-requisitions/'
+      preLoaderRoute: typeof LayoutPurchaseRequisitionsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/purchase-requisitions/$prId': {
+      id: '/_layout/purchase-requisitions/$prId'
+      path: '/purchase-requisitions/$prId'
+      fullPath: '/purchase-requisitions/$prId'
+      preLoaderRoute: typeof LayoutPurchaseRequisitionsPrIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/recipes/': {
+      id: '/_layout/recipes/'
+      path: '/recipes'
+      fullPath: '/recipes/'
+      preLoaderRoute: typeof LayoutRecipesIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/recipes/$recipeId': {
+      id: '/_layout/recipes/$recipeId'
+      path: '/recipes/$recipeId'
+      fullPath: '/recipes/$recipeId'
+      preLoaderRoute: typeof LayoutRecipesRecipeIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-invoices/': {
+      id: '/_layout/scm-invoices/'
+      path: '/scm-invoices'
+      fullPath: '/scm-invoices/'
+      preLoaderRoute: typeof LayoutScmInvoicesIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-invoices/$invId': {
+      id: '/_layout/scm-invoices/$invId'
+      path: '/scm-invoices/$invId'
+      fullPath: '/scm-invoices/$invId'
+      preLoaderRoute: typeof LayoutScmInvoicesInvIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-procurements/': {
+      id: '/_layout/scm-procurements/'
+      path: '/scm-procurements'
+      fullPath: '/scm-procurements/'
+      preLoaderRoute: typeof LayoutScmProcurementsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-procurements/$procurementId': {
+      id: '/_layout/scm-procurements/$procurementId'
+      path: '/scm-procurements/$procurementId'
+      fullPath: '/scm-procurements/$procurementId'
+      preLoaderRoute: typeof LayoutScmProcurementsProcurementIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-procurements/new': {
+      id: '/_layout/scm-procurements/new'
+      path: '/scm-procurements/new'
+      fullPath: '/scm-procurements/new'
+      preLoaderRoute: typeof LayoutScmProcurementsNewRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-transfers/': {
+      id: '/_layout/scm-transfers/'
+      path: '/scm-transfers'
+      fullPath: '/scm-transfers/'
+      preLoaderRoute: typeof LayoutScmTransfersIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-transfers/$transferId': {
+      id: '/_layout/scm-transfers/$transferId'
+      path: '/scm-transfers/$transferId'
+      fullPath: '/scm-transfers/$transferId'
+      preLoaderRoute: typeof LayoutScmTransfersTransferIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/scm-transfers/new': {
+      id: '/_layout/scm-transfers/new'
+      path: '/scm-transfers/new'
+      fullPath: '/scm-transfers/new'
+      preLoaderRoute: typeof LayoutScmTransfersNewRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/stock-opname/': {
+      id: '/_layout/stock-opname/'
+      path: '/stock-opname'
+      fullPath: '/stock-opname/'
+      preLoaderRoute: typeof LayoutStockOpnameIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/stock-opname/$soId': {
+      id: '/_layout/stock-opname/$soId'
+      path: '/stock-opname/$soId'
+      fullPath: '/stock-opname/$soId'
+      preLoaderRoute: typeof LayoutStockOpnameSoIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/stock-transfers/': {
+      id: '/_layout/stock-transfers/'
+      path: '/stock-transfers'
+      fullPath: '/stock-transfers/'
+      preLoaderRoute: typeof LayoutStockTransfersIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/stock-transfers/$trId': {
+      id: '/_layout/stock-transfers/$trId'
+      path: '/stock-transfers/$trId'
+      fullPath: '/stock-transfers/$trId'
+      preLoaderRoute: typeof LayoutStockTransfersTrIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/supplier-deliveries/': {
+      id: '/_layout/supplier-deliveries/'
+      path: '/supplier-deliveries'
+      fullPath: '/supplier-deliveries/'
+      preLoaderRoute: typeof LayoutSupplierDeliveriesIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/waste/': {
+      id: '/_layout/waste/'
+      path: '/waste'
+      fullPath: '/waste/'
+      preLoaderRoute: typeof LayoutWasteIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/form/address': {
+      id: '/demo/form/address'
+      path: '/demo/form/address'
+      fullPath: '/demo/form/address'
+      preLoaderRoute: typeof DemoFormAddressRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/form/simple': {
+      id: '/demo/form/simple'
+      path: '/demo/form/simple'
+      fullPath: '/demo/form/simple'
+      preLoaderRoute: typeof DemoFormSimpleRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }

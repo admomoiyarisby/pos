@@ -28,6 +28,8 @@ async function pickBranch(type: "Central" | "Outlet") {
 }
 
 async function pickUserByRole(role: string) {
+  // SAFETY: roles passed in come from the seed data, which only uses the five
+  // literal roles in the users table enum; eq() accepts the narrowed union.
   const [u] = await db
     .select()
     .from(users)

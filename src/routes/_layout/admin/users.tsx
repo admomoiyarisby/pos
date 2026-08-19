@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { lookupLabel } from "#/lib/label-lookup";
+import { badgeVariant, formText } from "#/lib/utils";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -76,21 +78,21 @@ export const Route = createFileRoute("/_layout/admin/users")({
 // Helpers
 // =============================================================================
 
-const roleLabels: Record<string, string> = {
+const roleLabels = {
   super_admin: "Super Admin",
   admin_pusat: "Admin Pusat",
   area_manager: "Area Manager",
   branch_admin: "Branch Admin",
   central_kitchen: "Central Kitchen",
-};
+} satisfies Record<string, string>;
 
-const roleColors: Record<string, string> = {
+const roleColors = {
   super_admin: "destructive",
   admin_pusat: "default",
   area_manager: "secondary",
   branch_admin: "outline",
   central_kitchen: "secondary",
-};
+} satisfies Record<string, string>;
 
 function buildGroupedStaff(users: UserRow[], branches: BranchRow[]): StaffGroupData[] {
   const groups: StaffGroupData[] = [];
@@ -250,7 +252,7 @@ function StaffGroup({
             }
 
             // Branch group (type === "branch")
-            const branchItem = item as { type: "branch"; branch: BranchRow; staff: UserRow[] };
+            const branchItem = item;
             return (
               <BranchSubGroup
                 key={branchItem.branch.id}
@@ -342,8 +344,11 @@ function StaffRow({
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
-        <Badge variant={roleColors[user.role] as any} className="text-xs hidden sm:inline-flex">
-          {roleLabels[user.role] ?? user.role}
+        <Badge
+          variant={badgeVariant(lookupLabel(roleColors, user.role))}
+          className="text-xs hidden sm:inline-flex"
+        >
+          {lookupLabel(roleLabels, user.role) ?? user.role}
         </Badge>
         {user.status === "Active" ? (
           <Badge variant="success" className="text-xs">
@@ -403,22 +408,22 @@ function StaffModal({
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const data: any = {
-      name: fd.get("name") as string,
-      email: fd.get("email") as string,
-      role: fd.get("role") as string,
-      status: fd.get("status") as string,
+      name: formText(fd, "name"),
+      email: formText(fd, "email"),
+      role: formText(fd, "role"),
+      status: formText(fd, "status"),
     };
 
     if (!isEdit) {
-      data.password = fd.get("password") as string;
+      data.password = formText(fd, "password");
     } else {
-      const password = fd.get("password") as string;
+      const password = formText(fd, "password");
       if (password) data.password = password;
     }
 
     // Branch fields based on role
     if (selectedRole === "branch_admin" || selectedRole === "central_kitchen") {
-      data.branchId = (fd.get("branchId") as string) || undefined;
+      data.branchId = formText(fd, "branchId") || undefined;
     }
 
     if (selectedRole === "area_manager") {

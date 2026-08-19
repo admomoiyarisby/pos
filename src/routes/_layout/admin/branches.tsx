@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { z } from "zod";
+import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import RoleGuard from "#/components/RoleGuard";
@@ -219,13 +221,13 @@ function BranchSheet({
     const fd = new FormData(e.currentTarget);
     const data = {
       id: branch.id,
-      code: fd.get("code") as string,
-      name: fd.get("name") as string,
-      location: fd.get("location") as string,
-      type: fd.get("type") as "Central" | "Outlet",
-      pin: (fd.get("pin") as string) || undefined,
-      phone: (fd.get("phone") as string) || undefined,
-      complaintPhone: (fd.get("complaintPhone") as string) || undefined,
+      code: formText(fd, "code"),
+      name: formText(fd, "name"),
+      location: formText(fd, "location"),
+      type: z.enum(["Central", "Outlet"]).parse(formText(fd, "type")),
+      pin: formText(fd, "pin") || undefined,
+      phone: formText(fd, "phone") || undefined,
+      complaintPhone: formText(fd, "complaintPhone") || undefined,
     };
     void updateMutation.mutateAsync({ data });
   };
@@ -233,9 +235,9 @@ function BranchSheet({
   const handleAddStaff = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const name = fd.get("name") as string;
-    const email = fd.get("email") as string;
-    const password = fd.get("password") as string;
+    const name = formText(fd, "name");
+    const email = formText(fd, "email");
+    const password = formText(fd, "password");
 
     void addStaffMutation.mutateAsync({
       data: {
@@ -755,10 +757,10 @@ function BranchesPage() {
     const fd = new FormData(e.currentTarget);
     void createMutation.mutateAsync({
       data: {
-        code: fd.get("code") as string,
-        name: fd.get("name") as string,
-        location: fd.get("location") as string,
-        type: fd.get("type") as "Central" | "Outlet",
+        code: formText(fd, "code"),
+        name: formText(fd, "name"),
+        location: formText(fd, "location"),
+        type: z.enum(["Central", "Outlet"]).parse(formText(fd, "type")),
       },
     });
   };

@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ORDER_CHANNEL_VALUES } from "#/db/schema";
+import { lookupLabel } from "#/lib/label-lookup";
 import { toast } from "sonner";
 import { Trash2, Pencil, Plus, ChevronDown, ChevronRight, Search } from "lucide-react";
 import RoleGuard from "#/components/RoleGuard";
@@ -37,13 +39,13 @@ const CHANNELS = [
   { value: "TikTok", label: "TikTok" },
 ];
 
-const CHANNEL_COLORS: Record<string, string> = {
+const CHANNEL_COLORS = {
   "Dine-in": "bg-blue-100 text-blue-700",
   Gofood: "bg-green-100 text-green-700",
   Grabfood: "bg-orange-100 text-orange-700",
   ShopeeFood: "bg-red-100 text-red-700",
   TikTok: "bg-gray-100 text-gray-700",
-};
+} satisfies Record<string, string>;
 
 function DataPenjualanPage() {
   const { branches } = Route.useLoaderData();
@@ -225,7 +227,7 @@ function DataPenjualanPage() {
               className="flex items-center gap-2 px-3 py-1.5 rounded-md border text-sm"
             >
               <span
-                className={`inline-block w-2 h-2 rounded-full ${CHANNEL_COLORS[ch.channel] ?? "bg-gray-300"}`}
+                className={`inline-block w-2 h-2 rounded-full ${lookupLabel(CHANNEL_COLORS, ch.channel) ?? "bg-gray-300"}`}
               />
               <span className="text-muted-foreground">{ch.channel}:</span>
               <span className="font-medium tabular-nums">{ch.orderCount} order</span>
@@ -417,7 +419,7 @@ function OrderRow({
         </td>
         <td className="py-2 px-3">
           <span
-            className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${CHANNEL_COLORS[order.channel] ?? "bg-gray-100"}`}
+            className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${lookupLabel(CHANNEL_COLORS, order.channel) ?? "bg-gray-100"}`}
           >
             {order.channel}
           </span>
@@ -536,7 +538,9 @@ function OrderEditModal({
   const isEdit = !!order;
 
   const [branchId, setBranchId] = useState(order?.branchId ?? branches[0]?.id ?? "");
-  const [channel, setChannel] = useState(order?.channel ?? "Gofood");
+  const [channel, setChannel] = useState<(typeof ORDER_CHANNEL_VALUES)[number]>(
+    order?.channel ?? "Gofood",
+  );
   const [orderCode, setOrderCode] = useState(order?.orderCode ?? "");
   const [customerName, setCustomerName] = useState(order?.customerName ?? "");
   const [notes, setNotes] = useState(order?.notes ?? "");
@@ -596,7 +600,7 @@ function OrderEditModal({
     mutationFn: async () => {
       const payload = {
         branchId,
-        channel: channel as any,
+        channel,
         orderCode: orderCode || undefined,
         customerName: customerName || undefined,
         notes: notes || undefined,
@@ -605,9 +609,9 @@ function OrderEditModal({
       };
 
       if (isEdit) {
-        return updateSalesOrder({ data: { id: order.id, ...payload } }) as any;
+        return updateSalesOrder({ data: { id: order.id, ...payload } });
       }
-      return createSalesOrder({ data: payload }) as any;
+      return createSalesOrder({ data: payload });
     },
     onSuccess: () => {
       toast.success(isEdit ? "Pesanan berhasil diubah" : "Pesanan berhasil dibuat");
@@ -642,7 +646,11 @@ function OrderEditModal({
               <label className="text-xs text-muted-foreground">Channel</label>
               <select
                 value={channel}
-                onChange={(e) => setChannel(e.target.value)}
+                onChange={(e) =>
+                  // SAFETY: the channel select only offers the five literal
+                  // channel options rendered below.
+                  setChannel(e.target.value as (typeof ORDER_CHANNEL_VALUES)[number])
+                }
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 {CHANNELS.filter((c) => c.value !== "all").map((c) => (

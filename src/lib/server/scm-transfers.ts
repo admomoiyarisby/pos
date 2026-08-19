@@ -9,6 +9,7 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "./db";
 import { requireAuth } from "./auth";
 import {
@@ -136,15 +137,20 @@ export const getMutasiTransfer = createServerFn({ method: "GET" })
           paidAt: result.invoice.paidAt,
           paidById: result.invoice.paidById,
           cancelledAt: result.invoice.cancelledAt,
-          lineItems: result.invoice.lineItems as Array<{
-            ingredientId: string;
-            ingredientName: string;
-            receivedQuantity: number;
-            rejectedQuantity: number;
-            unitPrice: number;
-            lineTotal: number;
-            reason: string | null;
-          }>,
+          lineItems: z
+            .array(
+              z.object({
+                ingredientId: z.string(),
+                ingredientName: z.string(),
+                receivedQuantity: z.number(),
+                rejectedQuantity: z.number(),
+                unitPrice: z.number(),
+                lineTotal: z.number(),
+                reason: z.string().nullable(),
+              }),
+            )
+            .catch([])
+            .parse(result.invoice.lineItems),
         } as const)
       : null;
 

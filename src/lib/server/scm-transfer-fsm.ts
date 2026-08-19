@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { scmTransferAuditLog, scmTransferItems, scmTransfers } from "#/db/schema";
 import type { FsmActor, FsmPayload, FsmTx } from "./scm-effects";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import {
   markTransferInvoicePaid,
   moveTransferToPendingReview,
@@ -35,29 +36,35 @@ async function getDb() {
 // Types
 // -----------------------------------------------------------------------------
 
-export type ScmTransferStatus =
-  | "SuratJalanDraft"
-  | "PendingAMReview"
-  | "Approved"
-  | "InTransit"
-  | "Delivered"
-  | "ReviewingSJ"
-  | "WaitingForPayment"
-  | "Finished"
-  | "Rejected"
-  | "Cancelled";
+export const SCM_TRANSFER_STATUS_VALUES = [
+  "SuratJalanDraft",
+  "PendingAMReview",
+  "Approved",
+  "InTransit",
+  "Delivered",
+  "ReviewingSJ",
+  "WaitingForPayment",
+  "Finished",
+  "Rejected",
+  "Cancelled",
+] as const;
 
-export type ScmTransferEvent =
-  | "submit"
-  | "approve"
-  | "reject"
-  | "withdraw"
-  | "ship"
-  | "mark-delivered"
-  | "open-receive"
-  | "finish-receive"
-  | "mark-paid"
-  | "cancel";
+export type ScmTransferStatus = (typeof SCM_TRANSFER_STATUS_VALUES)[number];
+
+export const SCM_TRANSFER_EVENT_VALUES = [
+  "submit",
+  "approve",
+  "reject",
+  "withdraw",
+  "ship",
+  "mark-delivered",
+  "open-receive",
+  "finish-receive",
+  "mark-paid",
+  "cancel",
+] as const;
+
+export type ScmTransferEvent = (typeof SCM_TRANSFER_EVENT_VALUES)[number];
 
 export type TransferActorRole = "branch_admin" | "area_manager" | "super_admin" | "admin_pusat";
 
@@ -244,16 +251,18 @@ export async function transitionTransfer(
       const rule = transferTransitions[tr.status]?.[event];
       if (!rule) throw new InvalidTransferTransitionError(tr.status, event);
 
-      // Actor authorization: rule's actors OR super_admin
+      // Actor authorization: rule's actors OR super_admin. SAFETY: widening
+      // the TransferActorRole[] allow-list to readonly string[] only relaxes
+      // the read; roles not in the list are denied.
       const isAllowed =
-        rule.actors.includes(actor.role as TransferActorRole) || actor.role === "super_admin";
+        (rule.actors as readonly string[]).includes(actor.role) || actor.role === "super_admin";
       if (!isAllowed) {
         throw new TransferUnauthorizedError(actor.role, event);
       }
 
       // Per-event metadata
       const now = new Date();
-      const eventMeta: Record<string, unknown> = {};
+      const eventMeta: UnknownRecord = {};
       switch (event) {
         case "submit":
           eventMeta.submittedAt = now;
@@ -377,7 +386,7 @@ export async function updateTransferItem(
         throw new InvalidTransferStateForEditError(tr.status, "edit received/rejected quantity");
       }
 
-      const updateFields: Record<string, unknown> = {};
+      const updateFields: UnknownRecord = {};
       if (patch.receivedQuantity !== undefined)
         updateFields.receivedQuantity = patch.receivedQuantity;
       if (patch.rejectedQuantity !== undefined)
@@ -422,10 +431,18 @@ export async function updateTransferItem(
 /** Returns the next possible events for a given (state, role). */
 export function availableTransferEvents(
   state: ScmTransferStatus,
-  role: TransferActorRole,
+  role: string,
 ): ScmTransferEvent[] {
   const stateRules = transferTransitions[state] ?? {};
-  return Object.entries(stateRules)
-    .filter(([, rule]) => rule.actors.includes(role) || role === "super_admin")
-    .map(([event]) => event as ScmTransferEvent);
+  // SAFETY: Object.entries widens keys to string, but the transitions table
+  // is keyed by ScmTransferEvent literals (verified by the selfcheck), so
+  // each key is a real event.
+  const ruleEntries = Object.entries(stateRules) as [ScmTransferEvent, TransferRule][];
+  // SAFETY: widening the TransferActorRole[] allow-list to readonly string[]
+  // only relaxes the read; roles not in the list are simply not allowed.
+  return ruleEntries
+    .filter(
+      ([, rule]) => (rule.actors as readonly string[]).includes(role) || role === "super_admin",
+    )
+    .map(([event]) => event);
 }

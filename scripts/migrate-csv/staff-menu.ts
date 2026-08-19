@@ -25,6 +25,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
 import * as schema from "../../src/db/schema";
+import { lookupLabel } from "../../src/lib/label-lookup";
 import { parseCsv, findColumns } from "./csv";
 import { canonicalName } from "./normalize";
 
@@ -39,11 +40,11 @@ type RecipeIngredientInsert = typeof schema.recipeIngredients.$inferInsert;
  * Map a staff recipe name → the BASE recipe name whose BOM it inherits.
  * If no base found, the staff recipe is inserted without BOM.
  */
-const STAFF_TO_BASE: Record<string, string> = {
+const STAFF_TO_BASE = {
   "Chicken Katsu Staff": "Chicken Katsu Don",
   "Chicken Karaage Staff": "Karage Don",
   "Nasi Staff": "nasi putih",
-};
+} satisfies Record<string, string>;
 
 function parseIdr(raw: string): number {
   const trimmed = raw.trim();
@@ -198,7 +199,7 @@ export async function migrateStaffMenu(options: StaffMenuOptions = {}): Promise<
       isBOGO: false,
       status: "Active",
     };
-    inserts.push({ recipe, baseName: STAFF_TO_BASE[p.name] ?? null });
+    inserts.push({ recipe, baseName: lookupLabel(STAFF_TO_BASE, p.name) ?? null });
   }
 
   if (options.dryRun) {

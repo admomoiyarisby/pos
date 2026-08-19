@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vite-plus/test";
 import {
   uploadRecipeImageToStorage,
   deleteRecipeImageFromStorage,
@@ -6,7 +6,15 @@ import {
 
 // --- mocks ---------------------------------------------------------------
 
-const fakeUser = { id: "u1", name: "Tester" } as any;
+import type { AppUser } from "#/lib/server/auth";
+
+const fakeUser: AppUser = {
+  id: "u1",
+  name: "Tester",
+  email: "tester@pos.test",
+  role: "super_admin",
+  status: "Active",
+};
 
 const uploads: Array<{ path: string; contentType?: string }> = [];
 const removes: Array<string[]> = [];
@@ -16,7 +24,7 @@ let publicUrlFor = (path: string) =>
 const fakeClient = {
   storage: {
     from: (_bucket: string) => ({
-      upload: async (path: string, _body: unknown, opts: { contentType?: string }) => {
+      upload: async (path: string, _body: File, opts: { contentType?: string }) => {
         uploads.push({ path, contentType: opts?.contentType });
         return { data: { path }, error: null };
       },
@@ -59,7 +67,7 @@ vi.mock("#/lib/server/db", () => ({
       }),
     }),
     update: () => ({
-      set: (values: unknown) => ({
+      set: (values: { imageUrl: string | null }) => ({
         where: async () => {
           updated.push(values);
           return [{ id: "rid" }];

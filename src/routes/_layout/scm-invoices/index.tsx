@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { badgeVariant, searchStringParam } from "#/lib/utils";
 import { useAuth } from "#/lib/auth-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -29,11 +30,11 @@ interface InvRow {
   createdAt: Date;
 }
 
-const statusColors: Record<string, "default" | "warning" | "success" | "destructive"> = {
+const statusColors = {
   Unpaid: "warning",
   Paid: "success",
   Cancelled: "destructive",
-};
+} satisfies Record<string, "default" | "warning" | "success" | "destructive">;
 
 export const Route = createFileRoute("/_layout/scm-invoices/")({
   component: SCMInvoicePage,
@@ -58,7 +59,7 @@ function SCMInvoicePage() {
     initialData: initial,
   });
 
-  const { status: statusFilter } = Route.useSearch() as { status?: string };
+  const statusFilter = searchStringParam(Route.useSearch(), "status");
   const filteredInvoices = statusFilter
     ? invoices.filter((inv) => inv.status === statusFilter)
     : invoices;
@@ -97,19 +98,7 @@ function SCMInvoicePage() {
       key: "status",
       header: "Status",
       sortable: true,
-      render: (r) => (
-        <Badge
-          variant={
-            (statusColors[r.status] ?? "default") as
-              | "default"
-              | "success"
-              | "warning"
-              | "destructive"
-          }
-        >
-          {r.status}
-        </Badge>
-      ),
+      render: (r) => <Badge variant={badgeVariant(statusColors[r.status])}>{r.status}</Badge>,
     },
     {
       key: "createdAt",
@@ -157,7 +146,7 @@ function SCMInvoicePage() {
                   dnCode: inv.deliveryNoteId.slice(0, 8).toUpperCase(),
                   totalAmount: inv.totalAmount,
                   status: inv.status,
-                  items: ((inv as any).items ?? []).map((item: any) => ({
+                  items: inv.items.map((item) => ({
                     ingredientName: item.ingredientName ?? item.ingredientId,
                     quantity: item.quantity,
                     unitPrice: item.unitPrice,

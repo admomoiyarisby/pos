@@ -22,6 +22,7 @@ import { resolve } from "node:path";
 import { Client } from "pg";
 import * as XLSX from "xlsx";
 
+import { lookupLabel } from "../src/lib/label-lookup";
 import { parseCsv, findColumn, findHeader, findColumns } from "./migrate-csv/csv";
 import { canonicalName, classify, normaliseUnit } from "./migrate-csv/normalize";
 import { formatLocation, parseAddress } from "./migrate-csv/address";
@@ -35,7 +36,7 @@ const XLSX_PATH = resolve(
 );
 
 // ─── BRANCH_CODE_MAP (frozen, mirrors branches.ts) ───
-const BRANCH_CODE_MAP: Record<string, string> = {
+const BRANCH_CODE_MAP = {
   "Omoiyari Wiyung": "WYG",
   "Omoiyari Darmo Permai": "DRM",
   "Omoiyari Tenggilis": "TGL",
@@ -43,16 +44,16 @@ const BRANCH_CODE_MAP: Record<string, string> = {
   "Omoiyari Jambangan": "JMB",
   "Omoiyari Pucang": "PCG",
   "Omoiyari Siwalankerto": "SWL",
-};
+} satisfies Record<string, string>;
 
-const ALIAS_RECIPES: Record<string, string> = {
+const ALIAS_RECIPES = {
   "japanese curry karaage don": "Curry Karage Don",
   "japanese curry katsu don": "Curry Katsu Don",
   gohan: "nasi putih",
   "es teh": "Ice Tea",
   "caramel puding": "Caramel Pudding",
   "extra curry sauce": "Curry Sauce",
-};
+} satisfies Record<string, string>;
 
 const OPERATIONAL_SECTIONS = ["barang keluar", "operasional"];
 
@@ -83,7 +84,7 @@ function expectedBranches() {
   for (const row of table.rows) {
     const name = (row[nameCol] ?? "").trim();
     if (!name) continue;
-    const prefix = BRANCH_CODE_MAP[name];
+    const prefix = lookupLabel(BRANCH_CODE_MAP, name);
     if (!prefix) continue;
     const location = formatLocation(parseAddress(row[addrCol] ?? ""));
     out.push({
@@ -210,10 +211,7 @@ function classifyRecipe(name: string): string {
   return "makanan";
 }
 
-function expectedRecipes(): {
-  byName: Map<string, RecipeExp>;
-  bomByName: Map<string, Map<string, number>>; // recipe name -> (ing canonical -> total qty)
-} {
+function expectedRecipes() {
   // 1) Rincian Menu -> recipe names + BOM
   const rawR = readFileSync(CSV("Detail POS - Rincian Menu.csv"), "utf-8");
   const tR = parseCsv(rawR);
@@ -283,7 +281,8 @@ function expectedRecipes(): {
     const hppV = parseIdr(row[curCols.hpp] ?? "");
     const priceV = parseIdr(row[curCols.price] ?? "");
     const canonical =
-      ALIAS_RECIPES[rawName.trim().toLowerCase().replace(/\s+/g, " ")] ?? rawName.trim();
+      lookupLabel(ALIAS_RECIPES, rawName.trim().toLowerCase().replace(/\s+/g, " ")) ??
+      rawName.trim();
     const key = canonical.toLowerCase();
     if (recipeNames.has(key)) {
       const r = recipeNames.get(key)!;
@@ -375,14 +374,12 @@ function expectedChannelRevenue() {
     const ws = wb.Sheets[sn];
     if (!ws) continue;
     const grid = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, blankrows: false });
-    for (const raw of grid) {
-      const row = raw as unknown[];
-      const label = row[0];
-      const uang = row[9];
-      if (typeof label !== "string" || !label.trim()) continue;
+    for (const row of grid) {
+      const label = String(row[0] ?? "");
+      if (!label.trim()) continue;
       const ch = mapPlatform(label);
       if (!ch) continue;
-      const amount = typeof uang === "number" ? uang : Number(uang);
+      const amount = Number(row[9]);
       if (!Number.isFinite(amount)) continue;
       rows.push({ date, channel: ch, amount: Math.round(amount) });
     }

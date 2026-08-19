@@ -47,18 +47,16 @@ async function nextCodeSeq(client: Client): Promise<number> {
   return Number.isFinite(n) ? n : 0;
 }
 
-function rowFromCsv(
-  name: string,
-  unit: string,
-  codeSeq: number,
-): {
-  row: IngredientInsert;
+type RowFromCsvResult = {
+  row: IngredientInsert | null;
   nextSeq: number;
-} {
+};
+
+function rowFromCsv(name: string, unit: string, codeSeq: number): RowFromCsvResult {
   const canonical = canonicalName(name);
   if (canonical === null) {
     return {
-      row: null as unknown as IngredientInsert, // marker for skipped
+      row: null, // marker for skipped
       nextSeq: codeSeq,
     };
   }

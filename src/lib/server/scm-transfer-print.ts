@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "./db";
 import { requireAuth } from "./auth";
 import {
@@ -372,14 +373,19 @@ export const printMutasiInvoice = createServerFn({ method: "GET" })
       .limit(1);
     if (!invoice) throw new Error("No invoice has been generated for this transfer yet");
 
-    const lineItems = (invoice.lineItems ?? []) as Array<{
-      ingredientName?: string;
-      receivedQuantity?: number;
-      rejectedQuantity?: number;
-      unitPrice?: number;
-      lineTotal?: number;
-      reason?: string | null;
-    }>;
+    const lineItems = z
+      .array(
+        z.object({
+          ingredientName: z.string(),
+          receivedQuantity: z.number(),
+          rejectedQuantity: z.number(),
+          unitPrice: z.number(),
+          lineTotal: z.number(),
+          reason: z.string().nullable(),
+        }),
+      )
+      .catch([])
+      .parse(invoice.lineItems);
 
     const allBranches = await db.select().from(branches);
     const from = allBranches.find((b) => b.id === tr.fromBranchId);

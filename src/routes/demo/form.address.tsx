@@ -22,13 +22,10 @@ function AddressForm() {
     },
     validators: {
       onBlur: ({ value }) => {
-        const errors = {
-          fields: {},
-        } as {
-          fields: Record<string, string>;
-        };
+        const fields: Record<string, string> = {};
+        const errors = { fields };
         if (value.fullName.trim().length === 0) {
-          errors.fields.fullName = "Full name is required";
+          fields.fullName = "Full name is required";
         }
         return errors;
       },

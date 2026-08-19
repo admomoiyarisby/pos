@@ -27,8 +27,6 @@ export const Route = createFileRoute("/_layout/scm-procurements/new")({
   component: NewProcurementPage,
 });
 
-type IngredientRow = { id: string; name: string; stockUnit: string; averageCost: number };
-
 type ProcurementDraftItem = {
   ingredientId: string;
   ingredientName: string;
@@ -75,17 +73,13 @@ function NewProcurementPage() {
     { items: [], notes: "", requestSource: "" },
     {
       restoreMode: "prompt",
-      isDirty: (s) => {
-        const d = s as ProcurementDraft;
-        return d.items.length > 0 || !!d.notes || !!d.requestSource;
-      },
+      isDirty: (s) => s.items.length > 0 || !!s.notes || !!s.requestSource,
     },
   );
   const items = draft.items;
   const setItems = (
     next: ProcurementDraftItem[] | ((prev: ProcurementDraftItem[]) => ProcurementDraftItem[]),
-  ) =>
-    setDraft((prev) => ({ ...prev, items: typeof next === "function" ? next(prev.items) : next }));
+  ) => setDraft((prev) => ({ ...prev, items: Array.isArray(next) ? next : next(prev.items) }));
   const notes = draft.notes;
   const setNotes = (v: string) => setDraft((prev) => ({ ...prev, notes: v }));
   const requestSource = draft.requestSource;
@@ -140,7 +134,7 @@ function NewProcurementPage() {
 
   function addItem() {
     if (!selectedIngredient || quantity <= 0) return;
-    const ing = (ingredients as IngredientRow[]).find((i) => i.id === selectedIngredient);
+    const ing = ingredients.find((i) => i.id === selectedIngredient);
     if (!ing) return;
     if (items.some((it) => it.ingredientId === ing.id)) return;
     setItems([
@@ -178,7 +172,7 @@ function NewProcurementPage() {
 
   const handleRestoreDraft = () => {
     if (!pendingDraft) return;
-    const validIds = new Set((ingredients as IngredientRow[]).map((i) => i.id));
+    const validIds = new Set(ingredients.map((i) => i.id));
     const kept = pendingDraft.items.filter((it) => validIds.has(it.ingredientId));
     const dropped = pendingDraft.items.filter((it) => !validIds.has(it.ingredientId));
     if (dropped.length > 0) {
@@ -226,14 +220,7 @@ function NewProcurementPage() {
                     <SelectValue placeholder="Pilih bahan..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {(
-                      ingredients as Array<{
-                        id: string;
-                        name: string;
-                        stockUnit: string;
-                        averageCost: number;
-                      }>
-                    ).map((ing) => (
+                    {ingredients.map((ing) => (
                       <SelectItem key={ing.id} value={ing.id}>
                         {ing.name} — Rp {ing.averageCost.toLocaleString("id-ID")}/{ing.stockUnit}
                       </SelectItem>
@@ -352,10 +339,16 @@ function NewProcurementPage() {
             </div>
 
             {createDraftM.isError ? (
-              <p className="text-sm text-destructive">{(createDraftM.error as Error).message}</p>
+              <p className="text-sm text-destructive">
+                {createDraftM.error instanceof Error
+                  ? createDraftM.error.message
+                  : String(createDraftM.error)}
+              </p>
             ) : null}
             {submitM.isError ? (
-              <p className="text-sm text-destructive">{(submitM.error as Error).message}</p>
+              <p className="text-sm text-destructive">
+                {submitM.error instanceof Error ? submitM.error.message : String(submitM.error)}
+              </p>
             ) : null}
           </CardContent>
         </Card>

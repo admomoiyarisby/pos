@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import {
   purchaseRequisitions,
   purchaseRequisitionItems,
@@ -18,8 +19,11 @@ import {
   systemNotifications,
   users,
   wasteEntries,
+  USER_ROLE_VALUES,
+  PR_STATUS_VALUES,
 } from "#/db/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { z } from "zod";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
@@ -27,15 +31,12 @@ import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 // ─── Helpers ───
 
 async function notifyUsers(
-  roles: string[],
+  roles: (typeof USER_ROLE_VALUES)[number][],
   title: string,
   message: string,
   type: "info" | "warning" | "alert" = "info",
 ) {
-  const targets = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(inArray(users.role, roles as (typeof users.$inferSelect.role)[]));
+  const targets = await db.select({ id: users.id }).from(users).where(inArray(users.role, roles));
   for (const u of targets) {
     await db.insert(systemNotifications).values({ userId: u.id, title, message, type });
   }
@@ -195,14 +196,7 @@ export const createPurchaseRequisition = createServerFn({ method: "POST" })
       "Create Purchase Requisition",
       `PR "${data.code}" dibuat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "purchaseRequisitions",
-      pr.id,
-      "CREATE",
-      undefined,
-      pr as Record<string, unknown>,
-    );
+    await logAudit(user, "purchaseRequisitions", pr.id, "CREATE", undefined, pr);
 
     // Notify admin pusat
     await notifyUsers(["admin_pusat"], "PR Baru", `PR "${data.code}" diajukan oleh ${user.name}`);
@@ -217,7 +211,10 @@ export const updatePurchaseRequisition = createServerFn({ method: "POST" })
       items?: { ingredientId: string; quantity: number }[];
       status?: string;
       rejectionReason?: string;
-    }) => data,
+    }) => ({
+      ...data,
+      status: z.enum(PR_STATUS_VALUES).optional().catch(undefined).parse(data.status),
+    }),
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
@@ -252,8 +249,8 @@ export const updatePurchaseRequisition = createServerFn({ method: "POST" })
     }
 
     if (status) {
-      const updateData: Record<string, unknown> = {
-        status: status as typeof purchaseRequisitions.$inferSelect.status,
+      const updateData: UnknownRecord = {
+        status,
         updatedAt: new Date(),
       };
       if (status === "Rejected" && rejectionReason) {
@@ -296,8 +293,8 @@ export const updatePurchaseRequisition = createServerFn({ method: "POST" })
       "purchaseRequisitions",
       id,
       status ? "STATUS_CHANGE" : "UPDATE",
-      oldPr as Record<string, unknown>,
-      updatedPr as Record<string, unknown>,
+      oldPr,
+      updatedPr,
     );
 
     return { success: true };
@@ -500,14 +497,7 @@ export const createPurchaseOrder = createServerFn({ method: "POST" })
       "Create Purchase Order",
       `PO "${data.code}" dibuat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "purchaseOrders",
-      po.id,
-      "CREATE",
-      undefined,
-      po as Record<string, unknown>,
-    );
+    await logAudit(user, "purchaseOrders", po.id, "CREATE", undefined, po);
 
     return po;
   });
@@ -558,14 +548,7 @@ export const updatePurchaseOrder = createServerFn({ method: "POST" })
       .where(eq(purchaseOrders.id, data.id))
       .limit(1);
 
-    await logAudit(
-      user,
-      "purchaseOrders",
-      data.id,
-      "UPDATE",
-      oldPo as Record<string, unknown>,
-      updatedPo as Record<string, unknown>,
-    );
+    await logAudit(user, "purchaseOrders", data.id, "UPDATE", oldPo, updatedPo);
 
     return { success: true };
   });
@@ -591,14 +574,7 @@ export const sendPurchaseOrder = createServerFn({ method: "POST" })
       .returning();
 
     await logSystemAction(user, "Send Purchase Order", `PO "${po.code}" dikirim oleh ${user.name}`);
-    await logAudit(
-      user,
-      "purchaseOrders",
-      data.id,
-      "STATUS_CHANGE",
-      oldPo as Record<string, unknown>,
-      po as Record<string, unknown>,
-    );
+    await logAudit(user, "purchaseOrders", data.id, "STATUS_CHANGE", oldPo, po);
 
     return po;
   });
@@ -646,14 +622,7 @@ export const receivePurchaseOrder = createServerFn({ method: "POST" })
       "Receive Purchase Order",
       `PO "${po.code}" status diubah ke ${newStatus} oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "purchaseOrders",
-      data.id,
-      "STATUS_CHANGE",
-      po as Record<string, unknown>,
-      updatedPo as Record<string, unknown>,
-    );
+    await logAudit(user, "purchaseOrders", data.id, "STATUS_CHANGE", po, updatedPo);
 
     return updatedPo;
   });
@@ -683,14 +652,7 @@ export const cancelPurchaseOrder = createServerFn({ method: "POST" })
       "Cancel Purchase Order",
       `PO "${po.code}" dibatalkan oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "purchaseOrders",
-      data.id,
-      "STATUS_CHANGE",
-      oldPo as Record<string, unknown>,
-      po as Record<string, unknown>,
-    );
+    await logAudit(user, "purchaseOrders", data.id, "STATUS_CHANGE", oldPo, po);
 
     return po;
   });
@@ -805,14 +767,7 @@ export const createDeliveryNote = createServerFn({ method: "POST" })
       "Create Delivery Note",
       `SJ "${data.code}" dibuat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "deliveryNotes",
-      dn.id,
-      "CREATE",
-      undefined,
-      dn as Record<string, unknown>,
-    );
+    await logAudit(user, "deliveryNotes", dn.id, "CREATE", undefined, dn);
 
     return dn;
   });
@@ -859,14 +814,7 @@ export const updateDeliveryNote = createServerFn({ method: "POST" })
     }
 
     await logSystemAction(user, "Update Delivery Note", `SJ "${dn.code}" diedit oleh ${user.name}`);
-    await logAudit(
-      user,
-      "deliveryNotes",
-      data.dnId,
-      "UPDATE",
-      dn as Record<string, unknown>,
-      undefined,
-    );
+    await logAudit(user, "deliveryNotes", data.dnId, "UPDATE", dn, undefined);
 
     return { success: true };
   });
@@ -942,14 +890,7 @@ export const shipDeliveryNote = createServerFn({ method: "POST" })
       .limit(1);
 
     await logSystemAction(user, "Ship Delivery Note", `SJ "${dn?.code}" dikirim oleh ${user.name}`);
-    await logAudit(
-      user,
-      "deliveryNotes",
-      data.dnId,
-      "STATUS_CHANGE",
-      dn as Record<string, unknown>,
-      updatedDn as Record<string, unknown>,
-    );
+    await logAudit(user, "deliveryNotes", data.dnId, "STATUS_CHANGE", dn, updatedDn);
 
     // Notify branch admin
     const branchAdminUsers = await db
@@ -1208,14 +1149,7 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
       "Receive Delivery Note",
       `SJ "${dn?.code}" diterima (${newStatus}) oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "deliveryNotes",
-      data.dnId,
-      "STATUS_CHANGE",
-      dn as Record<string, unknown>,
-      updatedDn as Record<string, unknown>,
-    );
+    await logAudit(user, "deliveryNotes", data.dnId, "STATUS_CHANGE", dn, updatedDn);
 
     // Trigger BOM cost roll-up
     for (const item of data.items) {
@@ -1328,14 +1262,7 @@ export const cancelDeliveryNote = createServerFn({ method: "POST" })
       "Cancel Delivery Note",
       `SJ "${dn.code}" dibatalkan oleh ${user.name}. Alasan: ${data.reason}`,
     );
-    await logAudit(
-      user,
-      "deliveryNotes",
-      data.dnId,
-      "STATUS_CHANGE",
-      dn as Record<string, unknown>,
-      updatedDn as Record<string, unknown>,
-    );
+    await logAudit(user, "deliveryNotes", data.dnId, "STATUS_CHANGE", dn, updatedDn);
 
     return { success: true };
   });
@@ -1538,14 +1465,7 @@ export const generateSCMInvoice = createServerFn({ method: "POST" })
       "Generate SCM Invoice",
       `Invoice SCM "${invoice.code}" (Rp${totalAmount.toLocaleString()}) dibuat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "scmInvoices",
-      invoice.id,
-      "CREATE",
-      undefined,
-      invoice as Record<string, unknown>,
-    );
+    await logAudit(user, "scmInvoices", invoice.id, "CREATE", undefined, invoice);
 
     return invoice;
   });
@@ -1572,14 +1492,7 @@ export const paySCMInvoice = createServerFn({ method: "POST" })
       "Pay SCM Invoice",
       `Invoice SCM "${invoice.code}" dibayar oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "scmInvoices",
-      data.id,
-      "STATUS_CHANGE",
-      oldInv as Record<string, unknown>,
-      invoice as Record<string, unknown>,
-    );
+    await logAudit(user, "scmInvoices", data.id, "STATUS_CHANGE", oldInv, invoice);
 
     return invoice;
   });
@@ -1609,14 +1522,7 @@ export const cancelSCMInvoice = createServerFn({ method: "POST" })
       "Cancel SCM Invoice",
       `Invoice SCM "${invoice.code}" dibatalkan oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "scmInvoices",
-      data.id,
-      "STATUS_CHANGE",
-      oldInv as Record<string, unknown>,
-      invoice as Record<string, unknown>,
-    );
+    await logAudit(user, "scmInvoices", data.id, "STATUS_CHANGE", oldInv, invoice);
 
     return invoice;
   });
@@ -1710,14 +1616,7 @@ export const createStockTransfer = createServerFn({ method: "POST" })
       "Create Stock Transfer",
       `Mutasi stok "${data.code}" dibuat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "stockTransfers",
-      transfer.id,
-      "CREATE",
-      undefined,
-      transfer as Record<string, unknown>,
-    );
+    await logAudit(user, "stockTransfers", transfer.id, "CREATE", undefined, transfer);
 
     // Notify area managers
     await notifyUsers(
@@ -1759,14 +1658,11 @@ export const approveStockTransfer = createServerFn({ method: "POST" })
       "Approve Stock Transfer",
       `Mutasi stok "${transfer.code}" diapprove oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "stockTransfers",
-      data.transferId,
-      "STATUS_CHANGE",
-      transfer as Record<string, unknown>,
-      { ...transfer, status: "Approved", approvedBy: user.id } as Record<string, unknown>,
-    );
+    await logAudit(user, "stockTransfers", data.transferId, "STATUS_CHANGE", transfer, {
+      ...transfer,
+      status: "Approved",
+      approvedBy: user.id,
+    });
 
     // Notify requester
     await db.insert(systemNotifications).values({
@@ -1813,19 +1709,12 @@ export const rejectStockTransfer = createServerFn({ method: "POST" })
       "Reject Stock Transfer",
       `Mutasi stok "${transfer.code}" ditolak oleh ${user.name}. Alasan: ${data.reason}`,
     );
-    await logAudit(
-      user,
-      "stockTransfers",
-      data.transferId,
-      "STATUS_CHANGE",
-      transfer as Record<string, unknown>,
-      {
-        ...transfer,
-        status: "Rejected",
-        rejectedBy: user.id,
-        rejectionReason: data.reason,
-      } as Record<string, unknown>,
-    );
+    await logAudit(user, "stockTransfers", data.transferId, "STATUS_CHANGE", transfer, {
+      ...transfer,
+      status: "Rejected",
+      rejectedBy: user.id,
+      rejectionReason: data.reason,
+    });
 
     // Notify requester
     await db.insert(systemNotifications).values({
@@ -1905,14 +1794,10 @@ export const shipStockTransfer = createServerFn({ method: "POST" })
       "Ship Stock Transfer",
       `Mutasi stok "${transfer.code}" dikirim oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "stockTransfers",
-      data.transferId,
-      "STATUS_CHANGE",
-      transfer as Record<string, unknown>,
-      { ...transfer, status: "In Transit" } as Record<string, unknown>,
-    );
+    await logAudit(user, "stockTransfers", data.transferId, "STATUS_CHANGE", transfer, {
+      ...transfer,
+      status: "In Transit",
+    });
 
     // Notify destination branch admin
     const destAdmins = await db
@@ -2011,14 +1896,11 @@ export const receiveStockTransfer = createServerFn({ method: "POST" })
       "Receive Stock Transfer",
       `Mutasi stok "${transfer.code}" diterima oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "stockTransfers",
-      data.transferId,
-      "STATUS_CHANGE",
-      transfer as Record<string, unknown>,
-      { ...transfer, status: "Completed", approvedBy: user.id } as Record<string, unknown>,
-    );
+    await logAudit(user, "stockTransfers", data.transferId, "STATUS_CHANGE", transfer, {
+      ...transfer,
+      status: "Completed",
+      approvedBy: user.id,
+    });
 
     return { success: true };
   });
@@ -2085,14 +1967,10 @@ export const cancelStockTransfer = createServerFn({ method: "POST" })
       "Cancel Stock Transfer",
       `Mutasi stok "${transfer.code}" dibatalkan oleh ${user.name}. Alasan: ${data.reason}`,
     );
-    await logAudit(
-      user,
-      "stockTransfers",
-      data.transferId,
-      "STATUS_CHANGE",
-      transfer as Record<string, unknown>,
-      { ...transfer, status: "Cancelled" } as Record<string, unknown>,
-    );
+    await logAudit(user, "stockTransfers", data.transferId, "STATUS_CHANGE", transfer, {
+      ...transfer,
+      status: "Cancelled",
+    });
 
     return { success: true };
   });

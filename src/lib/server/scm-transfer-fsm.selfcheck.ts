@@ -17,6 +17,7 @@
 import {
   type ScmTransferEvent,
   type ScmTransferStatus,
+  type TransferActorRole,
   availableTransferEvents,
   transferTransitions,
 } from "./scm-transfer-fsm";
@@ -90,12 +91,14 @@ const ALL_STATES: ScmTransferStatus[] = [
   "Cancelled",
 ];
 
-void (null as unknown as ScmTransferEvent[]); // type-only marker
+export type ScmTransferEventMarker = ScmTransferEvent[]; // type-only marker
 
 console.log("\n=== Mutasi Stok FSM self-check ===\n");
 
 // 1. Every (state, event) in the spec exists in the table with the right to/actors.
 for (const state of ALL_STATES) {
+  // SAFETY: SPEC keys are declared as ScmTransferEvent via the Spec type; the
+  // table lookup below fails loudly if a key isn't a real event.
   const expectedEvents = Object.keys(SPEC[state] ?? {}) as ScmTransferEvent[];
   const actualRules = transferTransitions[state] ?? {};
 
@@ -111,7 +114,10 @@ for (const state of ALL_STATES) {
 
     // Every actor in the spec must be allowed
     for (const actor of spec.actors) {
-      check(`${label} allows ${actor}`, rule.actors.includes(actor as never));
+      // SAFETY: rule.actors is TransferActorRole[]; actor comes from the Spec's
+      // string list and the includes() call is a membership check that stays
+      // truthful at runtime.
+      check(`${label} allows ${actor}`, rule.actors.includes(actor as TransferActorRole));
     }
     // And no extra actors (strict)
     const expectedActorSet = new Set(spec.actors);
@@ -123,7 +129,12 @@ for (const state of ALL_STATES) {
 
 // 2. No (state, event) exists in the table that isn't in the spec.
 for (const state of ALL_STATES) {
+  // SAFETY: both key sets are declared as ScmTransferEvent (Spec type and
+  // transferTransitions table); the membership check validates them against
+  // each other.
   const expectedEvents = new Set(Object.keys(SPEC[state] ?? {}) as ScmTransferEvent[]);
+  // SAFETY: the transitions table is keyed by ScmTransferEvent literals; the
+  // loop below checks every key against the spec, failing loudly otherwise.
   const actualEvents = Object.keys(transferTransitions[state] ?? {}) as ScmTransferEvent[];
   for (const event of actualEvents) {
     check(
@@ -146,6 +157,8 @@ console.log("\n--- availableTransferEvents checks ---\n");
 for (const state of ALL_STATES) {
   for (const role of ["branch_admin", "area_manager", "super_admin", "admin_pusat"] as const) {
     const events = availableTransferEvents(state, role);
+    // SAFETY: SPEC keys are declared as ScmTransferEvent via the Spec type; the
+    // comparison below verifies them against availableTransferEvents output.
     const expectedEvents = new Set(Object.keys(SPEC[state] ?? {}) as ScmTransferEvent[]);
 
     if (role === "super_admin") {
@@ -160,6 +173,8 @@ for (const state of ALL_STATES) {
       check(`admin_pusat sees no events in ${state}`, events.length === 0);
     } else {
       // role matches the spec
+      // SAFETY: SPEC entries are declared as ScmTransferEvent keys via the Spec
+      // type; entries() widens to strings but the event names are literal.
       const allowedForRole = (
         Object.entries(SPEC[state] ?? {}) as [ScmTransferEvent, { actors: string[] }][]
       )

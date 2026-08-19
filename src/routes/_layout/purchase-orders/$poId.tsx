@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { badgeVariant } from "#/lib/utils";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -16,16 +18,13 @@ import { getIngredients } from "#/lib/server/ingredients";
 import { Badge } from "#/components/ui/badge";
 import { Check, PackageCheck, Ban } from "lucide-react";
 
-const statusColors: Record<
-  string,
-  "default" | "secondary" | "warning" | "success" | "destructive"
-> = {
+const statusColors = {
   Draft: "secondary",
   Sent: "warning",
   Partial: "default",
   Completed: "success",
   Cancelled: "destructive",
-};
+} satisfies Record<string, "default" | "secondary" | "warning" | "success" | "destructive">;
 
 export const Route = createFileRoute("/_layout/purchase-orders/$poId")({
   component: PODetailPage,
@@ -120,18 +119,7 @@ function PODetailPage() {
             <p className="text-sm text-muted-foreground">Purchase Order</p>
           </div>
           <div className="flex items-center gap-3">
-            <Badge
-              variant={
-                (statusColors[po.status] ?? "default") as
-                  | "default"
-                  | "success"
-                  | "warning"
-                  | "destructive"
-                  | "secondary"
-              }
-            >
-              {po.status}
-            </Badge>
+            <Badge variant={badgeVariant(lookupLabel(statusColors, po.status))}>{po.status}</Badge>
             {canEdit && (
               <button
                 onClick={() => {

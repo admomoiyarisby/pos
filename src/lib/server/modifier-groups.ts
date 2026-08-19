@@ -50,7 +50,7 @@ export const getModifierGroups = createServerFn({ method: "GET" })
             .from(modifiers)
             .where(inArray(modifiers.modifierGroupId, groupIds))
             .orderBy(modifiers.sortOrder)
-        : Promise.resolve([] as (typeof modifiers.$inferSelect)[]),
+        : Promise.resolve<(typeof modifiers.$inferSelect)[]>([]),
       groupIds.length > 0
         ? db
             .select({
@@ -60,7 +60,7 @@ export const getModifierGroups = createServerFn({ method: "GET" })
             .from(recipeModifierGroups)
             .where(inArray(recipeModifierGroups.modifierGroupId, groupIds))
             .groupBy(recipeModifierGroups.modifierGroupId)
-        : Promise.resolve([] as { modifierGroupId: string; count: number }[]),
+        : Promise.resolve<{ modifierGroupId: string; count: number }[]>([]),
     ]);
 
     const countMap = Object.fromEntries(
@@ -97,7 +97,7 @@ export const getModifierGroup = createServerFn({ method: "GET" })
             .select()
             .from(modifierIngredients)
             .where(inArray(modifierIngredients.modifierId, modIds))
-        : Promise.resolve([] as (typeof modifierIngredients.$inferSelect)[]),
+        : Promise.resolve<(typeof modifierIngredients.$inferSelect)[]>([]),
       db
         .select({
           id: recipes.id,
@@ -121,7 +121,7 @@ export const getModifierGroup = createServerFn({ method: "GET" })
   });
 
 export const createModifierGroup = createServerFn({ method: "POST" })
-  .validator((data: unknown) => modifierGroupInput.parse(data))
+  .validator((data: z.input<typeof modifierGroupInput>) => modifierGroupInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
@@ -162,21 +162,16 @@ export const createModifierGroup = createServerFn({ method: "POST" })
       "Create Modifier Group",
       `Modifier group "${group.name}" dibuat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "modifierGroups",
-      group.id,
-      "CREATE",
-      undefined,
-      group as Record<string, unknown>,
-    );
+    await logAudit(user, "modifierGroups", group.id, "CREATE", undefined, group);
 
     return group;
   });
 
+const updateModifierGroupInput = modifierGroupInput.partial().extend({ id: z.string().uuid() });
+
 export const updateModifierGroup = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    modifierGroupInput.partial().extend({ id: z.string().uuid() }).parse(data),
+  .validator((data: z.input<typeof updateModifierGroupInput>) =>
+    updateModifierGroupInput.parse(data),
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
@@ -232,23 +227,19 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
       "Update Modifier Group",
       `Modifier group "${updated?.name}" diperbarui oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "modifierGroups",
-      id,
-      "UPDATE",
-      old as Record<string, unknown>,
-      updated as Record<string, unknown>,
-    );
+    await logAudit(user, "modifierGroups", id, "UPDATE", old, updated);
 
     return { success: true };
   });
 
+const linkRecipesToModifierGroupInput = z.object({
+  modifierGroupId: z.string().uuid(),
+  recipeIds: z.array(z.string().uuid()),
+});
+
 export const linkRecipesToModifierGroup = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({ modifierGroupId: z.string().uuid(), recipeIds: z.array(z.string().uuid()) })
-      .parse(data),
+  .validator((data: z.input<typeof linkRecipesToModifierGroupInput>) =>
+    linkRecipesToModifierGroupInput.parse(data),
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
@@ -276,15 +267,13 @@ export const linkRecipesToModifierGroup = createServerFn({ method: "POST" })
     return { success: true };
   });
 
+const reorderModifiersInput = z.object({
+  modifierGroupId: z.string().uuid(),
+  modifierIds: z.array(z.string().uuid()),
+});
+
 export const reorderModifiers = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        modifierGroupId: z.string().uuid(),
-        modifierIds: z.array(z.string().uuid()),
-      })
-      .parse(data),
-  )
+  .validator((data: z.input<typeof reorderModifiersInput>) => reorderModifiersInput.parse(data))
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat");
 
@@ -326,14 +315,7 @@ export const deleteModifierGroup = createServerFn({ method: "POST" })
       "Delete Modifier Group",
       `Modifier group "${old.name}" dihapus oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "modifierGroups",
-      data.id,
-      "DELETE",
-      old as Record<string, unknown>,
-      undefined,
-    );
+    await logAudit(user, "modifierGroups", data.id, "DELETE", old, undefined);
 
     return { success: true };
   });

@@ -164,7 +164,7 @@ function AnalyticsPage() {
                               />
                             ))}
                           </Pie>
-                          <Tooltip formatter={(value) => formatRp(value as number)} />
+                          <Tooltip formatter={(value) => formatRp(Number(value))} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>

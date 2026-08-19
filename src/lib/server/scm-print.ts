@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "./db";
 import { requireAuth } from "./auth";
 import {
@@ -370,7 +371,19 @@ export const printInvoice = createServerFn({ method: "GET" })
       .limit(1);
     if (!invoice) throw new Error("Invoice not found for this procurement");
 
-    const lineItems = (invoice.lineItems ?? []) as InvoiceLineItem[];
+    const lineItems = z
+      .array(
+        z.object({
+          ingredientName: z.string(),
+          receivedQuantity: z.number(),
+          rejectedQuantity: z.number(),
+          unitPrice: z.number(),
+          lineTotal: z.number(),
+          reason: z.string().nullable(),
+        }),
+      )
+      .catch([])
+      .parse(invoice.lineItems);
 
     // Fetch requester name
     const [requester] = proc.requestedById

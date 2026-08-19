@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { formText } from "#/lib/utils";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -38,13 +40,10 @@ interface DeliveryRow {
   createdAt: Date;
 }
 
-const statusColors: Record<
-  string,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const statusColors = {
   "Pending Invoice": "warning",
   Completed: "success",
-};
+} satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
 export const Route = createFileRoute("/_layout/supplier-deliveries/")({
   component: SupplierDeliveriesPage,
@@ -128,8 +127,8 @@ function SupplierDeliveriesPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const supplierName = fd.get("supplierName") as string;
-    const ingredientId = fd.get("ingredientId") as string;
+    const supplierName = formText(fd, "supplierName");
+    const ingredientId = formText(fd, "ingredientId");
     const quantity = Number(fd.get("quantity"));
     const price = Number(fd.get("price"));
 
@@ -283,7 +282,9 @@ function SupplierDeliveriesPage() {
       key: "status",
       header: "Status",
       sortable: true,
-      render: (r) => <Badge variant={statusColors[r.status] ?? "default"}>{r.status}</Badge>,
+      render: (r) => (
+        <Badge variant={lookupLabel(statusColors, r.status) ?? "default"}>{r.status}</Badge>
+      ),
     },
     {
       key: "id",
@@ -357,6 +358,7 @@ function SupplierDeliveriesPage() {
         columns={columns}
         data={deliveries}
         keyExtractor={(r) => r.id}
+        // SAFETY: the three strings are literal DeliveryRow column names.
         searchKeys={["supplierName", "ingredientName", "receivedByName"] as (keyof DeliveryRow)[]}
         search={search}
         onSearchChange={setSearch}

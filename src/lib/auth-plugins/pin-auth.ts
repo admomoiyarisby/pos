@@ -77,7 +77,7 @@ export const pinAuth = () => ({
         // 6. Log PIN login
         await db.insert(systemLogs).values({
           action: "PIN Login",
-          detail: `User "${String(userData.name)}" (${String((userData as Record<string, unknown>).role)}) login via PIN`,
+          detail: `User "${String(userData.name)}" (${String(userData.role)}) login via PIN`,
           userId: userData.id,
           userName: String(userData.name),
         });
@@ -88,8 +88,8 @@ export const pinAuth = () => ({
           user: {
             id: userData.id,
             name: userData.name,
-            role: (userData as Record<string, unknown>).role,
-            branchId: (userData as Record<string, unknown>).branchId,
+            role: userData.role,
+            branchId: userData.branchId,
           },
         });
       },
@@ -247,7 +247,7 @@ export const pinAuth = () => ({
         // 6. Log PIN login
         await db.insert(systemLogs).values({
           action: "Non-Branch PIN Login",
-          detail: `User "${String(userData.name)}" (${String((userData as Record<string, unknown>).role)}) login via PIN`,
+          detail: `User "${String(userData.name)}" (${String(userData.role)}) login via PIN`,
           userId: userData.id,
           userName: String(userData.name),
         });
@@ -258,7 +258,7 @@ export const pinAuth = () => ({
           user: {
             id: userData.id,
             name: userData.name,
-            role: (userData as Record<string, unknown>).role,
+            role: userData.role,
           },
         });
       },

@@ -209,7 +209,7 @@ export const triggerStockOpname = createServerFn({ method: "POST" })
       "Trigger Stock Opname",
       `Stock opname "${so.id}" dimulai untuk cabang ${data.branchId} oleh ${user.name}`,
     );
-    await logAudit(user, "stockOpnames", so.id, "CREATE", undefined, so as Record<string, unknown>);
+    await logAudit(user, "stockOpnames", so.id, "CREATE", undefined, so);
 
     return so;
   });
@@ -342,8 +342,8 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
       items: isBlind
         ? items.map((i) => ({
             ...i,
-            systemStock: 0 as number,
-            variance: 0 as number,
+            systemStock: 0,
+            variance: 0,
           }))
         : items,
       isBlind,
@@ -410,14 +410,10 @@ export const submitStockOpname = createServerFn({ method: "POST" })
       "Submit Stock Opname",
       `Stock opname "${data.soId}" disubmit oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "stockOpnames",
-      data.soId,
-      "STATUS_CHANGE",
-      oldSo as Record<string, unknown>,
-      { ...oldSo, status: newStatus } as Record<string, unknown>,
-    );
+    await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
+      ...oldSo,
+      status: newStatus,
+    });
 
     return { success: true, status: newStatus };
   });
@@ -452,18 +448,11 @@ export const markStockOpnameInvestigation = createServerFn({ method: "POST" })
       "Mark SO Investigation",
       `Stock opname "${data.soId}" ditandai Under Investigation oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "stockOpnames",
-      data.soId,
-      "STATUS_CHANGE",
-      oldSo as Record<string, unknown>,
-      {
-        ...oldSo,
-        status: "Under Investigation",
-        investigationNote: data.investigationNote,
-      } as Record<string, unknown>,
-    );
+    await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
+      ...oldSo,
+      status: "Under Investigation",
+      investigationNote: data.investigationNote,
+    });
 
     // Notify branch admin
     await db.insert(systemNotifications).values({
@@ -590,14 +579,11 @@ export const approveStockOpname = createServerFn({ method: "POST" })
       "Approve Stock Opname",
       `Stock opname "${data.soId}" diapprove oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "stockOpnames",
-      data.soId,
-      "STATUS_CHANGE",
-      oldSo as Record<string, unknown>,
-      { ...oldSo, status: "Approved", approvedBy: user.id } as Record<string, unknown>,
-    );
+    await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
+      ...oldSo,
+      status: "Approved",
+      approvedBy: user.id,
+    });
 
     return { success: true };
   });
@@ -654,14 +640,10 @@ export const updateStockOpnameCounts = createServerFn({ method: "POST" })
       "Update SO Counts",
       `Branch Admin updated counts for SO ${data.soId}`,
     );
-    await logAudit(
-      user,
-      "stockOpnames",
-      data.soId,
-      "UPDATE",
-      oldSo as Record<string, unknown>,
-      { ...oldSo, items: data.items } as Record<string, unknown>,
-    );
+    await logAudit(user, "stockOpnames", data.soId, "UPDATE", oldSo, {
+      ...oldSo,
+      items: data.items,
+    });
 
     return { success: true };
   });
@@ -813,7 +795,7 @@ export const realizeStockOpname = createServerFn({ method: "POST" })
           await db.insert(stockLedger).values({
             branchId: so.branchId,
             ingredientId: item.ingredientId,
-            type: (delta > 0 ? "IN" : "OUT") as "IN" | "OUT",
+            type: delta > 0 ? "IN" : "OUT",
             quantity: Math.abs(delta),
             balance: newQty,
             reference: `SO:${data.soId}`,
@@ -1050,14 +1032,14 @@ export const adjustBranchStockBatch = createServerFn({ method: "POST" })
         "inventory",
         r.inventoryId,
         "UPDATE",
-        { quantity: r.oldQuantity } as Record<string, unknown>,
+        { quantity: r.oldQuantity },
         {
           quantity: r.newQuantity,
           direction: r.direction,
           reason,
           reference,
           branchId: r.branchId,
-        } as Record<string, unknown>,
+        },
       );
     }
 
@@ -1121,7 +1103,7 @@ export const cleanSlateInventory = createServerFn({ method: "POST" })
       "inventory",
       branchId ?? "ALL",
       "DELETE",
-      { deleted, alsoLedger } as Record<string, unknown>,
+      { deleted, alsoLedger },
       undefined,
     );
 

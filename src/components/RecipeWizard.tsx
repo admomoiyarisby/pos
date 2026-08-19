@@ -19,10 +19,12 @@ import {
 } from "lucide-react";
 
 // Types
+export type RecipeCategory = "makanan" | "minuman" | "snack" | "add_ons" | "paket_bundle";
+
 export interface WizardData {
   code: string;
   name: string;
-  category: string;
+  category: RecipeCategory;
   basePrice: number;
   brandIds: string[];
   ingredients: { ingredientId: string; quantity: number }[];
@@ -46,9 +48,11 @@ interface IngredientOption {
 }
 
 interface SelectedIngredient {
-  ingredient: IngredientOption;
+  // `ingredient` is populated once the full list loads; `ingredientId` always
+  // carries the id (set at pick time or from edit-mode initial data).
+  ingredient?: IngredientOption;
   quantity: number;
-  ingredientId?: string; // For edit mode when ingredient data isn't loaded yet
+  ingredientId: string;
 }
 
 interface RecipeOption {
@@ -122,7 +126,7 @@ export function RecipeWizard({
   const [ingredientSearch, setIngredientSearch] = useState("");
   const [selectedIngredients, setSelectedIngredients] = useState<SelectedIngredient[]>(
     initialData?.ingredients?.map((si) => ({
-      ingredient: {} as IngredientOption, // Will be populated from query
+      ingredient: undefined, // Will be populated from query
       quantity: si.quantity,
       ingredientId: si.ingredientId,
     })) ?? [],
@@ -157,7 +161,7 @@ export function RecipeWizard({
   // Populate selected ingredients with full data when available
   const enrichedSelectedIngredients = selectedIngredients.map((si) => {
     if (si.ingredient?.id) return si;
-    const ingId = si.ingredientId ?? (si.ingredient as any)?.id;
+    const ingId = si.ingredientId ?? si.ingredient?.id;
     const fullIng = allIngredients?.find((i: IngredientOption) => i.id === ingId);
     return fullIng ? { ...si, ingredient: fullIng, ingredientId: ingId } : si;
   });
@@ -223,7 +227,10 @@ export function RecipeWizard({
 
   const addIngredient = (ing: IngredientOption) => {
     if (selectedIngredients.some((si) => si.ingredient?.id === ing.id)) return;
-    setSelectedIngredients([...selectedIngredients, { ingredient: ing, quantity: 1 }]);
+    setSelectedIngredients([
+      ...selectedIngredients,
+      { ingredient: ing, quantity: 1, ingredientId: ing.id },
+    ]);
   };
 
   const removeIngredient = (id: string) => {
@@ -320,7 +327,10 @@ export function RecipeWizard({
                 <select
                   name="category"
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+                  onChange={(e) =>
+                    // SAFETY: the options below are exactly the five recipe categories.
+                    setCategory(e.target.value as RecipeCategory)
+                  }
                   className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="makanan">Makanan</option>

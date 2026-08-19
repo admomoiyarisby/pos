@@ -110,7 +110,7 @@ export const getIngredient = createServerFn({ method: "GET" })
   });
 
 export const createIngredient = createServerFn({ method: "POST" })
-  .validator((data: unknown) => ingredientInput.parse(data))
+  .validator((data: z.input<typeof ingredientInput>) => ingredientInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat", "central_kitchen");
 
@@ -128,22 +128,18 @@ export const createIngredient = createServerFn({ method: "POST" })
       "Create Ingredient",
       `Bahan baku "${result.name}" (${result.code}) dibuat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "ingredients",
-      result.id,
-      "CREATE",
-      undefined,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "ingredients", result.id, "CREATE", undefined, result);
 
     return result;
   });
 
+const updateIngredientInput = ingredientInput.partial().extend({
+  id: z.string().uuid(),
+  status: z.enum(["Active", "Inactive"]).optional(),
+});
+
 export const updateIngredient = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    ingredientInput.partial().extend({ id: z.string().uuid() }).parse(data),
-  )
+  .validator((data: z.input<typeof updateIngredientInput>) => updateIngredientInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat", "central_kitchen");
 
@@ -177,14 +173,7 @@ export const updateIngredient = createServerFn({ method: "POST" })
       "Update Ingredient",
       `Bahan baku "${result.name}" diperbarui oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "ingredients",
-      id,
-      "UPDATE",
-      old as Record<string, unknown>,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "ingredients", id, "UPDATE", old, result);
 
     return result;
   });
@@ -193,10 +182,13 @@ export const updateIngredient = createServerFn({ method: "POST" })
 // DELETE INGREDIENT (SOFT DELETE)
 // =============================================================================
 
+const deleteIngredientInput = z.object({
+  id: z.string().uuid(),
+  hardDelete: z.boolean().default(false),
+});
+
 export const deleteIngredient = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z.object({ id: z.string().uuid(), hardDelete: z.boolean().default(false) }).parse(data),
-  )
+  .validator((data: z.input<typeof deleteIngredientInput>) => deleteIngredientInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat", "central_kitchen");
 
@@ -235,14 +227,7 @@ export const deleteIngredient = createServerFn({ method: "POST" })
       "Delete Ingredient",
       `Bahan baku "${old.name}" (${old.code}) dihapus oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "ingredients",
-      id,
-      "DELETE",
-      old as Record<string, unknown>,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "ingredients", id, "DELETE", old, result);
 
     return { success: true, wasSoftDelete: true };
   });

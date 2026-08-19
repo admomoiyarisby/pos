@@ -26,14 +26,14 @@ export function SubscribeButton({ label }: { label: string }) {
 function ErrorMessages({ errors }: { errors: Array<string | { message: string }> }) {
   return (
     <>
-      {errors.map((error) => (
-        <div
-          key={typeof error === "string" ? error : error.message}
-          className="text-red-500 mt-1 font-bold"
-        >
-          {typeof error === "string" ? error : error.message}
-        </div>
-      ))}
+      {errors.map((error) => {
+        const message = error instanceof Object ? error.message : error;
+        return (
+          <div key={message} className="text-red-500 mt-1 font-bold">
+            {message}
+          </div>
+        );
+      })}
     </>
   );
 }

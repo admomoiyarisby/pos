@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { useState } from "react";
+import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { lookupLabel } from "#/lib/label-lookup";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -35,11 +38,11 @@ interface IngredientRow {
   status: "Active" | "Inactive";
 }
 
-const skuLabels: Record<string, string> = {
+const skuLabels = {
   RM: "Raw Material",
   SFG: "Semi-Finished",
   FG: "Finished Goods",
-};
+} satisfies Record<string, string>;
 
 export const Route = createFileRoute("/_layout/ingredients/")({
   component: IngredientsPage,
@@ -121,12 +124,12 @@ function IngredientsPage() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const data = {
-      code: fd.get("code") as string,
-      name: fd.get("name") as string,
-      category: fd.get("category") as "Fresh" | "Dry" | "Packaging",
-      skuType: fd.get("skuType") as "RM" | "SFG" | "FG",
-      purchaseUnit: fd.get("purchaseUnit") as string,
-      stockUnit: fd.get("stockUnit") as string,
+      code: formText(fd, "code"),
+      name: formText(fd, "name"),
+      category: z.enum(["Fresh", "Dry", "Packaging"]).parse(formText(fd, "category")),
+      skuType: z.enum(["RM", "SFG", "FG"]).parse(formText(fd, "skuType")),
+      purchaseUnit: formText(fd, "purchaseUnit"),
+      stockUnit: formText(fd, "stockUnit"),
       conversionFactor: Number(fd.get("conversionFactor")),
       averageCost: Number(fd.get("averageCost")),
       rop: Number(fd.get("rop")),
@@ -145,7 +148,7 @@ function IngredientsPage() {
       key: "skuType",
       header: "Tipe SKU",
       sortable: true,
-      render: (r) => <Badge variant="outline">{skuLabels[r.skuType]}</Badge>,
+      render: (r) => <Badge variant="outline">{lookupLabel(skuLabels, r.skuType) ?? "-"}</Badge>,
     },
     {
       key: "category",

@@ -1,6 +1,8 @@
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "./db";
 import { scmProcurementAuditLog, scmProcurementItems, scmProcurements } from "#/db/schema";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import {
   copyReadyToPicked,
   generateInvoiceSnapshot,
@@ -23,29 +25,35 @@ import { buildNotificationsForEvent, insertNotifications } from "./scm-procureme
 // Types
 // -----------------------------------------------------------------------------
 
-export type ScmProcurementStatus =
-  | "Draft"
-  | "Pending"
-  | "UnderReview"
-  | "Rejected"
-  | "InTransit"
-  | "Delivered"
-  | "ReviewingSJ"
-  | "WaitingForPayment"
-  | "Finished"
-  | "Cancelled";
+export const SCM_PROCUREMENT_STATUS_VALUES = [
+  "Draft",
+  "Pending",
+  "UnderReview",
+  "Rejected",
+  "InTransit",
+  "Delivered",
+  "ReviewingSJ",
+  "WaitingForPayment",
+  "Finished",
+  "Cancelled",
+] as const;
 
-export type ScmProcurementEvent =
-  | "submit"
-  | "open-review"
-  | "withdraw"
-  | "reject"
-  | "accept-and-ship"
-  | "mark-delivered"
-  | "open-receive"
-  | "finish-receive"
-  | "mark-paid"
-  | "cancel";
+export type ScmProcurementStatus = (typeof SCM_PROCUREMENT_STATUS_VALUES)[number];
+
+export const SCM_PROCUREMENT_EVENT_VALUES = [
+  "submit",
+  "open-review",
+  "withdraw",
+  "reject",
+  "accept-and-ship",
+  "mark-delivered",
+  "open-receive",
+  "finish-receive",
+  "mark-paid",
+  "cancel",
+] as const;
+
+export type ScmProcurementEvent = (typeof SCM_PROCUREMENT_EVENT_VALUES)[number];
 
 export type FsmActorRole = "branch_admin" | "admin_pusat" | "super_admin" | "area_manager";
 
@@ -260,13 +268,17 @@ export async function transition(
       const rule = transitions[proc.status]?.[event];
       if (!rule) throw new InvalidTransitionError(proc.status, event);
 
-      if (!rule.actors.includes(actor.role as FsmActorRole)) {
+      // SAFETY: the actors list is FsmActorRole[]; widening it to a readonly
+      // string[] only relaxes the read so the membership test can accept any
+      // authenticated role string — the FSM treats unknown roles as denied.
+      const isAllowed = (rule.actors as readonly string[]).includes(actor.role);
+      if (!isAllowed) {
         throw new UnauthorizedError(actor.role, event);
       }
 
       // Build the per-event metadata patch
       const now = new Date();
-      const eventMeta: Record<string, unknown> = {};
+      const eventMeta: UnknownRecord = {};
       switch (event) {
         case "submit":
           eventMeta.submittedAt = now;
@@ -370,6 +382,16 @@ export type UpdateItemPatch = {
   quantity?: number;
 };
 
+export const UpdateItemPatchSchema = z.object({
+  caDecision: z.enum(["approved", "rejected"]).optional(),
+  readyQuantity: z.number().optional(),
+  receivedQuantity: z.number().optional(),
+  rejectedQuantity: z.number().optional(),
+  reason: z.string().optional(),
+  rejectionNote: z.string().optional(),
+  quantity: z.number().optional(),
+});
+
 export type UpdateItemResult =
   | { success: true }
   | { success: false; error: { name: string; message: string } };
@@ -416,7 +438,7 @@ export async function updateItem(
       }
 
       // Apply the patch
-      const updateFields: Record<string, unknown> = {};
+      const updateFields: UnknownRecord = {};
       if (patch.caDecision !== undefined) updateFields.caDecision = patch.caDecision;
       if (patch.readyQuantity !== undefined) updateFields.readyQuantity = patch.readyQuantity;
       if (patch.receivedQuantity !== undefined)
@@ -468,13 +490,23 @@ export async function updateItem(
 // Public helpers
 // -----------------------------------------------------------------------------
 
-/** Returns the next possible events for a given (state, role). */
-export function availableEvents(
-  state: ScmProcurementStatus,
-  role: FsmActorRole,
-): ScmProcurementEvent[] {
+/**
+ * Returns the next possible events for a given (state, role).
+ *
+ * `role` is a plain string: callers pass the authenticated user's role, which
+ * auth already validated against the users-table enum. The FSM treats the
+ * role as a membership key against each rule's actor allow-list, so unknown
+ * roles simply get no events.
+ */
+export function availableEvents(state: ScmProcurementStatus, role: string): ScmProcurementEvent[] {
   const stateRules = transitions[state] ?? {};
-  return Object.entries(stateRules)
-    .filter(([, rule]) => rule.actors.includes(role))
-    .map(([event]) => event as ScmProcurementEvent);
+  // SAFETY: Object.entries widens keys to string, but the transitions table
+  // is keyed by ScmProcurementEvent literals (verified by the spec), so each
+  // key is a real event.
+  const ruleEntries = Object.entries(stateRules) as [ScmProcurementEvent, FsmRule][];
+  // SAFETY: widening the FsmActorRole[] allow-list to readonly string[] only
+  // relaxes the read; roles not in the list are simply not allowed.
+  return ruleEntries
+    .filter(([, rule]) => (rule.actors as readonly string[]).includes(role))
+    .map(([event]) => event);
 }

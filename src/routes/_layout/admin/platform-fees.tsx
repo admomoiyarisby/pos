@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -19,20 +20,20 @@ interface FeeRow {
   fixedFee: number;
 }
 
-const channelLabels: Record<string, string> = {
+const channelLabels = {
   Gofood: "Gofood",
   Grabfood: "Grabfood",
   ShopeeFood: "ShopeeFood",
   "Dine-in": "Dine-in / Offline",
   TikTok: "TikTok",
-};
+} satisfies Record<string, string>;
 
 const columns: Column<FeeRow>[] = [
   {
     key: "channel",
     header: "Channel",
     sortable: true,
-    render: (r) => channelLabels[r.channel] ?? r.channel,
+    render: (r) => lookupLabel(channelLabels, r.channel) ?? r.channel,
   },
   {
     key: "feePercentage",
@@ -125,7 +126,7 @@ function PlatformFeesPage() {
       <Modal
         open={!!editing}
         onClose={() => setEditing(null)}
-        title={`Edit ${editing ? (channelLabels[editing.channel] ?? editing.channel) : ""}`}
+        title={`Edit ${editing ? (lookupLabel(channelLabels, editing.channel) ?? editing.channel) : ""}`}
       >
         {editing && (
           <form onSubmit={handleSubmit} className="space-y-4">

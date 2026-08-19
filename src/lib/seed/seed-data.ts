@@ -1,6 +1,8 @@
 // ──────────────────────────────────────────
 // Prototype data adapted for the current schema
 
+import { lookupLabel } from "../label-lookup";
+
 function nDaysAgo(n: number): Date {
   const d = new Date();
   d.setDate(d.getDate() - n);
@@ -218,6 +220,23 @@ export const AREA_MANAGER_BRANCHES = [
   "PCG-01",
   "SWL-01",
 ];
+
+/** Prototype ingredient row — `isNasi` is present only for the nasi row. */
+export interface IngredientSeed {
+  protoId: string;
+  code: string;
+  name: string;
+  category: "Fresh" | "Dry" | "Packaging";
+  skuType: "RM" | "SFG" | "FG";
+  purchaseUnit: string;
+  stockUnit: string;
+  conversionFactor: number;
+  averageCost: number;
+  rop: number;
+  moq: number;
+  countable: boolean;
+  isNasi?: boolean;
+}
 
 export const INGREDIENTS = [
   {
@@ -2055,7 +2074,7 @@ export const INGREDIENTS = [
     countable: true,
     isNasi: true,
   },
-];
+] satisfies IngredientSeed[];
 
 export const MODIFIER_GROUPS_DATA = [
   {
@@ -2208,7 +2227,22 @@ export const MODIFIER_GROUPS_DATA = [
   },
 ];
 
-export const RECIPES_DATA = [
+/** Prototype recipe row — optional relation fields are absent for most rows. */
+export interface RecipeSeed {
+  protoId: string;
+  code: string;
+  name: string;
+  category: "makanan" | "minuman" | "snack" | "add_ons";
+  isSubRecipe: boolean;
+  basePrice: number;
+  isBOGO: boolean;
+  brandProtoIds?: string[];
+  ingredients?: { ingredientProtoId: string; quantity: number }[];
+  modifierGroupProtoIds?: string[];
+  childRecipes?: { recipeProtoId: string; quantity: number }[];
+}
+
+export const RECIPES_DATA: RecipeSeed[] = [
   {
     protoId: "rec001",
     code: "REC-001",
@@ -2835,7 +2869,7 @@ const RECIPE_PROTO_IDS = [
   "rec017",
   "rec018",
 ];
-const RECIPE_PRICES: Record<string, number> = {
+const RECIPE_PRICES = {
   rec001: 35000,
   rec002: 48000,
   rec003: 42000,
@@ -2854,7 +2888,7 @@ const RECIPE_PRICES: Record<string, number> = {
   rec016: 55000,
   rec017: 45000,
   rec018: 18000,
-};
+} satisfies Record<string, number>;
 
 export const ORDERS_DATA = (() => {
   const orders: {
@@ -2910,7 +2944,7 @@ export const ORDERS_DATA = (() => {
 
     for (let j = 0; j < numItems; j++) {
       const rId = RECIPE_PROTO_IDS[(i + j) % RECIPE_PROTO_IDS.length];
-      const price = RECIPE_PRICES[rId] || 35000;
+      const price = lookupLabel(RECIPE_PRICES, rId) || 35000;
       const qty = 1 + ((i + j) % 4);
       const cogs = Math.round(price * 0.4);
       items.push({
@@ -3130,10 +3164,7 @@ export const DELIVERY_NOTES_DATA = (() => {
   const dnIngredients = ["ing001", "ing002", "ing003", "ing004", "ing005", "ing007", "ing012"];
   // Per-DN rejection pattern: 7 of 18 DNs have rejections with varied quantity
   // and a realistic disposition distribution (~57% Return to Source, ~29% Scrap, ~14% Quarantine)
-  const rejectionPattern: Record<
-    number,
-    { quantity: number; disposition: "Return to Source" | "Scrap" | "Quarantine" }
-  > = {
+  const rejectionPattern = {
     7: { quantity: 30, disposition: "Return to Source" },
     10: { quantity: 50, disposition: "Scrap" },
     11: { quantity: 75, disposition: "Return to Source" },
@@ -3141,11 +3172,14 @@ export const DELIVERY_NOTES_DATA = (() => {
     14: { quantity: 100, disposition: "Return to Source" },
     16: { quantity: 60, disposition: "Scrap" },
     17: { quantity: 80, disposition: "Return to Source" },
-  };
+  } satisfies Record<
+    number,
+    { quantity: number; disposition: "Return to Source" | "Scrap" | "Quarantine" }
+  >;
   for (let i = 1; i <= 18; i++) {
     const status = statuses[i % statuses.length];
     const qty = 2000 + i * 400;
-    const rej = rejectionPattern[i];
+    const rej = lookupLabel(rejectionPattern, i);
     dns.push({
       code: `SJ-${2025}${String(i).padStart(3, "0")}`,
       prCode: i <= 12 ? `PR-${2025}${String(i).padStart(3, "0")}` : undefined,

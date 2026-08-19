@@ -94,7 +94,7 @@ async function findExisting<T extends { id: string }>(
   value: string,
 ): Promise<T | undefined> {
   const rows = await db.select().from(table).where(eq(field, value)).limit(1);
-  return rows[0] as T | undefined;
+  return rows[0];
 }
 
 async function createUserViaAuth(
@@ -107,16 +107,24 @@ async function createUserViaAuth(
   pin?: string,
 ) {
   try {
-    const body: any = { email, password, name, role, status: "Active" };
-    if (branchCode && branchIdMap) {
-      body.branchId = branchIdMap.get(branchCode);
-    }
-    if (pin) {
-      body.pin = pin;
-    }
-    await auth.api.signUpEmail({ body: body as never });
+    const body = {
+      email,
+      password,
+      name,
+      role,
+      status: "Active",
+      branchId: branchCode && branchIdMap ? branchIdMap.get(branchCode) : undefined,
+      pin,
+    };
+    await auth.api.signUpEmail({ body });
   } catch {
-    const updateData: any = { name, role, status: "Active" };
+    const updateData: Partial<typeof usersTable.$inferInsert> = {
+      name,
+      // SAFETY: callers pass role strings from the known role set (validated
+      // at the seeding boundary before this helper runs).
+      role: role as typeof usersTable.$inferInsert.role,
+      status: "Active",
+    };
     if (branchCode && branchIdMap) {
       updateData.branchId = branchIdMap.get(branchCode);
     }
@@ -269,7 +277,7 @@ export async function seedIngredients(idMap: IdMap) {
           rop: ing.rop,
           moq: ing.moq,
           countable: ing.countable,
-          isNasi: (ing as any).isNasi ?? false,
+          isNasi: ing.isNasi ?? false,
         })
         .returning({ id: ingredientsTable.id });
       idMap.ingredient.set(ing.protoId, inserted.id);
@@ -392,7 +400,7 @@ export async function seedRecipesPass1(idMap: IdMap) {
     }
     if (!recId) continue;
 
-    for (const bpId of (r as any).brandProtoIds || []) {
+    for (const bpId of r.brandProtoIds || []) {
       const brandId = idMap.brand.get(bpId);
       if (!brandId) continue;
       const existingRb = await db
@@ -425,8 +433,8 @@ export async function seedRecipesPass1(idMap: IdMap) {
       }
     }
 
-    if ("modifierGroupProtoIds" in r && (r as any).modifierGroupProtoIds) {
-      for (const mgpId of (r as any).modifierGroupProtoIds) {
+    if (r.modifierGroupProtoIds) {
+      for (const mgpId of r.modifierGroupProtoIds) {
         const mgId = idMap.modifierGroup.get(mgpId);
         if (!mgId) continue;
         const existingRmg = await db
@@ -449,10 +457,10 @@ export async function seedRecipesPass1(idMap: IdMap) {
   }
 
   for (const r of RECIPES_DATA) {
-    if (!("childRecipes" in r) || !(r as any).childRecipes) continue;
+    if (!r.childRecipes) continue;
     const parentId = idMap.recipe.get(r.protoId);
     if (!parentId) continue;
-    for (const cr of (r as any).childRecipes) {
+    for (const cr of r.childRecipes) {
       const childId = idMap.recipe.get(cr.recipeProtoId);
       if (!childId) continue;
       const existingCr = await db
@@ -1484,13 +1492,13 @@ export async function seedYieldConversions(idMap: IdMap) {
         ingredientId: idMap.ingredient.get(o.ingredientProtoId),
         quantity: o.quantity,
       }))
-      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+      .filter((x): x is { ingredientId: string; quantity: number } => x.ingredientId !== undefined);
     const producedItems = yc.produced
       .map((p) => ({
         ingredientId: idMap.ingredient.get(p.ingredientProtoId),
         quantity: p.quantity,
       }))
-      .filter((x) => x.ingredientId) as { ingredientId: string; quantity: number }[];
+      .filter((x): x is { ingredientId: string; quantity: number } => x.ingredientId !== undefined);
     if (outItems.length === 0 || producedItems.length === 0) continue;
 
     const existing = await db

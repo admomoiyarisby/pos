@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { formText } from "#/lib/utils";
 import { useState, useMemo } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -297,7 +298,7 @@ function YieldTrackingPage() {
   );
   const grouped = useMemo(() => {
     const m: Record<string, IngredientLike[]> = {};
-    for (const ing of ingredients as IngredientLike[]) {
+    for (const ing of ingredients) {
       const cat = ing.category ?? "Lainnya";
       (m[cat] ??= []).push(ing);
     }
@@ -362,11 +363,11 @@ function YieldTrackingPage() {
 
     void createMutation.mutateAsync({
       data: {
-        branchId: fd.get("branchId") as string,
+        branchId: formText(fd, "branchId"),
         out,
         produced,
-        notes: (fd.get("notes") as string) || undefined,
-        productionDate: (fd.get("productionDate") as string) || undefined,
+        notes: formText(fd, "notes") || undefined,
+        productionDate: formText(fd, "productionDate") || undefined,
       },
     });
   };
@@ -545,7 +546,7 @@ function YieldTrackingPage() {
               title="Barang Keluar (Out)"
               icon={<PackageMinus className="h-4 w-4 text-destructive" />}
               items={outItems}
-              allIngredients={ingredients as IngredientLike[]}
+              allIngredients={ingredients}
               pickerOpen={outPickerOpen}
               setPickerOpen={setOutPickerOpen}
               openCats={openOutCats}
@@ -567,7 +568,7 @@ function YieldTrackingPage() {
               title="Barang Dihasilkan (Produced)"
               icon={<PackagePlus className="h-4 w-4 text-success" />}
               items={producedItems}
-              allIngredients={ingredients as IngredientLike[]}
+              allIngredients={ingredients}
               pickerOpen={producedPickerOpen}
               setPickerOpen={setProducedPickerOpen}
               openCats={openProducedCats}

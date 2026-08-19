@@ -8,9 +8,17 @@
  * SSR=true so the lazy DB init in lib/server/db.ts can run outside Vite.
  * MUST happen before importing anything that transitively pulls in db.ts.
  */
-if (typeof (import.meta as any).env === "undefined") {
+if (!("env" in import.meta)) {
+  // SAFETY: in plain-tsx execution import.meta has no `env`; this injects the
+  // SSR flag before any Vite-dependent module is imported, matching what the
+  // Vite build provides at compile time.
   (import.meta as any).env = { SSR: true };
-} else if (!(import.meta as any).env.SSR) {
+} else if (
+  // SAFETY: in plain-tsx execution import.meta has no `env`; the branch above
+  // injected the flag, so this read is safe and only sets it once.
+  !(import.meta as any).env.SSR
+) {
+  // SAFETY: same boundary — tsx gives a bare import.meta; we set the flag once.
   (import.meta as any).env.SSR = true;
 }
 

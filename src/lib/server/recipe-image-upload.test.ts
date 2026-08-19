@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vite-plus/test";
 import { parseRecipeImageFormData } from "#/lib/server/recipe-images";
 
 // Regression test for the recipe-image upload bug: a `File` cannot be sent
@@ -29,9 +29,9 @@ describe("parseRecipeImageFormData", () => {
     // Before the fix the client threw at serialization; now the server fn
     // rejects anything that isn't a FormData. Either way this must never
     // succeed — the upload must use the FormData transport.
-    expect(() => parseRecipeImageFormData({ recipeId, file: makeFile("image/png", 1024) })).toThrow(
-      /multipart FormData/,
-    );
+    // `any` simulates the untyped JSON payload the framework would hand us.
+    const jsonPayload: any = { recipeId, file: makeFile("image/png", 1024) };
+    expect(() => parseRecipeImageFormData(jsonPayload)).toThrow(/multipart FormData/);
   });
 
   it("rejects a FormData with no file", () => {

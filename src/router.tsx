@@ -13,6 +13,8 @@ interface MyRouterContext {
 }
 
 export function getRouter() {
+  // SAFETY: getContext() returns exactly the { queryClient, user } shape the
+  // router context requires; the annotation pins the inferred return type.
   const context = getContext() as MyRouterContext;
 
   const router = createTanStackRouter({

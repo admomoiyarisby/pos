@@ -7,6 +7,7 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import {
   orders,
   orderItems,
@@ -14,6 +15,7 @@ import {
   users,
   areaManagerBranches,
   systemNotifications,
+  ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { eq, and, gte, lte, desc, sql, inArray } from "drizzle-orm";
 import { requireRole } from "#/lib/server/auth";
@@ -53,7 +55,10 @@ export const getSalesRecords = createServerFn({ method: "POST" })
       channel?: string;
       page?: number;
       limit?: number;
-    }) => data,
+    }) => ({
+      ...data,
+      channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+    }),
   )
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat");
@@ -62,12 +67,7 @@ export const getSalesRecords = createServerFn({ method: "POST" })
       data.dateFrom ? gte(orders.createdAt, new Date(data.dateFrom)) : undefined,
       data.dateTo ? lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")) : undefined,
       data.branchId ? eq(orders.branchId, data.branchId) : undefined,
-      data.channel
-        ? eq(
-            orders.channel,
-            data.channel as "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok",
-          )
-        : undefined,
+      data.channel ? eq(orders.channel, data.channel) : undefined,
     );
 
     const page = data.page ?? 0;
@@ -192,7 +192,7 @@ export const updateSalesRecord = createServerFn({ method: "POST" })
     const { id, ...updates } = data;
 
     // Build the update object with explicit field mapping to match DB types
-    const updateValues: Record<string, unknown> = {};
+    const updateValues: UnknownRecord = {};
     if (updates.totalAmount !== undefined) updateValues.totalAmount = updates.totalAmount;
     if (updates.totalCogs !== undefined) updateValues.totalCogs = updates.totalCogs;
     if (updates.netSales !== undefined) updateValues.netSales = updates.netSales;

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -175,9 +176,11 @@ function ModifierGroupDetailPage() {
   const navigate = useNavigate();
 
   const goBack = () => {
+    // SAFETY: history.state is `any` in the DOM lib; the router sets `idx` on
+    // navigations, and the null/undefined cases are handled below.
     const state = window.history.state as { idx?: number } | null;
     const idx = state?.idx;
-    if (typeof idx === "number" && idx > 0) {
+    if (idx != null && Number.isFinite(idx) && idx > 0) {
       window.history.back();
     } else if (idx === 0) {
       void navigate({ to: "/modifier-groups", search: { search: undefined } });
@@ -296,8 +299,8 @@ function ModifierGroupDetailPage() {
     void updateMutation.mutateAsync({
       data: {
         id: mgId,
-        code: fd.get("code") as string,
-        name: fd.get("name") as string,
+        code: formText(fd, "code"),
+        name: formText(fd, "name"),
         minSelection: Number(fd.get("minSelection")),
         maxSelection: Number(fd.get("maxSelection")),
         modifiers: modifiersInput

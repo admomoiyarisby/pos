@@ -19,6 +19,7 @@
 
 import { config } from "dotenv";
 import { Client } from "pg";
+import { lookupLabel } from "../../src/lib/label-lookup";
 
 import { migrateBranches } from "./branches";
 import { migrateIngredientsCentral } from "./ingredients-central";
@@ -41,7 +42,7 @@ type MigrationSpec = {
   truncateTables?: string[];
 };
 
-const migrations: Record<string, MigrationSpec> = {
+const migrations = {
   branches: {
     fn: migrateBranches,
     truncateTables: ["branches"],
@@ -72,9 +73,9 @@ const migrations: Record<string, MigrationSpec> = {
   "channel-accounting": {
     fn: migrateChannelAccounting,
   },
-};
+} satisfies Record<string, MigrationSpec>;
 
-function parseArgs(argv: string[]): { only: string | null; dryRun: boolean; help: boolean } {
+function parseArgs(argv: string[]) {
   const onlyIdx = argv.indexOf("--only");
   const only = onlyIdx >= 0 ? (argv[onlyIdx + 1] ?? "") || null : null;
   const dryRun = argv.includes("--dry-run");
@@ -142,7 +143,7 @@ async function main(): Promise<void> {
   const alreadyTruncated = new Set<string>();
   for (const name of targets) {
     console.log(`[migrate-csv] → ${name}`);
-    const spec = migrations[name]!;
+    const spec: MigrationSpec = lookupLabel(migrations, name)!;
     if (!dryRun && spec.truncateTables && url) {
       await truncateTablesOnce(url, spec.truncateTables, alreadyTruncated);
     }

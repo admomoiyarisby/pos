@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { requireRole, type AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+import { lookupLabel } from "#/lib/label-lookup";
 import { getSupabaseServerClient, RECIPE_IMAGES_BUCKET } from "./supabase";
 
 /**
@@ -13,11 +14,11 @@ import { getSupabaseServerClient, RECIPE_IMAGES_BUCKET } from "./supabase";
  * public object URL lives in `recipes.image_url`. See wayfinder map #64.
  */
 
-const ALLOWED_MIME: Record<string, string> = {
+const ALLOWED_MIME = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
-};
+} satisfies Record<string, string>;
 // Decided in ticket #75.
 const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 
@@ -44,7 +45,7 @@ export async function uploadRecipeImageToStorage(
   if (!(file instanceof File) || !file.type) {
     throw new Error("No image file provided");
   }
-  const ext = ALLOWED_MIME[file.type];
+  const ext = lookupLabel(ALLOWED_MIME, file.type);
   if (!ext) {
     throw new Error(`Unsupported image type "${file.type}". Allowed: JPEG, PNG, WebP.`);
   }
@@ -90,8 +91,11 @@ export async function uploadRecipeImageToStorage(
     "recipes",
     recipeId,
     "UPDATE",
-    { ...recipe, imageUrl: oldUrl } as Record<string, unknown>,
-    { ...recipe, imageUrl: publicUrl } as Record<string, unknown>,
+    { ...recipe, imageUrl: oldUrl },
+    {
+      ...recipe,
+      imageUrl: publicUrl,
+    },
   );
 
   return { imageUrl: publicUrl };
@@ -132,8 +136,11 @@ export async function deleteRecipeImageFromStorage(
     "recipes",
     recipeId,
     "UPDATE",
-    { ...recipe, imageUrl: oldUrl } as Record<string, unknown>,
-    { ...recipe, imageUrl: null } as Record<string, unknown>,
+    { ...recipe, imageUrl: oldUrl },
+    {
+      ...recipe,
+      imageUrl: null,
+    },
   );
 
   return { success: true };
@@ -150,21 +157,20 @@ type RecipeImageUploadInput = { recipeId: string; file: File };
  * would throw on the client before the request is even made. The framework
  * reconstructs the `File` server-side from the raw multipart body.
  */
-export function parseRecipeImageFormData(data: unknown): RecipeImageUploadInput {
+export function parseRecipeImageFormData(data: FormData): RecipeImageUploadInput {
   if (!(data instanceof FormData)) {
     throw new Error("Expected a multipart FormData payload for image upload.");
   }
-  const recipeId = data.get("recipeId");
+  const recipeId = z.string().uuid().parse(data.get("recipeId"));
   const file = data.get("file");
-  z.string().uuid().parse(recipeId);
   if (!(file instanceof File) || !file.type) {
     throw new Error("No image file provided");
   }
-  return { recipeId: recipeId as string, file: file as File };
+  return { recipeId, file };
 }
 
 export const uploadRecipeImage = createServerFn({ method: "POST" })
-  .validator((data: unknown) => parseRecipeImageFormData(data))
+  .validator((data: FormData) => parseRecipeImageFormData(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
     return uploadRecipeImageToStorage(data.recipeId, data.file, user);

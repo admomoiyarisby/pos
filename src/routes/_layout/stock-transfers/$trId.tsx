@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { badgeVariant } from "#/lib/utils";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { getStockTransfer } from "#/lib/server/scm";
@@ -6,17 +8,14 @@ import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
 import { Badge } from "#/components/ui/badge";
 
-const statusColors: Record<
-  string,
-  "default" | "warning" | "success" | "destructive" | "secondary"
-> = {
+const statusColors = {
   "Pending Approval": "warning",
   Approved: "default",
   Rejected: "destructive",
   "In Transit": "warning",
   Completed: "success",
   Cancelled: "destructive",
-};
+} satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
 export const Route = createFileRoute("/_layout/stock-transfers/$trId")({
   component: TransferDetailPage,
@@ -56,16 +55,7 @@ function TransferDetailPage() {
             <h1 className="text-2xl font-bold">{transfer.code}</h1>
             <p className="text-sm text-muted-foreground">Mutasi Stok Antar Cabang</p>
           </div>
-          <Badge
-            variant={
-              (statusColors[transfer.status] ?? "default") as
-                | "default"
-                | "success"
-                | "warning"
-                | "destructive"
-                | "secondary"
-            }
-          >
+          <Badge variant={badgeVariant(lookupLabel(statusColors, transfer.status))}>
             {transfer.status}
           </Badge>
         </div>

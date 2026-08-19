@@ -41,7 +41,7 @@ export const getVouchers = createServerFn({ method: "GET" })
   });
 
 export const createVoucher = createServerFn({ method: "POST" })
-  .validator((data: unknown) => voucherInput.parse(data))
+  .validator((data: z.input<typeof voucherInput>) => voucherInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
@@ -59,22 +59,15 @@ export const createVoucher = createServerFn({ method: "POST" })
       "Create Voucher",
       `Voucher "${result.code}" dibuat oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "vouchers",
-      result.id,
-      "CREATE",
-      undefined,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "vouchers", result.id, "CREATE", undefined, result);
 
     return result;
   });
 
+const updateVoucherInput = voucherInput.partial().extend({ id: z.string().uuid() });
+
 export const updateVoucher = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    voucherInput.partial().extend({ id: z.string().uuid() }).parse(data),
-  )
+  .validator((data: z.input<typeof updateVoucherInput>) => updateVoucherInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
@@ -86,7 +79,7 @@ export const updateVoucher = createServerFn({ method: "POST" })
       .update(vouchers)
       .set({
         ...rest,
-        ...(validUntil ? { validUntil: new Date(validUntil) } : {}),
+        validUntil: validUntil ? new Date(validUntil) : undefined,
       })
       .where(eq(vouchers.id, id))
       .returning();
@@ -96,14 +89,7 @@ export const updateVoucher = createServerFn({ method: "POST" })
       "Update Voucher",
       `Voucher "${result.code}" diperbarui oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "vouchers",
-      id,
-      "UPDATE",
-      old as Record<string, unknown>,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "vouchers", id, "UPDATE", old, result);
 
     return result;
   });
@@ -127,14 +113,7 @@ export const deleteVoucher = createServerFn({ method: "POST" })
       "Delete Voucher",
       `Voucher "${result.code}" dinonaktifkan oleh ${user.name}`,
     );
-    await logAudit(
-      user,
-      "vouchers",
-      data.id,
-      "DELETE",
-      old as Record<string, unknown>,
-      result as Record<string, unknown>,
-    );
+    await logAudit(user, "vouchers", data.id, "DELETE", old, result);
 
     return { success: true };
   });

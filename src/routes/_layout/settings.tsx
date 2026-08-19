@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { lookupLabel } from "#/lib/label-lookup";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -10,13 +11,13 @@ import { Badge } from "#/components/ui/badge";
 import { updateMyProfile, updateMyPin, updateMyPassword } from "#/lib/server/users";
 import { Eye, EyeOff, User, Key, Lock } from "lucide-react";
 
-const roleLabels: Record<string, string> = {
+const roleLabels = {
   super_admin: "Super Admin",
   admin_pusat: "Admin Pusat",
   area_manager: "Area Manager",
   branch_admin: "Branch Admin",
   central_kitchen: "Central Kitchen",
-};
+} satisfies Record<string, string>;
 
 export const Route = createFileRoute("/_layout/settings")({
   component: SettingsPage,
@@ -106,7 +107,7 @@ function ProfileSection({
         <div className="space-y-2">
           <label className="text-sm font-medium">Role</label>
           <div>
-            <Badge variant="outline">{roleLabels[user.role] ?? user.role}</Badge>
+            <Badge variant="outline">{lookupLabel(roleLabels, user.role) ?? user.role}</Badge>
           </div>
         </div>
 

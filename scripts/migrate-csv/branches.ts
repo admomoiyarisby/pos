@@ -27,6 +27,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
 import * as schema from "../../src/db/schema";
+import { lookupLabel } from "../../src/lib/label-lookup";
 import { parseCsv, findColumn } from "./csv";
 import { formatLocation, parseAddress } from "./address";
 
@@ -53,7 +54,7 @@ const CENTRAL_FIXTURE: BranchInsert = {
  * The CSV is a one-time starter dataset; if new outlets arrive they go
  * through a future migration that extends this map (or replaces it).
  */
-const BRANCH_CODE_MAP: Record<string, string> = {
+const BRANCH_CODE_MAP = {
   "Omoiyari Wiyung": "WYG",
   "Omoiyari Darmo Permai": "DRM",
   "Omoiyari Tenggilis": "TGL",
@@ -61,7 +62,7 @@ const BRANCH_CODE_MAP: Record<string, string> = {
   "Omoiyari Jambangan": "JMB",
   "Omoiyari Pucang": "PCG",
   "Omoiyari Siwalankerto": "SWL",
-};
+} satisfies Record<string, string>;
 
 function rowFromCsv(
   idx: number,
@@ -70,7 +71,7 @@ function rowFromCsv(
   phone: string,
   complaintPhone: string,
 ): BranchInsert {
-  const prefix = BRANCH_CODE_MAP[name];
+  const prefix = lookupLabel(BRANCH_CODE_MAP, name);
   if (!prefix) {
     throw new Error(
       `Row ${idx + 2}: no code mapping for "${name}". ` +
