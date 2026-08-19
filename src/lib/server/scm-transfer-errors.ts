@@ -45,9 +45,9 @@ export class InvalidTransferStateForEditError extends Error {
  * the FSM refuses to deduct inventory that isn't there. The caller (server fn)
  * maps this to a user-facing error message.
  *
- * This error is unique to Mutasi (vs. Pengadaan) because the Sender is a
- * branch with bounded inventory. Central warehouses in Pengadaan have
- * theoretically unbounded stock, so the same check is unnecessary.
+ * Pengadaan has its own equivalent (`ProcurementInsufficientStockError` in
+ * `scm-effects.ts`) thrown by `accept-and-ship` — the system tracks Central's
+ * stock as a concrete quantity, so the same invariant applies there.
  */
 export class InsufficientStockError extends Error {
   constructor(
