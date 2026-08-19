@@ -37,7 +37,9 @@ export const ingredientCategoryEnum = pgEnum("ingredient_category", ["Fresh", "D
 
 export const skuTypeEnum = pgEnum("sku_type", ["RM", "SFG", "FG"]);
 
-export const ingredientStatusEnum = pgEnum("ingredient_status", ["Active", "Inactive"]);
+// ADR-0009 mirror: 'Deleted' is a UI-irreversible soft-delete tombstone (restore
+// is DB-only). Deleted rows never appear in lists; Inactive rows stay visible.
+export const ingredientStatusEnum = pgEnum("ingredient_status", ["Active", "Inactive", "Deleted"]);
 
 export const recipeCategoryEnum = pgEnum("recipe_category", [
   "makanan",

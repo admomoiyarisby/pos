@@ -5,7 +5,7 @@
 // too — they are used by both the server functions and the UI routes.
 // =============================================================================
 
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth } from "./auth";
 import {
@@ -258,7 +258,9 @@ export async function loadActiveBranches() {
 }
 
 export async function loadActiveIngredients() {
-  return db.select().from(ingredients);
+  // ADR-0009 mirror: Deleted (soft-tombstoned) ingredients never appear in
+  // dropdowns/lists; Inactive rows remain selectable.
+  return db.select().from(ingredients).where(ne(ingredients.status, "Deleted"));
 }
 
 export async function loadUserById(userId: string) {

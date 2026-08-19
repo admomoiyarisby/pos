@@ -100,7 +100,7 @@ function IngredientsPage() {
       void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
       setDeleteModalOpen(false);
       setIngredientToDelete(null);
-      toast.success("Bahan baku berhasil dinonaktifkan");
+      toast.success("Bahan baku berhasil dihapus");
     },
     onError: (error: Error) => {
       toast.error("Gagal menghapus bahan baku", { description: error.message });
@@ -416,13 +416,13 @@ function IngredientsPage() {
           setDeleteModalOpen(false);
           setIngredientToDelete(null);
         }}
-        title="Nonaktifkan Bahan Baku"
+        title="Hapus Bahan Baku"
         size="sm"
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Yakin ingin menonaktifkan bahan baku ini? Status akan diubah menjadi
-            <code className="ml-1 bg-muted px-1.5 py-0.5 rounded">Inactive</code>.
+            Yakin ingin menghapus bahan baku ini? Bahan akan dihapus dari daftar dan tidak dapat
+            dikembalikan melalui aplikasi.
           </p>
           <div className="flex justify-end gap-2 pt-2">
             <Button
@@ -441,7 +441,7 @@ function IngredientsPage() {
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
+              {deleteMutation.isPending ? "Menghapus..." : "Hapus"}
             </Button>
           </div>
         </div>

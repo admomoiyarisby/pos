@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { ingredients, recipeIngredients, ingredientBranches } from "#/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
@@ -41,7 +41,9 @@ export const getIngredients = createServerFn({ method: "GET" })
     const user = await getCurrentUserRaw();
     const currentBranchId = user?.branchId;
 
-    const conditions = [];
+    // ADR-0009 mirror: tombstoned (Deleted) ingredients never appear in lists.
+    // Inactive stays visible (search/sort/filter); only Deleted is hidden.
+    conditions.push(ne(ingredients.status, "Deleted"));
     if (data.search) {
       conditions.push(fuzzySearch([ingredients.name, ingredients.code], data.search));
     }
@@ -109,7 +111,7 @@ export const getIngredient = createServerFn({ method: "GET" })
     const [result] = await db
       .select()
       .from(ingredients)
-      .where(eq(ingredients.id, data.id))
+      .where(and(eq(ingredients.id, data.id), ne(ingredients.status, "Deleted")))
       .limit(1);
     if (!result) return null;
 
@@ -239,10 +241,12 @@ export const deleteIngredient = createServerFn({ method: "POST" })
       throw new Error("Ingredient not found");
     }
 
-    // Soft delete by setting status to Inactive
+    // Soft delete tombstone (ADR-0009 mirror): status → Deleted. The row is
+    // preserved for historical references, hidden from every list, and restore
+    // is DB-only (the UI never re-activates a Deleted ingredient).
     const [result] = await db
       .update(ingredients)
-      .set({ status: "Inactive", updatedAt: new Date() })
+      .set({ status: "Deleted", updatedAt: new Date() })
       .where(eq(ingredients.id, id))
       .returning();
 
