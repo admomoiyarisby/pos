@@ -90,6 +90,11 @@ export interface TransferViewProps {
   amInJurisdiction: boolean;
   /** Navigate back to the list page */
   onBack: () => void;
+  /**
+   * Per-unit prices are the HPP snapshot — hidden for branch_admin.
+   * Defaults to true (non-BA roles see prices).
+   */
+  showPrices?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,9 +191,11 @@ function SectionDivider() {
 function ReadOnlyItems({
   items,
   ingredientById,
+  showPrices = true,
 }: {
   items: TransferItemRow[];
   ingredientById: Map<string, { id: string; name: string; stockUnit: string }>;
+  showPrices?: boolean;
 }) {
   if (items.length === 0) {
     return (
@@ -220,9 +227,11 @@ function ReadOnlyItems({
                 <p className="text-sm">
                   Ditolak: <strong>{it.rejectedQuantity ?? "—"}</strong>
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  @ Rp {it.unitPrice.toLocaleString("id-ID")}/{ing?.stockUnit ?? "unit"}
-                </p>
+                {showPrices && (
+                  <p className="text-xs text-muted-foreground">
+                    @ Rp {it.unitPrice.toLocaleString("id-ID")}/{ing?.stockUnit ?? "unit"}
+                  </p>
+                )}
               </div>
             </div>
           );
@@ -341,7 +350,11 @@ export function FinishedView(props: TransferViewProps) {
     <Section>
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
+        <ReadOnlyItems
+          items={props.items}
+          ingredientById={props.ingredientById}
+          showPrices={props.showPrices ?? true}
+        />
       </div>
 
       {props.invoice && (
@@ -366,7 +379,11 @@ export function RejectedView(props: TransferViewProps) {
     <Section>
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
+        <ReadOnlyItems
+          items={props.items}
+          ingredientById={props.ingredientById}
+          showPrices={props.showPrices ?? true}
+        />
       </div>
 
       {props.auditLog.length > 0 && (
@@ -384,7 +401,11 @@ export function CancelledView(props: TransferViewProps) {
     <Section>
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems items={props.items} ingredientById={props.ingredientById} />
+        <ReadOnlyItems
+          items={props.items}
+          ingredientById={props.ingredientById}
+          showPrices={props.showPrices ?? true}
+        />
       </div>
 
       {props.auditLog.length > 0 && (
@@ -439,7 +460,11 @@ export function DraftSenderForm(props: TransferViewProps) {
 
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+        <ReadOnlyItems
+          items={items}
+          ingredientById={ingredientById}
+          showPrices={props.showPrices ?? true}
+        />
       </div>
 
       <SectionDivider />
@@ -512,7 +537,11 @@ export function PendingSenderWaiting(props: TransferViewProps) {
 
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+        <ReadOnlyItems
+          items={items}
+          ingredientById={ingredientById}
+          showPrices={props.showPrices ?? true}
+        />
       </div>
 
       <SectionDivider />
@@ -586,7 +615,11 @@ export function ApprovedSenderShip(props: TransferViewProps) {
 
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+        <ReadOnlyItems
+          items={items}
+          ingredientById={ingredientById}
+          showPrices={props.showPrices ?? true}
+        />
       </div>
 
       <SectionDivider />
@@ -674,7 +707,11 @@ export function PendingAmReview(props: TransferViewProps) {
 
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+        <ReadOnlyItems
+          items={items}
+          ingredientById={ingredientById}
+          showPrices={props.showPrices ?? true}
+        />
       </div>
 
       <SectionDivider />
@@ -770,7 +807,11 @@ export function InTransitReceiverTracking(props: TransferViewProps) {
 
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+        <ReadOnlyItems
+          items={items}
+          ingredientById={ingredientById}
+          showPrices={props.showPrices ?? true}
+        />
       </div>
 
       <SectionDivider />
@@ -814,7 +855,11 @@ export function DeliveredReceiverForm(props: TransferViewProps) {
 
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+        <ReadOnlyItems
+          items={items}
+          ingredientById={ingredientById}
+          showPrices={props.showPrices ?? true}
+        />
       </div>
 
       <SectionDivider />
@@ -1066,7 +1111,11 @@ export function WaitingInvoice(props: TransferViewProps) {
 
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems items={items} ingredientById={ingredientById} />
+        <ReadOnlyItems
+          items={items}
+          ingredientById={ingredientById}
+          showPrices={props.showPrices ?? true}
+        />
       </div>
 
       {invoice && (

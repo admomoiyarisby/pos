@@ -291,19 +291,24 @@ export function printSuratJalan(dn: {
   pw.document.close();
 }
 
-export function printSCMInvoice(inv: {
-  code: string;
-  dnCode: string;
-  totalAmount: number;
-  status: string;
-  items: {
-    ingredientName: string;
-    quantity: number;
-    unitPrice: number;
-    totalPrice: number;
-  }[];
-  createdAt: Date;
-}) {
+export function printSCMInvoice(
+  inv: {
+    code: string;
+    dnCode: string;
+    totalAmount: number;
+    status: string;
+    items: {
+      ingredientName: string;
+      quantity: number;
+      unitPrice: number;
+      totalPrice: number;
+    }[];
+    createdAt: Date;
+  },
+  opts?: { showUnitPrice?: boolean },
+) {
+  // Per-unit prices are the HPP snapshot — hidden for branch_admin.
+  const showUnitPrice = opts?.showUnitPrice ?? true;
   const lines: string[] = [
     "<html><head>",
     "<title>Invoice - " + inv.code + "</title>",
@@ -329,7 +334,9 @@ export function printSCMInvoice(inv: {
     '<div class="info"><strong>Surat Jalan:</strong> ' + inv.dnCode + "</div>",
     '<div class="divider"></div>',
     "<table>",
-    "<thead><tr><th>Bahan</th><th>Qty</th><th>Harga Satuan</th><th>Total</th></tr></thead>",
+    "<thead><tr><th>Bahan</th><th>Qty</th>" +
+      (showUnitPrice ? "<th>Harga Satuan</th>" : "") +
+      "<th>Total</th></tr></thead>",
     "<tbody>",
   ];
 
@@ -339,16 +346,18 @@ export function printSCMInvoice(inv: {
         item.ingredientName +
         "</td><td>" +
         item.quantity +
-        "</td><td>Rp " +
-        item.unitPrice.toLocaleString("id-ID") +
-        "</td><td>Rp " +
+        "</td>" +
+        (showUnitPrice ? "<td>Rp " + item.unitPrice.toLocaleString("id-ID") + "</td>" : "") +
+        "<td>Rp " +
         item.totalPrice.toLocaleString("id-ID") +
         "</td></tr>",
     );
   }
 
   lines.push(
-    '<tr class="total-row"><td colspan="3">TOTAL</td><td>Rp ' +
+    '<tr class="total-row"><td colspan="' +
+      (showUnitPrice ? 3 : 2) +
+      '">TOTAL</td><td>Rp ' +
       inv.totalAmount.toLocaleString("id-ID") +
       "</td></tr>",
     "</tbody></table>",

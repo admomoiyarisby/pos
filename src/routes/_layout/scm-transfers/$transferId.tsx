@@ -192,33 +192,36 @@ function TransferDetailPage() {
 function DispatchView(props: TransferViewProps) {
   const { transfer, isSenderBa, isReceiverBa, isAm } = props;
   const status = transfer.status;
+  // Per-unit prices are the HPP snapshot — branch admins on either side
+  // must not see them. Invoice totals stay visible (transaction amounts).
+  const showPrices = !isSenderBa && !isReceiverBa;
 
   if (status === "SuratJalanDraft") {
-    if (isSenderBa) return <DraftSenderForm {...props} />;
+    if (isSenderBa) return <DraftSenderForm {...props} showPrices={showPrices} />;
   }
   if (status === "PendingAMReview") {
-    if (isAm) return <PendingAmReview {...props} />;
-    if (isSenderBa) return <PendingSenderWaiting {...props} />;
+    if (isAm) return <PendingAmReview {...props} showPrices={showPrices} />;
+    if (isSenderBa) return <PendingSenderWaiting {...props} showPrices={showPrices} />;
   }
   if (status === "Approved") {
-    if (isSenderBa) return <ApprovedSenderShip {...props} />;
+    if (isSenderBa) return <ApprovedSenderShip {...props} showPrices={showPrices} />;
   }
   if (status === "InTransit") {
-    if (isReceiverBa) return <InTransitReceiverTracking {...props} />;
+    if (isReceiverBa) return <InTransitReceiverTracking {...props} showPrices={showPrices} />;
   }
   if (status === "Delivered") {
-    if (isReceiverBa) return <DeliveredReceiverForm {...props} />;
+    if (isReceiverBa) return <DeliveredReceiverForm {...props} showPrices={showPrices} />;
   }
   if (status === "ReviewingSJ") {
-    if (isReceiverBa) return <ReviewingReceiverInteractive {...props} />;
+    if (isReceiverBa) return <ReviewingReceiverInteractive {...props} showPrices={showPrices} />;
   }
   if (status === "WaitingForPayment") {
-    return <WaitingInvoice {...props} />;
+    return <WaitingInvoice {...props} showPrices={showPrices} />;
   }
-  if (status === "Rejected") return <RejectedView {...props} />;
-  if (status === "Cancelled") return <CancelledView {...props} />;
-  if (status === "Finished") return <FinishedView {...props} />;
+  if (status === "Rejected") return <RejectedView {...props} showPrices={showPrices} />;
+  if (status === "Cancelled") return <CancelledView {...props} showPrices={showPrices} />;
+  if (status === "Finished") return <FinishedView {...props} showPrices={showPrices} />;
 
   // Fallback (should not happen)
-  return <FinishedView {...props} />;
+  return <FinishedView {...props} showPrices={showPrices} />;
 }

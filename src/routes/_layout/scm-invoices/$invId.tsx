@@ -47,6 +47,10 @@ function SCMInvoiceDetailPage() {
   const canAct =
     invoice.status === "Unpaid" && ["super_admin", "admin_pusat"].includes(user?.role ?? "");
 
+  // Per-unit prices are the HPP snapshot — hidden for branch_admin. Line
+  // totals and the grand total are transaction amounts and stay visible.
+  const showUnitPrice = user?.role !== "branch_admin";
+
   const statusColors = {
     Unpaid: "warning",
     Paid: "success",
@@ -109,7 +113,9 @@ function SCMInvoiceDetailPage() {
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Bahan</th>
                 <th className="px-4 py-3 text-right font-medium">Qty</th>
-                <th className="px-4 py-3 text-right font-medium">Harga Satuan</th>
+                {showUnitPrice && (
+                  <th className="px-4 py-3 text-right font-medium">Harga Satuan</th>
+                )}
                 <th className="px-4 py-3 text-right font-medium">Total</th>
               </tr>
             </thead>
@@ -125,9 +131,11 @@ function SCMInvoiceDetailPage() {
                   <tr key={item.id} className="border-b">
                     <td className="px-4 py-3">{item.ingredientName}</td>
                     <td className="px-4 py-3 text-right">{item.quantity}</td>
-                    <td className="px-4 py-3 text-right">
-                      Rp {item.unitPrice.toLocaleString("id-ID")}
-                    </td>
+                    {showUnitPrice && (
+                      <td className="px-4 py-3 text-right">
+                        Rp {item.unitPrice.toLocaleString("id-ID")}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-right font-medium">
                       Rp {item.totalPrice.toLocaleString("id-ID")}
                     </td>

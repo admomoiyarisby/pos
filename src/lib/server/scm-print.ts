@@ -183,6 +183,8 @@ interface InvoiceData {
   requestedByName: string | null;
   requestSource: string | null;
   lineItems: InvoiceLineItem[];
+  /** Per-unit prices are the HPP snapshot — hidden for branch_admin. */
+  showUnitPrice: boolean;
 }
 
 function buildInvoiceHtml(d: InvoiceData): string {
@@ -196,7 +198,7 @@ function buildInvoiceHtml(d: InvoiceData): string {
           <td style="text-align:center;">${idx + 1}</td>
           <td>${escapeHtml(li.ingredientName)}</td>
           <td style="text-align:right;">${li.receivedQuantity}</td>
-          <td style="text-align:right;">Rp ${li.unitPrice.toLocaleString("id-ID")}</td>
+          ${d.showUnitPrice ? `<td style="text-align:right;">Rp ${li.unitPrice.toLocaleString("id-ID")}</td>` : ""}
           <td style="text-align:right;">Rp ${li.lineTotal.toLocaleString("id-ID")}</td>
         </tr>`,
     )
@@ -291,17 +293,17 @@ function buildInvoiceHtml(d: InvoiceData): string {
         <th style="width:30pt;">No</th>
         <th>Bahan</th>
         <th style="width:50pt; text-align:right;">Qty</th>
-        <th style="width:90pt; text-align:right;">Harga</th>
+        ${d.showUnitPrice ? `<th style="width:90pt; text-align:right;">Harga</th>` : ""}
         <th style="width:100pt; text-align:right;">Subtotal</th>
       </tr>
     </thead>
     <tbody>
-      ${acceptedRows || `<tr><td colspan="5" class="empty">Tidak ada item diterima.</td></tr>`}
+      ${acceptedRows || `<tr><td colspan="${d.showUnitPrice ? 5 : 4}" class="empty">Tidak ada item diterima.</td></tr>`}
       ${
         accepted.length > 0
           ? `<tr class="total-row">
                <td colspan="2" style="text-align:right;">Subtotal diterima (${totalQtyAccepted}):</td>
-               <td colspan="3" style="text-align:right;">Rp ${d.totalAmount.toLocaleString("id-ID")}</td>
+               <td colspan="${d.showUnitPrice ? 3 : 2}" style="text-align:right;">Rp ${d.totalAmount.toLocaleString("id-ID")}</td>
              </tr>`
           : ""
       }
@@ -355,7 +357,7 @@ function buildInvoiceHtml(d: InvoiceData): string {
 export const printInvoice = createServerFn({ method: "GET" })
   .validator((data: { procurementId: string }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     const [proc] = await db
       .select()
@@ -408,6 +410,7 @@ export const printInvoice = createServerFn({ method: "GET" })
       destBranchName: dest?.name ?? "-",
       requestedByName: requester?.name ?? null,
       requestSource: proc.requestSource ?? null,
+      showUnitPrice: user.role !== "branch_admin",
     });
   });
 

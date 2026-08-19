@@ -295,6 +295,12 @@ export const getProcurementItems = createServerFn({ method: "GET" })
       .where(eq(scmProcurementItems.scmProcurementId, data.procurementId))
       .orderBy(scmProcurementItems.sortOrder);
 
+    // Branch admins must not see the HPP snapshot (unitPrice) even though the
+    // detail views hide the column — keep it out of the payload entirely.
+    if (user.role === "branch_admin") {
+      return rows.map((r) => ({ ...r, unitPrice: 0 }));
+    }
+
     return rows;
   });
 
@@ -536,5 +542,15 @@ export const getProcurementInvoice = createServerFn({ method: "GET" })
       .where(eq(scmProcurementInvoices.scmProcurementId, data.procurementId))
       .limit(1);
     if (!inv) throw new Error("Invoice not found for this procurement");
+
+    // Branch admins must not see the per-unit HPP snapshot; line totals and the
+    // grand total are transaction amounts and stay visible.
+    if (user.role === "branch_admin") {
+      return {
+        ...inv,
+        lineItems: inv.lineItems.map((li) => ({ ...li, unitPrice: 0 })),
+      };
+    }
+
     return inv;
   });

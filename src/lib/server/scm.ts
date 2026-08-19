@@ -1348,7 +1348,7 @@ export const getSCMInvoices = createServerFn({ method: "GET" })
 export const getSCMInvoice = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     const [inv] = await db.select().from(scmInvoices).where(eq(scmInvoices.id, data.id)).limit(1);
 
@@ -1366,6 +1366,12 @@ export const getSCMInvoice = createServerFn({ method: "GET" })
       .from(scmInvoiceItems)
       .leftJoin(ingredients, eq(scmInvoiceItems.ingredientId, ingredients.id))
       .where(eq(scmInvoiceItems.scmInvoiceId, data.id));
+
+    // Branch admins must not see the per-unit HPP snapshot; line totals and
+    // the grand total are transaction amounts and stay visible.
+    if (user.role === "branch_admin") {
+      return { ...inv, items: items.map((it) => ({ ...it, unitPrice: 0 })) };
+    }
 
     return { ...inv, items };
   });

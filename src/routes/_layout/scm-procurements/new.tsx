@@ -222,7 +222,10 @@ function NewProcurementPage() {
                   <SelectContent>
                     {ingredients.map((ing) => (
                       <SelectItem key={ing.id} value={ing.id}>
-                        {ing.name} — Rp {ing.averageCost.toLocaleString("id-ID")}/{ing.stockUnit}
+                        {ing.name}
+                        {showPrices
+                          ? ` — Rp ${ing.averageCost.toLocaleString("id-ID")}/${ing.stockUnit}`
+                          : ` (${ing.stockUnit})`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -248,8 +251,8 @@ function NewProcurementPage() {
                     <tr>
                       <th className="px-3 py-2 text-left">Bahan</th>
                       <th className="px-3 py-2 text-right">Jumlah</th>
-                      <th className="px-3 py-2 text-right">Harga</th>
-                      <th className="px-3 py-2 text-right">Subtotal</th>
+                      {showPrices && <th className="px-3 py-2 text-right">Harga</th>}
+                      {showPrices && <th className="px-3 py-2 text-right">Subtotal</th>}
                       <th className="w-12"></th>
                     </tr>
                   </thead>
@@ -258,12 +261,16 @@ function NewProcurementPage() {
                       <tr key={it.ingredientId} className="border-b">
                         <td className="px-3 py-2">{it.ingredientName}</td>
                         <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
-                        <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                          Rp {it.unitPrice.toLocaleString("id-ID")}/{it.unitPriceUnit}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono">
-                          Rp {(it.quantity * it.unitPrice).toLocaleString("id-ID")}
-                        </td>
+                        {showPrices && (
+                          <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                            Rp {it.unitPrice.toLocaleString("id-ID")}/{it.unitPriceUnit}
+                          </td>
+                        )}
+                        {showPrices && (
+                          <td className="px-3 py-2 text-right font-mono">
+                            Rp {(it.quantity * it.unitPrice).toLocaleString("id-ID")}
+                          </td>
+                        )}
                         <td className="px-3 py-2">
                           <Button
                             size="icon-sm"

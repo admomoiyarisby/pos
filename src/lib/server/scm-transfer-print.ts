@@ -194,6 +194,8 @@ interface MutasiInvoiceData {
   fromBranchName: string;
   toBranchName: string;
   lineItems: MutasiInvoiceLineItem[];
+  /** Per-unit prices are the HPP snapshot — hidden for branch_admin. */
+  showUnitPrice: boolean;
 }
 
 function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
@@ -207,7 +209,7 @@ function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
           <td style="text-align:center;">${idx + 1}</td>
           <td>${escapeHtml(li.ingredientName)}</td>
           <td style="text-align:right;">${li.receivedQuantity}</td>
-          <td style="text-align:right;">Rp ${li.unitPrice.toLocaleString("id-ID")}</td>
+          ${d.showUnitPrice ? `<td style="text-align:right;">Rp ${li.unitPrice.toLocaleString("id-ID")}</td>` : ""}
           <td style="text-align:right;">Rp ${li.lineTotal.toLocaleString("id-ID")}</td>
         </tr>`,
     )
@@ -291,17 +293,17 @@ function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
         <th style="width:30pt;">No</th>
         <th>Bahan</th>
         <th style="width:50pt; text-align:right;">Qty</th>
-        <th style="width:90pt; text-align:right;">Harga</th>
+        ${d.showUnitPrice ? `<th style="width:90pt; text-align:right;">Harga</th>` : ""}
         <th style="width:100pt; text-align:right;">Subtotal</th>
       </tr>
     </thead>
     <tbody>
-      ${acceptedRows || `<tr><td colspan="5" class="empty">Tidak ada item diterima.</td></tr>`}
+      ${acceptedRows || `<tr><td colspan="${d.showUnitPrice ? 5 : 4}" class="empty">Tidak ada item diterima.</td></tr>`}
       ${
         accepted.length > 0
           ? `<tr class="total-row">
                <td colspan="2" style="text-align:right;">Subtotal diterima (${totalQtyAccepted}):</td>
-               <td colspan="3" style="text-align:right;">Rp ${d.totalAmount.toLocaleString("id-ID")}</td>
+               <td colspan="${d.showUnitPrice ? 3 : 2}" style="text-align:right;">Rp ${d.totalAmount.toLocaleString("id-ID")}</td>
              </tr>`
           : ""
       }
@@ -399,6 +401,7 @@ export const printMutasiInvoice = createServerFn({ method: "GET" })
       totalAmount: invoice.totalAmount,
       fromBranchName: from?.name ?? tr.fromBranchId,
       toBranchName: to?.name ?? tr.toBranchId,
+      showUnitPrice: user.role !== "branch_admin",
       lineItems: lineItems.map((li) => ({
         ingredientName: li.ingredientName ?? "",
         receivedQuantity: li.receivedQuantity ?? 0,

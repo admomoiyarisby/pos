@@ -335,6 +335,9 @@ function WastePage() {
 
   usePageTitle("Waste", "Pencatatan sisa produksi, jatah makan, dan barang rusak");
 
+  // Branch admins must not see the HPP-derived valuation (qty × averageCost).
+  const isBranchAdmin = user?.role === "branch_admin";
+
   const columns: Column<WasteRow>[] = [
     {
       key: "createdAt",
@@ -389,14 +392,18 @@ function WastePage() {
         );
       },
     },
-    {
-      key: "valuation",
-      header: "Nilai Kerugian",
-      align: "right",
-      width: "w-32",
-      sortable: true,
-      render: (r) => formatRupiah(r.valuation),
-    },
+    ...(isBranchAdmin
+      ? []
+      : [
+          {
+            key: "valuation",
+            header: "Nilai Kerugian",
+            align: "right" as const,
+            width: "w-32",
+            sortable: true,
+            render: (r: WasteRow) => formatRupiah(r.valuation),
+          },
+        ]),
     { key: "notes", header: "Keterangan", render: (r) => r.notes ?? "-" },
     {
       key: "investigation",
@@ -469,22 +476,25 @@ function WastePage() {
         }}
       />
 
-      {/* Summary — prominent, above filters */}
-      <div className="mb-6">
-        <div className="rounded-md border bg-card p-4">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-            <div>
-              <div className="text-sm text-muted-foreground">Total Kerugian</div>
-              <div className="text-2xl font-semibold tracking-tight">
-                {formatRupiah(totalValuation)}
+      {/* Summary — prominent, above filters. HPP-derived total hidden for
+          branch_admin. */}
+      {!isBranchAdmin && (
+        <div className="mb-6">
+          <div className="rounded-md border bg-card p-4">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+              <div>
+                <div className="text-sm text-muted-foreground">Total Kerugian</div>
+                <div className="text-2xl font-semibold tracking-tight">
+                  {formatRupiah(totalValuation)}
+                </div>
               </div>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Periode: {dateFrom} — {dateTo}
+              <div className="text-xs text-muted-foreground">
+                Periode: {dateFrom} — {dateTo}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Filters — 2-col grid on tablet, wrap on desktop */}
       <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">

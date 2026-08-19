@@ -79,6 +79,11 @@ export const getWasteEntries = createServerFn({ method: "GET" })
       )
       .orderBy(desc(wasteEntries.createdAt));
 
+    // Branch admins must not see the HPP-derived valuation (qty × averageCost).
+    if (user.role === "branch_admin") {
+      return result.map((r) => ({ ...r, valuation: 0 }));
+    }
+
     return result;
   });
 

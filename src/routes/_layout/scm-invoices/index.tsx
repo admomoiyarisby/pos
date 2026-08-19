@@ -141,19 +141,22 @@ function SCMInvoicePage() {
               e.stopPropagation();
               void getSCMInvoice({ data: { id: r.id } }).then(function (inv) {
                 if (!inv) return;
-                printSCMInvoice({
-                  code: inv.code,
-                  dnCode: inv.deliveryNoteId.slice(0, 8).toUpperCase(),
-                  totalAmount: inv.totalAmount,
-                  status: inv.status,
-                  items: inv.items.map((item) => ({
-                    ingredientName: item.ingredientName ?? item.ingredientId,
-                    quantity: item.quantity,
-                    unitPrice: item.unitPrice,
-                    totalPrice: item.totalPrice,
-                  })),
-                  createdAt: inv.createdAt,
-                });
+                printSCMInvoice(
+                  {
+                    code: inv.code,
+                    dnCode: inv.deliveryNoteId.slice(0, 8).toUpperCase(),
+                    totalAmount: inv.totalAmount,
+                    status: inv.status,
+                    items: inv.items.map((item) => ({
+                      ingredientName: item.ingredientName ?? item.ingredientId,
+                      quantity: item.quantity,
+                      unitPrice: item.unitPrice,
+                      totalPrice: item.totalPrice,
+                    })),
+                    createdAt: inv.createdAt,
+                  },
+                  { showUnitPrice: user?.role !== "branch_admin" },
+                );
               });
             }}
             className="h-7 px-2 rounded-md border text-xs font-medium flex items-center gap-1 hover:bg-accent"

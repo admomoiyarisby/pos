@@ -126,6 +126,26 @@ export const getMutasiTransfer = createServerFn({ method: "GET" })
       .where(eq(scmTransferItems.scmTransferId, data.transferId))
       .orderBy(scmTransferItems.sortOrder);
 
+    const invoiceLineItems = z
+      .array(
+        z.object({
+          ingredientId: z.string(),
+          ingredientName: z.string(),
+          receivedQuantity: z.number(),
+          rejectedQuantity: z.number(),
+          unitPrice: z.number(),
+          lineTotal: z.number(),
+          reason: z.string().nullable(),
+        }),
+      )
+      .catch([])
+      .parse(result.invoice?.lineItems);
+
+    // Branch admins must not see the per-unit HPP snapshot (unitPrice); line
+    // totals and the invoice grand total are transaction amounts and stay.
+    const isBranchAdmin = user.role === "branch_admin";
+    const visibleItems = isBranchAdmin ? items.map((it) => ({ ...it, unitPrice: 0 })) : items;
+
     const invoice = result.invoice
       ? ({
           id: result.invoice.id,
@@ -137,20 +157,9 @@ export const getMutasiTransfer = createServerFn({ method: "GET" })
           paidAt: result.invoice.paidAt,
           paidById: result.invoice.paidById,
           cancelledAt: result.invoice.cancelledAt,
-          lineItems: z
-            .array(
-              z.object({
-                ingredientId: z.string(),
-                ingredientName: z.string(),
-                receivedQuantity: z.number(),
-                rejectedQuantity: z.number(),
-                unitPrice: z.number(),
-                lineTotal: z.number(),
-                reason: z.string().nullable(),
-              }),
-            )
-            .catch([])
-            .parse(result.invoice.lineItems),
+          lineItems: isBranchAdmin
+            ? invoiceLineItems.map((li) => ({ ...li, unitPrice: 0 }))
+            : invoiceLineItems,
         } as const)
       : null;
 
@@ -173,7 +182,7 @@ export const getMutasiTransfer = createServerFn({ method: "GET" })
 
     return {
       transfer: result.transfer,
-      items,
+      items: visibleItems,
       invoice,
       auditLog: auditRows,
     };

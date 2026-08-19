@@ -87,6 +87,18 @@ export const getIngredients = createServerFn({ method: "GET" })
           : ingredients.name,
       );
 
+    // Branch admins must never see the stock HPP (averageCost / plannedCost).
+    // The ingredient master pages are role-gated, but the same serializer is
+    // used by branch-facing flows (procurement request form, waste combobox,
+    // Mutasi detail), so strip the cost fields at the view/serializer layer.
+    if (user?.role === "branch_admin") {
+      return result.map((ing) => ({
+        ...ing,
+        averageCost: 0,
+        plannedCost: ing.plannedCost === null ? null : 0,
+      }));
+    }
+
     return result;
   });
 
