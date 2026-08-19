@@ -40,6 +40,19 @@ export class InvalidTransferStateForEditError extends Error {
 }
 
 /**
+ * Marker wrapper for errors thrown by Mutasi effect handlers (issue #90).
+ * Mirrors `EffectFailedError` in `scm-fsm.ts`: the wrapper is thrown out of
+ * the transaction callback (rolling back the transition) and converted into
+ * a `{ success: false }` result by `transitionTransfer`.
+ */
+export class TransferEffectFailedError extends Error {
+  constructor(err: Error) {
+    super(err.message);
+    this.name = err.name;
+  }
+}
+
+/**
  * Thrown by the `ship` effect handler when the Sender's current inventory for
  * an ingredient is below the item's `quantity`. This is a strict invariant:
  * the FSM refuses to deduct inventory that isn't there. The caller (server fn)

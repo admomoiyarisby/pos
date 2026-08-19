@@ -1,4 +1,5 @@
 import { and, eq, isNull, sum } from "drizzle-orm";
+import { generateDocumentCode } from "./document-codes";
 import type { db as DbType } from "./db";
 import {
   inTransitInventory,
@@ -51,9 +52,10 @@ export interface FsmPayload {
   notes?: string;
   /**
    * Auto-generated invoice code, passed by the `finish-receive` server
-   * function so the `generateTransferInvoiceSnapshot` effect can write it on
-   * the `scm_transfer_invoices` row. Only meaningful for the `finish-receive`
-   * event on Mutasi transfers. Not used by Pengadaan.
+   * function so the effect can write it on the invoice row. Used by Mutasi
+   * (generated in the server fn before the transition). Pengadaan generates
+   * its code inside `generateInvoiceSnapshot` instead, since its transition
+   * wrapper is generic and carries no event-specific payload.
    */
   invoiceCode?: string;
   items?: Array<{
@@ -365,6 +367,17 @@ export async function writeRejectedWaste(
       .where(eq(scmProcurementItems.id, itemPatch.id));
     if (!item) continue;
 
+    // Value the waste entry the same way Mutasi does (issue #90):
+    // rejected qty × ingredient.averageCost. Previously Pengadaan left the
+    // column at its 0 default, so rejected-line financials diverged across
+    // the two flows.
+    const [ing] = await tx
+      .select()
+      .from(ingredients)
+      .where(eq(ingredients.id, item.ingredientId))
+      .limit(1);
+    const valuation = rejected * (ing?.averageCost ?? 0);
+
     await tx.insert(wasteEntries).values({
       branchId: proc.branchId,
       ingredientId: item.ingredientId,
@@ -373,6 +386,7 @@ export async function writeRejectedWaste(
       notes: itemPatch.reason
         ? `Ditolak saat penerimaan: ${itemPatch.reason}`
         : `Ditolak saat penerimaan pengadaan ${proc.code}`,
+      valuation,
       submittedBy: actor.id,
     });
   }
@@ -431,8 +445,22 @@ export async function generateInvoiceSnapshot(
 
   const totalAmount = lineItems.reduce((sum, li) => sum + li.lineTotal, 0);
 
+  // Invoice code INV/<branch>/<ddmmyy>/<serial> (issue #90), mirroring
+  // Mutasi. Generated inside the effect because the generic transition
+  // wrapper doesn't carry event-specific payloads. The sequence upsert uses
+  // the pool connection rather than the tx, so a rolled-back transition
+  // burns a serial — the same accepted trade-off as Mutasi, which generates
+  // before calling the FSM.
+  const [branch] = await tx
+    .select({ code: branches.code })
+    .from(branches)
+    .where(eq(branches.id, proc.branchId))
+    .limit(1);
+  const code = await generateDocumentCode("INV", branch?.code ?? "UNK");
+
   await tx.insert(scmProcurementInvoices).values({
     scmProcurementId: procurementId,
+    code,
     generatedAt: new Date(),
     generatedById: actor.id,
     totalAmount,

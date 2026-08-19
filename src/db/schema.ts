@@ -1163,6 +1163,11 @@ export const scmProcurementItems = pgTable(
   (t) => [
     index("spi_procurement_idx").on(t.scmProcurementId),
     index("spi_ingredient_idx").on(t.ingredientId),
+    // One line per ingredient (issue #90): writeReceivedStock clears
+    // pending-review rows per ingredient, so duplicates would corrupt
+    // receiving. Enforced server-side in createProcurement and
+    // addProcurementItem too.
+    unique("spi_procurement_ingredient_unique").on(t.scmProcurementId, t.ingredientId),
   ],
 );
 
@@ -1198,6 +1203,9 @@ export const scmProcurementInvoices = pgTable(
       .notNull()
       .unique()
       .references(() => scmProcurements.id, { onDelete: "cascade" }),
+    // INV/<branch>/<ddmmyy>/<serial> (issue #90) — mirrors
+    // scm_transfer_invoices.code so Pengadaan invoices can be coded/filed.
+    code: text("code").notNull().unique(),
     generatedAt: timestamp("generated_at", { mode: "date" }).notNull(),
     generatedById: uuid("generated_by_id")
       .notNull()

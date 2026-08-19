@@ -11,9 +11,10 @@ import {
   branches,
   users,
 } from "#/db/schema";
-import type { ScmProcurementStatus } from "./scm-fsm";
+import type { ScmProcurementEvent, ScmProcurementStatus } from "./scm-fsm";
 import { availableEvents, transition, updateItem } from "./scm-fsm";
 import { generateDocumentCode } from "./document-codes";
+import { buildNotificationsForEvent, insertNotifications } from "./scm-procurement-notifications";
 
 // =============================================================================
 // Branch-level authorization guard (mirrors Mutasi's assertTransferAccess)
@@ -79,6 +80,14 @@ export const createProcurement = createServerFn({ method: "POST" })
     // branch (super_admin can create on behalf of any branch). Previously
     // any branch_admin could create a PR for an arbitrary branchId.
     assertProcurementBranchAccess(user, data.branchId);
+
+    // Reject duplicate ingredients in one request (issue #90): the UI
+    // already prevents them, but the API must too — duplicate lines break
+    // pending-review clearing and inflate the invoice.
+    const requestedIngredientIds = data.items.map((it) => it.ingredientId);
+    if (new Set(requestedIngredientIds).size !== requestedIngredientIds.length) {
+      throw new Error("Duplicate ingredients in procurement request");
+    }
 
     // Look up branch code for the document code format:
     // PR/<branch_code>/ddmmyy/serial (see document-codes.ts)
@@ -373,6 +382,32 @@ export const transitionProcurement = createServerFn({ method: "POST" })
       (data.payload ?? {}) as never,
       { id: user.id, role: user.role },
     );
+
+    if (result.success) {
+      // Notifications after the FSM transaction has committed (mirrors
+      // Mutasi's runTransition, issue #90): a notification failure must not
+      // roll back an already-committed transition. The audit log row is
+      // written by transition() itself, so nothing is double-written here.
+      const [proc] = await db
+        .select({
+          id: scmProcurements.id,
+          code: scmProcurements.code,
+          branchId: scmProcurements.branchId,
+          requestedById: scmProcurements.requestedById,
+        })
+        .from(scmProcurements)
+        .where(eq(scmProcurements.id, data.procurementId))
+        .limit(1);
+      if (proc) {
+        const targets = await buildNotificationsForEvent({
+          procurement: proc,
+          event: data.event as ScmProcurementEvent,
+          actorUserId: user.id,
+        });
+        await insertNotifications(targets);
+      }
+    }
+
     return result;
   });
 
@@ -423,6 +458,20 @@ export const addProcurementItem = createServerFn({ method: "POST" })
       if (user.role === "branch_admin" && user.branchId && proc.branchId !== user.branchId) {
         throw new Error("Forbidden");
       }
+
+      // Reject duplicate ingredients (issue #90): one line per ingredient,
+      // enforced by the spi_procurement_ingredient_unique constraint too.
+      const [existing] = await tx
+        .select({ id: scmProcurementItems.id })
+        .from(scmProcurementItems)
+        .where(
+          and(
+            eq(scmProcurementItems.scmProcurementId, data.procurementId),
+            eq(scmProcurementItems.ingredientId, data.ingredientId),
+          ),
+        )
+        .limit(1);
+      if (existing) throw new Error("Ingredient already exists in this procurement");
 
       // Determine next sortOrder
       const [{ next }] = await tx
@@ -535,6 +584,7 @@ export const getProcurementInvoice = createServerFn({ method: "GET" })
       .select({
         id: scmProcurementInvoices.id,
         scmProcurementId: scmProcurementInvoices.scmProcurementId,
+        code: scmProcurementInvoices.code,
         generatedAt: scmProcurementInvoices.generatedAt,
         generatedById: scmProcurementInvoices.generatedById,
         totalAmount: scmProcurementInvoices.totalAmount,
