@@ -145,10 +145,22 @@ export const createIngredient = createServerFn({ method: "POST" })
     return result;
   });
 
-const updateIngredientInput = ingredientInput.partial().extend({
-  id: z.string().uuid(),
-  status: z.enum(["Active", "Inactive"]).optional(),
-});
+// Same partial-update trap as updateRecipe: `ingredientInput` defaults
+// rop/roq/moq/countable, and zod re-applies those defaults for keys absent from
+// a `.partial()` payload. The list page's status toggle only sends
+// `{ id, status }`, which used to silently reset ROP/ROQ/MOQ/countable to their
+// defaults. Strip the defaulted keys and re-add them as plain optionals.
+const updateIngredientInput = ingredientInput
+  .omit({ rop: true, roq: true, moq: true, countable: true })
+  .partial()
+  .extend({
+    id: z.string().uuid(),
+    status: z.enum(["Active", "Inactive"]).optional(),
+    rop: z.number().int().min(0).optional(),
+    roq: z.number().int().min(0).optional(),
+    moq: z.number().int().min(1).optional(),
+    countable: z.boolean().optional(),
+  });
 
 export const updateIngredient = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof updateIngredientInput>) => updateIngredientInput.parse(data))

@@ -356,7 +356,18 @@ export const createRecipe = createServerFn({ method: "POST" })
     return recipe;
   });
 
-const updateRecipeInput = recipeInput.partial().extend({ id: z.string().uuid() });
+// Partial-update schema for the edit-mode wizard. `recipeInput` declares
+// `isSubRecipe`/`isBOGO` with `.default(false)`; zod re-applies those defaults
+// when the key is absent from a `.partial()` payload. That silently reset the
+// flags on every BOM/availability-only save (a BOGO recipe lost its BOGO badge
+// the moment its takaran was edited). Strip the defaults here so absent keys
+// stay absent, and re-add them as plain optionals — the wizard sends them
+// explicitly on the Opsi Lanjutan step.
+const updateRecipeInput = recipeInput.partial().omit({ isSubRecipe: true, isBOGO: true }).extend({
+  id: z.string().uuid(),
+  isSubRecipe: z.boolean().optional(),
+  isBOGO: z.boolean().optional(),
+});
 
 export const updateRecipe = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof updateRecipeInput>) => updateRecipeInput.parse(data))
@@ -376,8 +387,13 @@ export const updateRecipe = createServerFn({ method: "POST" })
     // Fetch old recipe for audit
     const [old] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
 
-    // Update recipe base fields
-    await db.update(recipes).set(recipeUpdates).where(eq(recipes.id, id));
+    // Update recipe base fields. `recipeUpdates` can legitimately be empty for
+    // link-only partial saves (BOM-only or branch-only), so skip the UPDATE
+    // instead of sending drizzle an empty `set({})` (which throws
+    // "No values to set").
+    if (Object.keys(recipeUpdates).length > 0) {
+      await db.update(recipes).set(recipeUpdates).where(eq(recipes.id, id));
+    }
 
     // Update brand links
     if (brandIds !== undefined) {

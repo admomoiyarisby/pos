@@ -47,7 +47,10 @@ function NewProcurementPage() {
   const queryClient = useQueryClient();
 
   const { data: ingredients = [] } = useQuery({
-    queryKey: ["ingredients"],
+    // Dedicated key: the plain ["ingredients"] key is used by the recipe wizard
+    // and ingredient master with the FULL list; caching the excludeNasi subset
+    // under it would leak into those pages.
+    queryKey: ["ingredients", "procurement-new"],
     queryFn: () => getIngredients({ data: { excludeNasi: true } }),
   });
 

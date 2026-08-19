@@ -11,6 +11,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import { z } from "zod";
 
 const modifierInput = z.object({
@@ -167,7 +168,29 @@ export const createModifierGroup = createServerFn({ method: "POST" })
     return group;
   });
 
-const updateModifierGroupInput = modifierGroupInput.partial().extend({ id: z.string().uuid() });
+// Same partial-update trap as updateRecipe: `modifierGroupInput`/`modifierInput`
+// declare minSelection/maxSelection/price/isExclusion/sortOrder with
+// `.default(...)`, and zod re-applies those defaults for keys absent from a
+// `.partial()` payload — a rename-only group update would silently reset
+// Min/Max to 0/1, and a modifier omitting price would be re-created at Rp 0.
+// Strip the defaults so absent keys stay absent; re-add them as plain optionals.
+const updateModifierInput = modifierInput
+  .omit({ price: true, isExclusion: true, sortOrder: true })
+  .extend({
+    price: z.number().int().min(0).optional(),
+    isExclusion: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).optional(),
+  });
+
+const updateModifierGroupInput = modifierGroupInput
+  .omit({ minSelection: true, maxSelection: true, modifiers: true })
+  .partial()
+  .extend({
+    id: z.string().uuid(),
+    minSelection: z.number().int().min(0).optional(),
+    maxSelection: z.number().int().min(1).optional(),
+    modifiers: z.array(updateModifierInput).optional(),
+  });
 
 export const updateModifierGroup = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof updateModifierGroupInput>) =>
@@ -180,8 +203,15 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
 
     const [old] = await db.select().from(modifierGroups).where(eq(modifierGroups.id, id)).limit(1);
 
-    if (Object.keys(groupUpdates).length > 0) {
-      await db.update(modifierGroups).set(groupUpdates).where(eq(modifierGroups.id, id));
+    // Only set fields that were actually provided — absent optionals parse to
+    // `undefined` now (no default injection), and drizzle throws on an empty set.
+    const groupUpdateSet: UnknownRecord = {};
+    for (const [key, value] of Object.entries(groupUpdates)) {
+      if (value !== undefined) groupUpdateSet[key] = value;
+    }
+
+    if (Object.keys(groupUpdateSet).length > 0) {
+      await db.update(modifierGroups).set(groupUpdateSet).where(eq(modifierGroups.id, id));
     }
 
     if (mods !== undefined) {

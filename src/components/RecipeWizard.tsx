@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useImperativeHandle } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -78,6 +78,16 @@ interface ModifierGroupOption {
   modifiers?: { id: string; name: string; price: number; isExclusion: boolean }[];
 }
 
+export interface RecipeWizardHandle {
+  /**
+   * Persist the current step's fields (edit mode). Resolves `true` when the
+   * step was saved — or when there is nothing to save — and `false` when
+   * validation fails or the save errors. Callers must not navigate / exit on
+   * `false`, so edits are never silently dropped.
+   */
+  saveCurrentStep: () => Promise<boolean>;
+}
+
 interface RecipeWizardProps {
   // Initial data for edit mode
   initialData?: Partial<WizardData>;
@@ -89,12 +99,14 @@ interface RecipeWizardProps {
   // Callbacks
   onSubmit: (data: WizardData) => void;
   /** Edit-mode only: persist just the current step's fields (partial update), staying in the wizard. */
-  onSavePage?: (partial: Partial<WizardData>) => void;
+  onSavePage?: (partial: Partial<WizardData>) => void | Promise<void>;
   /** When true (edit mode), every step shows a per-page "Simpan" button instead of the final submit. */
   isEditMode?: boolean;
   onCancel: () => void;
   isPending?: boolean;
   submitLabel?: string;
+  /** React 19 ref — lets the parent persist the current step (e.g. before exiting edit mode). */
+  ref?: React.Ref<RecipeWizardHandle>;
 }
 
 const steps = [
@@ -116,6 +128,7 @@ export function RecipeWizard({
   onCancel,
   isPending = false,
   submitLabel = "Tambah",
+  ref,
 }: RecipeWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [code, setCode] = useState(initialData?.code ?? "");
@@ -144,9 +157,12 @@ export function RecipeWizard({
   );
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Fetch ingredients
+  // Fetch ingredients. Dedicated key: the shared ["ingredients"] key is also
+  // used by scm-procurements/new with `excludeNasi: true`, so a stale cache hit
+  // could serve a Nasi-less list here and leave BOM lines stuck on
+  // "Loading...".
   const { data: allIngredients } = useQuery({
-    queryKey: ["ingredients"],
+    queryKey: ["ingredients", "recipe-wizard"],
     queryFn: () => getIngredients({ data: {} }),
   });
 
@@ -166,19 +182,73 @@ export function RecipeWizard({
     return fullIng ? { ...si, ingredient: fullIng, ingredientId: ingId } : si;
   });
 
-  const handleNext = () => {
+  const buildStepPatch = (): Partial<WizardData> =>
+    currentStep === 0
+      ? { code, name, category, basePrice, brandIds: selectedBrandIds }
+      : currentStep === 1
+        ? {
+            ingredients: enrichedSelectedIngredients.map((si) => ({
+              ingredientId: si.ingredient?.id ?? si.ingredientId,
+              quantity: si.quantity,
+            })),
+          }
+        : currentStep === 2
+          ? { branchIds: selectedBranchIds }
+          : { isBOGO, modifierGroupIds: linkedModifierGroupIds, isBundling, childRecipes };
+
+  // Guards against re-entrancy while a save is in flight (rapid clicks before
+  // the parent's isPending prop propagates).
+  const savingRef = useRef(false);
+
+  // Persist the current step's fields (edit mode). Used by "Simpan",
+  // "Selanjutnya", "Kembali", "Batal" and the parent's header toggle so edits
+  // are never silently dropped. Returns false when the save failed or step 0's
+  // required fields are missing — callers must not navigate / exit then.
+  const saveCurrentStep = async (): Promise<boolean> => {
+    if (!isEditMode || !onSavePage) return true;
+    if (savingRef.current) return false;
+    // Step 0 requires code + name; the server schema rejects empty values, so
+    // don't attempt the save (or let navigation proceed) while they're missing.
+    if (currentStep === 0 && (!code.trim() || !name.trim())) return false;
+    savingRef.current = true;
+    try {
+      await onSavePage(buildStepPatch());
+      return true;
+    } catch {
+      // The caller's mutation onError already surfaced the failure via toast.
+      return false;
+    } finally {
+      savingRef.current = false;
+    }
+  };
+
+  useImperativeHandle(ref, () => ({ saveCurrentStep }));
+
+  const handleNext = async () => {
+    if (isEditMode) {
+      if (await saveCurrentStep()) setCurrentStep((s) => Math.min(s + 1, steps.length - 1));
+      return;
+    }
     if (currentStep === 0) {
-      if (!code.trim()) {
-        // Simple validation - could add toast here
-        return;
-      }
-      if (!name.trim()) return;
+      if (!code.trim() || !name.trim()) return;
     }
     setCurrentStep((s) => Math.min(s + 1, steps.length - 1));
   };
 
-  const handleBack = () => {
+  const handleBack = async () => {
+    if (isEditMode) {
+      if (await saveCurrentStep()) setCurrentStep((s) => Math.max(s - 1, 0));
+      return;
+    }
     setCurrentStep((s) => Math.max(s - 1, 0));
+  };
+
+  const handleCancel = async () => {
+    if (isEditMode) {
+      if (await saveCurrentStep()) onCancel();
+      return;
+    }
+    onCancel();
   };
 
   const handleSubmit = () => {
@@ -199,24 +269,6 @@ export function RecipeWizard({
       childRecipes,
     };
     onSubmit(data);
-  };
-
-  const handleSavePage = () => {
-    if (!onSavePage) return;
-    const patch: Partial<WizardData> =
-      currentStep === 0
-        ? { code, name, category, basePrice, brandIds: selectedBrandIds }
-        : currentStep === 1
-          ? {
-              ingredients: enrichedSelectedIngredients.map((si) => ({
-                ingredientId: si.ingredient?.id ?? si.ingredientId,
-                quantity: si.quantity,
-              })),
-            }
-          : currentStep === 2
-            ? { branchIds: selectedBranchIds }
-            : { isBOGO, modifierGroupIds: linkedModifierGroupIds, isBundling, childRecipes };
-    onSavePage(patch);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
@@ -243,10 +295,14 @@ export function RecipeWizard({
   };
 
   const updateIngredientQuantity = (id: string, quantity: number) => {
+    // Clamp to the input's min (0.1) and reject non-finite values: a cleared
+    // field yields Number("") = 0 (or NaN), and the server schema requires a
+    // positive quantity — a 0/NaN would otherwise fail the whole page save.
+    const safe = Number.isFinite(quantity) ? Math.max(0.1, quantity) : undefined;
     setSelectedIngredients(
       selectedIngredients.map((si) => {
         const siId = si.ingredient?.id ?? si.ingredientId;
-        return siId === id ? { ...si, quantity: Math.max(0, quantity) } : si;
+        return siId === id && safe !== undefined ? { ...si, quantity: safe } : si;
       }),
     );
   };
@@ -765,23 +821,33 @@ export function RecipeWizard({
 
         {/* Navigation */}
         <div className="flex items-center justify-between pt-4 border-t">
-          <Button type="button" variant="outline" onClick={onCancel}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void handleCancel()}
+            disabled={isEditMode && isPending}
+          >
             Batal
           </Button>
           <div className="flex items-center gap-2">
             {currentStep > 0 && (
-              <Button type="button" variant="outline" onClick={handleBack}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleBack()}
+                disabled={isEditMode && isPending}
+              >
                 <ChevronLeft className="h-4 w-4 mr-1" />
                 Kembali
               </Button>
             )}
             {isEditMode ? (
-              <Button type="button" onClick={handleSavePage} disabled={isPending}>
+              <Button type="button" onClick={() => void saveCurrentStep()} disabled={isPending}>
                 <Check className="h-4 w-4 mr-1" />
                 {isPending ? "Menyimpan..." : "Simpan"}
               </Button>
             ) : currentStep < steps.length - 1 ? (
-              <Button type="button" onClick={handleNext}>
+              <Button type="button" onClick={() => void handleNext()}>
                 Selanjutnya
                 <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
@@ -793,7 +859,7 @@ export function RecipeWizard({
             )}
 
             {isEditMode && currentStep < steps.length - 1 && (
-              <Button type="button" onClick={handleNext}>
+              <Button type="button" onClick={() => void handleNext()} disabled={isPending}>
                 Selanjutnya
                 <ChevronRight className="h-4 w-4 ml-1" />
               </Button>

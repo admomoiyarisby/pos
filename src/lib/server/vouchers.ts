@@ -5,6 +5,7 @@ import { eq, gte } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import { z } from "zod";
 
 const voucherInput = z.object({
@@ -64,7 +65,20 @@ export const createVoucher = createServerFn({ method: "POST" })
     return result;
   });
 
-const updateVoucherInput = voucherInput.partial().extend({ id: z.string().uuid() });
+// Partial-update schema. `voucherInput` declares `minOrder`/`isActive` with
+// `.default(...)`, and zod re-applies those defaults for keys absent from a
+// `.partial()` payload — a partial update would silently reset min_order to 0
+// and reactivate a deactivated voucher. Strip the defaults so absent keys stay
+// absent, and re-add them as plain optionals (the admin form sends the full
+// set, but no partial caller should be able to clobber them).
+const updateVoucherInput = voucherInput
+  .omit({ minOrder: true, isActive: true })
+  .partial()
+  .extend({
+    id: z.string().uuid(),
+    minOrder: z.number().int().min(0).optional(),
+    isActive: z.boolean().optional(),
+  });
 
 export const updateVoucher = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof updateVoucherInput>) => updateVoucherInput.parse(data))
@@ -75,14 +89,20 @@ export const updateVoucher = createServerFn({ method: "POST" })
 
     const [old] = await db.select().from(vouchers).where(eq(vouchers.id, id)).limit(1);
 
-    const [result] = await db
-      .update(vouchers)
-      .set({
-        ...rest,
-        validUntil: validUntil ? new Date(validUntil) : undefined,
-      })
-      .where(eq(vouchers.id, id))
-      .returning();
+    // Only set fields that were actually provided — absent optionals parse to
+    // `undefined` now (no default injection), and drizzle skips undefined keys
+    // in `.set()` but throws on a fully-empty set.
+    const updates: UnknownRecord = {};
+    for (const [key, value] of Object.entries(rest)) {
+      if (value !== undefined) updates[key] = value;
+    }
+    if (validUntil) updates.validUntil = new Date(validUntil);
+
+    if (Object.keys(updates).length === 0) {
+      throw new Error("Tidak ada perubahan");
+    }
+
+    const [result] = await db.update(vouchers).set(updates).where(eq(vouchers.id, id)).returning();
 
     await logSystemAction(
       user,

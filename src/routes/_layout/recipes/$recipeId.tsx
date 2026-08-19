@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import {
@@ -22,7 +22,7 @@ import { Card } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
 import Modal from "#/components/ui/Modal";
 import { Label } from "#/components/ui/label";
-import { RecipeWizard } from "#/components/RecipeWizard";
+import { RecipeWizard, type RecipeWizardHandle } from "#/components/RecipeWizard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
 import {
@@ -59,6 +59,7 @@ function RecipeDetailPage() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
   const [isEditing, setIsEditing] = useState(false);
+  const wizardRef = useRef<RecipeWizardHandle>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDeactivateModal, setShowDeactivateModal] = useState(false);
   const [showReactivateModal, setShowReactivateModal] = useState(false);
@@ -322,13 +323,18 @@ function RecipeDetailPage() {
               </>
             )}
             <Button
-              onClick={() => {
+              onClick={async () => {
                 if (!isEditing) {
                   setIsEditing(true);
-                } else {
+                  return;
+                }
+                // Persist the current step before leaving edit mode — never
+                // drop edits silently. A failed save keeps the wizard open.
+                if (await wizardRef.current?.saveCurrentStep()) {
                   setIsEditing(false);
                 }
               }}
+              disabled={isEditing && savePageMutation.isPending}
             >
               {isEditing ? (
                 "Batal"
@@ -346,6 +352,7 @@ function RecipeDetailPage() {
           /* Edit Mode: Wizard */
           <Card className="p-6">
             <RecipeWizard
+              ref={wizardRef}
               initialData={{
                 code: recipe.code,
                 name: recipe.name,
