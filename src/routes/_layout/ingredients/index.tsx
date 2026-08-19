@@ -174,6 +174,16 @@ function IngredientsPage() {
       render: (r) => `Rp ${r.averageCost.toLocaleString("id-ID")}`,
     },
     {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      render: (r) => (
+        <Badge variant={r.status === "Active" ? "success" : "secondary"}>
+          {r.status === "Active" ? "Aktif" : "Nonaktif"}
+        </Badge>
+      ),
+    },
+    {
       key: "id",
       header: "",
       width: "w-32",
