@@ -1,2 +1,3 @@
 debt/
 .analysis/
+src/routeTree.gen.ts
