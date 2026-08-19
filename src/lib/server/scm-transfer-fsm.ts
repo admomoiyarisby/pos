@@ -16,6 +16,7 @@ import {
 import {
   InvalidTransferStateForEditError,
   InvalidTransferTransitionError,
+  TransferEffectFailedError,
   TransferNotFoundError,
   TransferUnauthorizedError,
 } from "./scm-transfer-errors";
@@ -289,9 +290,16 @@ export async function transitionTransfer(
           break;
       }
 
-      // Run effect handlers
-      for (const effect of rule.effects) {
-        await effect(transferId, payload, actor, tx);
+      // Run effect handlers. A failing effect rolls back the transaction
+      // (thrown out of the callback) and surfaces as a domain failure
+      // ({ success: false }) rather than a raw 500 (issue #90).
+      try {
+        for (const effect of rule.effects) {
+          await effect(transferId, payload, actor, tx);
+        }
+      } catch (err) {
+        if (err instanceof Error) throw new TransferEffectFailedError(err);
+        throw err;
       }
 
       // Update the transfer
@@ -325,7 +333,8 @@ export async function transitionTransfer(
     if (
       err instanceof InvalidTransferTransitionError ||
       err instanceof TransferUnauthorizedError ||
-      err instanceof TransferNotFoundError
+      err instanceof TransferNotFoundError ||
+      err instanceof TransferEffectFailedError
     ) {
       return { success: false, error: { name: err.name, message: err.message } };
     }

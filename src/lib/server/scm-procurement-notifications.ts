@@ -15,8 +15,9 @@
 //   withdraw        → (none — self-action)
 //   open-receive    → (none)
 //
-// The function is called from the same transaction as the FSM transition, so
-// a notification failure rolls back the whole transition.
+// Notifications are inserted AFTER the FSM transaction has committed (in
+// `transitionProcurement`, mirroring Mutasi's `runTransition`, issue #90): a
+// notification failure must not roll back an already-committed transition.
 // =============================================================================
 
 import { inArray } from "drizzle-orm";
@@ -176,8 +177,8 @@ export async function buildNotificationsForEvent(args: NotifyArgs): Promise<Noti
 
 /**
  * Insert all the notifications computed by `buildNotificationsForEvent`.
- * Use this from inside a transaction (e.g. the FSM transition) so a
- * notification failure rolls back the whole state change.
+ * Called after the FSM transition commits (issue #90); the optional tx is
+ * kept for callers that need transactional inserts.
  */
 export async function insertNotifications(
   targets: NotificationTarget[],

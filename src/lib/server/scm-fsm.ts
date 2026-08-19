@@ -17,7 +17,6 @@ import {
   type FsmPayload,
   type FsmTx,
 } from "./scm-effects";
-import { buildNotificationsForEvent, insertNotifications } from "./scm-procurement-notifications";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -219,6 +218,19 @@ export class InvalidStateForEditError extends Error {
   }
 }
 
+/**
+ * Marker wrapper for errors thrown by effect handlers (issue #90). An effect
+ * failure must roll back the whole transition — the wrapper is thrown out of
+ * the db.transaction callback, and the outer catch converts it into a
+ * { success: false } result instead of a raw 500.
+ */
+export class EffectFailedError extends Error {
+  constructor(err: Error) {
+    super(err.message);
+    this.name = err.name;
+  }
+}
+
 // -----------------------------------------------------------------------------
 // transition() — state changes
 // -----------------------------------------------------------------------------
@@ -297,9 +309,16 @@ export async function transition(
           break;
       }
 
-      // Run effect handlers
-      for (const effect of rule.effects) {
-        await effect(procurementId, payload, actor, tx);
+      // Run effect handlers. A failing effect rolls back the transaction
+      // (thrown out of the callback) and surfaces as a domain failure
+      // ({ success: false }) rather than a raw 500 (issue #90).
+      try {
+        for (const effect of rule.effects) {
+          await effect(procurementId, payload, actor, tx);
+        }
+      } catch (err) {
+        if (err instanceof Error) throw new EffectFailedError(err);
+        throw err;
       }
 
       // Update the procurement
@@ -325,19 +344,6 @@ export async function transition(
         note: payload.reason ?? payload.notes,
       });
 
-      // Notifications (same transaction — rolls back on failure)
-      const notifTargets = await buildNotificationsForEvent({
-        procurement: {
-          id: procurementId,
-          code: proc.code,
-          branchId: proc.branchId,
-          requestedById: proc.requestedById,
-        },
-        event,
-        actorUserId: actor.id,
-      });
-      await insertNotifications(notifTargets, tx);
-
       return rule.to;
     });
 
@@ -346,7 +352,8 @@ export async function transition(
     if (
       err instanceof InvalidTransitionError ||
       err instanceof UnauthorizedError ||
-      err instanceof ProcurementNotFoundError
+      err instanceof ProcurementNotFoundError ||
+      err instanceof EffectFailedError
     ) {
       return { success: false, error: { name: err.name, message: err.message } };
     }

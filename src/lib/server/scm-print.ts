@@ -174,6 +174,7 @@ interface InvoiceLineItem {
 
 interface InvoiceData {
   code: string;
+  invoiceCode: string;
   generatedAt: Date;
   paidAt: Date | null;
   totalAmount: number;
@@ -252,7 +253,7 @@ function buildInvoiceHtml(d: InvoiceData): string {
       <div class="subtitle">Omoiyari POS</div>
     </div>
     <div class="meta">
-      <div>No Invoice: <strong>INV-${escapeHtml(d.code)}</strong></div>
+      <div>No Invoice: <strong>${escapeHtml(d.invoiceCode)}</strong></div>
       <div>No Pengadaan: ${escapeHtml(d.code)}</div>
       <div>Tanggal: ${new Date(d.generatedAt).toLocaleDateString("id-ID")}</div>
       <div class="${d.paidAt ? "paid" : "unpaid"}">
@@ -387,6 +388,7 @@ export const printInvoice = createServerFn({ method: "GET" })
 
     return buildInvoiceHtml({
       code: proc.code,
+      invoiceCode: invoice.code,
       generatedAt: invoice.generatedAt,
       paidAt: invoice.paidAt,
       totalAmount: invoice.totalAmount,
