@@ -37,6 +37,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Client } from "pg";
 import * as XLSX from "xlsx";
+import { z } from "zod";
 
 config({ path: [".env.local", ".env"] });
 
@@ -96,7 +97,9 @@ function parseRevenue(): RevenueRow[] {
     // with Uang Masuk empty. We only take rows where col A is a platform
     // label AND Uang Masuk (col 9) is a finite number.
     for (const row of grid) {
-      const label = String(row[0] ?? "");
+      // Excel cells arrive as `unknown`; a platform label is a string, and any
+      // non-string cell is treated as empty (never stringified as an object).
+      const label = z.string().catch("").parse(row[0]);
       if (!label.trim()) continue;
       const mapped = mapPlatform(label);
       if (!mapped) continue; // skip inventory-section rows / unknown labels

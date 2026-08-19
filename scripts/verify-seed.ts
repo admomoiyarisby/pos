@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Client } from "pg";
 import * as XLSX from "xlsx";
+import { z } from "zod";
 
 import { lookupLabel } from "../src/lib/label-lookup";
 import { parseCsv, findColumn, findHeader, findColumns } from "./migrate-csv/csv";
@@ -375,7 +376,9 @@ function expectedChannelRevenue() {
     if (!ws) continue;
     const grid = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, blankrows: false });
     for (const row of grid) {
-      const label = String(row[0] ?? "");
+      // Excel cells arrive as `unknown`; a platform label is a string, and any
+      // non-string cell is treated as empty (never stringified as an object).
+      const label = z.string().catch("").parse(row[0]);
       if (!label.trim()) continue;
       const ch = mapPlatform(label);
       if (!ch) continue;

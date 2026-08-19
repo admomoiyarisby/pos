@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { z } from "zod";
 
 /**
  * Read the free-text Table Search term out of a loosely-typed search object.
  * See ADR 0008 — the term lives under the `search` key, normalised to "".
  */
 function readSearch(search: { search?: unknown }): string {
-  const v = search.search;
-  return v === undefined || v === null ? "" : String(v);
+  // URL search values arrive as `unknown` (string, absent, or occasionally an
+  // array/number). A search term is a single string; anything else is "".
+  return z.string().catch("").parse(search.search);
 }
 
 export interface UseTableSearchOptions {
@@ -81,8 +83,9 @@ export function useTableSearch(options: UseTableSearchOptions = {}) {
  * normalised to `undefined` so `?search=` is omitted from the URL when empty.
  */
 export function tableSearchValidation(search: { search?: unknown }) {
-  const raw = search.search;
+  // Same boundary parse as readSearch: only a string term is meaningful, and
+  // an empty term is normalised to `undefined` so `?search=` is omitted.
   return {
-    search: raw === undefined || raw === null ? undefined : String(raw) || undefined,
+    search: z.string().catch("").parse(search.search) || undefined,
   };
 }
