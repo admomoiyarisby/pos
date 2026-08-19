@@ -1212,6 +1212,9 @@ export const scmProcurementInvoices = pgTable(
     lineItems: jsonb("line_items").notNull(),
     paidAt: timestamp("paid_at", { mode: "date" }),
     paidById: uuid("paid_by_id").references(() => users.id),
+    // Set when the procurement is cancelled after finish-receive (issue #93).
+    // Mirrors scm_transfer_invoices.cancelled_at (ADR 0006).
+    cancelledAt: timestamp("cancelled_at", { mode: "date" }),
   },
   (t) => [index("spin_procurement_idx").on(t.scmProcurementId)],
 );

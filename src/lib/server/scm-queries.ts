@@ -23,6 +23,46 @@ import { z } from "zod";
 import { generateDocumentCode } from "./document-codes";
 
 // =============================================================================
+// Branch-level authorization guard (mirrors Mutasi's assertTransferAccess)
+// =============================================================================
+
+/**
+ * The FSM authorizes by *role*; this guard authorizes by *branch*. A
+ * `branch_admin` may only touch procurements of their own branch
+ * (`branchId` on the user row). `admin_pusat` (central warehouse) and
+ * `super_admin` are unrestricted. A `branch_admin` with no `branchId` is
+ * rejected (null !== branchId), mirroring Mutasi's behavior.
+ */
+function assertProcurementBranchAccess(
+  user: { role: string; branchId?: string | null },
+  branchId: string,
+): void {
+  if (user.role === "branch_admin" && user.branchId !== branchId) {
+    throw new Error("Forbidden: branch_admin can only access their own branch's procurements");
+  }
+}
+
+/**
+ * Load the procurement's branch and run `assertProcurementBranchAccess`.
+ * No-op for non-branch_admin roles (admin_pusat / super_admin are
+ * unrestricted). A missing procurement is left to the caller to handle
+ * (e.g. transition() returns { success: false, ProcurementNotFound }),
+ * so the guard never masks the not-found path.
+ */
+async function assertProcurementAccess(
+  user: { role: string; branchId?: string | null },
+  procurementId: string,
+): Promise<void> {
+  if (user.role !== "branch_admin") return;
+  const [proc] = await db
+    .select({ branchId: scmProcurements.branchId })
+    .from(scmProcurements)
+    .where(eq(scmProcurements.id, procurementId))
+    .limit(1);
+  if (proc) assertProcurementBranchAccess(user, proc.branchId);
+}
+
+// =============================================================================
 // createProcurement
 // =============================================================================
 
@@ -41,6 +81,11 @@ export const createProcurement = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireRole("branch_admin", "super_admin");
+
+    // Branch guard: a branch_admin may only request stock for their own
+    // branch (super_admin can create on behalf of any branch). Previously
+    // any branch_admin could create a PR for an arbitrary branchId.
+    assertProcurementBranchAccess(user, data.branchId);
 
     // Look up branch code for the document code format:
     // PR/<branch_code>/ddmmyy/serial (see document-codes.ts)
@@ -226,7 +271,8 @@ export const getProcurement = createServerFn({ method: "GET" })
 export const getProcurementItems = createServerFn({ method: "GET" })
   .validator((data: { procurementId: string }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
+    await assertProcurementAccess(user, data.procurementId);
     const rows = await db
       .select({
         id: scmProcurementItems.id,
@@ -259,7 +305,8 @@ export const getProcurementItems = createServerFn({ method: "GET" })
 export const getProcurementAuditLog = createServerFn({ method: "GET" })
   .validator((data: { procurementId: string; limit?: number; offset?: number }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
+    await assertProcurementAccess(user, data.procurementId);
     const limit = Math.max(1, Math.min(100, data.limit ?? 10));
     const offset = Math.max(0, data.offset ?? 0);
     const rows = await db
@@ -468,7 +515,8 @@ export const removeProcurementItem = createServerFn({ method: "POST" })
 export const getProcurementInvoice = createServerFn({ method: "GET" })
   .validator((data: { procurementId: string }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
+    await assertProcurementAccess(user, data.procurementId);
     const [inv] = await db
       .select({
         id: scmProcurementInvoices.id,

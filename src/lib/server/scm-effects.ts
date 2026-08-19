@@ -562,11 +562,16 @@ export async function reverseInTransitOnCancel(
 }
 
 /**
- * Cancel from Delivered, ReviewingSJ, or WaitingForPayment: pending_review
- * stock goes back to Central. If the procurement is past finish-receive,
- * branch inventory was already incremented — we'd also need to decrement it.
- * For Phase 2 we only handle the pending_review reversal; the branch
- * inventory reversal is a TODO for when we need cancel-after-receive.
+ * Cancel from Delivered / ReviewingSJ: the stock sits in
+ * `pending_review_inventory` (delivered but not yet received) — it goes back
+ * to Central. Cancel from WaitingForPayment (past `finish-receive`): the
+ * received qty has already moved into the branch's main inventory, so debit
+ * the branch, credit Central, and void the frozen invoice snapshot.
+ *
+ * Mirrors Mutasi's `reverseTransferPendingReviewOnCancel` (ADR 0006 Phase 2).
+ * Phase 1 only touches *uncleared* pending rows — rows cleared at
+ * `finish-receive` are accounted for in Phase 2, so they must not be credited
+ * twice (see issue #93).
  */
 export async function reversePendingReviewOnCancel(
   procurementId: string,
@@ -577,10 +582,23 @@ export async function reversePendingReviewOnCancel(
   const [central] = await tx.select().from(branches).where(eq(branches.type, "Central")).limit(1);
   if (!central) return;
 
+  const [proc] = await tx
+    .select()
+    .from(scmProcurements)
+    .where(eq(scmProcurements.id, procurementId));
+  if (!proc) return;
+
+  // Phase 1: uncleared pending-review rows (stock at the branch but not yet
+  // received, e.g. fully-rejected lines) go back to Central.
   const rows = await tx
     .select()
     .from(pendingReviewInventory)
-    .where(eq(pendingReviewInventory.scmProcurementId, procurementId));
+    .where(
+      and(
+        eq(pendingReviewInventory.scmProcurementId, procurementId),
+        isNull(pendingReviewInventory.clearedAt),
+      ),
+    );
 
   for (const row of rows) {
     const [inv] = await tx
@@ -616,6 +634,85 @@ export async function reversePendingReviewOnCancel(
       .update(pendingReviewInventory)
       .set({ clearedAt: new Date() })
       .where(eq(pendingReviewInventory.id, row.id));
+  }
+
+  // Phase 2: cancel from WaitingForPayment — `finish-receive` already moved
+  // the received qty into the branch's main inventory and cleared the
+  // pending rows. Debit the branch, credit Central, void the invoice.
+  if (proc.status === "WaitingForPayment") {
+    const items = await tx
+      .select()
+      .from(scmProcurementItems)
+      .where(eq(scmProcurementItems.scmProcurementId, procurementId));
+
+    for (const item of items) {
+      const received = item.receivedQuantity ?? 0;
+      if (received <= 0) continue;
+
+      // Debit the branch's main inventory
+      const [inv] = await tx
+        .select()
+        .from(inventory)
+        .where(
+          and(eq(inventory.branchId, proc.branchId), eq(inventory.ingredientId, item.ingredientId)),
+        )
+        .limit(1);
+
+      if (inv) {
+        const newQty = Math.max(0, inv.quantity - received);
+        await tx
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, inv.id));
+        await tx.insert(stockLedger).values({
+          branchId: proc.branchId,
+          ingredientId: item.ingredientId,
+          type: "OUT",
+          quantity: received,
+          balance: newQty,
+          reference: procurementId,
+          notes: `Pengadaan dibatalkan saat menunggu pembayaran`,
+        });
+      }
+
+      // Credit Central
+      const [centralInv] = await tx
+        .select()
+        .from(inventory)
+        .where(
+          and(eq(inventory.branchId, central.id), eq(inventory.ingredientId, item.ingredientId)),
+        )
+        .limit(1);
+
+      if (centralInv) {
+        const newQty = centralInv.quantity + received;
+        await tx
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, centralInv.id));
+        await tx.insert(stockLedger).values({
+          branchId: central.id,
+          ingredientId: item.ingredientId,
+          type: "IN",
+          quantity: received,
+          balance: newQty,
+          reference: procurementId,
+          notes: `Pengadaan dibatalkan saat menunggu pembayaran`,
+        });
+      } else {
+        await tx.insert(inventory).values({
+          branchId: central.id,
+          ingredientId: item.ingredientId,
+          quantity: received,
+        });
+      }
+    }
+
+    // Void the frozen invoice snapshot
+    await tx
+      .update(scmProcurementInvoices)
+      .set({ cancelledAt: new Date() })
+      .where(eq(scmProcurementInvoices.scmProcurementId, procurementId));
   }
 
   void actor;

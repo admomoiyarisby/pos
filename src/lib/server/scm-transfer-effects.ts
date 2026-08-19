@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { db as DbType } from "./db";
 import {
   inTransitInventory,
@@ -571,12 +571,19 @@ export async function reverseTransferPendingReviewOnCancel(
   const [tr] = await tx.select().from(scmTransfers).where(eq(scmTransfers.id, transferId));
   if (!tr) return;
 
-  // Phase 1: if there are pending_review_inventory rows, credit them back to
-  // the Sender and clear them.
+  // Phase 1: credit *uncleared* pending_review_inventory rows back to the
+  // Sender and clear them. Rows cleared at finish-receive (received qty) must
+  // NOT be credited here — Phase 2 handles them, or the Sender gets double-
+  // credited on a WaitingForPayment cancel (issue #93).
   const pendingRows = await tx
     .select()
     .from(pendingReviewInventory)
-    .where(eq(pendingReviewInventory.scmTransferId, transferId));
+    .where(
+      and(
+        eq(pendingReviewInventory.scmTransferId, transferId),
+        isNull(pendingReviewInventory.clearedAt),
+      ),
+    );
 
   for (const row of pendingRows) {
     await creditBranchInventory(
