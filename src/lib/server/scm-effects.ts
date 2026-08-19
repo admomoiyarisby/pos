@@ -25,6 +25,27 @@ import {
 export type FsmTx = Parameters<Parameters<typeof DbType.transaction>[0]>[0];
 export type FsmActor = { id: string; role: string };
 
+/**
+ * Thrown by `writeInTransitInventory` (the `accept-and-ship` effect) when
+ * Central's current inventory for an ingredient is below the item's
+ * `pickedQuantity`. Mirrors Mutasi's `InsufficientStockError` (ADR 0006): the
+ * system tracks Central's stock as a concrete quantity, so shipping more than
+ * Central has would fabricate stock and desync the ledger — the transition is
+ * refused instead. The caller (server fn) maps this to a user-facing error.
+ */
+export class ProcurementInsufficientStockError extends Error {
+  constructor(
+    public readonly ingredientId: string,
+    public readonly requested: number,
+    public readonly available: number,
+  ) {
+    super(
+      `Insufficient stock at Central for ingredient ${ingredientId}: requested ${requested}, available ${available}`,
+    );
+    this.name = "ProcurementInsufficientStockError";
+  }
+}
+
 export interface FsmPayload {
   reason?: string;
   notes?: string;
@@ -108,30 +129,43 @@ export async function writeInTransitInventory(
       continue;
     }
 
-    // Decrement Central's inventory
+    // Strict stock check (mirrors Mutasi's ship-time guard, ADR 0006):
+    // the system tracks Central's inventory as a concrete quantity, so
+    // shipping more than Central has would fabricate stock. The old
+    // Math.max clamp wrote an OUT ledger larger than the balance delta
+    // and put phantom stock in transit. Refuse the transition instead.
     const [inv] = await tx
       .select()
       .from(inventory)
       .where(and(eq(inventory.branchId, central.id), eq(inventory.ingredientId, item.ingredientId)))
       .limit(1);
 
-    if (inv) {
-      const newQty = Math.max(0, inv.quantity - item.pickedQuantity);
-      await tx
-        .update(inventory)
-        .set({ quantity: newQty, lastUpdated: new Date() })
-        .where(eq(inventory.id, inv.id));
-
-      await tx.insert(stockLedger).values({
-        branchId: central.id,
-        ingredientId: item.ingredientId,
-        type: "OUT",
-        quantity: item.pickedQuantity,
-        balance: newQty,
-        reference: procurementId,
-        notes: `Pengadaan ${proc.code} dikirim`,
-      });
+    const currentQty = inv?.quantity ?? 0;
+    if (currentQty < item.pickedQuantity) {
+      throw new ProcurementInsufficientStockError(
+        item.ingredientId,
+        item.pickedQuantity,
+        currentQty,
+      );
     }
+
+    // Decrement Central's inventory (inv is guaranteed non-null here — the
+    // check above throws when no inventory row exists)
+    const newQty = inv!.quantity - item.pickedQuantity;
+    await tx
+      .update(inventory)
+      .set({ quantity: newQty, lastUpdated: new Date() })
+      .where(eq(inventory.id, inv!.id));
+
+    await tx.insert(stockLedger).values({
+      branchId: central.id,
+      ingredientId: item.ingredientId,
+      type: "OUT",
+      quantity: item.pickedQuantity,
+      balance: newQty,
+      reference: procurementId,
+      notes: `Pengadaan ${proc.code} dikirim`,
+    });
 
     // Insert in_transit_inventory row pointing at this procurement
     await tx.insert(inTransitInventory).values({

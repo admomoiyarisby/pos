@@ -21,6 +21,7 @@ import {
 import { getIngredients } from "#/lib/server/ingredients";
 import { printSuratJalan, printInvoice } from "#/lib/server/scm-print";
 import { openPrintWindow } from "#/lib/print-window";
+import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -198,7 +199,15 @@ function useTransitionMutation() {
           payload: vars.payload ?? {},
         },
       }),
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
+      // A transition can fail as a *domain* failure ({ success: false }) —
+      // e.g. accept-and-ship with insufficient Central stock (issue #92) —
+      // or as a thrown server error. Surface both to the user instead of
+      // silently invalidating stale queries.
+      if (!data.success) {
+        toast.error(data.error.message);
+        return;
+      }
       // Invalidate all four detail-page queries, not just the
       // procurement header. A transition can change:
       //   - the procurement row (status, lastEventAt, etc.)
@@ -220,6 +229,9 @@ function useTransitionMutation() {
       void queryClient.invalidateQueries({
         queryKey: ["scm-procurement-invoice", vars.procurementId],
       });
+    },
+    onError: (err) => {
+      toast.error((err as Error).message);
     },
   });
 }
