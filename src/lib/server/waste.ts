@@ -3,6 +3,7 @@ import { db } from "#/lib/server/db";
 import {
   wasteEntries,
   ingredients,
+  ingredientBranches,
   branches,
   stockLedger,
   inventory,
@@ -13,6 +14,7 @@ import { fuzzySearch } from "./fuzzy";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { requireAuth } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { z } from "zod";
 
 export const getWasteEntries = createServerFn({ method: "GET" })
@@ -108,13 +110,28 @@ export const createWasteEntry = createServerFn({ method: "POST" })
       throw new Error("Unauthorized branch");
     }
 
+    // Write-path defense: a branch-scoped caller must not record waste against
+    // an ingredient restricted from their branch. The picker is client-side and
+    // bypassable, so re-check visibility here via the shared clause.
     const [ing] = await db
       .select()
       .from(ingredients)
-      .where(eq(ingredients.id, data.ingredientId))
+      .where(
+        and(
+          eq(ingredients.id, data.ingredientId),
+          branchVisibleClause({
+            linkTable: ingredientBranches,
+            linkRowId: ingredientBranches.ingredientId,
+            rowId: ingredients.id,
+            linkBranchId: ingredientBranches.branchId,
+            currentBranchId: user.branchId,
+          }),
+        ),
+      )
       .limit(1);
+    if (!ing) throw new Error("Forbidden: ingredient is not available to your branch");
 
-    const valuation = data.quantity * (ing?.averageCost ?? 0);
+    const valuation = data.quantity * (ing.averageCost ?? 0);
 
     const [entry] = await db
       .insert(wasteEntries)

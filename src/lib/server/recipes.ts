@@ -22,6 +22,7 @@ import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateAllRecipeCosts as recalcAllCosts, recalculateRecipeCosts } from "./cost-rollup";
+import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { z } from "zod";
 
 const recipeIngredientInput = z.object({
@@ -77,17 +78,17 @@ export const getRecipes = createServerFn({ method: "GET" })
       whereConditions.push(eq(recipes.status, data.status));
     }
 
-    // Filter recipes based on branch visibility
-    if (currentBranchId) {
-      whereConditions.push(
-        sql`
-          EXISTS (
-            SELECT 1 FROM recipe_branches WHERE recipe_branches.recipe_id = recipes.id AND recipe_branches.branch_id = ${currentBranchId}
-          )
-          OR recipe_branches.id IS NULL
-        `,
-      );
-    }
+    // Branch visibility gate: a branch-scoped caller sees only recipes allowed
+    // at their branch; a recipe with no recipe_branches rows is visible
+    // everywhere. Centralized in branchVisibleClause.
+    const branchClause = branchVisibleClause({
+      linkTable: recipeBranches,
+      linkRowId: recipeBranches.recipeId,
+      rowId: recipes.id,
+      linkBranchId: recipeBranches.branchId,
+      currentBranchId,
+    });
+    if (branchClause) whereConditions.push(branchClause);
 
     const result = await db
       .select({
@@ -102,10 +103,8 @@ export const getRecipes = createServerFn({ method: "GET" })
         totalCogs: recipes.totalCogs,
         isBOGO: recipes.isBOGO,
         status: recipes.status,
-        branchId: recipeBranches.branchId,
       })
       .from(recipes)
-      .leftJoin(recipeBranches, eq(recipeBranches.recipeId, recipes.id))
       .where(and(...whereConditions))
       .orderBy(data.search ? fuzzyRank(recipes.name, data.search) : recipes.name);
 
@@ -165,8 +164,24 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
+    const user = await getCurrentUserRaw();
 
-    const [recipe] = await db.select().from(recipes).where(eq(recipes.id, data.id)).limit(1);
+    // Branch visibility: a branch-scoped caller must not deep-link to a recipe
+    // restricted from their branch. Reusing the shared clause makes a restricted
+    // row return no result → null.
+    const branchClause = branchVisibleClause({
+      linkTable: recipeBranches,
+      linkRowId: recipeBranches.recipeId,
+      rowId: recipes.id,
+      linkBranchId: recipeBranches.branchId,
+      currentBranchId: user?.branchId,
+    });
+
+    const [recipe] = await db
+      .select()
+      .from(recipes)
+      .where(and(eq(recipes.id, data.id), branchClause))
+      .limit(1);
 
     if (!recipe) return null;
 
@@ -254,6 +269,30 @@ export const getRecipeInventory = createServerFn({ method: "GET" })
   .validator((data: { recipeId: string }) => data)
   .handler(async ({ data }): Promise<RecipeStockRow[]> => {
     await requireAuth();
+    const user = await getCurrentUserRaw();
+
+    // Branch visibility: a branch-scoped caller must not see stock for a recipe
+    // restricted from their branch. Reuse the shared clause against recipes.id;
+    // if the recipe isn't visible, return no rows.
+    if (user?.branchId) {
+      const [visible] = await db
+        .select({ id: recipes.id })
+        .from(recipes)
+        .where(
+          and(
+            eq(recipes.id, data.recipeId),
+            branchVisibleClause({
+              linkTable: recipeBranches,
+              linkRowId: recipeBranches.recipeId,
+              rowId: recipes.id,
+              linkBranchId: recipeBranches.branchId,
+              currentBranchId: user.branchId,
+            }),
+          ),
+        )
+        .limit(1);
+      if (!visible) return [];
+    }
 
     const rows = await db
       .select({

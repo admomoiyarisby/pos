@@ -6,6 +6,7 @@ import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
+import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 
@@ -60,27 +61,17 @@ export const getIngredients = createServerFn({ method: "GET" })
       conditions.push(eq(ingredients.isNasi, false));
     }
 
-    // Branch visibility gate (mirrors getRecipes): a branch-scoped caller sees
-    // only ingredients allowed at their branch; an ingredient with no
-    // ingredient_branches rows is visible everywhere (NULL = all branches).
-    // Both disjuncts are self-contained subqueries so `ingredient_branches` is
-    // always in scope (referencing it in the outer WHERE without a LEFT JOIN is
-    // invalid SQL: "missing FROM-clause entry for table ingredient_branches").
-    if (currentBranchId) {
-      conditions.push(
-        sql`
-          NOT EXISTS (
-            SELECT 1 FROM ingredient_branches
-            WHERE ingredient_branches.ingredient_id = ingredients.id
-          )
-          OR EXISTS (
-            SELECT 1 FROM ingredient_branches
-            WHERE ingredient_branches.ingredient_id = ingredients.id
-              AND ingredient_branches.branch_id = ${currentBranchId}
-          )
-        `,
-      );
-    }
+    // Branch visibility gate (mirrors getRecipes / getPosMenu): a branch-scoped
+    // caller sees only ingredients allowed at their branch; an ingredient with
+    // no ingredient_branches rows is visible everywhere (NULL = all branches).
+    const branchClause = branchVisibleClause({
+      linkTable: ingredientBranches,
+      linkRowId: ingredientBranches.ingredientId,
+      rowId: ingredients.id,
+      linkBranchId: ingredientBranches.branchId,
+      currentBranchId,
+    });
+    if (branchClause) conditions.push(branchClause);
 
     const result = await db
       .select()
@@ -111,10 +102,23 @@ export const getIngredient = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
+    const user = await getCurrentUserRaw();
+
+    // Branch visibility: a branch-scoped caller must not deep-link to an
+    // ingredient restricted from their branch. Reusing the shared clause makes a
+    // restricted row return no result → null.
+    const branchClause = branchVisibleClause({
+      linkTable: ingredientBranches,
+      linkRowId: ingredientBranches.ingredientId,
+      rowId: ingredients.id,
+      linkBranchId: ingredientBranches.branchId,
+      currentBranchId: user?.branchId,
+    });
+
     const [result] = await db
       .select()
       .from(ingredients)
-      .where(and(eq(ingredients.id, data.id), ne(ingredients.status, "Deleted")))
+      .where(and(eq(ingredients.id, data.id), ne(ingredients.status, "Deleted"), branchClause))
       .limit(1);
     if (!result) return null;
 

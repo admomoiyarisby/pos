@@ -12,9 +12,11 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
 import { requireAuth } from "./auth";
+import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import {
   branches,
   ingredients,
+  ingredientBranches,
   inventory,
   scmTransferAuditLog,
   scmTransferItems,
@@ -232,10 +234,27 @@ export const createMutasiTransfer = createServerFn({ method: "POST" })
     // Snapshot the unitPrice from the global ingredients.averageCost at this
     // moment. (Q11 / ADR 0006 sub-decision: matches Pengadaan's pattern in
     // ADR 0003. Per-branch inventory.averageCost is a future migration.)
+    // Write-path defense: fold the shared branch-visibility clause into this
+    // query so restricted ingredients are excluded from avgById; then reject if
+    // any requested ingredient is missing. Central users (no branchId) are
+    // unfiltered.
+    const branchClause = branchVisibleClause({
+      linkTable: ingredientBranches,
+      linkRowId: ingredientBranches.ingredientId,
+      rowId: ingredients.id,
+      linkBranchId: ingredientBranches.branchId,
+      currentBranchId: user.branchId,
+    });
     const ingredientRows = await db
       .select({ id: ingredients.id, averageCost: ingredients.averageCost })
-      .from(ingredients);
+      .from(ingredients)
+      .where(branchClause);
     const avgById = new Map(ingredientRows.map((i) => [i.id, i.averageCost]));
+
+    const itemIngredientIds = [...new Set(data.items.map((it) => it.ingredientId))];
+    if (itemIngredientIds.some((id) => !avgById.has(id))) {
+      throw new Error("Forbidden: one or more ingredients are not available to your branch");
+    }
 
     // Get branch code for document code generation
     const [fromBranch] = await db

@@ -26,8 +26,9 @@ import {
   cancelRequests,
   users,
 } from "#/db/schema";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
-import { requireAuth } from "./auth";
+import { eq, and, desc, inArray } from "drizzle-orm";
+import { requireAuth, getCurrentUserRaw } from "./auth";
+import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { logSystemAction, logAudit } from "./logging";
 import {
   resolveNewItemIngredients,
@@ -42,18 +43,21 @@ export const getPosMenu = createServerFn({ method: "GET" })
   )
   .handler(async ({ data }) => {
     await requireAuth();
+    const user = await getCurrentUserRaw();
 
-    // Branch visibility: hide recipes that are assigned to other branches
-    // but NOT to this branch. Recipes with no assignments are shown everywhere.
+    // Branch visibility: a branch-scoped caller sees only recipes allowed at
+    // their branch; a recipe with no recipe_branches rows is visible everywhere.
+    // Driven by the SESSION's branch (not the client-supplied data.branchId) so
+    // a branch admin cannot request another branch's menu.
     const whereConditions: Array<ReturnType<typeof eq>> = [eq(recipes.status, "Active")];
-
-    if (data.branchId) {
-      // Has no branch assignments (unrestricted) OR is assigned to this branch
-      whereConditions.push(
-        sql`NOT EXISTS (SELECT 1 FROM ${recipeBranches} WHERE ${recipeBranches.recipeId} = ${recipes.id})
-            OR EXISTS (SELECT 1 FROM ${recipeBranches} WHERE ${recipeBranches.recipeId} = ${recipes.id} AND ${recipeBranches.branchId} = ${data.branchId})`,
-      );
-    }
+    const branchClause = branchVisibleClause({
+      linkTable: recipeBranches,
+      linkRowId: recipeBranches.recipeId,
+      rowId: recipes.id,
+      linkBranchId: recipeBranches.branchId,
+      currentBranchId: user?.branchId,
+    });
+    if (branchClause) whereConditions.push(branchClause);
 
     const result = await db
       .select({

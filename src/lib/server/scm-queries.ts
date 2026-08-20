@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from "./auth";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import {
   ingredients,
+  ingredientBranches,
   scmProcurementAuditLog,
   scmProcurementInvoices,
   scmProcurementItems,
@@ -18,6 +19,7 @@ import {
   type ScmProcurementStatus,
 } from "./scm-fsm";
 import { availableEvents, transition, updateItem } from "./scm-fsm";
+import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { FsmPayloadSchema } from "./scm-effects";
 import { z } from "zod";
 import { generateDocumentCode } from "./document-codes";
@@ -118,12 +120,31 @@ export const createProcurement = createServerFn({ method: "POST" })
       // insert below. If an ingredient somehow doesn't exist (FK
       // guarantees it does at insert time, but defensively), unitPrice
       // is null and the invoice will show Rp 0 for that line.
+      // Write-path defense: only ingredients visible to the caller's branch may
+      // be added. Folding the shared clause into this query drops any restricted
+      // (or non-existent) ingredient from priceById; we then reject if any
+      // requested id is missing. Central users (no branchId) are unfiltered.
       const ingredientIds = data.items.map((it) => it.ingredientId);
       const priceRows = await db
         .select({ id: ingredients.id, averageCost: ingredients.averageCost })
         .from(ingredients)
-        .where(inArray(ingredients.id, ingredientIds));
+        .where(
+          and(
+            inArray(ingredients.id, ingredientIds),
+            branchVisibleClause({
+              linkTable: ingredientBranches,
+              linkRowId: ingredientBranches.ingredientId,
+              rowId: ingredients.id,
+              linkBranchId: ingredientBranches.branchId,
+              currentBranchId: user.branchId,
+            }),
+          ),
+        );
       const priceById = new Map(priceRows.map((p) => [p.id, p.averageCost]));
+      const uniqueIngredientIds = [...new Set(ingredientIds)];
+      if (uniqueIngredientIds.some((id) => !priceById.has(id))) {
+        throw new Error("Forbidden: one or more ingredients are not available to your branch");
+      }
 
       await db.insert(scmProcurementItems).values(
         data.items.map((it, idx) => ({
@@ -424,13 +445,25 @@ export const addProcurementItem = createServerFn({ method: "POST" })
         .from(scmProcurementItems)
         .where(eq(scmProcurementItems.scmProcurementId, data.procurementId));
 
-      // Snapshot unitPrice (ADR 0003)
+      // Snapshot unitPrice (ADR 0003). Write-path defense: re-check the
+      // ingredient is visible to the caller's branch — the picker is bypassable.
       const [ing] = await tx
         .select({ averageCost: ingredients.averageCost })
         .from(ingredients)
-        .where(eq(ingredients.id, data.ingredientId))
+        .where(
+          and(
+            eq(ingredients.id, data.ingredientId),
+            branchVisibleClause({
+              linkTable: ingredientBranches,
+              linkRowId: ingredientBranches.ingredientId,
+              rowId: ingredients.id,
+              linkBranchId: ingredientBranches.branchId,
+              currentBranchId: user.branchId,
+            }),
+          ),
+        )
         .limit(1);
-      if (!ing) throw new Error("Ingredient not found");
+      if (!ing) throw new Error("Forbidden: ingredient is not available to your branch");
 
       const [row] = await tx
         .insert(scmProcurementItems)

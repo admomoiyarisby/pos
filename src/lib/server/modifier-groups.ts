@@ -6,11 +6,13 @@ import {
   modifierIngredients,
   recipes,
   recipeModifierGroups,
+  recipeBranches,
 } from "#/db/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
-import { requireAuth, requireRole } from "./auth";
+import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { z } from "zod";
 
@@ -35,6 +37,18 @@ export const getModifierGroups = createServerFn({ method: "GET" })
   .validator((data: { search?: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
+    const user = await getCurrentUserRaw();
+
+    // Branch visibility: only count recipes visible to the caller's branch (a
+    // recipe with zero recipe_branches rows is visible everywhere). Central
+    // users (no branchId) see the full count.
+    const branchClause = branchVisibleClause({
+      linkTable: recipeBranches,
+      linkRowId: recipeBranches.recipeId,
+      rowId: recipes.id,
+      linkBranchId: recipeBranches.branchId,
+      currentBranchId: user?.branchId,
+    });
 
     const groups = await db
       .select()
@@ -59,7 +73,8 @@ export const getModifierGroups = createServerFn({ method: "GET" })
               count: sql<number>`count(*)`,
             })
             .from(recipeModifierGroups)
-            .where(inArray(recipeModifierGroups.modifierGroupId, groupIds))
+            .innerJoin(recipes, eq(recipeModifierGroups.recipeId, recipes.id))
+            .where(and(inArray(recipeModifierGroups.modifierGroupId, groupIds), branchClause))
             .groupBy(recipeModifierGroups.modifierGroupId)
         : Promise.resolve<{ modifierGroupId: string; count: number }[]>([]),
     ]);
@@ -79,6 +94,18 @@ export const getModifierGroup = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
+    const user = await getCurrentUserRaw();
+
+    // Branch visibility: a branch-scoped caller must not see recipes in a
+    // modifier group that are restricted from their branch.
+    const branchClause = branchVisibleClause({
+      linkTable: recipeBranches,
+      linkRowId: recipeBranches.recipeId,
+      rowId: recipes.id,
+      linkBranchId: recipeBranches.branchId,
+      currentBranchId: user?.branchId,
+    });
+
     const [group] = await db
       .select()
       .from(modifierGroups)
@@ -108,7 +135,7 @@ export const getModifierGroup = createServerFn({ method: "GET" })
         })
         .from(recipeModifierGroups)
         .innerJoin(recipes, eq(recipeModifierGroups.recipeId, recipes.id))
-        .where(eq(recipeModifierGroups.modifierGroupId, data.id)),
+        .where(and(eq(recipeModifierGroups.modifierGroupId, data.id), branchClause)),
     ]);
 
     return {

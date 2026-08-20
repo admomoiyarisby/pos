@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { recipes, categories } from "#/db/schema";
-import { eq, inArray, sql } from "drizzle-orm";
-import { requireAuth, requireRole } from "./auth";
+import { recipes, categories, recipeBranches } from "#/db/schema";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction } from "./logging";
+import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { z } from "zod";
 
 export type CategoryInfo = {
@@ -40,6 +41,19 @@ export const getCategoryRecipes = createServerFn({ method: "GET" })
   .validator((data: { categoryId: string }) => data)
   .handler(async ({ data }) => {
     await requireAuth();
+    const user = await getCurrentUserRaw();
+
+    // Branch visibility: a branch-scoped caller sees only recipes allowed at
+    // their branch; a recipe with no recipe_branches rows is visible everywhere.
+    const whereConditions: SQL[] = [eq(recipes.categoryId, data.categoryId)];
+    const branchClause = branchVisibleClause({
+      linkTable: recipeBranches,
+      linkRowId: recipeBranches.recipeId,
+      rowId: recipes.id,
+      linkBranchId: recipeBranches.branchId,
+      currentBranchId: user?.branchId,
+    });
+    if (branchClause) whereConditions.push(branchClause);
 
     const rows = await db
       .select({
@@ -49,7 +63,7 @@ export const getCategoryRecipes = createServerFn({ method: "GET" })
         status: recipes.status,
       })
       .from(recipes)
-      .where(eq(recipes.categoryId, data.categoryId))
+      .where(and(...whereConditions))
       .orderBy(recipes.name);
 
     return rows;
