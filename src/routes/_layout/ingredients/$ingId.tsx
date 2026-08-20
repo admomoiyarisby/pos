@@ -10,6 +10,7 @@ import { getBranches } from "#/lib/server/branches";
 import { toast } from "sonner";
 import MoneyInput from "#/components/MoneyInput";
 import { Separator } from "#/components/ui/separator";
+import { Switch } from "#/components/ui/switch";
 import { ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/ingredients/$ingId")({
@@ -29,6 +30,9 @@ function IngredientDetailPage() {
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>(initial?.branchIds ?? []);
+  const [isBranchVisible, setIsBranchVisible] = useState<boolean>(
+    initial?.isBranchVisible ?? false,
+  );
 
   const { data: ingredient } = useQuery({
     queryKey: ["ingredient", ingId],
@@ -64,7 +68,9 @@ function IngredientDetailPage() {
       averageCost: Number(fd.get("averageCost")),
       rop: Number(fd.get("rop")),
       moq: Number(fd.get("moq")),
-      branchIds: selectedBranchIds,
+      isBranchVisible,
+      // Central-only (toggle off) ⇒ no branch links; branch-visible ⇒ honor selection.
+      branchIds: isBranchVisible ? selectedBranchIds : [],
     };
     void updateMutation.mutateAsync({ data });
   };
@@ -215,15 +221,44 @@ function IngredientDetailPage() {
                 />
               </div>
             </div>
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <div>
+                <p className="text-sm font-medium">Tampil di Cabang</p>
+                <p className="text-xs text-muted-foreground">
+                  Aktif = masuk katalog cabang (terlihat branch_admin). Nonaktif = hanya Gudang
+                  Pusat &amp; manajemen.
+                </p>
+              </div>
+              <Switch
+                checked={isBranchVisible}
+                onCheckedChange={(checked) => {
+                  setIsBranchVisible(checked);
+                  // Auto-sync the branch option: turning ON defaults to "all branches".
+                  if (checked) setSelectedBranchIds([]);
+                }}
+              />
+            </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Ketersediaan Cabang</label>
               <p className="text-xs text-muted-foreground">
                 Pilih cabang yang boleh melihat & memilih bahan ini. Kosong = semua cabang.
               </p>
+              {!isBranchVisible && (
+                <p className="text-xs text-amber-600">
+                  Nonaktif: bahan hanya untuk Gudang Pusat &amp; manajemen, pilihan cabang
+                  diabaikan.
+                </p>
+              )}
               <div className="rounded-lg border p-4 space-y-3">
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label
+                  className={
+                    "flex items-center gap-3 " +
+                    (isBranchVisible ? "cursor-pointer" : "cursor-not-allowed opacity-60")
+                  }
+                >
                   <input
                     type="checkbox"
+                    disabled={!isBranchVisible}
                     checked={selectedBranchIds.length === 0}
                     onChange={(e) => {
                       if (e.target.checked) {
@@ -240,7 +275,7 @@ function IngredientDetailPage() {
                   </div>
                 </label>
               </div>
-              {selectedBranchIds.length > 0 && (
+              {selectedBranchIds.length > 0 && isBranchVisible && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Pilih cabang:</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -251,6 +286,7 @@ function IngredientDetailPage() {
                       >
                         <input
                           type="checkbox"
+                          disabled={!isBranchVisible}
                           checked={selectedBranchIds.includes(b.id)}
                           onChange={(e) => {
                             if (e.target.checked) {
@@ -320,6 +356,12 @@ function IngredientDetailPage() {
               </div>
             </div>
 
+            <div className="rounded-lg border p-4">
+              <p className="text-xs text-muted-foreground uppercase">Visibilitas</p>
+              <p className="font-medium mt-1">
+                {ingredient.isBranchVisible ? "Tampil di Cabang" : "Gudang Pusat & Manajemen"}
+              </p>
+            </div>
             <div className="rounded-lg border p-4">
               <p className="text-xs text-muted-foreground uppercase">Ketersediaan Cabang</p>
               {ingredient.branchIds.length === 0 ? (

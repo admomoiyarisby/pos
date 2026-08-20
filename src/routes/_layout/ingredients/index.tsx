@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
+import { Switch } from "#/components/ui/switch";
 import { ArrowRight, Trash2, Check } from "lucide-react";
 
 interface IngredientRow {
@@ -36,6 +37,7 @@ interface IngredientRow {
   conversionFactor: number;
   averageCost: number;
   status: "Active" | "Inactive" | "Deleted";
+  isBranchVisible: boolean;
 }
 
 const skuLabels = {
@@ -63,6 +65,7 @@ function IngredientsPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [ingredientToDelete, setIngredientToDelete] = useState<string | null>(null);
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
+  const [isBranchVisible, setIsBranchVisible] = useState(false);
 
   const { data: ingredients } = useQuery({
     queryKey: ["ingredients"],
@@ -137,7 +140,9 @@ function IngredientsPage() {
       averageCost: Number(fd.get("averageCost")),
       rop: Number(fd.get("rop")),
       moq: Number(fd.get("moq")),
-      branchIds: selectedBranchIds,
+      isBranchVisible,
+      // Central-only (toggle off) ⇒ no branch links; branch-visible ⇒ honor selection.
+      branchIds: isBranchVisible ? selectedBranchIds : [],
     };
     void createMutation.mutateAsync({ data });
   };
@@ -183,6 +188,15 @@ function IngredientsPage() {
       render: (r) => (
         <Badge variant={r.status === "Active" ? "success" : "secondary"}>
           {r.status === "Active" ? "Aktif" : "Nonaktif"}
+        </Badge>
+      ),
+    },
+    {
+      key: "isBranchVisible",
+      header: "Visibilitas",
+      render: (r) => (
+        <Badge variant={r.isBranchVisible ? "success" : "secondary"}>
+          {r.isBranchVisible ? "Cabang" : "Pusat"}
         </Badge>
       ),
     },
@@ -341,15 +355,43 @@ function IngredientsPage() {
               className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div>
+              <p className="text-sm font-medium">Tampil di Cabang</p>
+              <p className="text-xs text-muted-foreground">
+                Aktif = masuk katalog cabang (terlihat branch_admin). Nonaktif = hanya Gudang Pusat
+                &amp; manajemen.
+              </p>
+            </div>
+            <Switch
+              checked={isBranchVisible}
+              onCheckedChange={(checked) => {
+                setIsBranchVisible(checked);
+                // Auto-sync the branch option: turning ON defaults to "all branches".
+                if (checked) setSelectedBranchIds([]);
+              }}
+            />
+          </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Ketersediaan Cabang</label>
             <p className="text-xs text-muted-foreground">
               Pilih cabang yang boleh melihat & memilih bahan ini. Kosong = semua cabang.
             </p>
+            {!isBranchVisible && (
+              <p className="text-xs text-amber-600">
+                Nonaktif: bahan hanya untuk Gudang Pusat &amp; manajemen, pilihan cabang diabaikan.
+              </p>
+            )}
             <div className="rounded-lg border p-4 space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer">
+              <label
+                className={
+                  "flex items-center gap-3 " +
+                  (isBranchVisible ? "cursor-pointer" : "cursor-not-allowed opacity-60")
+                }
+              >
                 <input
                   type="checkbox"
+                  disabled={!isBranchVisible}
                   checked={selectedBranchIds.length === 0}
                   onChange={(e) => {
                     if (e.target.checked) {
@@ -366,7 +408,7 @@ function IngredientsPage() {
                 </div>
               </label>
             </div>
-            {selectedBranchIds.length > 0 && (
+            {selectedBranchIds.length > 0 && isBranchVisible && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">Pilih cabang:</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

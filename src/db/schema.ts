@@ -287,6 +287,7 @@ export const ingredients = pgTable("ingredients", {
   status: ingredientStatusEnum("status").notNull().default("Active"),
   countable: boolean("countable").notNull().default(true),
   isNasi: boolean("is_nasi").notNull().default(false), // Special: cooked rice, only in stock opname
+  isBranchVisible: boolean("is_branch_visible").notNull().default(false), // Branch (outlet) catalog item; false = central-warehouse + management only (omoiyari stock-opname catalog)
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });

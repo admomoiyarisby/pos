@@ -24,6 +24,7 @@ const ingredientInput = z.object({
   roq: z.number().int().min(0).default(0),
   moq: z.number().int().min(1).default(1),
   countable: z.boolean().default(true),
+  isBranchVisible: z.boolean().default(false), // Branch (outlet) catalog item; false = central-only
   branchIds: z.array(z.string().uuid()).optional().nullable(),
 });
 
@@ -59,6 +60,16 @@ export const getIngredients = createServerFn({ method: "GET" })
     }
     if (data.excludeNasi) {
       conditions.push(eq(ingredients.isNasi, false));
+    }
+
+    // Branch-vs-central visibility (omoiyari stock-opname catalog): outlet
+    // branches (branch_admin) see ONLY branch-visible items. Central warehouse
+    // and management roles (super_admin / admin_pusat / central_kitchen /
+    // area_manager) see everything. The per-branch `ingredient_branches` link
+    // below is ANDed on top, so the future case "only some specific branches
+    // see item X" still works (link the item to those branches).
+    if (user?.role === "branch_admin") {
+      conditions.push(eq(ingredients.isBranchVisible, true));
     }
 
     // Branch visibility gate (mirrors getRecipes / getPosMenu): a branch-scoped
