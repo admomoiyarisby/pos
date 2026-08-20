@@ -11,6 +11,7 @@ import {
   ComboboxEmpty,
 } from "#/components/ui/combobox";
 import { adjustBranchStockBatch } from "#/lib/server/inventory";
+import { uuid } from "#/lib/uuid";
 
 export interface IngredientOption {
   id: string;
@@ -33,7 +34,7 @@ interface LineItem {
 }
 
 function makeId() {
-  return "randomUUID" in globalThis ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  return uuid();
 }
 
 export interface StockAdjustmentModalProps {

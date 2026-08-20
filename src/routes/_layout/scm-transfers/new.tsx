@@ -22,6 +22,7 @@ import { useUnsavedDraft } from "#/hooks/useUnsavedDraft";
 import { RestoreDraftBanner } from "#/components/draft/RestoreDraftBanner";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
+import { uuid } from "#/lib/uuid";
 
 export const Route = createFileRoute("/_layout/scm-transfers/new")({
   component: NewMutasiPage,
@@ -146,10 +147,7 @@ function NewMutasiPage() {
   }, [items, stockByIngredient]);
 
   const addItem = () => {
-    setItems((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), ingredientId: "", quantity: 1, inputValue: "" },
-    ]);
+    setItems((prev) => [...prev, { id: uuid(), ingredientId: "", quantity: 1, inputValue: "" }]);
   };
 
   const updateItem = (id: string, patch: Partial<ItemRow>) => {
