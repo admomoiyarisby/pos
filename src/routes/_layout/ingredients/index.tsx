@@ -35,7 +35,7 @@ interface IngredientRow {
   stockUnit: string;
   conversionFactor: number;
   averageCost: number;
-  status: "Active" | "Inactive";
+  status: "Active" | "Inactive" | "Deleted";
 }
 
 const skuLabels = {
@@ -107,7 +107,10 @@ function IngredientsPage() {
     },
   });
 
-  const handleStatusToggle = async (id: string, currentStatus: "Active" | "Inactive") => {
+  const handleStatusToggle = async (
+    id: string,
+    currentStatus: "Active" | "Inactive" | "Deleted",
+  ) => {
     const newStatus = currentStatus === "Active" ? "Inactive" : "Active";
     await updateMutation.mutateAsync({ data: { id, status: newStatus } });
   };

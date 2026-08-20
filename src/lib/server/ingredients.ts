@@ -41,6 +41,9 @@ export const getIngredients = createServerFn({ method: "GET" })
     const user = await getCurrentUserRaw();
     const currentBranchId = user?.branchId;
 
+    // Build conditions list, then apply all at once (mirrors getRecipes).
+    const conditions: import("drizzle-orm").SQL[] = [];
+
     // ADR-0009 mirror: tombstoned (Deleted) ingredients never appear in lists.
     // Inactive stays visible (search/sort/filter); only Deleted is hidden.
     conditions.push(ne(ingredients.status, "Deleted"));
