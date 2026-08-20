@@ -141,12 +141,16 @@ export const createUser = createServerFn({ method: "POST" })
       status: data.status ?? "Active",
     });
 
-    // Create credential account (better-auth stores passwords in the account table)
+    // Create credential account (better-auth stores passwords in the account
+    // table). `issuer` is required by better-auth >=1.7: signInEmail matches
+    // credential accounts on providerId + issuer ("local:credential") +
+    // accountId, so omitting it makes email login impossible for new users.
     const { account: accountTable } = await import("#/db/schema");
     await db.insert(accountTable).values({
       id: crypto.randomUUID(),
       accountId: userId,
       providerId: "credential",
+      issuer: "local:credential",
       userId,
       password: hashedPassword,
     });

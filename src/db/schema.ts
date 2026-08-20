@@ -1759,6 +1759,11 @@ export const account = pgTable(
     id: text("id").primaryKey(),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
+    // better-auth >=1.7 stores the credential issuer here ("local:credential"
+    // for email/password accounts). Missing on older tables — without it,
+    // signInEmail can never match a credential account and every login fails
+    // with "Invalid email or password".
+    issuer: text("issuer"),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
