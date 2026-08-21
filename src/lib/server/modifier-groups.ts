@@ -55,7 +55,14 @@ export const getModifierGroups = createServerFn({ method: "GET" })
       .select()
       .from(modifierGroups)
       .where(data.search ? fuzzySearch(modifierGroups.name, data.search) : undefined)
-      .orderBy(data.search ? fuzzyRank(modifierGroups.name, data.search) : modifierGroups.name);
+      // Browse (no search) honors the manual group order so the drag-and-drop
+      // reorder on /modifier-groups is reflected; searching keeps relevance
+      // ranking (fuzzyRank) so results aren't buried by sort order.
+      .orderBy(
+        ...(data.search
+          ? [fuzzyRank(modifierGroups.name, data.search)]
+          : [modifierGroups.sortOrder, modifierGroups.name]),
+      );
 
     const groupIds = groups.map((g) => g.id);
 
@@ -356,6 +363,30 @@ export const reorderModifiers = createServerFn({ method: "POST" })
     await db.transaction(async (tx) => {
       for (const [idx, modifierId] of data.modifierIds.entries()) {
         await tx.update(modifiers).set({ sortOrder: idx }).where(eq(modifiers.id, modifierId));
+      }
+    });
+
+    return { success: true };
+  });
+
+export const reorderModifierGroupsInput = z.object({
+  modifierGroupIds: z.array(z.string().uuid()),
+});
+
+export const reorderModifierGroups = createServerFn({ method: "POST" })
+  .validator((data: z.input<typeof reorderModifierGroupsInput>) =>
+    reorderModifierGroupsInput.parse(data),
+  )
+  .handler(async ({ data }) => {
+    await requireRole("super_admin", "admin_pusat");
+
+    // Update sort_order based on array position
+    await db.transaction(async (tx) => {
+      for (const [idx, groupId] of data.modifierGroupIds.entries()) {
+        await tx
+          .update(modifierGroups)
+          .set({ sortOrder: idx })
+          .where(eq(modifierGroups.id, groupId));
       }
     });
 

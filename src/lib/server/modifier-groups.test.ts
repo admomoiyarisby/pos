@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vite-plus/test";
-import { reorderModifiersInput } from "#/lib/server/modifier-groups";
+import { reorderModifiersInput, reorderModifierGroupsInput } from "#/lib/server/modifier-groups";
 
 // `reorderModifiers` writes `sort_order = array index` for each id in the
 // payload (see the handler). These tests pin the input contract so the
@@ -84,6 +84,41 @@ describe("reorderModifiersInput", () => {
       reorderModifiersInput.parse({
         modifierGroupId: GROUP_ID,
         modifierIds: bad,
+      }),
+    ).toThrow();
+  });
+});
+
+// `reorderModifierGroups` writes `sort_order = array index` for each group id
+// in the payload. These tests pin the same contract at the group level.
+describe("reorderModifierGroupsInput", () => {
+  it("accepts an ordered list of group ids", () => {
+    const parsed = reorderModifierGroupsInput.parse({
+      modifierGroupIds: [GROUP_ID, UUID_A, UUID_B],
+    });
+
+    // Array order is preserved — the handler maps index → sort_order.
+    expect(parsed.modifierGroupIds).toEqual([GROUP_ID, UUID_A, UUID_B]);
+  });
+
+  it("rejects a non-uuid entry", () => {
+    expect(() =>
+      reorderModifierGroupsInput.parse({
+        modifierGroupIds: [GROUP_ID, "not-a-uuid"],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a missing modifierGroupIds field", () => {
+    expect(() => reorderModifierGroupsInput.parse({})).toThrow();
+  });
+
+  it("rejects a modifierGroupIds array containing non-string values", () => {
+    // `any` simulates an untyped client payload that smuggles a number in.
+    const bad: any = [GROUP_ID, 123];
+    expect(() =>
+      reorderModifierGroupsInput.parse({
+        modifierGroupIds: bad,
       }),
     ).toThrow();
   });

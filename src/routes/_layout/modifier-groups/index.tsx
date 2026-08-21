@@ -1,16 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Fragment, useState } from "react";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { formText } from "#/lib/utils";
-import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getModifierGroups, createModifierGroup } from "#/lib/server/modifier-groups";
+import {
+  getModifierGroups,
+  createModifierGroup,
+  reorderModifierGroups,
+} from "#/lib/server/modifier-groups";
 import { toast } from "sonner";
-import type { Column } from "#/components/ui/DataTable";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import MoneyInput from "#/components/MoneyInput";
@@ -19,7 +21,25 @@ import { Separator } from "#/components/ui/separator";
 import { Switch } from "#/components/ui/switch";
 import { Label } from "#/components/ui/label";
 import { Badge } from "#/components/ui/badge";
-import { ArrowRight, X, Plus } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { ArrowRight, X, Plus, GripVertical, Search } from "lucide-react";
 
 interface ModifierFormInput {
   name: string;
@@ -39,48 +59,6 @@ interface MGRow {
   recipeCount: number;
 }
 
-const columns: Column<MGRow>[] = [
-  { key: "code", header: "Kode", width: "w-24", sortable: true },
-  {
-    key: "name",
-    header: "Nama Grup",
-    sortable: true,
-    render: (r) => <span className="font-medium">{r.name}</span>,
-  },
-  { key: "minSelection", header: "Min", width: "w-16", align: "center", sortable: true },
-  { key: "maxSelection", header: "Max", width: "w-16", align: "center", sortable: true },
-  {
-    key: "modifiers",
-    header: "Jumlah Opsi",
-    width: "w-24",
-    align: "center",
-    sortable: true,
-    render: (r) => <Badge variant="secondary">{r.modifiers.length}</Badge>,
-  },
-  {
-    key: "recipeCount",
-    header: "Menu Terkait",
-    width: "w-24",
-    align: "center",
-    sortable: true,
-    render: (r) => <Badge variant="outline">{r.recipeCount}</Badge>,
-  },
-  {
-    key: "id",
-    header: "",
-    width: "w-12",
-    render: (r) => (
-      <Link
-        to="/modifier-groups/$mgId"
-        params={{ mgId: r.id }}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-      >
-        <ArrowRight className="h-4 w-4" />
-      </Link>
-    ),
-  },
-];
-
 export const Route = createFileRoute("/_layout/modifier-groups/")({
   component: ModifierGroupsPage,
   loader: async () => {
@@ -88,6 +66,68 @@ export const Route = createFileRoute("/_layout/modifier-groups/")({
     return { groups };
   },
 });
+
+// A thin full-width separator row rendered between table rows during a drag.
+// Signals where the dragged modifier group will land on drop.
+function DropIndicatorRow() {
+  return (
+    <tr>
+      <td colSpan={7} className="p-0">
+        <div className="h-0.5 w-full bg-primary rounded-full" />
+      </td>
+    </tr>
+  );
+}
+
+// A single drag-and-drop sortable row in the modifier-groups table. Keyed by
+// the group's DB id (stable) so dnd-kit tracks identity correctly.
+function SortableGroupRow({ group }: { group: MGRow }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: group.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <tr ref={setNodeRef} style={style} className="border-b hover:bg-muted/30">
+      <td className="w-8 px-2 py-2">
+        <button
+          type="button"
+          className="cursor-grab touch-none text-muted-foreground hover:text-foreground inline-flex items-center"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </td>
+      <td className="px-4 py-2 text-muted-foreground">{group.code}</td>
+      <td className="px-4 py-2">
+        <span className="font-medium">{group.name}</span>
+      </td>
+      <td className="px-4 py-2 text-center">{group.minSelection}</td>
+      <td className="px-4 py-2 text-center">{group.maxSelection}</td>
+      <td className="px-4 py-2 text-center">
+        <Badge variant="secondary">{group.modifiers.length}</Badge>
+      </td>
+      <td className="px-4 py-2 text-center">
+        <Badge variant="outline">{group.recipeCount}</Badge>
+      </td>
+      <td className="px-4 py-2">
+        <Link
+          to="/modifier-groups/$mgId"
+          params={{ mgId: group.id }}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        >
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+      </td>
+    </tr>
+  );
+}
 
 function ModifierGroupsPage() {
   const { groups: initial } = Route.useLoaderData();
@@ -97,6 +137,11 @@ function ModifierGroupsPage() {
   const [modifiersInput, setModifiersInput] = useState<ModifierFormInput[]>([
     { name: "", price: 0, isExclusion: false },
   ]);
+
+  // Tracks the active drag and the row being hovered for the drop-indicator
+  // line. Cleared on drop / cancel.
+  const [viewDragOverId, setViewDragOverId] = useState<string | null>(null);
+  const [viewDragActiveId, setViewDragActiveId] = useState<string | null>(null);
 
   const { data: groups } = useQuery({
     queryKey: ["modifier-groups"],
@@ -125,6 +170,58 @@ function ModifierGroupsPage() {
     },
   });
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const reorderMutation = useMutation({
+    mutationFn: reorderModifierGroups,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["modifier-groups"] });
+    },
+    onError: (error: Error) => {
+      // Roll back to server truth: invalidate so the cache refetches and the
+      // optimistic reorder we wrote is discarded if it diverged.
+      void queryClient.invalidateQueries({ queryKey: ["modifier-groups"] });
+      toast.error("Gagal mengurutkan grup modifier", { description: error.message });
+    },
+  });
+
+  // View-mode drag-and-drop: reorders the live group rows directly. Keyed by
+  // group id (stable). The cache is updated optimistically before the server
+  // round-trip so the row snaps to its new position instantly; onSuccess
+  // refetches to confirm, onError refetches to roll back.
+  const handleViewDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !groups) return;
+
+    const oldIndex = groups.findIndex((g) => g.id === active.id);
+    const newIndex = groups.findIndex((g) => g.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(groups, oldIndex, newIndex);
+
+    queryClient.setQueryData(["modifier-groups"], reordered);
+
+    void reorderMutation.mutateAsync({
+      data: {
+        modifierGroupIds: reordered.map((g) => g.id),
+      },
+    });
+  };
+
+  const handleViewDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    setViewDragActiveId(String(active.id));
+    setViewDragOverId(over ? String(over.id) : null);
+  };
+
+  const clearViewDrag = () => {
+    setViewDragActiveId(null);
+    setViewDragOverId(null);
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -145,19 +242,109 @@ function ModifierGroupsPage() {
     };
     void createMutation.mutateAsync({ data });
   };
+
+  // Client-side filter on code/name (mirrors the previous DataTable search).
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? (groups ?? []).filter(
+        (g) =>
+          g.name.toLowerCase().includes(q) ||
+          String(g.code ?? "")
+            .toLowerCase()
+            .includes(q),
+      )
+    : (groups ?? []);
+
   usePageTitle("Grup Modifier", "Kelola grup modifier & add-ons menu");
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <PageHeader action={{ label: "Tambah Group", onClick: () => setModalOpen(true) }} />
 
-      <DataTable
-        columns={columns}
-        data={groups}
-        keyExtractor={(r) => r.id}
-        search={search}
-        onSearchChange={setSearch}
-      />
+      <div className="space-y-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Cari..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Cari data"
+              className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+          <span className="text-xs text-muted-foreground">{filtered.length} item</span>
+          {filtered.length > 1 && (
+            <span className="text-xs text-muted-foreground sm:ml-auto">
+              Seret untuk mengurutkan — urutan ini dipakai di POS
+            </span>
+          )}
+        </div>
+
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragOver={handleViewDragOver}
+          onDragEnd={(e) => {
+            handleViewDragEnd(e);
+            clearViewDrag();
+          }}
+          onDragCancel={clearViewDrag}
+        >
+          <SortableContext items={filtered.map((g) => g.id)} strategy={verticalListSortingStrategy}>
+            <div className="rounded-md border overflow-x-auto">
+              <table className="w-full caption-bottom text-sm min-w-[640px]">
+                <thead className="[&_tr]:border-b">
+                  <tr className="border-b transition-colors hover:bg-muted/50">
+                    <th className="w-8 px-2 py-2"></th>
+                    <th className="h-10 px-3 text-left align-middle font-medium whitespace-nowrap min-w-[80px] text-muted-foreground">
+                      Kode
+                    </th>
+                    <th className="h-10 px-3 text-left align-middle font-medium whitespace-nowrap min-w-[80px] text-muted-foreground">
+                      Nama Grup
+                    </th>
+                    <th className="h-10 px-3 text-center align-middle font-medium whitespace-nowrap min-w-[80px] text-muted-foreground">
+                      Min
+                    </th>
+                    <th className="h-10 px-3 text-center align-middle font-medium whitespace-nowrap min-w-[80px] text-muted-foreground">
+                      Max
+                    </th>
+                    <th className="h-10 px-3 text-center align-middle font-medium whitespace-nowrap min-w-[80px] text-muted-foreground">
+                      Jumlah Opsi
+                    </th>
+                    <th className="h-10 px-3 text-center align-middle font-medium whitespace-nowrap min-w-[80px] text-muted-foreground">
+                      Menu Terkait
+                    </th>
+                    <th className="h-10 px-3 text-left align-middle font-medium whitespace-nowrap min-w-[80px] text-muted-foreground"></th>
+                  </tr>
+                </thead>
+                <tbody className="[&_tr:last-child]:border-0">
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="h-24 text-center text-muted-foreground">
+                        Tidak ada data
+                      </td>
+                    </tr>
+                  ) : (
+                    filtered.map((g, i) => (
+                      <Fragment key={g.id}>
+                        {viewDragOverId === g.id && viewDragActiveId !== g.id && i === 0 && (
+                          <DropIndicatorRow />
+                        )}
+                        <SortableGroupRow group={g} />
+                        {viewDragOverId === g.id && viewDragActiveId !== g.id && i > 0 && (
+                          <DropIndicatorRow />
+                        )}
+                      </Fragment>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </SortableContext>
+        </DndContext>
+      </div>
 
       <Modal
         open={modalOpen}

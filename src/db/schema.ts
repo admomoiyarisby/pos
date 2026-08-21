@@ -399,6 +399,9 @@ export const modifierGroups = pgTable("modifier_groups", {
   name: text("name").notNull(),
   minSelection: integer("min_selection").notNull().default(0),
   maxSelection: integer("max_selection").notNull().default(1),
+  // Manual group order (set via drag-and-drop on /modifier-groups). Drives the
+  // order of modifier groups in the POS ModifierModal and the recipe-edit menu.
+  sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
 

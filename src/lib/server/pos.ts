@@ -105,6 +105,9 @@ export const getPosMenu = createServerFn({ method: "GET" })
             .from(recipeModifierGroups)
             .leftJoin(modifierGroups, eq(recipeModifierGroups.modifierGroupId, modifierGroups.id))
             .where(inArray(recipeModifierGroups.recipeId, recipeIds))
+            // Honor the manual group order set on /modifier-groups so the POS
+            // ModifierModal shows groups in the operator's chosen order.
+            .orderBy(modifierGroups.sortOrder)
         : [],
       recipeIds.length > 0
         ? db.select().from(recipeIngredients).where(inArray(recipeIngredients.recipeId, recipeIds))
