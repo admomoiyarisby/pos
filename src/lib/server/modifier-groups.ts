@@ -7,6 +7,7 @@ import {
   recipes,
   recipeModifierGroups,
   recipeBranches,
+  categories,
 } from "#/db/schema";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
@@ -139,10 +140,11 @@ export const getModifierGroup = createServerFn({ method: "GET" })
           id: recipes.id,
           code: recipes.code,
           name: recipes.name,
-          category: recipes.category,
+          categoryName: categories.name,
         })
         .from(recipeModifierGroups)
         .innerJoin(recipes, eq(recipeModifierGroups.recipeId, recipes.id))
+        .leftJoin(categories, eq(recipes.categoryId, categories.id))
         // ADR-0009 mirror: tombstoned (Deleted) recipes never appear in the UI,
         // so they must not show up in the linked-recipes list either.
         .where(

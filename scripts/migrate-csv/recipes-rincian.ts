@@ -109,6 +109,7 @@ type BomLine = { seq: number; rawName: string; canonical: string | null; qty: nu
 
 type RecipeGroup = {
   menu: string;
+  categoryCode: RecipeCategory;
   recipe: RecipeInsert;
   lines: BomLine[];
 };
@@ -136,10 +137,11 @@ export async function migrateRecipesRincian(options: RecipesRincianOptions = {})
     if (menu) {
       current = {
         menu,
+        categoryCode: classifyRecipe(menu),
         recipe: {
           code: "", // assigned after we know starting seq
           name: menu,
-          category: classifyRecipe(menu),
+          categoryId: "", // resolved from categoryCode before insert
           isSubRecipe: false,
           basePrice: 0,
           totalCogs: 0,
@@ -187,7 +189,7 @@ export async function migrateRecipesRincian(options: RecipesRincianOptions = {})
   if (options.dryRun) {
     console.log(`[recipes-rincian] dry-run: would insert ${groups.length} recipes`);
     for (const g of groups) {
-      console.log(`  - ${g.recipe.code}  ${g.recipe.name}  [${g.recipe.category}]`);
+      console.log(`  - ${g.recipe.code}  ${g.recipe.name}  [${g.categoryCode}]`);
       for (const l of g.lines) {
         const ing = l.canonical ? ingByCanonical.get(l.canonical.toLowerCase()) : null;
         const marker = ing ? " " : "!";
@@ -209,6 +211,22 @@ export async function migrateRecipesRincian(options: RecipesRincianOptions = {})
     for (const w of warnings) console.log(`  ! ${w}`);
     await client.end();
     return;
+  }
+
+  // Resolve category ids by code so recipes can be inserted with the
+  // categoryId FK (the legacy recipe_category enum column was dropped).
+  const catRows = await client.query<{ id: string; code: string }>(
+    `SELECT id, code FROM categories`,
+  );
+  const categoryIdByCode = new Map(catRows.rows.map((r) => [r.code, r.id]));
+  for (const g of groups) {
+    const id = categoryIdByCode.get(g.categoryCode);
+    if (!id) {
+      throw new Error(
+        `No categories row for code "${g.categoryCode}" (recipe ${g.recipe.code} ${g.recipe.name})`,
+      );
+    }
+    g.recipe.categoryId = id;
   }
 
   // Build the recipe_ingredients with real recipe IDs after insert.

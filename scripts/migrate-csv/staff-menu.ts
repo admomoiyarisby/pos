@@ -192,7 +192,7 @@ export async function migrateStaffMenu(options: StaffMenuOptions = {}): Promise<
     const recipe: RecipeInsert = {
       code,
       name: p.name,
-      category: "makanan",
+      categoryId: "", // resolved from the "makanan" code before insert
       isSubRecipe: false,
       basePrice: p.price,
       totalCogs: 0,
@@ -216,6 +216,15 @@ export async function migrateStaffMenu(options: StaffMenuOptions = {}): Promise<
     await client.end();
     return;
   }
+
+  // Resolve the "makanan" category id so recipes can be inserted with the
+  // categoryId FK (the legacy recipe_category enum column was dropped).
+  const catRows = await client.query<{ id: string; code: string }>(
+    `SELECT id, code FROM categories WHERE code = 'makanan'`,
+  );
+  const makananId = catRows.rows[0]?.id;
+  if (!makananId) throw new Error('No categories row for code "makanan"');
+  for (const i of inserts) i.recipe.categoryId = makananId;
 
   // Insert staff recipes first; capture their UUIDs for BOM copy.
   let insertedRecipes: { id: string; name: string }[];

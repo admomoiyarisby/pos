@@ -20,6 +20,7 @@ import {
   shifts,
   platformFees,
   branches,
+  categories,
   systemNotifications,
   areaManagerBranches,
   printRequests,
@@ -65,14 +66,15 @@ export const getPosMenu = createServerFn({ method: "GET" })
         code: recipes.code,
         name: recipes.name,
         imageUrl: recipes.imageUrl,
-        category: recipes.category,
         categoryId: recipes.categoryId,
+        categoryName: categories.name,
         basePrice: recipes.basePrice,
         isBOGO: recipes.isBOGO,
         isStaffMeal: recipes.isStaffMeal,
         status: recipes.status,
       })
       .from(recipes)
+      .leftJoin(categories, eq(recipes.categoryId, categories.id))
       .where(and(...whereConditions))
       .orderBy(recipes.name);
 

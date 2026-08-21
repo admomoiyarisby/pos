@@ -41,14 +41,6 @@ export const skuTypeEnum = pgEnum("sku_type", ["RM", "SFG", "FG"]);
 // is DB-only). Deleted rows never appear in lists; Inactive rows stay visible.
 export const ingredientStatusEnum = pgEnum("ingredient_status", ["Active", "Inactive", "Deleted"]);
 
-export const recipeCategoryEnum = pgEnum("recipe_category", [
-  "makanan",
-  "minuman",
-  "snack",
-  "add_ons",
-  "paket_bundle",
-]);
-
 // Recipe lifecycle (ADR-0009): Active ⇄ Inactive → Deleted. Deliberately
 // independent from ingredient_status so a future ingredient-status change can't
 // silently affect recipes.
@@ -318,8 +310,14 @@ export const recipes = pgTable("recipes", {
   name: text("name").notNull(),
   description: text("description"),
   imageUrl: text("image_url"),
-  category: recipeCategoryEnum("category").notNull().default("makanan"),
-  categoryId: uuid("category_id").references(() => categories.id, { onDelete: "restrict" }),
+  // The categories table (managed on /categories) is the single source of
+  // truth for recipe categories. The legacy `recipe_category` pgEnum column
+  // was dropped in favor of this FK — the wizard dropdown, POS grouping, and
+  // recipe list all read the category name via this join, so a category
+  // created on /categories appears everywhere without an enum migration.
+  categoryId: uuid("category_id")
+    .notNull()
+    .references(() => categories.id, { onDelete: "restrict" }),
   isSubRecipe: boolean("is_sub_recipe").notNull().default(false),
   basePrice: integer("base_price").notNull(),
   totalCogs: integer("total_cogs").notNull().default(0),

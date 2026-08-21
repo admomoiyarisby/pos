@@ -286,7 +286,7 @@ export async function migrateMenuKasir(options: MenuKasirOptions = {}): Promise<
   let seq = options.dryRun ? 0 : await nextCodeSeq(client);
 
   const updates: { id: string; basePrice: number; totalCogs: number; isBOGO?: boolean }[] = [];
-  const inserts: RecipeInsert[] = [];
+  const inserts: { recipe: RecipeInsert; categoryCode: RecipeCategory }[] = [];
   const warnings: string[] = [];
 
   for (const sec of sections) {
@@ -303,16 +303,19 @@ export async function migrateMenuKasir(options: MenuKasirOptions = {}): Promise<
       } else {
         seq += 1;
         const code = `REC-${String(seq).padStart(3, "0")}`;
-        const category = classifySection(sec.section ?? "", item.canonicalName);
+        const categoryCode = classifySection(sec.section ?? "", item.canonicalName);
         inserts.push({
-          code,
-          name: item.canonicalName,
-          category,
-          isSubRecipe: false,
-          basePrice: item.price,
-          totalCogs: item.hpp,
-          isBOGO: item.isBOGO,
-          status: "Active",
+          recipe: {
+            code,
+            name: item.canonicalName,
+            categoryId: "", // resolved from categoryCode before insert
+            isSubRecipe: false,
+            basePrice: item.price,
+            totalCogs: item.hpp,
+            isBOGO: item.isBOGO,
+            status: "Active",
+          },
+          categoryCode,
         });
         recipeByName.set(item.canonicalName.toLowerCase(), { id: `dry-${code}`, code });
       }
@@ -330,13 +333,28 @@ export async function migrateMenuKasir(options: MenuKasirOptions = {}): Promise<
     }
     for (const i of inserts) {
       console.log(
-        `  + insert ${i.code}  ${i.name}  [${i.category}] basePrice=${i.basePrice} totalCogs=${i.totalCogs}${i.isBOGO ? " BOGO" : ""}`,
+        `  + insert ${i.recipe.code}  ${i.recipe.name}  [${i.categoryCode}] basePrice=${i.recipe.basePrice} totalCogs=${i.recipe.totalCogs}${i.recipe.isBOGO ? " BOGO" : ""}`,
       );
     }
     await client.end();
     return;
   }
 
+  // Resolve category ids by code so recipes can be inserted with the
+  // categoryId FK (the legacy recipe_category enum column was dropped).
+  const catRows = await client.query<{ id: string; code: string }>(
+    `SELECT id, code FROM categories`,
+  );
+  const categoryIdByCode = new Map(catRows.rows.map((r) => [r.code, r.id]));
+  for (const i of inserts) {
+    const id = categoryIdByCode.get(i.categoryCode);
+    if (!id) {
+      throw new Error(
+        `No categories row for code "${i.categoryCode}" (recipe ${i.recipe.code} ${i.recipe.name})`,
+      );
+    }
+    i.recipe.categoryId = id;
+  }
   try {
     await client.query("BEGIN");
     const db = drizzle(client, { schema });
@@ -348,7 +366,7 @@ export async function migrateMenuKasir(options: MenuKasirOptions = {}): Promise<
       if (u.isBOGO !== undefined) set.isBOGO = u.isBOGO;
       await db.update(schema.recipes).set(set).where(eq(schema.recipes.id, u.id));
     }
-    if (inserts.length > 0) await db.insert(schema.recipes).values(inserts);
+    if (inserts.length > 0) await db.insert(schema.recipes).values(inserts.map((i) => i.recipe));
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");

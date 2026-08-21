@@ -246,10 +246,16 @@ export async function migrateMenuShopeefood(options: MenuShopeefoodOptions = {})
 
     const recipeIdByName = new Map<string, string>();
     if (inserts.length > 0) {
+      // Resolve category ids by code so recipes can be inserted with the
+      // categoryId FK (the legacy recipe_category enum column was dropped).
+      const catRows = await client.query<{ id: string; code: string }>(
+        `SELECT id, code FROM categories`,
+      );
+      const categoryIdByCode = new Map(catRows.rows.map((r) => [r.code, r.id]));
       const recipeRows: (typeof schema.recipes.$inferInsert)[] = inserts.map((r) => ({
         code: r.code,
         name: r.name,
-        category: r.category,
+        categoryId: categoryIdByCode.get(r.category)!,
         isSubRecipe: false,
         basePrice: r.basePrice,
         totalCogs: r.totalCogs,
@@ -343,14 +349,19 @@ export async function migrateMenuShopeefood(options: MenuShopeefoodOptions = {})
       );
       for (const row of result.rows) existingLinks.set(row.recipe_id, row.recipe_id);
     }
-    const allRecipes = await client.query<{ id: string; category: RecipeCategory }>(
-      `SELECT id, category FROM recipes`,
+    // Attach Tambahan to all makanan/snack/add_ons recipes (not minuman).
+    // The legacy recipe_category enum column was dropped; read the category
+    // code via the categories join instead.
+    const allRecipes = await client.query<{ id: string; code: string }>(
+      `SELECT r.id, c.code FROM recipes r JOIN categories c ON c.id = r.category_id`,
     );
     const links: (typeof schema.recipeModifierGroups.$inferInsert)[] = [];
     for (const r of allRecipes.rows) {
       if (existingLinks.has(r.id)) continue;
-      const cat = r.category;
-      if (!TAMBAHAN_CATEGORIES.has(cat)) continue;
+      // SAFETY: r.code comes from the categories table, whose seeded rows
+      // carry exactly the RECIPE_CATEGORY_CODES values; TAMBAHAN_CATEGORIES
+      // is a subset of those codes.
+      if (!TAMBAHAN_CATEGORIES.has(r.code as RecipeCategory)) continue;
       links.push({ recipeId: r.id, modifierGroupId: groupId });
     }
     if (links.length > 0) {

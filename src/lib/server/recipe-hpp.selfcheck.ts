@@ -26,11 +26,20 @@ async function main() {
   if (m) process.env.DATABASE_URL = m[1].trim();
 
   const { db } = await import("#/lib/server/db");
-  const { recipes, recipeIngredients, ingredients } = await import("#/db/schema");
+  const { recipes, recipeIngredients, ingredients, categories } = await import("#/db/schema");
   const { recalculateRecipeCosts } = await import("#/lib/server/cost-rollup");
   const { eq, ilike } = await import("drizzle-orm");
 
   console.log("=== Recipe HPP regression self-check ===");
+
+  // Resolve a real category row so the categoryId FK is valid (the legacy
+  // recipe_category enum was dropped in favor of the categories FK).
+  const [cat] = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(eq(categories.code, "makanan"))
+    .limit(1);
+  if (!cat) throw new Error('seed category with code "makanan" not found');
 
   async function findIngredient(name: string) {
     const [ing] = await db
@@ -54,7 +63,7 @@ async function main() {
 
   const [recipe] = await db
     .insert(recipes)
-    .values({ code: "SELFCHECK-HPP", name: "SELFCHECK-HPP", category: "makanan", basePrice: 1000 })
+    .values({ code: "SELFCHECK-HPP", name: "SELFCHECK-HPP", categoryId: cat.id, basePrice: 1000 })
     .returning();
   await db.insert(recipeIngredients).values(bom.map((b) => ({ recipeId: recipe.id, ...b })));
 

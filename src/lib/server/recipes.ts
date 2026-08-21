@@ -43,7 +43,9 @@ const recipeInput = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),
   imageUrl: z.string().optional(),
-  category: z.enum(["makanan", "minuman", "snack", "add_ons", "paket_bundle"]),
+  // The categories table is the master; the wizard submits the category row's
+  // id (FK), not a legacy enum code. Replaces the dropped recipe_category enum.
+  categoryId: z.string().uuid(),
   isSubRecipe: z.boolean().default(false),
   basePrice: z.number().int().min(0),
   isBOGO: z.boolean().default(false),
@@ -98,7 +100,8 @@ export const getRecipes = createServerFn({ method: "GET" })
         name: recipes.name,
         description: recipes.description,
         imageUrl: recipes.imageUrl,
-        category: recipes.category,
+        categoryId: recipes.categoryId,
+        categoryName: categories.name,
         isSubRecipe: recipes.isSubRecipe,
         basePrice: recipes.basePrice,
         totalCogs: recipes.totalCogs,
@@ -106,6 +109,7 @@ export const getRecipes = createServerFn({ method: "GET" })
         status: recipes.status,
       })
       .from(recipes)
+      .leftJoin(categories, eq(recipes.categoryId, categories.id))
       .where(and(...whereConditions))
       .orderBy(data.search ? fuzzyRank(recipes.name, data.search) : recipes.name);
 
@@ -179,14 +183,22 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
     });
 
     const [recipe] = await db
-      .select()
+      .select({
+        recipe: recipes,
+        categoryName: categories.name,
+      })
       .from(recipes)
+      .leftJoin(categories, eq(recipes.categoryId, categories.id))
       // ADR-0009 mirror: a tombstoned (Deleted) recipe must not be viewable
       // even via a direct URL (restore is DB-only).
       .where(and(eq(recipes.id, data.id), ne(recipes.status, "Deleted"), branchClause))
       .limit(1);
 
     if (!recipe) return null;
+
+    // Flatten the joined shape so callers see `categoryName` alongside the
+    // recipe columns (mirrors getRecipes).
+    const recipeRow = { ...recipe.recipe, categoryName: recipe.categoryName };
 
     const [brandLinks, ingredientLinks, childLinks, modifierLinks, branchLinks] = await Promise.all(
       [
@@ -250,7 +262,7 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
     }));
 
     return {
-      ...recipe,
+      ...recipeRow,
       brands: brandLinks,
       ingredients: ingredientLinks,
       childRecipes: childLinks,
@@ -321,21 +333,6 @@ export const getRecipeInventory = createServerFn({ method: "GET" })
     }));
   });
 
-// The `categories` table (managed on /categories) is the source of truth for
-// category names; its seeded rows carry codes matching the legacy
-// recipe_category enum exactly. Resolve the category_id FK from the enum code
-// on every recipe write so recipes.category and recipes.category_id never
-// drift apart — the wizard dropdown is driven by the categories table, so the
-// enum value it submits must map back to the same category row on save.
-async function resolveCategoryId(code: string): Promise<string | null> {
-  const [cat] = await db
-    .select({ id: categories.id })
-    .from(categories)
-    .where(eq(categories.code, code))
-    .limit(1);
-  return cat?.id ?? null;
-}
-
 export const createRecipe = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof recipeInput>) => recipeInput.parse(data))
   .handler(async ({ data }) => {
@@ -349,8 +346,7 @@ export const createRecipe = createServerFn({ method: "POST" })
         name: data.name,
         description: data.description,
         imageUrl: data.imageUrl,
-        category: data.category,
-        categoryId: await resolveCategoryId(data.category),
+        categoryId: data.categoryId,
         isSubRecipe: data.isSubRecipe,
         basePrice: data.basePrice,
         isBOGO: data.isBOGO,
@@ -444,17 +440,6 @@ export const updateRecipe = createServerFn({ method: "POST" })
 
     // Fetch old recipe for audit
     const [old] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
-
-    // Keep recipes.category_id in sync with the enum the wizard submits: the
-    // dropdown resolves labels from the categories table, so the picked enum
-    // code must map back to the matching category row here.
-    if (recipeUpdates.category !== undefined) {
-      // SAFETY: recipeUpdates is a partial recipes row; categoryId is a real
-      // (nullable) column that simply isn't part of the input schema.
-      (recipeUpdates as { categoryId?: string | null }).categoryId = await resolveCategoryId(
-        recipeUpdates.category,
-      );
-    }
 
     // Update recipe base fields. `recipeUpdates` can legitimately be empty for
     // link-only partial saves (BOM-only or branch-only), so skip the UPDATE

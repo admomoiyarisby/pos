@@ -30,6 +30,7 @@ async function main() {
     inventory,
     ingredients,
     branches,
+    categories,
   } = schema;
   const { eq, and } = await import("drizzle-orm");
 
@@ -66,13 +67,22 @@ async function main() {
 
   console.log(`  ✓ Test ingredients: ${testIngredient1.name}, ${testIngredient2.name}`);
 
+  // Resolve a real category row so the categoryId FK is valid (the legacy
+  // recipe_category enum was dropped in favor of the categories FK).
+  const [cat] = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(eq(categories.code, "makanan"))
+    .limit(1);
+  if (!cat) throw new Error('seed category with code "makanan" not found');
+
   // 3. Create throwaway recipe with BOM
   const [recipe] = await db
     .insert(recipes)
     .values({
       code: "SELFCHECK-PROD",
       name: "SELFCHECK-PROD",
-      category: "makanan",
+      categoryId: cat.id,
       basePrice: 1000,
     })
     .returning();

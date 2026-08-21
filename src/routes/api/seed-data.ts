@@ -13,6 +13,7 @@ import {
   modifierGroups as modifierGroupsTable,
   modifiers as modifiersTable,
   modifierIngredients as modifierIngredientsTable,
+  categories as categoriesTable,
   recipes as recipesTable,
   recipeBranches as recipeBranchesTable,
   recipeBrands as recipeBrandsTable,
@@ -382,6 +383,10 @@ export async function seedDatabase() {
   }
 
   console.log("[seed] Seeding recipes...");
+  // Pre-resolve category ids by code so recipes can be inserted with the
+  // categoryId FK (the legacy recipe_category enum column was dropped).
+  const categoryRows = await db.select().from(categoriesTable);
+  const categoryIdByCode = new Map(categoryRows.map((c) => [c.code, c.id]));
   for (const r of RECIPES_DATA) {
     let recId: string | undefined;
     const existingRec = await findExisting<{ id: string }>(recipesTable, recipesTable.code, r.code);
@@ -394,7 +399,7 @@ export async function seedDatabase() {
         .values({
           code: r.code,
           name: r.name,
-          category: r.category,
+          categoryId: categoryIdByCode.get(r.category)!,
           isSubRecipe: r.isSubRecipe,
           basePrice: r.basePrice,
           isBOGO: r.isBOGO,

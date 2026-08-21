@@ -558,7 +558,7 @@ function ModifierGroupDetailPage() {
                         <tr key={recipe.id} className="border-b hover:bg-muted/30">
                           <td className="px-4 py-2 text-muted-foreground">{recipe.code}</td>
                           <td className="px-4 py-2 font-medium">{recipe.name}</td>
-                          <td className="px-4 py-2 capitalize">{recipe.category}</td>
+                          <td className="px-4 py-2">{recipe.categoryName ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -621,7 +621,7 @@ function ModifierGroupDetailPage() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{recipe.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {recipe.code} — {recipe.category}
+                            {recipe.code} — {recipe.categoryName ?? "—"}
                           </p>
                         </div>
                       </label>

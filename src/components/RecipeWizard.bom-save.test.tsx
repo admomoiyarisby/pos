@@ -57,7 +57,7 @@ function renderWizard(
       initialData={{
         code: "REC-TEST",
         name: "Test Menu",
-        category: "makanan",
+        categoryId: "cat-makanan",
         basePrice: 10000,
         brandIds: [],
         ingredients: [{ ingredientId: mockIngs[0].id, quantity: 2 }],
@@ -90,7 +90,7 @@ async function click(button: HTMLElement) {
 const stepZeroPatch = {
   code: "REC-TEST",
   name: "Test Menu",
-  category: "makanan",
+  categoryId: "cat-makanan",
   basePrice: 10000,
   brandIds: [],
 };
@@ -129,7 +129,7 @@ describe("RecipeWizard BOM save (edit mode)", () => {
         initialData={{
           code: "REC-TEST",
           name: "Test Menu",
-          category: "makanan",
+          categoryId: "cat-makanan",
           basePrice: 10000,
           brandIds: [],
           ingredients: [],

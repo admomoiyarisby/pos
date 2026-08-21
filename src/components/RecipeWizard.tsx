@@ -20,12 +20,12 @@ import {
 } from "lucide-react";
 
 // Types
-export type RecipeCategory = "makanan" | "minuman" | "snack" | "add_ons" | "paket_bundle";
-
 export interface WizardData {
   code: string;
   name: string;
-  category: RecipeCategory;
+  // The categories table is the master; the wizard submits the category row's
+  // id (FK), not a legacy enum code. Replaces the dropped recipe_category enum.
+  categoryId: string;
   basePrice: number;
   brandIds: string[];
   ingredients: { ingredientId: string; quantity: number }[];
@@ -134,7 +134,7 @@ export function RecipeWizard({
   const [currentStep, setCurrentStep] = useState(0);
   const [code, setCode] = useState(initialData?.code ?? "");
   const [name, setName] = useState(initialData?.name ?? "");
-  const [category, setCategory] = useState(initialData?.category ?? "makanan");
+  const [categoryId, setCategoryId] = useState(initialData?.categoryId ?? "");
   const [basePrice, setBasePrice] = useState(initialData?.basePrice ?? 0);
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>(initialData?.brandIds ?? []);
   const [ingredientSearch, setIngredientSearch] = useState("");
@@ -170,32 +170,21 @@ export function RecipeWizard({
   // Category options come from the `categories` table (managed on /categories)
   // — the DB is the single source of truth for category names, so the dropdown
   // stays in lockstep with what /categories shows. The select value is the
-  // legacy recipe_category enum code: the seeded categories' `code` column
-  // matches the enum exactly. Filter to enum codes so the wizard can never
-  // submit a value the enum column rejects (custom non-enum categories created
-  // on /categories stay groupable there but aren't recipe categories).
-  const RECIPE_CATEGORY_CODES: readonly RecipeCategory[] = [
-    "makanan",
-    "minuman",
-    "snack",
-    "add_ons",
-    "paket_bundle",
-  ];
+  // category row's id (FK on recipes.category_id); no enum allow-list, so a
+  // category created on /categories appears here immediately.
   const { data: allCategories } = useQuery({
     queryKey: ["categories"],
     queryFn: () => getCategories({}),
   });
-  // SAFETY: casting the literal codes to readonly string[] only widens the
-  // array type so it can be compared against the DB `code` column (a plain
-  // string); the runtime values are unchanged.
-  const categoryOptions = (allCategories ?? [])
-    .filter((c) => (RECIPE_CATEGORY_CODES as readonly string[]).includes(c.code))
-    .map((c) => ({ code: c.code, name: c.name }));
+  const categoryOptions = (allCategories ?? []).map((c) => ({ id: c.id, name: c.name }));
   // Always keep the currently-selected value selectable (edit mode, or the
   // brief frame before categories load) so the dropdown never goes blank.
-  const categoryChoices = categoryOptions.some((c) => c.code === category)
+  const categoryChoices = categoryOptions.some((c) => c.id === categoryId)
     ? categoryOptions
-    : [{ code: category, name: category }, ...categoryOptions];
+    : [
+        { id: categoryId, name: categoryOptions.find((c) => c.id === categoryId)?.name ?? "—" },
+        ...categoryOptions,
+      ];
 
   // Filter ingredients based on search
   const filteredIngredients = (allIngredients ?? []).filter((ing: IngredientOption) => {
@@ -215,7 +204,7 @@ export function RecipeWizard({
 
   const buildStepPatch = (): Partial<WizardData> =>
     currentStep === 0
-      ? { code, name, category, basePrice, brandIds: selectedBrandIds }
+      ? { code, name, categoryId, basePrice, brandIds: selectedBrandIds }
       : currentStep === 1
         ? {
             ingredients: enrichedSelectedIngredients.map((si) => ({
@@ -286,7 +275,7 @@ export function RecipeWizard({
     const data: WizardData = {
       code,
       name,
-      category,
+      categoryId,
       basePrice,
       brandIds: selectedBrandIds,
       ingredients: enrichedSelectedIngredients.map((si) => ({
@@ -412,17 +401,13 @@ export function RecipeWizard({
                   Kategori <span className="text-destructive">*</span>
                 </Label>
                 <select
-                  name="category"
-                  value={category}
-                  onChange={(e) =>
-                    // SAFETY: categoryChoices are filtered to exactly the five
-                    // recipe_category enum codes.
-                    setCategory(e.target.value as RecipeCategory)
-                  }
+                  name="categoryId"
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
                   className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   {categoryChoices.map((c) => (
-                    <option key={c.code} value={c.code}>
+                    <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
                   ))}

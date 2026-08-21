@@ -1,6 +1,5 @@
 import { createFileRoute, Link, useSearch, useNavigate } from "@tanstack/react-router";
 import { z } from "zod";
-import { lookupLabel } from "#/lib/label-lookup";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -24,7 +23,7 @@ interface RecipeRow {
   id: string;
   code: string;
   name: string;
-  category: string;
+  categoryName: string | null;
   isSubRecipe: boolean;
   basePrice: number;
   totalCogs: number;
@@ -34,14 +33,6 @@ interface RecipeRow {
   brands: { id: string; name: string | null }[];
   imageUrl?: string | null;
 }
-
-const catLabels = {
-  makanan: "Makanan",
-  minuman: "Minuman",
-  snack: "Snack",
-  add_ons: "Add-on",
-  paket_bundle: "Paket Bundle",
-} satisfies Record<string, string>;
 
 export const Route = createFileRoute("/_layout/recipes/")({
   component: RecipesPage,
@@ -136,9 +127,7 @@ function RecipesPage() {
       key: "category",
       header: "Kategori",
       sortable: true,
-      render: (r) => (
-        <Badge variant="secondary">{lookupLabel(catLabels, r.category) ?? r.category}</Badge>
-      ),
+      render: (r) => <Badge variant="secondary">{r.categoryName ?? "—"}</Badge>,
     },
     {
       key: "type",

@@ -12,6 +12,7 @@ import {
   modifierGroups as modifierGroupsTable,
   modifiers as modifiersTable,
   modifierIngredients as modifierIngredientsTable,
+  categories as categoriesTable,
   recipes as recipesTable,
   recipeBrands as recipeBrandsTable,
   recipeIngredients as recipeIngredientsTable,
@@ -375,6 +376,10 @@ export async function seedModifiers(idMap: IdMap) {
 // ──────────────────────────────────────────
 
 export async function seedRecipesPass1(idMap: IdMap) {
+  // Pre-resolve category ids by code so recipes can be inserted with the
+  // categoryId FK (the legacy recipe_category enum column was dropped).
+  const categoryRows = await db.select().from(categoriesTable);
+  const categoryIdByCode = new Map(categoryRows.map((c) => [c.code, c.id]));
   for (const r of RECIPES_DATA) {
     let recId = idMap.recipe.get(r.protoId);
     if (!recId) {
@@ -388,7 +393,7 @@ export async function seedRecipesPass1(idMap: IdMap) {
           .values({
             code: r.code,
             name: r.name,
-            category: r.category,
+            categoryId: categoryIdByCode.get(r.category)!,
             isSubRecipe: r.isSubRecipe,
             basePrice: r.basePrice,
             isBOGO: r.isBOGO,

@@ -283,7 +283,7 @@ function RecipeDetailPage() {
             </div>
             <div>
               <p className="text-muted-foreground mt-1">
-                {recipe.code} • {recipe.category}
+                {recipe.code} • {recipe.categoryName ?? "—"}
               </p>
             </div>
           </div>
@@ -356,7 +356,7 @@ function RecipeDetailPage() {
               initialData={{
                 code: recipe.code,
                 name: recipe.name,
-                category: recipe.category,
+                categoryId: recipe.categoryId,
                 basePrice: recipe.basePrice,
                 brandIds: recipe.brands?.map((b: any) => b.brandId) ?? [],
                 ingredients:
@@ -453,7 +453,7 @@ function RecipeDetailPage() {
                       <Tag className="h-3 w-3 inline mr-1" />
                       Kategori
                     </p>
-                    <p className="font-medium capitalize">{recipe.category}</p>
+                    <p className="font-medium">{recipe.categoryName ?? "—"}</p>
                   </div>
                   <div>
                     <Badge

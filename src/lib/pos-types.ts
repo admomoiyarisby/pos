@@ -41,8 +41,8 @@ export interface MenuItem {
   code: string;
   name: string;
   imageUrl: string | null;
-  category: string;
-  categoryId: string | null;
+  categoryName: string | null;
+  categoryId: string;
   basePrice: number;
   isBOGO: boolean;
   isStaffMeal: boolean;
