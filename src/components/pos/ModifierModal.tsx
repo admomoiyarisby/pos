@@ -94,8 +94,12 @@ export default function ModifierModal({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-xl border bg-card p-4 sm:p-6 shadow-lg max-h-[90vh] overflow-y-auto">
+    // Enter animation matches the app's shared Modal (tw-animate-css): backdrop
+    // fades, panel zooms from 95%. Exit is instant — the confirm button should
+    // respond immediately, and this overlay is conditionally mounted. Off
+    // entirely for prefers-reduced-motion.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in-0 duration-200 motion-reduce:animate-none">
+      <div className="w-full max-w-md rounded-xl border bg-card p-4 sm:p-6 shadow-lg max-h-[90vh] overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-200 ease-out motion-reduce:animate-none">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-lg font-bold">{item.name}</h2>

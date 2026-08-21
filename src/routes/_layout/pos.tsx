@@ -1308,7 +1308,10 @@ function PosPage() {
           </button>
 
           {mobileCartOpen && (
-            <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden safe-inset">
+            // Mobile drawer slides in from the right — a translate-based enter
+            // (cheap, matches the app's modal vocabulary). Exit is instant on
+            // the close/checkout actions. Off entirely for prefers-reduced-motion.
+            <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden safe-inset animate-in slide-in-from-right duration-200 ease-out motion-reduce:animate-none">
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <div className="flex items-center gap-2">
                   <ShoppingCart className="h-5 w-5" />

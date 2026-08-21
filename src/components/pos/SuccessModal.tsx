@@ -36,8 +36,11 @@ export default function SuccessModal({
 
   let o = order;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm rounded-lg border bg-card p-6 shadow-lg">
+    // Rare, high-emotion moment — a slightly longer, gentler entrance is the
+    // delight budget here. Matches the shared Modal vocabulary. Off entirely
+    // for prefers-reduced-motion.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in-0 duration-300 motion-reduce:animate-none">
+      <div className="w-full max-w-sm rounded-lg border bg-card p-6 shadow-lg animate-in fade-in-0 zoom-in-95 duration-300 ease-out motion-reduce:animate-none">
         <div className="text-center mb-4">
           <CheckCircle2 className="h-12 w-12 text-primary mx-auto mb-2" />
           <h2 className="text-lg font-bold">Transaksi Berhasil!</h2>

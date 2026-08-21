@@ -72,7 +72,14 @@ export default function CartSidebar({
           <ShoppingCart className="h-4 w-4" />
           <h2 className="font-semibold text-sm">Keranjang</h2>
           {cartCount > 0 && (
-            <Badge variant="secondary" className="ml-auto text-[10px]">
+            // Re-key on cartCount so every addition re-triggers the pulse;
+            // rapid adds retarget cleanly (CSS transition, not keyframes).
+            // Off entirely for prefers-reduced-motion.
+            <Badge
+              key={cartCount}
+              variant="secondary"
+              className="ml-auto text-[10px] animate-in zoom-in-125 duration-100 motion-reduce:animate-none"
+            >
               {cartCount}
             </Badge>
           )}
@@ -90,7 +97,13 @@ export default function CartSidebar({
         ) : (
           cart.map(function (item, idx) {
             return (
-              <div key={idx} className="rounded-md border p-2">
+              // Near-imperceptible enter for a newly added line (fires only on
+              // mount — index keys keep existing lines from re-animating on
+              // qty changes). Off entirely for prefers-reduced-motion.
+              <div
+                key={idx}
+                className="rounded-md border p-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-150 ease-out motion-reduce:animate-none"
+              >
                 <div className="flex items-start justify-between gap-1.5">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium leading-tight">{item.name}</p>
