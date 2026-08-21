@@ -81,15 +81,33 @@ function PosPage() {
   let dbCategories = loaderData.categories;
   let queryClient = useQueryClient();
 
+  // Category display hierarchy for the POS — controls both the filter tabs and
+  // the menu-grid section order (MenuGrid follows the tab order). Makanan and
+  // Minuman always lead, Add-Ons is second-to-last and Jatah Makan Staff last;
+  // any category not pinned here falls in the middle, alphabetically.
+  const CATEGORY_PRIORITY = new Map<string, number>([
+    ["makanan", 0],
+    ["minuman", 1],
+    ["add_ons", 100],
+    ["jatah_makan_staff", 101],
+  ]);
+  const CATEGORY_MIDDLE_RANK = 50;
+
   // Build the category tabs from ALL categories table rows (keyed by category
   // id), with an "all categories" tab prepended. Filtering runs on
   // recipes.category_id, so non-enum categories like "Jatah Makan Staff" work.
-  // getCategories() already orders rows by name.
   let categories = [
     { key: "", label: "Semua" },
-    ...dbCategories.map(function (c) {
-      return { key: c.id, label: c.name };
-    }),
+    ...[...dbCategories]
+      .sort(function (a, b) {
+        const ra = CATEGORY_PRIORITY.get(a.code) ?? CATEGORY_MIDDLE_RANK;
+        const rb = CATEGORY_PRIORITY.get(b.code) ?? CATEGORY_MIDDLE_RANK;
+        if (ra !== rb) return ra - rb;
+        return a.name.localeCompare(b.name);
+      })
+      .map(function (c) {
+        return { key: c.id, label: c.name };
+      }),
   ];
 
   let isAdmin = user?.role === "super_admin" || user?.role === "admin_pusat";
