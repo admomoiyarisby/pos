@@ -65,7 +65,7 @@ export default function CartSidebar({
   children,
 }: CartSidebarProps) {
   return (
-    <div className="hidden md:flex w-72 border-l bg-card flex-col">
+    <div className="hidden lg:flex w-72 xl:w-80 shrink-0 border-l bg-card flex-col overflow-hidden">
       {/* Header */}
       <div className="px-3 py-2 border-b shrink-0">
         <div className="flex items-center gap-2">
@@ -246,8 +246,8 @@ export default function CartSidebar({
           </div>
         </div>
 
-        {/* Payment — Dine-in only */}
-        {isDineIn && (
+        {/* Payment */}
+        {isDineIn ? (
           <select
             value={paymentMethod}
             onChange={function (e) {
@@ -259,6 +259,10 @@ export default function CartSidebar({
             <option value="QRIS">QRIS</option>
             <option value="Transfer">Transfer</option>
           </select>
+        ) : (
+          <div className="h-8 w-full rounded-md border bg-muted px-2 text-xs flex items-center text-muted-foreground">
+            Online Payment
+          </div>
         )}
 
         {/* Print Bill button */}

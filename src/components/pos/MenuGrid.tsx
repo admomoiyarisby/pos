@@ -191,8 +191,8 @@ export default function MenuGrid({
       </div>
 
       {/* Category + Search */}
-      <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center">
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
+      <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-start">
+        <div className="flex flex-wrap gap-1.5">
           {categories.map(function (cat) {
             return (
               <button
@@ -213,7 +213,7 @@ export default function MenuGrid({
             );
           })}
         </div>
-        <div className="relative flex-1 max-w-xs ml-auto">
+        <div className="relative flex-1 min-w-[200px] w-full sm:ml-auto sm:max-w-sm lg:max-w-[320px]">
           <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"

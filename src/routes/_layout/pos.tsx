@@ -26,7 +26,20 @@ import { getBranches } from "#/lib/server/branches";
 import { getVouchers } from "#/lib/server/vouchers";
 import { getInventory } from "#/lib/server/inventory";
 import { getCategories } from "#/lib/server/categories";
-import { ShoppingCart, Plus, Minus, X, TicketPercent, Percent, AlertCircle } from "lucide-react";
+import {
+  ShoppingCart,
+  Plus,
+  Minus,
+  X,
+  TicketPercent,
+  Percent,
+  AlertCircle,
+  History,
+  UtensilsCrossed,
+  Receipt,
+  Store,
+  Clock3,
+} from "lucide-react";
 import { usePageTitle } from "#/hooks/usePageTitle";
 
 import type { CartModifier, CartItem, MenuItem, Voucher, OrderResult } from "#/lib/pos-types";
@@ -192,6 +205,9 @@ function PosPage() {
   let _v = useState(false);
   let mobileCartOpen = _v[0];
   let setMobileCartOpen = _v[1];
+  let _w = useState<"menu" | "cart" | "history">("menu");
+  let mobileTab = _w[0];
+  let setMobileTab = _w[1];
   // PB1 rate from branch config
   let pb1Rate = 11;
   let activeBranch = allBranches.find(function (b) {
@@ -526,6 +542,18 @@ function PosPage() {
   let finalTotal = subtotalAfterDiscount + taxAmount;
   let isDineIn = channel === "Dine-in";
 
+  // Auto-select Online Payment for non Dine-In channels
+  useEffect(
+    function () {
+      if (!isDineIn && paymentMethod !== "Online Payment") {
+        setPaymentMethod("Online Payment");
+      } else if (isDineIn && paymentMethod === "Online Payment") {
+        setPaymentMethod("Cash");
+      }
+    },
+    [channel],
+  );
+
   let resetForm = useCallback(function () {
     setCart([]);
     setCustomerName("");
@@ -812,122 +840,658 @@ function PosPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "branch_admin"]}>
-      <div className="flex flex-col md:flex-row h-[calc(100vh-3rem)] h-[calc(100dvh-3rem)] -m-4 md:-m-6">
+      <div className="flex flex-1 min-h-0 flex-col lg:flex-row -m-4 md:-m-6 overflow-hidden">
         {/* Main Content */}
         <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden min-h-0">
-          {/* Top Bar */}
-          <div className="flex items-center gap-3 mb-4 shrink-0 flex-wrap">
-            {isAdmin ? (
+          {/* ── Compact Top Bar — branch as floating legend, channel + shift on one row ── */}
+          <div className="relative shrink-0 rounded-xl border bg-card px-3 pt-5 pb-2.5 md:px-4 md:pt-5 md:pb-2.5 mb-2.5 space-y-2.5">
+            {/* Branch — floating legend overlapping border */}
+            <div className="absolute -top-2.5 left-3 md:left-4 inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs font-medium shadow-sm max-w-[60%]">
+              <Store className="h-3 w-3 text-muted-foreground shrink-0" />
+              {isAdmin ? (
+                <select
+                  value={activeBranchId}
+                  onChange={function (e) {
+                    setActiveBranchId(e.target.value);
+                    setSelectedBrandId("");
+                    setSelectedCategory("");
+                    setSearchQuery("");
+                    setCart([]);
+                    setCheckoutError(null);
+                  }}
+                  className="h-5 bg-transparent border-0 p-0 pr-6 text-xs font-medium focus:ring-0 focus:outline-none min-w-0 truncate"
+                >
+                  {allBranches.map(function (b) {
+                    return (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    );
+                  })}
+                </select>
+              ) : (
+                <span className="truncate">{userBranch?.name ?? "Unknown"}</span>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <select
-                value={activeBranchId}
+                value={channel}
                 onChange={function (e) {
-                  setActiveBranchId(e.target.value);
-                  setSelectedBrandId("");
-                  setSelectedCategory("");
-                  setSearchQuery("");
-                  setCart([]);
+                  // SAFETY: select only renders ORDER_CHANNEL_VALUES options
+                  setChannel(e.target.value as (typeof ORDER_CHANNEL_VALUES)[number]);
                   setCheckoutError(null);
                 }}
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm font-medium"
+                className="h-8 flex-1 min-w-[140px] sm:flex-none sm:min-w-[160px] rounded-full border border-input bg-background px-3 text-sm font-medium"
               >
-                {allBranches.map(function (b) {
+                {channels.map(function (c) {
                   return (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
+                    <option key={c.key} value={c.key}>
+                      {c.label}
                     </option>
                   );
                 })}
               </select>
-            ) : (
-              <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 text-sm font-medium">
-                <span>{}</span>
-                {userBranch?.name ?? "Unknown"}
-              </div>
-            )}
-
-            <select
-              value={channel}
-              onChange={function (e) {
-                // SAFETY: the select only renders the ORDER_CHANNEL_VALUES
-                // options below, so the value is always one of them.
-                setChannel(e.target.value as (typeof ORDER_CHANNEL_VALUES)[number]);
-                setCheckoutError(null);
-              }}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            >
-              {channels.map(function (c) {
-                return (
-                  <option key={c.key} value={c.key}>
-                    {c.label}
-                  </option>
-                );
-              })}
-            </select>
-            {channel === "Dine-in" ? (
-              <input
-                placeholder="Nama Pelanggan"
-                value={customerName}
-                onChange={function (e) {
-                  setCustomerName(e.target.value);
-                }}
-                className="h-9 flex-1 max-w-full sm:max-w-xs rounded-md border border-input bg-background px-3 text-sm"
-              />
-            ) : (
-              <input
-                placeholder="Kode Order"
-                value={orderCode}
-                onChange={function (e) {
-                  setOrderCode(e.target.value);
-                }}
-                className="h-9 flex-1 max-w-full sm:max-w-xs rounded-md border border-input bg-background px-3 text-sm"
-              />
-            )}
-            <div className="ml-auto flex items-center gap-2">
+              {/* Shift — same row as channel, ml-auto pushes to right */}
               {activeShift ? (
-                <button
-                  onClick={function () {
-                    setShiftModal("close");
-                  }}
-                  className="h-9 px-3 rounded-md border text-sm text-muted-foreground hover:bg-muted"
-                >
-                  Tutup Shift
-                </button>
+                <span className="ml-auto inline-flex items-center gap-1 rounded-full border bg-emerald-500/10 border-emerald-500/20 p-1 pl-2.5">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Aktif
+                  </span>
+                  <button
+                    onClick={function () {
+                      setShiftModal("close");
+                    }}
+                    className="h-7 shrink-0 whitespace-nowrap rounded-full bg-card border px-3 text-xs font-medium hover:bg-muted"
+                  >
+                    Tutup
+                  </button>
+                </span>
               ) : (
                 <button
                   onClick={function () {
                     setShiftModal("open");
                   }}
-                  className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm"
+                  className="ml-auto inline-flex items-center gap-1.5 h-8 shrink-0 whitespace-nowrap rounded-full bg-primary text-primary-foreground px-3.5 text-xs font-medium shadow-sm"
                 >
+                  <Clock3 className="h-3 w-3" />
                   Buka Shift
                 </button>
               )}
             </div>
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <div className="relative flex-1 md:max-w-[360px]">
+                {channel === "Dine-in" ? (
+                  <input
+                    placeholder="Nama Pelanggan (opsional)"
+                    value={customerName}
+                    onChange={function (e) {
+                      setCustomerName(e.target.value);
+                    }}
+                    className="h-9 w-full rounded-full border border-input bg-background px-3.5 text-sm"
+                  />
+                ) : (
+                  <input
+                    placeholder="Kode Order (Gofood / Grab / Shopee...)"
+                    value={orderCode}
+                    onChange={function (e) {
+                      setOrderCode(e.target.value);
+                    }}
+                    className="h-9 w-full rounded-full border border-input bg-background px-3.5 text-sm"
+                  />
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Menu Grid — using extracted component */}
-          <MenuGrid
-            menuItems={menuItems}
-            onAddToCart={handleAddToCart}
-            getStockQuantity={getStockForItem}
-            cart={cart}
-            selectedBrandId={selectedBrandId}
-            selectedCategory={selectedCategory}
-            searchQuery={searchQuery}
-            onSearchChange={handleSearchChange}
-            onCategoryChange={handleCategoryChange}
-            onBrandChange={handleBrandChange}
-            categories={categories}
-            brands={brands}
-            cartTotal={cartTotal}
-            voucherDiscount={voucherDiscount}
-            taxAmount={taxAmount}
-            finalTotal={finalTotal}
-            ppnEnabled={ppnEnabled}
-            pb1Rate={pb1Rate}
-            channel={channel}
-            isDineIn={isDineIn}
-          />
+          {/* ── Desktop MenuGrid ── */}
+          <div className="hidden lg:block flex-1 overflow-y-auto min-h-0">
+            <MenuGrid
+              menuItems={menuItems}
+              onAddToCart={handleAddToCart}
+              getStockQuantity={getStockForItem}
+              cart={cart}
+              selectedBrandId={selectedBrandId}
+              selectedCategory={selectedCategory}
+              searchQuery={searchQuery}
+              onSearchChange={handleSearchChange}
+              onCategoryChange={handleCategoryChange}
+              onBrandChange={handleBrandChange}
+              categories={categories}
+              brands={brands}
+              cartTotal={cartTotal}
+              voucherDiscount={voucherDiscount}
+              taxAmount={taxAmount}
+              finalTotal={finalTotal}
+              ppnEnabled={ppnEnabled}
+              pb1Rate={pb1Rate}
+              channel={channel}
+              isDineIn={isDineIn}
+            />
+          </div>
+          {/* ── Mobile Tab Contents ── */}
+          <div className="flex lg:hidden flex-1 flex-col min-h-0 overflow-hidden">
+            {mobileTab === "menu" && (
+              <div className={"flex-1 overflow-y-auto " + (cartCount > 0 ? "pb-32" : "pb-20")}>
+                <MenuGrid
+                  menuItems={menuItems}
+                  onAddToCart={handleAddToCart}
+                  getStockQuantity={getStockForItem}
+                  cart={cart}
+                  selectedBrandId={selectedBrandId}
+                  selectedCategory={selectedCategory}
+                  searchQuery={searchQuery}
+                  onSearchChange={handleSearchChange}
+                  onCategoryChange={handleCategoryChange}
+                  onBrandChange={handleBrandChange}
+                  categories={categories}
+                  brands={brands}
+                  cartTotal={cartTotal}
+                  voucherDiscount={voucherDiscount}
+                  taxAmount={taxAmount}
+                  finalTotal={finalTotal}
+                  ppnEnabled={ppnEnabled}
+                  pb1Rate={pb1Rate}
+                  channel={channel}
+                  isDineIn={isDineIn}
+                />
+              </div>
+            )}
+            {mobileTab === "cart" && (
+              <div className="flex-1 overflow-y-auto space-y-3 p-1 pb-20">
+                {cart.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-3">
+                      <ShoppingCart className="h-7 w-7 text-muted-foreground/60" />
+                    </div>
+                    <p className="text-sm font-medium">Keranjang kosong</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Pilih menu untuk memulai pesanan
+                    </p>
+                    <button
+                      onClick={function () {
+                        setMobileTab("menu");
+                      }}
+                      className="mt-4 h-9 px-4 rounded-full bg-primary text-primary-foreground text-sm font-medium"
+                    >
+                      Lihat Menu
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      {cart.map(function (item, idx) {
+                        return (
+                          <div key={idx} className="rounded-xl border bg-card p-3 flex gap-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium leading-tight">{item.name}</p>
+                              {item.modifiers.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {item.modifiers.map(function (m, mi) {
+                                    return (
+                                      <span
+                                        key={mi}
+                                        className={
+                                          "text-[10px] px-1.5 py-0.5 rounded-full border " +
+                                          (m.isExclusion
+                                            ? "bg-destructive/10 text-destructive border-destructive/20"
+                                            : "bg-primary/10 text-primary border-primary/20")
+                                        }
+                                      >
+                                        {m.isExclusion ? "Tanpa " : ""}
+                                        {m.name}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {item.notes && (
+                                <p className="text-xs text-muted-foreground mt-1 italic line-clamp-2">
+                                  \u201C{item.notes}\u201D
+                                </p>
+                              )}
+                              <p className="text-sm font-semibold text-primary mt-1">
+                                Rp {(item.price * item.quantity).toLocaleString("id-ID")}
+                              </p>
+                            </div>
+                            <div className="flex flex-col items-end gap-2 shrink-0">
+                              <button
+                                onClick={function () {
+                                  removeItem(idx);
+                                }}
+                                className="h-7 w-7 rounded-full border flex items-center justify-center text-muted-foreground hover:text-destructive"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                              <div className="flex items-center gap-1 rounded-full border bg-muted/30 p-1">
+                                <button
+                                  onClick={function () {
+                                    updateQty(idx, -1);
+                                  }}
+                                  className="h-7 w-7 rounded-full bg-card border flex items-center justify-center shadow-sm"
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </button>
+                                <span
+                                  key={item.quantity}
+                                  className="w-7 text-center text-sm font-semibold"
+                                >
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  onClick={function () {
+                                    updateQty(idx, 1);
+                                  }}
+                                  className="h-7 w-7 rounded-full bg-card border flex items-center justify-center shadow-sm"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="rounded-xl border bg-card p-3 space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Catatan Order
+                      </label>
+                      <textarea
+                        value={orderNotes}
+                        onChange={function (e) {
+                          setOrderNotes(e.target.value);
+                        }}
+                        placeholder="Catatan untuk dapur / kasir..."
+                        className="w-full rounded-xl border bg-background px-3 py-2 text-sm min-h-[60px] resize-none"
+                      />
+                    </div>
+                    {allVouchers.length > 0 && (
+                      <div className="rounded-xl border bg-card p-3 space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                          <TicketPercent className="h-3.5 w-3.5" /> Voucher
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {allVouchers.map(function (v) {
+                            let meetsMinOrder = cartTotal >= v.minOrder;
+                            let isSelected = selectedVoucher?.id === v.id;
+                            return (
+                              <button
+                                key={v.id}
+                                onClick={function () {
+                                  toggleVoucher(v);
+                                }}
+                                disabled={!meetsMinOrder}
+                                className={
+                                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs " +
+                                  (isSelected
+                                    ? "border-primary bg-primary text-primary-foreground font-semibold"
+                                    : meetsMinOrder
+                                      ? "bg-card hover:border-primary/50"
+                                      : "opacity-40 cursor-not-allowed")
+                                }
+                              >
+                                <Percent className="h-3 w-3" />
+                                {v.code}
+                                <span
+                                  className={
+                                    isSelected
+                                      ? "text-primary-foreground/80"
+                                      : "text-muted-foreground"
+                                  }
+                                >
+                                  {v.discountType === "percentage"
+                                    ? "-" + v.discountValue + "%"
+                                    : "-Rp" + v.discountValue.toLocaleString("id-ID")}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div className="rounded-xl border bg-card p-3 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="font-medium">Rp {cartTotal.toLocaleString("id-ID")}</span>
+                      </div>
+                      {voucherDiscount > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Diskon</span>
+                          <span className="font-medium text-primary">
+                            -Rp {voucherDiscount.toLocaleString("id-ID")}
+                          </span>
+                        </div>
+                      )}
+                      {isDineIn && pb1Rate > 0 && (
+                        <label className="flex items-center justify-between py-1 cursor-pointer">
+                          <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              checked={ppnEnabled}
+                              onChange={function (e) {
+                                handlePpnToggle(e.target.checked);
+                              }}
+                              className="h-4 w-4 rounded border-input"
+                            />{" "}
+                            PB1 {pb1Rate}%
+                          </span>
+                          {taxAmount > 0 && (
+                            <span className="text-sm text-muted-foreground">
+                              +Rp {taxAmount.toLocaleString("id-ID")}
+                            </span>
+                          )}
+                        </label>
+                      )}
+                      <div className="flex justify-between text-base font-bold border-t pt-2">
+                        <span>Total</span>
+                        <span>Rp {finalTotal.toLocaleString("id-ID")}</span>
+                      </div>
+                      {isDineIn ? (
+                        <select
+                          value={paymentMethod}
+                          onChange={function (e) {
+                            handlePaymentMethodChange(e.target.value);
+                          }}
+                          className="h-9 w-full rounded-full border bg-background px-3 text-sm"
+                        >
+                          <option value="Cash">Cash / Tunai</option>
+                          <option value="QRIS">QRIS</option>
+                          <option value="Transfer">Transfer</option>
+                        </select>
+                      ) : (
+                        <div className="h-9 w-full rounded-full border bg-muted px-3 text-sm flex items-center text-muted-foreground">
+                          Online Payment
+                        </div>
+                      )}
+                      {cart.length > 0 && (
+                        <button
+                          onClick={function () {
+                            printBill({
+                              cartItems: cart,
+                              branchName: userBranch?.name ?? "Cabang",
+                              subtotal: cartTotal,
+                              voucherDiscount: voucherDiscount,
+                              taxAmount: taxAmount,
+                              finalTotal: finalTotal,
+                              customerName: customerName || undefined,
+                              orderCode: orderCode || undefined,
+                            });
+                          }}
+                          className="w-full h-9 rounded-full border border-dashed text-sm font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-1.5"
+                        >
+                          <Receipt className="h-3.5 w-3.5" /> Cetak Tagihan
+                        </button>
+                      )}
+                      <button
+                        onClick={handleCheckout}
+                        disabled={
+                          cart.length === 0 || !activeShift || createOrderMutation.isPending
+                        }
+                        className="w-full h-11 rounded-full bg-primary text-primary-foreground text-sm font-semibold shadow-sm disabled:opacity-50"
+                      >
+                        {createOrderMutation.isPending
+                          ? "Memproses..."
+                          : isDineIn
+                            ? "Bayar Rp " + finalTotal.toLocaleString("id-ID")
+                            : "Konfirmasi Pesanan"}
+                      </button>
+                      {!activeShift && (
+                        <p className="text-xs text-center text-destructive">
+                          Buka shift terlebih dahulu
+                        </p>
+                      )}
+                      {checkoutError && (
+                        <div className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                          <div className="flex-1">
+                            <p className="font-medium">Gagal</p>
+                            <p className="text-xs opacity-80">{checkoutError}</p>
+                          </div>
+                          <button
+                            onClick={function () {
+                              setCheckoutError(null);
+                            }}
+                            className="shrink-0"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                      {stockError && (
+                        <div className="rounded-xl bg-amber-500/10 p-3 text-sm text-amber-700 flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4" />
+                          <span className="flex-1">{stockError}</span>
+                          <button
+                            onClick={function () {
+                              setStockError(null);
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {mobileTab === "history" && (
+              <div className="flex-1 overflow-y-auto pb-20">
+                <div className="rounded-xl border bg-card overflow-hidden">
+                  <div className="px-3 py-2 border-b bg-muted/20 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                      <History className="h-4 w-4" /> Riwayat Pesanan
+                    </h3>
+                    <span className="text-xs text-muted-foreground">
+                      {recentOrders.length} pesanan
+                    </span>
+                  </div>
+                  <div className="divide-y max-h-[60vh] overflow-y-auto md:max-h-none">
+                    {recentOrders.length === 0 ? (
+                      <div className="py-12 text-center">
+                        <History className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+                        <p className="text-sm text-muted-foreground">Belum ada pesanan</p>
+                      </div>
+                    ) : (
+                      recentOrders.map(function (o) {
+                        const isVoid = o.status === "Void";
+                        const req = activeRequestsMap[o.id];
+                        const printStatus = req?.print?.status ?? null;
+                        const cancelStatus = req?.cancel?.status ?? null;
+                        const printState = canDirectPrint
+                          ? "direct"
+                          : isVoid
+                            ? "hidden"
+                            : printStatus === "Approved"
+                              ? "active"
+                              : printStatus === "Pending"
+                                ? "pending"
+                                : "neutral";
+                        const cancelState = isVoid
+                          ? "hidden"
+                          : cancelStatus === "Approved"
+                            ? "active"
+                            : cancelStatus === "Pending"
+                              ? "pending"
+                              : "neutral";
+                        return (
+                          <div key={o.id} className="flex items-center justify-between px-3 py-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded font-medium">
+                                  #{(o.id || "").slice(0, 6).toUpperCase()}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(o.createdAt).toLocaleTimeString("id-ID", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                                {isVoid && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive font-bold">
+                                    VOID
+                                  </span>
+                                )}
+                                {!isVoid && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full border text-muted-foreground">
+                                    {o.status}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1 truncate">
+                                {o.channel} • {o.orderCode || o.customerName || "-"}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                              <span className="text-sm font-semibold">
+                                Rp {o.totalAmount.toLocaleString("id-ID")}
+                              </span>
+                              {printState !== "hidden" && (
+                                <button
+                                  onClick={function () {
+                                    if (canDirectPrint) {
+                                      void printApprovedOrder(o.id);
+                                      return;
+                                    }
+                                    let rs = printStatus;
+                                    let rid = req?.print?.requestId;
+                                    if (rs === "Approved") {
+                                      if (rid)
+                                        void consumePrintMutation.mutateAsync({
+                                          data: { requestId: rid },
+                                        });
+                                      void printApprovedOrder(o.id);
+                                    } else if (!rs || rs === "Rejected") handleReprint(o.id);
+                                  }}
+                                  disabled={printState === "pending"}
+                                  className={
+                                    "h-8 w-8 inline-flex items-center justify-center rounded-full border " +
+                                    (printState === "direct" || printState === "active"
+                                      ? "bg-primary text-primary-foreground border-primary"
+                                      : printState === "pending"
+                                        ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
+                                        : "bg-card")
+                                  }
+                                >
+                                  <Receipt className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              {!canVoid && canRequestCancel && cancelState !== "hidden" && (
+                                <button
+                                  onClick={function () {
+                                    let cs = cancelStatus;
+                                    if (cs === "Approved" && req?.cancel?.requestId)
+                                      setVoidModal({
+                                        orderId: o.id,
+                                        reason: req?.cancel?.reason ?? "",
+                                        mode: "execute",
+                                        requestId: req.cancel.requestId,
+                                      });
+                                    else if (!cs || cs === "Rejected")
+                                      setVoidModal({ orderId: o.id, reason: "", mode: "request" });
+                                  }}
+                                  disabled={cancelState === "pending"}
+                                  className={
+                                    "h-8 px-2 inline-flex items-center justify-center rounded-full border text-xs font-medium " +
+                                    (cancelState === "active"
+                                      ? "bg-primary text-primary-foreground border-primary"
+                                      : cancelState === "pending"
+                                        ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
+                                        : "border-destructive/30 text-destructive")
+                                  }
+                                >
+                                  {cancelState === "pending"
+                                    ? "..."
+                                    : cancelState === "active"
+                                      ? "Batal"
+                                      : "Btl"}
+                                </button>
+                              )}
+                              {canVoid && !isVoid && (
+                                <button
+                                  onClick={function () {
+                                    setVoidModal({ orderId: o.id, reason: "" });
+                                  }}
+                                  className="h-8 w-8 inline-flex items-center justify-center rounded-full border text-destructive"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Mobile Tabs — floating, follows sidebar */}
+          <div className="fixed bottom-0 right-0 z-30 flex lg:hidden border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 p-2 pb-[max(8px,env(safe-area-inset-bottom))] left-0 md:left-[var(--sidebar-width)]">
+            <div className="inline-flex w-full p-1 bg-muted rounded-full gap-1">
+              <button
+                onClick={function () {
+                  setMobileTab("menu");
+                }}
+                aria-label="Menu"
+                title="Menu"
+                className={
+                  "flex-1 inline-flex items-center justify-center gap-1.5 rounded-full px-2 min-h-[44px] text-sm font-medium transition-colors " +
+                  (mobileTab === "menu"
+                    ? "bg-card shadow-sm text-foreground"
+                    : "text-muted-foreground")
+                }
+              >
+                <UtensilsCrossed className="h-4 w-4" />
+                <span className="sr-only">Menu</span>
+              </button>
+              <button
+                onClick={function () {
+                  setMobileTab("cart");
+                }}
+                aria-label={"Keranjang" + (cartCount > 0 ? " (" + cartCount + ")" : "")}
+                title="Keranjang"
+                className={
+                  "flex-1 inline-flex items-center justify-center gap-1.5 rounded-full px-2 min-h-[44px] text-sm font-medium transition-colors relative " +
+                  (mobileTab === "cart"
+                    ? "bg-card shadow-sm text-foreground"
+                    : "text-muted-foreground")
+                }
+              >
+                <ShoppingCart className="h-4 w-4" />
+                <span className="sr-only">Keranjang</span>
+                {cartCount > 0 && (
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-bold px-1">
+                    {cartCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={function () {
+                  setMobileTab("history");
+                }}
+                aria-label={
+                  "Riwayat" + (recentOrders.length > 0 ? " (" + recentOrders.length + ")" : "")
+                }
+                title="Riwayat"
+                className={
+                  "flex-1 inline-flex items-center justify-center gap-1.5 rounded-full px-2 min-h-[44px] text-sm font-medium transition-colors relative " +
+                  (mobileTab === "history"
+                    ? "bg-card shadow-sm text-foreground"
+                    : "text-muted-foreground")
+                }
+              >
+                <History className="h-4 w-4" />
+                <span className="sr-only">Riwayat</span>
+                {recentOrders.length > 0 && (
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted-foreground/10 text-muted-foreground text-[11px] font-bold px-1">
+                    {recentOrders.length}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Cart Sidebar — Desktop */}
@@ -1291,269 +1855,29 @@ function PosPage() {
         </div>
       </Modal>
 
-      {/* Mobile cart FAB */}
-      {cart.length > 0 && (
-        <>
+      {/* Mobile sticky cart bar — thumb-reach when browsing menu */}
+      {cartCount > 0 && mobileTab === "menu" && (
+        <div className="fixed bottom-[68px] left-3 right-3 z-30 flex items-center justify-between rounded-full bg-primary text-primary-foreground shadow-lg pl-3 pr-1.5 py-1.5 lg:hidden safe-inset">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
+              <ShoppingCart className="h-4 w-4" />
+            </span>
+            <div className="leading-tight">
+              <p className="text-sm font-semibold leading-none">{cartCount} item</p>
+              <p className="text-xs opacity-80 leading-none">
+                Rp {finalTotal.toLocaleString("id-ID")}
+              </p>
+            </div>
+          </div>
           <button
             onClick={function () {
-              setMobileCartOpen(true);
-              setCheckoutError(null);
+              setMobileTab("cart");
             }}
-            className="fixed bottom-6 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg md:hidden"
+            className="h-9 px-5 rounded-full bg-white text-primary text-sm font-semibold shadow-sm"
           >
-            <ShoppingCart className="h-6 w-6" />
-            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-[11px] font-bold text-destructive-foreground">
-              {cartCount}
-            </span>
+            Lihat
           </button>
-
-          {mobileCartOpen && (
-            // Mobile drawer slides in from the right — a translate-based enter
-            // (cheap, matches the app's modal vocabulary). Exit is instant on
-            // the close/checkout actions. Off entirely for prefers-reduced-motion.
-            <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden safe-inset animate-in slide-in-from-right duration-200 ease-out motion-reduce:animate-none">
-              <div className="flex items-center justify-between border-b px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <ShoppingCart className="h-5 w-5" />
-                  <h2 className="font-semibold">Keranjang</h2>
-                  <span className="text-sm text-muted-foreground">({cartCount} item)</span>
-                </div>
-                <button
-                  onClick={function () {
-                    setMobileCartOpen(false);
-                  }}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {cart.map(function (item, idx) {
-                  return (
-                    <div key={idx} className="rounded-lg border p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium">{item.name}</p>
-                          {item.modifiers.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {item.modifiers.map(function (m, mi) {
-                                return (
-                                  <span
-                                    key={mi}
-                                    className={
-                                      "text-[10px] px-1.5 py-0.5 rounded border " +
-                                      (m.isExclusion
-                                        ? "bg-destructive/10 text-destructive border-destructive/20"
-                                        : "bg-primary/10 text-primary border-primary/20")
-                                    }
-                                  >
-                                    {m.isExclusion ? "X " : ""}
-                                    {m.name}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {item.notes && (
-                            <p className="text-xs text-muted-foreground mt-1 italic">
-                              {"\u201C" + item.notes + "\u201D"}
-                            </p>
-                          )}
-                        </div>
-                        <button
-                          onClick={function () {
-                            removeItem(idx);
-                          }}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={function () {
-                              updateQty(idx, -1);
-                            }}
-                            className="h-7 w-7 rounded-md border flex items-center justify-center text-xs"
-                          >
-                            <Minus className="h-3 w-3" />
-                          </button>
-                          {/* Re-key on quantity so each +/- click pops the new
-                              value in (subtle, near-imperceptible). Off for
-                              reduced motion. */}
-                          <span
-                            key={item.quantity}
-                            className="w-8 text-center text-sm font-medium animate-in zoom-in-110 duration-100 motion-reduce:animate-none"
-                          >
-                            {item.quantity}
-                          </span>
-                          <button
-                            onClick={function () {
-                              updateQty(idx, 1);
-                            }}
-                            className="h-7 w-7 rounded-md border flex items-center justify-center text-xs"
-                          >
-                            <Plus className="h-3 w-3" />
-                          </button>
-                        </div>
-                        <p className="text-sm font-semibold">
-                          Rp {(item.price * item.quantity).toLocaleString("id-ID")}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Mobile checkout */}
-              <div className="border-t p-4 space-y-3">
-                <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">Catatan Order</label>
-                  <textarea
-                    value={orderNotes}
-                    onChange={function (e) {
-                      setOrderNotes(e.target.value);
-                    }}
-                    placeholder="Catatan untuk dapur / kasir..."
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[50px] resize-none"
-                  />
-                </div>
-
-                {allVouchers.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <TicketPercent className="h-3.5 w-3.5" />
-                      <span className="font-semibold">Voucher</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {allVouchers.map(function (v) {
-                        let meetsMinOrder = cartTotal >= v.minOrder;
-                        let isSelected = selectedVoucher?.id === v.id;
-                        return (
-                          <button
-                            key={v.id}
-                            onClick={function () {
-                              toggleVoucher(v);
-                            }}
-                            disabled={!meetsMinOrder}
-                            className={
-                              "flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs transition-all " +
-                              (isSelected
-                                ? "border-primary bg-primary/10 text-primary font-semibold"
-                                : meetsMinOrder
-                                  ? "hover:border-primary/50 hover:bg-muted"
-                                  : "opacity-40 cursor-not-allowed")
-                            }
-                          >
-                            <Percent className="h-3 w-3" />
-                            <span>{v.code}</span>
-                            <span className="text-muted-foreground">
-                              {v.discountType === "percentage"
-                                ? "-" + v.discountValue + "%"
-                                : "-Rp" + v.discountValue.toLocaleString("id-ID")}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="font-medium">Rp {cartTotal.toLocaleString("id-ID")}</span>
-                </div>
-
-                {voucherDiscount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Diskon ({selectedVoucher?.code})</span>
-                    <span className="font-medium text-primary">
-                      -Rp {voucherDiscount.toLocaleString("id-ID")}
-                    </span>
-                  </div>
-                )}
-
-                {isDineIn && pb1Rate > 0 && (
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={ppnEnabled}
-                        onChange={function (e) {
-                          setPpnEnabled(e.target.checked);
-                        }}
-                        className="h-4 w-4 rounded border-gray-300"
-                      />
-                      PB1 {pb1Rate}%
-                    </label>
-                    {taxAmount > 0 && (
-                      <span className="text-sm text-muted-foreground">
-                        +Rp {taxAmount.toLocaleString("id-ID")}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex justify-between text-sm font-bold border-t pt-2">
-                  <span>Total</span>
-                  <span>Rp {finalTotal.toLocaleString("id-ID")}</span>
-                </div>
-
-                {isDineIn && (
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Metode Pembayaran</label>
-                    <select
-                      value={paymentMethod}
-                      onChange={function (e) {
-                        setPaymentMethod(e.target.value);
-                      }}
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="Cash">Cash / Tunai</option>
-                      <option value="QRIS">QRIS</option>
-                      <option value="Transfer">Transfer</option>
-                    </select>
-                  </div>
-                )}
-
-                {checkoutError && (
-                  <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="font-medium">Gagal memproses transaksi</p>
-                      <p className="text-xs opacity-80">{checkoutError}</p>
-                    </div>
-                    <button
-                      onClick={function () {
-                        setCheckoutError(null);
-                      }}
-                      className="shrink-0 rounded-md p-0.5 hover:bg-destructive/20"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-
-                <button
-                  onClick={handleCheckout}
-                  disabled={cart.length === 0 || !activeShift || createOrderMutation.isPending}
-                  className="w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {createOrderMutation.isPending
-                    ? "Memproses..."
-                    : isDineIn
-                      ? "Bayar"
-                      : "Konfirmasi"}
-                </button>
-                {!activeShift && (
-                  <p className="text-xs text-center text-destructive">Buka shift terlebih dahulu</p>
-                )}
-              </div>
-            </div>
-          )}
-        </>
+        </div>
       )}
     </RoleGuard>
   );

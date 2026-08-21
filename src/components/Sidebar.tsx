@@ -40,7 +40,9 @@ interface SidebarProps {
   userRole: UserRole;
   userName?: string;
   mobileOpen: boolean;
+  collapsed?: boolean;
   onClose: () => void;
+  onToggleCollapse?: () => void;
 }
 
 const roleLabels = {
@@ -82,7 +84,12 @@ const navGroups: NavGroup[] = [
         icon: ShoppingCart,
         roles: ["super_admin", "branch_admin"],
       },
-      { label: "Riwayat Pemesanan", to: "/order-history", icon: History, roles: ["super_admin"] },
+      {
+        label: "Riwayat Pemesanan",
+        to: "/order-history",
+        icon: History,
+        roles: ["super_admin"],
+      },
       {
         label: "Cetak Ulang",
         to: "/print-requests",
@@ -266,8 +273,38 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-function SidebarItem({ item, active }: { item: NavItem; active: boolean }) {
+function SidebarItem({
+  item,
+  active,
+  collapsed,
+}: {
+  item: NavItem;
+  active: boolean;
+  collapsed?: boolean;
+}) {
   const Icon = item.icon;
+  if (collapsed) {
+    return (
+      <Link
+        to={item.to}
+        title={item.label}
+        aria-label={item.label}
+        className={
+          "flex h-9 w-9 items-center justify-center rounded-lg transition-colors mx-auto relative " +
+          (active
+            ? "bg-primary text-primary-foreground"
+            : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground")
+        }
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        {item.to === "/scm-procurements" ? (
+          <span className="absolute -right-1 -top-1">
+            <PengadaanCountBadge active={active} />
+          </span>
+        ) : null}
+      </Link>
+    );
+  }
   return (
     <Link
       to={item.to}
@@ -311,7 +348,15 @@ function PengadaanCountBadge({ active }: { active: boolean }) {
   );
 }
 
-function SidebarGroup({ group, userRole }: { group: NavGroup; userRole: UserRole }) {
+function SidebarGroup({
+  group,
+  userRole,
+  collapsed,
+}: {
+  group: NavGroup;
+  userRole: UserRole;
+  collapsed?: boolean;
+}) {
   const location = useLocation();
   const [open, setOpen] = useState(true);
 
@@ -320,6 +365,23 @@ function SidebarGroup({ group, userRole }: { group: NavGroup; userRole: UserRole
   const visibleItems = group.items.filter((item) => item.roles.includes(userRole));
 
   if (visibleItems.length === 0) return null;
+
+  if (collapsed) {
+    return (
+      <div className="px-1 py-2">
+        <div className="space-y-1">
+          {visibleItems.map((item) => (
+            <SidebarItem
+              key={item.to}
+              item={item}
+              active={location.pathname === item.to}
+              collapsed
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-3 py-2">
@@ -341,7 +403,14 @@ function SidebarGroup({ group, userRole }: { group: NavGroup; userRole: UserRole
   );
 }
 
-export default function Sidebar({ userRole, userName, mobileOpen, onClose }: SidebarProps) {
+export default function Sidebar({
+  userRole,
+  userName,
+  mobileOpen,
+  collapsed,
+  onClose,
+  onToggleCollapse,
+}: SidebarProps) {
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -429,40 +498,108 @@ export default function Sidebar({ userRole, userName, mobileOpen, onClose }: Sid
         </div>
       </aside>
 
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-64 flex-col border-r border-sidebar-border bg-sidebar">
-        <div className="flex h-14 items-center border-b border-sidebar-border px-4">
-          <Link to="/" className="flex items-center gap-2 font-semibold text-sidebar-foreground">
+      {/* Desktop sidebar — collapsible on every viewport */}
+      <aside
+        className={
+          "hidden md:flex fixed left-0 top-0 z-40 h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-200 " +
+          (collapsed ? "w-16" : "w-64")
+        }
+      >
+        <div
+          className={
+            "flex h-14 items-center border-b border-sidebar-border " +
+            (collapsed ? "justify-center px-2" : "px-4 justify-between")
+          }
+        >
+          <Link
+            to="/"
+            className={
+              "flex items-center gap-2 font-semibold text-sidebar-foreground " +
+              (collapsed ? "justify-center" : "")
+            }
+            title={collapsed ? "Omoiyari POS" : undefined}
+          >
             <img src={logoSrc} alt="Omoiyari POS" className="h-8 w-auto" />
-            Omoiyari POS
+            {!collapsed && <span>Omoiyari POS</span>}
           </Link>
+          {!collapsed && onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              className="hidden h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent md:inline-flex"
+              aria-label="Ciutkan sidebar"
+              title="Ciutkan sidebar"
+            >
+              <ChevronRight className="h-4 w-4 rotate-180" />
+            </button>
+          )}
         </div>
 
         {/* User info */}
-        <div className="border-b border-sidebar-border px-4 py-3">
-          <p className="text-sm font-medium text-sidebar-foreground truncate">
-            {userName || "User"}
-          </p>
-          <Badge variant="outline" className="mt-1 text-xs">
-            {roleLabels[userRole] || userRole}
-          </Badge>
+        <div
+          className={
+            "border-b border-sidebar-border " +
+            (collapsed ? "px-2 py-3 flex flex-col items-center gap-2" : "px-4 py-3")
+          }
+        >
+          {collapsed ? (
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold"
+              title={userName || userRole}
+            >
+              {(userName || "U").trim().charAt(0).toUpperCase()}
+            </div>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-sidebar-foreground truncate">
+                {userName || "User"}
+              </p>
+              <Badge variant="outline" className="mt-1 text-xs">
+                {roleLabels[userRole] || userRole}
+              </Badge>
+            </>
+          )}
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2">
           {navGroups.map((group) => (
-            <SidebarGroup key={group.label} group={group} userRole={userRole} />
+            <SidebarGroup
+              key={group.label}
+              group={group}
+              userRole={userRole}
+              collapsed={collapsed}
+            />
           ))}
         </nav>
 
-        <div className="border-t border-sidebar-border p-3">
+        <div
+          className={
+            "border-t border-sidebar-border " + (collapsed ? "p-2 space-y-1" : "p-3 space-y-1")
+          }
+        >
+          {collapsed && onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              className="flex h-9 w-9 mx-auto items-center justify-center rounded-lg text-sidebar-foreground hover:bg-sidebar-accent"
+              aria-label="Perluas sidebar"
+              title="Perluas sidebar"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          )}
           <button
-            onClick={() => {
+            onClick={function () {
               void handleSignOut();
             }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            className={
+              collapsed
+                ? "flex h-9 w-9 mx-auto items-center justify-center rounded-lg text-sidebar-foreground hover:bg-sidebar-accent"
+                : "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            }
+            title={collapsed ? "Keluar" : undefined}
+            aria-label="Keluar"
           >
             <LogOut className="h-4 w-4" />
-            Keluar
+            {!collapsed && "Keluar"}
           </button>
         </div>
       </aside>
