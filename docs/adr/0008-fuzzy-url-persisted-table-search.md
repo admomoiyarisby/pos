@@ -27,7 +27,8 @@ Accepted
 
 **D4 — URL mechanics**
 
-- **Shared `useTableSearch()` hook + merge-update (CHOSEN)** — uniform `?search=` param; writes via `navigate({ search: (prev) => ({ ...prev, search: value || undefined }), replace: true })` so sibling URL params (`status`, `negative`, `noInvestigation`) are preserved; empty string normalised to `undefined`; debounce ~250ms on server-backed pages only; scope = search term only (sort/page NOT persisted).
+- **Shared `useTableSearch()` hook + merge-update (CHOSEN)** — uniform `?search=` param; writes via `navigate({ search: (prev) => ({ ...prev, search: value || undefined }), replace: true })` so sibling URL params (`status`, `negative`, `noInvestigation`) are preserved; empty string normalised to `undefined`; debounce ~250ms on server-backed pages only.
+- **Scope extended: page + sort + filters are URL-persisted too (SUPERSEDES the original "search term only" scope)** — the shared `useTableUrlState()` hook persists `page`, `sortKey`/`sortDir`, and declared filter keys in the query string using the same merge-update + `replace: true` pattern. This restores the exact list view (page/sort/filter) when the operator returns from a detail page via the "Kembali" button, reloads, or shares a link. `DataTable` gained controlled `page`/`onPageChange`/`sort`/`onSortChange` props (backward compatible); detail pages use `useGoBackToList()` (history.back, falling back to the list route) so the prior list URL is restored. Routes with a strict `validateSearch` (e.g. `scm-procurements`, `scm-transfers`, `stock-transfers`) declare the extra keys so they survive validation.
 - _Inline boilerplate per page_ — repeats code and risks dropping sibling filters.
 
 **D5 — Client (Fuse.js) config**
@@ -41,6 +42,7 @@ Accepted
 
 ## Consequences
 
+- **D4 scope superseded.** The original decision persisted only the search term; page/sort/filters are now persisted as well via `useTableUrlState()`. This was driven by a client pain point: editing a row on page 3 and clicking "Kembali" landed on page 1. The expanded scope is strictly additive — `?search=` still behaves exactly as before.
 - **No in-scope table page currently hits the server for search.** Every `DataTable` list page loads all rows and filters client-side, so the table-page work is entirely Fuse.js + `useTableSearch()`. The `pg_trgm` migration and server-fn upgrades apply to the _server search functions_ (consumed by POS and future callers), not to table pages.
 - Pages that have a server search fn but filter client-side today (`recipes`, `ingredients`, `modifier-groups`) **stay client-side Fuse** per D2 — we do not flip them to server search.
 - Server fuzzy predicate is `(col ILIKE '%term%' OR similarity(col, term) > 0.3)` combined via `GREATEST`, so short/exact queries (e.g. voucher code `VC…`) still match by substring while typos get trigram tolerance; results order by that score.

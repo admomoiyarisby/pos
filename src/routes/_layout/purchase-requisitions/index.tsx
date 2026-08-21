@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useRef } from "react";
-import { searchStringParam } from "#/lib/utils";
 import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -33,6 +32,7 @@ import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { ArrowRight, Plus, Package, RefreshCw, Truck } from "lucide-react";
 
 interface PRRow {
@@ -64,6 +64,9 @@ export const Route = createFileRoute("/_layout/purchase-requisitions/")({
 
 function PRPage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort, filters } = useTableUrlState<{
+    status?: string;
+  }>(["status"]);
   const { user } = useAuth();
   const { prs: initial, ingredients, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -99,7 +102,7 @@ function PRPage() {
     initialData: initial,
   });
 
-  const statusFilter = searchStringParam(Route.useSearch(), "status");
+  const statusFilter = filters.status;
   const filteredPrs = statusFilter ? prs.filter((p) => p.status === statusFilter) : prs;
 
   const createMutation = useMutation({
@@ -314,6 +317,10 @@ function PRPage() {
         keyExtractor={(r) => r.id}
         search={search}
         onSearchChange={setSearch}
+        page={page}
+        onPageChange={setPage}
+        sort={sort}
+        onSortChange={setSort}
       />
 
       {/* Create PR Modal */}

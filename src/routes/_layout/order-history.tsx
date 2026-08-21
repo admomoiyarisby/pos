@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { lookupLabel } from "#/lib/label-lookup";
 import { badgeVariant, searchStringParam } from "#/lib/utils";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -103,6 +104,7 @@ export const Route = createFileRoute("/_layout/order-history")({
 
 function OrderHistoryPage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort } = useTableUrlState();
   const { orders: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
@@ -155,6 +157,10 @@ function OrderHistoryPage() {
         onRowClick={(r) => setSelectedOrder(r)}
         search={search}
         onSearchChange={setSearch}
+        page={page}
+        onPageChange={setPage}
+        sort={sort}
+        onSortChange={setSort}
       />
 
       <Modal open={!!selectedOrder} onClose={handleCloseModal} title="Detail Pesanan" size="lg">

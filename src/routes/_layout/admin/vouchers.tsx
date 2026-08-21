@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { formText } from "#/lib/utils";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -122,6 +123,7 @@ export const Route = createFileRoute("/_layout/admin/vouchers")({
 
 function VouchersPage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort } = useTableUrlState();
   const { vouchers: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -270,6 +272,10 @@ function VouchersPage() {
         emptyMessage="Belum ada voucher"
         search={search}
         onSearchChange={setSearch}
+        page={page}
+        onPageChange={setPage}
+        sort={sort}
+        onSortChange={setSort}
       />
 
       <Modal

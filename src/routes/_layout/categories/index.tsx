@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -64,6 +65,7 @@ export const Route = createFileRoute("/_layout/categories/")({
 
 function CategoriesPage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort } = useTableUrlState();
   const { categories: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -117,6 +119,10 @@ function CategoriesPage() {
         keyExtractor={(r) => r.id}
         search={search}
         onSearchChange={setSearch}
+        page={page}
+        onPageChange={setPage}
+        sort={sort}
+        onSortChange={setSort}
       />
 
       {/* Create Category Modal */}

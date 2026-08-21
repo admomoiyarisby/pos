@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { badgeVariant } from "#/lib/utils";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { lookupLabel } from "#/lib/label-lookup";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -44,18 +45,27 @@ export const Route = createFileRoute("/_layout/admin/audit-logs")({
 function AuditLogsPage() {
   const [search, setSearch] = useTableSearch();
   const { logs: initial } = Route.useLoaderData();
-  const [page, setPage] = useState(0);
   const [selectedLog, setSelectedLog] = useState<AuditRow | null>(null);
-  const [filters, setFilters] = useState({
-    tableName: "",
-    action: "",
-    dateFrom: "",
-    dateTo: "",
-  });
+  const { page, setPage, filters, setFilter } = useTableUrlState<{
+    tableName?: string;
+    action?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }>(["tableName", "action", "dateFrom", "dateTo"]);
 
   const { data: logs } = useQuery({
     queryKey: ["audit-logs", page, filters],
-    queryFn: () => getAuditLogs({ data: { ...filters, page, limit: 15 } }),
+    queryFn: () =>
+      getAuditLogs({
+        data: {
+          tableName: filters.tableName || undefined,
+          action: filters.action || undefined,
+          dateFrom: filters.dateFrom || undefined,
+          dateTo: filters.dateTo || undefined,
+          page,
+          limit: 15,
+        },
+      }),
     initialData: initial,
   });
 
@@ -118,13 +128,13 @@ function AuditLogsPage() {
         <div className="flex items-center gap-3">
           <input
             placeholder="Tabel..."
-            value={filters.tableName}
-            onChange={(e) => setFilters((p) => ({ ...p, tableName: e.target.value }))}
+            value={filters.tableName ?? ""}
+            onChange={(e) => setFilter("tableName", e.target.value)}
             className="h-9 w-32 rounded-md border border-input bg-background px-3 text-sm"
           />
           <select
-            value={filters.action}
-            onChange={(e) => setFilters((p) => ({ ...p, action: e.target.value }))}
+            value={filters.action ?? ""}
+            onChange={(e) => setFilter("action", e.target.value)}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="">Semua Aksi</option>
@@ -134,15 +144,15 @@ function AuditLogsPage() {
           </select>
           <input
             type="date"
-            value={filters.dateFrom}
-            onChange={(e) => setFilters((p) => ({ ...p, dateFrom: e.target.value }))}
+            value={filters.dateFrom ?? ""}
+            onChange={(e) => setFilter("dateFrom", e.target.value)}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           />
           <span className="text-muted-foreground">sampai</span>
           <input
             type="date"
-            value={filters.dateTo}
-            onChange={(e) => setFilters((p) => ({ ...p, dateTo: e.target.value }))}
+            value={filters.dateTo ?? ""}
+            onChange={(e) => setFilter("dateTo", e.target.value)}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           />
         </div>
@@ -152,23 +162,21 @@ function AuditLogsPage() {
           data={logs}
           keyExtractor={(r) => r.id}
           pageSize={15}
+          pagination={false}
           search={search}
           onSearchChange={setSearch}
         />
 
         <div className="flex items-center justify-between">
           <button
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            onClick={() => setPage(Math.max(0, page - 1))}
             disabled={page === 0}
             className="h-9 px-4 rounded-md border text-sm disabled:opacity-50"
           >
             Sebelumnya
           </button>
           <span className="text-sm text-muted-foreground">Halaman {page + 1}</span>
-          <button
-            onClick={() => setPage((p) => p + 1)}
-            className="h-9 px-4 rounded-md border text-sm"
-          >
+          <button onClick={() => setPage(page + 1)} className="h-9 px-4 rounded-md border text-sm">
             Berikutnya
           </button>
         </div>

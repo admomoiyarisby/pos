@@ -201,7 +201,17 @@ function NewProcurementPage() {
     <RoleGuard allowedRoles={["branch_admin", "super_admin"]}>
       <div className="space-y-4 p-4 md:p-6">
         <div className="flex justify-end">
-          <Link to="/scm-procurements" search={() => ({ status: undefined, search: undefined })}>
+          <Link
+            to="/scm-procurements"
+            search={(prev) => ({
+              ...prev,
+              status: undefined,
+              search: undefined,
+              page: prev.page,
+              sortKey: prev.sortKey,
+              sortDir: prev.sortDir,
+            })}
+          >
             <Button variant="ghost">
               <ArrowLeft className="h-4 w-4" />
               Kembali
@@ -325,7 +335,14 @@ function NewProcurementPage() {
             <div className="flex flex-wrap justify-end gap-2">
               <Link
                 to="/scm-procurements"
-                search={() => ({ status: undefined, search: undefined })}
+                search={(prev) => ({
+                  ...prev,
+                  status: undefined,
+                  search: undefined,
+                  page: prev.page,
+                  sortKey: prev.sortKey,
+                  sortDir: prev.sortDir,
+                })}
               >
                 <Button variant="ghost">Batalkan</Button>
               </Link>

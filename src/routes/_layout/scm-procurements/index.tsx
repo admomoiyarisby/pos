@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { z } from "zod";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useAuth } from "#/lib/auth-context";
@@ -20,6 +21,10 @@ export const Route = createFileRoute("/_layout/scm-procurements/")({
   validateSearch: (search: UnknownRecord) => ({
     status: z.enum(SCM_PROCUREMENT_STATUS_VALUES).optional().catch(undefined).parse(search.status),
     search: z.string().optional().catch(undefined).parse(search.search),
+    // URL-persisted table state (see useTableUrlState).
+    page: z.coerce.number().int().min(0).optional().catch(undefined).parse(search.page),
+    sortKey: z.string().optional().catch(undefined).parse(search.sortKey),
+    sortDir: z.enum(["asc", "desc"]).optional().catch(undefined).parse(search.sortDir),
   }),
   loaderDeps: ({ search: { status } }) => ({ status }),
   loader: async ({ deps: { status } }) => {
@@ -106,6 +111,7 @@ const FILTER_TABS: { key: FilterKey; label: string; annotation?: string }[] = [
 
 function ProcurementsListPage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort } = useTableUrlState();
   const { user } = useAuth();
   const { status: statusFilter } = Route.useSearch();
   const { initialRows } = Route.useLoaderData();
@@ -134,7 +140,11 @@ function ProcurementsListPage() {
 
   const setFilter = (next: FilterKey) => {
     void navigate({
-      search: { status: next === "all" ? undefined : next, search: undefined },
+      search: (prev) => ({
+        ...prev,
+        status: next === "all" ? undefined : next,
+        search: undefined,
+      }),
       replace: true,
     });
   };
@@ -311,6 +321,10 @@ function ProcurementsListPage() {
             searchKeys={["code"]}
             search={search}
             onSearchChange={setSearch}
+            page={page}
+            onPageChange={setPage}
+            sort={sort}
+            onSortChange={setSort}
           />
         )}
       </div>

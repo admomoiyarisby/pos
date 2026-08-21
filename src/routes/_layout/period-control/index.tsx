@@ -11,6 +11,7 @@ import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { ArrowRight, Lock, Unlock, AlertTriangle } from "lucide-react";
 
 interface PeriodRow {
@@ -33,6 +34,7 @@ export const Route = createFileRoute("/_layout/period-control/")({
 
 function PeriodControlPage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort } = useTableUrlState();
   const { periods: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [openModal, setOpenModal] = useState(false);
@@ -136,6 +138,10 @@ function PeriodControlPage() {
           keyExtractor={(r) => r.id}
           search={search}
           onSearchChange={setSearch}
+          page={page}
+          onPageChange={setPage}
+          sort={sort}
+          onSortChange={setSort}
         />
 
         {/* Open Period Modal */}

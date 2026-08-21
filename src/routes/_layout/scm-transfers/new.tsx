@@ -243,7 +243,17 @@ function NewMutasiPage() {
             type="button"
             variant="ghost"
             onClick={() =>
-              navigate({ to: "/scm-transfers", search: { status: undefined, search: undefined } })
+              navigate({
+                to: "/scm-transfers",
+                search: (prev) => ({
+                  ...prev,
+                  status: undefined,
+                  search: undefined,
+                  page: prev.page,
+                  sortKey: prev.sortKey,
+                  sortDir: prev.sortDir,
+                }),
+              })
             }
             className="gap-1"
           >
@@ -518,7 +528,17 @@ function NewMutasiPage() {
             type="button"
             variant="outline"
             onClick={() =>
-              navigate({ to: "/scm-transfers", search: { status: undefined, search: undefined } })
+              navigate({
+                to: "/scm-transfers",
+                search: (prev) => ({
+                  ...prev,
+                  status: undefined,
+                  search: undefined,
+                  page: prev.page,
+                  sortKey: prev.sortKey,
+                  sortDir: prev.sortDir,
+                }),
+              })
             }
             disabled={isSubmitting}
           >

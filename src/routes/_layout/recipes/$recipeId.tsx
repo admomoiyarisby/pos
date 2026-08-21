@@ -1,7 +1,8 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
+import { useGoBackToList } from "#/hooks/useGoBackToList";
 import {
   getRecipeDetail,
   updateRecipe,
@@ -56,6 +57,7 @@ function RecipeDetailPage() {
   const { recipeId } = Route.useParams();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const goBack = useGoBackToList("/recipes");
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
   const [isEditing, setIsEditing] = useState(false);
@@ -256,14 +258,15 @@ function RecipeDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="space-y-6">
-        {/* Back Navigation */}
-        <Link
-          to="/recipes"
+        {/* Back Navigation — restores the list page's URL-persisted page/sort/filter */}
+        <button
+          type="button"
+          onClick={goBack}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Kembali ke Daftar Menu
-        </Link>
+        </button>
 
         {/* Header with Actions */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

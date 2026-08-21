@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
-import { badgeVariant, searchStringParam } from "#/lib/utils";
+import { badgeVariant } from "#/lib/utils";
 import { lookupLabel } from "#/lib/label-lookup";
 import { formText } from "#/lib/utils";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -61,6 +62,10 @@ export const Route = createFileRoute("/_layout/stock-transfers/")({
   validateSearch: (search: UnknownRecord) => ({
     status: z.string().optional().catch(undefined).parse(search.status),
     search: z.string().optional().catch(undefined).parse(search.search),
+    // URL-persisted table state (see useTableUrlState).
+    page: z.coerce.number().int().min(0).optional().catch(undefined).parse(search.page),
+    sortKey: z.string().optional().catch(undefined).parse(search.sortKey),
+    sortDir: z.enum(["asc", "desc"]).optional().catch(undefined).parse(search.sortDir),
   }),
   component: TransferPage,
   loader: async () => {
@@ -73,6 +78,9 @@ export const Route = createFileRoute("/_layout/stock-transfers/")({
 
 function TransferPage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort, filters } = useTableUrlState<{
+    status?: string;
+  }>(["status"]);
   const { user } = useAuth();
   const { transfers: initial, branches, ingredients } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -89,7 +97,7 @@ function TransferPage() {
     initialData: initial,
   });
 
-  const statusFilter = searchStringParam(Route.useSearch(), "status");
+  const statusFilter = filters.status;
   const filteredTransfers = statusFilter
     ? transfers.filter((t) => t.status === statusFilter)
     : transfers;
@@ -327,7 +335,14 @@ function TransferPage() {
             (mirip Pengadaan). Buat mutasi baru di{" "}
             <Link
               to="/scm-transfers"
-              search={{ status: undefined, search: undefined }}
+              search={(prev) => ({
+                ...prev,
+                status: undefined,
+                search: undefined,
+                page: prev.page,
+                sortKey: prev.sortKey,
+                sortDir: prev.sortDir,
+              })}
               className="underline font-medium"
             >
               /scm-transfers
@@ -358,6 +373,10 @@ function TransferPage() {
         keyExtractor={(r) => r.id}
         search={search}
         onSearchChange={setSearch}
+        page={page}
+        onPageChange={setPage}
+        sort={sort}
+        onSortChange={setSort}
       />
 
       <Modal

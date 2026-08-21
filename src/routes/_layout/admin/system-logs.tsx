@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
-import { useState } from "react";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -35,8 +35,12 @@ export const Route = createFileRoute("/_layout/admin/system-logs")({
 function SystemLogsPage() {
   const [search, setSearch] = useTableSearch();
   const { logs: initial } = Route.useLoaderData();
-  const [page, setPage] = useState(0);
-  const [statusFilter, setStatusFilter] = useState<"" | "Success" | "Warning" | "Error">("");
+  const { page, setPage, filters, setFilter } = useTableUrlState<{
+    status?: string;
+  }>(["status"]);
+  // SAFETY: the status filter select only offers the four status literals, so
+  // a URL value is narrowed to that set (anything else falls back to "").
+  const statusFilter = (filters.status ?? "") as "" | "Success" | "Warning" | "Error";
 
   const { data: logs } = useQuery({
     queryKey: ["system-logs", page, statusFilter],
@@ -97,10 +101,7 @@ function SystemLogsPage() {
         <div className="flex items-center gap-3">
           <select
             value={statusFilter}
-            onChange={(e) =>
-              // SAFETY: the select only offers the four status options below.
-              setStatusFilter(e.target.value as "" | "Success" | "Warning" | "Error")
-            }
+            onChange={(e) => setFilter("status", e.target.value)}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="">Semua Status</option>
@@ -115,23 +116,21 @@ function SystemLogsPage() {
           data={logs}
           keyExtractor={(r) => r.id}
           pageSize={15}
+          pagination={false}
           search={search}
           onSearchChange={setSearch}
         />
 
         <div className="flex items-center justify-between">
           <button
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            onClick={() => setPage(Math.max(0, page - 1))}
             disabled={page === 0}
             className="h-9 px-4 rounded-md border text-sm disabled:opacity-50"
           >
             Sebelumnya
           </button>
           <span className="text-sm text-muted-foreground">Halaman {page + 1}</span>
-          <button
-            onClick={() => setPage((p) => p + 1)}
-            className="h-9 px-4 rounded-md border text-sm"
-          >
+          <button onClick={() => setPage(page + 1)} className="h-9 px-4 rounded-md border text-sm">
             Berikutnya
           </button>
         </div>

@@ -1,6 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { useState } from "react";
+import { useGoBackToList } from "#/hooks/useGoBackToList";
 import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/_layout/ingredients/$ingId")({
 function IngredientDetailPage() {
   const { ingredient: initial, branches } = Route.useLoaderData();
   const { ingId } = Route.useParams();
+  const goBack = useGoBackToList("/ingredients");
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>(initial?.branchIds ?? []);
@@ -88,13 +90,14 @@ function IngredientDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "central_kitchen"]}>
       <div className="space-y-6">
-        <Link
-          to="/ingredients"
+        <button
+          type="button"
+          onClick={goBack}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Kembali ke Daftar Bahan
-        </Link>
+        </button>
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

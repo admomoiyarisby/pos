@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { lookupLabel } from "#/lib/label-lookup";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -47,11 +48,20 @@ function formatRupiah(value: number): string {
 
 function SalesAdminPage() {
   const [search, setSearch] = useTableSearch();
+  const {
+    page,
+    setPage,
+    sort,
+    setSort,
+    filters: { dateFrom, dateTo, branchId, channel },
+    setFilter,
+  } = useTableUrlState<{
+    dateFrom?: string;
+    dateTo?: string;
+    branchId?: string;
+    channel?: string;
+  }>(["dateFrom", "dateTo", "branchId", "channel"]);
   const queryClient = useQueryClient();
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [branchId, setBranchId] = useState("");
-  const [channel, setChannel] = useState("");
   const [editModal, setEditModal] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<SalesRow | null>(null);
@@ -242,8 +252,8 @@ function SalesAdminPage() {
             <label className="text-xs font-medium text-muted-foreground">Dari</label>
             <input
               type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              value={dateFrom ?? ""}
+              onChange={(e) => setFilter("dateFrom", e.target.value)}
               className="h-8 rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
@@ -251,16 +261,16 @@ function SalesAdminPage() {
             <label className="text-xs font-medium text-muted-foreground">Sampai</label>
             <input
               type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              value={dateTo ?? ""}
+              onChange={(e) => setFilter("dateTo", e.target.value)}
               className="h-8 rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Cabang</label>
             <select
-              value={branchId}
-              onChange={(e) => setBranchId(e.target.value)}
+              value={branchId ?? ""}
+              onChange={(e) => setFilter("branchId", e.target.value)}
               className="h-8 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="">Semua</option>
@@ -274,8 +284,8 @@ function SalesAdminPage() {
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Channel</label>
             <select
-              value={channel}
-              onChange={(e) => setChannel(e.target.value)}
+              value={channel ?? ""}
+              onChange={(e) => setFilter("channel", e.target.value)}
               className="h-8 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="">Semua</option>
@@ -296,6 +306,10 @@ function SalesAdminPage() {
           pageSize={25}
           search={search}
           onSearchChange={setSearch}
+          page={page}
+          onPageChange={setPage}
+          sort={sort}
+          onSortChange={setSort}
         />
 
         {/* Edit Modal */}

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { lookupLabel } from "#/lib/label-lookup";
-import { badgeVariant, searchStringParam } from "#/lib/utils";
+import { badgeVariant } from "#/lib/utils";
 import { useState } from "react";
 import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -23,6 +23,7 @@ import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { ArrowRight, Truck, CheckCircle, DollarSign, AlertCircle } from "lucide-react";
 
 interface DNRow {
@@ -57,6 +58,9 @@ export const Route = createFileRoute("/_layout/delivery-notes/")({
 
 function DNPage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort, filters } = useTableUrlState<{
+    status?: string;
+  }>(["status"]);
   const { user } = useAuth();
   const { dns: initial, branches, ingredients } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -74,7 +78,7 @@ function DNPage() {
     initialData: initial,
   });
 
-  const statusFilter = searchStringParam(Route.useSearch(), "status");
+  const statusFilter = filters.status;
   const filteredDns = statusFilter ? dns.filter((d) => d.status === statusFilter) : dns;
 
   const createMutation = useMutation({
@@ -251,6 +255,10 @@ function DNPage() {
         keyExtractor={(r) => r.id}
         search={search}
         onSearchChange={setSearch}
+        page={page}
+        onPageChange={setPage}
+        sort={sort}
+        onSortChange={setSort}
       />
 
       {/* Review SJ Modal */}

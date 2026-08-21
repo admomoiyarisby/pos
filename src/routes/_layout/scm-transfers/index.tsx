@@ -3,6 +3,7 @@ import { badgeVariant } from "#/lib/utils";
 import { z } from "zod";
 import { lookupLabel } from "#/lib/label-lookup";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -24,6 +25,10 @@ export const Route = createFileRoute("/_layout/scm-transfers/")({
   validateSearch: (search: UnknownRecord) => ({
     status: z.enum(SCM_TRANSFER_STATUS_VALUES).optional().catch(undefined).parse(search.status),
     search: z.string().optional().catch(undefined).parse(search.search),
+    // URL-persisted table state (see useTableUrlState).
+    page: z.coerce.number().int().min(0).optional().catch(undefined).parse(search.page),
+    sortKey: z.string().optional().catch(undefined).parse(search.sortKey),
+    sortDir: z.enum(["asc", "desc"]).optional().catch(undefined).parse(search.sortDir),
   }),
   loaderDeps: ({ search: { status } }) => ({ status }),
   loader: async ({ deps: { status } }) => {
@@ -116,6 +121,7 @@ const FILTER_TABS: { key: FilterKey; label: string; annotation?: string }[] = [
 
 function TransfersListPage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort } = useTableUrlState();
   const { user } = useAuth();
   const { status: statusFilter } = Route.useSearch();
   const { initialRows, initialAllRows, initialBranches } = Route.useLoaderData();
@@ -148,7 +154,11 @@ function TransfersListPage() {
 
   const setFilter = (next: FilterKey) => {
     void navigate({
-      search: { status: next === "all" ? undefined : next, search: undefined },
+      search: (prev) => ({
+        ...prev,
+        status: next === "all" ? undefined : next,
+        search: undefined,
+      }),
       replace: true,
     });
   };
@@ -316,6 +326,10 @@ function TransfersListPage() {
           keyExtractor={(r) => r.id}
           search={search}
           onSearchChange={setSearch}
+          page={page}
+          onPageChange={setPage}
+          sort={sort}
+          onSortChange={setSort}
         />
       </div>
     </RoleGuard>

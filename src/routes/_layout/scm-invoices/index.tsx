@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { badgeVariant, searchStringParam } from "#/lib/utils";
+import { badgeVariant } from "#/lib/utils";
 import { useAuth } from "#/lib/auth-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -19,6 +19,7 @@ import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { ArrowRight, Printer } from "lucide-react";
 import { printSCMInvoice } from "#/lib/pos-print";
 
@@ -47,6 +48,9 @@ export const Route = createFileRoute("/_layout/scm-invoices/")({
 
 function SCMInvoicePage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort, filters } = useTableUrlState<{
+    status?: string;
+  }>(["status"]);
   const { user } = useAuth();
   const { invoices: initial, dns } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -59,7 +63,7 @@ function SCMInvoicePage() {
     initialData: initial,
   });
 
-  const statusFilter = searchStringParam(Route.useSearch(), "status");
+  const statusFilter = filters.status;
   const filteredInvoices = statusFilter
     ? invoices.filter((inv) => inv.status === statusFilter)
     : invoices;
@@ -193,6 +197,10 @@ function SCMInvoicePage() {
         keyExtractor={(r) => r.id}
         search={search}
         onSearchChange={setSearch}
+        page={page}
+        onPageChange={setPage}
+        sort={sort}
+        onSortChange={setSort}
       />
 
       <div

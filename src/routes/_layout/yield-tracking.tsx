@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { formText } from "#/lib/utils";
 import { useState, useMemo } from "react";
 import type { Dispatch, SetStateAction } from "react";
@@ -250,6 +251,7 @@ export const Route = createFileRoute("/_layout/yield-tracking")({
 
 function YieldTrackingPage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort } = useTableUrlState();
   const { conversions: initial, ingredients, branches } = Route.useLoaderData();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -502,6 +504,10 @@ function YieldTrackingPage() {
           pageSize={15}
           search={search}
           onSearchChange={setSearch}
+          page={page}
+          onPageChange={setPage}
+          sort={sort}
+          onSortChange={setSort}
         />
 
         <Modal

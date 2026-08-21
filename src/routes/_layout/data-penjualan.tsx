@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useCallback } from "react";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { lookupLabel } from "#/lib/label-lookup";
@@ -55,16 +56,25 @@ function DataPenjualanPage() {
   const queryClient = useQueryClient();
   const now = new Date();
 
-  // Filters
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  });
-  const [selectedBranchId, setSelectedBranchId] = useState<string>("");
-  const [selectedChannel, setSelectedChannel] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // Pagination
-  const [page, setPage] = useState(0);
+  // URL-persisted filters (month/branch/channel/search) + page so the exact
+  // list view survives reload and back-navigation. Defaults: current month,
+  // all branches, all channels.
+  const {
+    page,
+    setPage,
+    filters: { month, branchId: branchIdFilter, channel, q },
+    setFilter,
+  } = useTableUrlState<{
+    month?: string;
+    branchId?: string;
+    channel?: string;
+    q?: string;
+  }>(["month", "branchId", "channel", "q"]);
+  const selectedMonth =
+    month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const selectedBranchId = branchIdFilter ?? "";
+  const selectedChannel = channel ?? "all";
+  const searchQuery = q ?? "";
   const limit = 50;
 
   // Modal state
@@ -150,7 +160,7 @@ function DataPenjualanPage() {
             type="month"
             value={selectedMonth}
             onChange={(e) => {
-              setSelectedMonth(e.target.value);
+              setFilter("month", e.target.value);
               setPage(0);
             }}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
@@ -161,7 +171,7 @@ function DataPenjualanPage() {
           <select
             value={selectedBranchId}
             onChange={(e) => {
-              setSelectedBranchId(e.target.value);
+              setFilter("branchId", e.target.value);
               setPage(0);
             }}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
@@ -179,7 +189,7 @@ function DataPenjualanPage() {
           <select
             value={selectedChannel}
             onChange={(e) => {
-              setSelectedChannel(e.target.value);
+              setFilter("channel", e.target.value);
               setPage(0);
             }}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
@@ -199,7 +209,7 @@ function DataPenjualanPage() {
               type="text"
               placeholder="Kode order, nama, catatan…"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => setFilter("q", e.target.value)}
               className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm block"
             />
           </div>
@@ -302,7 +312,7 @@ function DataPenjualanPage() {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              onClick={() => setPage(Math.max(0, page - 1))}
               disabled={page === 0}
               className="h-9 px-3 rounded-md border text-sm disabled:opacity-50"
             >
@@ -310,7 +320,7 @@ function DataPenjualanPage() {
             </button>
             <button
               type="button"
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => setPage(page + 1)}
               disabled={(page + 1) * limit >= salesData.total}
               className="h-9 px-3 rounded-md border text-sm disabled:opacity-50"
             >

@@ -1,6 +1,6 @@
-import { createFileRoute, Link, useSearch, useNavigate } from "@tanstack/react-router";
-import { z } from "zod";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -46,20 +46,17 @@ export const Route = createFileRoute("/_layout/recipes/")({
 
 function RecipesPage() {
   const [search, setSearch] = useTableSearch();
-  // Status Filter (ADR 0008): read loosely from the URL like useTableSearch does,
-  // so we never declare a route-level search schema (which would force every
-  // /recipes Link to pass it). Absent = "All".
-  const urlSearch = useSearch({ strict: false });
-  const statusParam = urlSearch.status;
-  const statusFilter = z.enum(["Active", "Inactive", "All"]).catch("All").parse(statusParam);
-  const navigate = useNavigate();
+  // URL-persisted table state (page/sort/status) so returning from a recipe
+  // detail page restores exactly where the operator left off. Status filter is
+  // read loosely from the URL; absent = "All".
+  const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState<{
+    status?: string;
+  }>(["status"]);
+  const statusParam = filters.status;
+  const statusFilter = statusParam === "Active" || statusParam === "Inactive" ? statusParam : "All";
   const setStatusFilter = (next: string) => {
-    // SAFETY: the updater merges the existing search object with the new
-    // `status` key; navigate accepts the widened shape.
-    void navigate({
-      search: (prev) => ({ ...prev, status: next === "All" ? undefined : next }) as never,
-      replace: true,
-    });
+    setFilter("status", next === "All" ? undefined : next);
+    setPage(0);
   };
   const { recipes: initial, brands, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -236,6 +233,10 @@ function RecipesPage() {
         keyExtractor={(r) => r.id}
         search={search}
         onSearchChange={setSearch}
+        page={page}
+        onPageChange={setPage}
+        sort={sort}
+        onSortChange={setSort}
       />
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Tambah Menu" size="3xl">

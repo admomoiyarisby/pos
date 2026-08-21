@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
-import { searchStringParam } from "#/lib/utils";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -82,6 +82,9 @@ export const Route = createFileRoute("/_layout/stock-opname/")({
 
 function StockOpnamePage() {
   const [search, setSearch] = useTableSearch();
+  const { page, setPage, sort, setSort, filters } = useTableUrlState<{
+    status?: string;
+  }>(["status"]);
   const { user } = useAuth();
   const { opnames: initial, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -134,7 +137,7 @@ function StockOpnamePage() {
       data: { branchId: selectedBranch, date: selectedDate },
     });
   };
-  const statusFilter = searchStringParam(Route.useSearch(), "status");
+  const statusFilter = filters.status;
   const filteredOpnames = statusFilter ? opnames.filter((o) => o.status === statusFilter) : opnames;
   usePageTitle("Opname Stok", "Verifikasi fisik stok per cabang");
 
@@ -160,6 +163,10 @@ function StockOpnamePage() {
         keyExtractor={(r) => r.id}
         search={search}
         onSearchChange={setSearch}
+        page={page}
+        onPageChange={setPage}
+        sort={sort}
+        onSortChange={setSort}
       />
 
       {filteredOpnames.length === 0 && (

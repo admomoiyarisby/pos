@@ -42,6 +42,10 @@ interface DataTableProps<T> {
   search?: string;
   /** Called when the search input changes (controlled mode). */
   onSearchChange?: (value: string) => void;
+  /** External current page (controlled mode). When provided, the component uses it instead of internal state. */
+  page?: number;
+  /** Called when the page changes (controlled mode). Also called with 0 when search/sort change, so the URL page resets. */
+  onPageChange?: (page: number) => void;
 }
 
 export default function DataTable<T>({
@@ -59,15 +63,28 @@ export default function DataTable<T>({
   onSortChange,
   search: externalSearch,
   onSearchChange,
+  page: externalPage,
+  onPageChange,
   rowClassName,
   loading = false,
   loadingRows = 5,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(0);
+  const [internalPage, setInternalPage] = useState(0);
   const [internalSort, setInternalSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(
     defaultSort ?? null,
   );
+
+  // Controlled page: when `page` + `onPageChange` are provided the parent owns
+  // the page (e.g. URL-persisted via useTableUrlState); otherwise internal.
+  const page = externalPage !== undefined ? externalPage : internalPage;
+  const changePage = (next: number) => {
+    if (onPageChange) {
+      onPageChange(Math.max(0, next));
+    } else {
+      setInternalPage(Math.max(0, next));
+    }
+  };
 
   // Use external sort if provided, otherwise use internal sort
   const sort = externalSort !== undefined ? externalSort : internalSort;
@@ -148,6 +165,8 @@ export default function DataTable<T>({
     } else {
       setInternalSort(newSort);
     }
+    // Sorting changes the row order, so reset to the first page.
+    changePage(0);
   };
 
   const stickyClass = "sticky left-0 bg-background z-10 border-r border-border";
@@ -169,7 +188,7 @@ export default function DataTable<T>({
                 } else {
                   setSearch(next);
                 }
-                setPage(0);
+                changePage(0);
               }}
               aria-label="Cari data"
               className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -279,7 +298,7 @@ export default function DataTable<T>({
           </div>
           <div className="flex items-center gap-1 flex-wrap">
             <button
-              onClick={() => setPage(0)}
+              onClick={() => changePage(0)}
               disabled={currentPage === 0}
               aria-label="Halaman pertama"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
@@ -287,7 +306,7 @@ export default function DataTable<T>({
               <ChevronsLeft className="h-4 w-4" />
             </button>
             <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              onClick={() => changePage(currentPage - 1)}
               disabled={currentPage === 0}
               aria-label="Halaman sebelumnya"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
@@ -295,7 +314,7 @@ export default function DataTable<T>({
               <ChevronLeft className="h-4 w-4" />
             </button>
             <button
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              onClick={() => changePage(currentPage + 1)}
               disabled={currentPage >= totalPages - 1}
               aria-label="Halaman selanjutnya"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
@@ -303,7 +322,7 @@ export default function DataTable<T>({
               <ChevronRight className="h-4 w-4" />
             </button>
             <button
-              onClick={() => setPage(totalPages - 1)}
+              onClick={() => changePage(totalPages - 1)}
               disabled={currentPage >= totalPages - 1}
               aria-label="Halaman terakhir"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"

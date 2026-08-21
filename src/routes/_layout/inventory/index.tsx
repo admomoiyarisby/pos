@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
-import { searchStringParam } from "#/lib/utils";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { lookupLabel } from "#/lib/label-lookup";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -51,11 +51,19 @@ function InventoryPage() {
   const { user } = useAuth();
   const { inventory: initialData, total: initialTotal } = Route.useLoaderData();
   const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
-  const [category, setCategory] = useState<"Fresh" | "Dry" | "Packaging" | "">("");
-  const [branchId, setBranchId] = useState("");
-  const [locationType, setLocationType] = useState<"" | "Central" | "Outlet">("");
-  const [page, setPage] = useState(0);
-  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
+  const {
+    page,
+    setPage,
+    sort,
+    setSort,
+    filters: { category, branchId, locationType, negative },
+    setFilter,
+  } = useTableUrlState<{
+    category?: string;
+    branchId?: string;
+    locationType?: string;
+    negative?: string;
+  }>(["category", "branchId", "locationType", "negative"]);
   const pageSize = 25;
 
   const { data: branches } = useQuery({
@@ -66,8 +74,7 @@ function InventoryPage() {
   const canFilterBranches =
     user?.role === "super_admin" || user?.role === "admin_pusat" || user?.role === "area_manager";
 
-  const negativeParam = searchStringParam(Route.useSearch(), "negative");
-  const negativeFilter = negativeParam === "true";
+  const negativeFilter = negative === "true";
 
   const { data: result } = useQuery({
     queryKey: [
@@ -84,9 +91,12 @@ function InventoryPage() {
       getInventory({
         data: {
           search: committedSearch || undefined,
-          category: category || null,
+          // SAFETY: the category/location filter controls only offer the
+          // declared literals.
+          category: (category || null) as "Fresh" | "Dry" | "Packaging" | null,
           branchId: branchId || undefined,
-          locationType: locationType || null,
+          // SAFETY: the location filter only offers Central/Outlet.
+          locationType: (locationType || null) as "Central" | "Outlet" | null,
           page,
           limit: pageSize,
           negative: negativeFilter || undefined,
@@ -207,9 +217,9 @@ function InventoryPage() {
       <div className="flex flex-wrap items-center gap-3 mb-4">
         {canFilterBranches && branches && (
           <select
-            value={branchId}
+            value={branchId ?? ""}
             onChange={(e) => {
-              setBranchId(e.target.value);
+              setFilter("branchId", e.target.value);
               setPage(0);
             }}
             className="h-8 rounded-md border border-input bg-background px-3 text-sm"
@@ -228,7 +238,7 @@ function InventoryPage() {
               <button
                 key={loc || "all-loc"}
                 onClick={() => {
-                  setLocationType(loc);
+                  setFilter("locationType", loc);
                   setPage(0);
                 }}
                 className={`h-8 px-3 rounded-md text-xs font-medium transition-colors ${locationType === loc ? "bg-secondary text-secondary-foreground" : "border hover:bg-muted"}`}
@@ -242,7 +252,10 @@ function InventoryPage() {
           {(["", "Fresh", "Dry", "Packaging"] as const).map((cat) => (
             <button
               key={cat || "all"}
-              onClick={() => setCategory(cat)}
+              onClick={() => {
+                setFilter("category", cat);
+                setPage(0);
+              }}
               className={`h-8 px-3 rounded-md text-xs font-medium transition-colors ${category === cat ? "bg-secondary text-secondary-foreground" : "border hover:bg-muted"}`}
             >
               {cat || "Semua"}
@@ -299,7 +312,7 @@ function InventoryPage() {
           <span>{total} item</span>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              onClick={() => setPage(Math.max(0, page - 1))}
               disabled={page === 0}
               className="h-7 px-2 rounded border disabled:opacity-30 hover:bg-muted"
             >
@@ -309,7 +322,7 @@ function InventoryPage() {
               Halaman {page + 1} dari {totalPages}
             </span>
             <button
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
               disabled={page >= totalPages - 1}
               className="h-7 px-2 rounded border disabled:opacity-30 hover:bg-muted"
             >
@@ -331,7 +344,7 @@ function InventoryPage() {
       <CleanSlateModal
         open={cleanSlateOpen}
         onClose={() => setCleanSlateOpen(false)}
-        branchId={branchId}
+        branchId={branchId ?? ""}
         branchName={branchId ? branchName : "SEMUA CABANG"}
       />
     </RoleGuard>

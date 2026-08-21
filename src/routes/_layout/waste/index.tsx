@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { useTableSearch } from "#/hooks/useTableSearch";
-import { searchStringParam } from "#/lib/utils";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { formText } from "#/lib/utils";
 import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -84,46 +84,53 @@ function WastePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [ingredientError, setIngredientError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<
-    "Beban Makan" | "Biaya Operasional" | "Spoiled" | "Denda" | null
-  >(null);
   const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
+  // URL-persisted table state: filters (category / date range / sort / neg)
+  // plus page, so returning to this page restores the exact list view.
+  const {
+    page,
+    setPage,
+    filters: { category, dateFrom, dateTo, sortBy, sortDir, noInvestigation },
+    setFilter,
+  } = useTableUrlState<{
+    category?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    sortBy?: string;
+    sortDir?: string;
+    noInvestigation?: string;
+  }>(["category", "dateFrom", "dateTo", "sortBy", "sortDir", "noInvestigation"]);
   const [investigationModalOpen, setInvestigationModalOpen] = useState(false);
   const [investigationEntryId, setInvestigationEntryId] = useState<string | null>(null);
   const [investigationNoteText, setInvestigationNoteText] = useState("");
   const [investigationError, setInvestigationError] = useState<string | null>(null);
 
-  // Date range state (default: 26th prev month to 25th current month)
-  const [dateFrom, setDateFrom] = useState(() => {
-    const now = new Date();
-    const currentDay = now.getDate();
-    // If before 26th, range is 26th prev month to 25th current month
-    // If on or after 26th, range is 26th current month to 25th next month
-    if (currentDay < 26) {
-      const from = new Date(now.getFullYear(), now.getMonth() - 1, 26);
-      return formatLocalDate(from);
-    } else {
-      const from = new Date(now.getFullYear(), now.getMonth(), 26);
-      return formatLocalDate(from);
-    }
-  });
-  const [dateTo, setDateTo] = useState(() => {
+  // Default date range (26th prev month to 25th current month) used when the
+  // URL carries no explicit dateFrom/dateTo.
+  const defaultRange = useMemo(() => {
     const now = new Date();
     const currentDay = now.getDate();
     if (currentDay < 26) {
-      const to = new Date(now.getFullYear(), now.getMonth(), 25);
-      return formatLocalDate(to);
-    } else {
-      const to = new Date(now.getFullYear(), now.getMonth() + 1, 25);
-      return formatLocalDate(to);
+      return {
+        from: formatLocalDate(new Date(now.getFullYear(), now.getMonth() - 1, 26)),
+        to: formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 25)),
+      };
     }
-  });
+    return {
+      from: formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 26)),
+      to: formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 25)),
+    };
+  }, []);
+  const effectiveDateFrom = dateFrom ?? defaultRange.from;
+  const effectiveDateTo = dateTo ?? defaultRange.to;
 
   const [showStaffField, setShowStaffField] = useState(false);
 
-  // Sort state
-  const [sortBy, setSortBy] = useState<"date" | "category">("date");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Sort state (default: date, descending).
+  // SAFETY: the sort controls only offer "date"/"category" and "asc"/"desc".
+  const effectiveSortBy = (sortBy ?? "date") as "date" | "category";
+  // SAFETY: same — only two directions are offered in the UI.
+  const effectiveSortDir = (sortDir ?? "desc") as "asc" | "desc";
 
   const filteredBranches = useMemo(() => {
     if (user?.role === "area_manager" && user.assignedBranches?.length) {
@@ -201,18 +208,17 @@ function WastePage() {
   const [ingredientInputValue, setIngredientInputValue] = useState("");
 
   const { data: entries } = useQuery({
-    queryKey: ["waste-entries", selectedCategory, committedSearch],
+    queryKey: ["waste-entries", category, committedSearch],
     queryFn: () =>
       getWasteEntries({
         data: {
-          category: selectedCategory,
+          // SAFETY: the category filter select only offers the four literals.
+          category: (category || null) as WasteRow["category"] | null,
           search: committedSearch || undefined,
         },
       }),
     initialData: initial,
   });
-
-  const noInvestigation = searchStringParam(Route.useSearch(), "noInvestigation");
 
   // Filter and sort entries
   const filteredEntries = useMemo(() => {
@@ -224,10 +230,10 @@ function WastePage() {
     }
 
     // Filter by date range
-    if (dateFrom && dateTo) {
-      const from = new Date(dateFrom);
+    if (effectiveDateFrom && effectiveDateTo) {
+      const from = new Date(effectiveDateFrom);
       from.setHours(0, 0, 0, 0);
-      const to = new Date(dateTo);
+      const to = new Date(effectiveDateTo);
       to.setHours(23, 59, 59, 999);
       result = result.filter((e) => {
         const entryDate = new Date(e.createdAt);
@@ -238,16 +244,23 @@ function WastePage() {
     // Sort
     result = [...result].sort((a, b) => {
       let cmp = 0;
-      if (sortBy === "date") {
+      if (effectiveSortBy === "date") {
         cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      } else if (sortBy === "category") {
+      } else if (effectiveSortBy === "category") {
         cmp = a.category.localeCompare(b.category);
       }
-      return sortDir === "asc" ? cmp : -cmp;
+      return effectiveSortDir === "asc" ? cmp : -cmp;
     });
 
     return result;
-  }, [entries, noInvestigation, dateFrom, dateTo, sortBy, sortDir]);
+  }, [
+    entries,
+    noInvestigation,
+    effectiveDateFrom,
+    effectiveDateTo,
+    effectiveSortBy,
+    effectiveSortDir,
+  ]);
 
   const createMutation = useMutation({
     mutationFn: createWasteEntry,
@@ -489,7 +502,7 @@ function WastePage() {
                 </div>
               </div>
               <div className="text-xs text-muted-foreground">
-                Periode: {dateFrom} — {dateTo}
+                Periode: {effectiveDateFrom} — {effectiveDateTo}
               </div>
             </div>
           </div>
@@ -501,31 +514,30 @@ function WastePage() {
         <div className="flex gap-2 sm:col-span-2 lg:col-span-1">
           <input
             type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            value={effectiveDateFrom}
+            onChange={(e) => {
+              setFilter("dateFrom", e.target.value);
+              setPage(0);
+            }}
             className="h-11 md:h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
           />
           <span className="flex items-center text-muted-foreground text-sm">—</span>
           <input
             type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            value={effectiveDateTo}
+            onChange={(e) => {
+              setFilter("dateTo", e.target.value);
+              setPage(0);
+            }}
             className="h-11 md:h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
           />
         </div>
         <select
-          value={selectedCategory ?? ""}
-          onChange={(e) =>
-            // SAFETY: the category select only offers the four literals below.
-            setSelectedCategory(
-              (e.target.value || null) as
-                | "Beban Makan"
-                | "Biaya Operasional"
-                | "Spoiled"
-                | "Denda"
-                | null,
-            )
-          }
+          value={category ?? ""}
+          onChange={(e) => {
+            setFilter("category", e.target.value);
+            setPage(0);
+          }}
           className="h-11 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="">Semua Kategori</option>
@@ -536,11 +548,11 @@ function WastePage() {
         </select>
         <div className="flex gap-2">
           <select
-            value={sortBy}
-            onChange={(e) =>
-              // SAFETY: the sort select only offers "date" and "category".
-              setSortBy(e.target.value as "date" | "category")
-            }
+            value={effectiveSortBy}
+            onChange={(e) => {
+              setFilter("sortBy", e.target.value);
+              setPage(0);
+            }}
             className="h-11 md:h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="date">Urut: Tanggal</option>
@@ -548,11 +560,14 @@ function WastePage() {
           </select>
           <button
             type="button"
-            onClick={() => setSortDir(sortDir === "asc" ? "desc" : "asc")}
+            onClick={() => {
+              setFilter("sortDir", effectiveSortDir === "asc" ? "desc" : "asc");
+              setPage(0);
+            }}
             className="h-11 md:h-9 w-11 md:w-9 rounded-md border flex items-center justify-center hover:bg-muted transition-colors"
-            title={sortDir === "asc" ? "Ascending" : "Descending"}
+            title={effectiveSortDir === "asc" ? "Ascending" : "Descending"}
           >
-            {sortDir === "asc" ? "↑" : "↓"}
+            {effectiveSortDir === "asc" ? "↑" : "↓"}
           </button>
         </div>
         <div className="relative sm:col-span-2 lg:col-span-1">
@@ -573,6 +588,8 @@ function WastePage() {
         data={filteredEntries}
         keyExtractor={(r) => r.id}
         pageSize={15}
+        page={page}
+        onPageChange={setPage}
         rowClassName={(r) => {
           const currentInv = r.currentInventoryQty ?? 0;
           const wastePercentage =

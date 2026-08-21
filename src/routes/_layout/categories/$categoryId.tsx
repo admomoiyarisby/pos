@@ -1,5 +1,6 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { useGoBackToList } from "#/hooks/useGoBackToList";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -34,7 +35,7 @@ function CategoryDetailPage() {
   const { categoryId } = Route.useParams();
   const { recipes: initialRecipes, categories } = Route.useLoaderData();
   const queryClient = useQueryClient();
-  const router = useRouter();
+  const goBack = useGoBackToList("/categories");
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [selectedRecipeIds, setSelectedRecipeIds] = useState<string[]>([]);
   const [originalRecipeIds, setOriginalRecipeIds] = useState<string[]>([]);
@@ -78,7 +79,7 @@ function CategoryDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["recipes"] });
       setDeleteModalOpen(false);
       toast.success("Kategori berhasil dihapus");
-      void router.navigate({ to: "/categories" });
+      goBack();
     },
     onError: (error: Error) => {
       toast.error("Gagal menghapus kategori", { description: error.message });
@@ -107,13 +108,14 @@ function CategoryDetailPage() {
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       <div className="space-y-6">
         {/* Back Navigation */}
-        <Link
-          to="/categories"
+        <button
+          type="button"
+          onClick={goBack}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Kembali ke Daftar Kategori
-        </Link>
+        </button>
 
         {/* Header */}
         <div className="flex items-center justify-between">

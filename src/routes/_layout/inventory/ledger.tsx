@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
-import { useState } from "react";
+import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -38,8 +38,10 @@ function LedgerPage() {
   const [search, setSearch] = useTableSearch();
   const { ledger: initial } = Route.useLoaderData();
   const user = useAuth().user;
-  const [page, setPage] = useState(0);
-  const [branchId, setBranchId] = useState("");
+  const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState<{
+    branchId?: string;
+  }>(["branchId"]);
+  const branchId = filters.branchId ?? "";
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -144,7 +146,7 @@ function LedgerPage() {
           <select
             value={branchId}
             onChange={(e) => {
-              setBranchId(e.target.value);
+              setFilter("branchId", e.target.value);
               setPage(0);
             }}
             className="h-8 rounded-md border border-input bg-background px-3 text-sm"
@@ -164,23 +166,25 @@ function LedgerPage() {
         data={ledger}
         keyExtractor={(r) => r.id}
         pageSize={15}
+        pagination={false}
         search={search}
         onSearchChange={setSearch}
+        page={page}
+        onPageChange={setPage}
+        sort={sort}
+        onSortChange={setSort}
       />
 
       <div className="flex items-center justify-between mt-4">
         <button
-          onClick={() => setPage((p) => Math.max(0, p - 1))}
+          onClick={() => setPage(Math.max(0, page - 1))}
           disabled={page === 0}
           className="h-9 px-4 rounded-md border text-sm disabled:opacity-50"
         >
           Sebelumnya
         </button>
         <span className="text-sm text-muted-foreground">Halaman {page + 1}</span>
-        <button
-          onClick={() => setPage((p) => p + 1)}
-          className="h-9 px-4 rounded-md border text-sm"
-        >
+        <button onClick={() => setPage(page + 1)} className="h-9 px-4 rounded-md border text-sm">
           Berikutnya
         </button>
       </div>
