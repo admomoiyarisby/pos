@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -22,6 +22,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -43,6 +44,11 @@ import {
 import { X, Plus, Pencil, Trash2, Link2, GripVertical, Search, ArrowLeft } from "lucide-react";
 
 interface ModifierFormInput {
+  // Stable local key for dnd-kit identity. For existing modifiers this is the
+  // DB id; for newly-added rows it's a synthetic `new-${n}` so drag tracking
+  // survives a blank name field (unlike keying on `name`, which collides on
+  // duplicates and breaks the moment the field is cleared).
+  key: string;
   name: string;
   price: number;
   isExclusion: boolean;
@@ -135,6 +141,76 @@ export const Route = createFileRoute("/_layout/modifier-groups/$mgId")({
   },
 });
 
+// A thin full-width separator row rendered between table rows during a
+// view-mode drag. Signals where the dragged modifier will land on drop.
+function DropIndicatorRow() {
+  return (
+    <tr>
+      <td colSpan={5} className="p-0">
+        <div className="h-0.5 w-full bg-primary rounded-full" />
+      </td>
+    </tr>
+  );
+}
+
+// A single drag-and-drop sortable row in the view-mode modifier table. Keyed
+// by the modifier's DB id (stable across renames) so dnd-kit tracks identity
+// correctly and the server reorder payload always references real ids.
+function SortableModifierRow({ mod }: { mod: any }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: mod.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <tr ref={setNodeRef} style={style} className="border-b hover:bg-muted/30">
+      <td className="w-8 px-2 py-2">
+        <button
+          type="button"
+          className="cursor-grab touch-none text-muted-foreground hover:text-foreground inline-flex items-center"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </td>
+      <td className="px-4 py-2">{mod.name}</td>
+      <td className="px-4 py-2 text-right">
+        {mod.price > 0 ? `Rp ${mod.price.toLocaleString("id-ID")}` : "—"}
+      </td>
+      <td className="px-4 py-2 text-center">
+        {mod.isExclusion ? (
+          <Badge variant="destructive" className="text-[10px]">
+            Exclusion
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-[10px]">
+            Regular
+          </Badge>
+        )}
+      </td>
+      <td className="px-4 py-2 text-xs text-muted-foreground">
+        {mod.ingredients?.length > 0 ? (
+          <div className="ml-4 pl-4 border-l-2 border-border space-y-0.5">
+            {mod.ingredients.map((mi: any) => (
+              <div key={mi.id}>
+                {mi.ingredientId} × {mi.quantity}
+              </div>
+            ))}
+          </div>
+        ) : (
+          "—"
+        )}
+      </td>
+    </tr>
+  );
+}
+
 function ModifierGroupDetailPage() {
   const { group: initial } = Route.useLoaderData();
   const { mgId } = Route.useParams();
@@ -153,11 +229,17 @@ function ModifierGroupDetailPage() {
 
   const [modifiersInput, setModifiersInput] = useState<ModifierFormInput[]>([]);
 
+  // Tracks the active drag and the row being hovered for the view-mode
+  // table's drop-indicator line. Cleared on drop / cancel.
+  const [viewDragOverId, setViewDragOverId] = useState<string | null>(null);
+  const [viewDragActiveId, setViewDragActiveId] = useState<string | null>(null);
+
   // Reset form when entering edit mode
   const startEditing = () => {
     if (group) {
       setModifiersInput(
         group.modifiers.map((m: any) => ({
+          key: m.id,
           name: m.name,
           price: m.price,
           isExclusion: m.isExclusion,
@@ -256,6 +338,9 @@ function ModifierGroupDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["modifier-groups"] });
     },
     onError: (error: Error) => {
+      // Roll back to server truth: invalidate the query so the cache refetches
+      // and the optimistic reorder we wrote is discarded if it diverged.
+      void queryClient.invalidateQueries({ queryKey: ["modifier-group", mgId] });
       toast.error("Gagal mengurutkan opsi", { description: error.message });
     },
   });
@@ -264,8 +349,8 @@ function ModifierGroupDetailPage() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = modifiersInput.findIndex((m) => m.name === active.id);
-    const newIndex = modifiersInput.findIndex((m) => m.name === over.id);
+    const oldIndex = modifiersInput.findIndex((m) => m.key === active.id);
+    const newIndex = modifiersInput.findIndex((m) => m.key === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
     const reordered = arrayMove(modifiersInput, oldIndex, newIndex);
@@ -274,8 +359,8 @@ function ModifierGroupDetailPage() {
     // Persist reorder to server immediately
     if (!group) return;
     // Build the reordered ID list by matching names in the new order
-    const nameToId = Object.fromEntries(group.modifiers.map((m: any) => [m.name, m.id]));
-    const orderedIds = reordered.filter((m) => nameToId[m.name]).map((m) => nameToId[m.name]);
+    const nameToId = Object.fromEntries(group.modifiers.map((m: any) => [m.id, m.id]));
+    const orderedIds = reordered.filter((m) => nameToId[m.key]).map((m) => nameToId[m.key]);
     if (orderedIds.length > 0) {
       void reorderMutation.mutateAsync({
         data: {
@@ -284,6 +369,51 @@ function ModifierGroupDetailPage() {
         },
       });
     }
+  };
+
+  // View-mode drag-and-drop: reorders the live modifier rows directly. Keyed
+  // by modifier id (stable), so the payload sent to reorderModifiers is the
+  // real DB id list in the new order. The cache is updated optimistically
+  // before the server round-trip so the row snaps to its new position
+  // instantly; onSuccess refetches to confirm, onError refetches to roll back.
+  const handleViewDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !group) return;
+
+    const oldIndex = group.modifiers.findIndex((m: any) => m.id === active.id);
+    const newIndex = group.modifiers.findIndex((m: any) => m.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(group.modifiers, oldIndex, newIndex);
+    const orderedIds = reordered.map((m: any) => m.id);
+
+    // Optimistic update: write the reordered array into the React Query cache
+    // immediately so dnd-kit's dropped row stays at its new position without
+    // waiting for the server. The query key matches the useQuery above.
+    queryClient.setQueryData(["modifier-group", mgId], {
+      ...group,
+      modifiers: reordered,
+    });
+
+    void reorderMutation.mutateAsync({
+      data: {
+        modifierGroupId: mgId,
+        modifierIds: orderedIds,
+      },
+    });
+  };
+
+  // Track the hovered row during a view-mode drag so the drop-indicator line
+  // can render above it. Cleared on drop and on cancel (e.g. Escape).
+  const handleViewDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    setViewDragActiveId(String(active.id));
+    setViewDragOverId(over ? String(over.id) : null);
+  };
+
+  const clearViewDrag = () => {
+    setViewDragActiveId(null);
+    setViewDragOverId(null);
   };
 
   const openLinkModal = () => {
@@ -406,6 +536,7 @@ function ModifierGroupDetailPage() {
                     setModifiersInput([
                       ...modifiersInput,
                       {
+                        key: `new-${Date.now()}-${modifiersInput.length}`,
                         name: "",
                         price: 0,
                         isExclusion: false,
@@ -425,13 +556,13 @@ function ModifierGroupDetailPage() {
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext
-                  items={modifiersInput.map((m) => m.name)}
+                  items={modifiersInput.map((m) => m.key)}
                   strategy={verticalListSortingStrategy}
                 >
                   {modifiersInput.map((mod, i) => (
                     <SortableCard
-                      key={mod.name || `new-${i}`}
-                      id={mod.name || `new-${i}`}
+                      key={mod.key}
+                      id={mod.key}
                       mod={mod}
                       index={i}
                       canRemove={modifiersInput.length > 1}
@@ -476,56 +607,59 @@ function ModifierGroupDetailPage() {
             <Separator />
 
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold">Opsi Modifier</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Opsi Modifier</h2>
+                {group.modifiers.length > 1 && (
+                  <span className="text-xs text-muted-foreground">
+                    Seret untuk mengurutkan — urutan ini dipakai di POS
+                  </span>
+                )}
+              </div>
               {group.modifiers.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Tidak ada opsi</p>
               ) : (
-                <div className="rounded-md border overflow-x-auto">
-                  <table className="w-full text-sm min-w-[480px]">
-                    <thead className="border-b bg-muted/50">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-medium">Nama Opsi</th>
-                        <th className="px-4 py-2 text-right font-medium">Harga Pengantar</th>
-                        <th className="px-4 py-2 text-center font-medium">Exclusion</th>
-                        <th className="px-4 py-2 text-left font-medium">Bahan Baku</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.modifiers.map((mod: any) => (
-                        <tr key={mod.id} className="border-b">
-                          <td className="px-4 py-2">{mod.name}</td>
-                          <td className="px-4 py-2 text-right">
-                            {mod.price > 0 ? `Rp ${mod.price.toLocaleString("id-ID")}` : "—"}
-                          </td>
-                          <td className="px-4 py-2 text-center">
-                            {mod.isExclusion ? (
-                              <Badge variant="destructive" className="text-[10px]">
-                                Exclusion
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-[10px]">
-                                Regular
-                              </Badge>
-                            )}
-                          </td>
-                          <td className="px-4 py-2 text-xs text-muted-foreground">
-                            {mod.ingredients?.length > 0 ? (
-                              <div className="ml-4 pl-4 border-l-2 border-border space-y-0.5">
-                                {mod.ingredients.map((mi: any) => (
-                                  <div key={mi.id}>
-                                    {mi.ingredientId} × {mi.quantity}
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragOver={handleViewDragOver}
+                  onDragEnd={(e) => {
+                    handleViewDragEnd(e);
+                    clearViewDrag();
+                  }}
+                  onDragCancel={clearViewDrag}
+                >
+                  <SortableContext
+                    items={group.modifiers.map((m: any) => m.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="rounded-md border overflow-x-auto">
+                      <table className="w-full text-sm min-w-[480px]">
+                        <thead className="border-b bg-muted/50">
+                          <tr>
+                            <th className="w-8 px-2 py-2"></th>
+                            <th className="px-4 py-2 text-left font-medium">Nama Opsi</th>
+                            <th className="px-4 py-2 text-right font-medium">Harga Pengantar</th>
+                            <th className="px-4 py-2 text-center font-medium">Exclusion</th>
+                            <th className="px-4 py-2 text-left font-medium">Bahan Baku</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.modifiers.map((mod: any, i: number) => (
+                            <Fragment key={mod.id}>
+                              {viewDragOverId === mod.id &&
+                                viewDragActiveId !== mod.id &&
+                                i === 0 && <DropIndicatorRow />}
+                              <SortableModifierRow mod={mod} />
+                              {viewDragOverId === mod.id &&
+                                viewDragActiveId !== mod.id &&
+                                i > 0 && <DropIndicatorRow />}
+                            </Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
 

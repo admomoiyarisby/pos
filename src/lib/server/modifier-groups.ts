@@ -342,7 +342,7 @@ export const linkRecipesToModifierGroup = createServerFn({ method: "POST" })
     return { success: true };
   });
 
-const reorderModifiersInput = z.object({
+export const reorderModifiersInput = z.object({
   modifierGroupId: z.string().uuid(),
   modifierIds: z.array(z.string().uuid()),
 });

@@ -131,6 +131,9 @@ export const getPosMenu = createServerFn({ method: "GET" })
             })
             .from(modifiers)
             .where(inArray(modifiers.modifierGroupId, groupIds))
+            // Honor the manual sort order set on /modifier-groups so the POS
+            // ModifierModal renders modifiers in the operator's chosen order.
+            .orderBy(modifiers.sortOrder)
         : [];
 
     const allModifierIds = [...new Set(allModifiers.map((m) => m.id))];
