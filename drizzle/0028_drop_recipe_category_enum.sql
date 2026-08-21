@@ -10,7 +10,9 @@ SET category_id = c.id
 FROM categories c
 WHERE r.category_id IS NULL
   AND r.category IS NOT NULL
-  AND c.code = r.category;
+  -- Cast the enum column to text so it can be compared against categories.code
+  -- (Postgres has no `text = recipe_category` operator).
+  AND c.code = r.category::text;
 
 -- Step 2: any row still missing a category_id (no matching category row) gets
 -- assigned to the first category by code, so the NOT NULL constraint can be
