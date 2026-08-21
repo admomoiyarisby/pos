@@ -1380,7 +1380,13 @@ function PosPage() {
                           >
                             <Minus className="h-3 w-3" />
                           </button>
-                          <span className="w-8 text-center text-sm font-medium">
+                          {/* Re-key on quantity so each +/- click pops the new
+                              value in (subtle, near-imperceptible). Off for
+                              reduced motion. */}
+                          <span
+                            key={item.quantity}
+                            className="w-8 text-center text-sm font-medium animate-in zoom-in-110 duration-100 motion-reduce:animate-none"
+                          >
                             {item.quantity}
                           </span>
                           <button

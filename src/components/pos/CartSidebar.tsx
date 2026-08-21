@@ -143,7 +143,14 @@ export default function CartSidebar({
                     >
                       <Minus className="h-2.5 w-2.5" />
                     </button>
-                    <span className="w-6 text-center text-xs font-medium">{item.quantity}</span>
+                    {/* Re-key on quantity so each +/- click pops the new value
+                        in (subtle, near-imperceptible). Off for reduced motion. */}
+                    <span
+                      key={item.quantity}
+                      className="w-6 text-center text-xs font-medium animate-in zoom-in-110 duration-100 motion-reduce:animate-none"
+                    >
+                      {item.quantity}
+                    </span>
                     <button
                       onClick={function () {
                         onUpdateQty(idx, 1);
