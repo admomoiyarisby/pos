@@ -16,6 +16,7 @@ import {
   modifierGroups,
   modifiers,
   orderItems,
+  categories,
 } from "#/db/schema";
 import { eq, inArray, sql, and, ne } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
@@ -318,6 +319,21 @@ export const getRecipeInventory = createServerFn({ method: "GET" })
     }));
   });
 
+// The `categories` table (managed on /categories) is the source of truth for
+// category names; its seeded rows carry codes matching the legacy
+// recipe_category enum exactly. Resolve the category_id FK from the enum code
+// on every recipe write so recipes.category and recipes.category_id never
+// drift apart — the wizard dropdown is driven by the categories table, so the
+// enum value it submits must map back to the same category row on save.
+async function resolveCategoryId(code: string): Promise<string | null> {
+  const [cat] = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(eq(categories.code, code))
+    .limit(1);
+  return cat?.id ?? null;
+}
+
 export const createRecipe = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof recipeInput>) => recipeInput.parse(data))
   .handler(async ({ data }) => {
@@ -332,6 +348,7 @@ export const createRecipe = createServerFn({ method: "POST" })
         description: data.description,
         imageUrl: data.imageUrl,
         category: data.category,
+        categoryId: await resolveCategoryId(data.category),
         isSubRecipe: data.isSubRecipe,
         basePrice: data.basePrice,
         isBOGO: data.isBOGO,
@@ -425,6 +442,17 @@ export const updateRecipe = createServerFn({ method: "POST" })
 
     // Fetch old recipe for audit
     const [old] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
+
+    // Keep recipes.category_id in sync with the enum the wizard submits: the
+    // dropdown resolves labels from the categories table, so the picked enum
+    // code must map back to the matching category row here.
+    if (recipeUpdates.category !== undefined) {
+      // SAFETY: recipeUpdates is a partial recipes row; categoryId is a real
+      // (nullable) column that simply isn't part of the input schema.
+      (recipeUpdates as { categoryId?: string | null }).categoryId = await resolveCategoryId(
+        recipeUpdates.category,
+      );
+    }
 
     // Update recipe base fields. `recipeUpdates` can legitimately be empty for
     // link-only partial saves (BOM-only or branch-only), so skip the UPDATE

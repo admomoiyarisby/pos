@@ -153,13 +153,13 @@ const navGroups: NavGroup[] = [
   },
   {
     label: "Produksi",
-    roles: ["super_admin", "central_kitchen"],
+    roles: ["super_admin", "central_kitchen", "branch_admin", "area_manager"],
     items: [
       {
         label: "Tracking Produksi",
         to: "/yield-tracking",
         icon: RefreshCw,
-        roles: ["super_admin", "central_kitchen"],
+        roles: ["super_admin", "central_kitchen", "branch_admin", "area_manager"],
       },
       {
         label: "Bahan Baku",

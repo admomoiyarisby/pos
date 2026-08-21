@@ -147,7 +147,7 @@ export default function ModifierModal({
                           toggleModifier(grp, mod);
                         }}
                         className={
-                          "w-full flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer " +
+                          "w-full flex items-center justify-between gap-2 p-3 rounded-xl border transition-all cursor-pointer text-left " +
                           (isSel
                             ? mod.isExclusion
                               ? "bg-destructive/10 border-destructive/30 ring-1 ring-destructive/20"
@@ -155,10 +155,10 @@ export default function ModifierModal({
                             : "bg-card border-border hover:bg-muted")
                         }
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div
                             className={
-                              "flex items-center justify-center transition-colors " +
+                              "shrink-0 flex items-center justify-center transition-colors " +
                               (single
                                 ? "w-5 h-5 rounded-full border-2" +
                                   (isSel ? " border-primary" : " border-muted-foreground/30")
@@ -185,14 +185,14 @@ export default function ModifierModal({
                           </div>
                           <span
                             className={
-                              "text-sm font-medium " +
+                              "text-sm font-medium leading-snug " +
                               (isSel ? (mod.isExclusion ? "text-destructive" : "text-primary") : "")
                             }
                           >
                             {mod.name}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 shrink-0">
                           {mod.price > 0 && !mod.isExclusion && (
                             <span className="text-xs font-bold text-primary">
                               +Rp {mod.price.toLocaleString("id-ID")}

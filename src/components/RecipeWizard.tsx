@@ -6,6 +6,7 @@ import { Label } from "#/components/ui/label";
 import { Badge } from "#/components/ui/badge";
 import MoneyInput from "#/components/MoneyInput";
 import { getIngredients } from "#/lib/server/ingredients";
+import { getCategories } from "#/lib/server/categories";
 import {
   ChevronLeft,
   ChevronRight,
@@ -165,6 +166,36 @@ export function RecipeWizard({
     queryKey: ["ingredients", "recipe-wizard"],
     queryFn: () => getIngredients({ data: {} }),
   });
+
+  // Category options come from the `categories` table (managed on /categories)
+  // — the DB is the single source of truth for category names, so the dropdown
+  // stays in lockstep with what /categories shows. The select value is the
+  // legacy recipe_category enum code: the seeded categories' `code` column
+  // matches the enum exactly. Filter to enum codes so the wizard can never
+  // submit a value the enum column rejects (custom non-enum categories created
+  // on /categories stay groupable there but aren't recipe categories).
+  const RECIPE_CATEGORY_CODES: readonly RecipeCategory[] = [
+    "makanan",
+    "minuman",
+    "snack",
+    "add_ons",
+    "paket_bundle",
+  ];
+  const { data: allCategories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => getCategories({}),
+  });
+  // SAFETY: casting the literal codes to readonly string[] only widens the
+  // array type so it can be compared against the DB `code` column (a plain
+  // string); the runtime values are unchanged.
+  const categoryOptions = (allCategories ?? [])
+    .filter((c) => (RECIPE_CATEGORY_CODES as readonly string[]).includes(c.code))
+    .map((c) => ({ code: c.code, name: c.name }));
+  // Always keep the currently-selected value selectable (edit mode, or the
+  // brief frame before categories load) so the dropdown never goes blank.
+  const categoryChoices = categoryOptions.some((c) => c.code === category)
+    ? categoryOptions
+    : [{ code: category, name: category }, ...categoryOptions];
 
   // Filter ingredients based on search
   const filteredIngredients = (allIngredients ?? []).filter((ing: IngredientOption) => {
@@ -384,16 +415,17 @@ export function RecipeWizard({
                   name="category"
                   value={category}
                   onChange={(e) =>
-                    // SAFETY: the options below are exactly the five recipe categories.
+                    // SAFETY: categoryChoices are filtered to exactly the five
+                    // recipe_category enum codes.
                     setCategory(e.target.value as RecipeCategory)
                   }
                   className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
-                  <option value="makanan">Makanan</option>
-                  <option value="minuman">Minuman</option>
-                  <option value="snack">Snack</option>
-                  <option value="add_ons">Add-on</option>
-                  <option value="paket_bundle">Paket Bundle</option>
+                  {categoryChoices.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-2">

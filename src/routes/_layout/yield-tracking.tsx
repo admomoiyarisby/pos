@@ -12,6 +12,7 @@ import Modal from "#/components/ui/Modal";
 import { getYieldConversions, createYieldConversion } from "#/lib/server/yield";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
+import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
 import { AlertCircle, ArrowRightLeft, PackageMinus, PackagePlus, X } from "lucide-react";
 
@@ -250,6 +251,7 @@ export const Route = createFileRoute("/_layout/yield-tracking")({
 function YieldTrackingPage() {
   const [search, setSearch] = useTableSearch();
   const { conversions: initial, ingredients, branches } = Route.useLoaderData();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [result, setResult] = useState<{ outCount: number; producedCount: number } | null>(null);
@@ -444,9 +446,17 @@ function YieldTrackingPage() {
   usePageTitle("Tracking Produksi", "Pencatatan produksi: barang keluar & barang dihasilkan");
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "central_kitchen"]}>
+    <RoleGuard allowedRoles={["super_admin", "central_kitchen", "branch_admin", "area_manager"]}>
       <div className="space-y-6">
-        <PageHeader action={{ label: "Input Produksi", onClick: () => setModalOpen(true) }} />
+        {/* Area managers are view-only: production records belong to the
+            branch/central kitchen that performed them. */}
+        <PageHeader
+          action={
+            user?.role === "area_manager"
+              ? undefined
+              : { label: "Input Produksi", onClick: () => setModalOpen(true) }
+          }
+        />
 
         {result && (
           <div className="rounded-lg border border-success/30 bg-success/10 p-4 text-sm text-success-foreground">
@@ -517,19 +527,30 @@ function YieldTrackingPage() {
             )}
             <div className="space-y-2">
               <label className="text-sm font-medium">Cabang / Gudang</label>
-              <select
-                name="branchId"
-                required
-                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                {branches
-                  .filter((b) => b.type === "Central")
-                  .map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-              </select>
+              {user?.role === "branch_admin" ? (
+                <>
+                  {/* Branch admins always record against their own branch; the
+                      server ignores any submitted branchId for them anyway. */}
+                  <input type="hidden" name="branchId" value={user.branchId ?? ""} />
+                  <p className="h-10 md:h-9 w-full rounded-md border bg-muted px-3 py-2 text-sm">
+                    {branches.find((b) => b.id === user.branchId)?.name ?? "Cabang saya"}
+                  </p>
+                </>
+              ) : (
+                <select
+                  name="branchId"
+                  required
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  {branches
+                    .filter((b) => b.type === "Central")
+                    .map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                </select>
+              )}
             </div>
 
             <div className="space-y-2">

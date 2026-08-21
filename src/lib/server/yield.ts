@@ -1,14 +1,29 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { yieldConversions, yieldConversionItems, ingredients } from "#/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 
 export const getYieldConversions = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string }) => data)
   .handler(async ({ data: _data }) => {
-    await requireRole("super_admin", "central_kitchen");
+    const user = await requireRole(
+      "super_admin",
+      "central_kitchen",
+      "branch_admin",
+      "area_manager",
+    );
+
+    // Branch admins see only their own branch's production records; area
+    // managers see only records for branches they're assigned to. Central
+    // roles (super_admin / central_kitchen) see everything.
+    const conditions: import("drizzle-orm").SQL[] = [];
+    if (user.role === "branch_admin" && user.branchId) {
+      conditions.push(eq(yieldConversions.branchId, user.branchId));
+    } else if (user.role === "area_manager" && user.assignedBranches?.length) {
+      conditions.push(inArray(yieldConversions.branchId, user.assignedBranches));
+    }
 
     const conversions = await db
       .select({
@@ -20,6 +35,7 @@ export const getYieldConversions = createServerFn({ method: "GET" })
         processedBy: yieldConversions.processedBy,
       })
       .from(yieldConversions)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(yieldConversions.createdAt);
 
     // Fetch all items for these conversions, with ingredient names.
@@ -83,7 +99,15 @@ export const createYieldConversion = createServerFn({ method: "POST" })
     }) => data,
   )
   .handler(async ({ data }) => {
-    const user = await requireRole("super_admin", "central_kitchen");
+    const user = await requireRole("super_admin", "central_kitchen", "branch_admin");
+
+    // Branch admins record production only against their own branch; the
+    // submitted branchId is ignored for them (client can't be trusted).
+    const branchId = data.branchId || (user.role === "branch_admin" ? user.branchId : undefined);
+    if (user.role === "branch_admin" && branchId !== user.branchId) {
+      throw new Error("Unauthorized branch");
+    }
+    if (!branchId) throw new Error("Branch is required");
 
     const out = (data.out ?? []).filter((s) => s.ingredientId && s.quantity > 0);
     const produced = (data.produced ?? []).filter((s) => s.ingredientId && s.quantity > 0);
@@ -120,7 +144,7 @@ export const createYieldConversion = createServerFn({ method: "POST" })
     const [conversion] = await db
       .insert(yieldConversions)
       .values({
-        branchId: data.branchId,
+        branchId,
         notes: data.notes,
         processedBy: user.id,
         productionDate: data.productionDate ? new Date(data.productionDate) : new Date(),

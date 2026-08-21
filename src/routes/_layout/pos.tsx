@@ -25,6 +25,7 @@ import { getBrands } from "#/lib/server/brands";
 import { getBranches } from "#/lib/server/branches";
 import { getVouchers } from "#/lib/server/vouchers";
 import { getInventory } from "#/lib/server/inventory";
+import { getCategories } from "#/lib/server/categories";
 import { ShoppingCart, Plus, Minus, X, TicketPercent, Percent, AlertCircle } from "lucide-react";
 import { usePageTitle } from "#/hooks/usePageTitle";
 
@@ -38,14 +39,9 @@ import OrderHistory from "#/components/pos/OrderHistory";
 import { default as SuccessModal } from "#/components/pos/SuccessModal";
 import { default as ModifierModalComp } from "#/components/pos/ModifierModal";
 
-const categories = [
-  { key: "", label: "Semua" },
-  { key: "makanan", label: "Makanan" },
-  { key: "minuman", label: "Minuman" },
-  { key: "snack", label: "Snack" },
-  { key: "add_ons", label: "Add-on" },
-  { key: "paket_bundle", label: "Paket" },
-];
+// Display order for the category tabs (kept in sync with MenuGrid's
+// CATEGORY_ORDER); labels come from the categories table, not here.
+const CATEGORY_TAB_ORDER = ["makanan", "minuman", "snack", "add_ons", "paket_bundle"];
 
 const channels = [
   { key: "Dine-in", label: "Dine-in" },
@@ -58,12 +54,21 @@ const channels = [
 export const Route = createFileRoute("/_layout/pos")({
   component: PosPage,
   loader: async () => {
-    const [brandsData, branchesData, vouchersData] = await Promise.all([
+    const [brandsData, branchesData, vouchersData, categoriesData] = await Promise.all([
       getBrands({ data: {} }),
       getBranches({ data: {} }),
       getVouchers({ data: { activeOnly: true } }),
+      // Category tabs come from the categories table (single source of truth,
+      // same as the recipe wizard); the legacy enum codes order the tabs and
+      // the DB names label them.
+      getCategories({}),
     ]);
-    return { brands: brandsData, branches: branchesData, vouchers: vouchersData };
+    return {
+      brands: brandsData,
+      branches: branchesData,
+      vouchers: vouchersData,
+      categories: categoriesData,
+    };
   },
 });
 
@@ -77,7 +82,26 @@ function PosPage() {
   let brands = loaderData.brands;
   let allBranches = loaderData.branches;
   let allVouchers = loaderData.vouchers;
+  let dbCategories = loaderData.categories;
   let queryClient = useQueryClient();
+
+  // Build the category tabs from the DB rows, ordered by the legacy enum codes,
+  // with an "all categories" tab prepended. Custom non-enum categories created
+  // on /categories are intentionally excluded (they can't be represented in
+  // recipes.category and are grouped under "other" in the grid instead).
+  let categories = [
+    { key: "", label: "Semua" },
+    ...dbCategories
+      .filter(function (c) {
+        return CATEGORY_TAB_ORDER.includes(c.code);
+      })
+      .sort(function (a, b) {
+        return CATEGORY_TAB_ORDER.indexOf(a.code) - CATEGORY_TAB_ORDER.indexOf(b.code);
+      })
+      .map(function (c) {
+        return { key: c.code, label: c.name };
+      }),
+  ];
 
   let isAdmin = user?.role === "super_admin" || user?.role === "admin_pusat";
   let userBranch = allBranches.find(function (b) {
