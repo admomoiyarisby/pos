@@ -238,7 +238,10 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
           })
           .from(recipeModifierGroups)
           .leftJoin(modifierGroups, eq(recipeModifierGroups.modifierGroupId, modifierGroups.id))
-          .where(eq(recipeModifierGroups.recipeId, data.id)),
+          .where(eq(recipeModifierGroups.recipeId, data.id))
+          // Honor the manual group order set on /modifier-groups so the recipe
+          // detail page lists modifier groups in the operator's chosen order.
+          .orderBy(modifierGroups.sortOrder),
         db
           .select({ branchId: recipeBranches.branchId })
           .from(recipeBranches)
