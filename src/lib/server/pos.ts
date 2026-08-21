@@ -39,7 +39,7 @@ import { z } from "zod";
 
 export const getPosMenu = createServerFn({ method: "GET" })
   .validator(
-    (data: { branchId?: string; brandId?: string; category?: string; search?: string }) => data,
+    (data: { branchId?: string; brandId?: string; categoryId?: string; search?: string }) => data,
   )
   .handler(async ({ data }) => {
     await requireAuth();
@@ -66,6 +66,7 @@ export const getPosMenu = createServerFn({ method: "GET" })
         name: recipes.name,
         imageUrl: recipes.imageUrl,
         category: recipes.category,
+        categoryId: recipes.categoryId,
         basePrice: recipes.basePrice,
         isBOGO: recipes.isBOGO,
         isStaffMeal: recipes.isStaffMeal,
@@ -145,7 +146,10 @@ export const getPosMenu = createServerFn({ method: "GET" })
           const rb = brandLinks.filter((b) => b.recipeId === r.id);
           return rb.some((b) => b.brandId === data.brandId);
         }
-        if (data.category && r.category !== data.category) return false;
+        // Category filtering runs on the categories table FK (recipes.category_id)
+        // — not the legacy enum — so non-enum categories like "Jatah Makan Staff"
+        // filter correctly.
+        if (data.categoryId && r.categoryId !== data.categoryId) return false;
         if (data.search) {
           const q = data.search.toLowerCase();
           return r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q);

@@ -39,10 +39,6 @@ import OrderHistory from "#/components/pos/OrderHistory";
 import { default as SuccessModal } from "#/components/pos/SuccessModal";
 import { default as ModifierModalComp } from "#/components/pos/ModifierModal";
 
-// Display order for the category tabs (kept in sync with MenuGrid's
-// CATEGORY_ORDER); labels come from the categories table, not here.
-const CATEGORY_TAB_ORDER = ["makanan", "minuman", "snack", "add_ons", "paket_bundle"];
-
 const channels = [
   { key: "Dine-in", label: "Dine-in" },
   { key: "Gofood", label: "Gofood" },
@@ -85,22 +81,15 @@ function PosPage() {
   let dbCategories = loaderData.categories;
   let queryClient = useQueryClient();
 
-  // Build the category tabs from the DB rows, ordered by the legacy enum codes,
-  // with an "all categories" tab prepended. Custom non-enum categories created
-  // on /categories are intentionally excluded (they can't be represented in
-  // recipes.category and are grouped under "other" in the grid instead).
+  // Build the category tabs from ALL categories table rows (keyed by category
+  // id), with an "all categories" tab prepended. Filtering runs on
+  // recipes.category_id, so non-enum categories like "Jatah Makan Staff" work.
+  // getCategories() already orders rows by name.
   let categories = [
     { key: "", label: "Semua" },
-    ...dbCategories
-      .filter(function (c) {
-        return CATEGORY_TAB_ORDER.includes(c.code);
-      })
-      .sort(function (a, b) {
-        return CATEGORY_TAB_ORDER.indexOf(a.code) - CATEGORY_TAB_ORDER.indexOf(b.code);
-      })
-      .map(function (c) {
-        return { key: c.code, label: c.name };
-      }),
+    ...dbCategories.map(function (c) {
+      return { key: c.id, label: c.name };
+    }),
   ];
 
   let isAdmin = user?.role === "super_admin" || user?.role === "admin_pusat";
@@ -288,7 +277,7 @@ function PosPage() {
         data: {
           branchId: activeBranchId || undefined,
           brandId: selectedBrandId || undefined,
-          category: selectedCategory || undefined,
+          categoryId: selectedCategory || undefined,
           search: searchQuery || undefined,
         },
       });

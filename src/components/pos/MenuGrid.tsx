@@ -6,20 +6,6 @@ import { Search, Plus, Zap, Package } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import type { MenuItem } from "#/lib/pos-types";
 
-// Display order for category sections
-const CATEGORY_ORDER = ["makanan", "minuman", "snack", "add_ons", "paket_bundle"];
-
-// Fallback labels for categories not in the passed categories prop
-import { lookupLabel } from "#/lib/label-lookup";
-
-const CATEGORY_LABELS = {
-  makanan: "Makanan",
-  minuman: "Minuman",
-  snack: "Snack",
-  add_ons: "Add-on",
-  paket_bundle: "Paket Bundle",
-};
-
 interface MenuGridProps {
   menuItems: MenuItem[];
   onAddToCart: (item: MenuItem) => void;
@@ -43,10 +29,12 @@ interface MenuGridProps {
   isDineIn: boolean;
 }
 
+// Sections are keyed by the categories-table FK (recipes.category_id), the same
+// key the filter tabs use, so staff meals etc. group under their real category.
 function groupByCategory(items: MenuItem[]): Map<string, MenuItem[]> {
   const groups = new Map<string, MenuItem[]>();
   for (const item of items) {
-    const cat = item.category || "other";
+    const cat = item.categoryId || "other";
     const group = groups.get(cat) ?? [];
     group.push(item);
     groups.set(cat, group);
@@ -58,10 +46,17 @@ function groupByCategory(items: MenuItem[]): Map<string, MenuItem[]> {
   return groups;
 }
 
-function getOrderedCategories(groups: Map<string, MenuItem[]>): string[] {
+// Order sections to match the filter-tab order (the categories prop, minus the
+// empty-keyed "Semua" tab), then any categories not in the tabs (e.g. recipes
+// with a null/dangling category_id) sorted by key.
+function getOrderedCategories(
+  groups: Map<string, MenuItem[]>,
+  categoryTabs: { key: string; label: string }[],
+): string[] {
   const keys = Array.from(groups.keys());
-  const known = CATEGORY_ORDER.filter((c) => keys.includes(c));
-  const unknown = keys.filter((c) => !CATEGORY_ORDER.includes(c)).sort();
+  const tabKeys = categoryTabs.map((c) => c.key).filter((k) => k !== "");
+  const known = tabKeys.filter((k) => keys.includes(k));
+  const unknown = keys.filter((k) => !known.includes(k)).sort();
   return [...known, ...unknown];
 }
 
@@ -148,7 +143,7 @@ export default function MenuGrid({
   brands,
 }: MenuGridProps) {
   const groups = groupByCategory(menuItems);
-  const orderedCategories = getOrderedCategories(groups);
+  const orderedCategories = getOrderedCategories(groups, categories);
 
   // Build a label lookup from the categories prop + fallbacks
   const labelLookup: Record<string, string> = {};
@@ -243,7 +238,7 @@ export default function MenuGrid({
         <div className="space-y-6">
           {orderedCategories.map(function (catKey) {
             const items = groups.get(catKey)!;
-            const label = labelLookup[catKey] ?? lookupLabel(CATEGORY_LABELS, catKey) ?? catKey;
+            const label = labelLookup[catKey] ?? (catKey === "other" ? "Lainnya" : catKey);
             return (
               <div key={catKey}>
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">

@@ -42,6 +42,7 @@ export interface MenuItem {
   name: string;
   imageUrl: string | null;
   category: string;
+  categoryId: string | null;
   basePrice: number;
   isBOGO: boolean;
   isStaffMeal: boolean;
