@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { recipes, categories, recipeBranches } from "#/db/schema";
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
@@ -40,6 +40,9 @@ export const getCategories = createServerFn({ method: "GET" }).handler(async () 
       count: sql<number>`count(*)`,
     })
     .from(recipes)
+    // ADR-0009 mirror: tombstoned (Deleted) recipes never appear in the UI, so
+    // they must not inflate the per-category menu count either.
+    .where(ne(recipes.status, "Deleted"))
     .groupBy(recipes.categoryId);
 
   const countMap = Object.fromEntries(counts.map((r) => [r.categoryId, Number(r.count)]));
@@ -62,7 +65,11 @@ export const getCategoryRecipes = createServerFn({ method: "GET" })
 
     // Branch visibility: a branch-scoped caller sees only recipes allowed at
     // their branch; a recipe with no recipe_branches rows is visible everywhere.
-    const whereConditions: SQL[] = [eq(recipes.categoryId, data.categoryId)];
+    // ADR-0009 mirror: tombstoned (Deleted) recipes never appear in the UI.
+    const whereConditions: SQL[] = [
+      eq(recipes.categoryId, data.categoryId),
+      ne(recipes.status, "Deleted"),
+    ];
     const branchClause = branchVisibleClause({
       linkTable: recipeBranches,
       linkRowId: recipeBranches.recipeId,

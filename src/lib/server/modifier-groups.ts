@@ -8,7 +8,7 @@ import {
   recipeModifierGroups,
   recipeBranches,
 } from "#/db/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
@@ -74,7 +74,15 @@ export const getModifierGroups = createServerFn({ method: "GET" })
             })
             .from(recipeModifierGroups)
             .innerJoin(recipes, eq(recipeModifierGroups.recipeId, recipes.id))
-            .where(and(inArray(recipeModifierGroups.modifierGroupId, groupIds), branchClause))
+            // ADR-0009 mirror: tombstoned (Deleted) recipes never appear in the
+            // UI, so they must not inflate the recipe count either.
+            .where(
+              and(
+                inArray(recipeModifierGroups.modifierGroupId, groupIds),
+                ne(recipes.status, "Deleted"),
+                branchClause,
+              ),
+            )
             .groupBy(recipeModifierGroups.modifierGroupId)
         : Promise.resolve<{ modifierGroupId: string; count: number }[]>([]),
     ]);
@@ -135,7 +143,15 @@ export const getModifierGroup = createServerFn({ method: "GET" })
         })
         .from(recipeModifierGroups)
         .innerJoin(recipes, eq(recipeModifierGroups.recipeId, recipes.id))
-        .where(and(eq(recipeModifierGroups.modifierGroupId, data.id), branchClause)),
+        // ADR-0009 mirror: tombstoned (Deleted) recipes never appear in the UI,
+        // so they must not show up in the linked-recipes list either.
+        .where(
+          and(
+            eq(recipeModifierGroups.modifierGroupId, data.id),
+            ne(recipes.status, "Deleted"),
+            branchClause,
+          ),
+        ),
     ]);
 
     return {

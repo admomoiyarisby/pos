@@ -181,7 +181,9 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
     const [recipe] = await db
       .select()
       .from(recipes)
-      .where(and(eq(recipes.id, data.id), branchClause))
+      // ADR-0009 mirror: a tombstoned (Deleted) recipe must not be viewable
+      // even via a direct URL (restore is DB-only).
+      .where(and(eq(recipes.id, data.id), ne(recipes.status, "Deleted"), branchClause))
       .limit(1);
 
     if (!recipe) return null;

@@ -18,7 +18,7 @@ import {
   recipeChildRecipes,
   recipeBrands,
 } from "#/db/schema";
-import { eq, and, desc, inArray, lt } from "drizzle-orm";
+import { eq, and, desc, inArray, lt, ne } from "drizzle-orm";
 import { requireAuth } from "./auth";
 import type { AppUser } from "./auth";
 
@@ -84,8 +84,9 @@ export async function fetchDashboardData(user: AppUser) {
         .limit(50);
     })(),
 
-    // Recipes
-    db.select().from(recipes),
+    // Recipes — ADR-0009 mirror: tombstoned (Deleted) recipes never appear in
+    // the UI, so they must not feed the HPP/COGS dashboard tables either.
+    db.select().from(recipes).where(ne(recipes.status, "Deleted")),
 
     // Ingredients
     db.select().from(ingredients),
