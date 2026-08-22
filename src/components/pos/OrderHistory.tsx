@@ -32,11 +32,11 @@ export default function OrderHistory({
   onDirectVoid,
 }: OrderHistoryProps) {
   return (
-    <div className="shrink-0 border-t h-40 flex flex-col">
-      <h3 className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase text-muted-foreground border-b bg-muted/30 shrink-0">
+    <div className="flex flex-col flex-1 min-h-0">
+      <h3 className="px-4 py-2.5 pr-10 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b bg-muted/30 shrink-0">
         Riwayat Pesanan
       </h3>
-      <div className="flex-1 overflow-y-auto px-3 py-1.5 space-y-1">
+      <div className="flex-1 overflow-y-auto px-4 py-2.5 space-y-1">
         {recentOrders.length === 0 ? (
           <p className="text-[10px] text-muted-foreground text-center py-3">Belum ada pesanan</p>
         ) : (

@@ -840,9 +840,9 @@ function PosPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "branch_admin"]}>
-      <div className="flex flex-1 min-h-0 flex-col lg:flex-row -m-4 md:-m-6 overflow-hidden">
+      <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:items-start lg:gap-6 -m-4 md:-m-6 overflow-hidden lg:overflow-visible">
         {/* Main Content */}
-        <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden min-h-0">
+        <div className="flex-1 flex flex-col min-w-0 p-4 md:p-6 min-h-0 overflow-hidden lg:overflow-visible">
           {/* ── Compact Top Bar — branch as floating legend, channel + shift on one row ── */}
           <div className="relative shrink-0 rounded-xl border bg-card px-3 pt-5 pb-2.5 md:px-4 md:pt-5 md:pb-2.5 mb-2.5 space-y-2.5">
             {/* Branch — floating legend overlapping border */}
@@ -945,7 +945,7 @@ function PosPage() {
           </div>
 
           {/* ── Desktop MenuGrid ── */}
-          <div className="hidden lg:block flex-1 overflow-y-auto min-h-0">
+          <div className="hidden lg:block">
             <MenuGrid
               menuItems={menuItems}
               onAddToCart={handleAddToCart}
