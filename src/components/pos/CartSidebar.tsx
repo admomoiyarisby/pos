@@ -66,7 +66,7 @@ export default function CartSidebar({
 }: CartSidebarProps) {
   const [activeTab, setActiveTab] = useState<"cart" | "history">("cart");
   return (
-    <div className="hidden lg:flex w-80 xl:w-[380px] shrink-0 lg:sticky lg:top-6 lg:h-[calc(100dvh-1.5rem)] lg:max-h-[calc(100dvh-1.5rem)] border-l lg:rounded-xl lg:border lg:shadow-sm bg-card flex-col overflow-hidden self-start">
+    <div className="hidden lg:flex w-80 xl:w-[380px] shrink-0 lg:sticky lg:top-[clamp(0.75rem,2dvh,1.5rem)] lg:h-[clamp(420px,82dvh,760px)] lg:max-h-[min(85dvh,760px)] border-l lg:rounded-xl lg:border lg:shadow-sm bg-card flex-col overflow-hidden self-start">
       {/* Tabs — mimics mobile: Cart / History */}
       <div className="px-3 py-2 border-b shrink-0">
         <div className="inline-flex w-full p-1 bg-muted rounded-full gap-1">

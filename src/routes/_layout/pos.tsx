@@ -840,14 +840,13 @@ function PosPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "branch_admin"]}>
-      <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:items-start lg:gap-6 -m-4 md:-m-6 overflow-hidden lg:overflow-visible">
+      <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:items-start gap-4 lg:gap-6 -m-4 md:-m-6 overflow-hidden lg:overflow-visible">
         {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0 p-4 md:p-6 min-h-0 overflow-hidden lg:overflow-visible">
-          {/* ── Compact Top Bar — branch as floating legend, channel + shift on one row ── */}
-          <div className="relative shrink-0 rounded-xl border bg-card px-3 pt-5 pb-2.5 md:px-4 md:pt-5 md:pb-2.5 mb-2.5 space-y-2.5">
-            {/* Branch — floating legend overlapping border */}
-            <div className="absolute -top-2.5 left-3 md:left-4 inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs font-medium shadow-sm max-w-[60%]">
-              <Store className="h-3 w-3 text-muted-foreground shrink-0" />
+        <div className="flex-1 flex flex-col min-w-0 p-4 md:p-6 min-h-0 overflow-hidden lg:overflow-visible gap-4 isolate">
+          {/* ── Top Bar — fieldset legend (no absolute overlap) ── */}
+          <fieldset className="shrink-0 rounded-xl border bg-card px-3 py-3 md:px-4 space-y-3 shadow-sm">
+            <legend className="px-2 text-xs font-medium flex items-center gap-1.5 ml-1 bg-card">
+              <Store className="h-3 w-3 text-muted-foreground" />
               {isAdmin ? (
                 <select
                   value={activeBranchId}
@@ -859,7 +858,7 @@ function PosPage() {
                     setCart([]);
                     setCheckoutError(null);
                   }}
-                  className="h-5 bg-transparent border-0 p-0 pr-6 text-xs font-medium focus:ring-0 focus:outline-none min-w-0 truncate"
+                  className="h-5 bg-transparent border-0 p-0 pr-4 text-xs font-medium focus:ring-0 focus:outline-none truncate max-w-[160px] sm:max-w-[200px]"
                 >
                   {allBranches.map(function (b) {
                     return (
@@ -870,10 +869,12 @@ function PosPage() {
                   })}
                 </select>
               ) : (
-                <span className="truncate">{userBranch?.name ?? "Unknown"}</span>
+                <span className="truncate max-w-[160px] sm:max-w-[200px]">
+                  {userBranch?.name ?? "Unknown"}
+                </span>
               )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
+            </legend>
+            <div className="flex flex-wrap items-center gap-3">
               <select
                 value={channel}
                 onChange={function (e) {
@@ -891,7 +892,7 @@ function PosPage() {
                   );
                 })}
               </select>
-              {/* Shift — same row as channel, ml-auto pushes to right */}
+              {/* Shift — same row as channel */}
               {activeShift ? (
                 <span className="ml-auto inline-flex items-center gap-1 rounded-full border bg-emerald-500/10 border-emerald-500/20 p-1 pl-2.5">
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
@@ -942,10 +943,10 @@ function PosPage() {
                 )}
               </div>
             </div>
-          </div>
+          </fieldset>
 
           {/* ── Desktop MenuGrid ── */}
-          <div className="hidden lg:block">
+          <div className="hidden lg:block relative z-0 mt-2">
             <MenuGrid
               menuItems={menuItems}
               onAddToCart={handleAddToCart}
