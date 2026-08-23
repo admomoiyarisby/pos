@@ -29,7 +29,7 @@ import {
 } from "#/db/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth, getCurrentUserRaw } from "./auth";
-import { branchVisibleClause } from "#/lib/server/branch-visibility";
+import { branchVisibleClause, getEffectiveBranchId } from "#/lib/server/branch-visibility";
 import { logSystemAction, logAudit } from "./logging";
 import {
   resolveNewItemIngredients,
@@ -46,17 +46,23 @@ export const getPosMenu = createServerFn({ method: "GET" })
     await requireAuth();
     const user = await getCurrentUserRaw();
 
-    // Branch visibility: a branch-scoped caller sees only recipes allowed at
-    // their branch; a recipe with no recipe_branches rows is visible everywhere.
-    // Driven by the SESSION's branch (not the client-supplied data.branchId) so
-    // a branch admin cannot request another branch's menu.
+    // Central admins can preview the selected POS branch. Branch admins stay
+    // bound to their session branch so the client cannot switch their scope.
+    const currentBranchId = getEffectiveBranchId({
+      role: user?.role ?? "branch_admin",
+      sessionBranchId: user?.branchId,
+      requestedBranchId: data.branchId,
+    });
+
+    // A recipe with no recipe_branches rows is visible everywhere; otherwise
+    // it is visible only at the effective branch.
     const whereConditions: Array<ReturnType<typeof eq>> = [eq(recipes.status, "Active")];
     const branchClause = branchVisibleClause({
       linkTable: recipeBranches,
       linkRowId: recipeBranches.recipeId,
       rowId: recipes.id,
       linkBranchId: recipeBranches.branchId,
-      currentBranchId: user?.branchId,
+      currentBranchId,
     });
     if (branchClause) whereConditions.push(branchClause);
 

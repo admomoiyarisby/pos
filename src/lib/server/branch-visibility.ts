@@ -1,6 +1,49 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { PgTable, PgColumn } from "drizzle-orm/pg-core";
 
+export type BranchVisibilityRole =
+  | "super_admin"
+  | "admin_pusat"
+  | "area_manager"
+  | "branch_admin"
+  | "central_kitchen";
+
+export interface EffectiveBranchOptions {
+  role: BranchVisibilityRole;
+  sessionBranchId: string | undefined;
+  requestedBranchId: string | undefined;
+}
+
+/**
+ * Resolve the branch used by a branch-aware read.
+ *
+ * Central admins can preview a selected branch from the POS. Branch-scoped
+ * roles must remain bound to the branch in their authenticated session, even
+ * if a client sends a different branch id.
+ */
+export function getEffectiveBranchId({
+  role,
+  sessionBranchId,
+  requestedBranchId,
+}: EffectiveBranchOptions): string | undefined {
+  if (role === "super_admin" || role === "admin_pusat") {
+    return requestedBranchId;
+  }
+  return sessionBranchId;
+}
+
+/**
+ * Pure representation of the branch-link policy used by branchVisibleClause.
+ * An empty link set means all branches; a non-empty set is an allow-list.
+ */
+export function isBranchVisible(
+  linkedBranchIds: readonly string[],
+  currentBranchId: string | undefined,
+): boolean {
+  if (!currentBranchId || linkedBranchIds.length === 0) return true;
+  return linkedBranchIds.includes(currentBranchId);
+}
+
 export interface BranchVisibleOptions {
   /** The link table, e.g. `ingredientBranches` or `recipeBranches`. */
   linkTable: PgTable;
@@ -23,7 +66,7 @@ export interface BranchVisibleOptions {
  * rows (NULL = all branches).
  *
  * Returns `undefined` when `currentBranchId` is falsy so callers can drop it
- * from the WHERE clause (central users see everything). Otherwise returns:
+ * from the WHERE clause (an unscoped central read sees everything). Otherwise returns:
  *
  *   NOT EXISTS (no link rows for this row)
  *   OR EXISTS (a link row for this row AND that link's branch = currentBranchId)
