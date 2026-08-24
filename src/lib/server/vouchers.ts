@@ -46,10 +46,21 @@ export const createVoucher = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
+    const normalizedCode = data.code.trim().toUpperCase();
+    const existing = await db
+      .select({ id: vouchers.id })
+      .from(vouchers)
+      .where(eq(vouchers.code, normalizedCode))
+      .limit(1);
+    if (existing.length > 0) {
+      throw new Error(`Kode voucher "${normalizedCode}" sudah digunakan`);
+    }
+
     const [result] = await db
       .insert(vouchers)
       .values({
         ...data,
+        code: normalizedCode,
         validUntil: new Date(data.validUntil),
         createdBy: user.id,
       })
@@ -85,14 +96,28 @@ export const updateVoucher = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
-    const { id, validUntil, ...rest } = data;
+    const { id, validUntil, code, ...rest } = data;
 
     const [old] = await db.select().from(vouchers).where(eq(vouchers.id, id)).limit(1);
+    if (!old) throw new Error("Voucher not found");
+
+    if (code) {
+      const normalized = code.trim().toUpperCase();
+      const dup = await db
+        .select({ id: vouchers.id })
+        .from(vouchers)
+        .where(eq(vouchers.code, normalized))
+        .limit(1);
+      if (dup.length > 0 && dup[0].id !== id) {
+        throw new Error(`Kode voucher "${normalized}" sudah digunakan`);
+      }
+    }
 
     // Only set fields that were actually provided — absent optionals parse to
     // `undefined` now (no default injection), and drizzle skips undefined keys
     // in `.set()` but throws on a fully-empty set.
     const updates: UnknownRecord = {};
+    if (code) updates.code = code.trim().toUpperCase();
     for (const [key, value] of Object.entries(rest)) {
       if (value !== undefined) updates[key] = value;
     }

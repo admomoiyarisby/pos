@@ -209,6 +209,8 @@ function VouchersPage() {
     if (!validUntilRaw) return setFormError("Tanggal berlaku sampai wajib diisi");
     if (Number.isNaN(discountValue) || discountValue < 0)
       return setFormError("Nilai diskon harus berupa angka ≥ 0");
+    if (discountType === "percentage" && discountValue > 100)
+      return setFormError("Diskon persen maksimal 100");
 
     let validUntil: string;
     try {
@@ -284,7 +286,7 @@ function VouchersPage() {
         title={editing ? "Edit Voucher" : "Tambah Voucher"}
         size="md"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form key={editing?.id ?? "new"} onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">
               Kode <span className="text-destructive">*</span>
@@ -335,15 +337,18 @@ function VouchersPage() {
               </label>
               {discountType === "fixed" ? (
                 <MoneyInput
+                  key={editing?.id ?? "new-discount"}
                   name="discountValue"
                   defaultValue={editing?.discountValue ?? 0}
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               ) : (
                 <input
+                  key={editing?.id ?? "new-discount-num"}
                   name="discountValue"
                   type="number"
                   min={0}
+                  max={100}
                   step={1}
                   defaultValue={editing?.discountValue ?? 0}
                   required
@@ -356,6 +361,7 @@ function VouchersPage() {
           <div className="space-y-2">
             <label className="text-sm font-medium">Min. Order (Rp)</label>
             <MoneyInput
+              key={editing?.id ? `${editing.id}-minOrder` : "new-minOrder"}
               name="minOrder"
               defaultValue={editing?.minOrder ?? 0}
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
