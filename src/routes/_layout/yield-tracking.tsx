@@ -10,12 +10,29 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getYieldConversions, createYieldConversion } from "#/lib/server/yield";
+import {
+  getYieldConversions,
+  createYieldConversion,
+  requestYieldCancel,
+  getYieldCancelRequests,
+  approveYieldCancelRequest,
+  rejectYieldCancelRequest,
+  directCancelYieldConversion,
+} from "#/lib/server/yield";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
-import { AlertCircle, ArrowRightLeft, PackageMinus, PackagePlus, X } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRightLeft,
+  PackageMinus,
+  PackagePlus,
+  X,
+  Trash2,
+  Check,
+  Ban,
+} from "lucide-react";
 
 interface ProductionItem {
   ingredientId: string;
@@ -24,9 +41,13 @@ interface ProductionItem {
 
 interface ProductionRow {
   id: string;
+  branchId: string;
   createdAt: Date;
   productionDate?: Date;
   notes: string | null;
+  status: "Active" | "Cancelled";
+  cancelledAt?: Date | null;
+  cancelReason?: string | null;
   out: { ingredientId: string; quantity: number; ingredientName: string | null }[];
   produced: { ingredientId: string; quantity: number; ingredientName: string | null }[];
 }
@@ -294,6 +315,50 @@ function YieldTrackingPage() {
     },
   });
 
+  // ── Cancel Produksi (branch_admin → super_admin/area_manager)
+  const [cancelTarget, setCancelTarget] = useState<ProductionRow | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const canApprove = user?.role === "super_admin" || user?.role === "area_manager";
+  const { data: cancelRequests = [] } = useQuery({
+    queryKey: ["yield-cancel-requests", user?.role],
+    queryFn: () => getYieldCancelRequests({ data: { status: "Pending" } }),
+    enabled: canApprove,
+  });
+  const pendingByYield = useMemo(() => {
+    const m = new Map<string, (typeof cancelRequests)[number]>();
+    for (const r of cancelRequests) m.set(r.yieldConversionId, r);
+    return m;
+  }, [cancelRequests]);
+  const requestCancelMutation = useMutation({
+    mutationFn: requestYieldCancel,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["yield-cancel-requests"] });
+      setCancelTarget(null);
+      setCancelReason("");
+    },
+  });
+  const approveMutation = useMutation({
+    mutationFn: approveYieldCancelRequest,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["yield-conversions"] });
+      void queryClient.invalidateQueries({ queryKey: ["yield-cancel-requests"] });
+    },
+  });
+  const rejectMutation = useMutation({
+    mutationFn: rejectYieldCancelRequest,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["yield-cancel-requests"] });
+    },
+  });
+  const directCancelMutation = useMutation({
+    mutationFn: directCancelYieldConversion,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["yield-conversions"] });
+      setCancelTarget(null);
+      setCancelReason("");
+    },
+  });
+
   // ── Barang Keluar (Out) — checkbox selection
   const outIds = useMemo(() => new Set(outItems.map((i) => i.ingredientId)), [outItems]);
   const producedIds = useMemo(
@@ -443,6 +508,78 @@ function YieldTrackingPage() {
       sortable: false,
       render: (r) => <span className="text-muted-foreground">{r.notes ?? "-"}</span>,
     },
+    {
+      key: "status",
+      header: "Status",
+      width: "w-28",
+      sortable: true,
+      render: (r) => {
+        const pending = pendingByYield.get(r.id);
+        if (r.status === "Cancelled")
+          return (
+            <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs">
+              Cancelled
+            </span>
+          );
+        if (pending)
+          return (
+            <span className="inline-flex items-center rounded bg-amber-100 text-amber-800 px-2 py-0.5 text-xs">
+              Pending Cancel
+            </span>
+          );
+        return (
+          <span className="inline-flex items-center rounded bg-emerald-50 text-emerald-700 px-2 py-0.5 text-xs">
+            Active
+          </span>
+        );
+      },
+    },
+    {
+      key: "actions",
+      header: "Aksi",
+      width: "w-40",
+      sortable: false,
+      render: (r) => {
+        const pending = pendingByYield.get(r.id);
+        const isCancelled = r.status === "Cancelled";
+        if (isCancelled) return <span className="text-xs text-muted-foreground">—</span>;
+        if (pending && canApprove) {
+          return (
+            <div className="flex gap-1">
+              <button
+                onClick={() => approveMutation.mutate({ data: { requestId: pending.id } })}
+                disabled={approveMutation.isPending}
+                className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                <Check className="h-3 w-3" /> Setujui
+              </button>
+              <button
+                onClick={() => rejectMutation.mutate({ data: { requestId: pending.id } })}
+                disabled={rejectMutation.isPending}
+                className="inline-flex items-center gap-1 rounded bg-destructive px-2 py-1 text-xs text-white hover:bg-destructive/90 disabled:opacity-50"
+              >
+                <Ban className="h-3 w-3" /> Tolak
+              </button>
+            </div>
+          );
+        }
+        if (pending) return <span className="text-xs text-amber-600">Menunggu persetujuan</span>;
+        // branch_admin / central_kitchen can request; super_admin can direct cancel
+        const canRequest =
+          user?.role === "branch_admin" ||
+          user?.role === "central_kitchen" ||
+          user?.role === "super_admin";
+        if (!canRequest) return <span className="text-xs text-muted-foreground">—</span>;
+        return (
+          <button
+            onClick={() => setCancelTarget(r)}
+            className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted"
+          >
+            <Trash2 className="h-3 w-3" /> Batal
+          </button>
+        );
+      },
+    },
   ];
 
   usePageTitle("Tracking Produksi", "Pencatatan produksi: barang keluar & barang dihasilkan");
@@ -509,6 +646,17 @@ function YieldTrackingPage() {
           sort={sort}
           onSortChange={setSort}
         />
+
+        {canApprove && cancelRequests.length > 0 && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm">
+            <p className="font-medium text-amber-800">
+              {cancelRequests.length} permintaan batal produksi menunggu persetujuan
+            </p>
+            <p className="text-amber-700 text-xs">
+              Setujui atau tolak dari kolom Aksi pada tabel di bawah.
+            </p>
+          </div>
+        )}
 
         <Modal
           open={modalOpen}
@@ -643,6 +791,114 @@ function YieldTrackingPage() {
               </button>
             </div>
           </form>
+        </Modal>
+
+        <Modal
+          open={!!cancelTarget}
+          onClose={() => {
+            setCancelTarget(null);
+            setCancelReason("");
+            requestCancelMutation.reset();
+            directCancelMutation.reset();
+          }}
+          title={user?.role === "super_admin" ? "Batalkan Produksi" : "Request Batal Produksi"}
+          size="lg"
+        >
+          <div className="space-y-4">
+            {(requestCancelMutation.isError || directCancelMutation.isError) && (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>
+                  {(requestCancelMutation.error as Error)?.message ||
+                    (directCancelMutation.error as Error)?.message ||
+                    "Gagal membatalkan"}
+                </span>
+              </div>
+            )}
+            {requestCancelMutation.isSuccess && (
+              <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
+                Permintaan batal dikirim — menunggu persetujuan super_admin / area_manager.
+              </div>
+            )}
+            {cancelTarget && (
+              <div className="rounded-md border p-3 text-sm space-y-1">
+                <p className="font-medium">
+                  Produksi {cancelTarget.id.slice(0, 8)} —{" "}
+                  {new Date(
+                    cancelTarget.productionDate ?? cancelTarget.createdAt,
+                  ).toLocaleDateString("id-ID")}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  {cancelTarget.out.map((o) => o.ingredientName).join(", ")} →{" "}
+                  {cancelTarget.produced.map((p) => p.ingredientName).join(", ")}
+                </p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Alasan pembatalan *</label>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Contoh: salah input tanggal / duplikat"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[80px] resize-none"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCancelTarget(null);
+                  setCancelReason("");
+                }}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Tutup
+              </button>
+              {user?.role === "super_admin" ? (
+                <button
+                  type="button"
+                  disabled={
+                    !cancelReason.trim() ||
+                    directCancelMutation.isPending ||
+                    requestCancelMutation.isPending
+                  }
+                  onClick={() => {
+                    if (!cancelTarget) return;
+                    // super_admin direct cancel without request queue
+                    directCancelMutation.mutate({
+                      data: { yieldConversionId: cancelTarget.id, reason: cancelReason.trim() },
+                    });
+                  }}
+                  className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium disabled:opacity-50"
+                >
+                  {directCancelMutation.isPending ? "Memproses..." : "Batalkan Langsung"}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={!cancelReason.trim() || requestCancelMutation.isPending}
+                onClick={() => {
+                  if (!cancelTarget) return;
+                  requestCancelMutation.mutate({
+                    data: { yieldConversionId: cancelTarget.id, reason: cancelReason.trim() },
+                  });
+                }}
+                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+              >
+                {requestCancelMutation.isPending
+                  ? "Mengirim..."
+                  : user?.role === "super_admin"
+                    ? "Request Batal"
+                    : "Kirim Request"}
+              </button>
+            </div>
+            {user?.role === "super_admin" && (
+              <p className="text-xs text-muted-foreground">
+                Sebagai super_admin Anda dapat “Batalkan Langsung” tanpa menunggu persetujuan, atau
+                kirim request seperti branch_admin.
+              </p>
+            )}
+          </div>
         </Modal>
       </div>
     </RoleGuard>
