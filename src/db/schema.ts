@@ -151,6 +151,15 @@ export const printRequestStatusEnum = pgEnum("print_request_status", [
   "Consumed",
 ]);
 
+export const yieldConversionStatusEnum = pgEnum("yield_conversion_status", ["Active", "Cancelled"]);
+
+export const yieldCancelRequestStatusEnum = pgEnum("yield_cancel_request_status", [
+  "Pending",
+  "Approved",
+  "Rejected",
+  "Executed",
+]);
+
 export const logStatusEnum = pgEnum("log_status", ["Success", "Warning", "Error"]);
 
 export const notificationTypeEnum = pgEnum("notification_type", ["info", "warning", "alert"]);
@@ -833,8 +842,12 @@ export const yieldConversions = pgTable(
       .references(() => users.id),
     productionDate: timestamp("production_date", { mode: "date" }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    status: yieldConversionStatusEnum("status").notNull().default("Active"),
+    cancelledAt: timestamp("cancelled_at", { mode: "date" }),
+    cancelledBy: uuid("cancelled_by").references(() => users.id),
+    cancelReason: text("cancel_reason"),
   },
-  (t) => [index("yc_branch_idx").on(t.branchId)],
+  (t) => [index("yc_branch_idx").on(t.branchId), index("yc_status_idx").on(t.status)],
 );
 
 // One row per ingredient movement within a production record.
@@ -858,6 +871,29 @@ export const yieldConversionItems = pgTable(
   (t) => [
     index("yci_conversion_idx").on(t.conversionId),
     index("yci_ingredient_idx").on(t.ingredientId),
+  ],
+);
+
+export const yieldCancelRequests = pgTable(
+  "yield_cancel_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    yieldConversionId: uuid("yield_conversion_id")
+      .notNull()
+      .references(() => yieldConversions.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    detail: text("detail"),
+    requestedBy: uuid("requested_by")
+      .notNull()
+      .references(() => users.id),
+    approvedBy: uuid("approved_by").references(() => users.id),
+    status: yieldCancelRequestStatusEnum("status").notNull().default("Pending"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    approvedAt: timestamp("approved_at", { mode: "date" }),
+  },
+  (t) => [
+    index("ycr_conversion_idx").on(t.yieldConversionId),
+    index("ycr_status_idx").on(t.status),
   ],
 );
 
@@ -1884,6 +1920,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   cancelApprovals: many(cancelRequests, { relationName: "approvedBy" }),
   printRequests: many(printRequests, { relationName: "requestedBy" }),
   printApprovals: many(printRequests, { relationName: "approvedBy" }),
+  yieldCancelRequests: many(yieldCancelRequests, { relationName: "yieldCancelRequestedBy" }),
+  yieldCancelApprovals: many(yieldCancelRequests, { relationName: "yieldCancelApprovedBy" }),
   vouchersCreated: many(vouchers),
   purchaseRequisitions: many(purchaseRequisitions, { relationName: "requestedBy" }),
   purchaseRequisitionsApproved: many(purchaseRequisitions, { relationName: "approvedBy" }),
@@ -2204,6 +2242,25 @@ export const yieldConversionsRelations = relations(yieldConversions, ({ one, man
   branch: one(branches, { fields: [yieldConversions.branchId], references: [branches.id] }),
   items: many(yieldConversionItems),
   processedByUser: one(users, { fields: [yieldConversions.processedBy], references: [users.id] }),
+  cancelledByUser: one(users, { fields: [yieldConversions.cancelledBy], references: [users.id] }),
+  cancelRequests: many(yieldCancelRequests),
+}));
+
+export const yieldCancelRequestsRelations = relations(yieldCancelRequests, ({ one }) => ({
+  yieldConversion: one(yieldConversions, {
+    fields: [yieldCancelRequests.yieldConversionId],
+    references: [yieldConversions.id],
+  }),
+  requestedByUser: one(users, {
+    fields: [yieldCancelRequests.requestedBy],
+    references: [users.id],
+    relationName: "yieldCancelRequestedBy",
+  }),
+  approvedByUser: one(users, {
+    fields: [yieldCancelRequests.approvedBy],
+    references: [users.id],
+    relationName: "yieldCancelApprovedBy",
+  }),
 }));
 
 // ─── SCM ───
