@@ -8,6 +8,7 @@ import {
   recipeModifierGroups,
   recipeBranches,
   categories,
+  orderItemModifiers,
 } from "#/db/schema";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
@@ -229,6 +230,7 @@ export const createModifierGroup = createServerFn({ method: "POST" })
 const updateModifierInput = modifierInput
   .omit({ price: true, isExclusion: true, sortOrder: true })
   .extend({
+    id: z.string().uuid().optional(),
     price: z.number().int().min(0).optional(),
     isExclusion: z.boolean().optional(),
     sortOrder: z.number().int().min(0).optional(),
@@ -254,6 +256,7 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
     const { id, modifiers: mods, ...groupUpdates } = data;
 
     const [old] = await db.select().from(modifierGroups).where(eq(modifierGroups.id, id)).limit(1);
+    if (!old) throw new Error("Modifier group not found");
 
     // Only set fields that were actually provided — absent optionals parse to
     // `undefined` now (no default injection), and drizzle throws on an empty set.
@@ -267,35 +270,134 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
     }
 
     if (mods !== undefined) {
-      // Delete existing modifiers
-      const existing = await db.select().from(modifiers).where(eq(modifiers.modifierGroupId, id));
-      for (const e of existing) {
-        await db.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, e.id));
-      }
-      await db.delete(modifiers).where(eq(modifiers.modifierGroupId, id));
+      // SAFETY: data.code is validated by zod as string | undefined; fallback to stored code.
+      const groupCode = (data.code as string | undefined) ?? old.code;
 
-      // Re-create
-      for (const [idx, mod] of mods.entries()) {
-        const [createdMod] = await db
-          .insert(modifiers)
-          .values({
-            modifierGroupId: id,
-            code: `${groupUpdates.code ?? ""}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
-            name: mod.name,
-            price: mod.price,
-            isExclusion: mod.isExclusion,
-            sortOrder: idx,
-          })
-          .returning();
+      await db.transaction(async (tx) => {
+        const existing = await tx.select().from(modifiers).where(eq(modifiers.modifierGroupId, id));
+        const existingMap = new Map(existing.map((e) => [e.id, e]));
+        const incomingIds = new Set(
+          mods.filter((m): m is typeof m & { id: string } => m.id !== undefined).map((m) => m.id),
+        );
+        const hasIds = incomingIds.size > 0;
+        const legacyNoIds = !hasIds && mods.length > 0;
 
-        if (mod.ingredientId && mod.ingredientQty) {
-          await db.insert(modifierIngredients).values({
-            modifierId: createdMod.id,
-            ingredientId: mod.ingredientId,
-            quantity: mod.ingredientQty,
-          });
+        if (legacyNoIds && existing.length > 0) {
+          // Legacy payload without ids — cannot diff by identity. Guard the
+          // FK on order_item_modifiers.modifier_id (restrict) so Postgres
+          // doesn't surface a bare `Failed query: delete from "modifiers"`.
+          const referenced = await tx
+            .select({ rid: orderItemModifiers.modifierId })
+            .from(orderItemModifiers)
+            .where(
+              inArray(
+                orderItemModifiers.modifierId,
+                existing.map((e) => e.id),
+              ),
+            )
+            .limit(1);
+          if (referenced.length > 0) {
+            throw new Error(
+              "Tidak dapat mengubah opsi modifier karena sudah dipakai di riwayat pesanan. Hapus pemakaian atau edit opsi satu per satu (nama/harga) tanpa menghapus opsi yang sudah terpakai.",
+            );
+          }
+          for (const e of existing) {
+            await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, e.id));
+          }
+          await tx.delete(modifiers).where(eq(modifiers.modifierGroupId, id));
+          for (const [idx, mod] of mods.entries()) {
+            const [createdMod] = await tx
+              .insert(modifiers)
+              .values({
+                modifierGroupId: id,
+                code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
+                name: mod.name,
+                price: mod.price ?? 0,
+                isExclusion: mod.isExclusion ?? false,
+                sortOrder: mod.sortOrder ?? idx,
+              })
+              .returning();
+            if (mod.ingredientId && mod.ingredientQty) {
+              await tx.insert(modifierIngredients).values({
+                modifierId: createdMod.id,
+                ingredientId: mod.ingredientId,
+                quantity: mod.ingredientQty,
+              });
+            }
+          }
+          return;
         }
-      }
+
+        // Id-aware diff: update existing, insert new, delete removed.
+        for (const incomingId of incomingIds) {
+          if (!existingMap.has(incomingId)) {
+            throw new Error(`Modifier ${incomingId} tidak ditemukan di grup ini`);
+          }
+        }
+
+        const toDeleteIds = existing.filter((e) => !incomingIds.has(e.id)).map((e) => e.id);
+        if (toDeleteIds.length > 0) {
+          const referenced = await tx
+            .select({ rid: orderItemModifiers.modifierId })
+            .from(orderItemModifiers)
+            .where(inArray(orderItemModifiers.modifierId, toDeleteIds));
+          if (referenced.length > 0) {
+            const names = existing
+              .filter((e) => referenced.some((r) => r.rid === e.id))
+              .map((e) => e.name)
+              .join(", ");
+            throw new Error(
+              `Tidak dapat menghapus opsi "${names}" karena sudah dipakai di riwayat pesanan. Ubah nama/harga opsi tersebut tanpa menghapusnya, atau hapus pesanan terkait terlebih dahulu.`,
+            );
+          }
+          for (const delId of toDeleteIds) {
+            await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, delId));
+            await tx.delete(modifiers).where(eq(modifiers.id, delId));
+          }
+        }
+
+        // Also handle the case where mods is an empty array (remove all) —
+        // toDeleteIds already covers it, so just handle upserts below (no-op).
+        for (const [idx, mod] of mods.entries()) {
+          if (mod.id && existingMap.has(mod.id)) {
+            const set: UnknownRecord = {
+              name: mod.name,
+              sortOrder: mod.sortOrder ?? idx,
+              code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
+            };
+            if (mod.price !== undefined) set.price = mod.price;
+            if (mod.isExclusion !== undefined) set.isExclusion = mod.isExclusion;
+            await tx.update(modifiers).set(set).where(eq(modifiers.id, mod.id));
+            await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, mod.id));
+            if (mod.ingredientId && mod.ingredientQty) {
+              await tx.insert(modifierIngredients).values({
+                modifierId: mod.id,
+                ingredientId: mod.ingredientId,
+                quantity: mod.ingredientQty,
+              });
+            }
+          } else if (!mod.id) {
+            const [createdMod] = await tx
+              .insert(modifiers)
+              .values({
+                modifierGroupId: id,
+                code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
+                name: mod.name,
+                price: mod.price ?? 0,
+                isExclusion: mod.isExclusion ?? false,
+                sortOrder: mod.sortOrder ?? idx,
+              })
+              .returning();
+            if (mod.ingredientId && mod.ingredientQty) {
+              await tx.insert(modifierIngredients).values({
+                modifierId: createdMod.id,
+                ingredientId: mod.ingredientId,
+                quantity: mod.ingredientQty,
+              });
+            }
+          }
+        }
+      });
     }
 
     const [updated] = await db
@@ -405,11 +507,42 @@ export const deleteModifierGroup = createServerFn({ method: "POST" })
       .limit(1);
     if (!old) throw new Error("Modifier group not found");
 
-    // Delete cascade: modifiers → modifierIngredients
+    // Guard FK: order_item_modifiers restricts deletion of a modifier that has
+    // been used in order history. Surface a friendly message instead of a raw
+    // Postgres FK violation.
     const existingMods = await db
       .select()
       .from(modifiers)
       .where(eq(modifiers.modifierGroupId, data.id));
+    if (existingMods.length > 0) {
+      const referenced = await db
+        .select({ rid: orderItemModifiers.modifierId })
+        .from(orderItemModifiers)
+        .where(
+          inArray(
+            orderItemModifiers.modifierId,
+            existingMods.map((m) => m.id),
+          ),
+        )
+        .limit(1);
+      if (referenced.length > 0) {
+        throw new Error(
+          "Tidak dapat menghapus grup modifier karena salah satu opsinya sudah dipakai di riwayat pesanan.",
+        );
+      }
+      // Also check modifier_group_id FK from order_item_modifiers
+      const groupReferenced = await db
+        .select({ rid: orderItemModifiers.modifierGroupId })
+        .from(orderItemModifiers)
+        .where(eq(orderItemModifiers.modifierGroupId, data.id))
+        .limit(1);
+      if (groupReferenced.length > 0) {
+        throw new Error(
+          "Tidak dapat menghapus grup modifier karena grup ini sudah dipakai di riwayat pesanan.",
+        );
+      }
+    }
+    // Delete cascade: modifiers → modifierIngredients (safe after guard)
     for (const m of existingMods) {
       await db.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, m.id));
     }

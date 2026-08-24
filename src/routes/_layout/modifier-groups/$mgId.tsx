@@ -435,11 +435,26 @@ function ModifierGroupDetailPage() {
         maxSelection: Number(fd.get("maxSelection")),
         modifiers: modifiersInput
           .filter((m) => m.name.trim())
-          .map((m) => ({
-            name: m.name,
-            price: m.price,
-            isExclusion: m.isExclusion,
-          })),
+          .map((m, idx) => {
+            // Include the DB id for existing rows so the server can UPDATE
+            // in place and preserve order history. Synthetic `new-*` keys
+            // are omitted so the server INSERTs instead.
+            if (m.key.startsWith("new-")) {
+              return {
+                name: m.name,
+                price: m.price,
+                isExclusion: m.isExclusion,
+                sortOrder: idx,
+              };
+            }
+            return {
+              id: m.key,
+              name: m.name,
+              price: m.price,
+              isExclusion: m.isExclusion,
+              sortOrder: idx,
+            };
+          }),
       },
     });
   };

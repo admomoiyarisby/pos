@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- integration test bridges TestDb to FsmTx transaction handle via unchecked cast; the underlying pg drizzle surface is identical and correctness is validated by live DB round-trips */
 /**
  * Kartu Stok (stock_ledger) integration — per-path ledger contract.
  *
@@ -268,15 +269,13 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         const mgId = crypto.randomUUID();
         await db.insert(schema.modifierGroups).values({ id: mgId, code: suid("MG"), name: "Excl" });
         const modId = crypto.randomUUID();
-        await db
-          .insert(schema.modifiers)
-          .values({
-            id: modId,
-            modifierGroupId: mgId,
-            code: suid("MOD"),
-            name: "No X",
-            isExclusion: true,
-          });
+        await db.insert(schema.modifiers).values({
+          id: modId,
+          modifierGroupId: mgId,
+          code: suid("MOD"),
+          name: "No X",
+          isExclusion: true,
+        });
         await db
           .insert(schema.recipeModifierExclusions)
           .values({ recipeId, modifierId: modId, ingredientId: exclIngId, quantity: 2 });
@@ -316,16 +315,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: invBase.quantity - baseDelta })
           .where(eq(schema.inventory.id, invBase.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId,
-            ingredientId: baseIngId,
-            type: "OUT",
-            quantity: baseDelta,
-            balance: invBase.quantity - baseDelta,
-            reference: orderId,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: baseIngId,
+          type: "OUT",
+          quantity: baseDelta,
+          balance: invBase.quantity - baseDelta,
+          reference: orderId,
+        });
         // Apply exclusion (IN)
         const [invExcl] = await db
           .select()
@@ -341,16 +338,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: invExcl.quantity - exclDelta })
           .where(eq(schema.inventory.id, invExcl.id)); // minus -2 = +2
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId,
-            ingredientId: exclIngId,
-            type: "IN",
-            quantity: Math.abs(exclDelta),
-            balance: invExcl.quantity - exclDelta,
-            reference: orderId,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: exclIngId,
+          type: "IN",
+          quantity: Math.abs(exclDelta),
+          balance: invExcl.quantity - exclDelta,
+          reference: orderId,
+        });
         await assertLedgerContract(db, {
           reference: orderId,
           branchId,
@@ -398,16 +393,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: inv.quantity - 4 })
           .where(eq(schema.inventory.id, inv.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId,
-            ingredientId: ingId,
-            type: "OUT",
-            quantity: 4,
-            balance: 96,
-            reference: orderId,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingId,
+          type: "OUT",
+          quantity: 4,
+          balance: 96,
+          reference: orderId,
+        });
         await assertLedgerContract(db, {
           reference: orderId,
           branchId,
@@ -461,16 +454,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
             .update(schema.inventory)
             .set({ quantity: inv.quantity - ing.quantity })
             .where(eq(schema.inventory.id, inv.id));
-          await db
-            .insert(schema.stockLedger)
-            .values({
-              branchId,
-              ingredientId: ing.ingredientId,
-              type: "OUT",
-              quantity: ing.quantity,
-              balance: inv.quantity - ing.quantity,
-              reference: orderId,
-            });
+          await db.insert(schema.stockLedger).values({
+            branchId,
+            ingredientId: ing.ingredientId,
+            type: "OUT",
+            quantity: ing.quantity,
+            balance: inv.quantity - ing.quantity,
+            reference: orderId,
+          });
         }
         await assertLedgerContract(db, {
           reference: orderId,
@@ -517,27 +508,23 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: 42 })
           .where(eq(schema.inventory.id, invBefore.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId,
-            ingredientId: ingId,
-            type: "OUT",
-            quantity: 8,
-            balance: 42,
-            reference: orderId,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingId,
+          type: "OUT",
+          quantity: 8,
+          balance: 42,
+          reference: orderId,
+        });
         // Create minimal order + orderItem rows to test resolvePersistedItemIngredients round-trip
-        await db
-          .insert(schema.orders)
-          .values({
-            id: orderId,
-            branchId,
-            channel: "Dine-in",
-            subtotal: 100,
-            totalAmount: 100,
-            status: "New",
-          });
+        await db.insert(schema.orders).values({
+          id: orderId,
+          branchId,
+          channel: "Dine-in",
+          subtotal: 100,
+          totalAmount: 100,
+          status: "New",
+        });
         const oiId = crypto.randomUUID();
         await db
           .insert(schema.orderItems)
@@ -556,17 +543,15 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: invPreVoid.quantity + 8 })
           .where(eq(schema.inventory.id, invBefore.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId,
-            ingredientId: ingId,
-            type: "IN",
-            quantity: 8,
-            balance: 50,
-            reference: orderId,
-            notes: `Void Order ${orderId.slice(0, 8)}`,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingId,
+          type: "IN",
+          quantity: 8,
+          balance: 50,
+          reference: orderId,
+          notes: `Void Order ${orderId.slice(0, 8)}`,
+        });
         // Same reference has both OUT (create) and IN (void) — assert the IN row exists
         const p2Rows = await ledgerRows(db, orderId);
         const p2VoidRow = p2Rows.find(
@@ -595,15 +580,13 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .insert(schema.modifierGroups)
           .values({ id: mgId, code: suid("MG2"), name: "Excl2" });
         const modId = crypto.randomUUID();
-        await db
-          .insert(schema.modifiers)
-          .values({
-            id: modId,
-            modifierGroupId: mgId,
-            code: suid("MOD2"),
-            name: "No X2",
-            isExclusion: true,
-          });
+        await db.insert(schema.modifiers).values({
+          id: modId,
+          modifierGroupId: mgId,
+          code: suid("MOD2"),
+          name: "No X2",
+          isExclusion: true,
+        });
         await db
           .insert(schema.recipeModifierExclusions)
           .values({ recipeId, modifierId: modId, ingredientId: exclIngId, quantity: 2 });
@@ -611,37 +594,31 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, branchId, exclIngId, 100);
         // Simulate order with exclusion: createOrder deducts 5 OUT and IN 2 for exclusion
         const orderId = crypto.randomUUID();
-        await db
-          .insert(schema.orders)
-          .values({
-            id: orderId,
-            branchId,
-            channel: "Dine-in",
-            subtotal: 100,
-            totalAmount: 100,
-            status: "New",
-          });
+        await db.insert(schema.orders).values({
+          id: orderId,
+          branchId,
+          channel: "Dine-in",
+          subtotal: 100,
+          totalAmount: 100,
+          status: "New",
+        });
         const oiId = crypto.randomUUID();
         await db
           .insert(schema.orderItems)
           .values({ id: oiId, orderId, recipeId, quantity: 1, price: 100 });
-        await db
-          .insert(schema.orderItemModifiers)
-          .values({
-            id: crypto.randomUUID(),
-            orderItemId: oiId,
-            modifierGroupId: mgId,
-            modifierId: modId,
-          });
+        await db.insert(schema.orderItemModifiers).values({
+          id: crypto.randomUUID(),
+          orderItemId: oiId,
+          modifierGroupId: mgId,
+          modifierId: modId,
+        });
         // Exclusion record persisted by createOrder
-        await db
-          .insert(schema.orderItemExclusions)
-          .values({
-            id: crypto.randomUUID(),
-            orderItemId: oiId,
-            ingredientId: exclIngId,
-            quantity: 2,
-          });
+        await db.insert(schema.orderItemExclusions).values({
+          id: crypto.randomUUID(),
+          orderItemId: oiId,
+          ingredientId: exclIngId,
+          quantity: 2,
+        });
         // Apply create ledgers to reflect current inventory (post-order): base 95, excl 102
         const [bInv] = await db
           .select()
@@ -753,16 +730,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         const requesterId = await createUser(db, branchId, "branch_admin");
         const approverId = await createUser(db, branchId, "area_manager");
         // Simulate order creation (deduct 8)
-        await db
-          .insert(schema.orders)
-          .values({
-            id: orderId,
-            branchId,
-            channel: "Dine-in",
-            subtotal: 100,
-            totalAmount: 100,
-            status: "New",
-          });
+        await db.insert(schema.orders).values({
+          id: orderId,
+          branchId,
+          channel: "Dine-in",
+          subtotal: 100,
+          totalAmount: 100,
+          status: "New",
+        });
         const oiId = crypto.randomUUID();
         await db
           .insert(schema.orderItems)
@@ -778,27 +753,23 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: 52 })
           .where(eq(schema.inventory.id, inv0.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId,
-            ingredientId: ingId,
-            type: "OUT",
-            quantity: 8,
-            balance: 52,
-            reference: orderId,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingId,
+          type: "OUT",
+          quantity: 8,
+          balance: 52,
+          reference: orderId,
+        });
         // Create cancel request Pending -> Approved -> Executed (state machine)
         const crId = crypto.randomUUID();
-        await db
-          .insert(schema.cancelRequests)
-          .values({
-            id: crId,
-            orderId,
-            reason: "Salah Input",
-            requestedBy: requesterId,
-            status: "Pending",
-          });
+        await db.insert(schema.cancelRequests).values({
+          id: crId,
+          orderId,
+          reason: "Salah Input",
+          requestedBy: requesterId,
+          status: "Pending",
+        });
         await db
           .update(schema.cancelRequests)
           .set({ status: "Approved", approvedBy: approverId })
@@ -821,17 +792,15 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: invPre.quantity + 8 })
           .where(eq(schema.inventory.id, inv0.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId,
-            ingredientId: ingId,
-            type: "IN",
-            quantity: 8,
-            balance: 60,
-            reference: orderId,
-            notes: `Cancel ${crId.slice(0, 8)}`,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingId,
+          type: "IN",
+          quantity: 8,
+          balance: 60,
+          reference: orderId,
+          notes: `Cancel ${crId.slice(0, 8)}`,
+        });
         const rows = await ledgerRows(db, orderId);
         const cancelVoidRow = rows.find((r) => r.type === "IN" && r.notes?.includes("Cancel"));
         expect(cancelVoidRow).toBeDefined();
@@ -962,41 +931,35 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           centralId = centrals[0].id;
         }
         const procId = crypto.randomUUID();
-        await db
-          .insert(schema.scmProcurements)
-          .values({
-            id: procId,
-            code: suid("PROC-S2"),
-            branchId: destId,
-            status: "InTransit",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmProcurements).values({
+          id: procId,
+          code: suid("PROC-S2"),
+          branchId: destId,
+          status: "InTransit",
+          requestedById: actorId,
+        });
         const itemId = crypto.randomUUID();
-        await db
-          .insert(schema.scmProcurementItems)
-          .values({
-            id: itemId,
-            scmProcurementId: procId,
-            ingredientId: ingId,
-            quantity: 10,
-            readyQuantity: 10,
-            pickedQuantity: 10,
-            caDecision: "approved",
-            unitPrice: 5000,
-            receivedQuantity: 8,
-            rejectedQuantity: 2,
-            reason: "rusak",
-            baDecision: "accepted",
-          });
+        await db.insert(schema.scmProcurementItems).values({
+          id: itemId,
+          scmProcurementId: procId,
+          ingredientId: ingId,
+          quantity: 10,
+          readyQuantity: 10,
+          pickedQuantity: 10,
+          caDecision: "approved",
+          unitPrice: 5000,
+          receivedQuantity: 8,
+          rejectedQuantity: 2,
+          reason: "rusak",
+          baDecision: "accepted",
+        });
         // Simulate S1 already put inTransit at Central — insert inTransitInventory at dest
-        await db
-          .insert(schema.inTransitInventory)
-          .values({
-            scmProcurementId: procId,
-            branchId: destId,
-            ingredientId: ingId,
-            quantity: 10,
-          });
+        await db.insert(schema.inTransitInventory).values({
+          scmProcurementId: procId,
+          branchId: destId,
+          ingredientId: ingId,
+          quantity: 10,
+        });
         const { moveStockToPendingReview, writeReceivedStock } = await import("./scm-effects");
         // S2: move to pendingReview — no ledger
         await moveStockToPendingReview(
@@ -1060,15 +1023,13 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         const ingB = await createIngredient(db, suid("ING-S3B-B"), 3000);
         const procId = crypto.randomUUID();
         const actorId = await createUser(db, null, "super_admin");
-        await db
-          .insert(schema.scmProcurements)
-          .values({
-            id: procId,
-            code: suid("PROC-S3B"),
-            branchId: destId,
-            status: "ReviewingSJ",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmProcurements).values({
+          id: procId,
+          code: suid("PROC-S3B"),
+          branchId: destId,
+          status: "ReviewingSJ",
+          requestedById: actorId,
+        });
         const itemA = crypto.randomUUID();
         const itemB = crypto.randomUUID();
         await db.insert(schema.scmProcurementItems).values([
@@ -1131,15 +1092,13 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         const ingB = await createIngredient(db, suid("ING-S3C-B"), 3000);
         const procId = crypto.randomUUID();
         const actorId = await createUser(db, null, "super_admin");
-        await db
-          .insert(schema.scmProcurements)
-          .values({
-            id: procId,
-            code: suid("PROC-S3C"),
-            branchId: destId,
-            status: "ReviewingSJ",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmProcurements).values({
+          id: procId,
+          code: suid("PROC-S3C"),
+          branchId: destId,
+          status: "ReviewingSJ",
+          requestedById: actorId,
+        });
         const itemA = crypto.randomUUID();
         const itemB = crypto.randomUUID();
         await db.insert(schema.scmProcurementItems).values([
@@ -1194,31 +1153,27 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
       const ingId = await createIngredient(db, suid("ING-S4"));
       const procId = crypto.randomUUID();
       const actorId = await createUser(db, null, "super_admin");
-      await db
-        .insert(schema.scmProcurements)
-        .values({
-          id: procId,
-          code: suid("PROC-S4"),
-          branchId: destId,
-          status: "WaitingForPayment",
-          requestedById: actorId,
-        });
+      await db.insert(schema.scmProcurements).values({
+        id: procId,
+        code: suid("PROC-S4"),
+        branchId: destId,
+        status: "WaitingForPayment",
+        requestedById: actorId,
+      });
       const itemId = crypto.randomUUID();
-      await db
-        .insert(schema.scmProcurementItems)
-        .values({
-          id: itemId,
-          scmProcurementId: procId,
-          ingredientId: ingId,
-          quantity: 5,
-          readyQuantity: 5,
-          pickedQuantity: 5,
-          caDecision: "approved",
-          unitPrice: 1000,
-          receivedQuantity: 5,
-          rejectedQuantity: 0,
-          baDecision: "accepted",
-        });
+      await db.insert(schema.scmProcurementItems).values({
+        id: itemId,
+        scmProcurementId: procId,
+        ingredientId: ingId,
+        quantity: 5,
+        readyQuantity: 5,
+        pickedQuantity: 5,
+        caDecision: "approved",
+        unitPrice: 1000,
+        receivedQuantity: 5,
+        rejectedQuantity: 0,
+        baDecision: "accepted",
+      });
       const { generateInvoiceSnapshot, markInvoicePaid } = await import("./scm-effects");
       await generateInvoiceSnapshot(
         procId,
@@ -1248,15 +1203,13 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
       await setInventory(db, destId, ingId, 50);
       const procId = crypto.randomUUID();
       const actorId = await createUser(db, null, "super_admin");
-      await db
-        .insert(schema.scmProcurements)
-        .values({
-          id: procId,
-          code: suid("PROC-S5"),
-          branchId: destId,
-          status: "Draft",
-          requestedById: actorId,
-        });
+      await db.insert(schema.scmProcurements).values({
+        id: procId,
+        code: suid("PROC-S5"),
+        branchId: destId,
+        status: "Draft",
+        requestedById: actorId,
+      });
       const { noopOnCancel } = await import("./scm-effects");
       await noopOnCancel(
         procId,
@@ -1291,23 +1244,19 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, centralId, ingId, 40);
         const procId = crypto.randomUUID();
         const actorId = await createUser(db, null, "super_admin");
-        await db
-          .insert(schema.scmProcurements)
-          .values({
-            id: procId,
-            code: suid("PROC-S6"),
-            branchId: destId,
-            status: "InTransit",
-            requestedById: actorId,
-          });
-        await db
-          .insert(schema.inTransitInventory)
-          .values({
-            scmProcurementId: procId,
-            branchId: destId,
-            ingredientId: ingId,
-            quantity: 10,
-          });
+        await db.insert(schema.scmProcurements).values({
+          id: procId,
+          code: suid("PROC-S6"),
+          branchId: destId,
+          status: "InTransit",
+          requestedById: actorId,
+        });
+        await db.insert(schema.inTransitInventory).values({
+          scmProcurementId: procId,
+          branchId: destId,
+          ingredientId: ingId,
+          quantity: 10,
+        });
         const [invBefore] = await db
           .select()
           .from(schema.inventory)
@@ -1359,15 +1308,13 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, centralId, ingId, 30);
         const procId = crypto.randomUUID();
         const actorId = await createUser(db, null, "super_admin");
-        await db
-          .insert(schema.scmProcurements)
-          .values({
-            id: procId,
-            code: suid("PROC-S7"),
-            branchId: destId,
-            status: "Delivered",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmProcurements).values({
+          id: procId,
+          code: suid("PROC-S7"),
+          branchId: destId,
+          status: "Delivered",
+          requestedById: actorId,
+        });
         await db.insert(schema.pendingReviewInventory).values([
           {
             scmProcurementId: procId,
@@ -1422,32 +1369,28 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, destId, ingId, 10);
         const procId = crypto.randomUUID();
         const actorId = await createUser(db, null, "super_admin");
-        await db
-          .insert(schema.scmProcurements)
-          .values({
-            id: procId,
-            code: suid("PROC-S8"),
-            branchId: destId,
-            status: "WaitingForPayment",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmProcurements).values({
+          id: procId,
+          code: suid("PROC-S8"),
+          branchId: destId,
+          status: "WaitingForPayment",
+          requestedById: actorId,
+        });
         const itemId = crypto.randomUUID();
-        await db
-          .insert(schema.scmProcurementItems)
-          .values({
-            id: itemId,
-            scmProcurementId: procId,
-            ingredientId: ingId,
-            quantity: 10,
-            readyQuantity: 10,
-            pickedQuantity: 10,
-            caDecision: "approved",
-            unitPrice: 1000,
-            receivedQuantity: 6,
-            rejectedQuantity: 4,
-            reason: "rusak",
-            baDecision: "accepted",
-          });
+        await db.insert(schema.scmProcurementItems).values({
+          id: itemId,
+          scmProcurementId: procId,
+          ingredientId: ingId,
+          quantity: 10,
+          readyQuantity: 10,
+          pickedQuantity: 10,
+          caDecision: "approved",
+          unitPrice: 1000,
+          receivedQuantity: 6,
+          rejectedQuantity: 4,
+          reason: "rusak",
+          baDecision: "accepted",
+        });
         // Simulate finish-receive already moved 6 to dest and cleared pending
         const [destInv] = await db
           .select()
@@ -1460,15 +1403,13 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: 16 })
           .where(eq(schema.inventory.id, destInv.id));
-        await db
-          .insert(schema.scmProcurementInvoices)
-          .values({
-            scmProcurementId: procId,
-            generatedAt: new Date(),
-            generatedById: actorId,
-            totalAmount: 6000,
-            lineItems: [],
-          });
+        await db.insert(schema.scmProcurementInvoices).values({
+          scmProcurementId: procId,
+          generatedAt: new Date(),
+          generatedById: actorId,
+          totalAmount: 6000,
+          lineItems: [],
+        });
         const { reversePendingReviewOnCancel } = await import("./scm-effects");
         await reversePendingReviewOnCancel(
           procId,
@@ -1558,26 +1499,22 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, receiverId, ingId, 10);
         const actorId = await createUser(db, null, "super_admin");
         const trId = crypto.randomUUID();
-        await db
-          .insert(schema.scmTransfers)
-          .values({
-            id: trId,
-            code: suid("MUT-M2"),
-            fromBranchId: senderId,
-            toBranchId: receiverId,
-            status: "Approved",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmTransfers).values({
+          id: trId,
+          code: suid("MUT-M2"),
+          fromBranchId: senderId,
+          toBranchId: receiverId,
+          status: "Approved",
+          requestedById: actorId,
+        });
         const itemId = crypto.randomUUID();
-        await db
-          .insert(schema.scmTransferItems)
-          .values({
-            id: itemId,
-            scmTransferId: trId,
-            ingredientId: ingId,
-            quantity: 10,
-            unitPrice: 4000,
-          });
+        await db.insert(schema.scmTransferItems).values({
+          id: itemId,
+          scmTransferId: trId,
+          ingredientId: ingId,
+          quantity: 10,
+          unitPrice: 4000,
+        });
         const {
           writeTransferInTransitInventory,
           moveTransferToPendingReview,
@@ -1686,38 +1623,32 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, receiverId, ingId, 0);
         const actorId = await createUser(db, null, "super_admin");
         const trId = crypto.randomUUID();
-        await db
-          .insert(schema.scmTransfers)
-          .values({
-            id: trId,
-            code: suid("MUT-M3B"),
-            fromBranchId: senderId,
-            toBranchId: receiverId,
-            status: "ReviewingSJ",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmTransfers).values({
+          id: trId,
+          code: suid("MUT-M3B"),
+          fromBranchId: senderId,
+          toBranchId: receiverId,
+          status: "ReviewingSJ",
+          requestedById: actorId,
+        });
         const itemId = crypto.randomUUID();
-        await db
-          .insert(schema.scmTransferItems)
-          .values({
-            id: itemId,
-            scmTransferId: trId,
-            ingredientId: ingId,
-            quantity: 10,
-            unitPrice: 2500,
-            receivedQuantity: 8,
-            rejectedQuantity: 2,
-            reason: "bocor",
-          });
-        await db
-          .insert(schema.pendingReviewInventory)
-          .values({
-            scmTransferId: trId,
-            branchId: receiverId,
-            ingredientId: ingId,
-            quantity: 10,
-            createdById: actorId,
-          });
+        await db.insert(schema.scmTransferItems).values({
+          id: itemId,
+          scmTransferId: trId,
+          ingredientId: ingId,
+          quantity: 10,
+          unitPrice: 2500,
+          receivedQuantity: 8,
+          rejectedQuantity: 2,
+          reason: "bocor",
+        });
+        await db.insert(schema.pendingReviewInventory).values({
+          scmTransferId: trId,
+          branchId: receiverId,
+          ingredientId: ingId,
+          quantity: 10,
+          createdById: actorId,
+        });
         const { writeTransferRejectedWaste } = await import("./scm-transfer-effects");
         await writeTransferRejectedWaste(
           trId,
@@ -1747,16 +1678,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         const ingB = await createIngredient(db, suid("ING-M3C-B"), 3000);
         const actorId = await createUser(db, null, "super_admin");
         const trId = crypto.randomUUID();
-        await db
-          .insert(schema.scmTransfers)
-          .values({
-            id: trId,
-            code: suid("MUT-M3C"),
-            fromBranchId: senderId,
-            toBranchId: receiverId,
-            status: "ReviewingSJ",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmTransfers).values({
+          id: trId,
+          code: suid("MUT-M3C"),
+          fromBranchId: senderId,
+          toBranchId: receiverId,
+          status: "ReviewingSJ",
+          requestedById: actorId,
+        });
         const itemA = crypto.randomUUID();
         const itemB = crypto.randomUUID();
         await db.insert(schema.scmTransferItems).values([
@@ -1823,28 +1752,24 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
       const ingId = await createIngredient(db, suid("ING-M4"));
       const actorId = await createUser(db, null, "super_admin");
       const trId = crypto.randomUUID();
-      await db
-        .insert(schema.scmTransfers)
-        .values({
-          id: trId,
-          code: suid("MUT-M4"),
-          fromBranchId: senderId,
-          toBranchId: receiverId,
-          status: "WaitingForPayment",
-          requestedById: actorId,
-        });
+      await db.insert(schema.scmTransfers).values({
+        id: trId,
+        code: suid("MUT-M4"),
+        fromBranchId: senderId,
+        toBranchId: receiverId,
+        status: "WaitingForPayment",
+        requestedById: actorId,
+      });
       const itemId = crypto.randomUUID();
-      await db
-        .insert(schema.scmTransferItems)
-        .values({
-          id: itemId,
-          scmTransferId: trId,
-          ingredientId: ingId,
-          quantity: 5,
-          unitPrice: 1000,
-          receivedQuantity: 5,
-          rejectedQuantity: 0,
-        });
+      await db.insert(schema.scmTransferItems).values({
+        id: itemId,
+        scmTransferId: trId,
+        ingredientId: ingId,
+        quantity: 5,
+        unitPrice: 1000,
+        receivedQuantity: 5,
+        rejectedQuantity: 0,
+      });
       const { generateTransferInvoiceSnapshot, markTransferInvoicePaid } =
         await import("./scm-transfer-effects");
       await generateTransferInvoiceSnapshot(
@@ -1878,16 +1803,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, senderId, ingId, 50);
         const actorId = await createUser(db, null, "super_admin");
         const trId = crypto.randomUUID();
-        await db
-          .insert(schema.scmTransfers)
-          .values({
-            id: trId,
-            code: suid("MUT-M5"),
-            fromBranchId: senderId,
-            toBranchId: receiverId,
-            status: "SuratJalanDraft",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmTransfers).values({
+          id: trId,
+          code: suid("MUT-M5"),
+          fromBranchId: senderId,
+          toBranchId: receiverId,
+          status: "SuratJalanDraft",
+          requestedById: actorId,
+        });
         const { noopOnCancel } = await import("./scm-transfer-effects");
         await noopOnCancel(
           trId,
@@ -1920,16 +1843,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, receiverId, ingId, 0);
         const actorId = await createUser(db, null, "super_admin");
         const trId = crypto.randomUUID();
-        await db
-          .insert(schema.scmTransfers)
-          .values({
-            id: trId,
-            code: suid("MUT-M6"),
-            fromBranchId: senderId,
-            toBranchId: receiverId,
-            status: "InTransit",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmTransfers).values({
+          id: trId,
+          code: suid("MUT-M6"),
+          fromBranchId: senderId,
+          toBranchId: receiverId,
+          status: "InTransit",
+          requestedById: actorId,
+        });
         await db
           .insert(schema.inTransitInventory)
           .values({ scmTransferId: trId, branchId: receiverId, ingredientId: ingId, quantity: 10 });
@@ -1993,16 +1914,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, senderId, ingId, 30);
         const actorId = await createUser(db, null, "super_admin");
         const trId = crypto.randomUUID();
-        await db
-          .insert(schema.scmTransfers)
-          .values({
-            id: trId,
-            code: suid("MUT-M7"),
-            fromBranchId: senderId,
-            toBranchId: receiverId,
-            status: "Delivered",
-            requestedById: actorId,
-          });
+        await db.insert(schema.scmTransfers).values({
+          id: trId,
+          code: suid("MUT-M7"),
+          fromBranchId: senderId,
+          toBranchId: receiverId,
+          status: "Delivered",
+          requestedById: actorId,
+        });
         // One pending cleared, one not
         await db.insert(schema.pendingReviewInventory).values([
           {
@@ -2060,25 +1979,21 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, branchId, ingId, 100);
         const actorId = await createUser(db, null, "super_admin");
         const soId = crypto.randomUUID();
-        await db
-          .insert(schema.stockOpnames)
-          .values({
-            id: soId,
-            branchId,
-            date: new Date().toISOString().slice(0, 10),
-            status: "Submitted",
-            triggeredBy: actorId,
-            submittedBy: actorId,
-          });
-        await db
-          .insert(schema.stockOpnameItems)
-          .values({
-            stockOpnameId: soId,
-            ingredientId: ingId,
-            systemStock: 100,
-            physicalStock: 80,
-            variance: -20,
-          });
+        await db.insert(schema.stockOpnames).values({
+          id: soId,
+          branchId,
+          date: new Date().toISOString().slice(0, 10),
+          status: "Submitted",
+          triggeredBy: actorId,
+          submittedBy: actorId,
+        });
+        await db.insert(schema.stockOpnameItems).values({
+          stockOpnameId: soId,
+          ingredientId: ingId,
+          systemStock: 100,
+          physicalStock: 80,
+          variance: -20,
+        });
         // Simulate approve: inventory 100 -> 80, OUT 20, balance 80
         const [inv] = await db
           .select()
@@ -2091,17 +2006,15 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: 80 })
           .where(eq(schema.inventory.id, inv.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId,
-            ingredientId: ingId,
-            type: "OUT",
-            quantity: 20,
-            balance: 80,
-            reference: soId,
-            notes: "SO Adjustment",
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingId,
+          type: "OUT",
+          quantity: 20,
+          balance: 80,
+          reference: soId,
+          notes: "SO Adjustment",
+        });
         await assertLedgerContract(db, {
           reference: soId,
           branchId,
@@ -2129,25 +2042,21 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, branchId, ingId, 50);
         const actorId = await createUser(db, null, "super_admin");
         const soId = crypto.randomUUID();
-        await db
-          .insert(schema.stockOpnames)
-          .values({
-            id: soId,
-            branchId,
-            date: new Date().toISOString().slice(0, 10),
-            status: "Submitted",
-            triggeredBy: actorId,
-            submittedBy: actorId,
-          });
-        await db
-          .insert(schema.stockOpnameItems)
-          .values({
-            stockOpnameId: soId,
-            ingredientId: ingId,
-            systemStock: 50,
-            physicalStock: 60,
-            variance: 10,
-          });
+        await db.insert(schema.stockOpnames).values({
+          id: soId,
+          branchId,
+          date: new Date().toISOString().slice(0, 10),
+          status: "Submitted",
+          triggeredBy: actorId,
+          submittedBy: actorId,
+        });
+        await db.insert(schema.stockOpnameItems).values({
+          stockOpnameId: soId,
+          ingredientId: ingId,
+          systemStock: 50,
+          physicalStock: 60,
+          variance: 10,
+        });
         // Not Approved status — realize should be rejected by business rule (but our direct ledger test just proves no auto-ledger)
         const ledgersBefore = await ledgerRows(db, `SO:${soId}`);
         expect(ledgersBefore).toHaveLength(0);
@@ -2175,25 +2084,21 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, branchId, ingId, 50);
         const actorId = await createUser(db, null, "super_admin");
         const soId = crypto.randomUUID();
-        await db
-          .insert(schema.stockOpnames)
-          .values({
-            id: soId,
-            branchId,
-            date: new Date().toISOString().slice(0, 10),
-            status: "Approved",
-            triggeredBy: actorId,
-            submittedBy: actorId,
-          });
-        await db
-          .insert(schema.stockOpnameItems)
-          .values({
-            stockOpnameId: soId,
-            ingredientId: ingId,
-            systemStock: 50,
-            physicalStock: 70,
-            variance: 20,
-          });
+        await db.insert(schema.stockOpnames).values({
+          id: soId,
+          branchId,
+          date: new Date().toISOString().slice(0, 10),
+          status: "Approved",
+          triggeredBy: actorId,
+          submittedBy: actorId,
+        });
+        await db.insert(schema.stockOpnameItems).values({
+          stockOpnameId: soId,
+          ingredientId: ingId,
+          systemStock: 50,
+          physicalStock: 70,
+          variance: 20,
+        });
         // Simulate realize: adjust to physicalStock 70
         const [inv] = await db
           .select()
@@ -2206,16 +2111,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: 70 })
           .where(eq(schema.inventory.id, inv.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId,
-            ingredientId: ingId,
-            type: "IN",
-            quantity: 20,
-            balance: 70,
-            reference: `SO:${soId}`,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingId,
+          type: "IN",
+          quantity: 20,
+          balance: 70,
+          reference: `SO:${soId}`,
+        });
         await assertLedgerContract(db, {
           reference: `SO:${soId}`,
           branchId,
@@ -2245,17 +2148,15 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
       await setInventory(db, centralId, ingId, 30);
       const deliveryId = crypto.randomUUID();
       const actorId = await createUser(db, null, "super_admin");
-      await db
-        .insert(schema.supplierDeliveries)
-        .values({
-          id: deliveryId,
-          supplierName: "Test Supplier",
-          ingredientId: ingId,
-          quantity: 20,
-          price: 1000,
-          deliveryDate: new Date(),
-          receivedBy: actorId,
-        });
+      await db.insert(schema.supplierDeliveries).values({
+        id: deliveryId,
+        supplierName: "Test Supplier",
+        ingredientId: ingId,
+        quantity: 20,
+        price: 1000,
+        deliveryDate: new Date(),
+        receivedBy: actorId,
+      });
       const [invBefore] = await db
         .select()
         .from(schema.inventory)
@@ -2267,16 +2168,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         .update(schema.inventory)
         .set({ quantity: invBefore.quantity + 20 })
         .where(eq(schema.inventory.id, invBefore.id));
-      await db
-        .insert(schema.stockLedger)
-        .values({
-          branchId: centralId,
-          ingredientId: ingId,
-          type: "IN",
-          quantity: 20,
-          balance: 50,
-          reference: deliveryId,
-        });
+      await db.insert(schema.stockLedger).values({
+        branchId: centralId,
+        ingredientId: ingId,
+        type: "IN",
+        quantity: 20,
+        balance: 50,
+        reference: deliveryId,
+      });
       await assertLedgerContract(db, {
         reference: deliveryId,
         branchId: centralId,
@@ -2304,17 +2203,15 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         await setInventory(db, centralId, ingId, 50);
         const actorId = await createUser(db, null, "super_admin");
         const delId = crypto.randomUUID();
-        await db
-          .insert(schema.supplierDeliveries)
-          .values({
-            id: delId,
-            supplierName: "S",
-            ingredientId: ingId,
-            quantity: 20,
-            price: 1000,
-            deliveryDate: new Date(),
-            receivedBy: actorId,
-          });
+        await db.insert(schema.supplierDeliveries).values({
+          id: delId,
+          supplierName: "S",
+          ingredientId: ingId,
+          quantity: 20,
+          price: 1000,
+          deliveryDate: new Date(),
+          receivedBy: actorId,
+        });
         // apply D1
         const [inv0] = await db
           .select()
@@ -2327,45 +2224,39 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: 70 })
           .where(eq(schema.inventory.id, inv0.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId: centralId,
-            ingredientId: ingId,
-            type: "IN",
-            quantity: 20,
-            balance: 70,
-            reference: delId,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId: centralId,
+          ingredientId: ingId,
+          type: "IN",
+          quantity: 20,
+          balance: 70,
+          reference: delId,
+        });
         // D2: update 20 -> 15 (revert 20 OUT, apply 15 IN) -> net 65, two ledgers
         await db
           .update(schema.inventory)
           .set({ quantity: 50 })
           .where(eq(schema.inventory.id, inv0.id)); // revert to 50
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId: centralId,
-            ingredientId: ingId,
-            type: "OUT",
-            quantity: 20,
-            balance: 50,
-            reference: delId,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId: centralId,
+          ingredientId: ingId,
+          type: "OUT",
+          quantity: 20,
+          balance: 50,
+          reference: delId,
+        });
         await db
           .update(schema.inventory)
           .set({ quantity: 65 })
           .where(eq(schema.inventory.id, inv0.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId: centralId,
-            ingredientId: ingId,
-            type: "IN",
-            quantity: 15,
-            balance: 65,
-            reference: delId,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId: centralId,
+          ingredientId: ingId,
+          type: "IN",
+          quantity: 15,
+          balance: 65,
+          reference: delId,
+        });
         const rowsAfterUpdate = await ledgerRows(db, delId);
         expect(rowsAfterUpdate.filter((r) => r.type === "OUT" && r.quantity === 20)).toHaveLength(
           1,
@@ -2376,16 +2267,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: 50 })
           .where(eq(schema.inventory.id, inv0.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId: centralId,
-            ingredientId: ingId,
-            type: "OUT",
-            quantity: 15,
-            balance: 50,
-            reference: delId,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId: centralId,
+          ingredientId: ingId,
+          type: "OUT",
+          quantity: 15,
+          balance: 50,
+          reference: delId,
+        });
         const rowsAfterDelete = await ledgerRows(db, delId);
         expect(rowsAfterDelete.filter((r) => r.type === "OUT")).toHaveLength(2); // revert OUT 20 + delete OUT 15
       });
@@ -2419,17 +2308,15 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
             submittedBy: actorId,
           })
           .returning();
-        await db
-          .insert(schema.operationalExpenses)
-          .values({
-            branchId,
-            wasteEntryId: entry.id,
-            category: "Biaya Operasional",
-            amount: valuation,
-            date: new Date().toISOString().split("T")[0],
-            notes: `Waste ${entry.id}`,
-            submittedBy: actorId,
-          });
+        await db.insert(schema.operationalExpenses).values({
+          branchId,
+          wasteEntryId: entry.id,
+          category: "Biaya Operasional",
+          amount: valuation,
+          date: new Date().toISOString().split("T")[0],
+          notes: `Waste ${entry.id}`,
+          submittedBy: actorId,
+        });
         const [inv] = await db
           .select()
           .from(schema.inventory)
@@ -2441,17 +2328,15 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: inv.quantity - qty })
           .where(eq(schema.inventory.id, inv.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId,
-            ingredientId: ingId,
-            type: "OUT",
-            quantity: qty,
-            balance: inv.quantity - qty,
-            reference: entry.id,
-            notes: "Waste: Biaya Operasional",
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingId,
+          type: "OUT",
+          quantity: qty,
+          balance: inv.quantity - qty,
+          reference: entry.id,
+          notes: "Waste: Biaya Operasional",
+        });
         await assertLedgerContract(db, {
           reference: entry.id,
           branchId,
@@ -2521,33 +2406,29 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
             .update(schema.inventory)
             .set({ quantity: newQty })
             .where(eq(schema.inventory.id, inv.id));
-          await db
-            .insert(schema.stockLedger)
-            .values({
-              branchId: centralId,
-              ingredientId: ingId,
-              type: "OUT",
-              quantity: per * qty,
-              balance: newQty,
-              reference: ref,
-              notes: `Produksi test`,
-            });
+          await db.insert(schema.stockLedger).values({
+            branchId: centralId,
+            ingredientId: ingId,
+            type: "OUT",
+            quantity: per * qty,
+            balance: newQty,
+            reference: ref,
+            notes: `Produksi test`,
+          });
         }
         // Upsert recipeInventory
         await db
           .insert(schema.recipeInventory)
           .values({ recipeId, branchId: centralId, quantity: qty });
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId: centralId,
-            recipeId,
-            type: "IN",
-            quantity: qty,
-            balance: qty,
-            reference: ref,
-            notes: `Produksi test`,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId: centralId,
+          recipeId,
+          type: "IN",
+          quantity: qty,
+          balance: qty,
+          reference: ref,
+          notes: `Produksi test`,
+        });
         await assertLedgerContract(db, {
           reference: ref,
           branchId: centralId,
@@ -2660,16 +2541,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: inv1.quantity + 10 })
           .where(eq(schema.inventory.id, inv1.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId: br1,
-            ingredientId: ingId,
-            type: "IN",
-            quantity: 10,
-            balance: 60,
-            reference: ref,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId: br1,
+          ingredientId: ingId,
+          type: "IN",
+          quantity: 10,
+          balance: 60,
+          reference: ref,
+        });
         const [inv2] = await db
           .select()
           .from(schema.inventory)
@@ -2679,16 +2558,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           .update(schema.inventory)
           .set({ quantity: inv2.quantity - 3 })
           .where(eq(schema.inventory.id, inv2.id));
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId: br2,
-            ingredientId: ingId,
-            type: "OUT",
-            quantity: 3,
-            balance: 2,
-            reference: ref,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId: br2,
+          ingredientId: ingId,
+          type: "OUT",
+          quantity: 3,
+          balance: 2,
+          reference: ref,
+        });
         const a1Rows = await ledgerRows(db, ref);
         const a1Br1 = a1Rows.find((r) => r.branchId === br1 && r.type === "IN");
         const a1Br2 = a1Rows.find((r) => r.branchId === br2 && r.type === "OUT");
@@ -2709,16 +2586,14 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
         const ingId = await createIngredient(db, suid("ING-A2"));
         await setInventory(db, br, ingId, 99);
         const ref = suid("LEDGER-A2");
-        await db
-          .insert(schema.stockLedger)
-          .values({
-            branchId: br,
-            ingredientId: ingId,
-            type: "IN",
-            quantity: 99,
-            balance: 99,
-            reference: ref,
-          });
+        await db.insert(schema.stockLedger).values({
+          branchId: br,
+          ingredientId: ingId,
+          type: "IN",
+          quantity: 99,
+          balance: 99,
+          reference: ref,
+        });
         // Simulate cleanSlate with alsoLedger=false: delete inventory, keep ledger
         await db.delete(schema.inventory).where(eq(schema.inventory.branchId, br));
         const invRows = await db
