@@ -14,8 +14,13 @@ import {
 } from "#/db/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
+export type Db = NodePgDatabase<typeof schema>;
+
 /** Transaction client type — same shape as the SCM effects `FsmTx`. */
-export type DbTx = Parameters<Parameters<NodePgDatabase<typeof schema>["transaction"]>[0]>[0];
+export type DbTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/** Any database handle we accept — pooled db or an active transaction. */
+export type DbOrTx = Db | DbTx;
 
 // =============================================================================
 // Types
@@ -41,7 +46,7 @@ export interface ResolvedItemIngredients {
 
 async function fetchIngredientNames(
   ingredientIds: string[],
-  tx?: DbTx,
+  tx?: DbOrTx,
 ): Promise<Map<string, string>> {
   if (ingredientIds.length === 0) return new Map();
 
@@ -71,7 +76,7 @@ async function resolveRecipeBOM(
   entries: BOMEntry[],
   addonModifierIds: string[],
   includeCost: boolean,
-  tx?: DbTx,
+  tx?: DbOrTx,
 ): Promise<Map<string, { qty: number; cost: number }>> {
   const ingredientMap = new Map<string, { qty: number; cost: number }>();
 
@@ -149,7 +154,7 @@ export async function resolveNewItemIngredients(
   recipeId: string,
   quantity: number,
   selectedModifiers?: Array<{ modifierId: string; isExclusion?: boolean }>,
-  opts?: { includeCost?: boolean; tx?: DbTx },
+  opts?: { includeCost?: boolean; tx?: DbOrTx },
 ): Promise<ResolvedItemIngredients> {
   const includeCost = opts?.includeCost ?? false;
   const tx = opts?.tx;
@@ -251,7 +256,7 @@ export async function resolveNewItemIngredients(
 
 export async function resolvePersistedItemIngredients(
   orderItemId: string,
-  opts?: { includeCost?: boolean; tx?: DbTx },
+  opts?: { includeCost?: boolean; tx?: DbOrTx },
 ): Promise<ResolvedItemIngredients> {
   const includeCost = opts?.includeCost ?? false;
   const tx = opts?.tx;

@@ -2,8 +2,11 @@ import { Client } from "pg";
 import { describe, expect, it } from "vite-plus/test";
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "#/db/schema";
 import { branchVisibleClause } from "./branch-visibility";
+
+type TestDb = NodePgDatabase<typeof schema>;
 
 const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
 
@@ -19,7 +22,7 @@ type TestFixture = {
   };
 };
 
-async function createFixture(db: ReturnType<typeof drizzle<typeof schema>>): Promise<TestFixture> {
+async function createFixture(db: TestDb): Promise<TestFixture> {
   const branchA = crypto.randomUUID();
   const branchB = crypto.randomUUID();
   const branchC = crypto.randomUUID();
@@ -113,7 +116,7 @@ async function createFixture(db: ReturnType<typeof drizzle<typeof schema>>): Pro
 }
 
 async function visibleRecipeCodes(
-  db: ReturnType<typeof drizzle<typeof schema>>,
+  db: TestDb,
   branchId: string | undefined,
   recipeCodes: string[],
 ): Promise<string[]> {

@@ -2,8 +2,11 @@ import { Client } from "pg";
 import { describe, expect, it } from "vite-plus/test";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "#/db/schema";
 import { resolveNewItemIngredients } from "./ingredient-resolver";
+
+type TestDb = NodePgDatabase<typeof schema>;
 
 const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
 
@@ -19,9 +22,7 @@ type ResolverFixture = {
   exclusionModifierId: string;
 };
 
-async function createResolverFixture(
-  db: ReturnType<typeof drizzle<typeof schema>>,
-): Promise<ResolverFixture> {
+async function createResolverFixture(db: TestDb): Promise<ResolverFixture> {
   const branchId = crypto.randomUUID();
   const categoryId = crypto.randomUUID();
   const parentRecipeId = crypto.randomUUID();
