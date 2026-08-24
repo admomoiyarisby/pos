@@ -191,21 +191,27 @@ export const updateIngredient = createServerFn({ method: "POST" })
 
     const [old] = await db.select().from(ingredients).where(eq(ingredients.id, id)).limit(1);
 
-    const [result] = await db
-      .update(ingredients)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(ingredients.id, id))
-      .returning();
+    // Branch visibility delete+insert must be atomic — a bad branchId must not leave
+    // 0 rows (visible everywhere). Wrap base update + branch links in one txn.
+    const [result] = await db.transaction(async (tx) => {
+      const [r] = await tx
+        .update(ingredients)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(ingredients.id, id))
+        .returning();
 
-    // Update branch visibility (mirrors updateRecipe): empty array = all branches.
-    if (branchIds !== undefined && branchIds !== null) {
-      await db.delete(ingredientBranches).where(eq(ingredientBranches.ingredientId, id));
-      if (branchIds.length > 0) {
-        await db
-          .insert(ingredientBranches)
-          .values(branchIds.map((branchId) => ({ ingredientId: id, branchId })));
+      // Update branch visibility (mirrors updateRecipe): empty array = all branches.
+      if (branchIds !== undefined && branchIds !== null) {
+        await tx.delete(ingredientBranches).where(eq(ingredientBranches.ingredientId, id));
+        if (branchIds.length > 0) {
+          await tx
+            .insert(ingredientBranches)
+            .values(branchIds.map((branchId) => ({ ingredientId: id, branchId })));
+        }
       }
-    }
+
+      return [r];
+    });
 
     // Trigger BOM cost roll-up if averageCost changed
     if ("averageCost" in updates) {

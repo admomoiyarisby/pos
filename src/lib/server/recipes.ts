@@ -444,73 +444,79 @@ export const updateRecipe = createServerFn({ method: "POST" })
     // Fetch old recipe for audit
     const [old] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
 
-    // Update recipe base fields. `recipeUpdates` can legitimately be empty for
-    // link-only partial saves (BOM-only or branch-only), so skip the UPDATE
-    // instead of sending drizzle an empty `set({})` (which throws
-    // "No values to set").
-    if (Object.keys(recipeUpdates).length > 0) {
-      await db.update(recipes).set(recipeUpdates).where(eq(recipes.id, id));
-    }
-
-    // Update brand links
-    if (brandIds !== undefined) {
-      await db.delete(recipeBrands).where(eq(recipeBrands.recipeId, id));
-      if (brandIds.length > 0) {
-        await db
-          .insert(recipeBrands)
-          .values(brandIds.map((brandId) => ({ recipeId: id, brandId })));
+    // All link-table writes are atomic — a failure in any block (e.g. dup
+    // recipe_child_unique) rolls back the whole recipe update, avoiding a
+    // half-deleted BOM that the non-transactional version left behind
+    // (see db-risky-calls.integration.test.ts).
+    await db.transaction(async (tx) => {
+      // Update recipe base fields. `recipeUpdates` can legitimately be empty for
+      // link-only partial saves (BOM-only or branch-only), so skip the UPDATE
+      // instead of sending drizzle an empty `set({})` (which throws
+      // "No values to set").
+      if (Object.keys(recipeUpdates).length > 0) {
+        await tx.update(recipes).set(recipeUpdates).where(eq(recipes.id, id));
       }
-    }
 
-    // Update ingredients
-    if (recipeIngs !== undefined) {
-      await db.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, id));
-      if (recipeIngs.length > 0) {
-        await db
-          .insert(recipeIngredients)
-          .values(recipeIngs.map((ing) => ({ recipeId: id, ...ing })));
-      }
-    }
-
-    // Update child recipes
-    if (childRecipes !== undefined) {
-      await db.delete(recipeChildRecipes).where(eq(recipeChildRecipes.parentRecipeId, id));
-      if (childRecipes.length > 0) {
-        await db.insert(recipeChildRecipes).values(
-          childRecipes.map((cr) => ({
-            parentRecipeId: id,
-            childRecipeId: cr.recipeId,
-            quantity: cr.quantity,
-          })),
-        );
-      }
-    }
-
-    // Update modifier groups
-    if (modifierGroupIds !== undefined) {
-      await db.delete(recipeModifierGroups).where(eq(recipeModifierGroups.recipeId, id));
-      if (modifierGroupIds.length > 0) {
-        await db
-          .insert(recipeModifierGroups)
-          .values(modifierGroupIds.map((mgId) => ({ recipeId: id, modifierGroupId: mgId })));
-      }
-    }
-
-    // Update branch visibility
-    if (branchIds !== undefined && branchIds !== null) {
-      if (branchIds.length === 0) {
-        // Explicitly set to "all branches" by deleting all explicit records
-        await db.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
-      } else {
-        // Delete existing and insert new branch assignments
-        await db.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
-        if (branchIds.length > 0) {
-          await db
-            .insert(recipeBranches)
-            .values(branchIds.map((branchId) => ({ recipeId: id, branchId })));
+      // Update brand links
+      if (brandIds !== undefined) {
+        await tx.delete(recipeBrands).where(eq(recipeBrands.recipeId, id));
+        if (brandIds.length > 0) {
+          await tx
+            .insert(recipeBrands)
+            .values(brandIds.map((brandId) => ({ recipeId: id, brandId })));
         }
       }
-    }
+
+      // Update ingredients
+      if (recipeIngs !== undefined) {
+        await tx.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, id));
+        if (recipeIngs.length > 0) {
+          await tx
+            .insert(recipeIngredients)
+            .values(recipeIngs.map((ing) => ({ recipeId: id, ...ing })));
+        }
+      }
+
+      // Update child recipes
+      if (childRecipes !== undefined) {
+        await tx.delete(recipeChildRecipes).where(eq(recipeChildRecipes.parentRecipeId, id));
+        if (childRecipes.length > 0) {
+          await tx.insert(recipeChildRecipes).values(
+            childRecipes.map((cr) => ({
+              parentRecipeId: id,
+              childRecipeId: cr.recipeId,
+              quantity: cr.quantity,
+            })),
+          );
+        }
+      }
+
+      // Update modifier groups
+      if (modifierGroupIds !== undefined) {
+        await tx.delete(recipeModifierGroups).where(eq(recipeModifierGroups.recipeId, id));
+        if (modifierGroupIds.length > 0) {
+          await tx
+            .insert(recipeModifierGroups)
+            .values(modifierGroupIds.map((mgId) => ({ recipeId: id, modifierGroupId: mgId })));
+        }
+      }
+
+      // Update branch visibility
+      if (branchIds !== undefined && branchIds !== null) {
+        if (branchIds.length === 0) {
+          // Explicitly set to "all branches" by deleting all explicit records
+          await tx.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
+        } else {
+          // Delete existing and insert new branch assignments
+          await tx.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
+          if (branchIds.length > 0) {
+            await tx
+              .insert(recipeBranches)
+              .values(branchIds.map((branchId) => ({ recipeId: id, branchId })));
+          }
+        }
+      }
+    });
 
     const [updated] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
 

@@ -282,12 +282,14 @@ export const updateUser = createServerFn({ method: "POST" })
 
     await logAudit(user, "users", id, "UPDATE", oldUser, newUserData);
 
-    // Update area manager branches
+    // Update area manager branches — atomic delete+insert (bad branchId must not leave 0 rows)
     if (assignedBranches !== undefined) {
-      await db.delete(areaManagerBranches).where(eq(areaManagerBranches.userId, id));
-      for (const branchId of assignedBranches) {
-        await db.insert(areaManagerBranches).values({ userId: id, branchId });
-      }
+      await db.transaction(async (tx) => {
+        await tx.delete(areaManagerBranches).where(eq(areaManagerBranches.userId, id));
+        for (const branchId of assignedBranches) {
+          await tx.insert(areaManagerBranches).values({ userId: id, branchId });
+        }
+      });
     }
 
     return { success: true };
