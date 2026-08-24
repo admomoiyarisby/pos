@@ -152,6 +152,8 @@ export default function DataTable<T>({
   const currentPage = Math.min(page, totalPages - 1);
   const paginated = sorted.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
 
+  const isUrlControlled = externalSort !== undefined && externalPage !== undefined;
+
   const handleSort = (key: string) => {
     const newSort = (() => {
       if (sort?.key === key) {
@@ -162,11 +164,14 @@ export default function DataTable<T>({
 
     if (onSortChange) {
       onSortChange(newSort);
+      // When sort is URL-controlled, setSort already resets page via
+      // useTableUrlState (page: undefined). Avoid a second navigate that
+      // would race and potentially drop the sort param.
+      if (!isUrlControlled) changePage(0);
     } else {
       setInternalSort(newSort);
+      changePage(0);
     }
-    // Sorting changes the row order, so reset to the first page.
-    changePage(0);
   };
 
   const stickyClass = "sticky left-0 bg-background z-10 border-r border-border";
@@ -185,10 +190,12 @@ export default function DataTable<T>({
                 const next = e.target.value;
                 if (onSearchChange) {
                   onSearchChange(next);
+                  // useTableSearch already resets page in same navigate; avoid double navigate
+                  if (!onPageChange) changePage(0);
                 } else {
                   setSearch(next);
+                  changePage(0);
                 }
-                changePage(0);
               }}
               aria-label="Cari data"
               className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

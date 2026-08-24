@@ -1,4 +1,4 @@
-import { useState, useRef, useImperativeHandle } from "react";
+import { useState, useRef, useImperativeHandle, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -177,12 +177,23 @@ export function RecipeWizard({
     queryFn: () => getCategories({}),
   });
   const categoryOptions = (allCategories ?? []).map((c) => ({ id: c.id, name: c.name }));
+  // Auto-select first category when creating a new recipe and none chosen yet
+  // (prevents submitting empty uuid which fails Zod validation).
+  useEffect(() => {
+    if (!initialData?.categoryId && !categoryId && categoryOptions.length > 0) {
+      setCategoryId(categoryOptions[0].id);
+    }
+  }, [categoryOptions, categoryId, initialData?.categoryId]);
+  const displayCategoryId = categoryId;
   // Always keep the currently-selected value selectable (edit mode, or the
   // brief frame before categories load) so the dropdown never goes blank.
-  const categoryChoices = categoryOptions.some((c) => c.id === categoryId)
+  const categoryChoices = categoryOptions.some((c) => c.id === displayCategoryId)
     ? categoryOptions
     : [
-        { id: categoryId, name: categoryOptions.find((c) => c.id === categoryId)?.name ?? "—" },
+        {
+          id: displayCategoryId,
+          name: categoryOptions.find((c) => c.id === displayCategoryId)?.name ?? "—",
+        },
         ...categoryOptions,
       ];
 
@@ -202,9 +213,10 @@ export function RecipeWizard({
     return fullIng ? { ...si, ingredient: fullIng, ingredientId: ingId } : si;
   });
 
+  const resolvedCategoryId = categoryId || categoryOptions[0]?.id || "";
   const buildStepPatch = (): Partial<WizardData> =>
     currentStep === 0
-      ? { code, name, categoryId, basePrice, brandIds: selectedBrandIds }
+      ? { code, name, categoryId: resolvedCategoryId, basePrice, brandIds: selectedBrandIds }
       : currentStep === 1
         ? {
             ingredients: enrichedSelectedIngredients.map((si) => ({
@@ -275,7 +287,7 @@ export function RecipeWizard({
     const data: WizardData = {
       code,
       name,
-      categoryId,
+      categoryId: categoryId || categoryOptions[0]?.id || "",
       basePrice,
       brandIds: selectedBrandIds,
       ingredients: enrichedSelectedIngredients.map((si) => ({

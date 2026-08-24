@@ -63,9 +63,15 @@ export function useTableSearch(options: UseTableSearchOptions = {}) {
       const commit = () => {
         // SAFETY: the merged object preserves every existing search param and
         // only updates the `search` key; navigate accepts the widened shape.
-        const nextSearch = { ...urlSearch, search: next || undefined } as never;
+        // Reset page to 0 when search changes so results start at first page.
+        const nextSearch = {
+          ...urlSearch,
+          search: next || undefined,
+          page: undefined,
+        } as never;
         void navigate({ search: nextSearch, replace: true });
       };
+
       if (debounceMs > 0) {
         timer.current = setTimeout(commit, debounceMs);
       } else {

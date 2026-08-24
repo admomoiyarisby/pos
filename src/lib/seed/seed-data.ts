@@ -2840,12 +2840,9 @@ const BRANCH_CODES = [
   "PCG-01",
   "SWL-01",
 ];
-const CHANNELS: Array<"Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in"> = [
-  "Gofood",
-  "Grabfood",
-  "ShopeeFood",
-  "Dine-in",
-];
+const CHANNELS: Array<
+  "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok" | "Perlengkapan"
+> = ["Gofood", "Grabfood", "ShopeeFood", "Dine-in", "TikTok", "Perlengkapan"];
 const ORDER_STATUSES: Array<
   "New" | "Processing" | "In Delivery" | "Completed" | "Void" | "Cancel Requested"
 > = ["New", "Processing", "In Delivery", "Completed", "Void", "Cancel Requested"];
@@ -2894,7 +2891,7 @@ export const ORDERS_DATA = (() => {
   const orders: {
     idx: number;
     branchCode: string;
-    channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in";
+    channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok" | "Perlengkapan";
     status: "New" | "Processing" | "In Delivery" | "Completed" | "Void" | "Cancel Requested";
     subtotal: number;
     merchantDiscount: number;
@@ -2959,7 +2956,8 @@ export const ORDERS_DATA = (() => {
     }
 
     const tax = Math.round(subtotal * 0.1);
-    const mdrFee = channel === "Dine-in" ? 0 : Math.round(subtotal * 0.2);
+    const mdrFee =
+      channel === "Dine-in" || channel === "Perlengkapan" ? 0 : Math.round(subtotal * 0.2);
     const netSales = subtotal - mdrFee;
 
     const chCode =
@@ -2969,7 +2967,11 @@ export const ORDERS_DATA = (() => {
           ? "GR"
           : channel === "ShopeeFood"
             ? "SF"
-            : "DI";
+            : channel === "TikTok"
+              ? "TK"
+              : channel === "Perlengkapan"
+                ? "PL"
+                : "DI";
     const orderCode = `${chCode}-${20250000 + i}`;
 
     const voucherCode = i % 15 === 0 ? "PROMO10" : i % 23 === 0 ? "FREESHIP" : undefined;
@@ -3509,7 +3511,7 @@ export const CHANNEL_REVENUES_DATA = (() => {
   const crs: {
     branchCode: string;
     date: string;
-    channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in";
+    channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok" | "Perlengkapan";
     amount: number;
     notes?: string;
     submittedByEmail: string;

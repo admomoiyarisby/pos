@@ -60,7 +60,12 @@ export const Route = createFileRoute("/_layout/ingredients/")({
 
 function IngredientsPage() {
   const [search, setSearch] = useTableSearch();
-  const { page, setPage, sort, setSort } = useTableUrlState();
+  const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState<{
+    category?: string;
+    skuType?: string;
+  }>(["category", "skuType"]);
+  const categoryFilter = filters.category ?? "all";
+  const skuTypeFilter = filters.skuType ?? "all";
   const { ingredients: initial, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -73,6 +78,12 @@ function IngredientsPage() {
     queryKey: ["ingredients"],
     queryFn: () => getIngredients({ data: {} }),
     initialData: initial,
+  });
+
+  const filteredIngredients = ingredients.filter((r) => {
+    if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
+    if (skuTypeFilter !== "all" && r.skuType !== skuTypeFilter) return false;
+    return true;
   });
 
   const createMutation = useMutation({
@@ -150,6 +161,15 @@ function IngredientsPage() {
   };
 
   usePageTitle("Bahan Baku", "Kelola master bahan baku, semi-finished, dan finished goods");
+
+  const setCategoryFilter = (v: string) => {
+    setFilter("category", v === "all" ? undefined : v);
+    setPage(0);
+  };
+  const setSkuTypeFilter = (v: string) => {
+    setFilter("skuType", v === "all" ? undefined : v);
+    setPage(0);
+  };
 
   const columns: Column<IngredientRow>[] = [
     { key: "code", header: "Kode", width: "w-24", sortable: true },
@@ -239,11 +259,37 @@ function IngredientsPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "central_kitchen"]}>
-      <PageHeader action={{ label: "Tambah Bahan", onClick: () => setModalOpen(true) }} />
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <PageHeader action={{ label: "Tambah Bahan", onClick: () => setModalOpen(true) }} />
+        <div className="flex items-center gap-2">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+            aria-label="Filter kategori bahan"
+          >
+            <option value="all">Semua Kategori</option>
+            <option value="Fresh">Fresh</option>
+            <option value="Dry">Dry</option>
+            <option value="Packaging">Packaging</option>
+          </select>
+          <select
+            value={skuTypeFilter}
+            onChange={(e) => setSkuTypeFilter(e.target.value)}
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+            aria-label="Filter tipe SKU"
+          >
+            <option value="all">Semua SKU</option>
+            <option value="RM">RM</option>
+            <option value="SFG">SFG</option>
+            <option value="FG">FG</option>
+          </select>
+        </div>
+      </div>
 
       <DataTable
         columns={columns}
-        data={ingredients}
+        data={filteredIngredients}
         keyExtractor={(r) => r.id}
         search={search}
         onSearchChange={setSearch}

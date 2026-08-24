@@ -13,6 +13,7 @@ import { RecipeWizard } from "#/components/RecipeWizard";
 import { getRecipes, createRecipe, recalculateAllRecipeCosts } from "#/lib/server/recipes";
 import { getBrands } from "#/lib/server/brands";
 import { getBranches } from "#/lib/server/branches";
+import { getCategories } from "#/lib/server/categories";
 import { getModifierGroups } from "#/lib/server/modifier-groups";
 import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
@@ -23,6 +24,7 @@ interface RecipeRow {
   id: string;
   code: string;
   name: string;
+  categoryId: string;
   categoryName: string | null;
   isSubRecipe: boolean;
   basePrice: number;
@@ -37,28 +39,41 @@ interface RecipeRow {
 export const Route = createFileRoute("/_layout/recipes/")({
   component: RecipesPage,
   loader: async () => {
-    const recipes = await getRecipes({ data: {} });
-    const brands = await getBrands({ data: {} });
-    const branches = await getBranches({ data: {} });
-    return { recipes, brands, branches };
+    const [recipes, brands, branches, categories] = await Promise.all([
+      getRecipes({ data: {} }),
+      getBrands({ data: {} }),
+      getBranches({ data: {} }),
+      getCategories({}),
+    ]);
+    return { recipes, brands, branches, categories };
   },
 });
 
 function RecipesPage() {
   const [search, setSearch] = useTableSearch();
-  // URL-persisted table state (page/sort/status) so returning from a recipe
-  // detail page restores exactly where the operator left off. Status filter is
-  // read loosely from the URL; absent = "All".
+  // URL-persisted table state (page/sort/status/category) so returning from a
+  // recipe detail page restores exactly where the operator left off.
   const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState<{
     status?: string;
-  }>(["status"]);
+    category?: string;
+  }>(["status", "category"]);
   const statusParam = filters.status;
   const statusFilter = statusParam === "Active" || statusParam === "Inactive" ? statusParam : "All";
   const setStatusFilter = (next: string) => {
     setFilter("status", next === "All" ? undefined : next);
     setPage(0);
   };
-  const { recipes: initial, brands, branches } = Route.useLoaderData();
+  const categoryFilter = filters.category ?? "all";
+  const setCategoryFilter = (next: string) => {
+    setFilter("category", next === "all" ? undefined : next);
+    setPage(0);
+  };
+  const {
+    recipes: initial,
+    brands,
+    branches,
+    categories: initialCategories,
+  } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const user = useAuth().user;
@@ -69,6 +84,15 @@ function RecipesPage() {
       getRecipes({ data: { status: statusFilter === "All" ? undefined : statusFilter } }),
     initialData: initial,
   });
+
+  const { data: categories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => getCategories({}),
+    initialData: initialCategories,
+  });
+
+  const filteredRecipes =
+    categoryFilter === "all" ? recipes : recipes.filter((r) => r.categoryId === categoryFilter);
 
   const { data: allModifierGroups } = useQuery({
     queryKey: ["modifier-groups"],
@@ -121,7 +145,7 @@ function RecipesPage() {
     { key: "code", header: "Kode", width: "w-24", sortable: true },
     { key: "name", header: "Nama Menu", sortable: true },
     {
-      key: "category",
+      key: "categoryName",
       header: "Kategori",
       sortable: true,
       render: (r) => <Badge variant="secondary">{r.categoryName ?? "—"}</Badge>,
@@ -202,8 +226,8 @@ function RecipesPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <PageHeader action={{ label: "Tambah Menu", onClick: () => setModalOpen(true) }} />
           <select
             value={statusFilter}
@@ -213,6 +237,19 @@ function RecipesPage() {
             <option value="All">Semua Status</option>
             <option value="Active">Aktif</option>
             <option value="Inactive">Nonaktif</option>
+          </select>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="h-9 rounded-md border bg-background px-2 text-sm max-w-[180px]"
+            aria-label="Filter kategori"
+          >
+            <option value="all">Semua Kategori</option>
+            {(categories ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
           </select>
         </div>
         {user?.role === "super_admin" && (
@@ -229,7 +266,7 @@ function RecipesPage() {
 
       <DataTable
         columns={columns}
-        data={recipes}
+        data={filteredRecipes}
         keyExtractor={(r) => r.id}
         search={search}
         onSearchChange={setSearch}

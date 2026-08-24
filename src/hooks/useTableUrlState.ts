@@ -84,7 +84,7 @@ export function useTableUrlState<F extends Record<string, string | number | null
   const setPage = useCallback((p: number) => commit({ page: Math.max(0, p) }), [commit]);
 
   const setSort = useCallback(
-    (s: TableSortState | null) => commit({ sortKey: s?.key, sortDir: s?.dir }),
+    (s: TableSortState | null) => commit({ sortKey: s?.key, sortDir: s?.dir, page: undefined }),
     [commit],
   );
 
