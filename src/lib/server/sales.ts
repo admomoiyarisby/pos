@@ -125,7 +125,7 @@ export const createSalesRecord = createServerFn({ method: "POST" })
   .validator(
     z.object({
       branchId: z.string(),
-      channel: z.enum(["Gofood", "Grabfood", "ShopeeFood", "Dine-in", "TikTok"]),
+      channel: z.enum(ORDER_CHANNEL_VALUES),
       totalAmount: z.number().int(),
       totalCogs: z.number().int().default(0),
       netSales: z.number().int().default(0),

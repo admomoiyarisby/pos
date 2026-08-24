@@ -45,6 +45,7 @@ const CHANNELS = [
   { label: "Grab", value: "Grabfood" },
   { label: "Shopee", value: "ShopeeFood" },
   { label: "TikTok", value: "TikTok" },
+  { label: "Perlengkapan", value: "Perlengkapan" },
 ];
 
 function getWeeksInMonth(year: number, month: number) {
@@ -381,7 +382,7 @@ function FinancePage() {
           branchId: formText(fd, "branchId"),
           date: formText(fd, "date"),
           channel: z
-            .enum(["Gofood", "Grabfood", "ShopeeFood", "Dine-in", "TikTok"])
+            .enum(["Gofood", "Grabfood", "ShopeeFood", "Dine-in", "TikTok", "Perlengkapan"])
             .parse(formText(fd, "channel")),
           amount: Number(formText(fd, "amount")),
           notes: formText(fd, "notes") || undefined,
@@ -822,6 +823,8 @@ function FinancePage() {
                 <option value="Grabfood">Grabfood</option>
                 <option value="ShopeeFood">ShopeeFood</option>
                 <option value="Dine-in">Dine-in</option>
+                <option value="TikTok">TikTok</option>
+                <option value="Perlengkapan">Perlengkapan</option>
               </select>
             </div>
           )}

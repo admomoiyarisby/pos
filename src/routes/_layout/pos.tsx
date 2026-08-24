@@ -58,6 +58,7 @@ const channels = [
   { key: "Grabfood", label: "Grabfood" },
   { key: "ShopeeFood", label: "ShopeeFood" },
   { key: "TikTok", label: "TikTok" },
+  { key: "Perlengkapan", label: "Perlengkapan" },
 ];
 
 export const Route = createFileRoute("/_layout/pos")({

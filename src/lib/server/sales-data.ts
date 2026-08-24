@@ -142,7 +142,7 @@ export const createSalesOrder = createServerFn({ method: "POST" })
   .validator(
     (data: {
       branchId: string;
-      channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok";
+      channel: (typeof ORDER_CHANNEL_VALUES)[number];
       orderCode?: string;
       customerName?: string;
       notes?: string;
@@ -253,7 +253,7 @@ export const updateSalesOrder = createServerFn({ method: "POST" })
     (data: {
       id: string;
       branchId: string;
-      channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok";
+      channel: (typeof ORDER_CHANNEL_VALUES)[number];
       orderCode?: string;
       customerName?: string;
       notes?: string;

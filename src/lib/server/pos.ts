@@ -26,6 +26,7 @@ import {
   printRequests,
   cancelRequests,
   users,
+  ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth, getCurrentUserRaw } from "./auth";
@@ -327,7 +328,7 @@ export const createOrder = createServerFn({ method: "POST" })
   .validator(
     (data: {
       branchId: string;
-      channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok";
+      channel: (typeof ORDER_CHANNEL_VALUES)[number];
       customerName?: string;
       orderCode?: string;
       items: z.infer<typeof orderItemInput>[];

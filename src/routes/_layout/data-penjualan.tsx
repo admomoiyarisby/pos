@@ -38,6 +38,7 @@ const CHANNELS = [
   { value: "Grabfood", label: "Grab (Grabfood)" },
   { value: "ShopeeFood", label: "Shopee (ShopeeFood)" },
   { value: "TikTok", label: "TikTok" },
+  { value: "Perlengkapan", label: "Perlengkapan" },
 ];
 
 const CHANNEL_COLORS = {
@@ -46,6 +47,7 @@ const CHANNEL_COLORS = {
   Grabfood: "bg-orange-100 text-orange-700",
   ShopeeFood: "bg-red-100 text-red-700",
   TikTok: "bg-gray-100 text-gray-700",
+  Perlengkapan: "bg-purple-100 text-purple-700",
 } satisfies Record<string, string>;
 
 function DataPenjualanPage() {

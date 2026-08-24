@@ -91,6 +91,7 @@ function PrintRequestsPage() {
     ShopeeFood: "ShopeeFood",
     "Dine-in": "Dine-in",
     TikTok: "TikTok",
+    Perlengkapan: "Perlengkapan",
   } satisfies Record<string, string>;
 
   return (

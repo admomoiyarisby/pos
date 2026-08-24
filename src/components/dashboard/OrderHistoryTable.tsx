@@ -205,6 +205,8 @@ function ChannelDot({ channel }: { channel: string }) {
     Grabfood: "bg-emerald-500",
     ShopeeFood: "bg-orange-500",
     "Dine-in": "bg-blue-500",
+    TikTok: "bg-gray-500",
+    Perlengkapan: "bg-purple-500",
   };
   return (
     <span

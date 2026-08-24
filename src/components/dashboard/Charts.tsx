@@ -79,7 +79,14 @@ export function computeSalesTrend(orders: Order[]) {
 }
 
 export function computeChannelData(orders: Order[], platformChannels?: string[]) {
-  const channels = platformChannels ?? ["Gofood", "Grabfood", "ShopeeFood", "Dine-in", "TikTok"];
+  const channels = platformChannels ?? [
+    "Gofood",
+    "Grabfood",
+    "ShopeeFood",
+    "Dine-in",
+    "TikTok",
+    "Perlengkapan",
+  ];
   return channels
     .map((c) => ({
       name: c,

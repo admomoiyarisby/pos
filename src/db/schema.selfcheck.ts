@@ -68,7 +68,8 @@
     // ID2: orderChannelEnum includes TikTok
     const orderChannelValues = schema.orderChannelEnum.enumValues;
     check("orderChannelEnum includes TikTok", orderChannelValues.includes("TikTok"));
-    check("orderChannelEnum has 5 values", orderChannelValues.length === 5);
+    check("orderChannelEnum includes Perlengkapan", orderChannelValues.includes("Perlengkapan"));
+    check("orderChannelEnum has 6 values", orderChannelValues.length === 6);
 
     // ID7: notificationPriorityEnum has normal and urgent
     const priorityValues = schema.notificationPriorityEnum.enumValues;

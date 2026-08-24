@@ -13,6 +13,7 @@ const CHANNELS = [
   { label: "Grab (Grabfood)", value: "Grabfood" },
   { label: "Shopee (ShopeeFood)", value: "ShopeeFood" },
   { label: "TikTok (TikTok)", value: "TikTok" },
+  { label: "Perlengkapan", value: "Perlengkapan" },
 ];
 
 function formatQty(n: number): string {

@@ -27,6 +27,7 @@ const channelLabels = {
   ShopeeFood: "ShopeeFood",
   "Dine-in": "Dine-in / Offline",
   TikTok: "TikTok",
+  Perlengkapan: "Perlengkapan",
 } satisfies Record<string, string>;
 
 const columns: Column<FeeRow>[] = [

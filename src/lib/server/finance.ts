@@ -340,7 +340,7 @@ export const createChannelRevenue = createServerFn({ method: "POST" })
     (data: {
       branchId: string;
       date: string;
-      channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok";
+      channel: (typeof ORDER_CHANNEL_VALUES)[number];
       amount: number;
       notes?: string;
     }) => data,

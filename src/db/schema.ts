@@ -52,6 +52,7 @@ export const ORDER_CHANNEL_VALUES = [
   "ShopeeFood",
   "Dine-in",
   "TikTok",
+  "Perlengkapan",
 ] as const;
 
 export const orderChannelEnum = pgEnum("order_channel", ORDER_CHANNEL_VALUES);
