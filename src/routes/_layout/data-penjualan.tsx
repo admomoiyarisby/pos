@@ -409,6 +409,14 @@ function OrderRow({
   const [expanded, setExpanded] = useState(false);
   const profit = order.totalAmount - order.totalCogs;
 
+  // Lazily fetch the menu items sold in this order only when the row is
+  // expanded, so the list view stays light (one query per expanded order).
+  const { data: detail, isLoading: detailLoading } = useQuery({
+    queryKey: ["sales-order-detail", order.id],
+    queryFn: () => getSalesOrderDetail({ data: { id: order.id } }),
+    enabled: expanded,
+  });
+
   return (
     <>
       <tr className="border-b hover:bg-muted/30">
@@ -476,19 +484,81 @@ function OrderRow({
       {expanded && (
         <tr className="bg-muted/20">
           <td colSpan={10} className="px-6 py-3">
-            <div className="text-xs text-muted-foreground space-y-1">
-              {order.customerName && <p>Pelanggan: {order.customerName}</p>}
-              {order.notes && <p>Catatan: {order.notes}</p>}
-              <p>
-                Subtotal: {formatRp(order.subtotal)} · Diskon:{" "}
-                {formatRp(order.merchantDiscount + order.platformDiscount)} · Pajak:{" "}
-                {formatRp(order.taxAmount)} · MDR: {formatRp(order.mdrFee)} · Net:{" "}
-                {formatRp(order.netSales)}
-              </p>
-              <p className="text-muted-foreground/70">
-                ID: {order.id.slice(0, 8)} · Dibuat:{" "}
-                {order.createdAt ? new Date(order.createdAt).toLocaleString("id-ID") : "-"}
-              </p>
+            <div className="space-y-3">
+              {/* Menu items sold */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">Menu Terjual</p>
+                {detailLoading ? (
+                  <p className="text-xs text-muted-foreground">Memuat menu…</p>
+                ) : detail?.items && detail.items.length > 0 ? (
+                  <div className="rounded-md border bg-background overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="text-left py-1.5 px-3 font-medium">Menu</th>
+                          <th className="text-right py-1.5 px-2 font-medium w-14">Qty</th>
+                          <th className="text-right py-1.5 px-2 font-medium w-28">Harga</th>
+                          <th className="text-right py-1.5 px-2 font-medium w-28">HPP</th>
+                          <th className="text-right py-1.5 px-2 font-medium w-28">Profit</th>
+                          <th className="text-right py-1.5 px-3 font-medium w-28">Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.items.map((item: any) => {
+                          const lineTotal = (item.price ?? 0) * item.quantity;
+                          const lineCogs = (item.cogsAtTransaction ?? 0) * item.quantity;
+                          const lineProfit = lineTotal - lineCogs;
+                          return (
+                            <tr key={item.id ?? item.recipeId} className="border-b last:border-b-0">
+                              <td className="py-1.5 px-3">
+                                {item.recipeName ?? "-"}
+                                {item.notes && (
+                                  <span className="text-muted-foreground ml-1">({item.notes})</span>
+                                )}
+                              </td>
+                              <td className="py-1.5 px-2 text-right tabular-nums">
+                                {item.quantity}
+                              </td>
+                              <td className="py-1.5 px-2 text-right tabular-nums">
+                                {formatRp(item.price)}
+                              </td>
+                              <td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground">
+                                {formatRp(lineCogs)}
+                              </td>
+                              <td
+                                className={`py-1.5 px-2 text-right tabular-nums font-medium ${lineProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}
+                              >
+                                {formatRp(lineProfit)}
+                              </td>
+                              <td className="py-1.5 px-3 text-right tabular-nums font-medium">
+                                {formatRp(lineTotal)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Tidak ada item.</p>
+                )}
+              </div>
+
+              {/* Order metadata */}
+              <div className="text-xs text-muted-foreground space-y-1">
+                {order.customerName && <p>Pelanggan: {order.customerName}</p>}
+                {order.notes && <p>Catatan: {order.notes}</p>}
+                <p>
+                  Subtotal: {formatRp(order.subtotal)} · Diskon:{" "}
+                  {formatRp(order.merchantDiscount + order.platformDiscount)} · Pajak:{" "}
+                  {formatRp(order.taxAmount)} · MDR: {formatRp(order.mdrFee)} · Net:{" "}
+                  {formatRp(order.netSales)}
+                </p>
+                <p className="text-muted-foreground/70">
+                  ID: {order.id.slice(0, 8)} · Dibuat:{" "}
+                  {order.createdAt ? new Date(order.createdAt).toLocaleString("id-ID") : "-"}
+                </p>
+              </div>
             </div>
           </td>
         </tr>
