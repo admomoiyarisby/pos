@@ -274,7 +274,14 @@ export const Route = createFileRoute("/_layout/yield-tracking")({
 
 function YieldTrackingPage() {
   const [search, setSearch] = useTableSearch();
-  const { page, setPage, sort, setSort } = useTableUrlState();
+  const {
+    page,
+    setPage,
+    sort,
+    setSort,
+    filters: { branchId },
+    setFilter,
+  } = useTableUrlState<{ branchId?: string }>(["branchId"]);
   const { conversions: initial, ingredients, branches } = Route.useLoaderData();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -300,6 +307,23 @@ function YieldTrackingPage() {
   const conversions = [...rawConversions].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
+
+  // Branch filter — only roles that can see more than one branch get the
+  // dropdown (branch_admin is scoped to their own branch server-side).
+  const canFilterBranches =
+    user?.role === "super_admin" ||
+    user?.role === "central_kitchen" ||
+    user?.role === "area_manager";
+  const filteredBranches = useMemo(() => {
+    if (user?.role === "area_manager" && user.assignedBranches?.length) {
+      return branches.filter((b) => user.assignedBranches!.includes(b.id));
+    }
+    return branches;
+  }, [branches, user]);
+  const filteredConversions = useMemo(() => {
+    if (!branchId) return conversions;
+    return conversions.filter((c) => c.branchId === branchId);
+  }, [conversions, branchId]);
 
   const createMutation = useMutation({
     mutationFn: createYieldConversion,
@@ -448,11 +472,11 @@ function YieldTrackingPage() {
     setProducedItems([]);
   };
 
-  const totalOut = conversions.reduce(
+  const totalOut = filteredConversions.reduce(
     (sum, c) => sum + c.out.reduce((a, i) => a + i.quantity, 0),
     0,
   );
-  const totalProduced = conversions.reduce(
+  const totalProduced = filteredConversions.reduce(
     (sum, c) => sum + c.produced.reduce((a, i) => a + i.quantity, 0),
     0,
   );
@@ -628,7 +652,7 @@ function YieldTrackingPage() {
               <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
               <span className="text-xs text-muted-foreground uppercase">Total Produksi</span>
             </div>
-            <p className="text-2xl font-bold mt-2">{conversions.length}</p>
+            <p className="text-2xl font-bold mt-2">{filteredConversions.length}</p>
           </div>
           <div className="rounded-lg border p-4">
             <div className="flex items-center gap-2">
@@ -648,9 +672,29 @@ function YieldTrackingPage() {
           </div>
         </div>
 
+        {canFilterBranches && filteredBranches.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={branchId ?? ""}
+              onChange={(e) => {
+                setFilter("branchId", e.target.value);
+                setPage(0);
+              }}
+              className="h-8 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">Semua Cabang</option>
+              {filteredBranches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <DataTable
           columns={columns}
-          data={conversions}
+          data={filteredConversions}
           keyExtractor={(r) => r.id}
           pageSize={15}
           search={search}
