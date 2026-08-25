@@ -42,6 +42,8 @@ interface ProductionItem {
 interface ProductionRow {
   id: string;
   branchId: string;
+  branchName: string | null;
+  recordedByName: string | null;
   createdAt: Date;
   productionDate?: Date;
   notes: string | null;
@@ -495,6 +497,18 @@ function YieldTrackingPage() {
       render: (r) =>
         new Date(r.createdAt).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit" }),
     },
+    {
+      key: "branchName",
+      header: "Cabang",
+      width: "w-40",
+      sortable: true,
+      render: (r) => (
+        <div className="space-y-0.5">
+          <span className="font-medium">{r.branchName ?? "-"}</span>
+          <div className="text-xs text-muted-foreground">{r.recordedByName ?? "-"}</div>
+        </div>
+      ),
+    },
     { key: "out", header: "Barang Keluar", sortable: false, render: (r) => itemList(r.out) },
     {
       key: "produced",
@@ -833,6 +847,7 @@ function YieldTrackingPage() {
                   ).toLocaleDateString("id-ID")}
                 </p>
                 <p className="text-muted-foreground text-xs">
+                  {cancelTarget.branchName ?? "-"} · {cancelTarget.recordedByName ?? "-"} ·{" "}
                   {cancelTarget.out.map((o) => o.ingredientName).join(", ")} →{" "}
                   {cancelTarget.produced.map((p) => p.ingredientName).join(", ")}
                 </p>

@@ -41,16 +41,20 @@ export const getYieldConversions = createServerFn({ method: "GET" })
       .select({
         id: yieldConversions.id,
         branchId: yieldConversions.branchId,
+        branchName: branches.name,
         notes: yieldConversions.notes,
         productionDate: yieldConversions.productionDate,
         createdAt: yieldConversions.createdAt,
         processedBy: yieldConversions.processedBy,
+        recordedByName: users.name,
         status: yieldConversions.status,
         cancelledAt: yieldConversions.cancelledAt,
         cancelledBy: yieldConversions.cancelledBy,
         cancelReason: yieldConversions.cancelReason,
       })
       .from(yieldConversions)
+      .leftJoin(branches, eq(yieldConversions.branchId, branches.id))
+      .leftJoin(users, eq(yieldConversions.processedBy, users.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(yieldConversions.createdAt);
 
