@@ -125,6 +125,7 @@ function PosPage() {
   ];
 
   let isAdmin = user?.role === "super_admin" || user?.role === "admin_pusat";
+  let canBypassShift = user?.role === "super_admin";
   let userBranch = allBranches.find(function (b) {
     return b.id === user?.branchId;
   });
@@ -385,7 +386,12 @@ function PosPage() {
         }
 
         // Enter to checkout
-        if (e.key === "Enter" && cart.length > 0 && activeShift && !createOrderMutation.isPending) {
+        if (
+          e.key === "Enter" &&
+          cart.length > 0 &&
+          (activeShift || canBypassShift) &&
+          !createOrderMutation.isPending
+        ) {
           // Don't intercept if focus is in an input
           // SAFETY: keyboard events on the page originate from a DOM element;
           // non-Element targets simply don't match the tag checks below.
@@ -450,6 +456,7 @@ function PosPage() {
       mobileCartOpen,
       cart,
       activeShift,
+      canBypassShift,
       createOrderMutation.isPending,
       menuItems,
       branchInventory,
@@ -542,13 +549,14 @@ function PosPage() {
 
   let finalTotal = subtotalAfterDiscount + taxAmount;
   let isDineIn = channel === "Dine-in";
+  let isCashChannel = channel === "Dine-in" || channel === "Perlengkapan";
 
-  // Auto-select Online Payment for non Dine-In channels
+  // Auto-select Online Payment for online channels only (Dine-in and Perlengkapan use Cash)
   useEffect(
     function () {
-      if (!isDineIn && paymentMethod !== "Online Payment") {
+      if (!isCashChannel && paymentMethod !== "Online Payment") {
         setPaymentMethod("Online Payment");
-      } else if (isDineIn && paymentMethod === "Online Payment") {
+      } else if (isCashChannel && paymentMethod === "Online Payment") {
         setPaymentMethod("Cash");
       }
     },
@@ -707,13 +715,13 @@ function PosPage() {
   }
 
   async function handleCheckout() {
-    if (cart.length === 0 || !activeShift) return;
+    if (cart.length === 0 || (!activeShift && !canBypassShift)) return;
     setCheckoutError(null);
     setConfirmPaymentModal(true);
   }
 
   async function handleConfirmPayment() {
-    if (cart.length === 0 || !activeShift) return;
+    if (cart.length === 0 || (!activeShift && !canBypassShift)) return;
     setConfirmPaymentModal(false);
 
     let items = cart.map(function (c) {
@@ -746,7 +754,7 @@ function PosPage() {
           voucherDiscount: voucherDiscount > 0 ? voucherDiscount : undefined,
           taxAmount: taxAmount > 0 ? taxAmount : undefined,
           paymentMethod: paymentMethod,
-          shiftId: activeShift.id,
+          shiftId: activeShift?.id,
           notes: orderNotes || undefined,
         },
       });
@@ -1188,7 +1196,7 @@ function PosPage() {
                         <span>Total</span>
                         <span>Rp {finalTotal.toLocaleString("id-ID")}</span>
                       </div>
-                      {isDineIn ? (
+                      {isCashChannel ? (
                         <select
                           value={paymentMethod}
                           onChange={function (e) {
@@ -1227,17 +1235,19 @@ function PosPage() {
                       <button
                         onClick={handleCheckout}
                         disabled={
-                          cart.length === 0 || !activeShift || createOrderMutation.isPending
+                          cart.length === 0 ||
+                          (!activeShift && !canBypassShift) ||
+                          createOrderMutation.isPending
                         }
                         className="w-full h-11 rounded-full bg-primary text-primary-foreground text-sm font-semibold shadow-sm disabled:opacity-50"
                       >
                         {createOrderMutation.isPending
                           ? "Memproses..."
-                          : isDineIn
+                          : isCashChannel
                             ? "Bayar Rp " + finalTotal.toLocaleString("id-ID")
                             : "Konfirmasi Pesanan"}
                       </button>
-                      {!activeShift && (
+                      {!activeShift && !canBypassShift && (
                         <p className="text-xs text-center text-destructive">
                           Buka shift terlebih dahulu
                         </p>
@@ -1515,6 +1525,7 @@ function PosPage() {
           stockError={stockError}
           activeShift={activeShift}
           createOrderPending={createOrderMutation.isPending}
+          canBypassShift={canBypassShift}
           onRemoveItem={removeItem}
           onUpdateQty={updateQty}
           onToggleVoucher={toggleVoucher}
@@ -1659,7 +1670,11 @@ function PosPage() {
               disabled={createOrderMutation.isPending}
               className="h-10 px-6 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
             >
-              {createOrderMutation.isPending ? "Memproses..." : isDineIn ? "Bayar" : "Konfirmasi"}
+              {createOrderMutation.isPending
+                ? "Memproses..."
+                : isCashChannel
+                  ? "Bayar"
+                  : "Konfirmasi"}
             </button>
           </div>
         </div>

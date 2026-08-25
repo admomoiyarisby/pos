@@ -24,6 +24,7 @@ interface CartSidebarProps {
   stockError: string | null;
   activeShift: any;
   createOrderPending: boolean;
+  canBypassShift?: boolean;
   onRemoveItem: (idx: number) => void;
   onUpdateQty: (idx: number, delta: number) => void;
   onToggleVoucher: (v: Voucher) => void;
@@ -45,6 +46,7 @@ export default function CartSidebar({
   finalTotal,
   ppnEnabled,
   pb1Rate,
+  channel,
   isDineIn,
   paymentMethod,
   selectedVoucher,
@@ -53,6 +55,7 @@ export default function CartSidebar({
   stockError,
   activeShift,
   createOrderPending,
+  canBypassShift = false,
   onRemoveItem,
   onUpdateQty,
   onToggleVoucher,
@@ -273,7 +276,7 @@ export default function CartSidebar({
             </div>
 
             {/* Payment */}
-            {isDineIn ? (
+            {isDineIn || channel === "Perlengkapan" ? (
               <select
                 value={paymentMethod}
                 onChange={function (e) {
@@ -308,16 +311,18 @@ export default function CartSidebar({
               onClick={function () {
                 onCheckout();
               }}
-              disabled={cartTotal === 0 || !activeShift || createOrderPending}
+              disabled={
+                cart.length === 0 || (!activeShift && !canBypassShift) || createOrderPending
+              }
               className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {createOrderPending
                 ? "Memproses..."
-                : isDineIn
+                : isDineIn || channel === "Perlengkapan"
                   ? "Bayar Rp " + finalTotal.toLocaleString("id-ID")
                   : "Konfirmasi Pesanan"}
             </button>
-            {!activeShift && (
+            {!activeShift && !canBypassShift && (
               <p className="text-[10px] text-center text-destructive">Buka shift terlebih dahulu</p>
             )}
 

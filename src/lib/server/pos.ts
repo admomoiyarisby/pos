@@ -227,13 +227,7 @@ export const getShiftStatus = createServerFn({ method: "GET" })
     const [openShift] = await db
       .select()
       .from(shifts)
-      .where(
-        and(
-          eq(shifts.branchId, data.branchId),
-          eq(shifts.userId, data.userId),
-          eq(shifts.status, "Open"),
-        ),
-      )
+      .where(and(eq(shifts.branchId, data.branchId), eq(shifts.status, "Open")))
       .orderBy(shifts.startTime)
       .limit(1);
 
