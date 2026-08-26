@@ -21,6 +21,7 @@ import {
 } from "#/lib/server/yield";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
+import { getInventory } from "#/lib/server/inventory";
 import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
 import {
@@ -83,6 +84,9 @@ function SidePicker({
   onToggleCat,
   onUpdateQty,
   onRemove,
+  stockByIngredient,
+  direction,
+  stockLoading,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -97,6 +101,9 @@ function SidePicker({
   onToggleCat: (cat: string) => void;
   onUpdateQty: (ingredientId: string, qty: number) => void;
   onRemove: (ingredientId: string) => void;
+  stockByIngredient: Map<string, number>;
+  direction: "OUT" | "PRODUCED";
+  stockLoading: boolean;
 }) {
   const grouped = useMemo(() => {
     const m: Record<string, IngredientLike[]> = {};
@@ -226,15 +233,37 @@ function SidePicker({
         ) : (
           items.map((item) => {
             const ing = allIngredients.find((i) => i.id === item.ingredientId);
+            const current = stockByIngredient.get(item.ingredientId) ?? 0;
+            // OUT consumes stock (−), PRODUCED produces stock (+); negative is
+            // allowed (ADR 0012), so an OUT line that would drive stock below 0
+            // shows a warning instead of blocking.
+            const resulting = current + (direction === "OUT" ? -1 : 1) * item.quantity;
+            const goesNegative = direction === "OUT" && item.quantity > 0 && resulting < 0;
             return (
               <div
                 key={item.ingredientId}
-                className="flex items-center gap-3 rounded-md border p-2"
+                className="flex items-center gap-2 md:gap-3 rounded-md border p-2"
               >
                 <span className="flex-1 truncate text-sm">{ing?.name ?? item.ingredientId}</span>
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                <span className="hidden sm:inline text-xs text-muted-foreground whitespace-nowrap">
                   {ing?.stockUnit}
                 </span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  Stok: {stockLoading ? "…" : current.toLocaleString("id-ID")}
+                </span>
+                <span
+                  className={
+                    "text-xs font-semibold whitespace-nowrap tabular-nums " +
+                    (goesNegative ? "text-destructive" : "text-success")
+                  }
+                >
+                  → {stockLoading ? "…" : resulting.toLocaleString("id-ID")}
+                </span>
+                {goesNegative && (
+                  <span className="text-xs font-medium text-destructive whitespace-nowrap">
+                    ⚠ Stok negatif
+                  </span>
+                )}
                 <input
                   value={item.quantity > 0 ? item.quantity : ""}
                   onChange={(e) => onUpdateQty(item.ingredientId, Number(e.target.value))}
@@ -242,7 +271,7 @@ function SidePicker({
                   inputMode="numeric"
                   pattern="[0-9]*"
                   required
-                  className="h-9 w-28 rounded-md border border-input bg-background px-2 text-sm"
+                  className="h-9 w-24 rounded-md border border-input bg-background px-2 text-sm"
                   placeholder="Jumlah"
                 />
                 <button
@@ -298,6 +327,23 @@ function YieldTrackingPage() {
     new Set(["Fresh", "Dry", "Packaging"]),
   );
 
+  // Live stock preview (ADR 0012): current stock for the record's branch,
+  // fetched when the modal opens so each line shows "Stok → sisa". Missing
+  // inventory rows read as 0 (upsert-from-0 semantics).
+  const [formBranchId, setFormBranchId] = useState("");
+  const selectedBranchId = user?.role === "branch_admin" ? (user.branchId ?? "") : formBranchId;
+  const stockQuery = useQuery({
+    queryKey: ["branch-inventory", selectedBranchId],
+    queryFn: () => getInventory({ data: { branchId: selectedBranchId, limit: 1000 } }),
+    enabled: modalOpen && !!selectedBranchId,
+  });
+  const stockByIngredient = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const row of stockQuery.data?.data ?? []) m.set(row.ingredientId, row.quantity);
+    return m;
+  }, [stockQuery.data]);
+  const stockReady = !!selectedBranchId && !stockQuery.isPending;
+
   const { data: rawConversions } = useQuery({
     queryKey: ["yield-conversions"],
     queryFn: () => getYieldConversions({ data: {} }),
@@ -329,6 +375,7 @@ function YieldTrackingPage() {
     mutationFn: createYieldConversion,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["yield-conversions"] });
+      void queryClient.invalidateQueries({ queryKey: ["branch-inventory"] });
       setModalOpen(false);
       const v = createMutation.variables?.data;
       setResult({
@@ -367,6 +414,7 @@ function YieldTrackingPage() {
     mutationFn: approveYieldCancelRequest,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["yield-conversions"] });
+      void queryClient.invalidateQueries({ queryKey: ["branch-inventory"] });
       void queryClient.invalidateQueries({ queryKey: ["yield-cancel-requests"] });
     },
   });
@@ -380,6 +428,7 @@ function YieldTrackingPage() {
     mutationFn: directCancelYieldConversion,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["yield-conversions"] });
+      void queryClient.invalidateQueries({ queryKey: ["branch-inventory"] });
       setCancelTarget(null);
       setCancelReason("");
     },
@@ -555,20 +604,47 @@ function YieldTrackingPage() {
         const pending = pendingByYield.get(r.id);
         if (r.status === "Cancelled")
           return (
-            <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs">
-              Cancelled
-            </span>
+            <div className="flex flex-col gap-1">
+              <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs">
+                Cancelled
+              </span>
+              <a
+                href={`/inventory/ledger?reference=YIELD-${r.id}`}
+                title="Lihat mutasi pembalikan di Kartu Stok"
+                className="inline-flex items-center rounded bg-destructive/10 px-2 py-0.5 text-xs text-destructive hover:bg-destructive/20"
+              >
+                stok dibalik
+              </a>
+            </div>
           );
         if (pending)
           return (
-            <span className="inline-flex items-center rounded bg-amber-100 text-amber-800 px-2 py-0.5 text-xs">
-              Pending Cancel
-            </span>
+            <div className="flex flex-col gap-1">
+              <span className="inline-flex items-center rounded bg-amber-100 text-amber-800 px-2 py-0.5 text-xs">
+                Pending Cancel
+              </span>
+              <a
+                href={`/inventory/ledger?reference=YIELD-${r.id}`}
+                title="Lihat mutasi stok produksi di Kartu Stok"
+                className="text-xs text-muted-foreground hover:text-foreground hover:underline underline-offset-2"
+              >
+                Kartu Stok
+              </a>
+            </div>
           );
         return (
-          <span className="inline-flex items-center rounded bg-emerald-50 text-emerald-700 px-2 py-0.5 text-xs">
-            Active
-          </span>
+          <div className="flex flex-col gap-1">
+            <span className="inline-flex items-center rounded bg-emerald-50 text-emerald-700 px-2 py-0.5 text-xs">
+              Active
+            </span>
+            <a
+              href={`/inventory/ledger?reference=YIELD-${r.id}`}
+              title="Lihat mutasi stok produksi di Kartu Stok"
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline underline-offset-2"
+            >
+              Kartu Stok
+            </a>
+          </div>
         );
       },
     },
@@ -620,7 +696,10 @@ function YieldTrackingPage() {
     },
   ];
 
-  usePageTitle("Tracking Produksi", "Pencatatan produksi: barang keluar & barang dihasilkan");
+  usePageTitle(
+    "Tracking Produksi",
+    "Pencatatan produksi yang mengubah stok: barang keluar & barang dihasilkan",
+  );
 
   return (
     <RoleGuard allowedRoles={["super_admin", "central_kitchen", "branch_admin", "area_manager"]}>
@@ -639,8 +718,8 @@ function YieldTrackingPage() {
           <div className="rounded-lg border border-success/30 bg-success/10 p-4 text-sm text-success-foreground">
             <p className="font-medium">Produksi berhasil dicatat!</p>
             <p>
-              {result.outCount} bahan keluar · {result.producedCount} bahan dihasilkan dicatat
-              sebagai histori (stok tidak berubah).
+              {result.outCount} bahan keluar · {result.producedCount} bahan dihasilkan dicatat. Stok
+              diperbarui: bahan keluar dikurangi, bahan dihasilkan ditambah.
             </p>
           </div>
         )}
@@ -752,8 +831,11 @@ function YieldTrackingPage() {
                 <select
                   name="branchId"
                   required
+                  value={formBranchId}
+                  onChange={(e) => setFormBranchId(e.target.value)}
                   className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
+                  <option value="">Pilih cabang…</option>
                   {branches
                     .filter((b) => b.type === "Central")
                     .map((b) => (
@@ -789,6 +871,9 @@ function YieldTrackingPage() {
               onToggleCat={toggleOutCatAll}
               onUpdateQty={updateOutItem}
               onRemove={removeOutItem}
+              stockByIngredient={stockByIngredient}
+              direction="OUT"
+              stockLoading={!stockReady}
             />
 
             <div className="flex items-center justify-center">
@@ -811,6 +896,9 @@ function YieldTrackingPage() {
               onToggleCat={toggleProducedCatAll}
               onUpdateQty={updateProducedItem}
               onRemove={removeProducedItem}
+              stockByIngredient={stockByIngredient}
+              direction="PRODUCED"
+              stockLoading={!stockReady}
             />
 
             <div className="space-y-2">
@@ -824,7 +912,8 @@ function YieldTrackingPage() {
 
             <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
               <p>
-                Pencatatan ini murni histori — stok barang keluar maupun dihasilkan tidak berubah.
+                Mencatat produksi langsung mengubah stok: bahan keluar dikurangi, bahan dihasilkan
+                ditambah. Membatalkan produksi membalik perubahan ini.
               </p>
             </div>
 
@@ -879,7 +968,7 @@ function YieldTrackingPage() {
             )}
             {requestCancelMutation.isSuccess && (
               <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
-                Permintaan batal dikirim — menunggu persetujuan super_admin / area_manager.
+                Permintaan batal dikirim. Bila disetujui, stok produksi ini dibalik.
               </div>
             )}
             {cancelTarget && (
@@ -897,6 +986,10 @@ function YieldTrackingPage() {
                 </p>
               </div>
             )}
+            <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+              Menyetujui pembatalan akan membalik stok produksi ini: bahan keluar dikembalikan,
+              bahan dihasilkan dikurangi.
+            </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Alasan pembatalan *</label>
               <textarea

@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prototipe — Umpan Balik Stok Yield Tracking</title>
+    <style>
+      :root {
+        --bg: #fafafa;
+        --card: #ffffff;
+        --border: #e4e4e7;
+        --muted: #71717a;
+        --muted-2: #a1a1aa;
+        --primary: #3d56a6;
+        --primary-ink: #ffffff;
+        --destructive: #d93832;
+        --success: #059669;
+        --success-bg: #ecfdf5;
+        --success-ink: #047857;
+        --amber-bg: #fffbeb;
+        --amber-border: #fde68a;
+        --amber-ink: #b45309;
+        --red-bg: #fef2f2;
+        --red-border: #fecaca;
+        --red-ink: #b91c1c;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: #18181b;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 24px 16px 64px;
+      }
+      .masthead {
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 16px;
+        margin-bottom: 24px;
+      }
+      .masthead h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      .masthead p {
+        color: var(--muted);
+        margin: 2px 0;
+        font-size: 13px;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #3730a3;
+        margin-right: 6px;
+      }
+      section {
+        margin-bottom: 28px;
+      }
+      .sec-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .sec-num {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background: var(--primary);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .sec-head h2 {
+        font-size: 15px;
+        margin: 0;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+      }
+      .card + .card {
+        margin-top: 12px;
+      }
+      .card-title {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 0 0 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .note {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin-top: 10px;
+      }
+      .note b {
+        color: #3f3f46;
+      }
+      /* form mock */
+      .field {
+        margin-bottom: 12px;
+      }
+      .field label {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 500;
+        margin-bottom: 4px;
+      }
+      .control {
+        width: 100%;
+        height: 34px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #fff;
+        padding: 0 10px;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        color: #3f3f46;
+      }
+      .control.sel {
+        color: #18181b;
+      }
+      .picker {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px;
+        margin-bottom: 10px;
+      }
+      .picker h4 {
+        margin: 0 0 8px;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .picker h4 .count {
+        color: var(--muted);
+        font-weight: 400;
+        font-size: 12px;
+      }
+      table.lines {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      table.lines th {
+        text-align: left;
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+        padding: 4px 6px;
+        border-bottom: 1px solid var(--border);
+      }
+      table.lines td {
+        padding: 6px;
+        border-bottom: 1px solid #f4f4f5;
+        vertical-align: middle;
+      }
+      table.lines .num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .qty-input {
+        display: inline-block;
+        min-width: 72px;
+        text-align: right;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 4px 8px;
+        background: #fff;
+      }
+      .stock-cur {
+        color: var(--muted);
+      }
+      .stock-after {
+        font-weight: 600;
+      }
+      .stock-after.neg {
+        color: var(--red-ink);
+      }
+      .stock-after.pos {
+        color: var(--success);
+      }
+      .warn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11.5px;
+        color: var(--amber-ink);
+        background: var(--amber-bg);
+        border: 1px solid var(--amber-border);
+        border-radius: 6px;
+        padding: 2px 8px;
+      }
+      .warn.red {
+        color: var(--red-ink);
+        background: var(--red-bg);
+        border-color: var(--red-border);
+      }
+      .foot-note {
+        font-size: 12px;
+        color: var(--muted);
+        background: #f4f4f5;
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .btn {
+        height: 34px;
+        padding: 0 16px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #fff;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: default;
+      }
+      .btn.primary {
+        background: var(--primary);
+        color: #fff;
+        border-color: var(--primary);
+      }
+      .btn.danger {
+        background: var(--destructive);
+        color: #fff;
+        border-color: var(--destructive);
+      }
+      /* toast mock */
+      .toast {
+        border: 1px solid #a7f3d0;
+        background: var(--success-bg);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+      .toast h4 {
+        margin: 0 0 2px;
+        font-size: 13.5px;
+        color: var(--success-ink);
+      }
+      .toast p {
+        margin: 0;
+        font-size: 12.5px;
+        color: #065f46;
+      }
+      /* badge */
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 6px;
+        padding: 2px 8px;
+      }
+      .badge.active {
+        background: var(--success-bg);
+        color: var(--success-ink);
+      }
+      .badge.pending {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .badge.cancelled {
+        background: #f4f4f5;
+        color: #52525b;
+      }
+      .badge.reversed {
+        background: var(--red-bg);
+        color: var(--red-ink);
+      }
+      /* copy table */
+      table.copy {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+      }
+      table.copy th {
+        text-align: left;
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--muted);
+        padding: 6px;
+        border-bottom: 1px solid var(--border);
+      }
+      table.copy td {
+        padding: 8px 6px;
+        border-bottom: 1px solid #f4f4f5;
+        vertical-align: top;
+      }
+      table.copy .loc {
+        white-space: nowrap;
+        font-weight: 600;
+        color: #3f3f46;
+        width: 130px;
+      }
+      table.copy .old {
+        color: var(--red-ink);
+        text-decoration: line-through;
+        text-decoration-color: #fca5a5;
+      }
+      table.copy .new {
+        color: #166534;
+      }
+      .del {
+        color: var(--destructive);
+        text-decoration: line-through;
+      }
+      .add {
+        color: var(--success);
+      }
+      .callout {
+        border: 1px solid #c7d2fe;
+        background: #eef2ff;
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 12.5px;
+      }
+      .callout b {
+        color: #3730a3;
+      }
+      .callout code,
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        background: #f4f4f5;
+        border: 1px solid #e4e4e7;
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+      .q {
+        margin: 10px 0 0;
+        font-size: 12.5px;
+      }
+      .q b {
+        color: #3f3f46;
+      }
+      ul.plain {
+        margin: 6px 0 0;
+        padding-left: 18px;
+      }
+      ul.plain li {
+        margin: 3px 0;
+      }
+      @media (max-width: 640px) {
+        .wrap {
+          padding: 16px 10px 48px;
+        }
+        table.lines th:nth-child(2),
+        table.lines td:nth-child(2) {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="masthead">
+        <h1>Umpan Balik Stok — Tracking Produksi (<code>/yield-tracking</code>)</h1>
+        <p>
+          <span class="tag">PROTOTIPE</span> Sketsa kasar untuk direaksi — bukan implementasi.
+          Berdasarkan ADR 0012: mencatat produksi <b>langsung mengubah stok</b> (bahan keluar −,
+          bahan dihasilkan +), pembatalan membalik mutasi.
+        </p>
+        <p>
+          Data contoh: produksi kaldu ayam — Tulang Ayam 2000, Air 4000, Bawang Merah 200 → Kaldu
+          Ayam (SFG) 4800. Satu baris sengaja dibuat negatif untuk menunjukkan peringatan.
+        </p>
+      </div>
+
+      <!-- 1. Modal Input Produksi -->
+      <section>
+        <div class="sec-head">
+          <span class="sec-num">1</span>
+          <h2>Modal “Input Produksi” — pratinjau stok per baris</h2>
+        </div>
+        <div class="card">
+          <div class="field">
+            <label>Cabang / Gudang</label>
+            <div class="control">Gudang Pusat (Central)</div>
+          </div>
+          <div class="field">
+            <label>Tanggal Produksi</label>
+            <div class="control sel">27 Agustus 2026</div>
+          </div>
+
+          <div class="picker">
+            <h4>⬇️ Barang Keluar (Out) <span class="count">3 dipilih</span></h4>
+            <table class="lines">
+              <thead>
+                <tr>
+                  <th>Bahan</th>
+                  <th>Satuan</th>
+                  <th>Jumlah</th>
+                  <th>Stok saat ini</th>
+                  <th>Sisa stok</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Tulang Ayam</td>
+                  <td>gr</td>
+                  <td class="num"><span class="qty-input">2000</span></td>
+                  <td class="num stock-cur">1.500</td>
+                  <td class="num stock-after neg">−500</td>
+                  <td><span class="warn red">⚠ Stok akan negatif</span></td>
+                </tr>
+                <tr>
+                  <td>Air</td>
+                  <td>ml</td>
+                  <td class="num"><span class="qty-input">4000</span></td>
+                  <td class="num stock-cur">12.000</td>
+                  <td class="num stock-after">8.000</td>
+                  <td></td>
+                </tr>
+                <tr>
+                  <td>Bawang Merah</td>
+                  <td>gr</td>
+                  <td class="num"><span class="qty-input">200</span></td>
+                  <td class="num stock-cur">350</td>
+                  <td class="num stock-after">150</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="note">
+              Peringatan <b>amber</b> juga bisa dipakai untuk baris yang menuju stok rendah; merah
+              khusus stok negatif. Keputusan yang sudah tetap:
+              <b>memperingatkan, bukan memblokir</b>.
+            </p>
+          </div>
+
+          <div class="picker">
+            <h4>⬆️ Barang Dihasilkan (Produced) <span class="count">1 dipilih</span></h4>
+            <table class="lines">
+              <thead>
+                <tr>
+                  <th>Bahan</th>
+                  <th>Satuan</th>
+                  <th>Jumlah</th>
+                  <th>Stok saat ini</th>
+                  <th>Sisa stok</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Kaldu Ayam (SFG)</td>
+                  <td>ml</td>
+                  <td class="num"><span class="qty-input">4800</span></td>
+                  <td class="num stock-cur">0</td>
+                  <td class="num stock-after pos">+4.800</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="foot-note">
+            Mencatat produksi <b>langsung mengubah stok</b>: bahan keluar dikurangi, bahan
+            dihasilkan ditambah. Membatalkan produksi membalik perubahan ini.
+          </div>
+          <div class="actions">
+            <span class="btn">Batal</span><span class="btn primary">Catat Produksi</span>
+          </div>
+        </div>
+        <p class="q">
+          <b>Pertanyaan untuk direaksi:</b> (a) pratinjau <i>inline per baris</i> seperti di atas vs
+          ringkasan strip di bawah modal? (b) kolom “Sisa stok” perlu untuk sisi dihasilkan juga,
+          atau cukup sisi keluar?
+        </p>
+      </section>
+
+      <!-- 2. Success toast -->
+      <section>
+        <div class="sec-head">
+          <span class="sec-num">2</span>
+          <h2>Toast sukses — copy baru</h2>
+        </div>
+        <div class="card">
+          <div class="toast">
+            <h4>Produksi berhasil dicatat!</h4>
+            <p>
+              3 bahan keluar · 1 bahan dihasilkan. Stok diperbarui: bahan keluar dikurangi, bahan
+              dihasilkan ditambah.
+            </p>
+          </div>
+          <p class="note">
+            Lama: <span class="del">“dicatat sebagai histori (stok tidak berubah)”</span>. Baru
+            menyebut efek stok tanpa mengulang angka per baris (detail ada di Kartu Stok).
+          </p>
+        </div>
+      </section>
+
+      <!-- 3. Cancel modal -->
+      <section>
+        <div class="sec-head">
+          <span class="sec-num">3</span>
+          <h2>Modal pembatalan — menyebut pembalikan stok</h2>
+        </div>
+        <div class="card">
+          <p style="margin: 0 0 8px; font-size: 13px; font-weight: 600">Batalkan Produksi</p>
+          <p style="font-size: 12.5px; color: var(--muted); margin: 0 0 10px">
+            Produksi 1f2a9c3d — 26 Agustus 2026 · Gudang Pusat (Central) · Tulang Ayam (2000), Air
+            (4000), Bawang Merah (200) → Kaldu Ayam (SFG) (4800)
+          </p>
+          <div class="field">
+            <label>Alasan pembatalan *</label>
+            <div class="control">salah input tanggal</div>
+          </div>
+          <div
+            class="callout"
+            style="border-color: #fecaca; background: var(--red-bg); margin-bottom: 12px"
+          >
+            <b>Menyetujui pembatalan akan membalik stok produksi ini:</b> bahan keluar (Tulang Ayam,
+            Air, Bawang Merah) dikembalikan, bahan dihasilkan (Kaldu Ayam) dikurangi — ditulis di
+            Kartu Stok sebagai mutasi pembalik.
+          </div>
+          <div class="actions">
+            <span class="btn">Tutup</span>
+            <span class="btn danger">Batalkan Langsung</span>
+            <span class="btn primary">Request Batal</span>
+          </div>
+          <p class="note">
+            Copy request-sukses yang juga berubah:
+            <span class="del"
+              >“Permintaan batal dikirim — menunggu persetujuan super_admin / area_manager.”</span
+            >
+            →
+            <span class="add"
+              >“Permintaan batal dikirim. Bila disetujui, stok produksi ini dibalik.”</span
+            >
+          </p>
+        </div>
+      </section>
+
+      <!-- 4. History table affordance -->
+      <section>
+        <div class="sec-head">
+          <span class="sec-num">4</span>
+          <h2>Tabel riwayat — penanda “stok dibalik”</h2>
+        </div>
+        <div class="card">
+          <table class="copy">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Tampilan usulan</th>
+                <th>Keterangan</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Active</td>
+                <td><span class="badge active">Active</span></td>
+                <td>Stok sudah dimutasi saat dicatat.</td>
+              </tr>
+              <tr>
+                <td>Pending Cancel</td>
+                <td><span class="badge pending">Pending Cancel</span></td>
+                <td>Stok <b>belum</b> dibalik — menunggu persetujuan.</td>
+              </tr>
+              <tr>
+                <td>Cancelled</td>
+                <td>
+                  <span class="badge cancelled">Cancelled</span>
+                  <span class="badge reversed">stok dibalik</span>
+                </td>
+                <td>Mutasi sudah dibalik di Kartu Stok (referensi sama).</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="q">
+            <b>Deep-link ke Kartu Stok?</b> Halaman Kartu Stok ada di
+            <code>/inventory/ledger</code> tetapi filter-nya hanya
+            <code>branchId</code>/<code>ingredientId</code>/<code>recipeId</code> —
+            <b>belum ada filter <code>reference</code></b
+            >, jadi tautan per-produksi tidak bisa langsung menunjuk barisnya. Opsi: (a) lewati
+            tautan, cukup badge “stok dibalik” (tanpa perubahan server); (b) tambahkan filter
+            <code>reference</code> ke <code>getStockLedger</code> + halaman ledger — tugas kecil
+            lanjutan.
+          </p>
+        </div>
+      </section>
+
+      <!-- 5. Copy change list -->
+      <section>
+        <div class="sec-head">
+          <span class="sec-num">5</span>
+          <h2>Daftar perubahan copy (sebelum → sesudah)</h2>
+        </div>
+        <div class="card">
+          <table class="copy">
+            <thead>
+              <tr>
+                <th>Lokasi</th>
+                <th>Sebelum</th>
+                <th>Sesudah</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="loc">Toast sukses</td>
+                <td class="old">…dicatat sebagai histori (stok tidak berubah).</td>
+                <td class="new">
+                  …Stok diperbarui: bahan keluar dikurangi, bahan dihasilkan ditambah.
+                </td>
+              </tr>
+              <tr>
+                <td class="loc">Catatan kaki modal</td>
+                <td class="old">
+                  Pencatatan ini murni histori — stok barang keluar maupun dihasilkan tidak berubah.
+                </td>
+                <td class="new">
+                  Mencatat produksi langsung mengubah stok: bahan keluar dikurangi, bahan dihasilkan
+                  ditambah. Membatalkan produksi membalik perubahan ini.
+                </td>
+              </tr>
+              <tr>
+                <td class="loc">Modal batal — info</td>
+                <td class="old">(tidak ada info stok)</td>
+                <td class="new">
+                  Menyetujui pembatalan akan membalik stok produksi ini: bahan keluar dikembalikan,
+                  bahan dihasilkan dikurangi.
+                </td>
+              </tr>
+              <tr>
+                <td class="loc">Modal batal — sukses request</td>
+                <td class="old">
+                  Permintaan batal dikirim — menunggu persetujuan super_admin / area_manager.
+                </td>
+                <td class="new">
+                  Permintaan batal dikirim. Bila disetujui, stok produksi ini dibalik.
+                </td>
+              </tr>
+              <tr>
+                <td class="loc">Halaman — subtitle</td>
+                <td class="old">Pencatatan produksi: barang keluar &amp; barang dihasilkan</td>
+                <td class="new">
+                  Pencatatan produksi yang mengubah stok: barang keluar &amp; barang dihasilkan
+                </td>
+              </tr>
+              <tr>
+                <td class="loc">Tabel — badge Cancelled</td>
+                <td class="old">Cancelled</td>
+                <td class="new">
+                  Cancelled
+                  <span class="badge reversed" style="vertical-align: middle">stok dibalik</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 6. Data question -->
+      <section>
+        <div class="sec-head">
+          <span class="sec-num">6</span>
+          <h2>Keputusan data: dari mana pratinjau dapat stok saat ini?</h2>
+        </div>
+        <div class="card">
+          <div class="callout">
+            <b
+              >Rekomendasi: pakai kembali <code>getInventory</code> — tidak perlu server function
+              baru.</b
+            >
+            <ul class="plain">
+              <li>
+                Query React Query <code>["branch-inventory", branchId]</code> memanggil
+                <code>getInventory({ branchId, limit: 1000 })</code> saat modal dibuka / cabang
+                diganti. Batas 1000 baris cukup untuk skala grup restoran ini.
+              </li>
+              <li>
+                Baris yang <i>tidak ada</i> di <code>inventory</code> (belum pernah distok di
+                cabang) dianggap <b>0</b> — konsisten dengan semantik upsert-from-0 pada ADR 0012.
+              </li>
+              <li>
+                Untuk <code>branch_admin</code> (cabangnya sudah pasti), loader halaman bisa
+                prefetch stok cabangnya agar pratinjau langsung tampil tanpa spinner.
+              </li>
+              <li>
+                Scoping tetap di server: <code>getInventory</code> mengunci
+                <code>branch_admin</code> ke cabangnya sendiri.
+              </li>
+            </ul>
+          </div>
+          <p class="note">
+            <b>Alternatif yang ditolak:</b> menambah semua stok ke loader halaman (boros — ikut
+            termuat walau modal tak dibuka); server function khusus
+            <code>getBranchInventoryMap</code> (duplikasi query yang sudah ada).
+          </p>
+        </div>
+      </section>
+
+      <p style="color: var(--muted); font-size: 12px">
+        Prototipe untuk ticket “Prototype: Yield-tracking stock feedback” (wayfinder map #138).
+        Sketsa — silakan reaksi: ubah susunan, warna, atau copy.
+      </p>
+    </div>
+  </body>
+</html>

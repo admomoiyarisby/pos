@@ -118,11 +118,14 @@ Effect handlers: `src/lib/server/scm-transfer-effects.ts`. Parallel shape to Pen
 
 ---
 
-## 8 — Yield Tracking / Produksi Internal (src/lib/server/yield.ts) — NO-WRITE
+## 8 — Yield Tracking / Produksi Internal (src/lib/server/yield.ts) — WRITE PATH (ADR 0012)
 
-| #      | Event                                                                        | Branch                            | type                      | reference | balance | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------ | ---------------------------------------------------------------------------- | --------------------------------- | ------------------------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Y1** | `createYieldConversion` (`Barang Keluar` OUT + `Barang Dihasilkan` PRODUCED) | `yield.ts: createYieldConversion` | — (no inventory mutation) | —         | —       | **Documentation-only** per `CONTEXT.md` Production definition: "records the out and produced items as history but does NOT change stock and does NOT write to the stock ledger." Inserts `yieldConversions(branchId, notes, productionDate)` + `yieldConversionItems(ingredientId, quantity, direction=OUT/PRODUCED)` only. Stock adjustments, if needed, are via SO or `adjustBranchStockBatch`. This is the gap referenced in the prompt ("changes in yield tracking supposed to update kartu stok too") — see Grilling ticket T2. |
+> **Update (ADR 0012):** Y1 flipped from NO-WRITE to a write path — recording a production mutates `inventory` + `stockLedger` at the record's branch; cancelling reverses it. See `docs/adr/0012-production-yield-writes-kartu-stok.md` and wayfinder map #138. Produces **ingredients** into `inventory` (no `stockLedger.recipeId`) — distinct from R1's recipe production.
+
+| #       | Event                                                                          | Branch                                            | type                                                           | reference                           | balance                                                                                                                                    | Notes                                                                                                                                                                                                                                                                 |
+| ------- | ------------------------------------------------------------------------------ | ------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Y1**  | `createYieldConversion` (`Barang Keluar` OUT + `Barang Dihasilkan` PRODUCED)   | **Record's branch** (`yieldConversions.branchId`) | `OUT` per out item + `IN` per produced item                    | `YIELD-<conversionId>`              | `newQty = oldQty − outQty` per OUT (upsert from 0); `newQty = oldQty + producedQty` per PRODUCED (upsert); **negative allowed** (no guard) | Inserts `yieldConversions` + `yieldConversionItems` + inventory/ledger rows in **one transaction** (error → no partial writes); `stockLedger.notes = "Produksi <id8>"`; `processedBy` = recording user; no `ingredients.averageCost` change (HPP manual)              |
+| **Y1b** | `approveYieldCancelRequest` / `directCancelYieldConversion` — record cancelled | **Record's branch**                               | `IN` per out item (restore) + `OUT` per produced item (deduct) | `YIELD-<conversionId>` (same as Y1) | `newQty = oldQty + outQty` (OUT restore), `newQty = oldQty − producedQty` (produced deduct); negative allowed                              | Sets `yieldConversions.status=Cancelled`; reversal `stockLedger.notes = "Produksi dibatalkan <id8>"`; **only for records that wrote stock** (pre-ADR-0012 records have no ledger rows to reverse); a **pending** cancel request leaves stock untouched until approval |
 
 ---
 
@@ -151,9 +154,9 @@ Effect handlers: `src/lib/server/scm-transfer-effects.ts`. Parallel shape to Pen
 - **Supplier:** 3 inventory writers (D1 create, D2 update=2 ledgers, D3 delete).
 - **Waste:** 1 direct writer (W1) + 2 FSM-triggered (S3b/M3b).
 - **Recipe production:** 1 writer (R1) — the only writer of `stockLedger.recipeId`.
-- **Yield tracking:** 0 writers (Y1 no-write by design — gap to decide).
+- **Yield tracking:** 2 writers (Y1 record mutation + Y1b cancel reversal) per ADR 0012.
 - **Manual:** 2 writers (A1 batch, A2 destructive delete).
-- **Total ledger-writing paths:** **≈ 20** distinct `stockLedger` insert patterns (excluding the legacy scm.ts 3-doc paths). Each needs at least one integration test asserting `stockLedger.balance == inventory.quantity` post-write, `type` correctness, and `reference` prefix.
+- **Total ledger-writing paths:** **≈ 22** distinct `stockLedger` insert patterns (excluding the legacy scm.ts 3-doc paths). Each needs at least one integration test asserting `stockLedger.balance == inventory.quantity` post-write, `type` correctness, and `reference` prefix.
 
 ---
 
@@ -167,4 +170,4 @@ Effect handlers: `src/lib/server/scm-transfer-effects.ts`. Parallel shape to Pen
 6. `inTransitInventory` / `pendingReviewInventory` side-effects are present/cleared as specified.
 7. Error paths (InsufficientStockError, SO wrong date, AlreadyRealized, etc.) produce **no** ledger rows and leave inventory unchanged.
 
-This matrix is the input to Tickets T4–T7. T2 decides whether Y1 becomes a new write path.
+This matrix is the input to Tickets T4–T7. Y1 is now a write path per ADR 0012 (record mutation + cancel reversal), pinned by the flipped Y1 tests in `kartu-stok.integration.test.ts`.

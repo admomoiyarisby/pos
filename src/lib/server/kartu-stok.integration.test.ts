@@ -2458,20 +2458,26 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
   );
 
   // ---------------------------------------------------------------------------
-  // Yield Tracking — src/lib/server/yield.ts (Y1) — NO-WRITE NEGATIVE CASE
+  // Yield Tracking — src/lib/server/yield.ts (Y1) — WRITE PATH (ADR 0012)
+  // Recording a production deducts OUT / adds PRODUCED on the record branch and
+  // mirrors every movement to stockLedger with a shared `YIELD-<conversionId>`
+  // reference. Cancelling reverses. Simulation style matches P1/R1: the ledger
+  // write createYieldConversion will perform is applied directly and the
+  // contract asserted (the feature implementation is the map's handoff).
   // ---------------------------------------------------------------------------
 
   it.skipIf(!hasDatabaseUrl)(
-    "Y1: createYieldConversion is documentation-only — inserts yieldConversions + yieldConversionItems but writes NO inventory or stockLedger rows",
+    "Y1: createYieldConversion write-path — deducts OUT, upserts PRODUCED from 0, ledger balance == inventory.quantity, shared YIELD-* reference",
     async () => {
       await withTx(async (db) => {
         const branchId = await createBranch(db, suid("BR-Y1"));
         const ingOutId = await createIngredient(db, suid("ING-Y1O"));
         const ingProdId = await createIngredient(db, suid("ING-Y1P"));
         await setInventory(db, branchId, ingOutId, 100);
-        await setInventory(db, branchId, ingProdId, 0);
+        // ingProdId intentionally has NO inventory row — produced upsert-from-0
 
         const convId = crypto.randomUUID();
+        const reference = `YIELD-${convId}`;
         await db.insert(schema.yieldConversions).values({
           id: convId,
           branchId,
@@ -2484,6 +2490,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
           { conversionId: convId, ingredientId: ingProdId, quantity: 8, direction: "PRODUCED" },
         ]);
 
+        // OUT: 100 − 10 = 90
         const [invOut] = await db
           .select()
           .from(schema.inventory)
@@ -2494,7 +2501,23 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
             ),
           )
           .limit(1);
-        const [invProd] = await db
+        const outNewQty = invOut.quantity - 10;
+        await db
+          .update(schema.inventory)
+          .set({ quantity: outNewQty })
+          .where(eq(schema.inventory.id, invOut.id));
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingOutId,
+          type: "OUT",
+          quantity: 10,
+          balance: outNewQty,
+          reference,
+          notes: `Produksi ${convId.slice(0, 8)}`,
+        });
+
+        // PRODUCED: no row yet → upsert from 0 → 0 + 8 = 8
+        const [existingProd] = await db
           .select()
           .from(schema.inventory)
           .where(
@@ -2504,15 +2527,311 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
             ),
           )
           .limit(1);
-        expect(invOut.quantity).toBe(100);
-        expect(invProd.quantity).toBe(0);
+        const prodNewQty = (existingProd?.quantity ?? 0) + 8;
+        if (existingProd) {
+          await db
+            .update(schema.inventory)
+            .set({ quantity: prodNewQty })
+            .where(eq(schema.inventory.id, existingProd.id));
+        } else {
+          await db.insert(schema.inventory).values({
+            branchId,
+            ingredientId: ingProdId,
+            quantity: prodNewQty,
+          });
+        }
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingProdId,
+          type: "IN",
+          quantity: 8,
+          balance: prodNewQty,
+          reference,
+          notes: `Produksi ${convId.slice(0, 8)}`,
+        });
 
-        const allLedgers = await db
+        await assertLedgerContract(db, {
+          reference,
+          branchId,
+          expectedType: "OUT",
+          expectedQuantity: 10,
+          expectedBalance: 90,
+          ingredientId: ingOutId,
+        });
+        await assertLedgerContract(db, {
+          reference,
+          branchId,
+          expectedType: "IN",
+          expectedQuantity: 8,
+          expectedBalance: 8,
+          ingredientId: ingProdId,
+        });
+        const [invOutAfter] = await db
+          .select()
+          .from(schema.inventory)
+          .where(eq(schema.inventory.id, invOut.id))
+          .limit(1);
+        const [invProdAfter] = await db
+          .select()
+          .from(schema.inventory)
+          .where(
+            and(
+              eq(schema.inventory.branchId, branchId),
+              eq(schema.inventory.ingredientId, ingProdId),
+            ),
+          )
+          .limit(1);
+        expect(invOutAfter.quantity).toBe(90);
+        expect(invProdAfter.quantity).toBe(8);
+        // both movements share one YIELD-* reference at the record's branch
+        const ledgers = await db
           .select()
           .from(schema.stockLedger)
-          .where(eq(schema.stockLedger.branchId, branchId));
-        // No ledger rows with reference == convId should exist for Y1
-        expect(allLedgers.filter((r) => r.reference === convId)).toHaveLength(0);
+          .where(eq(schema.stockLedger.reference, reference));
+        expect(ledgers).toHaveLength(2);
+        for (const r of ledgers) expect(r.branchId).toBe(branchId);
+      });
+    },
+  );
+
+  it.skipIf(!hasDatabaseUrl)(
+    "Y1 negative: OUT exceeding current stock is allowed — balance goes negative, no clamp",
+    async () => {
+      await withTx(async (db) => {
+        const branchId = await createBranch(db, suid("BR-Y1N"));
+        const ingOutId = await createIngredient(db, suid("ING-Y1NO"));
+        const ingProdId = await createIngredient(db, suid("ING-Y1NP"));
+        await setInventory(db, branchId, ingOutId, 10);
+
+        const convId = crypto.randomUUID();
+        const reference = `YIELD-${convId}`;
+        await db.insert(schema.yieldConversions).values({
+          id: convId,
+          branchId,
+          notes: "Y1 negative",
+          productionDate: new Date(),
+          processedBy: await createUser(db, branchId, "super_admin"),
+        });
+        await db.insert(schema.yieldConversionItems).values([
+          { conversionId: convId, ingredientId: ingOutId, quantity: 25, direction: "OUT" },
+          { conversionId: convId, ingredientId: ingProdId, quantity: 4, direction: "PRODUCED" },
+        ]);
+
+        // OUT: 10 − 25 = −15 (negative allowed, no guard/clamp)
+        const [invOut] = await db
+          .select()
+          .from(schema.inventory)
+          .where(
+            and(
+              eq(schema.inventory.branchId, branchId),
+              eq(schema.inventory.ingredientId, ingOutId),
+            ),
+          )
+          .limit(1);
+        await db
+          .update(schema.inventory)
+          .set({ quantity: invOut.quantity - 25 })
+          .where(eq(schema.inventory.id, invOut.id));
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingOutId,
+          type: "OUT",
+          quantity: 25,
+          balance: -15,
+          reference,
+          notes: `Produksi ${convId.slice(0, 8)}`,
+        });
+        // PRODUCED: upsert from 0 → 4
+        await db.insert(schema.inventory).values({
+          branchId,
+          ingredientId: ingProdId,
+          quantity: 4,
+        });
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingProdId,
+          type: "IN",
+          quantity: 4,
+          balance: 4,
+          reference,
+          notes: `Produksi ${convId.slice(0, 8)}`,
+        });
+
+        const [invOutAfter] = await db
+          .select()
+          .from(schema.inventory)
+          .where(eq(schema.inventory.id, invOut.id))
+          .limit(1);
+        expect(invOutAfter.quantity).toBe(-15);
+        await assertLedgerContract(db, {
+          reference,
+          branchId,
+          expectedType: "OUT",
+          expectedQuantity: 25,
+          expectedBalance: -15,
+          ingredientId: ingOutId,
+        });
+      });
+    },
+  );
+
+  it.skipIf(!hasDatabaseUrl)(
+    "Y1 cancel reversal: cancelling restores OUT items (IN) and deducts produced items (OUT) on the same YIELD-* reference",
+    async () => {
+      await withTx(async (db) => {
+        const branchId = await createBranch(db, suid("BR-Y1C"));
+        const ingOutId = await createIngredient(db, suid("ING-Y1CO"));
+        const ingProdId = await createIngredient(db, suid("ING-Y1CP"));
+        await setInventory(db, branchId, ingOutId, 100);
+
+        const convId = crypto.randomUUID();
+        const reference = `YIELD-${convId}`;
+        // record created + cancelled (request→approval or direct cancel flips status)
+        await db.insert(schema.yieldConversions).values({
+          id: convId,
+          branchId,
+          notes: "Y1 cancel",
+          productionDate: new Date(),
+          processedBy: await createUser(db, branchId, "super_admin"),
+          status: "Cancelled",
+        });
+        await db.insert(schema.yieldConversionItems).values([
+          { conversionId: convId, ingredientId: ingOutId, quantity: 10, direction: "OUT" },
+          { conversionId: convId, ingredientId: ingProdId, quantity: 8, direction: "PRODUCED" },
+        ]);
+
+        // forward mutation (as Y1 write-path): OUT 100→90, PRODUCED 0→8
+        const [invOut] = await db
+          .select()
+          .from(schema.inventory)
+          .where(
+            and(
+              eq(schema.inventory.branchId, branchId),
+              eq(schema.inventory.ingredientId, ingOutId),
+            ),
+          )
+          .limit(1);
+        await db
+          .update(schema.inventory)
+          .set({ quantity: invOut.quantity - 10 })
+          .where(eq(schema.inventory.id, invOut.id));
+        await db.insert(schema.inventory).values({
+          branchId,
+          ingredientId: ingProdId,
+          quantity: 8,
+        });
+        await db.insert(schema.stockLedger).values([
+          {
+            branchId,
+            ingredientId: ingOutId,
+            type: "OUT",
+            quantity: 10,
+            balance: 90,
+            reference,
+            notes: `Produksi ${convId.slice(0, 8)}`,
+          },
+          {
+            branchId,
+            ingredientId: ingProdId,
+            type: "IN",
+            quantity: 8,
+            balance: 8,
+            reference,
+            notes: `Produksi ${convId.slice(0, 8)}`,
+          },
+        ]);
+
+        // reversal on cancel: OUT restored (90+10=100), produced deducted (8−8=0)
+        const [invOutRev] = await db
+          .select()
+          .from(schema.inventory)
+          .where(eq(schema.inventory.id, invOut.id))
+          .limit(1);
+        const outRevQty = invOutRev.quantity + 10;
+        await db
+          .update(schema.inventory)
+          .set({ quantity: outRevQty })
+          .where(eq(schema.inventory.id, invOutRev.id));
+        const [invProdRev] = await db
+          .select()
+          .from(schema.inventory)
+          .where(
+            and(
+              eq(schema.inventory.branchId, branchId),
+              eq(schema.inventory.ingredientId, ingProdId),
+            ),
+          )
+          .limit(1);
+        const prodRevQty = invProdRev.quantity - 8;
+        await db
+          .update(schema.inventory)
+          .set({ quantity: prodRevQty })
+          .where(eq(schema.inventory.id, invProdRev.id));
+        await db.insert(schema.stockLedger).values([
+          {
+            branchId,
+            ingredientId: ingOutId,
+            type: "IN",
+            quantity: 10,
+            balance: outRevQty,
+            reference,
+            notes: `Produksi dibatalkan ${convId.slice(0, 8)}`,
+          },
+          {
+            branchId,
+            ingredientId: ingProdId,
+            type: "OUT",
+            quantity: 8,
+            balance: prodRevQty,
+            reference,
+            notes: `Produksi dibatalkan ${convId.slice(0, 8)}`,
+          },
+        ]);
+
+        const [invOutFinal] = await db
+          .select()
+          .from(schema.inventory)
+          .where(eq(schema.inventory.id, invOutRev.id))
+          .limit(1);
+        const [invProdFinal] = await db
+          .select()
+          .from(schema.inventory)
+          .where(eq(schema.inventory.id, invProdRev.id))
+          .limit(1);
+        expect(invOutFinal.quantity).toBe(100);
+        expect(invProdFinal.quantity).toBe(0);
+
+        // reversal rows exist on the SAME reference (two rows per ingredient:
+        // forward + reversal — filter by type rather than assertLedgerContract)
+        const outRows = await db
+          .select()
+          .from(schema.stockLedger)
+          .where(
+            and(
+              eq(schema.stockLedger.reference, reference),
+              eq(schema.stockLedger.ingredientId, ingOutId),
+            ),
+          );
+        const outReversal = outRows.find((r) => r.type === "IN");
+        expect(outReversal).toBeDefined();
+        expect(outReversal!.quantity).toBe(10);
+        expect(outReversal!.balance).toBe(100);
+
+        const prodRows = await db
+          .select()
+          .from(schema.stockLedger)
+          .where(
+            and(
+              eq(schema.stockLedger.reference, reference),
+              eq(schema.stockLedger.ingredientId, ingProdId),
+            ),
+          );
+        const prodReversal = prodRows.find(
+          (r) => r.type === "OUT" && r.notes?.startsWith("Produksi dibatalkan"),
+        );
+        expect(prodReversal).toBeDefined();
+        expect(prodReversal!.quantity).toBe(8);
+        expect(prodReversal!.balance).toBe(0);
       });
     },
   );

@@ -116,6 +116,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
       branchId?: string;
       ingredientId?: string;
       recipeId?: string;
+      reference?: string;
       dateFrom?: string;
       dateTo?: string;
       page?: number;
@@ -151,6 +152,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
           data.branchId ? eq(stockLedger.branchId, data.branchId) : undefined,
           data.ingredientId ? eq(stockLedger.ingredientId, data.ingredientId) : undefined,
           data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
+          data.reference ? eq(stockLedger.reference, data.reference) : undefined,
         ),
       )
       .orderBy(desc(stockLedger.createdAt))

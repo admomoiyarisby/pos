@@ -40,15 +40,15 @@ A module that traverses a recipe's BOM — including child recipes (bundles) and
 _Avoid_: BOM resolver, ingredient flattener, stock calculator
 
 **Production (Produksi)**:
-The act of transforming inventory at the Central Kitchen: a set of ingredients is consumed (Barang Keluar / "out") and a set of ingredients is created (Barang Dihasilkan / "produced"). A production record is a **documentation-only event** — it records the out and produced items as history but does **NOT** change stock and does **NOT** write to the stock ledger. Stock adjustments (when needed) are made separately via Stock Opname or manual adjustment. It does NOT recompute HPP or yield; produced-item cost is set manually on the ingredient master.
+The act of transforming inventory at the Central Kitchen: a set of ingredients is consumed (Barang Keluar / "out") and a set of ingredients is created (Barang Dihasilkan / "produced"). A production record **documents and applies** the transformation: recording it deducts the out items from the branch's stock and adds the produced items, each written to the stock ledger (Kartu Stok). Cancelling the record reverses the mutation. It does NOT recompute HPP or yield; produced-item cost is set manually on the ingredient master.
 _Avoid_: Yield conversion, BOM, manufacturing order
 
 **Barang Keluar (out)**:
-An ingredient listed as consumed by a production record (documented only — stock is not actually deducted by the record).
+An ingredient consumed by a production record; recording the record deducts its stock at the record's branch.
 _Avoid_: source, input, raw
 
 **Barang Dihasilkan (produced)**:
-An ingredient listed as created by a production record (documented only — stock is not actually added by the record).
+An ingredient created by a production record; recording the record adds its stock at the record's branch.
 _Avoid_: target, output, finished
 
 **Modifier Group (Grup Modifier)**:

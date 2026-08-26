@@ -10,7 +10,7 @@ import { getBranches } from "#/lib/server/branches";
 import { useAuth } from "#/lib/auth-context";
 import type { Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
-import { Factory } from "lucide-react";
+import { Factory, X } from "lucide-react";
 
 interface LedgerRow {
   id: string;
@@ -40,8 +40,10 @@ function LedgerPage() {
   const user = useAuth().user;
   const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState<{
     branchId?: string;
-  }>(["branchId"]);
+    reference?: string;
+  }>(["branchId", "reference"]);
   const branchId = filters.branchId ?? "";
+  const reference = filters.reference ?? "";
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -52,8 +54,16 @@ function LedgerPage() {
     user?.role === "super_admin" || user?.role === "area_manager" || user?.role === "admin_pusat";
 
   const { data: ledger } = useQuery({
-    queryKey: ["stock-ledger", page, branchId],
-    queryFn: () => getStockLedger({ data: { page, limit: 15, branchId: branchId || undefined } }),
+    queryKey: ["stock-ledger", page, branchId, reference],
+    queryFn: () =>
+      getStockLedger({
+        data: {
+          page,
+          limit: 15,
+          branchId: branchId || undefined,
+          reference: reference || undefined,
+        },
+      }),
     initialData: initial,
   });
 
@@ -125,7 +135,11 @@ function LedgerPage() {
       key: "reference",
       header: "Referensi",
       width: "w-28",
-      render: (r) => <span className="font-mono text-xs">{r.reference.slice(0, 8)}</span>,
+      render: (r) => (
+        <span className="font-mono text-xs">
+          {reference ? r.reference : r.reference.slice(0, 8)}
+        </span>
+      ),
     },
     { key: "notes", header: "Keterangan", render: (r) => r.notes ?? "-" },
   ];
@@ -158,6 +172,21 @@ function LedgerPage() {
               </option>
             ))}
           </select>
+        )}
+        {reference && (
+          <span className="inline-flex items-center gap-1 rounded-md border bg-muted px-2 py-1 text-xs font-mono">
+            {reference}
+            <button
+              onClick={() => {
+                setFilter("reference", "");
+                setPage(0);
+              }}
+              className="text-muted-foreground hover:text-foreground"
+              title="Hapus filter referensi"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
         )}
       </div>
 

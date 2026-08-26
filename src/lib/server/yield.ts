@@ -4,6 +4,8 @@ import {
   yieldConversions,
   yieldConversionItems,
   yieldCancelRequests,
+  inventory,
+  stockLedger,
   ingredients,
   users,
   areaManagerBranches,
@@ -13,6 +15,105 @@ import {
 import { and, eq, inArray, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
+
+// ─── Stock effect (ADR 0012) ────────────────────────────────────────────────
+// Recording a production mutates stock at the record's branch: Barang Keluar is
+// deducted (OUT), Barang Dihasilkan is added (IN) — each mirrored to Kartu Stok
+// (stockLedger) with a shared `YIELD-<conversionId>` reference and a balance
+// equal to the post-write inventory.quantity. Negative resulting stock is
+// allowed (no guard, no clamp). Runs inside the caller's transaction.
+
+type YieldTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function applyYieldStockEffect(
+  tx: YieldTx,
+  branchId: string,
+  conversionId: string,
+  deltas: { ingredientId: string; signedDelta: number }[],
+  opts: { cancelled?: boolean } = {},
+): Promise<void> {
+  const reference = `YIELD-${conversionId}`;
+  const id8 = conversionId.slice(0, 8);
+  const note = opts.cancelled ? `Produksi dibatalkan ${id8}` : `Produksi ${id8}`;
+
+  // Lock touched rows in a consistent order (by ingredientId) so concurrent
+  // records touching the same ingredients cannot deadlock.
+  const ordered = [...deltas].sort((a, b) => (a.ingredientId < b.ingredientId ? -1 : 1));
+
+  for (const { ingredientId, signedDelta } of ordered) {
+    if (signedDelta === 0) continue;
+
+    const [inv] = await tx
+      .select()
+      .from(inventory)
+      .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, ingredientId)))
+      .for("update")
+      .limit(1);
+
+    const newQty = (inv?.quantity ?? 0) + signedDelta;
+
+    if (inv) {
+      await tx
+        .update(inventory)
+        .set({ quantity: newQty, lastUpdated: new Date() })
+        .where(eq(inventory.id, inv.id));
+    } else {
+      // Upsert-from-0 (ADR 0012): a never-stocked ingredient starts at 0, so an
+      // OUT creates a negative row and a PRODUCED creates a positive one.
+      await tx.insert(inventory).values({
+        branchId,
+        ingredientId,
+        quantity: newQty,
+      });
+    }
+
+    await tx.insert(stockLedger).values({
+      branchId,
+      ingredientId,
+      type: signedDelta > 0 ? "IN" : "OUT",
+      quantity: Math.abs(signedDelta),
+      balance: newQty,
+      reference,
+      notes: note,
+    });
+  }
+}
+
+/** Reverse a production's stock effect when it is cancelled (ADR 0012): restore
+ *  each Barang Keluar (IN) and deduct each Barang Dihasilkan (OUT), writing
+ *  opposite-type ledger rows on the same `YIELD-<id>` reference. Only records
+ *  that wrote stock are reversed — records created before ADR 0012 have no
+ *  ledger rows to reverse. */
+async function reverseYieldStockEffect(
+  tx: YieldTx,
+  conversionId: string,
+  branchId: string,
+): Promise<void> {
+  const reference = `YIELD-${conversionId}`;
+  const [wroteStock] = await tx
+    .select()
+    .from(stockLedger)
+    .where(eq(stockLedger.reference, reference))
+    .limit(1);
+  if (!wroteStock) return;
+
+  const items = await tx
+    .select()
+    .from(yieldConversionItems)
+    .where(eq(yieldConversionItems.conversionId, conversionId));
+
+  await applyYieldStockEffect(
+    tx,
+    branchId,
+    conversionId,
+    items.map((it) => ({
+      ingredientId: it.ingredientId,
+      // restore OUT items (IN), deduct PRODUCED items (OUT)
+      signedDelta: it.direction === "OUT" ? it.quantity : -it.quantity,
+    })),
+    { cancelled: true },
+  );
+}
 
 export const getYieldConversions = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; includeCancelled?: boolean }) => data)
@@ -160,40 +261,49 @@ export const createYieldConversion = createServerFn({ method: "POST" })
     const missing = [...allIds].filter((id) => !ingMap.has(id));
     if (missing.length > 0) throw new Error(`Bahan tidak ditemukan: ${missing.join(", ")}`);
 
-    const [conversion] = await db
-      .insert(yieldConversions)
-      .values({
-        branchId,
-        notes: data.notes,
-        processedBy: user.id,
-        productionDate: data.productionDate ? new Date(data.productionDate) : new Date(),
-      })
-      .returning();
+    // Record + stock effect in ONE transaction (ADR 0012) — an error anywhere
+    // leaves no partial writes.
+    const conversion = await db.transaction(async (tx) => {
+      const [conversion] = await tx
+        .insert(yieldConversions)
+        .values({
+          branchId,
+          notes: data.notes,
+          processedBy: user.id,
+          productionDate: data.productionDate ? new Date(data.productionDate) : new Date(),
+        })
+        .returning();
 
-    const itemsToInsert: {
-      conversionId: string;
-      ingredientId: string;
-      quantity: number;
-      direction: "OUT" | "PRODUCED";
-    }[] = [
-      ...out.map((s) => ({
-        conversionId: conversion.id,
-        ingredientId: s.ingredientId,
-        quantity: s.quantity,
-        direction: "OUT" as const,
-      })),
-      ...produced.map((s) => ({
-        conversionId: conversion.id,
-        ingredientId: s.ingredientId,
-        quantity: s.quantity,
-        direction: "PRODUCED" as const,
-      })),
-    ];
-    await db.insert(yieldConversionItems).values(itemsToInsert);
+      const itemsToInsert: {
+        conversionId: string;
+        ingredientId: string;
+        quantity: number;
+        direction: "OUT" | "PRODUCED";
+      }[] = [
+        ...out.map((s) => ({
+          conversionId: conversion.id,
+          ingredientId: s.ingredientId,
+          quantity: s.quantity,
+          direction: "OUT" as const,
+        })),
+        ...produced.map((s) => ({
+          conversionId: conversion.id,
+          ingredientId: s.ingredientId,
+          quantity: s.quantity,
+          direction: "PRODUCED" as const,
+        })),
+      ];
+      await tx.insert(yieldConversionItems).values(itemsToInsert);
 
-    // NOTE: Production records are a documentation/log only. They do NOT adjust
-    // inventory or write stock-ledger entries — stock changes are handled
-    // separately (e.g. stock opname / manual adjustments).
+      // Stock effect (ADR 0012): deduct Barang Keluar (OUT), add Barang
+      // Dihasilkan (IN), each mirrored to Kartu Stok with a shared YIELD-* ref.
+      await applyYieldStockEffect(tx, branchId, conversion.id, [
+        ...out.map((s) => ({ ingredientId: s.ingredientId, signedDelta: -s.quantity })),
+        ...produced.map((s) => ({ ingredientId: s.ingredientId, signedDelta: s.quantity })),
+      ]);
+
+      return conversion;
+    });
 
     const outNames = out
       .map((s) => `${ingMap.get(s.ingredientId)?.name ?? s.ingredientId} (${s.quantity})`)
@@ -205,7 +315,7 @@ export const createYieldConversion = createServerFn({ method: "POST" })
     await logSystemAction(
       user,
       "Create Production Record",
-      `Produksi "${outNames} → ${producedNames}" dicatat (catatan produksi, tidak mengubah stok) oleh ${user.name}`,
+      `Produksi "${outNames} → ${producedNames}" dicatat dan stok diperbarui oleh ${user.name}`,
     );
     await logAudit(user, "yieldConversions", conversion.id, "CREATE", undefined, conversion);
 
@@ -420,6 +530,8 @@ export const approveYieldCancelRequest = createServerFn({ method: "POST" })
           cancelReason: req.reason,
         })
         .where(eq(yieldConversions.id, req.yieldConversionId));
+      // Reverse the stock mutation (restore OUT, deduct PRODUCED) — ADR 0012.
+      await reverseYieldStockEffect(tx, req.yieldConversionId, yc.branchId);
       return r;
     });
 
@@ -512,16 +624,21 @@ export const directCancelYieldConversion = createServerFn({ method: "POST" })
     if (!yc) throw new Error("Produksi tidak ditemukan");
     if (yc.status === "Cancelled") throw new Error("Produksi sudah dibatalkan");
 
-    const [updated] = await db
-      .update(yieldConversions)
-      .set({
-        status: "Cancelled",
-        cancelledAt: new Date(),
-        cancelledBy: user.id,
-        cancelReason: reason,
-      })
-      .where(eq(yieldConversions.id, data.yieldConversionId))
-      .returning();
+    // Cancel + stock reversal in one transaction (ADR 0012).
+    const updated = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(yieldConversions)
+        .set({
+          status: "Cancelled",
+          cancelledAt: new Date(),
+          cancelledBy: user.id,
+          cancelReason: reason,
+        })
+        .where(eq(yieldConversions.id, data.yieldConversionId))
+        .returning();
+      await reverseYieldStockEffect(tx, data.yieldConversionId, yc.branchId);
+      return updated;
+    });
 
     await logSystemAction(
       user,

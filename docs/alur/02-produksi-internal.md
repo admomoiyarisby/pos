@@ -48,13 +48,14 @@ Ketika Gudang Pusat (Central Kitchen) mengolah bahan menjadi bahan lain — misa
 
 ### 2. Apa yang Terjadi di Sistem?
 
-Setelah disimpan, sistem **hanya mencatat** produksi sebagai histori (record):
+Setelah disimpan, sistem **mencatat produksi sekaligus mengubah stok** dalam satu aksi atomik:
 
 1. Menyimpan catatan produksi (Barang Keluar + Barang Dihasilkan) di halaman riwayat
-2. **Tidak mengubah stok** sama sekali — stok bahan keluar maupun dihasilkan tetap utuh
-3. **Tidak menulis Kartu Stok** — tidak ada mutasi "OUT"/"IN" yang dibuat oleh pencatatan ini
+2. **Mengurangi stok** setiap bahan keluar (Barang Keluar) di cabang tersebut
+3. **Menambah stok** setiap bahan dihasilkan (Barang Dihasilkan) di cabang tersebut
+4. **Menulis Kartu Stok** — mutasi "OUT" untuk setiap bahan keluar dan "IN" untuk setiap bahan dihasilkan, dengan referensi `YIELD-<id produksi>`
 
-Pencatatan produksi murni sebagai dokumentasi. Penyesuaian stok (jika diperlukan) dilakukan terpisah, misalnya melalui Stock Opname atau penyesuaian manual. Sistem **tidak** menghitung ulang HPP (harga pokok) bahan hasil secara otomatis — HPP diatur secara manual pada master bahan.
+Stok hasil bisa menjadi **negatif** jika jumlah keluar melebihi stok saat ini — sistem tetap mencatatnya dan form menampilkan peringatan. Jika produksi **dibatalkan** (setelah permintaan batal disetujui, atau batalkan langsung oleh super_admin), mutasi stok tersebut **dibalik**: bahan keluar dikembalikan dan bahan dihasilkan dikurangi. Sistem **tidak** menghitung ulang HPP (harga pokok) bahan hasil secara otomatis — HPP diatur secara manual pada master bahan.
 
 ### 3. Melihat Riwayat Produksi
 
@@ -83,8 +84,9 @@ Halaman Tracking Produksi menampilkan:
 **Hasil**:
 
 - Satu catatan produksi baru tersimpan di riwayat dengan Barang Keluar (tulang ayam, air, bawang merah) dan Barang Dihasilkan (kaldu ayam 4800)
-- Stok **tidak berubah** — pencatatan ini hanya histori
-- Kartu Stok **tidak** mencatat mutasi apa pun dari pencatatan produksi ini
+- Stok **Tulang Ayam, Air, dan Bawang Merah berkurang** sesuai jumlah yang dicatat
+- Stok **Kaldu Ayam (SFG) bertambah** 4800
+- Kartu Stok **mencatat mutasi** — OUT untuk bahan keluar, IN untuk kaldu ayam — dengan referensi `YIELD-<id produksi>`
 
 ## Pertanyaan Umum
 
@@ -99,7 +101,7 @@ A:
 A: Tidak. Produksi internal hanya bisa dilakukan di Gudang Pusat (Central Kitchen).
 
 **Q: Apakah HPP bahan hasil dihitung otomatis?**
-A: Tidak. Pencatatan produksi hanya menyimpan histori Barang Keluar & Barang Dihasilkan; tidak mengubah stok maupun menghitung HPP. HPP diatur manual pada master bahan.
+A: Tidak. Pencatatan produksi mengubah stok (bahan keluar berkurang, bahan dihasilkan bertambah) tetapi **tidak** menghitung HPP. HPP diatur manual pada master bahan.
 
 **Q: Boleh satu produksi menghasilkan lebih dari satu bahan?**
 A: Boleh. Bagian "Barang Dihasilkan" mendukung beberapa baris, begitu juga "Barang Keluar".
