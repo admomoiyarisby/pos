@@ -17,6 +17,22 @@ export function formatRp(value: number | string | bigint | null | undefined): st
 }
 
 /**
+ * Format a timestamp for the Indonesian UI using the application's fixed
+ * timezone. An explicit timezone keeps SSR and browser output identical.
+ */
+export function formatJakartaDateTime(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  });
+}
+
+/**
  * Read a text field from a FormData at its I/O boundary.
  *
  * `FormData.get` returns `FormDataEntryValue | null` (a string or a File).

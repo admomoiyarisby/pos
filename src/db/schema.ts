@@ -131,6 +131,9 @@ export const periodStatusEnum = pgEnum("period_status", ["Open", "Closed"]);
 
 export const voucherDiscountTypeEnum = pgEnum("voucher_discount_type", ["percentage", "fixed"]);
 
+export const VOUCHER_STATUS_VALUES = ["Active", "Inactive", "Deleted"] as const;
+export const voucherStatusEnum = pgEnum("voucher_status", VOUCHER_STATUS_VALUES);
+
 export const cancelRequestReasonEnum = pgEnum("cancel_request_reason", [
   "Stok Habis",
   "Salah Input",
@@ -512,7 +515,7 @@ export const vouchers = pgTable(
     discountValue: integer("discount_value").notNull(),
     minOrder: integer("min_order").notNull().default(0),
     validUntil: timestamp("valid_until", { mode: "date" }).notNull(),
-    isActive: boolean("is_active").notNull().default(true),
+    status: voucherStatusEnum("status").notNull().default("Active"),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id),

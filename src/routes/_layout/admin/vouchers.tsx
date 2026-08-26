@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
-import { formText } from "#/lib/utils";
+import { formText, formatJakartaDateTime } from "#/lib/utils";
+import { voucherActionForStatus } from "#/lib/voucher-lifecycle";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -15,7 +16,13 @@ import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
 import { toast } from "sonner";
 import { Trash2, AlertTriangle } from "lucide-react";
-import { getVouchers, createVoucher, updateVoucher, deleteVoucher } from "#/lib/server/vouchers";
+import {
+  getVouchers,
+  createVoucher,
+  updateVoucher,
+  deactivateVoucher,
+  deleteVoucher,
+} from "#/lib/server/vouchers";
 import type { Column } from "#/components/ui/DataTable";
 
 interface VoucherRow {
@@ -26,7 +33,7 @@ interface VoucherRow {
   discountValue: number;
   minOrder: number;
   validUntil: Date | string;
-  isActive: boolean;
+  status: "Active" | "Inactive" | "Deleted";
   createdAt: Date | string;
 }
 
@@ -54,11 +61,12 @@ function formatDiscount(r: VoucherRow): string {
 
 type VoucherStatusBadge = {
   label: string;
-  variant: "success" | "warning" | "secondary";
+  variant: "success" | "warning" | "secondary" | "destructive";
 };
 
 function voucherStatus(r: VoucherRow): VoucherStatusBadge {
-  if (!r.isActive) return { label: "Nonaktif", variant: "secondary" };
+  if (r.status === "Inactive") return { label: "Nonaktif", variant: "secondary" };
+  if (r.status === "Deleted") return { label: "Deleted", variant: "destructive" };
   if (new Date(r.validUntil).getTime() < Date.now())
     return { label: "Kadaluarsa", variant: "warning" };
   return { label: "Aktif", variant: "success" };
@@ -87,17 +95,7 @@ const columns: Column<VoucherRow>[] = [
     header: "Berlaku Sampai",
     width: "w-40",
     sortable: true,
-    render: (r) => (
-      <span className="tabular-nums">
-        {new Date(r.validUntil).toLocaleString("id-ID", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
-      </span>
-    ),
+    render: (r) => <span className="tabular-nums">{formatJakartaDateTime(r.validUntil)}</span>,
   },
   {
     key: "status",
@@ -180,8 +178,8 @@ function VouchersPage() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteVoucher,
+  const deactivateMutation = useMutation({
+    mutationFn: deactivateVoucher,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["vouchers"] });
       setDeleteTarget(null);
@@ -189,6 +187,18 @@ function VouchersPage() {
     },
     onError: (error: Error) => {
       toast.error("Gagal menonaktifkan voucher", { description: error.message });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteVoucher,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["vouchers"] });
+      setDeleteTarget(null);
+      toast.success("Voucher berhasil dihapus");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus voucher", { description: error.message });
     },
   });
 
@@ -251,20 +261,23 @@ function VouchersPage() {
             key: "actions",
             header: "",
             width: "w-12",
-            render: (r) => (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDeleteTarget(r);
-                }}
-                className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                title="Nonaktifkan"
-                disabled={!r.isActive}
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            ),
+            render: (r) => {
+              const action = voucherActionForStatus(r.status);
+              return (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteTarget(r);
+                  }}
+                  className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  title={action === "deactivate" ? "Nonaktifkan" : "Hapus"}
+                  disabled={action === null}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              );
+            },
           },
         ]}
         data={vouchers}
@@ -385,7 +398,7 @@ function VouchersPage() {
             <input
               type="checkbox"
               name="isActive"
-              defaultChecked={editing ? editing.isActive : true}
+              defaultChecked={editing ? editing.status === "Active" : true}
               className="h-4 w-4 rounded border-input"
             />
             Voucher aktif
@@ -411,7 +424,7 @@ function VouchersPage() {
       <Modal
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        title="Nonaktifkan Voucher"
+        title={deleteTarget?.status === "Active" ? "Nonaktifkan Voucher" : "Hapus Voucher"}
         size="sm"
       >
         {deleteTarget && (
@@ -419,10 +432,15 @@ function VouchersPage() {
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
               <div>
-                <p className="font-medium">Nonaktifkan voucher "{deleteTarget.code}"?</p>
+                <p className="font-medium">
+                  {deleteTarget.status === "Active"
+                    ? `Nonaktifkan voucher "${deleteTarget.code}"?`
+                    : `Hapus voucher "${deleteTarget.code}"?`}
+                </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Voucher yang dinonaktifkan tidak dapat digunakan pada pesanan baru, namun riwayat
-                  tetap tersimpan.
+                  {deleteTarget.status === "Active"
+                    ? "Voucher yang dinonaktifkan tidak dapat digunakan pada pesanan baru, namun masih dapat diaktifkan kembali."
+                    : "Voucher akan dihapus dari daftar dan POS. Riwayat voucher tetap tersimpan untuk audit."}
                 </p>
               </div>
             </div>
@@ -432,10 +450,18 @@ function VouchersPage() {
               </Button>
               <Button
                 variant="destructive"
-                onClick={() => void deleteMutation.mutateAsync({ data: { id: deleteTarget.id } })}
-                disabled={deleteMutation.isPending}
+                onClick={() =>
+                  deleteTarget.status === "Active"
+                    ? void deactivateMutation.mutateAsync({ data: { id: deleteTarget.id } })
+                    : void deleteMutation.mutateAsync({ data: { id: deleteTarget.id } })
+                }
+                disabled={deactivateMutation.isPending || deleteMutation.isPending}
               >
-                {deleteMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
+                {deactivateMutation.isPending || deleteMutation.isPending
+                  ? "Memproses..."
+                  : deleteTarget.status === "Active"
+                    ? "Nonaktifkan"
+                    : "Hapus"}
               </Button>
             </div>
           </div>

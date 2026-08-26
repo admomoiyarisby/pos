@@ -539,7 +539,7 @@ describe.skipIf(!hasDatabaseUrl)("crud persistence integration", () => {
     });
   });
 
-  it("voucher: create → get → update → soft-delete (isActive=false)", async () => {
+  it("voucher: create → get → deactivate → soft-delete (status lifecycle)", async () => {
     await withRollbackDb(async (db) => {
       const userId =
         (await db.select({ id: schema.users.id }).from(schema.users).limit(1))[0]?.id ??
@@ -583,7 +583,7 @@ describe.skipIf(!hasDatabaseUrl)("crud persistence integration", () => {
           minOrder: 50000,
           validUntil: new Date(Date.now() + 86400000),
           createdBy: creatorId,
-          isActive: true,
+          status: "Active",
         })
         .returning();
       expect(v1.code).toBe(code);
@@ -595,17 +595,25 @@ describe.skipIf(!hasDatabaseUrl)("crud persistence integration", () => {
         .where(eq(schema.vouchers.id, v1.id))
         .returning();
       expect(upd.discountValue).toBe(20);
-      const [soft] = await db
+      const [inactive] = await db
         .update(schema.vouchers)
-        .set({ isActive: false })
+        .set({ status: "Inactive" })
         .where(eq(schema.vouchers.id, v1.id))
         .returning();
-      expect(soft.isActive).toBe(false);
-      const activeOnly = await db
+      expect(inactive.status).toBe("Inactive");
+
+      const [deleted] = await db
+        .update(schema.vouchers)
+        .set({ status: "Deleted" })
+        .where(eq(schema.vouchers.id, v1.id))
+        .returning();
+      expect(deleted.status).toBe("Deleted");
+
+      const visible = await db
         .select()
         .from(schema.vouchers)
-        .where(eq(schema.vouchers.isActive, true));
-      expect(activeOnly.find((r) => r.id === v1.id)).toBeUndefined();
+        .where(ne(schema.vouchers.status, "Deleted"));
+      expect(visible.find((r) => r.id === v1.id)).toBeUndefined();
     });
   });
 

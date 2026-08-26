@@ -60,7 +60,7 @@ export interface Voucher {
   discountValue: number;
   minOrder: number;
   validUntil: Date;
-  isActive: boolean;
+  status: "Active" | "Inactive" | "Deleted";
 }
 
 export interface OrderResult {

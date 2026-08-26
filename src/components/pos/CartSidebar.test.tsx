@@ -21,7 +21,7 @@ const voucher: Voucher = {
   discountValue: 10,
   minOrder: 20000,
   validUntil: new Date("2030-01-01"),
-  isActive: true,
+  status: "Active",
 };
 
 function renderCart(overrides: Partial<React.ComponentProps<typeof CartSidebar>> = {}) {
