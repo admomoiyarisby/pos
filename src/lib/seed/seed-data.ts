@@ -3533,35 +3533,14 @@ export const CHANNEL_REVENUES_DATA = (() => {
 // YIELD CONVERSIONS
 // ──────────────────────────────────────────
 
-export const YIELD_CONVERSIONS_DATA = (() => {
-  const ycs: {
-    branchCode: string;
-    out: { ingredientProtoId: string; quantity: number }[];
-    produced: { ingredientProtoId: string; quantity: number }[];
-    notes?: string;
-    processedByEmail: string;
-    createdAt: Date;
-  }[] = [];
-  const conversions = [
-    { out: [{ p: "ing001", q: 5000 }], produced: [{ p: "ing107", q: 4500 }] },
-    { out: [{ p: "ing002", q: 3000 }], produced: [{ p: "ing108", q: 2700 }] },
-    { out: [{ p: "ing003", q: 2000 }], produced: [{ p: "ing109", q: 1700 }] },
-    { out: [{ p: "ing007", q: 30 }], produced: [{ p: "ing115", q: 28 }] },
-    { out: [{ p: "ing018", q: 1200 }], produced: [{ p: "ing107", q: 1000 }] },
-  ];
-  for (let i = 1; i <= 20; i++) {
-    const conv = conversions[i % conversions.length];
-    ycs.push({
-      branchCode: BRANCH_CODES[i % BRANCH_CODES.length],
-      out: conv.out.map((o) => ({ ingredientProtoId: o.p, quantity: o.q + i * 100 })),
-      produced: conv.produced.map((p) => ({ ingredientProtoId: p.p, quantity: p.q + i * 90 })),
-      notes: `Processing batch ${i}`,
-      processedByEmail: i % 2 === 0 ? "ck@omoiyari.net" : "andi.wiyung@omoiyari.net",
-      createdAt: nDaysAgo((i % 20) + 1),
-    });
-  }
-  return ycs;
-})();
+export const YIELD_CONVERSIONS_DATA: {
+  branchCode: string;
+  out: { ingredientProtoId: string; quantity: number }[];
+  produced: { ingredientProtoId: string; quantity: number }[];
+  notes?: string;
+  processedByEmail: string;
+  createdAt: Date;
+}[] = [];
 
 // ──────────────────────────────────────────
 // WASTE ENTRIES
@@ -3795,48 +3774,15 @@ export const SUPPLIER_DELIVERIES_DATA = (() => {
 // STOCK LEDGER
 // ──────────────────────────────────────────
 
-export const STOCK_LEDGER_DATA = (() => {
-  const entries: {
-    branchCode: string;
-    ingredientProtoId: string;
-    type: "IN" | "OUT";
-    quantity: number;
-    reference: string;
-    notes?: string;
-    dayAgo: number;
-  }[] = [];
-  const ledgerIngredients = [
-    "ing001",
-    "ing002",
-    "ing003",
-    "ing004",
-    "ing007",
-    "ing012",
-    "ing016",
-    "ing017",
-  ];
-  const refs = ["POS", "DELIVERY", "TRANSFER", "WASTE", "ADJUSTMENT", "YIELD"];
-  for (let i = 1; i <= 100; i++) {
-    const ref = refs[i % refs.length];
-    // Assign IN/OUT based on reference type, not arbitrary index.
-    // WASTE is always OUT; POS is always OUT; DELIVERY is always IN;
-    // others alternate by index (transfer direction varies).
-    let isIn: boolean;
-    if (ref === "WASTE" || ref === "POS") isIn = false;
-    else if (ref === "DELIVERY") isIn = true;
-    else isIn = i % 3 === 0;
-    entries.push({
-      branchCode: BRANCH_CODES[i % BRANCH_CODES.length],
-      ingredientProtoId: ledgerIngredients[i % ledgerIngredients.length],
-      type: isIn ? "IN" : "OUT",
-      quantity: 100 + i * 50,
-      reference: `${ref}-${20250000 + i}`,
-      notes: `${isIn ? "Masuk" : "Keluar"} stok ${ledgerIngredients[i % ledgerIngredients.length]}`,
-      dayAgo: i % 30,
-    });
-  }
-  return entries;
-})();
+export const STOCK_LEDGER_DATA: {
+  branchCode: string;
+  ingredientProtoId: string;
+  type: "IN" | "OUT";
+  quantity: number;
+  reference: string;
+  notes?: string;
+  dayAgo: number;
+}[] = [];
 
 // ──────────────────────────────────────────
 // SYSTEM LOGS
@@ -4122,76 +4068,4 @@ export const YIELD_CONVERSION_MULTI_DATA: {
   notes?: string;
   processedByEmail: string;
   createdAt: Date;
-}[] = [
-  {
-    branchCode: "CENTRAL",
-    notes: "Kaldu ayam: tulang + air + bawang merah",
-    processedByEmail: "ck@omoiyari.net",
-    createdAt: nDaysAgo(28),
-    out: [
-      { ingredientProtoId: "ing008", quantity: 2000 }, // tulang ayam
-      { ingredientProtoId: "ing013", quantity: 4000 }, // air
-      { ingredientProtoId: "ing023", quantity: 200 }, // bawang merah
-    ],
-    produced: [{ ingredientProtoId: "ing115", quantity: 4800 }], // kaldu ayam
-  },
-  {
-    branchCode: "CENTRAL",
-    notes: "Teriyaki base: kecap + mirin + saus",
-    processedByEmail: "ck@omoiyari.net",
-    createdAt: nDaysAgo(21),
-    out: [
-      { ingredientProtoId: "ing004", quantity: 800 }, // kecap
-      { ingredientProtoId: "ing006", quantity: 600 }, // mirin
-      { ingredientProtoId: "ing005", quantity: 500 }, // saus
-    ],
-    produced: [{ ingredientProtoId: "ing110", quantity: 1900 }], // teriyaki base
-  },
-  {
-    branchCode: "CENTRAL",
-    notes: "Mixed seafood: udang + cumi + ikan",
-    processedByEmail: "ck@omoiyari.net",
-    createdAt: nDaysAgo(14),
-    out: [
-      { ingredientProtoId: "ing028", quantity: 1000 }, // udang
-      { ingredientProtoId: "ing029", quantity: 1000 }, // cumi
-      { ingredientProtoId: "ing030", quantity: 1000 }, // ikan
-    ],
-    produced: [{ ingredientProtoId: "ing124", quantity: 2400 }], // seafood mix
-  },
-  {
-    branchCode: "CENTRAL",
-    notes: "Bumbu halus: bawang putih + jahe + bawang merah",
-    processedByEmail: "ck@omoiyari.net",
-    createdAt: nDaysAgo(7),
-    out: [
-      { ingredientProtoId: "ing021", quantity: 500 }, // bawang putih
-      { ingredientProtoId: "ing022", quantity: 300 }, // jahe
-      { ingredientProtoId: "ing023", quantity: 400 }, // bawang merah
-    ],
-    produced: [{ ingredientProtoId: "ing111", quantity: 1000 }], // bumbu halus
-  },
-  {
-    branchCode: "WYG-01",
-    notes: "Coleslaw mix: wortel + kol",
-    processedByEmail: "andi.wiyung@omoiyari.net",
-    createdAt: nDaysAgo(5),
-    out: [
-      { ingredientProtoId: "ing024", quantity: 600 }, // wortel
-      { ingredientProtoId: "ing025", quantity: 800 }, // kol
-    ],
-    produced: [{ ingredientProtoId: "ing112", quantity: 1100 }], // slaw mix
-  },
-  {
-    branchCode: "WYG-01",
-    notes: "Seasoning sachet: garam + gula + kecap",
-    processedByEmail: "andi.wiyung@omoiyari.net",
-    createdAt: nDaysAgo(2),
-    out: [
-      { ingredientProtoId: "ing014", quantity: 200 }, // garam
-      { ingredientProtoId: "ing015", quantity: 800 }, // gula
-      { ingredientProtoId: "ing004", quantity: 500 }, // kecap
-    ],
-    produced: [{ ingredientProtoId: "ing123", quantity: 1500 }], // sachet bumbu
-  },
-];
+}[] = [];

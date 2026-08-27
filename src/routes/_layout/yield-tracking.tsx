@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { formText } from "#/lib/utils";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -366,10 +366,26 @@ function YieldTrackingPage() {
     }
     return branches;
   }, [branches, user]);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => {
+      const v = new URLSearchParams(window.location.search).get("highlight");
+      setHighlightId(v && v.trim() ? v.trim() : null);
+    };
+    read();
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
+  }, []);
+  // When highlight is present, show only that conversion (deep-link from Kartu Stok).
+  // Accepts both full UUID and 8-char short id.
   const filteredConversions = useMemo(() => {
+    if (highlightId) {
+      const hit = conversions.filter((c) => c.id === highlightId || c.id.startsWith(highlightId));
+      if (hit.length > 0) return hit;
+    }
     if (!branchId) return conversions;
     return conversions.filter((c) => c.branchId === branchId);
-  }, [conversions, branchId]);
+  }, [conversions, branchId, highlightId]);
 
   const createMutation = useMutation({
     mutationFn: createYieldConversion,
@@ -713,6 +729,23 @@ function YieldTrackingPage() {
               : { label: "Input Produksi", onClick: () => setModalOpen(true) }
           }
         />
+
+        {highlightId && (
+          <div className="flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
+            <span>
+              Menampilkan Produksi{" "}
+              <span className="font-mono font-medium">{highlightId.slice(0, 8)}</span>
+              {filteredConversions.length === 0 ? " — tidak ditemukan" : ""}
+              <span className="text-muted-foreground ml-2">(tautan dari Kartu Stok)</span>
+            </span>
+            <a
+              href="/yield-tracking"
+              className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs hover:bg-muted"
+            >
+              <X className="h-3 w-3" /> Hapus filter
+            </a>
+          </div>
+        )}
 
         {result && (
           <div className="rounded-lg border border-success/30 bg-success/10 p-4 text-sm text-success-foreground">

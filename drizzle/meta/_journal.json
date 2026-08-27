@@ -211,6 +211,90 @@
       "when": 1784700200000,
       "tag": "0029_add_modifier_group_sort_order",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0030_ingredient_status_deleted",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0031_add_ingredient_branch_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0032_add_account_issuer",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0033_activate_omoiyari_pdf_recipes",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0034_add_pdf_missing_recipes",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0035_recipe_activation_and_karaage_names",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0036_normalize_curry_karaage_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0037_update_bom_from_omoiyari_sheet",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0038_add_order_channel_perlengkapan",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0039_yield_cancel_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0040_voucher_status_deleted",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0041_remove_dummy_live_data",
+      "breakpoints": true
     }
   ]
 }

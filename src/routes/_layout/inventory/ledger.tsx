@@ -134,12 +134,24 @@ function LedgerPage() {
     {
       key: "reference",
       header: "Referensi",
-      width: "w-28",
-      render: (r) => (
-        <span className="font-mono text-xs">
-          {reference ? r.reference : r.reference.slice(0, 8)}
-        </span>
-      ),
+      width: "w-36",
+      render: (r) => {
+        const isYield = r.reference.startsWith("YIELD-");
+        const display = reference ? r.reference : r.reference.slice(0, 8);
+        if (isYield) {
+          const yieldId = r.reference.replace("YIELD-", "");
+          return (
+            <a
+              href={`/yield-tracking?highlight=${yieldId}`}
+              title="Lihat Produksi di Yield Tracking"
+              className="font-mono text-xs text-primary hover:underline underline-offset-2"
+            >
+              {display}
+            </a>
+          );
+        }
+        return <span className="font-mono text-xs">{display}</span>;
+      },
     },
     { key: "notes", header: "Keterangan", render: (r) => r.notes ?? "-" },
   ];
