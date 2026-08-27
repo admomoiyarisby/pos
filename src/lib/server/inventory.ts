@@ -11,7 +11,7 @@ import {
   systemNotifications,
   areaManagerBranches,
 } from "#/db/schema";
-import { eq, and, desc, asc, count, inArray, sql, ilike } from "drizzle-orm";
+import { eq, and, or, desc, asc, count, inArray, sql, ilike, ne } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
@@ -55,6 +55,14 @@ export const getInventory = createServerFn({ method: "GET" })
     const buildFallbackSearchCondition = (term: string) =>
       sql`(${ilike(ingredients.name, `%${term}%`)} OR ${ilike(ingredients.code, `%${term}%`)})`;
 
+    // Outlet branches only see their branch (outlet) catalog — same rule as the
+    // stock-opname catalog and the ingredient master (getIngredients). Central
+    // warehouse and management views keep everything.
+    const branchCatalogCondition = or(
+      ne(branches.type, "Outlet"),
+      eq(ingredients.isBranchVisible, true),
+    );
+
     let useFallback = false;
     const conditions = [
       branchFilter ? eq(inventory.branchId, branchFilter) : undefined,
@@ -63,6 +71,7 @@ export const getInventory = createServerFn({ method: "GET" })
       data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
       data.locationType ? eq(branches.type, data.locationType) : undefined, // ID18
       data.negative ? sql`${inventory.quantity} <= 0` : undefined,
+      branchCatalogCondition,
     ];
     let where = and(...conditions.filter(Boolean));
 
@@ -87,6 +96,7 @@ export const getInventory = createServerFn({ method: "GET" })
           data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
           data.locationType ? eq(branches.type, data.locationType) : undefined,
           data.negative ? sql`${inventory.quantity} <= 0` : undefined,
+          branchCatalogCondition,
         ];
         where = and(...fallbackConditions.filter(Boolean));
         [totalResult] = await db
@@ -258,6 +268,16 @@ export const triggerStockOpname = createServerFn({ method: "POST" })
       throw new Error("Branch Admin hanya bisa trigger SO untuk cabang sendiri");
     }
 
+    // Outlet SOs only carry the branch (outlet) catalog (isBranchVisible = true);
+    // central-warehouse SOs include everything. Deleted ingredients are
+    // tombstoned from the master and never appear in an SO (mirrors getIngredients).
+    const [branch] = await db
+      .select({ type: branches.type })
+      .from(branches)
+      .where(eq(branches.id, data.branchId))
+      .limit(1);
+    const isOutlet = branch?.type === "Outlet";
+
     // Get current inventory for the branch (only countable items)
     const invItems = await db
       .select({
@@ -266,7 +286,14 @@ export const triggerStockOpname = createServerFn({ method: "POST" })
       })
       .from(inventory)
       .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
-      .where(and(eq(inventory.branchId, data.branchId), eq(ingredients.countable, true)));
+      .where(
+        and(
+          eq(inventory.branchId, data.branchId),
+          eq(ingredients.countable, true),
+          ne(ingredients.status, "Deleted"),
+          isOutlet ? eq(ingredients.isBranchVisible, true) : undefined,
+        ),
+      );
 
     // Create stock opname
     const [so] = await db
@@ -382,12 +409,17 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
       throw new Error("Unauthorized: you can only view Stock Opnames for your branch");
     }
 
-    // Fetch branch name
+    // Fetch branch name + type (type decides the SO catalog below)
     const [branch] = await db
-      .select({ name: branches.name })
+      .select({ name: branches.name, type: branches.type })
       .from(branches)
       .where(eq(branches.id, so.branchId))
       .limit(1);
+
+    // Outlet SOs only show the branch (outlet) catalog; central-warehouse SOs
+    // show everything. Deleted ingredients are tombstoned from the master and
+    // never shown (mirrors getIngredients).
+    const isOutlet = branch?.type === "Outlet";
 
     const items = await db
       .select({
@@ -405,7 +437,13 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
       })
       .from(stockOpnameItems)
       .leftJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
-      .where(eq(stockOpnameItems.stockOpnameId, data.id));
+      .where(
+        and(
+          eq(stockOpnameItems.stockOpnameId, data.id),
+          ne(ingredients.status, "Deleted"),
+          isOutlet ? eq(ingredients.isBranchVisible, true) : undefined,
+        ),
+      );
 
     // Access check for admin_pusat - can only view Central Warehouse SOs
     if (user.role === "admin_pusat") {
@@ -566,6 +604,19 @@ export const approveStockOpname = createServerFn({ method: "POST" })
 
     if (!so) throw new Error("Stock opname not found");
 
+    // State guard: approval only proceeds from a counted SO (Submitted or
+    // Under Investigation), and never re-approves an Approved one. A freshly
+    // triggered SO is also "Submitted" (no enum for triggered), so the
+    // blank-count guard below is what stops approving an uncounted SO.
+    if (so.status === "Approved") {
+      throw new Error("Stock opname sudah di-approve");
+    }
+    if (so.status !== "Submitted" && so.status !== "Under Investigation") {
+      throw new Error(
+        "Stock opname harus berstatus Submitted atau Under Investigation untuk di-approve",
+      );
+    }
+
     const oldSo = { ...so };
 
     // Adjust inventory to physical stock
@@ -573,6 +624,14 @@ export const approveStockOpname = createServerFn({ method: "POST" })
       .select()
       .from(stockOpnameItems)
       .where(eq(stockOpnameItems.stockOpnameId, data.soId));
+
+    // Blank-submit guard (FRD §4.3 pattern 1): never approve an SO whose
+    // counts were never entered — approving one would zero out inventory.
+    if (items.length > 0 && items.every((i) => i.physicalStock === 0)) {
+      throw new Error(
+        "Belum ada stok fisik yang diisi. Simpan opname (submit) terlebih dahulu sebelum approve.",
+      );
+    }
 
     for (const item of items) {
       // Find inventory record
@@ -914,7 +973,7 @@ export const realizeStockOpname = createServerFn({ method: "POST" })
 export const printStockOpname = createServerFn({ method: "GET" })
   .validator((data: { soId: string }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     const [so] = await db
       .select()
@@ -923,7 +982,26 @@ export const printStockOpname = createServerFn({ method: "GET" })
       .limit(1);
     if (!so) throw new Error("Stock Opname not found");
 
+    // Branch access check (mirrors getStockOpnameDetail)
+    if (user.role === "branch_admin" && user.branchId && so.branchId !== user.branchId) {
+      throw new Error("Unauthorized: you can only print Stock Opnames for your branch");
+    }
+    if (user.role === "admin_pusat") {
+      const [centralBranch] = await db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(eq(branches.type, "Central"))
+        .limit(1);
+      if (centralBranch && so.branchId !== centralBranch.id) {
+        throw new Error("Unauthorized: Admin Pusat can only print Central Warehouse Stock Opnames");
+      }
+    }
+
     const [branch] = await db.select().from(branches).where(eq(branches.id, so.branchId)).limit(1);
+
+    // Outlet SOs only carry the branch (outlet) catalog; Deleted ingredients are
+    // tombstoned from the master and never shown (mirrors getStockOpnameDetail).
+    const isOutlet = branch?.type === "Outlet";
 
     const items = await db
       .select({
@@ -936,8 +1014,18 @@ export const printStockOpname = createServerFn({ method: "GET" })
       })
       .from(stockOpnameItems)
       .innerJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
-      .where(eq(stockOpnameItems.stockOpnameId, data.soId))
+      .where(
+        and(
+          eq(stockOpnameItems.stockOpnameId, data.soId),
+          ne(ingredients.status, "Deleted"),
+          isOutlet ? eq(ingredients.isBranchVisible, true) : undefined,
+        ),
+      )
       .orderBy(ingredients.name);
+
+    // Blind SO: branch admins (and admin pusat on the central warehouse) must
+    // not see system stock or variance — same rule as getStockOpnameDetail.
+    const isBlind = user.role === "branch_admin" || user.role === "admin_pusat";
 
     const rows = items
       .map(
@@ -946,9 +1034,13 @@ export const printStockOpname = createServerFn({ method: "GET" })
           <td style="text-align:center;">${idx + 1}</td>
           <td>${escapeHtml(it.ingredientCode ?? "")}</td>
           <td>${escapeHtml(it.ingredientName ?? "")}</td>
-          <td style="text-align:right;">${it.systemStock.toLocaleString("id-ID")}</td>
+          ${
+            isBlind
+              ? `<td style="text-align:right;">${it.physicalStock.toLocaleString("id-ID")}</td>`
+              : `<td style="text-align:right;">${it.systemStock.toLocaleString("id-ID")}</td>
           <td style="text-align:right;">${it.physicalStock.toLocaleString("id-ID")}</td>
-          <td style="text-align:right;">${it.variance > 0 ? "+" : ""}${it.variance.toLocaleString("id-ID")}</td>
+          <td style="text-align:right;">${it.variance > 0 ? "+" : ""}${it.variance.toLocaleString("id-ID")}</td>`
+          }
         </tr>`,
       )
       .join("");
@@ -964,7 +1056,7 @@ export const printStockOpname = createServerFn({ method: "GET" })
 <div class="header-flex">
   <div>
     <div class="title">Laporan Stock Opname</div>
-    <div class="subtitle">${escapeHtml(branch?.name ?? "")} (${escapeHtml(branch?.code ?? "")})</div>
+    <div class="subtitle">${escapeHtml(branch?.name ?? "")} (${escapeHtml(branch?.code ?? "")})${isBlind ? " — Blind SO (Stok Sistem Tidak Ditampilkan)" : ""}</div>
   </div>
   <div class="meta">
     <div><strong>Tanggal:</strong> ${so.date}</div>
@@ -977,9 +1069,13 @@ export const printStockOpname = createServerFn({ method: "GET" })
   <th style="width:40pt;">No</th>
   <th style="width:80pt;">Kode</th>
   <th>Nama Bahan</th>
-  <th style="width:80pt;text-align:right;">Stok Sistem</th>
+  ${
+    isBlind
+      ? `<th style="width:80pt;text-align:right;">Stok Fisik</th>`
+      : `<th style="width:80pt;text-align:right;">Stok Sistem</th>
   <th style="width:80pt;text-align:right;">Stok Fisik</th>
-  <th style="width:80pt;text-align:right;">Selisih</th>
+  <th style="width:80pt;text-align:right;">Selisih</th>`
+  }
 </tr></thead>
 <tbody>${rows}</tbody>
 </table>

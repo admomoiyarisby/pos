@@ -149,9 +149,12 @@ function StockOpnameDetailPage() {
   const isBlind = detail.isBlind;
   const canApprove =
     ["super_admin", "area_manager"].includes(user?.role ?? "") && detail.status !== "Approved";
+  // Supervisors can run the full flow themselves (trigger → count → submit →
+  // approve). Without this, a super_admin/area_manager filling counts would have
+  // no way to persist them before approving, and approve would apply zeros.
   const canSubmit =
     (detail.status === "Submitted" || detail.status === "Under Investigation") &&
-    user?.role === "branch_admin";
+    ["branch_admin", "super_admin", "area_manager"].includes(user?.role ?? "");
   const canUpdate =
     detail.status === "Under Investigation" &&
     (user?.role === "branch_admin" || ["super_admin", "area_manager"].includes(user?.role ?? ""));
