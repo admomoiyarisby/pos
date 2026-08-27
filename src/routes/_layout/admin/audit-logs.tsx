@@ -10,7 +10,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getAuditLogs } from "#/lib/server/system";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Eye } from "lucide-react";
 
@@ -69,13 +69,13 @@ function AuditLogsPage() {
     initialData: initial,
   });
 
-  const columns: Column<AuditRow>[] = [
+  const columns: ColumnDef<AuditRow>[] = [
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Waktu",
       width: "w-36",
-      sortable: true,
-      render: (r) =>
+      enableSorting: true,
+      cell: (r) =>
         new Date(r.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
           month: "short",
@@ -83,33 +83,33 @@ function AuditLogsPage() {
           minute: "2-digit",
         }),
     },
-    { key: "tableName", header: "Tabel", width: "w-28", sortable: true },
+    { accessorKey: "tableName", header: "Tabel", width: "w-28", enableSorting: true },
     {
-      key: "action",
+      accessorKey: "action",
       header: "Aksi",
       width: "w-24",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={badgeVariant(lookupLabel(actionColors, r.action))}>{r.action}</Badge>
       ),
     },
     {
-      key: "recordId",
+      accessorKey: "recordId",
       header: "Record ID",
       width: "w-32",
-      render: (r) => <span className="font-mono text-xs">{r.recordId.slice(0, 12)}</span>,
+      cell: (r) => <span className="font-mono text-xs">{r.recordId.slice(0, 12)}</span>,
     },
     {
-      key: "userName",
+      accessorKey: "userName",
       header: "User",
-      sortable: true,
-      render: (r) => r.userName ?? r.userId?.slice(0, 8) ?? "system",
+      enableSorting: true,
+      cell: (r) => r.userName ?? r.userId?.slice(0, 8) ?? "system",
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "",
       width: "w-12",
-      render: (r) => (
+      cell: (r) => (
         <button
           onClick={() => setSelectedLog(r)}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"

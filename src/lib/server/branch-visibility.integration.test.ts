@@ -4,11 +4,13 @@ import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "#/db/schema";
+import { getTestDatabaseUrl } from "./test-database";
 import { branchVisibleClause } from "./branch-visibility";
 
 type TestDb = NodePgDatabase<typeof schema>;
 
-const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+const testDatabaseUrl = getTestDatabaseUrl();
+const hasTestDatabaseUrl = Boolean(testDatabaseUrl);
 
 type TestFixture = {
   branchA: string;
@@ -144,10 +146,10 @@ async function visibleRecipeCodes(
 }
 
 describe("branch visibility SQL integration", () => {
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "applies the allow-list policy for unrestricted, single-branch, and multi-branch recipes",
     async () => {
-      const client = new Client({ connectionString: process.env.DATABASE_URL });
+      const client = new Client({ connectionString: testDatabaseUrl });
       await client.connect();
 
       try {

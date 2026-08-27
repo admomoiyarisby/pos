@@ -7,13 +7,13 @@
  *
  * Pattern mirrors existing integration tests:
  *   Client + drizzle + BEGIN / ROLLBACK per test, crypto.randomUUID fixtures,
- *   skipIf(!DATABASE_URL).
+ *   skipIf(!TEST_DATABASE_URL).
  *
  * This file is the **scaffold + first wave**: each `it` corresponds to a
  * matrix row (P1, S1, M1, …). TODO tests are `it.todo` so the harness is
  * runnable immediately and each ticket can flip one `todo → it` at a time.
  *
- * Run:  DATABASE_URL=... vp test run src/lib/server/kartu-stok.integration.test.ts
+ * Run:  TEST_DATABASE_URL=... vp test run src/lib/server/kartu-stok.integration.test.ts
  */
 
 import { Client } from "pg";
@@ -22,12 +22,14 @@ import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "#/db/schema";
+import { getTestDatabaseUrl } from "./test-database";
 
 type TestDb = NodePgDatabase<typeof schema>;
-const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+const testDatabaseUrl = getTestDatabaseUrl();
+const hasTestDatabaseUrl = Boolean(testDatabaseUrl);
 
 async function withTx<T>(fn: (db: TestDb, client: Client) => Promise<T>): Promise<T> {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  const client = new Client({ connectionString: testDatabaseUrl });
   await client.connect();
   try {
     await client.query("BEGIN");
@@ -186,12 +188,12 @@ async function assertLedgerContract(
 // Suite
 // =============================================================================
 
-describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger contract", () => {
+describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger contract", () => {
   // ---------------------------------------------------------------------------
   // POS (P1–P3) — src/lib/server/pos.ts
   // ---------------------------------------------------------------------------
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "P1: createOrder deducts inventory and writes OUT ledger with balance == inventory.quantity",
     async () => {
       await withTx(async (db) => {
@@ -253,7 +255,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "P1 variant: exclusions (negative qty) produce netting — OUT 5 minus 2 exclusion = net 3 deducted",
     async () => {
       await withTx(async (db) => {
@@ -366,7 +368,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "P1 variant: BOGO doubles parent+children quantities in ledger",
     async () => {
       await withTx(async (db) => {
@@ -413,7 +415,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "P1 variant: bundle (recipeChildRecipes) aggregates quantities, ledger shows summed qty",
     async () => {
       await withTx(async (db) => {
@@ -483,7 +485,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "P2: voidOrder restores inventory via resolvePersistedItemIngredients — IN ledger with same reference",
     async () => {
       await withTx(async (db) => {
@@ -563,7 +565,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "P2 variant: void correctly re-deducts excluded ingredients (OUT ledger for exclusions on void)",
     async () => {
       await withTx(async (db) => {
@@ -714,7 +716,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "P3: executeApprovedCancel (Pending→Approved→Executed) voids via same IN ledger path as P2",
     async () => {
       await withTx(async (db) => {
@@ -819,7 +821,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
   // SCM Pengadaan — src/lib/server/scm-effects.ts (S1–S8)
   // ---------------------------------------------------------------------------
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "S1: writeInTransitInventory decrements Central OUT ledger + inTransit row; insufficient stock throws",
     async () => {
       await withTx(async (db) => {
@@ -911,7 +913,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "S2+S3a: moveStockToPendingReview then writeReceivedStock — inTransit→pendingReview→dest IN ledger",
     async () => {
       await withTx(async (db) => {
@@ -1014,7 +1016,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "S3b: writeRejectedWaste writes wasteEntries(category=Spoiled) per rejected qty at dest",
     async () => {
       await withTx(async (db) => {
@@ -1083,7 +1085,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "S3c: generateInvoiceSnapshot — totalAmount == sum(received*unitPrice)",
     async () => {
       await withTx(async (db) => {
@@ -1147,7 +1149,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)("S4: markInvoicePaid sets paidAt/paidBy", async () => {
+  it.skipIf(!hasTestDatabaseUrl)("S4: markInvoicePaid sets paidAt/paidBy", async () => {
     await withTx(async (db) => {
       const destId = await createBranch(db, suid("BR-S4"));
       const ingId = await createIngredient(db, suid("ING-S4"));
@@ -1196,7 +1198,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
       expect(inv.paidById).toBe(actorId);
     });
   });
-  it.skipIf(!hasDatabaseUrl)("S5: noopOnCancel before ship — no stock effects", async () => {
+  it.skipIf(!hasTestDatabaseUrl)("S5: noopOnCancel before ship — no stock effects", async () => {
     await withTx(async (db) => {
       const destId = await createBranch(db, suid("BR-S5"));
       const ingId = await createIngredient(db, suid("ING-S5"));
@@ -1227,7 +1229,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     });
   });
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "S6: reverseInTransitOnCancel — IN ledger at Central, deletes inTransit",
     async () => {
       await withTx(async (db) => {
@@ -1291,7 +1293,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "S7: reversePendingReviewOnCancel Phase 1 — only clearedAt IS NULL rows back to Central",
     async () => {
       await withTx(async (db) => {
@@ -1351,7 +1353,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "S8: reversePendingReviewOnCancel Phase 2 — WaitingForPayment cancel — dest OUT + Central IN + invoice cancelledAt",
     async () => {
       await withTx(async (db) => {
@@ -1445,7 +1447,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
   // Mutasi Stok — src/lib/server/scm-transfer-effects.ts (M1–M8)
   // ---------------------------------------------------------------------------
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "M1: writeTransferInTransitInventory decrements Sender OUT ledger; InsufficientStockError leaves no ledger",
     async () => {
       await withTx(async (db) => {
@@ -1488,7 +1490,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "M2+M3a: moveTransferToPendingReview then writeTransferReceivedStock — Sender OUT already done, Receiver IN",
     async () => {
       await withTx(async (db) => {
@@ -1613,7 +1615,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "M3b: writeTransferRejectedWaste — waste at receiver with valuation=rejected*averageCost",
     async () => {
       await withTx(async (db) => {
@@ -1668,7 +1670,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "M3c: generateTransferInvoiceSnapshot — totalAmount == sum(received*unitPrice) + code required",
     async () => {
       await withTx(async (db) => {
@@ -1745,7 +1747,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)("M4: markTransferInvoicePaid sets paidAt/paidBy", async () => {
+  it.skipIf(!hasTestDatabaseUrl)("M4: markTransferInvoicePaid sets paidAt/paidBy", async () => {
     await withTx(async (db) => {
       const senderId = await createBranch(db, suid("SND-M4"));
       const receiverId = await createBranch(db, suid("RCV-M4"));
@@ -1793,7 +1795,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
       expect(inv.paidById).toBe(actorId);
     });
   });
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "M5: noopOnCancel early states — no inventory/ledger change",
     async () => {
       await withTx(async (db) => {
@@ -1832,7 +1834,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "M6: reverseTransferInTransitOnCancel credits Sender correctly",
     async () => {
       await withTx(async (db) => {
@@ -1904,7 +1906,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "M7: reverseTransferPendingReviewOnCancel Phase 1 only — clearedAt IS NULL rows back to Sender, cleared rows not double-credited",
     async () => {
       await withTx(async (db) => {
@@ -1970,7 +1972,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
   // Stock Opname — src/lib/server/inventory.ts (O4–O5)
   // ---------------------------------------------------------------------------
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "O4: approveStockOpname adjusts inventory to physicalStock, writes IN/OUT ledger with absolute physicalStock as balance",
     async () => {
       await withTx(async (db) => {
@@ -2033,7 +2035,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "O5: realizeStockOpname guards — wrong date / not Approved / already realized produce no ledger (date guard is 25th)",
     async () => {
       await withTx(async (db) => {
@@ -2075,7 +2077,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "O5: realizeStockOpname happy path — SO:<id> adjusts inventory to physicalStock with IN ledger",
     async () => {
       await withTx(async (db) => {
@@ -2135,59 +2137,63 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
   // Supplier Deliveries — src/lib/server/supplier-deliveries.ts (D1–D3)
   // ---------------------------------------------------------------------------
 
-  it.skipIf(!hasDatabaseUrl)("D1: createSupplierDelivery upserts Central IN ledger", async () => {
-    await withTx(async (db) => {
-      const centrals = await db
-        .select({ id: schema.branches.id })
-        .from(schema.branches)
-        .where(eq(schema.branches.type, "Central"));
-      let centralId: string;
-      if (centrals.length === 0) centralId = await createBranch(db, suid("CENTRAL-D1"), "Central");
-      else centralId = centrals[0].id;
-      const ingId = await createIngredient(db, suid("ING-D1"), 2000);
-      await setInventory(db, centralId, ingId, 30);
-      const deliveryId = crypto.randomUUID();
-      const actorId = await createUser(db, null, "super_admin");
-      await db.insert(schema.supplierDeliveries).values({
-        id: deliveryId,
-        supplierName: "Test Supplier",
-        ingredientId: ingId,
-        quantity: 20,
-        price: 1000,
-        deliveryDate: new Date(),
-        receivedBy: actorId,
+  it.skipIf(!hasTestDatabaseUrl)(
+    "D1: createSupplierDelivery upserts Central IN ledger",
+    async () => {
+      await withTx(async (db) => {
+        const centrals = await db
+          .select({ id: schema.branches.id })
+          .from(schema.branches)
+          .where(eq(schema.branches.type, "Central"));
+        let centralId: string;
+        if (centrals.length === 0)
+          centralId = await createBranch(db, suid("CENTRAL-D1"), "Central");
+        else centralId = centrals[0].id;
+        const ingId = await createIngredient(db, suid("ING-D1"), 2000);
+        await setInventory(db, centralId, ingId, 30);
+        const deliveryId = crypto.randomUUID();
+        const actorId = await createUser(db, null, "super_admin");
+        await db.insert(schema.supplierDeliveries).values({
+          id: deliveryId,
+          supplierName: "Test Supplier",
+          ingredientId: ingId,
+          quantity: 20,
+          price: 1000,
+          deliveryDate: new Date(),
+          receivedBy: actorId,
+        });
+        const [invBefore] = await db
+          .select()
+          .from(schema.inventory)
+          .where(
+            and(eq(schema.inventory.branchId, centralId), eq(schema.inventory.ingredientId, ingId)),
+          )
+          .limit(1);
+        await db
+          .update(schema.inventory)
+          .set({ quantity: invBefore.quantity + 20 })
+          .where(eq(schema.inventory.id, invBefore.id));
+        await db.insert(schema.stockLedger).values({
+          branchId: centralId,
+          ingredientId: ingId,
+          type: "IN",
+          quantity: 20,
+          balance: 50,
+          reference: deliveryId,
+        });
+        await assertLedgerContract(db, {
+          reference: deliveryId,
+          branchId: centralId,
+          expectedType: "IN",
+          expectedQuantity: 20,
+          expectedBalance: 50,
+          ingredientId: ingId,
+        });
       });
-      const [invBefore] = await db
-        .select()
-        .from(schema.inventory)
-        .where(
-          and(eq(schema.inventory.branchId, centralId), eq(schema.inventory.ingredientId, ingId)),
-        )
-        .limit(1);
-      await db
-        .update(schema.inventory)
-        .set({ quantity: invBefore.quantity + 20 })
-        .where(eq(schema.inventory.id, invBefore.id));
-      await db.insert(schema.stockLedger).values({
-        branchId: centralId,
-        ingredientId: ingId,
-        type: "IN",
-        quantity: 20,
-        balance: 50,
-        reference: deliveryId,
-      });
-      await assertLedgerContract(db, {
-        reference: deliveryId,
-        branchId: centralId,
-        expectedType: "IN",
-        expectedQuantity: 20,
-        expectedBalance: 50,
-        ingredientId: ingId,
-      });
-    });
-  });
+    },
+  );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "D2+D3: updateSupplierDelivery revert+apply and deleteSupplierDelivery OUT",
     async () => {
       await withTx(async (db) => {
@@ -2285,7 +2291,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
   // Waste — src/lib/server/waste.ts (W1)
   // ---------------------------------------------------------------------------
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "W1: createWasteEntry OUT ledger at branch, valuation=qty*averageCost, Biaya Operasional also inserts operationalExpenses",
     async () => {
       await withTx(async (db) => {
@@ -2361,7 +2367,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
   // Recipe Production — src/lib/server/recipes.ts (R1)
   // ---------------------------------------------------------------------------
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "R1: assignRecipeStock — Central ingredient OUT per BOM + recipeInventory upsert + stockLedger.recipeId IN ledger with shared PROD-* reference",
     async () => {
       await withTx(async (db) => {
@@ -2466,7 +2472,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
   // contract asserted (the feature implementation is the map's handoff).
   // ---------------------------------------------------------------------------
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "Y1: createYieldConversion write-path — deducts OUT, upserts PRODUCED from 0, ledger balance == inventory.quantity, shared YIELD-* reference",
     async () => {
       await withTx(async (db) => {
@@ -2594,7 +2600,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "Y1 negative: OUT exceeding current stock is allowed — balance goes negative, no clamp",
     async () => {
       await withTx(async (db) => {
@@ -2675,7 +2681,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
     },
   );
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "Y1 cancel reversal: cancelling restores OUT items (IN) and deducts produced items (OUT) on the same YIELD-* reference",
     async () => {
       await withTx(async (db) => {
@@ -2840,7 +2846,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
   // Manual Adjustments — src/lib/server/inventory.ts (A1–A2)
   // ---------------------------------------------------------------------------
 
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "A1: adjustBranchStockBatch — per-branch IN/OUT with shared ADJ-* reference, balance per branch",
     async () => {
       await withTx(async (db) => {
@@ -2897,7 +2903,7 @@ describe.skipIf(!hasDatabaseUrl)("Kartu Stok (stock_ledger) — per-path ledger 
       });
     },
   );
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "A2: cleanSlateInventory — deletes inventory rows, ledger kept unless alsoLedger=true",
     async () => {
       await withTx(async (db) => {

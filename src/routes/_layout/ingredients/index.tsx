@@ -21,7 +21,7 @@ import {
 } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { toast } from "sonner";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Switch } from "#/components/ui/switch";
@@ -59,7 +59,7 @@ export const Route = createFileRoute("/_layout/ingredients/")({
 });
 
 function IngredientsPage() {
-  const [search, setSearch] = useTableSearch();
+  const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
   const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState<{
     category?: string;
     skuType?: string;
@@ -75,16 +75,22 @@ function IngredientsPage() {
   const [isBranchVisible, setIsBranchVisible] = useState(false);
 
   const { data: ingredients } = useQuery({
-    queryKey: ["ingredients"],
-    queryFn: () => getIngredients({ data: {} }),
+    queryKey: ["ingredients", committedSearch, categoryFilter, skuTypeFilter],
+    queryFn: () =>
+      getIngredients({
+        data: {
+          search: committedSearch || undefined,
+          // SAFETY: these URL filters are restricted by the corresponding selects.
+          category:
+            categoryFilter === "all" ? null : (categoryFilter as "Fresh" | "Dry" | "Packaging"),
+          // SAFETY: this URL filter is restricted by the corresponding select.
+          skuType: skuTypeFilter === "all" ? null : (skuTypeFilter as "RM" | "SFG" | "FG"),
+        },
+      }),
     initialData: initial,
   });
 
-  const filteredIngredients = ingredients.filter((r) => {
-    if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
-    if (skuTypeFilter !== "all" && r.skuType !== skuTypeFilter) return false;
-    return true;
-  });
+  const filteredIngredients = ingredients;
 
   const createMutation = useMutation({
     mutationFn: createIngredient,
@@ -171,20 +177,20 @@ function IngredientsPage() {
     setPage(0);
   };
 
-  const columns: Column<IngredientRow>[] = [
-    { key: "code", header: "Kode", width: "w-24", sortable: true },
-    { key: "name", header: "Nama Bahan", sortable: true },
+  const columns: ColumnDef<IngredientRow>[] = [
+    { accessorKey: "code", header: "Kode", width: "w-24", enableSorting: true },
+    { accessorKey: "name", header: "Nama Bahan", enableSorting: true },
     {
-      key: "skuType",
+      accessorKey: "skuType",
       header: "Tipe SKU",
-      sortable: true,
-      render: (r) => <Badge variant="outline">{lookupLabel(skuLabels, r.skuType) ?? "-"}</Badge>,
+      enableSorting: true,
+      cell: (r) => <Badge variant="outline">{lookupLabel(skuLabels, r.skuType) ?? "-"}</Badge>,
     },
     {
-      key: "category",
+      accessorKey: "category",
       header: "Kategori",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge
           variant={
             r.category === "Fresh" ? "destructive" : r.category === "Dry" ? "secondary" : "default"
@@ -194,39 +200,39 @@ function IngredientsPage() {
         </Badge>
       ),
     },
-    { key: "purchaseUnit", header: "Satuan Beli", width: "w-28", sortable: true },
-    { key: "stockUnit", header: "Satuan Stok", width: "w-28", sortable: true },
+    { accessorKey: "purchaseUnit", header: "Satuan Beli", width: "w-28", enableSorting: true },
+    { accessorKey: "stockUnit", header: "Satuan Stok", width: "w-28", enableSorting: true },
     {
-      key: "averageCost",
+      accessorKey: "averageCost",
       header: "HPP",
       align: "right",
-      sortable: true,
-      render: (r) => `Rp ${r.averageCost.toLocaleString("id-ID")}`,
+      enableSorting: true,
+      cell: (r) => `Rp ${r.averageCost.toLocaleString("id-ID")}`,
     },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={r.status === "Active" ? "success" : "secondary"}>
           {r.status === "Active" ? "Aktif" : "Nonaktif"}
         </Badge>
       ),
     },
     {
-      key: "isBranchVisible",
+      accessorKey: "isBranchVisible",
       header: "Visibilitas",
-      render: (r) => (
+      cell: (r) => (
         <Badge variant={r.isBranchVisible ? "success" : "secondary"}>
           {r.isBranchVisible ? "Cabang" : "Pusat"}
         </Badge>
       ),
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "",
       width: "w-32",
-      render: (r) => (
+      cell: (r) => (
         <div className="flex items-center gap-1">
           <Link
             to="/ingredients/$ingId"
@@ -296,7 +302,10 @@ function IngredientsPage() {
         page={page}
         onPageChange={setPage}
         sort={sort}
-        onSortChange={setSort}
+        onSortChange={(nextSort) => {
+          setSort(nextSort);
+          setPage(0);
+        }}
       />
 
       <Modal

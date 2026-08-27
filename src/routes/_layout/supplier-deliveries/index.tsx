@@ -21,7 +21,7 @@ import {
   getSuppliers,
 } from "#/lib/server/supplier-deliveries";
 import { getIngredients } from "#/lib/server/ingredients";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Printer, Pencil, Trash2, CheckCircle } from "lucide-react";
 
@@ -257,42 +257,42 @@ function SupplierDeliveriesPage() {
     });
   };
 
-  const columns: Column<DeliveryRow>[] = [
+  const columns: ColumnDef<DeliveryRow>[] = [
     {
-      key: "deliveryDate",
+      accessorKey: "deliveryDate",
       header: "Tanggal",
-      sortable: true,
-      render: (r) => formatDate(r.deliveryDate),
+      enableSorting: true,
+      cell: (r) => formatDate(r.deliveryDate),
     },
-    { key: "supplierName", header: "Supplier", sortable: true },
-    { key: "ingredientName", header: "Bahan Baku", sortable: true },
+    { accessorKey: "supplierName", header: "Supplier", enableSorting: true },
+    { accessorKey: "ingredientName", header: "Bahan Baku", enableSorting: true },
     {
-      key: "quantity",
+      accessorKey: "quantity",
       header: "Jumlah",
-      sortable: true,
-      render: (r) => `${r.quantity.toLocaleString()} ${r.ingredientStockUnit ?? "-"}`,
+      enableSorting: true,
+      cell: (r) => `${r.quantity.toLocaleString()} ${r.ingredientStockUnit ?? "-"}`,
     },
     {
-      key: "price",
+      accessorKey: "price",
       header: "Total Harga",
       align: "right",
-      sortable: true,
-      render: (r) => `Rp ${r.price.toLocaleString()}`,
+      enableSorting: true,
+      cell: (r) => `Rp ${r.price.toLocaleString()}`,
     },
-    { key: "receivedByName", header: "Penerima", sortable: true },
+    { accessorKey: "receivedByName", header: "Penerima", enableSorting: true },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={lookupLabel(statusColors, r.status) ?? "default"}>{r.status}</Badge>
       ),
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "Aksi",
       width: "w-36",
-      render: (r) => (
+      cell: (r) => (
         <div className="flex items-center justify-end gap-1">
           <button
             onClick={(e) => {

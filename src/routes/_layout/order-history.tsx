@@ -10,7 +10,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getOrders, getOrderWithItems, updateOrderStatus } from "#/lib/server/pos";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Printer, Pencil } from "lucide-react";
 import { printReceipt } from "#/lib/pos-print";
@@ -43,13 +43,13 @@ const statusColors = {
   "Cancel Requested": "destructive",
 } satisfies Record<string, string>;
 
-const columns: Column<OrderRow>[] = [
+const columns: ColumnDef<OrderRow>[] = [
   {
-    key: "createdAt",
+    accessorKey: "createdAt",
     header: "Waktu",
     width: "w-32",
-    sortable: true,
-    render: (r) =>
+    enableSorting: true,
+    cell: (r) =>
       new Date(r.createdAt).toLocaleString("id-ID", {
         day: "2-digit",
         month: "short",
@@ -58,31 +58,31 @@ const columns: Column<OrderRow>[] = [
       }),
   },
   {
-    key: "channel",
+    accessorKey: "channel",
     header: "Channel",
-    sortable: true,
-    render: (r) => (
+    enableSorting: true,
+    cell: (r) => (
       <Badge variant="outline">{lookupLabel(channelLabels, r.channel) ?? r.channel}</Badge>
     ),
   },
   {
-    key: "orderCode",
+    accessorKey: "orderCode",
     header: "Kode",
-    sortable: true,
-    render: (r) => r.orderCode ?? r.customerName ?? "-",
+    enableSorting: true,
+    cell: (r) => r.orderCode ?? r.customerName ?? "-",
   },
   {
-    key: "totalAmount",
+    accessorKey: "totalAmount",
     header: "Total",
     align: "right",
-    sortable: true,
-    render: (r) => `Rp ${r.totalAmount.toLocaleString("id-ID")}`,
+    enableSorting: true,
+    cell: (r) => `Rp ${r.totalAmount.toLocaleString("id-ID")}`,
   },
   {
-    key: "status",
+    accessorKey: "status",
     header: "Status",
-    sortable: true,
-    render: (r) => (
+    enableSorting: true,
+    cell: (r) => (
       <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status || "-"}</Badge>
     ),
   },

@@ -8,7 +8,7 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getCategories, createCategory } from "#/lib/server/categories";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import Modal from "#/components/ui/Modal";
@@ -24,26 +24,26 @@ interface CategoryRow {
   recipeCount: number;
 }
 
-const columns: Column<CategoryRow>[] = [
+const columns: ColumnDef<CategoryRow>[] = [
   {
-    key: "name",
+    accessorKey: "name",
     header: "Kategori",
-    sortable: true,
-    render: (r) => <span className="font-medium capitalize">{r.name}</span>,
+    enableSorting: true,
+    cell: (r) => <span className="font-medium capitalize">{r.name}</span>,
   },
   {
-    key: "recipeCount",
+    accessorKey: "recipeCount",
     header: "Menu Terkait",
     width: "w-28",
     align: "center",
-    sortable: true,
-    render: (r) => <Badge variant="outline">{r.recipeCount}</Badge>,
+    enableSorting: true,
+    cell: (r) => <Badge variant="outline">{r.recipeCount}</Badge>,
   },
   {
-    key: "id",
+    accessorKey: "id",
     header: "",
     width: "w-12",
-    render: (r) => (
+    cell: (r) => (
       <Link
         to="/categories/$categoryId"
         params={{ categoryId: r.id }}

@@ -68,7 +68,10 @@ const config = defineConfig({
       "anti-slop/require-safety-comment-for-type-assertion": "error",
     },
   },
-  resolve: { tsconfigPaths: true },
+  resolve: {
+    tsconfigPaths: true,
+    dedupe: ["react", "react-dom"],
+  },
   plugins: [
     devtools(),
     nitro({ rollupConfig: { external: [/^@sentry\//] } }),

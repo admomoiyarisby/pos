@@ -28,7 +28,7 @@ import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { getInventory } from "#/lib/server/inventory";
 import { generateReorderRecommendations } from "#/lib/server/reorder";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -215,28 +215,28 @@ function PRPage() {
     });
   };
 
-  const columns: Column<PRRow>[] = [
-    { key: "code", header: "Kode PR", width: "w-28", sortable: true },
-    { key: "branchName", header: "Cabang", sortable: true },
+  const columns: ColumnDef<PRRow>[] = [
+    { accessorKey: "code", header: "Kode PR", width: "w-28", enableSorting: true },
+    { accessorKey: "branchName", header: "Cabang", enableSorting: true },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={lookupLabel(statusColors, r.status) ?? "default"}>{r.status}</Badge>
       ),
     },
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Dibuat",
-      sortable: true,
-      render: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
+      enableSorting: true,
+      cell: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "Aksi",
       width: "w-40",
-      render: (r) => {
+      cell: (r) => {
         const canProcess = isApprover && ["Pending", "Approved"].includes(r.status);
         const canReject = isApprover && ["Pending", "Approved"].includes(r.status);
         const canEdit = isBranchAdmin && r.status === "Draft";

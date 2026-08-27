@@ -23,7 +23,7 @@ import {
   deactivateVoucher,
   deleteVoucher,
 } from "#/lib/server/vouchers";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 
 interface VoucherRow {
   id: string;
@@ -72,37 +72,37 @@ function voucherStatus(r: VoucherRow): VoucherStatusBadge {
   return { label: "Aktif", variant: "success" };
 }
 
-const columns: Column<VoucherRow>[] = [
-  { key: "code", header: "Kode", width: "w-32", sortable: true },
-  { key: "description", header: "Deskripsi", sortable: true },
+const columns: ColumnDef<VoucherRow>[] = [
+  { accessorKey: "code", header: "Kode", width: "w-32", enableSorting: true },
+  { accessorKey: "description", header: "Deskripsi", enableSorting: true },
   {
-    key: "discountValue",
+    accessorKey: "discountValue",
     header: "Diskon",
     width: "w-28",
-    sortable: true,
-    render: (r) => formatDiscount(r),
+    enableSorting: true,
+    cell: (r) => formatDiscount(r),
   },
   {
-    key: "minOrder",
+    accessorKey: "minOrder",
     header: "Min. Order",
     width: "w-32",
     align: "right",
-    sortable: true,
-    render: (r) => (r.minOrder > 0 ? `Rp ${r.minOrder.toLocaleString("id-ID")}` : "-"),
+    enableSorting: true,
+    cell: (r) => (r.minOrder > 0 ? `Rp ${r.minOrder.toLocaleString("id-ID")}` : "-"),
   },
   {
-    key: "validUntil",
+    accessorKey: "validUntil",
     header: "Berlaku Sampai",
     width: "w-40",
-    sortable: true,
-    render: (r) => <span className="tabular-nums">{formatJakartaDateTime(r.validUntil)}</span>,
+    enableSorting: true,
+    cell: (r) => <span className="tabular-nums">{formatJakartaDateTime(r.validUntil)}</span>,
   },
   {
-    key: "status",
+    accessorKey: "status",
     header: "Status",
     width: "w-24",
-    sortable: true,
-    render: (r) => {
+    enableSorting: true,
+    cell: (r) => {
       const s = voucherStatus(r);
       return <Badge variant={s.variant}>{s.label}</Badge>;
     },
@@ -120,7 +120,7 @@ export const Route = createFileRoute("/_layout/admin/vouchers")({
 });
 
 function VouchersPage() {
-  const [search, setSearch] = useTableSearch();
+  const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
   const { page, setPage, sort, setSort } = useTableUrlState();
   const { vouchers: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -131,10 +131,11 @@ function VouchersPage() {
   const [discountType, setDiscountType] = useState<VoucherRow["discountType"]>("percentage");
 
   const { data: vouchers } = useQuery({
-    queryKey: ["vouchers"],
+    queryKey: ["vouchers", committedSearch],
     // SAFETY: server rows are assignable to VoucherRow (Date timestamps are
     // covered by the Date | string union).
-    queryFn: () => getVouchers({ data: {} }) as Promise<VoucherRow[]>,
+    queryFn: () =>
+      getVouchers({ data: { search: committedSearch || undefined } }) as Promise<VoucherRow[]>,
     initialData: initial,
   });
 
@@ -258,10 +259,10 @@ function VouchersPage() {
         columns={[
           ...columns,
           {
-            key: "actions",
+            accessorKey: "actions",
             header: "",
             width: "w-12",
-            render: (r) => {
+            cell: (r) => {
               const action = voucherActionForStatus(r.status);
               return (
                 <button

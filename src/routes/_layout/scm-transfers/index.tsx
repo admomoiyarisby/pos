@@ -15,7 +15,7 @@ import { Button } from "#/components/ui/button";
 import { Plus, ArrowRight, Lock } from "lucide-react";
 import { getMutasiTransfers } from "#/lib/server/scm-transfers";
 import { canAmAct } from "#/lib/server/scm-transfer-queries";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { SCM_TRANSFER_STATUS_VALUES, type ScmTransferStatus } from "#/lib/server/scm-transfer-fsm";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { getBranches } from "#/lib/server/branches";
@@ -97,26 +97,38 @@ const FORWARD_EVENTS = new Set([
 // ?status=.
 type FilterKey = "all" | ScmTransferStatus;
 
-const FILTER_TABS: { key: FilterKey; label: string; annotation?: string }[] = [
-  { key: "all", label: "Semua" },
-  { key: "SuratJalanDraft", label: "Draft SJ", annotation: "cabang pengirim: edit & kirim" },
-  { key: "PendingAMReview", label: "Menunggu AM", annotation: "area manager: review & setujui" },
-  { key: "Approved", label: "Disetujui", annotation: "cabang pengirim: kirim barang" },
-  { key: "InTransit", label: "Dalam Pengiriman", annotation: "cabang penerima: tandai diterima" },
-  { key: "Delivered", label: "Diterima", annotation: "cabang penerima: periksa barang" },
+const FILTER_TABS: { accessorKey: FilterKey; label: string; annotation?: string }[] = [
+  { accessorKey: "all", label: "Semua" },
   {
-    key: "ReviewingSJ",
+    accessorKey: "SuratJalanDraft",
+    label: "Draft SJ",
+    annotation: "cabang pengirim: edit & kirim",
+  },
+  {
+    accessorKey: "PendingAMReview",
+    label: "Menunggu AM",
+    annotation: "area manager: review & setujui",
+  },
+  { accessorKey: "Approved", label: "Disetujui", annotation: "cabang pengirim: kirim barang" },
+  {
+    accessorKey: "InTransit",
+    label: "Dalam Pengiriman",
+    annotation: "cabang penerima: tandai diterima",
+  },
+  { accessorKey: "Delivered", label: "Diterima", annotation: "cabang penerima: periksa barang" },
+  {
+    accessorKey: "ReviewingSJ",
     label: "Review Penerima",
     annotation: "cabang penerima: konfirmasi jumlah",
   },
   {
-    key: "WaitingForPayment",
+    accessorKey: "WaitingForPayment",
     label: "Menunggu Bayar",
     annotation: "cabang penerima: tandai bayar",
   },
-  { key: "Finished", label: "Lunas", annotation: "selesai" },
-  { key: "Rejected", label: "Ditolak", annotation: "ditolak" },
-  { key: "Cancelled", label: "Dibatalkan", annotation: "batal" },
+  { accessorKey: "Finished", label: "Lunas", annotation: "selesai" },
+  { accessorKey: "Rejected", label: "Ditolak", annotation: "ditolak" },
+  { accessorKey: "Cancelled", label: "Dibatalkan", annotation: "batal" },
 ];
 
 function TransfersListPage() {
@@ -177,8 +189,8 @@ function TransfersListPage() {
       const events = row.availableEvents ?? [];
       const isActionable = events.some((e) => FORWARD_EVENTS.has(e));
       if (isActionable) {
-        const key: FilterKey = row.status;
-        counts[key] = (counts[key] ?? 0) + 1;
+        const statusKey: FilterKey = row.status;
+        counts[statusKey] = (counts[statusKey] ?? 0) + 1;
         total++;
       }
     }
@@ -188,41 +200,41 @@ function TransfersListPage() {
 
   usePageTitle("Mutasi Stok", "Surat Jalan antar cabang");
 
-  const columns: Column<TransferRow>[] = [
-    { key: "code", header: "Kode", width: "w-32", sortable: true },
+  const columns: ColumnDef<TransferRow>[] = [
+    { accessorKey: "code", header: "Kode", width: "w-32", enableSorting: true },
     {
-      key: "fromBranchId",
+      accessorKey: "fromBranchId",
       header: "Dari",
-      sortable: true,
-      render: (r) => branchById.get(r.fromBranchId)?.name ?? r.fromBranchId.slice(0, 8) + "...",
+      enableSorting: true,
+      cell: (r) => branchById.get(r.fromBranchId)?.name ?? r.fromBranchId.slice(0, 8) + "...",
     },
     {
-      key: "toBranchId",
+      accessorKey: "toBranchId",
       header: "Ke",
-      sortable: true,
-      render: (r) => branchById.get(r.toBranchId)?.name ?? r.toBranchId.slice(0, 8) + "...",
+      enableSorting: true,
+      cell: (r) => branchById.get(r.toBranchId)?.name ?? r.toBranchId.slice(0, 8) + "...",
     },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>
           {lookupLabel(statusLabels, r.status) ?? r.status}
         </Badge>
       ),
     },
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Tgl Dibuat",
-      sortable: true,
-      render: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
+      enableSorting: true,
+      cell: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "",
       width: "w-44",
-      render: (r) => {
+      cell: (r) => {
         const isAm = user?.role === "area_manager";
         const isCrossJurisdiction =
           isAm &&

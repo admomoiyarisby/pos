@@ -4,11 +4,13 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "#/db/schema";
+import { getTestDatabaseUrl } from "./test-database";
 import { resolveNewItemIngredients } from "./ingredient-resolver";
 
 type TestDb = NodePgDatabase<typeof schema>;
 
-const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+const testDatabaseUrl = getTestDatabaseUrl();
+const hasTestDatabaseUrl = Boolean(testDatabaseUrl);
 
 type ResolverFixture = {
   branchId: string;
@@ -170,10 +172,10 @@ async function createResolverFixture(db: TestDb): Promise<ResolverFixture> {
 }
 
 describe("ingredient resolver database integration", () => {
-  it.skipIf(!hasDatabaseUrl)(
+  it.skipIf(!hasTestDatabaseUrl)(
     "resolves BOGO, bundle, add-on, and exclusion quantities from real rows",
     async () => {
-      const client = new Client({ connectionString: process.env.DATABASE_URL });
+      const client = new Client({ connectionString: testDatabaseUrl });
       await client.connect();
 
       try {

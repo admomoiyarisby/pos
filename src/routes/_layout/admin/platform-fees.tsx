@@ -11,7 +11,7 @@ import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
 import MoneyInput from "#/components/MoneyInput";
 import { getPlatformFees, updatePlatformFee } from "#/lib/server/platform-fees";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Trash2, Info } from "lucide-react";
 
 interface FeeRow {
@@ -30,26 +30,26 @@ const channelLabels = {
   Perlengkapan: "Perlengkapan",
 } satisfies Record<string, string>;
 
-const columns: Column<FeeRow>[] = [
+const columns: ColumnDef<FeeRow>[] = [
   {
-    key: "channel",
+    accessorKey: "channel",
     header: "Channel",
-    sortable: true,
-    render: (r) => lookupLabel(channelLabels, r.channel) ?? r.channel,
+    enableSorting: true,
+    cell: (r) => lookupLabel(channelLabels, r.channel) ?? r.channel,
   },
   {
-    key: "feePercentage",
+    accessorKey: "feePercentage",
     header: "MDR (%)",
     align: "right",
-    sortable: true,
-    render: (r) => `${r.feePercentage}%`,
+    enableSorting: true,
+    cell: (r) => `${r.feePercentage}%`,
   },
   {
-    key: "fixedFee",
+    accessorKey: "fixedFee",
     header: "Biaya Tetap (Rp)",
     align: "right",
-    sortable: true,
-    render: (r) => `Rp ${r.fixedFee.toLocaleString("id-ID")}`,
+    enableSorting: true,
+    cell: (r) => `Rp ${r.fixedFee.toLocaleString("id-ID")}`,
   },
 ];
 
@@ -101,10 +101,10 @@ function PlatformFeesPage() {
         columns={[
           ...columns,
           {
-            key: "actions",
+            accessorKey: "actions",
             header: "",
             width: "w-12",
-            render: (r) => (
+            cell: (r) => (
               <button
                 type="button"
                 onClick={(e) => {

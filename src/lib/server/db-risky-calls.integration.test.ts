@@ -5,12 +5,14 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "#/db/schema";
+import { getTestDatabaseUrl } from "./test-database";
 
 type TestDb = NodePgDatabase<typeof schema>;
-const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+const testDatabaseUrl = getTestDatabaseUrl();
+const hasTestDatabaseUrl = Boolean(testDatabaseUrl);
 
 async function withTx<T>(fn: (db: TestDb, client: Client) => Promise<T>): Promise<T> {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  const client = new Client({ connectionString: testDatabaseUrl });
   await client.connect();
   try {
     await client.query("BEGIN");
@@ -27,7 +29,7 @@ function suid(prefix: string): string {
   return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-describe.skipIf(!hasDatabaseUrl)("db-risky calls — FK and transaction audit (map #129)", () => {
+describe.skipIf(!hasTestDatabaseUrl)("db-risky calls — FK and transaction audit (map #129)", () => {
   describe("modifier-groups FK (restrict) — mirrors original bug d71419fc…", () => {
     it("deleting a modifier used in order_item_modifiers must FK-fail (raw delete), guard query must find it", async () => {
       await withTx(async (db, client) => {

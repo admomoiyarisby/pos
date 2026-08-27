@@ -3,8 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import * as schema from "#/db/schema";
+import { getTestDatabaseUrl } from "./test-database";
 
-const testDatabaseUrl = process.env.TEST_DATABASE_URL;
+const testDatabaseUrl = getTestDatabaseUrl();
 
 describe("database migrations", () => {
   it.skipIf(!testDatabaseUrl)(

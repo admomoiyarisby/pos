@@ -80,8 +80,8 @@ CREATE TABLE "scm_transfers" (
 );
 --> statement-breakpoint
 ALTER TABLE "pending_review_inventory" ALTER COLUMN "scm_procurement_id" DROP NOT NULL;--> statement-breakpoint
-ALTER TABLE "branches" ADD COLUMN "phone" text;--> statement-breakpoint
-ALTER TABLE "branches" ADD COLUMN "complaint_phone" text;--> statement-breakpoint
+ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "phone" text;--> statement-breakpoint
+ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "complaint_phone" text;--> statement-breakpoint
 ALTER TABLE "in_transit_inventory" ADD COLUMN "scm_transfer_id" uuid;--> statement-breakpoint
 ALTER TABLE "pending_review_inventory" ADD COLUMN "scm_transfer_id" uuid;--> statement-breakpoint
 ALTER TABLE "scm_transfer_audit_log" ADD CONSTRAINT "scm_transfer_audit_log_scm_transfer_id_scm_transfers_id_fk" FOREIGN KEY ("scm_transfer_id") REFERENCES "public"."scm_transfers"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

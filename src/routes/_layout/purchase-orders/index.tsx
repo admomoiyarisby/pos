@@ -6,7 +6,7 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getPurchaseOrders } from "#/lib/server/scm";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -49,34 +49,39 @@ function POPage() {
     initialData: initial,
   });
 
-  const columns: Column<PORow>[] = [
-    { key: "code", header: "Kode PO", width: "w-28", sortable: true },
+  const columns: ColumnDef<PORow>[] = [
+    { accessorKey: "code", header: "Kode PO", width: "w-28", enableSorting: true },
     {
-      key: "fromBranchId",
+      accessorKey: "fromBranchId",
       header: "Dari",
-      sortable: true,
-      render: (r) => r.fromBranchId.slice(0, 8),
+      enableSorting: true,
+      cell: (r) => r.fromBranchId.slice(0, 8),
     },
-    { key: "toBranchId", header: "Ke", sortable: true, render: (r) => r.toBranchId.slice(0, 8) },
     {
-      key: "status",
+      accessorKey: "toBranchId",
+      header: "Ke",
+      enableSorting: true,
+      cell: (r) => r.toBranchId.slice(0, 8),
+    },
+    {
+      accessorKey: "status",
       header: "Status",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status}</Badge>
       ),
     },
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Dibuat",
-      sortable: true,
-      render: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
+      enableSorting: true,
+      cell: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "",
       width: "w-12",
-      render: (r) => (
+      cell: (r) => (
         <Link
           to="/purchase-orders/$poId"
           params={{ poId: r.id }}

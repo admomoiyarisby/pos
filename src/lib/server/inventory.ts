@@ -117,6 +117,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
       ingredientId?: string;
       recipeId?: string;
       reference?: string;
+      search?: string;
       dateFrom?: string;
       dateTo?: string;
       page?: number;
@@ -153,6 +154,12 @@ export const getStockLedger = createServerFn({ method: "GET" })
           data.ingredientId ? eq(stockLedger.ingredientId, data.ingredientId) : undefined,
           data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
           data.reference ? eq(stockLedger.reference, data.reference) : undefined,
+          data.search
+            ? fuzzySearch(
+                [ingredients.name, recipes.name, stockLedger.reference, stockLedger.notes],
+                data.search,
+              )
+            : undefined,
         ),
       )
       .orderBy(desc(stockLedger.createdAt))

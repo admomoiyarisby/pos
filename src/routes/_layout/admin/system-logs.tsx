@@ -6,7 +6,7 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getSystemLogs } from "#/lib/server/system";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 
 interface LogRow {
@@ -55,12 +55,12 @@ function SystemLogsPage() {
     initialData: initial,
   });
 
-  const columns: Column<LogRow>[] = [
+  const columns: ColumnDef<LogRow>[] = [
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Waktu",
       width: "w-36",
-      render: (r) =>
+      cell: (r) =>
         new Date(r.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
           month: "short",
@@ -69,10 +69,10 @@ function SystemLogsPage() {
         }),
     },
     {
-      key: "status",
+      accessorKey: "status",
       header: "",
       width: "w-8",
-      render: (r) => {
+      cell: (r) => {
         const config = statusConfig[r.status];
         const Icon = config.icon;
         return (
@@ -82,14 +82,14 @@ function SystemLogsPage() {
         );
       },
     },
-    { key: "action", header: "Aksi", width: "w-40", sortable: true },
-    { key: "detail", header: "Detail" },
+    { accessorKey: "action", header: "Aksi", width: "w-40", enableSorting: true },
+    { accessorKey: "detail", header: "Detail" },
     {
-      key: "userName",
+      accessorKey: "userName",
       header: "User",
       width: "w-32",
-      sortable: true,
-      render: (r) => r.userName ?? "system",
+      enableSorting: true,
+      cell: (r) => r.userName ?? "system",
     },
   ];
 

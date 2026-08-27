@@ -11,7 +11,7 @@ import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getStockOpnames, triggerStockOpname, getAssignedBranchIds } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { ArrowRight } from "lucide-react";
 
@@ -30,24 +30,24 @@ const statusColors = {
   "Under Investigation": "warning",
 } satisfies Record<string, "default" | "warning" | "success">;
 
-const columns: Column<SORow>[] = [
-  { key: "date", header: "Tanggal", sortable: true },
-  { key: "branchName", header: "Cabang", sortable: true },
+const columns: ColumnDef<SORow>[] = [
+  { accessorKey: "date", header: "Tanggal", enableSorting: true },
+  { accessorKey: "branchName", header: "Cabang", enableSorting: true },
   {
-    key: "status",
+    accessorKey: "status",
     header: "Status",
-    sortable: true,
-    render: (r) => (
+    enableSorting: true,
+    cell: (r) => (
       <Badge variant={statusColors[r.status] ?? "default"}>
         {r.status === "Under Investigation" ? "Investigasi" : r.status}
       </Badge>
     ),
   },
   {
-    key: "createdAt",
+    accessorKey: "createdAt",
     header: "Dibuat",
-    sortable: true,
-    render: (r) =>
+    enableSorting: true,
+    cell: (r) =>
       new Date(r.createdAt).toLocaleString("id-ID", {
         day: "2-digit",
         month: "short",
@@ -56,10 +56,10 @@ const columns: Column<SORow>[] = [
       }),
   },
   {
-    key: "id",
+    accessorKey: "id",
     header: "",
     width: "w-12",
-    render: (r) => (
+    cell: (r) => (
       <Link
         to="/stock-opname/$soId"
         params={{ soId: r.id }}

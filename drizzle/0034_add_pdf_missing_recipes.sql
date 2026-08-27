@@ -3,8 +3,8 @@
 -- No recipe_branches rows are created: empty means available to every branch.
 
 INSERT INTO recipes
-  (id, code, name, description, category, category_id, is_sub_recipe, base_price, status)
-SELECT gen_random_uuid(), v.code, v.name, 'Imported from docs/omoiyari-sheet.pdf', v.category::recipe_category,
+  (id, code, name, description, category_id, is_sub_recipe, base_price, status)
+SELECT gen_random_uuid(), v.code, v.name, 'Imported from docs/omoiyari-sheet.pdf',
        c.id, false, 0, 'Active'
 FROM (
   VALUES

@@ -22,13 +22,13 @@ WHERE code IN ('REC-002', 'REC-003', 'REC-005', 'REC-006', 'REC-012', 'REC-037')
 UPDATE recipes
 SET status = 'Active', updated_at = now()
 WHERE status <> 'Deleted'
-  AND category IN ('minuman', 'snack', 'add_ons');
+  AND category_id IN (SELECT id FROM categories WHERE code IN ('minuman', 'snack', 'add_ons'));
 
 -- Approved main dishes from the PDF, including the four newly added recipes.
 UPDATE recipes
 SET status = 'Active', updated_at = now()
 WHERE status <> 'Deleted'
-  AND category = 'makanan'
+  AND category_id = (SELECT id FROM categories WHERE code = 'makanan')
   AND lower(trim(name)) IN (
     'gyumeshi',
     'karaage don',
@@ -54,7 +54,7 @@ WHERE status <> 'Deleted'
 UPDATE recipes
 SET status = 'Inactive', updated_at = now()
 WHERE status <> 'Deleted'
-  AND category = 'makanan'
+  AND category_id = (SELECT id FROM categories WHERE code = 'makanan')
   AND lower(trim(name)) NOT IN (
     'gyumeshi',
     'karaage don',

@@ -8,7 +8,7 @@ import DataTable from "#/components/ui/DataTable";
 import { getStockLedger } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
 import { useAuth } from "#/lib/auth-context";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Factory, X } from "lucide-react";
 
@@ -35,7 +35,7 @@ export const Route = createFileRoute("/_layout/inventory/ledger")({
 });
 
 function LedgerPage() {
-  const [search, setSearch] = useTableSearch();
+  const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
   const { ledger: initial } = Route.useLoaderData();
   const user = useAuth().user;
   const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState<{
@@ -54,7 +54,7 @@ function LedgerPage() {
     user?.role === "super_admin" || user?.role === "area_manager" || user?.role === "admin_pusat";
 
   const { data: ledger } = useQuery({
-    queryKey: ["stock-ledger", page, branchId, reference],
+    queryKey: ["stock-ledger", page, branchId, reference, committedSearch],
     queryFn: () =>
       getStockLedger({
         data: {
@@ -62,18 +62,19 @@ function LedgerPage() {
           limit: 15,
           branchId: branchId || undefined,
           reference: reference || undefined,
+          search: committedSearch || undefined,
         },
       }),
     initialData: initial,
   });
 
-  const columns: Column<LedgerRow>[] = [
+  const columns: ColumnDef<LedgerRow>[] = [
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Waktu",
       width: "w-36",
-      sortable: true,
-      render: (r) =>
+      enableSorting: true,
+      cell: (r) =>
         new Date(r.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
           month: "short",
@@ -82,10 +83,10 @@ function LedgerPage() {
         }),
     },
     {
-      key: "ingredientName",
+      accessorKey: "ingredientName",
       header: "Bahan/Resep",
-      sortable: true,
-      render: (r) => {
+      enableSorting: true,
+      cell: (r) => {
         // Show recipe name for recipe-linked entries, ingredient name otherwise
         if (r.recipeName) {
           return (
@@ -99,19 +100,19 @@ function LedgerPage() {
       },
     },
     {
-      key: "type",
+      accessorKey: "type",
       header: "Tipe",
       width: "w-16",
-      sortable: true,
-      render: (r) => <Badge variant={r.type === "IN" ? "success" : "destructive"}>{r.type}</Badge>,
+      enableSorting: true,
+      cell: (r) => <Badge variant={r.type === "IN" ? "success" : "destructive"}>{r.type}</Badge>,
     },
     {
-      key: "quantity",
+      accessorKey: "quantity",
       header: "Qty",
       align: "right",
       width: "w-20",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <span>
           {r.quantity.toLocaleString("id-ID")}
           {r.stockUnit && <span className="text-muted-foreground ml-0.5">{r.stockUnit}</span>}
@@ -119,12 +120,12 @@ function LedgerPage() {
       ),
     },
     {
-      key: "balance",
+      accessorKey: "balance",
       header: "Saldo",
       align: "right",
       width: "w-20",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <span>
           {r.balance.toLocaleString("id-ID")}
           {r.stockUnit && <span className="text-muted-foreground ml-0.5">{r.stockUnit}</span>}
@@ -132,10 +133,10 @@ function LedgerPage() {
       ),
     },
     {
-      key: "reference",
+      accessorKey: "reference",
       header: "Referensi",
       width: "w-36",
-      render: (r) => {
+      cell: (r) => {
         const isYield = r.reference.startsWith("YIELD-");
         const display = reference ? r.reference : r.reference.slice(0, 8);
         if (isYield) {
@@ -153,7 +154,7 @@ function LedgerPage() {
         return <span className="font-mono text-xs">{display}</span>;
       },
     },
-    { key: "notes", header: "Keterangan", render: (r) => r.notes ?? "-" },
+    { accessorKey: "notes", header: "Keterangan", cell: (r) => r.notes ?? "-" },
   ];
   usePageTitle("Kartu Stok", "Riwayat mutasi masuk dan keluar");
 

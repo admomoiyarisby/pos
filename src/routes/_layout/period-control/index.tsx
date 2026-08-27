@@ -7,7 +7,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getPeriods, openPeriod, closePeriod } from "#/lib/server/finance";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -73,35 +73,35 @@ function PeriodControlPage() {
 
   const openPeriodCount = periods.filter((p) => p.status === "Open").length;
 
-  const columns: Column<PeriodRow>[] = [
-    { key: "periodName", header: "Nama Periode", sortable: true },
+  const columns: ColumnDef<PeriodRow>[] = [
+    { accessorKey: "periodName", header: "Nama Periode", enableSorting: true },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={r.status === "Open" ? "success" : "secondary"}>
           {r.status === "Open" ? "Terbuka" : "Tertutup"}
         </Badge>
       ),
     },
     {
-      key: "openedAt",
+      accessorKey: "openedAt",
       header: "Dibuka",
-      sortable: true,
-      render: (r) => new Date(r.openedAt).toLocaleDateString("id-ID"),
+      enableSorting: true,
+      cell: (r) => new Date(r.openedAt).toLocaleDateString("id-ID"),
     },
     {
-      key: "closedAt",
+      accessorKey: "closedAt",
       header: "Ditutup",
-      sortable: true,
-      render: (r) => (r.closedAt ? new Date(r.closedAt).toLocaleDateString("id-ID") : "-"),
+      enableSorting: true,
+      cell: (r) => (r.closedAt ? new Date(r.closedAt).toLocaleDateString("id-ID") : "-"),
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "",
       width: "w-12",
-      render: (r) => (
+      cell: (r) => (
         <Link
           to="/period-control/$periodId"
           params={{ periodId: r.id }}

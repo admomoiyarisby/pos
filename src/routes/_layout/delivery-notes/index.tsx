@@ -19,7 +19,7 @@ import {
 } from "#/lib/server/scm";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -143,35 +143,40 @@ function DNPage() {
     void createMutation.mutateAsync({ data });
   };
 
-  const columns: Column<DNRow>[] = [
-    { key: "code", header: "Kode SJ", width: "w-28", sortable: true },
+  const columns: ColumnDef<DNRow>[] = [
+    { accessorKey: "code", header: "Kode SJ", width: "w-28", enableSorting: true },
     {
-      key: "fromBranchId",
+      accessorKey: "fromBranchId",
       header: "Dari",
-      sortable: true,
-      render: (r) =>
+      enableSorting: true,
+      cell: (r) =>
         branches.find((b) => b.id === r.fromBranchId)?.name ?? r.fromBranchId.slice(0, 8),
     },
     {
-      key: "toBranchId",
+      accessorKey: "toBranchId",
       header: "Ke",
-      sortable: true,
-      render: (r) => branches.find((b) => b.id === r.toBranchId)?.name ?? r.toBranchId.slice(0, 8),
+      enableSorting: true,
+      cell: (r) => branches.find((b) => b.id === r.toBranchId)?.name ?? r.toBranchId.slice(0, 8),
     },
-    { key: "driverName", header: "Driver", sortable: true, render: (r) => r.driverName ?? "-" },
     {
-      key: "status",
+      accessorKey: "driverName",
+      header: "Driver",
+      enableSorting: true,
+      cell: (r) => r.driverName ?? "-",
+    },
+    {
+      accessorKey: "status",
       header: "Status",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status}</Badge>
       ),
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "",
       width: "w-48",
-      render: (r) => (
+      cell: (r) => (
         <div className="flex items-center justify-end gap-1">
           {["super_admin", "admin_pusat"].includes(user?.role ?? "") && r.status === "Picking" && (
             <button

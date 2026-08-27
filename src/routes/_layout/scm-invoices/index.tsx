@@ -15,7 +15,7 @@ import {
   cancelSCMInvoice,
 } from "#/lib/server/scm";
 import { getDeliveryNotes } from "#/lib/server/scm";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -89,32 +89,32 @@ function SCMInvoicePage() {
 
   const receivedDns = dns.filter((d) => d.status === "Received");
 
-  const columns: Column<InvRow>[] = [
-    { key: "code", header: "Kode Invoice", width: "w-32", sortable: true },
+  const columns: ColumnDef<InvRow>[] = [
+    { accessorKey: "code", header: "Kode Invoice", width: "w-32", enableSorting: true },
     {
-      key: "totalAmount",
+      accessorKey: "totalAmount",
       header: "Total",
       align: "right",
-      sortable: true,
-      render: (r) => `Rp ${r.totalAmount.toLocaleString("id-ID")}`,
+      enableSorting: true,
+      cell: (r) => `Rp ${r.totalAmount.toLocaleString("id-ID")}`,
     },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
-      sortable: true,
-      render: (r) => <Badge variant={badgeVariant(statusColors[r.status])}>{r.status}</Badge>,
+      enableSorting: true,
+      cell: (r) => <Badge variant={badgeVariant(statusColors[r.status])}>{r.status}</Badge>,
     },
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Dibuat",
-      sortable: true,
-      render: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
+      enableSorting: true,
+      cell: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "",
       width: "w-32",
-      render: (r) => (
+      cell: (r) => (
         <div className="flex items-center justify-end gap-1">
           {r.status === "Unpaid" && (
             <>

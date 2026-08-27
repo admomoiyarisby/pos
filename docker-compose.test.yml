@@ -1,0 +1,21 @@
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: omoiyari-pos-postgres-test
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: omoiyari_pos_test
+      POSTGRES_USER: omoiyari_test
+      POSTGRES_PASSWORD: omoiyari_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - omoiyari-pos-postgres-test-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omoiyari_test -d omoiyari_pos_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  omoiyari-pos-postgres-test-data:

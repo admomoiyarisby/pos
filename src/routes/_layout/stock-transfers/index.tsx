@@ -25,7 +25,7 @@ import {
 } from "#/lib/server/scm";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import {
   AlertCircle,
@@ -187,49 +187,49 @@ function TransferPage() {
     });
   };
 
-  const columns: Column<TRRow>[] = [
-    { key: "code", header: "Kode", width: "w-28", sortable: true },
+  const columns: ColumnDef<TRRow>[] = [
+    { accessorKey: "code", header: "Kode", width: "w-28", enableSorting: true },
     {
-      key: "fromBranchId",
+      accessorKey: "fromBranchId",
       header: "Dari",
-      sortable: true,
-      render: (r) =>
+      enableSorting: true,
+      cell: (r) =>
         branches.find((b) => b.id === r.fromBranchId)?.name ?? r.fromBranchId.slice(0, 8),
     },
     {
-      key: "toBranchId",
+      accessorKey: "toBranchId",
       header: "Ke",
-      sortable: true,
-      render: (r) => branches.find((b) => b.id === r.toBranchId)?.name ?? r.toBranchId.slice(0, 8),
+      enableSorting: true,
+      cell: (r) => branches.find((b) => b.id === r.toBranchId)?.name ?? r.toBranchId.slice(0, 8),
     },
     {
-      key: "ingredientId",
+      accessorKey: "ingredientId",
       header: "Bahan",
-      sortable: true,
-      render: (r) =>
+      enableSorting: true,
+      cell: (r) =>
         ingredients.find((i) => i.id === r.ingredientId)?.name ?? r.ingredientId.slice(0, 8),
     },
     {
-      key: "quantity",
+      accessorKey: "quantity",
       header: "Qty",
       align: "right",
       width: "w-20",
-      sortable: true,
-      render: (r) => r.quantity.toLocaleString("id-ID"),
+      enableSorting: true,
+      cell: (r) => r.quantity.toLocaleString("id-ID"),
     },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status}</Badge>
       ),
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "",
       width: "w-48",
-      render: (r) => {
+      cell: (r) => {
         const canApprove =
           r.status === "Pending Approval" &&
           ["super_admin", "area_manager"].includes(user?.role ?? "");

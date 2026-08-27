@@ -14,7 +14,7 @@ import StockAdjustmentModal from "#/components/inventory/StockAdjustmentModal";
 import CleanSlateModal from "#/components/inventory/CleanSlateModal";
 import type { IngredientOption } from "#/components/inventory/StockAdjustmentModal";
 import { useAuth } from "#/lib/auth-context";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 
 interface InvRow {
@@ -49,7 +49,7 @@ export const Route = createFileRoute("/_layout/inventory/")({
 
 function InventoryPage() {
   const { user } = useAuth();
-  const { inventory: initialData, total: initialTotal } = Route.useLoaderData();
+  Route.useLoaderData();
   const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
   const {
     page,
@@ -104,7 +104,7 @@ function InventoryPage() {
           sortOrder: sort?.dir || undefined,
         },
       }),
-    initialData: { data: initialData, total: initialTotal },
+    placeholderData: (previous) => previous,
   });
 
   const inventory = result?.data ?? [];
@@ -165,24 +165,24 @@ function InventoryPage() {
   const showBranchColumn =
     user?.role === "super_admin" || user?.role === "area_manager" || user?.role === "admin_pusat";
 
-  const columns: Column<InvRow>[] = [
-    { key: "ingredientCode", header: "Kode", width: "w-20", sortable: true },
-    { key: "ingredientName", header: "Nama Bahan", sortable: true },
+  const columns: ColumnDef<InvRow>[] = [
+    { accessorKey: "ingredientCode", header: "Kode", width: "w-20", enableSorting: true },
+    { accessorKey: "ingredientName", header: "Nama Bahan", enableSorting: true },
     {
-      key: "ingredientSkuType",
+      accessorKey: "ingredientSkuType",
       header: "SKU",
       width: "w-16",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant="outline">{lookupLabel(skuLabels, r.ingredientSkuType ?? "") ?? "-"}</Badge>
       ),
     },
     {
-      key: "ingredientCategory",
+      accessorKey: "ingredientCategory",
       header: "Kategori",
       width: "w-24",
-      sortable: true,
-      render: (r) =>
+      enableSorting: true,
+      cell: (r) =>
         r.ingredientCategory ? (
           <Badge variant={catColors[r.ingredientCategory]}>{r.ingredientCategory}</Badge>
         ) : (
@@ -190,17 +190,22 @@ function InventoryPage() {
         ),
     },
     {
-      key: "quantity",
+      accessorKey: "quantity",
       header: "Stok",
       align: "right",
       width: "w-24",
-      sortable: true,
-      render: (r) => `${r.quantity.toLocaleString("id-ID")} ${r.stockUnit ?? ""}`,
+      enableSorting: true,
+      cell: (r) => `${r.quantity.toLocaleString("id-ID")} ${r.stockUnit ?? ""}`,
     },
   ];
 
   if (showBranchColumn) {
-    columns.splice(2, 0, { key: "branchName", header: "Cabang", width: "w-40", sortable: true });
+    columns.splice(2, 0, {
+      accessorKey: "branchName",
+      header: "Cabang",
+      width: "w-40",
+      enableSorting: true,
+    });
   }
   usePageTitle("Stok Saat Ini", "Real-time inventory per cabang");
 
@@ -300,6 +305,8 @@ function InventoryPage() {
         keyExtractor={(r) => r.id}
         searchable={false}
         pagination={false}
+        search={search}
+        onSearchChange={setSearch}
         sort={sort}
         onSortChange={(newSort) => {
           setSort(newSort);

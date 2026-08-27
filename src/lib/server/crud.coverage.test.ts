@@ -5,8 +5,10 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, ne } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "#/db/schema";
+import { getTestDatabaseUrl } from "./test-database";
 
-const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+const testDatabaseUrl = getTestDatabaseUrl();
+const hasTestDatabaseUrl = Boolean(testDatabaseUrl);
 type TestDb = NodePgDatabase<typeof schema>;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,7 +215,7 @@ describe("crud validation contracts", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function withRollbackDb<T>(fn: (db: TestDb) => Promise<T>): Promise<T> {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  const client = new Client({ connectionString: testDatabaseUrl });
   await client.connect();
   try {
     await client.query("BEGIN");
@@ -226,7 +228,7 @@ async function withRollbackDb<T>(fn: (db: TestDb) => Promise<T>): Promise<T> {
   }
 }
 
-describe.skipIf(!hasDatabaseUrl)("crud persistence integration", () => {
+describe.skipIf(!hasTestDatabaseUrl)("crud persistence integration", () => {
   it("category: create → get → delete (reassign) → verify", async () => {
     await withRollbackDb(async (db) => {
       const catA = `CAT-A-${Date.now().toString(36)}`;

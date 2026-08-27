@@ -17,7 +17,7 @@ import {
 } from "#/lib/server/sales";
 import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { getBranches } from "#/lib/server/branches";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { toast } from "sonner";
 import { AlertCircle } from "lucide-react";
@@ -149,64 +149,64 @@ function SalesAdminPage() {
 
   usePageTitle("Data Penjualan", "Rekap dan kelola data penjualan");
 
-  const columns: Column<SalesRow>[] = [
+  const columns: ColumnDef<SalesRow>[] = [
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Tanggal",
-      sortable: true,
+      enableSorting: true,
       width: "w-28",
-      render: (r) =>
+      cell: (r) =>
         new Date(r.createdAt).toLocaleDateString("id-ID", {
           day: "2-digit",
           month: "short",
         }),
     },
-    { key: "branchName", header: "Cabang", sortable: true, width: "w-28" },
-    { key: "orderCode", header: "Kode", width: "w-28" },
+    { accessorKey: "branchName", header: "Cabang", enableSorting: true, width: "w-28" },
+    { accessorKey: "orderCode", header: "Kode", width: "w-28" },
     {
-      key: "channel",
+      accessorKey: "channel",
       header: "Channel",
       width: "w-24",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant="outline">{lookupLabel(channelLabels, r.channel) ?? r.channel}</Badge>
       ),
     },
     {
-      key: "customerName",
+      accessorKey: "customerName",
       header: "Pelanggan",
-      render: (r) => r.customerName ?? "-",
+      cell: (r) => r.customerName ?? "-",
       width: "w-28",
     },
     {
-      key: "totalAmount",
+      accessorKey: "totalAmount",
       header: "Total",
       align: "right",
       width: "w-28",
-      sortable: true,
-      render: (r) => formatRupiah(r.totalAmount),
+      enableSorting: true,
+      cell: (r) => formatRupiah(r.totalAmount),
     },
     {
-      key: "netSales",
+      accessorKey: "netSales",
       header: "Net Sales",
       align: "right",
       width: "w-28",
-      render: (r) => formatRupiah(r.netSales),
+      cell: (r) => formatRupiah(r.netSales),
     },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
       width: "w-24",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={lookupLabel(statusColors, r.status) ?? "default"}>{r.status}</Badge>
       ),
     },
     {
-      key: "actions",
+      accessorKey: "actions",
       header: "",
       width: "w-20",
-      render: (r) => (
+      cell: (r) => (
         <div className="flex gap-1">
           <button
             onClick={() => {

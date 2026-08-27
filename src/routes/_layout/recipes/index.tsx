@@ -16,7 +16,7 @@ import { getBranches } from "#/lib/server/branches";
 import { getCategories } from "#/lib/server/categories";
 import { getModifierGroups } from "#/lib/server/modifier-groups";
 import { useAuth } from "#/lib/auth-context";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { ArrowRight, RefreshCw, Zap, Package, Image as ImageIcon } from "lucide-react";
 
@@ -120,14 +120,14 @@ function RecipesPage() {
 
   usePageTitle("Menu / Resep", "Kelola master menu, BOM, dan bundling");
 
-  const columns: Column<RecipeRow>[] = [
+  const columns: ColumnDef<RecipeRow>[] = [
     {
-      key: "image",
+      accessorKey: "image",
       header: "",
       width: "w-9",
       align: "center",
       cellClassName: "!p-0 !min-w-0",
-      render: (r) =>
+      cell: (r) =>
         r.imageUrl ? (
           <img
             src={r.imageUrl}
@@ -142,19 +142,19 @@ function RecipesPage() {
           </div>
         ),
     },
-    { key: "code", header: "Kode", width: "w-24", sortable: true },
-    { key: "name", header: "Nama Menu", sortable: true },
+    { accessorKey: "code", header: "Kode", width: "w-24", enableSorting: true },
+    { accessorKey: "name", header: "Nama Menu", enableSorting: true },
     {
-      key: "categoryName",
+      accessorKey: "categoryName",
       header: "Kategori",
-      sortable: true,
-      render: (r) => <Badge variant="secondary">{r.categoryName ?? "—"}</Badge>,
+      enableSorting: true,
+      cell: (r) => <Badge variant="secondary">{r.categoryName ?? "—"}</Badge>,
     },
     {
-      key: "type",
+      accessorKey: "type",
       header: "Tipe",
       width: "w-28",
-      render: (r) => (
+      cell: (r) => (
         <div className="flex gap-1">
           {r.isBOGO && (
             <Badge variant="warning" className="text-xs gap-0.5">
@@ -173,18 +173,18 @@ function RecipesPage() {
       ),
     },
     {
-      key: "basePrice",
+      accessorKey: "basePrice",
       header: "Harga Dasar",
       align: "right",
-      sortable: true,
-      render: (r) => `Rp ${r.basePrice.toLocaleString("id-ID")}`,
+      enableSorting: true,
+      cell: (r) => `Rp ${r.basePrice.toLocaleString("id-ID")}`,
     },
     {
-      key: "totalCogs",
+      accessorKey: "totalCogs",
       header: "HPP Total",
       align: "right",
-      sortable: true,
-      render: (r) => {
+      enableSorting: true,
+      cell: (r) => {
         const pct = r.totalCogs > 0 && r.basePrice > 0 ? (r.totalCogs / r.basePrice) * 100 : 0;
         return (
           <div className="flex items-center gap-1.5 justify-end">
@@ -199,20 +199,20 @@ function RecipesPage() {
       },
     },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <Badge variant={r.status === "Active" ? "success" : "secondary"}>
           {r.status === "Active" ? "Aktif" : "Nonaktif"}
         </Badge>
       ),
     },
     {
-      key: "id",
+      accessorKey: "id",
       header: "",
       width: "w-12",
-      render: (r) => (
+      cell: (r) => (
         <Link
           to="/recipes/$recipeId"
           params={{ recipeId: r.id }}

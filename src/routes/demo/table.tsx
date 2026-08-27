@@ -2,12 +2,12 @@ import React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  sortingFns,
-  useReactTable,
+  createCoreRowModel,
+  createFilteredRowModel,
+  createPaginatedRowModel,
+  createSortedRowModel,
+  sortFns,
+  useTable,
 } from "@tanstack/react-table";
 import { compareItems, rankItem } from "@tanstack/match-sorter-utils";
 
@@ -70,7 +70,7 @@ const fuzzySort: SortingFn<any> = (rowA, rowB, columnId) => {
   }
 
   // Provide an alphanumeric fallback for when the item ranks are equal
-  return dir === 0 ? sortingFns.alphanumeric(rowA, rowB, columnId) : dir;
+  return dir === 0 ? sortFns.alphanumeric(rowA, rowB, columnId) : dir;
 };
 
 function TableDemo() {
@@ -113,7 +113,7 @@ function TableDemo() {
   const [data, setData] = React.useState<Person[]>(() => makeData(5_000));
   const refreshData = () => setData((_old) => makeData(50_000)); //stress test
 
-  const table = useReactTable({
+  const table = useTable({
     data,
     columns,
     filterFns: {
@@ -126,10 +126,12 @@ function TableDemo() {
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
     globalFilterFn: "fuzzy", //apply fuzzy filter to the global filter (most common use case for fuzzy filter)
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(), //client side filtering
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    rowModelFns: {
+      core: createCoreRowModel(),
+      filtered: createFilteredRowModel(), // client side filtering
+      sorted: createSortedRowModel(),
+      paginated: createPaginatedRowModel(),
+    },
     debugTable: true,
     debugHeaders: true,
     debugColumns: false,

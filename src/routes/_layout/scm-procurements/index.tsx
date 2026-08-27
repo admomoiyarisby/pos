@@ -12,7 +12,7 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Plus, Eye, FileText } from "lucide-react";
 import { listProcurements } from "#/lib/server/scm-queries";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { SCM_PROCUREMENT_STATUS_VALUES, type ScmProcurementStatus } from "#/lib/server/scm-fsm";
 import type { UnknownRecord } from "#/lib/unknown-record";
 
@@ -95,18 +95,22 @@ const FORWARD_EVENTS = new Set([
 // ?status=. (ADR 0004 §2)
 type FilterKey = "all" | ScmProcurementStatus;
 
-const FILTER_TABS: { key: FilterKey; label: string; annotation?: string }[] = [
-  { key: "all", label: "Semua" },
-  { key: "Draft", label: "Draft", annotation: "cabang: edit & kirim" },
-  { key: "Pending", label: "Menunggu Review", annotation: "admin pusat: buka review" },
-  { key: "UnderReview", label: "Sedang Direview", annotation: "admin pusat: review item" },
-  { key: "InTransit", label: "Dalam Pengiriman", annotation: "cabang: terima barang" },
-  { key: "Delivered", label: "Sudah Dikirim", annotation: "cabang: periksa barang" },
-  { key: "ReviewingSJ", label: "Review Cabang", annotation: "cabang: konfirmasi jumlah" },
-  { key: "WaitingForPayment", label: "Pembayaran", annotation: "admin pusat: tandai bayar" },
-  { key: "Finished", label: "Lunas", annotation: "selesai" },
-  { key: "Cancelled", label: "Dibatalkan", annotation: "batal" },
-  { key: "Rejected", label: "Ditolak", annotation: "batal" },
+const FILTER_TABS: { accessorKey: FilterKey; label: string; annotation?: string }[] = [
+  { accessorKey: "all", label: "Semua" },
+  { accessorKey: "Draft", label: "Draft", annotation: "cabang: edit & kirim" },
+  { accessorKey: "Pending", label: "Menunggu Review", annotation: "admin pusat: buka review" },
+  { accessorKey: "UnderReview", label: "Sedang Direview", annotation: "admin pusat: review item" },
+  { accessorKey: "InTransit", label: "Dalam Pengiriman", annotation: "cabang: terima barang" },
+  { accessorKey: "Delivered", label: "Sudah Dikirim", annotation: "cabang: periksa barang" },
+  { accessorKey: "ReviewingSJ", label: "Review Cabang", annotation: "cabang: konfirmasi jumlah" },
+  {
+    accessorKey: "WaitingForPayment",
+    label: "Pembayaran",
+    annotation: "admin pusat: tandai bayar",
+  },
+  { accessorKey: "Finished", label: "Lunas", annotation: "selesai" },
+  { accessorKey: "Cancelled", label: "Dibatalkan", annotation: "batal" },
+  { accessorKey: "Rejected", label: "Ditolak", annotation: "batal" },
 ];
 
 function ProcurementsListPage() {
@@ -149,9 +153,9 @@ function ProcurementsListPage() {
     });
   };
 
-  const columns: Column<ProcurementRow>[] = [
+  const columns: ColumnDef<ProcurementRow>[] = [
     {
-      key: "code",
+      accessorKey: "code",
       header: "Kode",
       render: (row) => (
         <Link
@@ -164,34 +168,34 @@ function ProcurementsListPage() {
       ),
     },
     {
-      key: "branchName",
+      accessorKey: "branchName",
       header: "Cabang",
       render: (row) => row.branchName ?? "-",
     },
     {
-      key: "requestedByName",
+      accessorKey: "requestedByName",
       header: "Pemohon",
       render: (row) => row.requestedByName ?? "-",
     },
     {
-      key: "requestSource",
+      accessorKey: "requestSource",
       header: "Sumber",
       render: (row) => (
         <span className="text-xs text-muted-foreground">{row.requestSource ?? "System"}</span>
       ),
     },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
       render: (row) => <Badge variant={statusColors[row.status]}>{statusLabels[row.status]}</Badge>,
     },
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Tanggal",
       render: (row) => new Date(row.createdAt).toLocaleDateString("id-ID"),
     },
     {
-      key: "actions",
+      accessorKey: "actions",
       header: "Aksi",
       render: (row) => (
         <Link to="/scm-procurements/$procurementId" params={{ procurementId: row.id }}>
@@ -217,8 +221,8 @@ function ProcurementsListPage() {
       const events = row.availableEvents ?? [];
       const isActionable = events.some((e) => FORWARD_EVENTS.has(e));
       if (isActionable) {
-        const key: FilterKey = row.status;
-        counts[key] = (counts[key] ?? 0) + 1;
+        const statusKey: FilterKey = row.status;
+        counts[statusKey] = (counts[statusKey] ?? 0) + 1;
         total++;
       }
     }

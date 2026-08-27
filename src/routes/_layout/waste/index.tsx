@@ -24,7 +24,7 @@ import { getWasteEntries, createWasteEntry, addInvestigationNote } from "#/lib/s
 import { getIngredients } from "#/lib/server/ingredients";
 import { getInventory } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { getFinancialClassificationLabel } from "#/lib/waste-categories";
 
@@ -351,13 +351,13 @@ function WastePage() {
   // Branch admins must not see the HPP-derived valuation (qty × averageCost).
   const isBranchAdmin = user?.role === "branch_admin";
 
-  const columns: Column<WasteRow>[] = [
+  const columns: ColumnDef<WasteRow>[] = [
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Waktu",
       width: "w-36",
-      sortable: true,
-      render: (r) =>
+      enableSorting: true,
+      cell: (r) =>
         new Date(r.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
           month: "short",
@@ -365,13 +365,13 @@ function WastePage() {
           minute: "2-digit",
         }),
     },
-    { key: "branchName", header: "Cabang", sortable: true },
-    { key: "ingredientName", header: "Bahan", sortable: true },
+    { accessorKey: "branchName", header: "Cabang", enableSorting: true },
+    { accessorKey: "ingredientName", header: "Bahan", enableSorting: true },
     {
-      key: "category",
+      accessorKey: "category",
       header: "Kategori",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <div className="space-y-0.5">
           <Badge variant={catColors[r.category]}>{r.category}</Badge>
           {r.category === "Denda" && r.staffName && (
@@ -384,12 +384,12 @@ function WastePage() {
       ),
     },
     {
-      key: "quantity",
+      accessorKey: "quantity",
       header: "Qty",
       align: "right",
       width: "w-24",
-      sortable: true,
-      render: (r) => {
+      enableSorting: true,
+      cell: (r) => {
         const currentInv = r.currentInventoryQty ?? 0;
         const wastePercentage =
           currentInv + r.quantity > 0 ? (r.quantity / (currentInv + r.quantity)) * 100 : 0;
@@ -409,20 +409,20 @@ function WastePage() {
       ? []
       : [
           {
-            key: "valuation",
+            accessorKey: "valuation",
             header: "Nilai Kerugian",
             align: "right" as const,
             width: "w-32",
-            sortable: true,
-            render: (r: WasteRow) => formatRupiah(r.valuation),
+            enableSorting: true,
+            cell: ({ row: _row }: WasteRow) => formatRupiah(r.valuation),
           },
         ]),
-    { key: "notes", header: "Keterangan", render: (r) => r.notes ?? "-" },
+    { accessorKey: "notes", header: "Keterangan", cell: (r) => r.notes ?? "-" },
     {
-      key: "investigation",
+      accessorKey: "investigation",
       header: "Investigasi",
       width: "w-48",
-      render: (r) => {
+      cell: (r) => {
         const currentInv = r.currentInventoryQty ?? 0;
         const wastePercentage =
           currentInv + r.quantity > 0 ? (r.quantity / (currentInv + r.quantity)) * 100 : 0;

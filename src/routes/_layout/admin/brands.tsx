@@ -12,7 +12,7 @@ import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
 import { getBrands, createBrand, updateBrand, deleteBrand } from "#/lib/server/brands";
 import { toast } from "sonner";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Trash2, AlertTriangle } from "lucide-react";
 
@@ -24,15 +24,15 @@ interface BrandRow {
   status: string;
 }
 
-const columns: Column<BrandRow>[] = [
-  { key: "code", header: "Kode", width: "w-24", sortable: true },
-  { key: "name", header: "Nama Brand", sortable: true },
+const columns: ColumnDef<BrandRow>[] = [
+  { accessorKey: "code", header: "Kode", width: "w-24", enableSorting: true },
+  { accessorKey: "name", header: "Nama Brand", enableSorting: true },
   {
-    key: "status",
+    accessorKey: "status",
     header: "Status",
     width: "w-20",
-    sortable: true,
-    render: (r) =>
+    enableSorting: true,
+    cell: (r) =>
       r.status === "Active" ? (
         <Badge variant="success">Aktif</Badge>
       ) : (
@@ -50,7 +50,7 @@ export const Route = createFileRoute("/_layout/admin/brands")({
 });
 
 function BrandsPage() {
-  const [search, setSearch] = useTableSearch();
+  const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
   const { page, setPage, sort, setSort } = useTableUrlState();
   const { brands: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -59,8 +59,8 @@ function BrandsPage() {
   const [deleteTarget, setDeleteTarget] = useState<BrandRow | null>(null);
 
   const { data: brands } = useQuery({
-    queryKey: ["brands"],
-    queryFn: () => getBrands({ data: {} }),
+    queryKey: ["brands", committedSearch],
+    queryFn: () => getBrands({ data: { search: committedSearch || undefined } }),
     initialData: initial,
   });
 
@@ -133,10 +133,10 @@ function BrandsPage() {
         columns={[
           ...columns,
           {
-            key: "actions",
+            accessorKey: "actions",
             header: "",
             width: "w-12",
-            render: (r) => (
+            cell: (r) => (
               <button
                 type="button"
                 onClick={(e) => {

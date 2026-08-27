@@ -23,7 +23,7 @@ import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { getInventory } from "#/lib/server/inventory";
 import { useAuth } from "#/lib/auth-context";
-import type { Column } from "#/components/ui/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import {
   AlertCircle,
   ArrowRightLeft,
@@ -565,13 +565,13 @@ function YieldTrackingPage() {
     </div>
   );
 
-  const columns: Column<ProductionRow>[] = [
+  const columns: ColumnDef<ProductionRow>[] = [
     {
-      key: "productionDate",
+      accessorKey: "productionDate",
       header: "Tanggal Produksi",
       width: "w-32",
-      sortable: true,
-      render: (r) =>
+      enableSorting: true,
+      cell: (r) =>
         new Date(r.productionDate ?? r.createdAt).toLocaleDateString("id-ID", {
           day: "2-digit",
           month: "short",
@@ -579,44 +579,49 @@ function YieldTrackingPage() {
         }),
     },
     {
-      key: "createdAt",
+      accessorKey: "createdAt",
       header: "Jam Input",
       width: "w-24",
-      sortable: true,
-      render: (r) =>
+      enableSorting: true,
+      cell: (r) =>
         new Date(r.createdAt).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit" }),
     },
     {
-      key: "branchName",
+      accessorKey: "branchName",
       header: "Cabang",
       width: "w-40",
-      sortable: true,
-      render: (r) => (
+      enableSorting: true,
+      cell: (r) => (
         <div className="space-y-0.5">
           <span className="font-medium">{r.branchName ?? "-"}</span>
           <div className="text-xs text-muted-foreground">{r.recordedByName ?? "-"}</div>
         </div>
       ),
     },
-    { key: "out", header: "Barang Keluar", sortable: false, render: (r) => itemList(r.out) },
     {
-      key: "produced",
+      accessorKey: "out",
+      header: "Barang Keluar",
+      enableSorting: false,
+      cell: (r) => itemList(r.out),
+    },
+    {
+      accessorKey: "produced",
       header: "Barang Dihasilkan",
-      sortable: false,
-      render: (r) => itemList(r.produced),
+      enableSorting: false,
+      cell: (r) => itemList(r.produced),
     },
     {
-      key: "notes",
+      accessorKey: "notes",
       header: "Catatan",
-      sortable: false,
-      render: (r) => <span className="text-muted-foreground">{r.notes ?? "-"}</span>,
+      enableSorting: false,
+      cell: (r) => <span className="text-muted-foreground">{r.notes ?? "-"}</span>,
     },
     {
-      key: "status",
+      accessorKey: "status",
       header: "Status",
       width: "w-28",
-      sortable: true,
-      render: (r) => {
+      enableSorting: true,
+      cell: (r) => {
         const pending = pendingByYield.get(r.id);
         if (r.status === "Cancelled")
           return (
@@ -665,11 +670,11 @@ function YieldTrackingPage() {
       },
     },
     {
-      key: "actions",
+      accessorKey: "actions",
       header: "Aksi",
       width: "w-40",
-      sortable: false,
-      render: (r) => {
+      enableSorting: false,
+      cell: (r) => {
         const pending = pendingByYield.get(r.id);
         const isCancelled = r.status === "Cancelled";
         if (isCancelled) return <span className="text-xs text-muted-foreground">—</span>;
