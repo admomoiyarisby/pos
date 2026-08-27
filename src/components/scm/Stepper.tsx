@@ -46,8 +46,11 @@ export function ScmStepper({
   const offRampIndex = isOffRamp ? (offRampAttach[currentKey] ?? 0) : -1;
 
   return (
-    <nav aria-label={ariaLabel} className="rounded-md border bg-background p-4">
-      <ol className="flex items-center gap-2 overflow-x-auto">
+    <nav
+      aria-label={ariaLabel}
+      className="rounded-xl sm:rounded-md border bg-background p-3 sm:p-4 shadow-xs"
+    >
+      <ol className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden snap-x snap-mandatory -mx-1 px-1 sm:mx-0 sm:px-0">
         {steps.map((step, idx) => {
           const isCompleted = !isOffRamp && idx < currentIndex;
           const isCurrent = !isOffRamp && idx === currentIndex;

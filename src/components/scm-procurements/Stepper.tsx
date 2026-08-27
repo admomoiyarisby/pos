@@ -44,9 +44,9 @@ export function Stepper({ currentStatus }: StepperProps) {
   return (
     <nav
       aria-label="Procurement lifecycle progress"
-      className="rounded-md border bg-background p-4"
+      className="rounded-xl sm:rounded-md border bg-background p-3 sm:p-4 shadow-xs"
     >
-      <ol className="flex items-center gap-2 overflow-x-auto">
+      <ol className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden snap-x snap-mandatory -mx-1 px-1 sm:mx-0 sm:px-0">
         {HAPPY_PATH.map((step, idx) => {
           const isCompleted = !isOffRamp && idx < currentIndex;
           const isCurrent = !isOffRamp && idx === currentIndex;

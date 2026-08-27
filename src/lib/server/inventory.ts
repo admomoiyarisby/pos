@@ -11,8 +11,8 @@ import {
   systemNotifications,
   areaManagerBranches,
 } from "#/db/schema";
-import { eq, and, desc, asc, count, inArray, sql } from "drizzle-orm";
-import { fuzzySearch } from "./fuzzy";
+import { eq, and, desc, asc, count, inArray, sql, ilike } from "drizzle-orm";
+import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, buildPrintHtml } from "./html-utils";
@@ -42,49 +42,73 @@ export const getInventory = createServerFn({ method: "GET" })
       branchFilter = user.branchId;
     }
 
+    // Ensure pg_trgm is available for similarity(); ignore if the DB user lacks CREATE privilege
+    // (the fallback ILIKE path below will keep search usable).
+    try {
+      await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+    } catch {
+      // ignore - will fallback to ILIKE-only search if similarity() is missing
+    }
+
+    const buildSearchCondition = (term: string) =>
+      fuzzySearch([ingredients.name, ingredients.code], term);
+    const buildFallbackSearchCondition = (term: string) =>
+      sql`(${ilike(ingredients.name, `%${term}%`)} OR ${ilike(ingredients.code, `%${term}%`)})`;
+
+    let useFallback = false;
     const conditions = [
       branchFilter ? eq(inventory.branchId, branchFilter) : undefined,
-      data.search ? fuzzySearch(ingredients.name, data.search) : undefined,
+      data.search ? buildSearchCondition(data.search) : undefined,
       data.category ? eq(ingredients.category, data.category) : undefined,
       data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
       data.locationType ? eq(branches.type, data.locationType) : undefined, // ID18
       data.negative ? sql`${inventory.quantity} <= 0` : undefined,
     ];
-    const where = and(...conditions.filter(Boolean));
+    let where = and(...conditions.filter(Boolean));
 
-    // Get total count
-    const [totalResult] = await db
-      .select({ total: count() })
-      .from(inventory)
-      .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
-      .leftJoin(branches, eq(inventory.branchId, branches.id))
-      .where(where);
+    // Get total count — retry with ILIKE-only if pg_trgm/similarity() is unavailable
+    let totalResult: { total: number } | undefined;
+    try {
+      [totalResult] = await db
+        .select({ total: count() })
+        .from(inventory)
+        .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
+        .leftJoin(branches, eq(inventory.branchId, branches.id))
+        .where(where);
+    } catch (e) {
+      // SAFETY: caught value is unknown, narrow to Error to read message for pg_trgm fallback
+      const msg = String((e as Error)?.message ?? e);
+      if (data.search && (msg.includes("similarity") || msg.includes("pg_trgm"))) {
+        useFallback = true;
+        const fallbackConditions = [
+          branchFilter ? eq(inventory.branchId, branchFilter) : undefined,
+          data.search ? buildFallbackSearchCondition(data.search) : undefined,
+          data.category ? eq(ingredients.category, data.category) : undefined,
+          data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
+          data.locationType ? eq(branches.type, data.locationType) : undefined,
+          data.negative ? sql`${inventory.quantity} <= 0` : undefined,
+        ];
+        where = and(...fallbackConditions.filter(Boolean));
+        [totalResult] = await db
+          .select({ total: count() })
+          .from(inventory)
+          .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
+          .leftJoin(branches, eq(inventory.branchId, branches.id))
+          .where(where);
+      } else {
+        throw e;
+      }
+    }
 
     const total = totalResult?.total ?? 0;
     const limit = data.limit ? Math.min(data.limit, 1000) : 50;
     const offset = (data.page ?? 0) * limit;
 
-    const result = await db
-      .select({
-        id: inventory.id,
-        branchId: inventory.branchId,
-        ingredientId: inventory.ingredientId,
-        quantity: inventory.quantity,
-        lastUpdated: inventory.lastUpdated,
-        ingredientName: ingredients.name,
-        ingredientCode: ingredients.code,
-        ingredientCategory: ingredients.category,
-        ingredientSkuType: ingredients.skuType,
-        purchaseUnit: ingredients.purchaseUnit,
-        stockUnit: ingredients.stockUnit,
-        branchName: branches.name,
-      })
-      .from(inventory)
-      .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
-      .leftJoin(branches, eq(inventory.branchId, branches.id))
-      .where(where)
-      .orderBy(
-        (() => {
+    const orderByExpr = data.search
+      ? useFallback
+        ? asc(ingredients.name)
+        : fuzzyRank([ingredients.name, ingredients.code], data.search)
+      : (() => {
           const dir = data.sortOrder === "desc" ? desc : asc;
           switch (data.sortBy) {
             case "ingredientCode":
@@ -102,10 +126,63 @@ export const getInventory = createServerFn({ method: "GET" })
             default:
               return asc(ingredients.name);
           }
-        })(),
-      )
-      .limit(limit)
-      .offset(offset);
+        })();
+
+    let result;
+    try {
+      result = await db
+        .select({
+          id: inventory.id,
+          branchId: inventory.branchId,
+          ingredientId: inventory.ingredientId,
+          quantity: inventory.quantity,
+          lastUpdated: inventory.lastUpdated,
+          ingredientName: ingredients.name,
+          ingredientCode: ingredients.code,
+          ingredientCategory: ingredients.category,
+          ingredientSkuType: ingredients.skuType,
+          purchaseUnit: ingredients.purchaseUnit,
+          stockUnit: ingredients.stockUnit,
+          branchName: branches.name,
+        })
+        .from(inventory)
+        .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
+        .leftJoin(branches, eq(inventory.branchId, branches.id))
+        .where(where)
+        .orderBy(orderByExpr)
+        .limit(limit)
+        .offset(offset);
+    } catch (e) {
+      // SAFETY: caught value is unknown, narrow to Error to read message for pg_trgm fallback
+      const msg = String((e as Error)?.message ?? e);
+      if (data.search && !useFallback && (msg.includes("similarity") || msg.includes("pg_trgm"))) {
+        // Fallback already prepared for count; reuse ILIKE ranking (simple name order)
+        result = await db
+          .select({
+            id: inventory.id,
+            branchId: inventory.branchId,
+            ingredientId: inventory.ingredientId,
+            quantity: inventory.quantity,
+            lastUpdated: inventory.lastUpdated,
+            ingredientName: ingredients.name,
+            ingredientCode: ingredients.code,
+            ingredientCategory: ingredients.category,
+            ingredientSkuType: ingredients.skuType,
+            purchaseUnit: ingredients.purchaseUnit,
+            stockUnit: ingredients.stockUnit,
+            branchName: branches.name,
+          })
+          .from(inventory)
+          .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
+          .leftJoin(branches, eq(inventory.branchId, branches.id))
+          .where(where)
+          .orderBy(asc(ingredients.name))
+          .limit(limit)
+          .offset(offset);
+      } else {
+        throw e;
+      }
+    }
 
     return { data: result, total };
   });

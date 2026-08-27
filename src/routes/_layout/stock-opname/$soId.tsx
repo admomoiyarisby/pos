@@ -45,9 +45,6 @@ function StockOpnameDetailPage() {
   const { soId } = Route.useParams();
   const queryClient = useQueryClient();
   const cacheKey = `so-edit-${soId}`;
-  // ADR 0011: silent local persistence of in-progress physical counts. The SO is an
-  // entity-detail screen, so the draft is unambiguously "our work on this SO" — restore
-  // silently. Legacy caches (pre-wrapper format) are dropped by the hook's read guard.
   const initialDraft: StockOpnameDraft = {
     // SAFETY: empty collections are seeded as the starting draft value; the
     // shape is pinned by the named StockOpnameDraft contract below.
@@ -133,7 +130,6 @@ function StockOpnameDetailPage() {
     },
   });
 
-  // ID12: Realize SO mutation
   const realizeMutation = useMutation({
     mutationFn: realizeStockOpname,
     onSuccess: (result) => {
@@ -162,7 +158,6 @@ function StockOpnameDetailPage() {
   const canMarkInvestigation =
     detail.status === "Submitted" && ["super_admin", "area_manager"].includes(user?.role ?? "");
 
-  // ID12: Can realize SO only on 25th, for admin_pusat/super_admin, when status is Approved
   const today = new Date();
   const is25th = today.getDate() === 25;
   const canRealize =
@@ -182,7 +177,6 @@ function StockOpnameDetailPage() {
   };
 
   const buildItems = () => {
-    // 1. Check that EVERY item has an explicit entry in physicalInputs
     const missingItems = detail.items.filter((item: any) => physicalInputs[item.id] === undefined);
     if (missingItems.length > 0) {
       setSubmitError(
@@ -190,20 +184,15 @@ function StockOpnameDetailPage() {
       );
       return null;
     }
-
-    // 2. Build payload only from explicitly entered values
     const items = detail.items.map((item: any) => ({
       itemId: item.id,
       physicalStock: Number(physicalInputs[item.id]),
     }));
-
-    // 3. Validate all values are valid non-negative numbers
     const hasInvalid = items.some((i) => isNaN(i.physicalStock) || i.physicalStock < 0);
     if (hasInvalid) {
       setSubmitError("Stok fisik tidak valid. Pastikan semua nilai adalah angka non-negatif.");
       return null;
     }
-
     return items;
   };
 
@@ -227,12 +216,10 @@ function StockOpnameDetailPage() {
     });
   };
 
-  // Dev-only: auto-fill stock numbers for testing
   const handleDebugFill = () => {
     const newInputs: Record<string, string> = {};
     const newTouched: string[] = [];
     for (const item of detail.items) {
-      // Generate truly random positive number (0 to 2x system stock)
       const maxStock = Math.max(item.systemStock * 2, 100);
       const physicalStock = Math.floor(Math.random() * maxStock);
       newInputs[item.id] = String(physicalStock);
@@ -253,6 +240,12 @@ function StockOpnameDetailPage() {
     });
   };
 
+  const filledCount = Object.keys(physicalInputs).filter(
+    (k) => physicalInputs[k] !== "" && physicalInputs[k] !== undefined,
+  ).length;
+  const totalCount = detail.items.length;
+  const progressPct = totalCount ? Math.round((filledCount / totalCount) * 100) : 0;
+
   return (
     <RoleGuard
       allowedRoles={[
@@ -263,18 +256,55 @@ function StockOpnameDetailPage() {
         "central_kitchen",
       ]}
     >
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Tanggal: {detail.date} · Cabang: {detail.branchName}
-            </p>
+      <div className="space-y-4">
+        {/* Header card — stacked on mobile */}
+        <div className="rounded-xl border bg-card p-3.5 sm:p-4 shadow-xs">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
+                Opname Stok
+              </div>
+              <div className="text-sm font-semibold truncate">
+                {detail.date} · {detail.branchName}
+              </div>
+              <div className="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden sm:hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground tabular-nums sm:hidden">
+                {filledCount}/{totalCount} terisi • {progressPct}%
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1.5 shrink-0">
+              <Badge
+                variant={statusColors[detail.status] ?? "default"}
+                className="rounded-full px-3 py-1 text-xs"
+              >
+                {detail.status === "Under Investigation" ? "Investigasi" : detail.status}
+              </Badge>
+              {isBlind && (
+                <Badge variant="outline" className="rounded-full text-[11px]">
+                  Blind SO
+                </Badge>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Badge variant={statusColors[detail.status] ?? "default"}>
-              {detail.status === "Under Investigation" ? "Investigasi" : detail.status}
-            </Badge>
-            {isBlind && <Badge variant="outline">Blind SO</Badge>}
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+              <span>
+                {filledCount}/{totalCount} terisi
+              </span>
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+              <span>{progressPct}%</span>
+              <div className="ml-2 h-1.5 w-24 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </div>
             <button
               type="button"
               onClick={async () => {
@@ -287,7 +317,7 @@ function StockOpnameDetailPage() {
                   });
                 }
               }}
-              className="h-8 px-3 rounded-md border text-xs font-medium hover:bg-muted transition-colors"
+              className="inline-flex items-center justify-center h-8 px-3 rounded-lg sm:rounded-md border bg-background text-xs font-medium hover:bg-muted transition-colors shrink-0"
             >
               Cetak PDF
             </button>
@@ -295,12 +325,107 @@ function StockOpnameDetailPage() {
         </div>
 
         {submitError && (
-          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
             {submitError}
           </div>
         )}
 
-        <div className="rounded-md border overflow-x-auto">
+        {/* Mobile cards */}
+        <div className="md:hidden space-y-2.5 -mx-4 px-4">
+          {detail.items.map((item: any, idx: number) => {
+            const inputValue =
+              physicalInputs[item.id] ?? (item.physicalStock > 0 ? String(item.physicalStock) : "");
+            const variance = !isBlind ? Number(inputValue || 0) - item.systemStock : 0;
+            const hasVariance = !isBlind && inputValue !== "" && variance !== 0;
+            const isEmpty = inputValue === "";
+            const isTouched = touchedItems.includes(item.id);
+            return (
+              <div
+                key={item.id}
+                className={`rounded-xl border bg-card p-3.5 shadow-xs ${hasVariance ? "border-warning/30 bg-warning/5" : ""} ${isEmpty && detail.status !== "Approved" ? "ring-1 ring-warning/20" : ""}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted text-[11px] font-medium">
+                        {idx + 1}
+                      </span>
+                      <span className="font-mono text-xs text-muted-foreground truncate">
+                        {item.ingredientCode}
+                      </span>
+                      {!isBlind && hasVariance && (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${variance > 0 ? "bg-success/15 text-success-foreground" : "bg-destructive/10 text-destructive"}`}
+                        >
+                          {variance > 0
+                            ? `+${variance.toLocaleString("id-ID")}`
+                            : variance.toLocaleString("id-ID")}
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-medium text-sm truncate mt-1">{item.ingredientName}</div>
+                    {!isBlind && (
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        Sistem:{" "}
+                        <span className="font-mono font-medium text-foreground">
+                          {item.systemStock.toLocaleString("id-ID")}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {isTouched && (
+                    <span
+                      className="shrink-0 h-2 w-2 rounded-full bg-success mt-1"
+                      aria-label="terisi"
+                    />
+                  )}
+                </div>
+                <div className="mt-3">
+                  <label className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
+                    Stok Fisik
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={inputValue}
+                    onChange={(e) => handleInputChange(item.id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const inputs = Array.from(
+                          document.querySelectorAll<HTMLInputElement>("input[inputmode='numeric']"),
+                        );
+                        const currentIdx = inputs.indexOf(e.currentTarget);
+                        if (currentIdx < inputs.length - 1) {
+                          inputs[currentIdx + 1].focus();
+                          inputs[currentIdx + 1].select();
+                        }
+                      }
+                    }}
+                    disabled={detail.status === "Approved"}
+                    aria-label={`${item.ingredientName} stok fisik`}
+                    placeholder="0"
+                    className={cn(
+                      "mt-1 h-12 w-full rounded-xl border bg-background px-3 text-base font-medium tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+                      !isTouched && detail.status !== "Approved"
+                        ? "border-warning/40 bg-warning/10"
+                        : "border-input",
+                    )}
+                  />
+                </div>
+              </div>
+            );
+          })}
+          {detail.items.length === 0 && (
+            <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+              Tidak ada item
+            </div>
+          )}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden md:block rounded-md border overflow-x-auto">
           <table className="w-full text-sm min-w-[480px]">
             <thead className="border-b bg-muted/50">
               <tr>
@@ -317,9 +442,8 @@ function StockOpnameDetailPage() {
                 const inputValue =
                   physicalInputs[item.id] ??
                   (item.physicalStock > 0 ? String(item.physicalStock) : "");
-                const variance = !isBlind ? Number(inputValue) - item.systemStock : 0;
-                const hasVariance = !isBlind && variance !== 0;
-
+                const variance = !isBlind ? Number(inputValue || 0) - item.systemStock : 0;
+                const hasVariance = !isBlind && inputValue !== "" && variance !== 0;
                 return (
                   <tr key={item.id} className={`border-b ${hasVariance ? "bg-warning/10" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground">{idx + 1}</td>
@@ -366,8 +490,9 @@ function StockOpnameDetailPage() {
                       <td
                         className={`px-4 py-3 text-right font-medium ${variance > 0 ? "text-success-foreground" : variance < 0 ? "text-destructive" : ""}`}
                       >
-                        {variance > 0 ? "+" : ""}
-                        {variance.toLocaleString("id-ID")}
+                        {inputValue !== ""
+                          ? `${variance > 0 ? "+" : ""}${variance.toLocaleString("id-ID")}`
+                          : "—"}
                       </td>
                     )}
                   </tr>
@@ -384,17 +509,15 @@ function StockOpnameDetailPage() {
           </table>
         </div>
 
-        {/* Investigation Note (if exists) */}
         {detail.investigationNote && (
-          <div className="rounded-md bg-warning/10 border border-warning/20 p-4">
+          <div className="rounded-xl bg-warning/10 border border-warning/20 p-4">
             <p className="text-sm font-medium text-warning-foreground mb-1">Catatan Investigasi</p>
             <p className="text-sm text-warning-foreground/80">{detail.investigationNote}</p>
           </div>
         )}
 
-        {/* Nasi Conversion Display */}
         {detail.items.some((item: any) => item.isNasi) && (
-          <div className="rounded-md border bg-blue-50/50 p-4">
+          <div className="rounded-xl border bg-blue-50/50 p-4 shadow-xs">
             <p className="text-sm font-medium mb-2">Konversi Nasi Putih → Bahan Baku</p>
             <p className="text-xs text-muted-foreground mb-3">
               Stok fisik Nasi akan dikonversi ke bahan baku saat Realize SO.
@@ -410,7 +533,10 @@ function StockOpnameDetailPage() {
                     <div className="text-sm font-medium">{numPortions} porsi Nasi Putih</div>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                       {conversions.map((conv) => (
-                        <div key={conv.ingredientName} className="text-xs">
+                        <div
+                          key={conv.ingredientName}
+                          className="text-xs rounded-lg bg-background border px-2.5 py-2"
+                        >
                           <span className="text-muted-foreground">{conv.ingredientName}:</span>
                           <span className="ml-1 font-medium">
                             {conv.totalAmount.toLocaleString("id-ID")} {conv.unit}
@@ -424,69 +550,64 @@ function StockOpnameDetailPage() {
           </div>
         )}
 
-        {/* Actions */}
-        <div className="flex items-center justify-between gap-3">
-          {canSubmit && (
-            <button
-              onClick={handleSubmit}
-              disabled={submitMutation.isPending}
-              className="h-10 px-6 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-            >
-              {submitMutation.isPending ? "Menyimpan..." : "Simpan Opname"}
-            </button>
-          )}
-
-          {canMarkInvestigation && (
-            <button
-              onClick={() => setInvestigationModal(true)}
-              className="h-8 px-3 rounded-md bg-warning text-warning-foreground text-xs font-medium hover:bg-warning/90"
-            >
-              Tandai Investigasi
-            </button>
-          )}
-
-          {canUpdate && (
-            <button
-              onClick={handleUpdateCounts}
-              disabled={updateCountsMutation.isPending}
-              className="h-8 px-3 rounded-md bg-warning text-warning-foreground text-xs font-medium hover:bg-warning/90 disabled:opacity-50"
-            >
-              {updateCountsMutation.isPending ? "Memperbarui..." : "Perbarui Hitungan"}
-            </button>
-          )}
-
-          {canApprove && detail.status !== "Approved" && (
-            <button
-              onClick={() => setApproveModal(true)}
-              className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-medium"
-            >
-              Setujui & Sesuaikan
-            </button>
-          )}
-
-          {/* ID12: Realize SO button - only on 25th for admin_pusat/super_admin */}
-          {canRealize && (
-            <button
-              onClick={() => setRealizeModal(true)}
-              disabled={realizeMutation.isPending}
-              className="h-8 px-3 rounded-md bg-green-600 text-white text-xs font-medium hover:bg-green-700 disabled:opacity-50"
-            >
-              {realizeMutation.isPending ? "Memproses..." : "Realize SO"}
-            </button>
-          )}
-
-          {/* Show info when SO is already realized */}
+        {/* Actions — sticky on mobile */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sticky bottom-0 bg-background -mx-4 px-4 sm:mx-0 sm:px-0 py-3 sm:py-0 border-t sm:border-0 z-10 safe-bottom">
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            {canSubmit && (
+              <button
+                onClick={handleSubmit}
+                disabled={submitMutation.isPending}
+                className="inline-flex items-center justify-center h-11 sm:h-10 px-6 rounded-xl sm:rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 w-full sm:w-auto shadow-sm"
+              >
+                {submitMutation.isPending ? "Menyimpan..." : "Simpan Opname"}
+              </button>
+            )}
+            {canUpdate && (
+              <button
+                onClick={handleUpdateCounts}
+                disabled={updateCountsMutation.isPending}
+                className="inline-flex items-center justify-center h-11 sm:h-10 px-4 rounded-xl sm:rounded-md bg-warning text-warning-foreground text-sm font-medium hover:bg-warning/90 disabled:opacity-50 w-full sm:w-auto"
+              >
+                {updateCountsMutation.isPending ? "Memperbarui..." : "Perbarui Hitungan"}
+              </button>
+            )}
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto sm:justify-end">
+            {canMarkInvestigation && (
+              <button
+                onClick={() => setInvestigationModal(true)}
+                className="inline-flex items-center justify-center h-11 sm:h-10 px-4 rounded-xl sm:rounded-md bg-warning text-warning-foreground text-sm font-medium hover:bg-warning/90 w-full sm:w-auto"
+              >
+                Tandai Investigasi
+              </button>
+            )}
+            {canApprove && detail.status !== "Approved" && (
+              <button
+                onClick={() => setApproveModal(true)}
+                className="inline-flex items-center justify-center h-11 sm:h-10 px-4 rounded-xl sm:rounded-md bg-primary text-primary-foreground text-sm font-medium w-full sm:w-auto shadow-sm"
+              >
+                Setujui & Sesuaikan
+              </button>
+            )}
+            {canRealize && (
+              <button
+                onClick={() => setRealizeModal(true)}
+                disabled={realizeMutation.isPending}
+                className="inline-flex items-center justify-center h-11 sm:h-10 px-4 rounded-xl sm:rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50 w-full sm:w-auto"
+              >
+                {realizeMutation.isPending ? "Memproses..." : "Realize SO"}
+              </button>
+            )}
+          </div>
           {detail.realizedAt && (
-            <div className="text-sm text-muted-foreground">
+            <div className="text-xs text-muted-foreground text-center sm:text-right w-full sm:w-auto">
               Di-realize pada {new Date(detail.realizedAt).toLocaleString("id-ID")}
             </div>
           )}
-
           {isDev && canSubmit && (
             <button
               onClick={handleDebugFill}
-              className="h-10 px-4 rounded-md bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 ml-auto"
-              title="Dev only: Auto-fill with random variance"
+              className="inline-flex items-center justify-center h-11 sm:h-10 px-4 rounded-xl sm:rounded-md bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 w-full sm:w-auto sm:ml-2"
             >
               🐛 Debug Fill
             </button>

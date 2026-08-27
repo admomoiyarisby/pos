@@ -289,8 +289,17 @@ export default function DataTable<T extends RowData>({
               >
                 {headerGroup.headers.map((header, colIdx) => {
                   // SAFETY: tableColumns are created directly from the legacy Column<T> definitions above.
+                  // SAFETY: tableColumns are created directly from the legacy Column<T> definitions above.
                   const col = header.column.columnDef as Column<T>;
                   const colKey = col.key ?? header.column.id;
+                  // SAFETY: Column<T> carries the legacy `sortable` prop; the TanStack ColumnDef
+                  // carries `enableSorting` — check both so migrated columns (`enableSorting: true`)
+                  // and legacy columns (`sortable: true`) both enable the header sort affordance.
+                  const canSort =
+                    (col as { sortable?: boolean }).sortable ??
+                    // SAFETY: same Column<T> invariant — enableSorting is the TanStack-typed flag.
+                    (col as { enableSorting?: boolean }).enableSorting ??
+                    header.column.getCanSort();
                   return (
                     <th
                       key={header.id}
@@ -298,22 +307,22 @@ export default function DataTable<T extends RowData>({
                       className={
                         "h-10 px-3 text-left align-middle font-medium whitespace-nowrap min-w-[80px] " +
                         (col.width ?? "") +
-                        (col.sortable ? "cursor-pointer select-none " : "") +
+                        (canSort ? "cursor-pointer select-none " : "") +
                         (colIdx === 0 ? stickyClass : "") +
                         " " +
                         (col.cellClassName ?? "") +
                         " " +
-                        (col.sortable && sort?.key === colKey
+                        (canSort && sort?.key === colKey
                           ? "text-foreground"
                           : "text-muted-foreground")
                       }
                       style={{ textAlign: col.align ?? "left" }}
-                      onClick={() => col.sortable && handleSort(colKey)}
+                      onClick={() => canSort && handleSort(colKey)}
                     >
                       {header.isPlaceholder ? null : (
                         <div className="flex items-center gap-1.5">
                           {flexRender(header.column.columnDef.header, header.getContext())}
-                          {col.sortable &&
+                          {canSort &&
                             (sort?.key === colKey ? (
                               sort.dir === "asc" ? (
                                 <ArrowUp className="h-3.5 w-3.5" />

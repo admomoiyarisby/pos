@@ -9,7 +9,7 @@ import RoleGuard from "#/components/RoleGuard";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Building2, ArrowRight, Hash, CalendarDays } from "lucide-react";
 import { getMutasiTransfer } from "#/lib/server/scm-transfers";
 import { canAmAct } from "#/lib/server/scm-transfer-queries";
 import { getBranches } from "#/lib/server/branches";
@@ -112,7 +112,7 @@ function TransferDetailPage() {
   if (isLoading && !result) {
     return (
       <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
-        <div className="space-y-4 p-4 md:p-6">
+        <div className="space-y-4">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-64 w-full" />
@@ -138,12 +138,16 @@ function TransferDetailPage() {
       ? canAmAct({ assignedBranches: user.assignedBranches }, transfer)
       : false;
 
+  const fromName = branchById.get(transfer.fromBranchId)?.name ?? transfer.fromBranchId.slice(0, 8);
+  const toName = branchById.get(transfer.toBranchId)?.name ?? transfer.toBranchId.slice(0, 8);
+
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
-      <div className="space-y-4 p-4 md:p-6">
-        <div className="flex items-center justify-between gap-2">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-2 -mb-1">
           <Button
             variant="ghost"
+            size="sm"
             onClick={() =>
               navigate({
                 to: "/scm-transfers",
@@ -157,27 +161,72 @@ function TransferDetailPage() {
                 }),
               })
             }
-            className="gap-1"
+            className="gap-1.5 -ml-2 h-8 px-2"
           >
             <ArrowLeft className="h-4 w-4" />
             Kembali
           </Button>
-          <Badge variant={badgeVariant(lookupLabel(statusColors, transfer.status))}>
+          <Badge
+            variant={badgeVariant(lookupLabel(statusColors, transfer.status))}
+            className="shrink-0 rounded-full px-3 py-1 text-xs"
+          >
             {lookupLabel(statusLabels, transfer.status) ?? transfer.status}
           </Badge>
         </div>
 
-        <ScmStepper
-          steps={TRANSFER_STEPS}
-          currentKey={transfer.status}
-          offRampKeys={["Rejected", "Cancelled"]}
-          offRampAttach={{ Rejected: 1 }}
-          ariaLabel="Mutasi lifecycle progress"
-          offRampMessage={{
-            Rejected: "Mutasi ini ditolak oleh Area Manager.",
-            Cancelled: "Mutasi ini dibatalkan.",
-          }}
-        />
+        <div className="rounded-xl border bg-card p-3.5 sm:p-4 shadow-xs">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-xs font-medium tracking-widest uppercase text-muted-foreground">
+                <Hash className="h-3 w-3" />
+                Kode Mutasi
+              </div>
+              <div className="font-mono text-base sm:text-lg font-semibold tracking-tight truncate">
+                {transfer.code}
+              </div>
+            </div>
+            <div className="hidden sm:block text-right shrink-0">
+              <div className="text-xs text-muted-foreground">Dibuat</div>
+              <div className="text-xs font-medium tabular-nums">
+                {new Date(transfer.createdAt).toLocaleString("id-ID", {
+                  day: "2-digit",
+                  month: "short",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-1.5 text-xs rounded-lg bg-muted/40 px-2.5 py-2 sm:gap-2 sm:py-2.5">
+            <span className="flex items-center gap-1 font-medium truncate">
+              <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+              {fromName}
+            </span>
+            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="flex items-center gap-1 font-medium truncate">
+              <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+              {toName}
+            </span>
+          </div>
+          <div className="sm:hidden mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
+            <CalendarDays className="h-3 w-3" />
+            {new Date(transfer.createdAt).toLocaleString("id-ID")}
+          </div>
+        </div>
+
+        <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
+          <ScmStepper
+            steps={TRANSFER_STEPS}
+            currentKey={transfer.status}
+            offRampKeys={["Rejected", "Cancelled"]}
+            offRampAttach={{ Rejected: 1 }}
+            ariaLabel="Mutasi lifecycle progress"
+            offRampMessage={{
+              Rejected: "Mutasi ini ditolak oleh Area Manager.",
+              Cancelled: "Mutasi ini dibatalkan.",
+            }}
+          />
+        </div>
 
         <DispatchView
           transfer={transfer}

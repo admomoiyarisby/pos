@@ -40,9 +40,13 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   return <h3 className="text-sm font-medium text-muted-foreground">{children}</h3>;
 }
 
-/** Primary action bar — no Card wrapper, visually subordinate to content */
+/** Primary action bar — thumbs-first: full-width stacked on mobile, sticky bottom */
 function ActionBar({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap items-center gap-2 pt-2">{children}</div>;
+  return (
+    <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end items-stretch sm:items-center gap-2 pt-3 sm:pt-2 sticky bottom-0 bg-background -mx-4 px-4 sm:mx-0 sm:px-0 py-3 sm:py-0 border-t sm:border-0 z-10 safe-bottom">
+      {children}
+    </div>
+  );
 }
 
 /** Divider between major sections */
@@ -395,9 +399,9 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
 
       <div>
         <SectionHeading>Tambah Bahan</SectionHeading>
-        <div className="flex gap-2 mt-2">
+        <div className="flex flex-col sm:flex-row gap-2 mt-2">
           <Select value={newIngredientId} onValueChange={setNewIngredientId}>
-            <SelectTrigger className="flex-1">
+            <SelectTrigger className="flex-1 h-11 sm:h-10 text-[16px] sm:text-sm">
               <SelectValue placeholder="Pilih bahan..." />
             </SelectTrigger>
             <SelectContent>
@@ -417,22 +421,29 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
               )}
             </SelectContent>
           </Select>
-          <Input
-            type="number"
-            min={1}
-            value={newQuantity}
-            onChange={(e) => setNewQuantity(Number(e.target.value))}
-            className="w-32"
-          />
-          <Button
-            onClick={handleAdd}
-            disabled={
-              !newIngredientId || newQuantity <= 0 || addM.isPending || availableToAdd.length === 0
-            }
-          >
-            <Plus className="h-4 w-4" />
-            Tambah Bahan
-          </Button>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              min={1}
+              value={newQuantity}
+              onChange={(e) => setNewQuantity(Number(e.target.value))}
+              className="h-11 sm:h-10 flex-1 sm:w-24 text-base sm:text-sm"
+              inputMode="numeric"
+            />
+            <Button
+              onClick={handleAdd}
+              disabled={
+                !newIngredientId ||
+                newQuantity <= 0 ||
+                addM.isPending ||
+                availableToAdd.length === 0
+              }
+              className="h-11 sm:h-10 px-4 sm:px-3 whitespace-nowrap flex-1 sm:flex-none"
+            >
+              <Plus className="h-4 w-4" />
+              Tambah
+            </Button>
+          </div>
         </div>
         {addM.isError ? (
           <p className="mt-2 text-sm text-destructive">
@@ -482,7 +493,7 @@ export function PendingBaView({ procurement, items }: StateViewProps) {
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-col sm:flex-row sm:justify-end gap-2 [&>button]:w-full sm:[&>button]:w-auto [&>button]:h-11 sm:[&>button]:h-10">
         <Button
           variant="ghost"
           disabled={transitionM.isPending}
@@ -602,18 +613,20 @@ export function UnderReviewCaReview({ procurement, items, showPrices }: StateVie
 
       <SectionDivider />
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex-1">
           <Input
             type="text"
             placeholder="Alasan penolakan (wajib untuk Tolak Semua)"
             value={rejectionReason}
             onChange={(e) => setRejectionReason(e.target.value)}
+            className="h-11 sm:h-10 text-base sm:text-sm"
           />
         </div>
         <ActionBar>
           <Button
             variant="destructive"
+            className="w-full sm:w-auto h-11 sm:h-10"
             disabled={!rejectionReason || transitionM.isPending || updateM.isPending}
             onClick={() =>
               transitionM.mutate({
@@ -626,6 +639,7 @@ export function UnderReviewCaReview({ procurement, items, showPrices }: StateVie
             Tolak Semua
           </Button>
           <Button
+            className="w-full sm:w-auto h-11 sm:h-10"
             disabled={!allDecided || transitionM.isPending || updateM.isPending}
             onClick={handleAcceptAndShip}
             title={
@@ -715,7 +729,7 @@ export function InTransitBaTracking({ procurement, items }: StateViewProps) {
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-col sm:flex-row sm:justify-end gap-2 [&>button]:w-full sm:[&>button]:w-auto [&>button]:h-11 sm:[&>button]:h-10 [&>a]:w-full sm:[&>a]:w-auto">
         <SuratJalanButton procurementId={procurement.id} />
         <Button
           disabled={transitionM.isPending}
@@ -748,18 +762,20 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex-1">
           <Input
             type="text"
             placeholder="Alasan pembatalan (wajib untuk Batalkan)"
             value={cancellationReason}
             onChange={(e) => setCancellationReason(e.target.value)}
+            className="h-11 sm:h-10 text-base sm:text-sm"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <Button
             variant="destructive"
+            className="w-full sm:w-auto h-11 sm:h-10"
             disabled={!cancellationReason || transitionM.isPending}
             onClick={() =>
               transitionM.mutate({
@@ -771,7 +787,9 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
           >
             Batalkan
           </Button>
-          <SuratJalanButton procurementId={procurement.id} label="Cetak Surat Jalan" />
+          <div className="w-full sm:w-auto [&>button]:w-full sm:[&>button]:w-auto [&>button]:h-11 sm:[&>button]:h-10">
+            <SuratJalanButton procurementId={procurement.id} label="Cetak Surat Jalan" />
+          </div>
         </div>
       </div>
       <AuditLogSection procurementId={procurement.id} />
@@ -833,7 +851,7 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
           />
         </CardContent>
       </Card>
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-col sm:flex-row sm:justify-end gap-2 [&>button]:w-full sm:[&>button]:w-auto [&>button]:h-11 sm:[&>button]:h-10 [&>a]:w-full sm:[&>a]:w-auto">
         <SuratJalanButton procurementId={procurement.id} />
         <Button disabled={transitionM.isPending || updateM.isPending} onClick={handleOpenReceive}>
           {updateM.isPending
@@ -921,18 +939,20 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
 
       <SectionDivider />
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex-1">
           <Input
             type="text"
             placeholder="Alasan pembatalan (wajib untuk Batalkan)"
             value={cancellationReason}
             onChange={(e) => setCancellationReason(e.target.value)}
+            className="h-11 sm:h-10 text-base sm:text-sm"
           />
         </div>
         <ActionBar>
           <Button
             variant="destructive"
+            className="w-full sm:w-auto h-11 sm:h-10"
             disabled={!cancellationReason || transitionM.isPending}
             onClick={() =>
               transitionM.mutate({
@@ -944,7 +964,11 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
           >
             Batalkan
           </Button>
-          <Button disabled={transitionM.isPending} onClick={handleFinishReceive}>
+          <Button
+            className="w-full sm:w-auto h-11 sm:h-10"
+            disabled={transitionM.isPending}
+            onClick={handleFinishReceive}
+          >
             Selesai Review
           </Button>
         </ActionBar>

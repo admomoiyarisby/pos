@@ -14,7 +14,10 @@ export function fuzzySearch(columns: FuzzyColumn | FuzzyColumn[], term: string):
   const cols = Array.isArray(columns) ? columns : [columns];
   const t = sql.param(term);
   const parts = cols.map((c) => sql`(${ilike(c, `%${term}%`)} OR similarity(${c}, ${t}) > 0.3)`);
-  return parts.length === 1 ? parts[0] : parts.reduce((acc, p) => sql`${acc} OR ${p}`);
+  if (parts.length === 1) return parts[0];
+  // Wrap the OR chain in outer parens so it composes correctly with AND
+  // (e.g. `category = 'Fresh' AND ((name ILIKE ...) OR (code ILIKE ...))`).
+  return sql`(${sql.join(parts, sql` OR `)})`;
 }
 
 /** Similarity score used to re-rank fuzzy results best-match first. */
