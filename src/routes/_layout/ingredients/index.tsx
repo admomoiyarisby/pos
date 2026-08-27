@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -8,7 +8,6 @@ import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { lookupLabel } from "#/lib/label-lookup";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
@@ -25,7 +24,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Switch } from "#/components/ui/switch";
-import { ArrowRight, Trash2, Check } from "lucide-react";
+import { ArrowRight, Trash2, Check, Search, X, Plus, Package } from "lucide-react";
 
 interface IngredientRow {
   id: string;
@@ -166,6 +165,14 @@ function IngredientsPage() {
     void createMutation.mutateAsync({ data });
   };
 
+  const displayRows = useMemo(() => filteredIngredients ?? [], [filteredIngredients]);
+  const totalPages = Math.ceil(displayRows.length / 15) || 1;
+  const pagedRows = useMemo(
+    () => displayRows.slice(page * 15, (page + 1) * 15),
+    [displayRows, page],
+  );
+  const hasActiveFilters = !!(search.trim() || categoryFilter !== "all" || skuTypeFilter !== "all");
+
   usePageTitle("Bahan Baku", "Kelola master bahan baku, semi-finished, dan finished goods");
 
   const setCategoryFilter = (v: string) => {
@@ -271,48 +278,245 @@ function IngredientsPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "central_kitchen"]}>
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <PageHeader action={{ label: "Tambah Bahan", onClick: () => setModalOpen(true) }} />
-        <div className="flex items-center gap-2">
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="h-9 rounded-md border bg-background px-2 text-sm"
-            aria-label="Filter kategori bahan"
+      {/* ── Toolbar: search + action (mobile-first) ── */}
+      <div className="space-y-3 mb-4">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+          <div className="relative flex-1 sm:max-w-[380px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              inputMode="search"
+              autoComplete="off"
+              aria-label="Cari bahan baku"
+              placeholder="Cari kode, nama bahan…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-11 w-full rounded-xl border border-input bg-background pl-9 pr-9 text-[16px] shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:rounded-lg sm:text-sm"
+            />
+            {search ? (
+              <button
+                type="button"
+                aria-label="Hapus pencarian"
+                onClick={() => setSearch("")}
+                className="absolute right-1.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+          <Button
+            onClick={() => setModalOpen(true)}
+            className="w-full sm:w-auto sm:ml-auto h-11 sm:h-9 rounded-xl sm:rounded-md shadow-sm"
           >
-            <option value="all">Semua Kategori</option>
-            <option value="Fresh">Fresh</option>
-            <option value="Dry">Dry</option>
-            <option value="Packaging">Packaging</option>
-          </select>
-          <select
-            value={skuTypeFilter}
-            onChange={(e) => setSkuTypeFilter(e.target.value)}
-            className="h-9 rounded-md border bg-background px-2 text-sm"
-            aria-label="Filter tipe SKU"
-          >
-            <option value="all">Semua SKU</option>
-            <option value="RM">RM</option>
-            <option value="SFG">SFG</option>
-            <option value="FG">FG</option>
-          </select>
+            <Plus className="h-4 w-4" />
+            Tambah Bahan
+          </Button>
+        </div>
+        <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 snap-x snap-mandatory">
+          <div className="flex items-center gap-1.5 shrink-0 snap-start">
+            {(["all", "Fresh", "Dry", "Packaging"] as const).map((c) => {
+              const active = categoryFilter === c;
+              return (
+                <button
+                  key={c}
+                  onClick={() => setCategoryFilter(c)}
+                  aria-pressed={active}
+                  className={`shrink-0 snap-start inline-flex items-center h-8 px-3.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${active ? "bg-foreground text-background border-foreground shadow-sm" : "bg-background border-border hover:bg-muted text-foreground"}`}
+                >
+                  {c === "all" ? "Semua" : c}
+                </button>
+              );
+            })}
+          </div>
+          <div className="h-5 w-px bg-border shrink-0 hidden sm:block" />
+          <div className="flex items-center gap-1.5 shrink-0 snap-start">
+            {(["all", "RM", "SFG", "FG"] as const).map((s) => {
+              const active = skuTypeFilter === s;
+              return (
+                <button
+                  key={s}
+                  onClick={() => setSkuTypeFilter(s)}
+                  aria-pressed={active}
+                  className={`shrink-0 snap-start inline-flex items-center h-8 px-3.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${active ? "bg-foreground text-background border-foreground shadow-sm" : "bg-background border-border hover:bg-muted text-foreground"}`}
+                >
+                  {s === "all" ? "Semua SKU" : s}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex items-center justify-between sm:hidden text-xs">
+          <span className="text-muted-foreground tabular-nums">
+            {displayRows.length} bahan • Hal {page + 1}/{totalPages}
+          </span>
+          {hasActiveFilters && (
+            <button
+              onClick={() => {
+                setSearch("");
+                setCategoryFilter("all");
+                setSkuTypeFilter("all");
+                setPage(0);
+              }}
+              className="font-medium text-primary hover:underline underline-offset-4"
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={filteredIngredients}
-        keyExtractor={(r) => r.id}
-        search={search}
-        onSearchChange={setSearch}
-        page={page}
-        onPageChange={setPage}
-        sort={sort}
-        onSortChange={(nextSort) => {
-          setSort(nextSort);
-          setPage(0);
-        }}
-      />
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-2.5 -mx-4 px-4">
+        {pagedRows.length === 0 ? (
+          <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+              <Package className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <p className="mt-3 text-sm font-medium">
+              {hasActiveFilters ? "Tidak ada hasil" : "Belum ada bahan"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {hasActiveFilters ? "Tidak ada bahan untuk pencarian ini." : "Tambah bahan pertama."}
+            </p>
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => {
+                  setSearch("");
+                  setCategoryFilter("all");
+                  setSkuTypeFilter("all");
+                  setPage(0);
+                }}
+              >
+                Reset
+              </Button>
+            )}
+          </div>
+        ) : (
+          pagedRows.map((r) => (
+            <div key={r.id} className="rounded-xl border bg-card p-3.5 shadow-xs">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="font-mono text-xs text-muted-foreground truncate">{r.code}</div>
+                  <div className="font-medium text-sm truncate">{r.name}</div>
+                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                    <Badge variant="outline" className="text-[11px] h-5">
+                      {lookupLabel(skuLabels, r.skuType) ?? r.skuType}
+                    </Badge>
+                    <Badge
+                      variant={
+                        r.category === "Fresh"
+                          ? "destructive"
+                          : r.category === "Dry"
+                            ? "secondary"
+                            : "default"
+                      }
+                      className="text-[11px] h-5"
+                    >
+                      {r.category}
+                    </Badge>
+                    <Badge
+                      variant={r.status === "Active" ? "success" : "secondary"}
+                      className="text-[11px] h-5"
+                    >
+                      {r.status === "Active" ? "Aktif" : "Nonaktif"}
+                    </Badge>
+                  </div>
+                </div>
+                <Link
+                  to="/ingredients/$ingId"
+                  params={{ ingId: r.id }}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border bg-background shadow-xs shrink-0"
+                >
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-1.5 text-xs">
+                <div className="rounded-lg bg-muted/40 px-2 py-2 text-center">
+                  <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium">
+                    Beli
+                  </div>
+                  <div className="font-medium truncate">{r.purchaseUnit}</div>
+                </div>
+                <div className="rounded-lg bg-muted/40 px-2 py-2 text-center">
+                  <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium">
+                    Stok
+                  </div>
+                  <div className="font-medium truncate">{r.stockUnit}</div>
+                </div>
+                <div className="rounded-lg bg-muted/40 px-2 py-2 text-center">
+                  <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium">
+                    Konversi
+                  </div>
+                  <div className="font-mono font-medium">{r.conversionFactor}</div>
+                </div>
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  HPP Rp {r.averageCost.toLocaleString("id-ID")}
+                </span>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => handleStatusToggle(r.id, r.status)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground hover:bg-accent"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIngredientToDelete(r.id);
+                      setDeleteModalOpen(true);
+                    }}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+        {totalPages > 1 && pagedRows.length > 0 && (
+          <div className="flex items-center justify-between pt-2">
+            <button
+              onClick={() => setPage(Math.max(0, page - 1))}
+              disabled={page === 0}
+              className="inline-flex items-center justify-center h-9 px-3 rounded-lg border bg-background text-sm font-medium disabled:opacity-30 hover:bg-muted min-w-[96px]"
+            >
+              Sebelumnya
+            </button>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              Hal {page + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+              disabled={page >= totalPages - 1}
+              className="inline-flex items-center justify-center h-9 px-3 rounded-lg border bg-background text-sm font-medium disabled:opacity-30 hover:bg-muted min-w-[96px]"
+            >
+              Selanjutnya
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block -mx-4 md:mx-0">
+        <DataTable
+          columns={columns}
+          data={displayRows}
+          keyExtractor={(r) => r.id}
+          searchable={false}
+          page={page}
+          onPageChange={setPage}
+          sort={sort}
+          onSortChange={(nextSort) => {
+            setSort(nextSort);
+            setPage(0);
+          }}
+        />
+      </div>
 
       <Modal
         open={modalOpen}

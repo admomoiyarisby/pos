@@ -4,7 +4,6 @@ import { useTableSearch } from "#/hooks/useTableSearch";
 import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import Modal from "#/components/ui/Modal";
 import {
@@ -259,22 +258,31 @@ function ModifierGroupsPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
-      <PageHeader action={{ label: "Tambah Group", onClick: () => setModalOpen(true) }} />
-
-      <div className="space-y-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+      <div className="space-y-3 mb-4">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+          <div className="relative flex-1 sm:max-w-[380px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
-              type="text"
-              placeholder="Cari..."
+              type="search"
+              inputMode="search"
+              autoComplete="off"
+              aria-label="Cari grup modifier"
+              placeholder="Cari grup modifier…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              aria-label="Cari data"
-              className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="h-11 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-[16px] shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:rounded-lg sm:text-sm"
             />
           </div>
-          <span className="text-xs text-muted-foreground">{filtered.length} item</span>
+          <Button
+            onClick={() => setModalOpen(true)}
+            className="w-full sm:w-auto sm:ml-auto h-11 sm:h-9 rounded-xl sm:rounded-md shadow-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Tambah Group
+          </Button>
+        </div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground tabular-nums">{filtered.length} grup</span>
           {filtered.length > 1 && (
             <span className="text-xs text-muted-foreground sm:ml-auto">
               Seret untuk mengurutkan — urutan ini dipakai di POS

@@ -268,10 +268,10 @@ function RecipeDetailPage() {
           Kembali ke Daftar Menu
         </button>
 
-        {/* Header with Actions */}
+        {/* Header with Actions — stacked on mobile */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border bg-muted">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="relative h-16 w-16 sm:h-20 sm:w-20 shrink-0 overflow-hidden rounded-xl border bg-muted shadow-xs">
               {recipe.imageUrl ? (
                 <img
                   src={recipe.imageUrl}
@@ -284,13 +284,29 @@ function RecipeDetailPage() {
                 </div>
               )}
             </div>
-            <div>
-              <p className="text-muted-foreground mt-1">
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-semibold tracking-tight truncate">
+                {recipe.name}
+              </h1>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 font-mono truncate">
                 {recipe.code} • {recipe.categoryName ?? "—"}
               </p>
+              <div className="flex items-center gap-1.5 mt-1.5 md:hidden">
+                <Badge
+                  variant={recipe.status === "Active" ? "success" : "secondary"}
+                  className="rounded-full text-[11px] h-5"
+                >
+                  {recipe.status === "Active" ? "Aktif" : "Nonaktif"}
+                </Badge>
+                {isHighHPP && (
+                  <Badge variant="destructive" className="rounded-full text-[11px] h-5">
+                    HPP &gt;40%
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 w-full sm:w-auto [&>button]:w-full sm:[&>button]:w-auto [&>button]:h-11 sm:[&>button]:h-9 [&>button]:rounded-xl sm:[&>button]:rounded-md">
             {!isEditing && (
               <Button variant="outline" size="sm" onClick={openImageModal}>
                 <ImageIcon className="h-4 w-4" />

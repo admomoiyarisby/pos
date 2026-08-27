@@ -5,7 +5,6 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
@@ -673,12 +672,15 @@ function StaffPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
-      <PageHeader
-        action={{
-          label: "Tambah Staf",
-          onClick: handleOpenCreate,
-        }}
-      />
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center mb-4">
+        <Button
+          onClick={handleOpenCreate}
+          className="w-full sm:w-auto sm:ml-auto h-11 sm:h-9 rounded-xl sm:rounded-md shadow-sm"
+        >
+          <Users className="h-4 w-4" />
+          Tambah Staf
+        </Button>
+      </div>
 
       <div className="space-y-4">
         {groupedStaff.map((group) => (

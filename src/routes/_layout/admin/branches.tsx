@@ -5,7 +5,6 @@ import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
@@ -774,12 +773,15 @@ function BranchesPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
-      <PageHeader
-        action={{
-          label: "Tambah Cabang",
-          onClick: () => setCreateModalOpen(true),
-        }}
-      />
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center mb-4">
+        <Button
+          onClick={() => setCreateModalOpen(true)}
+          className="w-full sm:w-auto sm:ml-auto h-11 sm:h-9 rounded-xl sm:rounded-md shadow-sm"
+        >
+          <Store className="h-4 w-4" />
+          Tambah Cabang
+        </Button>
+      </div>
 
       {/* Card Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

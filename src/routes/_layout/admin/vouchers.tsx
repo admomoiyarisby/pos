@@ -4,10 +4,9 @@ import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { formText, formatJakartaDateTime } from "#/lib/utils";
 import { voucherActionForStatus } from "#/lib/voucher-lifecycle";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
-import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
@@ -15,7 +14,7 @@ import MoneyInput from "#/components/MoneyInput";
 import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
 import { toast } from "sonner";
-import { Trash2, AlertTriangle } from "lucide-react";
+import { Trash2, AlertTriangle, Search, X, Plus, Ticket, Tag, Clock } from "lucide-react";
 import {
   getVouchers,
   createVoucher,
@@ -250,52 +249,287 @@ function VouchersPage() {
     }
   };
 
+  const [statusFilter, setStatusFilter] = useState<"all" | "Active" | "Inactive" | "expired">(
+    "all",
+  );
+  const displayRows = useMemo(() => {
+    const base = vouchers ?? [];
+    if (statusFilter === "all") return base;
+    if (statusFilter === "expired")
+      return base.filter(
+        (r) => new Date(r.validUntil).getTime() < Date.now() && r.status === "Active",
+      );
+    return base.filter((r) => r.status === statusFilter);
+  }, [vouchers, statusFilter]);
+  const totalPages = Math.ceil(displayRows.length / 15) || 1;
+  const pagedRows = useMemo(
+    () => displayRows.slice(page * 15, (page + 1) * 15),
+    [displayRows, page],
+  );
+  const hasActiveFilters = !!search.trim() || statusFilter !== "all";
+
   usePageTitle("Manajemen Voucher", "Kelola kode promo dan diskon pesanan");
 
   const pending = createMutation.isPending || updateMutation.isPending;
 
+  // SAFETY: tableColumns are validated VoucherRow ColumnDefs — action column augmentation.
+  const tableColumns = [
+    ...columns,
+    {
+      accessorKey: "actions",
+      header: "",
+      width: "w-12",
+      // SAFETY: tableColumns are validated VoucherRow ColumnDefs — action column is a known augmentation.
+      cell: ({ row }: { row: { original: VoucherRow } }) => {
+        const action = voucherActionForStatus(row.original.status);
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeleteTarget(row.original);
+            }}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            title={action === "deactivate" ? "Nonaktifkan" : "Hapus"}
+            disabled={action === null}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        );
+      },
+    },
+
+    // SAFETY: tableColumns are validated VoucherRow ColumnDefs — action column augmentation.
+  ] as ColumnDef<VoucherRow>[];
+
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
-      <PageHeader action={{ label: "Tambah Voucher", onClick: openCreate }} />
+      {/* ── Toolbar: search + action (mobile-first) ── */}
+      <div className="space-y-3 mb-4">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+          <div className="relative flex-1 sm:max-w-[380px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              inputMode="search"
+              autoComplete="off"
+              aria-label="Cari voucher"
+              placeholder="Cari kode, deskripsi…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-11 w-full rounded-xl border border-input bg-background pl-9 pr-9 text-[16px] shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:rounded-lg sm:text-sm"
+            />
+            {search ? (
+              <button
+                type="button"
+                aria-label="Hapus pencarian"
+                onClick={() => setSearch("")}
+                className="absolute right-1.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+          <Button
+            onClick={openCreate}
+            className="w-full sm:w-auto sm:ml-auto h-11 sm:h-9 rounded-xl sm:rounded-md shadow-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Tambah Voucher
+          </Button>
+        </div>
+        {/* Status pills — edge bleed on mobile */}
+        <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 snap-x snap-mandatory">
+          {(
+            [
+              ["all", "Semua"],
+              ["Active", "Aktif"],
+              ["Inactive", "Nonaktif"],
+              ["expired", "Kadaluarsa"],
+            ] as const
+          ).map(([key, label]) => {
+            const active = statusFilter === key;
+            return (
+              <button
+                key={key}
+                onClick={() => {
+                  setStatusFilter(key);
+                  setPage(0);
+                }}
+                aria-pressed={active}
+                className={`shrink-0 snap-start inline-flex items-center h-8 px-3.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${active ? "bg-foreground text-background border-foreground shadow-sm" : "bg-background border-border hover:bg-muted text-foreground"}`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-between sm:hidden text-xs">
+          <span className="text-muted-foreground tabular-nums">
+            {displayRows.length} voucher • Hal {page + 1}/{totalPages}
+          </span>
+          {hasActiveFilters && (
+            <button
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("all");
+                setPage(0);
+              }}
+              className="font-medium text-primary hover:underline underline-offset-4"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
 
-      <DataTable
-        columns={[
-          ...columns,
-          {
-            accessorKey: "actions",
-            header: "",
-            width: "w-12",
-            cell: ({ row }) => {
-              const action = voucherActionForStatus(row.original.status);
-              return (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteTarget(row.original);
-                  }}
-                  className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                  title={action === "deactivate" ? "Nonaktifkan" : "Hapus"}
-                  disabled={action === null}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              );
-            },
-          },
-        ]}
-        data={vouchers}
-        keyExtractor={(r) => r.id}
-        searchKeys={["code", "description"]}
-        onRowClick={(r) => openEdit(r)}
-        emptyMessage="Belum ada voucher"
-        search={search}
-        onSearchChange={setSearch}
-        page={page}
-        onPageChange={setPage}
-        sort={sort}
-        onSortChange={setSort}
-      />
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-2.5 -mx-4 px-4">
+        {pagedRows.length === 0 ? (
+          <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+              <Ticket className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <p className="mt-3 text-sm font-medium">
+              {hasActiveFilters ? "Tidak ada hasil" : "Belum ada voucher"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {hasActiveFilters
+                ? `Tidak ada voucher untuk "${search}".`
+                : "Tambah voucher pertama."}
+            </p>
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => {
+                  setSearch("");
+                  setStatusFilter("all");
+                  setPage(0);
+                }}
+              >
+                Reset
+              </Button>
+            )}
+          </div>
+        ) : (
+          pagedRows.map((r) => {
+            const s = voucherStatus(r);
+            const isExpired =
+              new Date(r.validUntil).getTime() < Date.now() && r.status === "Active";
+            return (
+              <div
+                key={r.id}
+                onClick={() => openEdit(r)}
+                className="rounded-xl border bg-card p-3.5 shadow-xs active:scale-[0.99] transition-transform cursor-pointer"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-mono text-sm font-semibold tracking-tight truncate">
+                      {r.code}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate mt-0.5">
+                      {r.description}
+                    </div>
+                  </div>
+                  <Badge variant={s.variant} className="shrink-0 rounded-full text-[11px] h-5">
+                    {s.label}
+                  </Badge>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-1.5 text-xs">
+                  <div className="rounded-lg bg-muted/40 px-2 py-2 text-center">
+                    <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium flex items-center justify-center gap-1">
+                      <Tag className="h-3 w-3" />
+                      Diskon
+                    </div>
+                    <div className="font-mono font-semibold mt-0.5">{formatDiscount(r)}</div>
+                  </div>
+                  <div className="rounded-lg bg-muted/40 px-2 py-2 text-center">
+                    <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium">
+                      Min Order
+                    </div>
+                    <div className="font-mono font-medium mt-0.5 truncate">
+                      {r.minOrder > 0 ? `Rp ${r.minOrder.toLocaleString("id-ID")}` : "—"}
+                    </div>
+                  </div>
+                  <div
+                    className={`rounded-lg px-2 py-2 text-center ${isExpired ? "bg-warning/15 border border-warning/30" : "bg-muted/40"}`}
+                  >
+                    <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium flex items-center justify-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Sampai
+                    </div>
+                    <div className="font-mono text-xs mt-0.5 tabular-nums truncate">
+                      {formatJakartaDateTime(r.validUntil)}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {new Date(r.createdAt).toLocaleDateString("id-ID", {
+                      day: "2-digit",
+                      month: "short",
+                    })}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-primary font-medium">Edit</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(r);
+                      }}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border bg-background text-muted-foreground hover:text-destructive hover:bg-destructive/10 ml-1"
+                      title={
+                        voucherActionForStatus(r.status) === "deactivate" ? "Nonaktifkan" : "Hapus"
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+        {totalPages > 1 && pagedRows.length > 0 && (
+          <div className="flex items-center justify-between pt-2">
+            <button
+              onClick={() => setPage(Math.max(0, page - 1))}
+              disabled={page === 0}
+              className="inline-flex items-center justify-center h-9 px-3 rounded-lg border bg-background text-sm font-medium disabled:opacity-30 hover:bg-muted min-w-[96px]"
+            >
+              Sebelumnya
+            </button>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              Hal {page + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+              disabled={page >= totalPages - 1}
+              className="inline-flex items-center justify-center h-9 px-3 rounded-lg border bg-background text-sm font-medium disabled:opacity-30 hover:bg-muted min-w-[96px]"
+            >
+              Selanjutnya
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block -mx-4 md:mx-0">
+        <DataTable
+          columns={tableColumns}
+          data={displayRows}
+          keyExtractor={(r) => r.id}
+          onRowClick={(r) => openEdit(r)}
+          searchable={false}
+          page={page}
+          onPageChange={setPage}
+          sort={sort}
+          onSortChange={setSort}
+        />
+      </div>
 
       <Modal
         open={modalOpen}
