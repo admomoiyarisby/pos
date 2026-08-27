@@ -149,78 +149,85 @@ function DNPage() {
       accessorKey: "fromBranchId",
       header: "Dari",
       enableSorting: true,
-      cell: (r) =>
-        branches.find((b) => b.id === r.fromBranchId)?.name ?? r.fromBranchId.slice(0, 8),
+      cell: ({ row }) =>
+        branches.find((b) => b.id === row.original.fromBranchId)?.name ??
+        row.original.fromBranchId.slice(0, 8),
     },
     {
       accessorKey: "toBranchId",
       header: "Ke",
       enableSorting: true,
-      cell: (r) => branches.find((b) => b.id === r.toBranchId)?.name ?? r.toBranchId.slice(0, 8),
+      cell: ({ row }) =>
+        branches.find((b) => b.id === row.original.toBranchId)?.name ??
+        row.original.toBranchId.slice(0, 8),
     },
     {
       accessorKey: "driverName",
       header: "Driver",
       enableSorting: true,
-      cell: (r) => r.driverName ?? "-",
+      cell: ({ row }) => row.original.driverName ?? "-",
     },
     {
       accessorKey: "status",
       header: "Status",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status}</Badge>
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant(lookupLabel(statusColors, row.original.status))}>
+          {row.original.status}
+        </Badge>
       ),
     },
     {
       accessorKey: "id",
       header: "",
       width: "w-48",
-      cell: (r) => (
+      cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
-          {["super_admin", "admin_pusat"].includes(user?.role ?? "") && r.status === "Picking" && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                void shipMutation.mutateAsync({ data: { dnId: r.id } });
-              }}
-              className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-medium"
-            >
-              <Truck className="h-3 w-3 inline mr-1" />
-              Kirim
-            </button>
-          )}
-          {["super_admin", "admin_pusat"].includes(user?.role ?? "") && r.status === "Received" && (
-            <>
-              {!r.reviewedByAdminPusat ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setReviewSJ(r);
-                  }}
-                  className="h-7 px-2 rounded-md bg-amber-500 text-white text-[10px] font-medium flex items-center gap-1"
-                >
-                  <CheckCircle className="h-3 w-3" />
-                  Review SJ
-                </button>
-              ) : (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setInvoiceError(null);
-                    void generateInvoiceMutation.mutateAsync({ data: { dnId: r.id } });
-                  }}
-                  className="h-7 px-2 rounded-md bg-success text-success-foreground text-[10px] font-medium flex items-center gap-1"
-                >
-                  <DollarSign className="h-3 w-3" />
-                  Buat Invoice
-                </button>
-              )}
-            </>
-          )}
+          {["super_admin", "admin_pusat"].includes(user?.role ?? "") &&
+            row.original.status === "Picking" && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void shipMutation.mutateAsync({ data: { dnId: row.original.id } });
+                }}
+                className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-medium"
+              >
+                <Truck className="h-3 w-3 inline mr-1" />
+                Kirim
+              </button>
+            )}
+          {["super_admin", "admin_pusat"].includes(user?.role ?? "") &&
+            row.original.status === "Received" && (
+              <>
+                {!row.original.reviewedByAdminPusat ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReviewSJ(row.original);
+                    }}
+                    className="h-7 px-2 rounded-md bg-amber-500 text-white text-[10px] font-medium flex items-center gap-1"
+                  >
+                    <CheckCircle className="h-3 w-3" />
+                    Review SJ
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setInvoiceError(null);
+                      void generateInvoiceMutation.mutateAsync({ data: { dnId: row.original.id } });
+                    }}
+                    className="h-7 px-2 rounded-md bg-success text-success-foreground text-[10px] font-medium flex items-center gap-1"
+                  >
+                    <DollarSign className="h-3 w-3" />
+                    Buat Invoice
+                  </button>
+                )}
+              </>
+            )}
           <Link
             to="/delivery-notes/$dnId"
-            params={{ dnId: r.id }}
+            params={{ dnId: row.original.id }}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
           >
             <ArrowRight className="h-4 w-4" />

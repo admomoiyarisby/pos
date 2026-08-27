@@ -262,7 +262,7 @@ function SupplierDeliveriesPage() {
       accessorKey: "deliveryDate",
       header: "Tanggal",
       enableSorting: true,
-      cell: (r) => formatDate(r.deliveryDate),
+      cell: ({ row }) => formatDate(row.original.deliveryDate),
     },
     { accessorKey: "supplierName", header: "Supplier", enableSorting: true },
     { accessorKey: "ingredientName", header: "Bahan Baku", enableSorting: true },
@@ -270,45 +270,48 @@ function SupplierDeliveriesPage() {
       accessorKey: "quantity",
       header: "Jumlah",
       enableSorting: true,
-      cell: (r) => `${r.quantity.toLocaleString()} ${r.ingredientStockUnit ?? "-"}`,
+      cell: ({ row }) =>
+        `${row.original.quantity.toLocaleString()} ${row.original.ingredientStockUnit ?? "-"}`,
     },
     {
       accessorKey: "price",
       header: "Total Harga",
       align: "right",
       enableSorting: true,
-      cell: (r) => `Rp ${r.price.toLocaleString()}`,
+      cell: ({ row }) => `Rp ${row.original.price.toLocaleString()}`,
     },
     { accessorKey: "receivedByName", header: "Penerima", enableSorting: true },
     {
       accessorKey: "status",
       header: "Status",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={lookupLabel(statusColors, r.status) ?? "default"}>{r.status}</Badge>
+      cell: ({ row }) => (
+        <Badge variant={lookupLabel(statusColors, row.original.status) ?? "default"}>
+          {row.original.status}
+        </Badge>
       ),
     },
     {
       accessorKey: "id",
       header: "Aksi",
       width: "w-36",
-      cell: (r) => (
+      cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
           <button
             onClick={(e) => {
               e.stopPropagation();
-              handlePrint(r);
+              handlePrint(row.original);
             }}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
             title="Cetak Invoice"
           >
             <Printer className="h-4 w-4" />
           </button>
-          {canWrite && r.status === "Pending Invoice" && (
+          {canWrite && row.original.status === "Pending Invoice" && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleComplete(r.id);
+                handleComplete(row.original.id);
               }}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-success hover:bg-success/10"
               title="Tandai Selesai"
@@ -321,7 +324,7 @@ function SupplierDeliveriesPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  openEditModal(r);
+                  openEditModal(row.original);
                 }}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
                 title="Edit"
@@ -331,7 +334,7 @@ function SupplierDeliveriesPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setDeleteConfirm(r.id);
+                  setDeleteConfirm(row.original.id);
                 }}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-destructive hover:bg-destructive/10"
                 title="Hapus"

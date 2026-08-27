@@ -35,21 +35,21 @@ const columns: ColumnDef<FeeRow>[] = [
     accessorKey: "channel",
     header: "Channel",
     enableSorting: true,
-    cell: (r) => lookupLabel(channelLabels, r.channel) ?? r.channel,
+    cell: ({ row }) => lookupLabel(channelLabels, row.original.channel) ?? row.original.channel,
   },
   {
     accessorKey: "feePercentage",
     header: "MDR (%)",
     align: "right",
     enableSorting: true,
-    cell: (r) => `${r.feePercentage}%`,
+    cell: ({ row }) => `${row.original.feePercentage}%`,
   },
   {
     accessorKey: "fixedFee",
     header: "Biaya Tetap (Rp)",
     align: "right",
     enableSorting: true,
-    cell: (r) => `Rp ${r.fixedFee.toLocaleString("id-ID")}`,
+    cell: ({ row }) => `Rp ${row.original.fixedFee.toLocaleString("id-ID")}`,
   },
 ];
 
@@ -104,7 +104,7 @@ function PlatformFeesPage() {
             accessorKey: "actions",
             header: "",
             width: "w-12",
-            cell: (r) => (
+            cell: () => (
               <button
                 type="button"
                 onClick={(e) => {

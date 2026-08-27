@@ -96,32 +96,36 @@ function SCMInvoicePage() {
       header: "Total",
       align: "right",
       enableSorting: true,
-      cell: (r) => `Rp ${r.totalAmount.toLocaleString("id-ID")}`,
+      cell: ({ row }) => `Rp ${row.original.totalAmount.toLocaleString("id-ID")}`,
     },
     {
       accessorKey: "status",
       header: "Status",
       enableSorting: true,
-      cell: (r) => <Badge variant={badgeVariant(statusColors[r.status])}>{r.status}</Badge>,
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant(statusColors[row.original.status])}>
+          {row.original.status}
+        </Badge>
+      ),
     },
     {
       accessorKey: "createdAt",
       header: "Dibuat",
       enableSorting: true,
-      cell: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
+      cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString("id-ID"),
     },
     {
       accessorKey: "id",
       header: "",
       width: "w-32",
-      cell: (r) => (
+      cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
-          {r.status === "Unpaid" && (
+          {row.original.status === "Unpaid" && (
             <>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  void payMutation.mutateAsync({ data: { id: r.id } });
+                  void payMutation.mutateAsync({ data: { id: row.original.id } });
                 }}
                 className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-xs font-medium"
               >
@@ -131,7 +135,7 @@ function SCMInvoicePage() {
                 onClick={(e) => {
                   e.stopPropagation();
                   if (confirm("Yakin ingin membatalkan invoice ini?")) {
-                    void cancelMutation.mutateAsync({ data: { id: r.id } });
+                    void cancelMutation.mutateAsync({ data: { id: row.original.id } });
                   }
                 }}
                 className="h-7 px-2 rounded-md bg-destructive text-destructive-foreground text-xs font-medium"
@@ -143,7 +147,7 @@ function SCMInvoicePage() {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              void getSCMInvoice({ data: { id: r.id } }).then(function (inv) {
+              void getSCMInvoice({ data: { id: row.original.id } }).then(function (inv) {
                 if (!inv) return;
                 printSCMInvoice(
                   {
@@ -170,7 +174,7 @@ function SCMInvoicePage() {
           </button>
           <Link
             to="/scm-invoices/$invId"
-            params={{ invId: r.id }}
+            params={{ invId: row.original.id }}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
           >
             <ArrowRight className="h-4 w-4" />

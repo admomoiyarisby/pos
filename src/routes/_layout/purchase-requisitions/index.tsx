@@ -222,24 +222,26 @@ function PRPage() {
       accessorKey: "status",
       header: "Status",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={lookupLabel(statusColors, r.status) ?? "default"}>{r.status}</Badge>
+      cell: ({ row }) => (
+        <Badge variant={lookupLabel(statusColors, row.original.status) ?? "default"}>
+          {row.original.status}
+        </Badge>
       ),
     },
     {
       accessorKey: "createdAt",
       header: "Dibuat",
       enableSorting: true,
-      cell: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
+      cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString("id-ID"),
     },
     {
       accessorKey: "id",
       header: "Aksi",
       width: "w-40",
-      cell: (r) => {
-        const canProcess = isApprover && ["Pending", "Approved"].includes(r.status);
-        const canReject = isApprover && ["Pending", "Approved"].includes(r.status);
-        const canEdit = isBranchAdmin && r.status === "Draft";
+      cell: ({ row }) => {
+        const canProcess = isApprover && ["Pending", "Approved"].includes(row.original.status);
+        const canReject = isApprover && ["Pending", "Approved"].includes(row.original.status);
+        const canEdit = isBranchAdmin && row.original.status === "Draft";
 
         return (
           <div className="flex items-center justify-end gap-1">
@@ -247,7 +249,7 @@ function PRPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleProcessClick(r);
+                  handleProcessClick(row.original);
                 }}
                 className="h-7 px-2 rounded-md bg-primary text-primary-foreground text-[10px] font-medium whitespace-nowrap"
               >
@@ -258,7 +260,7 @@ function PRPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleRejectClick(r);
+                  handleRejectClick(row.original);
                 }}
                 className="h-7 px-2 rounded-md bg-destructive text-destructive-foreground text-[10px] font-medium whitespace-nowrap"
               >
@@ -268,7 +270,7 @@ function PRPage() {
             {canEdit && (
               <Link
                 to="/purchase-requisitions/$prId"
-                params={{ prId: r.id }}
+                params={{ prId: row.original.id }}
                 className="inline-flex h-7 px-2 items-center rounded-md border text-[10px] whitespace-nowrap"
               >
                 Edit
@@ -276,7 +278,7 @@ function PRPage() {
             )}
             <Link
               to="/purchase-requisitions/$prId"
-              params={{ prId: r.id }}
+              params={{ prId: row.original.id }}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
             >
               <ArrowRight className="h-4 w-4" />

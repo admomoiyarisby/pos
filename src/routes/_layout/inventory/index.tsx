@@ -173,8 +173,10 @@ function InventoryPage() {
       header: "SKU",
       width: "w-16",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant="outline">{lookupLabel(skuLabels, r.ingredientSkuType ?? "") ?? "-"}</Badge>
+      cell: ({ row }) => (
+        <Badge variant="outline">
+          {lookupLabel(skuLabels, row.original.ingredientSkuType ?? "") ?? "-"}
+        </Badge>
       ),
     },
     {
@@ -182,9 +184,11 @@ function InventoryPage() {
       header: "Kategori",
       width: "w-24",
       enableSorting: true,
-      cell: (r) =>
-        r.ingredientCategory ? (
-          <Badge variant={catColors[r.ingredientCategory]}>{r.ingredientCategory}</Badge>
+      cell: ({ row }) =>
+        row.original.ingredientCategory ? (
+          <Badge variant={catColors[row.original.ingredientCategory]}>
+            {row.original.ingredientCategory}
+          </Badge>
         ) : (
           "-"
         ),
@@ -195,7 +199,8 @@ function InventoryPage() {
       align: "right",
       width: "w-24",
       enableSorting: true,
-      cell: (r) => `${r.quantity.toLocaleString("id-ID")} ${r.stockUnit ?? ""}`,
+      cell: ({ row }) =>
+        `${row.original.quantity.toLocaleString("id-ID")} ${row.original.stockUnit ?? ""}`,
     },
   ];
 

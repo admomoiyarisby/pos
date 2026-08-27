@@ -32,8 +32,8 @@ const columns: ColumnDef<BrandRow>[] = [
     header: "Status",
     width: "w-20",
     enableSorting: true,
-    cell: (r) =>
-      r.status === "Active" ? (
+    cell: ({ row }) =>
+      row.original.status === "Active" ? (
         <Badge variant="success">Aktif</Badge>
       ) : (
         <Badge variant="secondary">Nonaktif</Badge>
@@ -136,7 +136,7 @@ function BrandsPage() {
             accessorKey: "actions",
             header: "",
             width: "w-12",
-            cell: (r) => (
+            cell: () => (
               <button
                 type="button"
                 onClick={(e) => {

@@ -571,30 +571,36 @@ function YieldTrackingPage() {
       header: "Tanggal Produksi",
       width: "w-32",
       enableSorting: true,
-      cell: (r) =>
-        new Date(r.productionDate ?? r.createdAt).toLocaleDateString("id-ID", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
+      cell: ({ row }) =>
+        new Date(row.original.productionDate ?? row.original.createdAt).toLocaleDateString(
+          "id-ID",
+          {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          },
+        ),
     },
     {
       accessorKey: "createdAt",
       header: "Jam Input",
       width: "w-24",
       enableSorting: true,
-      cell: (r) =>
-        new Date(r.createdAt).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleString("id-ID", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
     },
     {
       accessorKey: "branchName",
       header: "Cabang",
       width: "w-40",
       enableSorting: true,
-      cell: (r) => (
+      cell: ({ row }) => (
         <div className="space-y-0.5">
-          <span className="font-medium">{r.branchName ?? "-"}</span>
-          <div className="text-xs text-muted-foreground">{r.recordedByName ?? "-"}</div>
+          <span className="font-medium">{row.original.branchName ?? "-"}</span>
+          <div className="text-xs text-muted-foreground">{row.original.recordedByName ?? "-"}</div>
         </div>
       ),
     },
@@ -602,35 +608,35 @@ function YieldTrackingPage() {
       accessorKey: "out",
       header: "Barang Keluar",
       enableSorting: false,
-      cell: (r) => itemList(r.out),
+      cell: ({ row }) => itemList(row.original.out),
     },
     {
       accessorKey: "produced",
       header: "Barang Dihasilkan",
       enableSorting: false,
-      cell: (r) => itemList(r.produced),
+      cell: ({ row }) => itemList(row.original.produced),
     },
     {
       accessorKey: "notes",
       header: "Catatan",
       enableSorting: false,
-      cell: (r) => <span className="text-muted-foreground">{r.notes ?? "-"}</span>,
+      cell: ({ row }) => <span className="text-muted-foreground">{row.original.notes ?? "-"}</span>,
     },
     {
       accessorKey: "status",
       header: "Status",
       width: "w-28",
       enableSorting: true,
-      cell: (r) => {
-        const pending = pendingByYield.get(r.id);
-        if (r.status === "Cancelled")
+      cell: ({ row }) => {
+        const pending = pendingByYield.get(row.original.id);
+        if (row.original.status === "Cancelled")
           return (
             <div className="flex flex-col gap-1">
               <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs">
                 Cancelled
               </span>
               <a
-                href={`/inventory/ledger?reference=YIELD-${r.id}`}
+                href={`/inventory/ledger?reference=YIELD-${row.original.id}`}
                 title="Lihat mutasi pembalikan di Kartu Stok"
                 className="inline-flex items-center rounded bg-destructive/10 px-2 py-0.5 text-xs text-destructive hover:bg-destructive/20"
               >
@@ -645,7 +651,7 @@ function YieldTrackingPage() {
                 Pending Cancel
               </span>
               <a
-                href={`/inventory/ledger?reference=YIELD-${r.id}`}
+                href={`/inventory/ledger?reference=YIELD-${row.original.id}`}
                 title="Lihat mutasi stok produksi di Kartu Stok"
                 className="text-xs text-muted-foreground hover:text-foreground hover:underline underline-offset-2"
               >
@@ -659,7 +665,7 @@ function YieldTrackingPage() {
               Active
             </span>
             <a
-              href={`/inventory/ledger?reference=YIELD-${r.id}`}
+              href={`/inventory/ledger?reference=YIELD-${row.original.id}`}
               title="Lihat mutasi stok produksi di Kartu Stok"
               className="text-xs text-muted-foreground hover:text-foreground hover:underline underline-offset-2"
             >
@@ -674,9 +680,9 @@ function YieldTrackingPage() {
       header: "Aksi",
       width: "w-40",
       enableSorting: false,
-      cell: (r) => {
-        const pending = pendingByYield.get(r.id);
-        const isCancelled = r.status === "Cancelled";
+      cell: ({ row }) => {
+        const pending = pendingByYield.get(row.original.id);
+        const isCancelled = row.original.status === "Cancelled";
         if (isCancelled) return <span className="text-xs text-muted-foreground">—</span>;
         if (pending && canApprove) {
           return (
@@ -707,7 +713,7 @@ function YieldTrackingPage() {
         if (!canRequest) return <span className="text-xs text-muted-foreground">—</span>;
         return (
           <button
-            onClick={() => setCancelTarget(r)}
+            onClick={() => setCancelTarget(row.original)}
             className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted"
           >
             <Trash2 className="h-3 w-3" /> Batal

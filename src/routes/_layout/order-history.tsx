@@ -49,8 +49,8 @@ const columns: ColumnDef<OrderRow>[] = [
     header: "Waktu",
     width: "w-32",
     enableSorting: true,
-    cell: (r) =>
-      new Date(r.createdAt).toLocaleString("id-ID", {
+    cell: ({ row }) =>
+      new Date(row.original.createdAt).toLocaleString("id-ID", {
         day: "2-digit",
         month: "short",
         hour: "2-digit",
@@ -61,29 +61,33 @@ const columns: ColumnDef<OrderRow>[] = [
     accessorKey: "channel",
     header: "Channel",
     enableSorting: true,
-    cell: (r) => (
-      <Badge variant="outline">{lookupLabel(channelLabels, r.channel) ?? r.channel}</Badge>
+    cell: ({ row }) => (
+      <Badge variant="outline">
+        {lookupLabel(channelLabels, row.original.channel) ?? row.original.channel}
+      </Badge>
     ),
   },
   {
     accessorKey: "orderCode",
     header: "Kode",
     enableSorting: true,
-    cell: (r) => r.orderCode ?? r.customerName ?? "-",
+    cell: ({ row }) => row.original.orderCode ?? row.original.customerName ?? "-",
   },
   {
     accessorKey: "totalAmount",
     header: "Total",
     align: "right",
     enableSorting: true,
-    cell: (r) => `Rp ${r.totalAmount.toLocaleString("id-ID")}`,
+    cell: ({ row }) => `Rp ${row.original.totalAmount.toLocaleString("id-ID")}`,
   },
   {
     accessorKey: "status",
     header: "Status",
     enableSorting: true,
-    cell: (r) => (
-      <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status || "-"}</Badge>
+    cell: ({ row }) => (
+      <Badge variant={badgeVariant(lookupLabel(statusColors, row.original.status))}>
+        {row.original.status || "-"}
+      </Badge>
     ),
   },
 ];

@@ -79,9 +79,9 @@ function PeriodControlPage() {
       accessorKey: "status",
       header: "Status",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={r.status === "Open" ? "success" : "secondary"}>
-          {r.status === "Open" ? "Terbuka" : "Tertutup"}
+      cell: ({ row }) => (
+        <Badge variant={row.original.status === "Open" ? "success" : "secondary"}>
+          {row.original.status === "Open" ? "Terbuka" : "Tertutup"}
         </Badge>
       ),
     },
@@ -89,22 +89,23 @@ function PeriodControlPage() {
       accessorKey: "openedAt",
       header: "Dibuka",
       enableSorting: true,
-      cell: (r) => new Date(r.openedAt).toLocaleDateString("id-ID"),
+      cell: ({ row }) => new Date(row.original.openedAt).toLocaleDateString("id-ID"),
     },
     {
       accessorKey: "closedAt",
       header: "Ditutup",
       enableSorting: true,
-      cell: (r) => (r.closedAt ? new Date(r.closedAt).toLocaleDateString("id-ID") : "-"),
+      cell: ({ row }) =>
+        row.original.closedAt ? new Date(row.original.closedAt).toLocaleDateString("id-ID") : "-",
     },
     {
       accessorKey: "id",
       header: "",
       width: "w-12",
-      cell: (r) => (
+      cell: ({ row }) => (
         <Link
           to="/period-control/$periodId"
-          params={{ periodId: r.id }}
+          params={{ periodId: row.original.id }}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
         >
           <ArrowRight className="h-4 w-4" />

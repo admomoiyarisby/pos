@@ -357,8 +357,8 @@ function WastePage() {
       header: "Waktu",
       width: "w-36",
       enableSorting: true,
-      cell: (r) =>
-        new Date(r.createdAt).toLocaleString("id-ID", {
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
           month: "short",
           hour: "2-digit",
@@ -371,14 +371,14 @@ function WastePage() {
       accessorKey: "category",
       header: "Kategori",
       enableSorting: true,
-      cell: (r) => (
+      cell: ({ row }) => (
         <div className="space-y-0.5">
-          <Badge variant={catColors[r.category]}>{r.category}</Badge>
-          {r.category === "Denda" && r.staffName && (
-            <div className="text-xs text-muted-foreground">Staff: {r.staffName}</div>
+          <Badge variant={catColors[row.original.category]}>{row.original.category}</Badge>
+          {row.original.category === "Denda" && row.original.staffName && (
+            <div className="text-xs text-muted-foreground">Staff: {row.original.staffName}</div>
           )}
           <div className="text-xs text-muted-foreground">
-            {getFinancialClassificationLabel(r.category)}
+            {getFinancialClassificationLabel(row.original.category)}
           </div>
         </div>
       ),
@@ -389,15 +389,19 @@ function WastePage() {
       align: "right",
       width: "w-24",
       enableSorting: true,
-      cell: (r) => {
-        const currentInv = r.currentInventoryQty ?? 0;
+      cell: ({ row }) => {
+        const currentInv = row.original.currentInventoryQty ?? 0;
         const wastePercentage =
-          currentInv + r.quantity > 0 ? (r.quantity / (currentInv + r.quantity)) * 100 : 0;
+          currentInv + row.original.quantity > 0
+            ? (row.original.quantity / (currentInv + row.original.quantity)) * 100
+            : 0;
         const isAnomaly = wastePercentage > 5;
         return (
           <div className={isAnomaly ? "text-rose-600 font-medium" : ""}>
-            {r.quantity.toLocaleString("id-ID")}
-            {r.stockUnit && <span className="text-muted-foreground ml-0.5">{r.stockUnit}</span>}
+            {row.original.quantity.toLocaleString("id-ID")}
+            {row.original.stockUnit && (
+              <span className="text-muted-foreground ml-0.5">{row.original.stockUnit}</span>
+            )}
             {isAnomaly && (
               <div className="text-xs text-rose-500">({wastePercentage.toFixed(1)}%)</div>
             )}
@@ -417,26 +421,28 @@ function WastePage() {
             cell: ({ row: _row }: WasteRow) => formatRupiah(r.valuation),
           },
         ]),
-    { accessorKey: "notes", header: "Keterangan", cell: (r) => r.notes ?? "-" },
+    { accessorKey: "notes", header: "Keterangan", cell: ({ row }) => row.original.notes ?? "-" },
     {
       accessorKey: "investigation",
       header: "Investigasi",
       width: "w-48",
-      cell: (r) => {
-        const currentInv = r.currentInventoryQty ?? 0;
+      cell: ({ row }) => {
+        const currentInv = row.original.currentInventoryQty ?? 0;
         const wastePercentage =
-          currentInv + r.quantity > 0 ? (r.quantity / (currentInv + r.quantity)) * 100 : 0;
+          currentInv + row.original.quantity > 0
+            ? (row.original.quantity / (currentInv + row.original.quantity)) * 100
+            : 0;
         const isAnomaly = wastePercentage > 5;
         const canInvestigate = user?.role === "super_admin" || user?.role === "area_manager";
 
-        if (r.investigationNote) {
+        if (row.original.investigationNote) {
           return (
             <div className="space-y-1">
               <Badge variant="secondary" className="text-xs">
                 Diinvestigasi
               </Badge>
               <div className="text-xs text-muted-foreground line-clamp-2 max-w-[160px]">
-                {r.investigationNote}
+                {row.original.investigationNote}
               </div>
             </div>
           );
@@ -446,7 +452,7 @@ function WastePage() {
           if (canInvestigate) {
             return (
               <button
-                onClick={() => handleOpenInvestigation(r)}
+                onClick={() => handleOpenInvestigation(row.original)}
                 className="text-xs px-2 py-1 rounded-md bg-rose-100 text-rose-700 hover:bg-rose-200 transition-colors"
               >
                 Investigasi

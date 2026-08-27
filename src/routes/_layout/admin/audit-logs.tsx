@@ -75,8 +75,8 @@ function AuditLogsPage() {
       header: "Waktu",
       width: "w-36",
       enableSorting: true,
-      cell: (r) =>
-        new Date(r.createdAt).toLocaleString("id-ID", {
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
           month: "short",
           hour: "2-digit",
@@ -89,29 +89,33 @@ function AuditLogsPage() {
       header: "Aksi",
       width: "w-24",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={badgeVariant(lookupLabel(actionColors, r.action))}>{r.action}</Badge>
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant(lookupLabel(actionColors, row.original.action))}>
+          {row.original.action}
+        </Badge>
       ),
     },
     {
       accessorKey: "recordId",
       header: "Record ID",
       width: "w-32",
-      cell: (r) => <span className="font-mono text-xs">{r.recordId.slice(0, 12)}</span>,
+      cell: ({ row }) => (
+        <span className="font-mono text-xs">{row.original.recordId.slice(0, 12)}</span>
+      ),
     },
     {
       accessorKey: "userName",
       header: "User",
       enableSorting: true,
-      cell: (r) => r.userName ?? r.userId?.slice(0, 8) ?? "system",
+      cell: ({ row }) => row.original.userName ?? row.original.userId?.slice(0, 8) ?? "system",
     },
     {
       accessorKey: "id",
       header: "",
       width: "w-12",
-      cell: (r) => (
+      cell: ({ row }) => (
         <button
-          onClick={() => setSelectedLog(r)}
+          onClick={() => setSelectedLog(row.original)}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
         >
           <Eye className="h-4 w-4" />

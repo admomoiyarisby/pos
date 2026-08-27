@@ -37,9 +37,9 @@ const columns: ColumnDef<SORow>[] = [
     accessorKey: "status",
     header: "Status",
     enableSorting: true,
-    cell: (r) => (
-      <Badge variant={statusColors[r.status] ?? "default"}>
-        {r.status === "Under Investigation" ? "Investigasi" : r.status}
+    cell: ({ row }) => (
+      <Badge variant={statusColors[row.original.status] ?? "default"}>
+        {row.original.status === "Under Investigation" ? "Investigasi" : row.original.status}
       </Badge>
     ),
   },
@@ -47,8 +47,8 @@ const columns: ColumnDef<SORow>[] = [
     accessorKey: "createdAt",
     header: "Dibuat",
     enableSorting: true,
-    cell: (r) =>
-      new Date(r.createdAt).toLocaleString("id-ID", {
+    cell: ({ row }) =>
+      new Date(row.original.createdAt).toLocaleString("id-ID", {
         day: "2-digit",
         month: "short",
         hour: "2-digit",
@@ -59,10 +59,10 @@ const columns: ColumnDef<SORow>[] = [
     accessorKey: "id",
     header: "",
     width: "w-12",
-    cell: (r) => (
+    cell: ({ row }) => (
       <Link
         to="/stock-opname/$soId"
-        params={{ soId: r.id }}
+        params={{ soId: row.original.id }}
         className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
       >
         <ArrowRight className="h-4 w-4" />

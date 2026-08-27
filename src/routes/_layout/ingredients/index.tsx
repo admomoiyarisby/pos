@@ -184,19 +184,25 @@ function IngredientsPage() {
       accessorKey: "skuType",
       header: "Tipe SKU",
       enableSorting: true,
-      cell: (r) => <Badge variant="outline">{lookupLabel(skuLabels, r.skuType) ?? "-"}</Badge>,
+      cell: ({ row }) => (
+        <Badge variant="outline">{lookupLabel(skuLabels, row.original.skuType) ?? "-"}</Badge>
+      ),
     },
     {
       accessorKey: "category",
       header: "Kategori",
       enableSorting: true,
-      cell: (r) => (
+      cell: ({ row }) => (
         <Badge
           variant={
-            r.category === "Fresh" ? "destructive" : r.category === "Dry" ? "secondary" : "default"
+            row.original.category === "Fresh"
+              ? "destructive"
+              : row.original.category === "Dry"
+                ? "secondary"
+                : "default"
           }
         >
-          {r.category}
+          {row.original.category}
         </Badge>
       ),
     },
@@ -207,24 +213,24 @@ function IngredientsPage() {
       header: "HPP",
       align: "right",
       enableSorting: true,
-      cell: (r) => `Rp ${r.averageCost.toLocaleString("id-ID")}`,
+      cell: ({ row }) => `Rp ${row.original.averageCost.toLocaleString("id-ID")}`,
     },
     {
       accessorKey: "status",
       header: "Status",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={r.status === "Active" ? "success" : "secondary"}>
-          {r.status === "Active" ? "Aktif" : "Nonaktif"}
+      cell: ({ row }) => (
+        <Badge variant={row.original.status === "Active" ? "success" : "secondary"}>
+          {row.original.status === "Active" ? "Aktif" : "Nonaktif"}
         </Badge>
       ),
     },
     {
       accessorKey: "isBranchVisible",
       header: "Visibilitas",
-      cell: (r) => (
-        <Badge variant={r.isBranchVisible ? "success" : "secondary"}>
-          {r.isBranchVisible ? "Cabang" : "Pusat"}
+      cell: ({ row }) => (
+        <Badge variant={row.original.isBranchVisible ? "success" : "secondary"}>
+          {row.original.isBranchVisible ? "Cabang" : "Pusat"}
         </Badge>
       ),
     },
@@ -232,25 +238,25 @@ function IngredientsPage() {
       accessorKey: "id",
       header: "",
       width: "w-32",
-      cell: (r) => (
+      cell: ({ row }) => (
         <div className="flex items-center gap-1">
           <Link
             to="/ingredients/$ingId"
-            params={{ ingId: r.id }}
+            params={{ ingId: row.original.id }}
             className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           >
             <ArrowRight className="h-4 w-4" />
           </Link>
           <button
-            onClick={() => handleStatusToggle(r.id, r.status)}
+            onClick={() => handleStatusToggle(row.original.id, row.original.status)}
             className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            title={r.status === "Active" ? "Nonaktifkan" : "Aktifkan"}
+            title={row.original.status === "Active" ? "Nonaktifkan" : "Aktifkan"}
           >
             <Check className="h-4 w-4" />
           </button>
           <button
             onClick={() => {
-              setIngredientToDelete(r.id);
+              setIngredientToDelete(row.original.id);
               setDeleteModalOpen(true);
             }}
             className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border text-muted-foreground hover:bg-destructive/10 hover:text-destructive"

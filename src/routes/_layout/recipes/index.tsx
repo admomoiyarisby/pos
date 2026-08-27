@@ -127,11 +127,11 @@ function RecipesPage() {
       width: "w-9",
       align: "center",
       cellClassName: "!p-0 !min-w-0",
-      cell: (r) =>
-        r.imageUrl ? (
+      cell: ({ row }) =>
+        row.original.imageUrl ? (
           <img
-            src={r.imageUrl}
-            alt={r.name}
+            src={row.original.imageUrl}
+            alt={row.original.name}
             loading="lazy"
             decoding="async"
             className="h-8 w-8 rounded-lg border bg-muted object-cover"
@@ -148,20 +148,20 @@ function RecipesPage() {
       accessorKey: "categoryName",
       header: "Kategori",
       enableSorting: true,
-      cell: (r) => <Badge variant="secondary">{r.categoryName ?? "—"}</Badge>,
+      cell: ({ row }) => <Badge variant="secondary">{row.original.categoryName ?? "—"}</Badge>,
     },
     {
       accessorKey: "type",
       header: "Tipe",
       width: "w-28",
-      cell: (r) => (
+      cell: ({ row }) => (
         <div className="flex gap-1">
-          {r.isBOGO && (
+          {row.original.isBOGO && (
             <Badge variant="warning" className="text-xs gap-0.5">
               <Zap className="h-3 w-3" /> BOGO
             </Badge>
           )}
-          {r.hasChildren && (
+          {row.original.hasChildren && (
             <Badge
               variant="outline"
               className="text-xs gap-0.5 border-info text-info-foreground bg-info/10"
@@ -177,18 +177,21 @@ function RecipesPage() {
       header: "Harga Dasar",
       align: "right",
       enableSorting: true,
-      cell: (r) => `Rp ${r.basePrice.toLocaleString("id-ID")}`,
+      cell: ({ row }) => `Rp ${row.original.basePrice.toLocaleString("id-ID")}`,
     },
     {
       accessorKey: "totalCogs",
       header: "HPP Total",
       align: "right",
       enableSorting: true,
-      cell: (r) => {
-        const pct = r.totalCogs > 0 && r.basePrice > 0 ? (r.totalCogs / r.basePrice) * 100 : 0;
+      cell: ({ row }) => {
+        const pct =
+          row.original.totalCogs > 0 && row.original.basePrice > 0
+            ? (row.original.totalCogs / row.original.basePrice) * 100
+            : 0;
         return (
           <div className="flex items-center gap-1.5 justify-end">
-            <span>Rp {r.totalCogs.toLocaleString("id-ID")}</span>
+            <span>Rp {row.original.totalCogs.toLocaleString("id-ID")}</span>
             {pct > 40 && (
               <Badge variant="destructive" className="text-xs">
                 &gt;40%
@@ -202,9 +205,9 @@ function RecipesPage() {
       accessorKey: "status",
       header: "Status",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={r.status === "Active" ? "success" : "secondary"}>
-          {r.status === "Active" ? "Aktif" : "Nonaktif"}
+      cell: ({ row }) => (
+        <Badge variant={row.original.status === "Active" ? "success" : "secondary"}>
+          {row.original.status === "Active" ? "Aktif" : "Nonaktif"}
         </Badge>
       ),
     },
@@ -212,10 +215,10 @@ function RecipesPage() {
       accessorKey: "id",
       header: "",
       width: "w-12",
-      cell: (r) => (
+      cell: ({ row }) => (
         <Link
           to="/recipes/$recipeId"
-          params={{ recipeId: r.id }}
+          params={{ recipeId: row.original.id }}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         >
           <ArrowRight className="h-4 w-4" />

@@ -80,7 +80,7 @@ const columns: ColumnDef<VoucherRow>[] = [
     header: "Diskon",
     width: "w-28",
     enableSorting: true,
-    cell: (r) => formatDiscount(r),
+    cell: ({ row }) => formatDiscount(row.original),
   },
   {
     accessorKey: "minOrder",
@@ -88,22 +88,25 @@ const columns: ColumnDef<VoucherRow>[] = [
     width: "w-32",
     align: "right",
     enableSorting: true,
-    cell: (r) => (r.minOrder > 0 ? `Rp ${r.minOrder.toLocaleString("id-ID")}` : "-"),
+    cell: ({ row }) =>
+      row.original.minOrder > 0 ? `Rp ${row.original.minOrder.toLocaleString("id-ID")}` : "-",
   },
   {
     accessorKey: "validUntil",
     header: "Berlaku Sampai",
     width: "w-40",
     enableSorting: true,
-    cell: (r) => <span className="tabular-nums">{formatJakartaDateTime(r.validUntil)}</span>,
+    cell: ({ row }) => (
+      <span className="tabular-nums">{formatJakartaDateTime(row.original.validUntil)}</span>
+    ),
   },
   {
     accessorKey: "status",
     header: "Status",
     width: "w-24",
     enableSorting: true,
-    cell: (r) => {
-      const s = voucherStatus(r);
+    cell: ({ row }) => {
+      const s = voucherStatus(row.original);
       return <Badge variant={s.variant}>{s.label}</Badge>;
     },
   },
@@ -262,14 +265,14 @@ function VouchersPage() {
             accessorKey: "actions",
             header: "",
             width: "w-12",
-            cell: (r) => {
-              const action = voucherActionForStatus(r.status);
+            cell: ({ row }) => {
+              const action = voucherActionForStatus(row.original.status);
               return (
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setDeleteTarget(r);
+                    setDeleteTarget(row.original);
                   }}
                   className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   title={action === "deactivate" ? "Nonaktifkan" : "Hapus"}

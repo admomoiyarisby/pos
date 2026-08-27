@@ -55,36 +55,38 @@ function POPage() {
       accessorKey: "fromBranchId",
       header: "Dari",
       enableSorting: true,
-      cell: (r) => r.fromBranchId.slice(0, 8),
+      cell: ({ row }) => row.original.fromBranchId.slice(0, 8),
     },
     {
       accessorKey: "toBranchId",
       header: "Ke",
       enableSorting: true,
-      cell: (r) => r.toBranchId.slice(0, 8),
+      cell: ({ row }) => row.original.toBranchId.slice(0, 8),
     },
     {
       accessorKey: "status",
       header: "Status",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status}</Badge>
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant(lookupLabel(statusColors, row.original.status))}>
+          {row.original.status}
+        </Badge>
       ),
     },
     {
       accessorKey: "createdAt",
       header: "Dibuat",
       enableSorting: true,
-      cell: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
+      cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString("id-ID"),
     },
     {
       accessorKey: "id",
       header: "",
       width: "w-12",
-      cell: (r) => (
+      cell: ({ row }) => (
         <Link
           to="/purchase-orders/$poId"
-          params={{ poId: r.id }}
+          params={{ poId: row.original.id }}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
         >
           <ArrowRight className="h-4 w-4" />

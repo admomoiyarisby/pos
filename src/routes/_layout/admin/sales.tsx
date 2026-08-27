@@ -155,8 +155,8 @@ function SalesAdminPage() {
       header: "Tanggal",
       enableSorting: true,
       width: "w-28",
-      cell: (r) =>
-        new Date(r.createdAt).toLocaleDateString("id-ID", {
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleDateString("id-ID", {
           day: "2-digit",
           month: "short",
         }),
@@ -168,14 +168,16 @@ function SalesAdminPage() {
       header: "Channel",
       width: "w-24",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant="outline">{lookupLabel(channelLabels, r.channel) ?? r.channel}</Badge>
+      cell: ({ row }) => (
+        <Badge variant="outline">
+          {lookupLabel(channelLabels, row.original.channel) ?? row.original.channel}
+        </Badge>
       ),
     },
     {
       accessorKey: "customerName",
       header: "Pelanggan",
-      cell: (r) => r.customerName ?? "-",
+      cell: ({ row }) => row.original.customerName ?? "-",
       width: "w-28",
     },
     {
@@ -184,34 +186,36 @@ function SalesAdminPage() {
       align: "right",
       width: "w-28",
       enableSorting: true,
-      cell: (r) => formatRupiah(r.totalAmount),
+      cell: ({ row }) => formatRupiah(row.original.totalAmount),
     },
     {
       accessorKey: "netSales",
       header: "Net Sales",
       align: "right",
       width: "w-28",
-      cell: (r) => formatRupiah(r.netSales),
+      cell: ({ row }) => formatRupiah(row.original.netSales),
     },
     {
       accessorKey: "status",
       header: "Status",
       width: "w-24",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={lookupLabel(statusColors, r.status) ?? "default"}>{r.status}</Badge>
+      cell: ({ row }) => (
+        <Badge variant={lookupLabel(statusColors, row.original.status) ?? "default"}>
+          {row.original.status}
+        </Badge>
       ),
     },
     {
       accessorKey: "actions",
       header: "",
       width: "w-20",
-      cell: (r) => (
+      cell: ({ row }) => (
         <div className="flex gap-1">
           <button
             onClick={() => {
-              setSelectedOrder(r);
-              setEditAmount(String(r.totalAmount));
+              setSelectedOrder(row.original);
+              setEditAmount(String(row.original.totalAmount));
               setEditModal(true);
             }}
             className="h-7 px-2 rounded text-xs border hover:bg-muted transition-colors"
@@ -220,7 +224,7 @@ function SalesAdminPage() {
           </button>
           <button
             onClick={() => {
-              setSelectedOrder(r);
+              setSelectedOrder(row.original);
               setDeleteModal(true);
             }}
             className="h-7 px-2 rounded text-xs border text-destructive hover:bg-destructive/10 transition-colors"

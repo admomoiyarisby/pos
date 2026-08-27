@@ -60,8 +60,8 @@ function SystemLogsPage() {
       accessorKey: "createdAt",
       header: "Waktu",
       width: "w-36",
-      cell: (r) =>
-        new Date(r.createdAt).toLocaleString("id-ID", {
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
           month: "short",
           hour: "2-digit",
@@ -72,8 +72,8 @@ function SystemLogsPage() {
       accessorKey: "status",
       header: "",
       width: "w-8",
-      cell: (r) => {
-        const config = statusConfig[r.status];
+      cell: ({ row }) => {
+        const config = statusConfig[row.original.status];
         const Icon = config.icon;
         return (
           <Icon
@@ -89,7 +89,7 @@ function SystemLogsPage() {
       header: "User",
       width: "w-32",
       enableSorting: true,
-      cell: (r) => r.userName ?? "system",
+      cell: ({ row }) => row.original.userName ?? "system",
     },
   ];
 

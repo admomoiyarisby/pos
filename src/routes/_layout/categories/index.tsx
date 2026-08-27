@@ -29,7 +29,7 @@ const columns: ColumnDef<CategoryRow>[] = [
     accessorKey: "name",
     header: "Kategori",
     enableSorting: true,
-    cell: (r) => <span className="font-medium capitalize">{r.name}</span>,
+    cell: ({ row }) => <span className="font-medium capitalize">{row.original.name}</span>,
   },
   {
     accessorKey: "recipeCount",
@@ -37,16 +37,16 @@ const columns: ColumnDef<CategoryRow>[] = [
     width: "w-28",
     align: "center",
     enableSorting: true,
-    cell: (r) => <Badge variant="outline">{r.recipeCount}</Badge>,
+    cell: ({ row }) => <Badge variant="outline">{row.original.recipeCount}</Badge>,
   },
   {
     accessorKey: "id",
     header: "",
     width: "w-12",
-    cell: (r) => (
+    cell: ({ row }) => (
       <Link
         to="/categories/$categoryId"
-        params={{ categoryId: r.id }}
+        params={{ categoryId: row.original.id }}
         className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       >
         <ArrowRight className="h-4 w-4" />

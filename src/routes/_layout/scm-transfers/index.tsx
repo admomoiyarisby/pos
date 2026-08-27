@@ -206,21 +206,25 @@ function TransfersListPage() {
       accessorKey: "fromBranchId",
       header: "Dari",
       enableSorting: true,
-      cell: (r) => branchById.get(r.fromBranchId)?.name ?? r.fromBranchId.slice(0, 8) + "...",
+      cell: ({ row }) =>
+        branchById.get(row.original.fromBranchId)?.name ??
+        row.original.fromBranchId.slice(0, 8) + "...",
     },
     {
       accessorKey: "toBranchId",
       header: "Ke",
       enableSorting: true,
-      cell: (r) => branchById.get(r.toBranchId)?.name ?? r.toBranchId.slice(0, 8) + "...",
+      cell: ({ row }) =>
+        branchById.get(row.original.toBranchId)?.name ??
+        row.original.toBranchId.slice(0, 8) + "...",
     },
     {
       accessorKey: "status",
       header: "Status",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>
-          {lookupLabel(statusLabels, r.status) ?? r.status}
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant(lookupLabel(statusColors, row.original.status))}>
+          {lookupLabel(statusLabels, row.original.status) ?? row.original.status}
         </Badge>
       ),
     },
@@ -228,20 +232,20 @@ function TransfersListPage() {
       accessorKey: "createdAt",
       header: "Tgl Dibuat",
       enableSorting: true,
-      cell: (r) => new Date(r.createdAt).toLocaleDateString("id-ID"),
+      cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString("id-ID"),
     },
     {
       accessorKey: "id",
       header: "",
       width: "w-44",
-      cell: (r) => {
+      cell: ({ row }) => {
         const isAm = user?.role === "area_manager";
         const isCrossJurisdiction =
           isAm &&
           user.assignedBranches &&
           !canAmAct(
             { assignedBranches: user.assignedBranches },
-            { fromBranchId: r.fromBranchId, toBranchId: r.toBranchId },
+            { fromBranchId: row.original.fromBranchId, toBranchId: row.original.toBranchId },
           );
 
         return (
@@ -254,7 +258,7 @@ function TransfersListPage() {
             )}
             <Link
               to="/scm-transfers/$transferId"
-              params={{ transferId: r.id }}
+              params={{ transferId: row.original.id }}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
             >
               <ArrowRight className="h-4 w-4" />

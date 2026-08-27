@@ -74,8 +74,8 @@ function LedgerPage() {
       header: "Waktu",
       width: "w-36",
       enableSorting: true,
-      cell: (r) =>
-        new Date(r.createdAt).toLocaleString("id-ID", {
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleString("id-ID", {
           day: "2-digit",
           month: "short",
           hour: "2-digit",
@@ -86,17 +86,17 @@ function LedgerPage() {
       accessorKey: "ingredientName",
       header: "Bahan/Resep",
       enableSorting: true,
-      cell: (r) => {
+      cell: ({ row }) => {
         // Show recipe name for recipe-linked entries, ingredient name otherwise
-        if (r.recipeName) {
+        if (row.original.recipeName) {
           return (
             <span className="flex items-center gap-1">
               <Factory className="h-3 w-3 text-muted-foreground" />
-              <span className="font-medium">{r.recipeName}</span>
+              <span className="font-medium">{row.original.recipeName}</span>
             </span>
           );
         }
-        return r.ingredientName ?? "-";
+        return row.original.ingredientName ?? "-";
       },
     },
     {
@@ -104,7 +104,11 @@ function LedgerPage() {
       header: "Tipe",
       width: "w-16",
       enableSorting: true,
-      cell: (r) => <Badge variant={r.type === "IN" ? "success" : "destructive"}>{r.type}</Badge>,
+      cell: ({ row }) => (
+        <Badge variant={row.original.type === "IN" ? "success" : "destructive"}>
+          {row.original.type}
+        </Badge>
+      ),
     },
     {
       accessorKey: "quantity",
@@ -112,10 +116,12 @@ function LedgerPage() {
       align: "right",
       width: "w-20",
       enableSorting: true,
-      cell: (r) => (
+      cell: ({ row }) => (
         <span>
-          {r.quantity.toLocaleString("id-ID")}
-          {r.stockUnit && <span className="text-muted-foreground ml-0.5">{r.stockUnit}</span>}
+          {row.original.quantity.toLocaleString("id-ID")}
+          {row.original.stockUnit && (
+            <span className="text-muted-foreground ml-0.5">{row.original.stockUnit}</span>
+          )}
         </span>
       ),
     },
@@ -125,10 +131,12 @@ function LedgerPage() {
       align: "right",
       width: "w-20",
       enableSorting: true,
-      cell: (r) => (
+      cell: ({ row }) => (
         <span>
-          {r.balance.toLocaleString("id-ID")}
-          {r.stockUnit && <span className="text-muted-foreground ml-0.5">{r.stockUnit}</span>}
+          {row.original.balance.toLocaleString("id-ID")}
+          {row.original.stockUnit && (
+            <span className="text-muted-foreground ml-0.5">{row.original.stockUnit}</span>
+          )}
         </span>
       ),
     },
@@ -136,11 +144,11 @@ function LedgerPage() {
       accessorKey: "reference",
       header: "Referensi",
       width: "w-36",
-      cell: (r) => {
-        const isYield = r.reference.startsWith("YIELD-");
-        const display = reference ? r.reference : r.reference.slice(0, 8);
+      cell: ({ row }) => {
+        const isYield = row.original.reference.startsWith("YIELD-");
+        const display = reference ? row.original.reference : row.original.reference.slice(0, 8);
         if (isYield) {
-          const yieldId = r.reference.replace("YIELD-", "");
+          const yieldId = row.original.reference.replace("YIELD-", "");
           return (
             <a
               href={`/yield-tracking?highlight=${yieldId}`}
@@ -154,7 +162,7 @@ function LedgerPage() {
         return <span className="font-mono text-xs">{display}</span>;
       },
     },
-    { accessorKey: "notes", header: "Keterangan", cell: (r) => r.notes ?? "-" },
+    { accessorKey: "notes", header: "Keterangan", cell: ({ row }) => row.original.notes ?? "-" },
   ];
   usePageTitle("Kartu Stok", "Riwayat mutasi masuk dan keluar");
 

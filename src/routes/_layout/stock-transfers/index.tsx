@@ -193,21 +193,25 @@ function TransferPage() {
       accessorKey: "fromBranchId",
       header: "Dari",
       enableSorting: true,
-      cell: (r) =>
-        branches.find((b) => b.id === r.fromBranchId)?.name ?? r.fromBranchId.slice(0, 8),
+      cell: ({ row }) =>
+        branches.find((b) => b.id === row.original.fromBranchId)?.name ??
+        row.original.fromBranchId.slice(0, 8),
     },
     {
       accessorKey: "toBranchId",
       header: "Ke",
       enableSorting: true,
-      cell: (r) => branches.find((b) => b.id === r.toBranchId)?.name ?? r.toBranchId.slice(0, 8),
+      cell: ({ row }) =>
+        branches.find((b) => b.id === row.original.toBranchId)?.name ??
+        row.original.toBranchId.slice(0, 8),
     },
     {
       accessorKey: "ingredientId",
       header: "Bahan",
       enableSorting: true,
-      cell: (r) =>
-        ingredients.find((i) => i.id === r.ingredientId)?.name ?? r.ingredientId.slice(0, 8),
+      cell: ({ row }) =>
+        ingredients.find((i) => i.id === row.original.ingredientId)?.name ??
+        row.original.ingredientId.slice(0, 8),
     },
     {
       accessorKey: "quantity",
@@ -215,37 +219,39 @@ function TransferPage() {
       align: "right",
       width: "w-20",
       enableSorting: true,
-      cell: (r) => r.quantity.toLocaleString("id-ID"),
+      cell: ({ row }) => row.original.quantity.toLocaleString("id-ID"),
     },
     {
       accessorKey: "status",
       header: "Status",
       enableSorting: true,
-      cell: (r) => (
-        <Badge variant={badgeVariant(lookupLabel(statusColors, r.status))}>{r.status}</Badge>
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant(lookupLabel(statusColors, row.original.status))}>
+          {row.original.status}
+        </Badge>
       ),
     },
     {
       accessorKey: "id",
       header: "",
       width: "w-48",
-      cell: (r) => {
+      cell: ({ row }) => {
         const canApprove =
-          r.status === "Pending Approval" &&
+          row.original.status === "Pending Approval" &&
           ["super_admin", "area_manager"].includes(user?.role ?? "");
         const canReject =
-          r.status === "Pending Approval" &&
+          row.original.status === "Pending Approval" &&
           ["super_admin", "area_manager"].includes(user?.role ?? "");
         const canShip =
-          r.status === "Approved" &&
+          row.original.status === "Approved" &&
           (["super_admin", "admin_pusat"].includes(user?.role ?? "") ||
-            (user?.role === "branch_admin" && user?.branchId === r.fromBranchId));
+            (user?.role === "branch_admin" && user?.branchId === row.original.fromBranchId));
         const canReceive =
-          r.status === "In Transit" &&
+          row.original.status === "In Transit" &&
           (["super_admin"].includes(user?.role ?? "") ||
-            (user?.role === "branch_admin" && user?.branchId === r.toBranchId));
+            (user?.role === "branch_admin" && user?.branchId === row.original.toBranchId));
         const canCancel =
-          ["Approved", "In Transit"].includes(r.status) &&
+          ["Approved", "In Transit"].includes(row.original.status) &&
           ["super_admin", "admin_pusat"].includes(user?.role ?? "");
 
         return (
@@ -254,7 +260,7 @@ function TransferPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  void approveMutation.mutateAsync({ data: { transferId: r.id } });
+                  void approveMutation.mutateAsync({ data: { transferId: row.original.id } });
                 }}
                 className="h-7 px-2 rounded-md bg-success text-success-foreground text-[10px] font-medium"
               >
@@ -266,7 +272,7 @@ function TransferPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setRejectModal({ id: r.id, code: r.code });
+                  setRejectModal({ id: row.original.id, code: row.original.code });
                 }}
                 className="h-7 px-2 rounded-md bg-destructive text-destructive-foreground text-[10px] font-medium"
               >
@@ -278,7 +284,7 @@ function TransferPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  void shipMutation.mutateAsync({ data: { transferId: r.id } });
+                  void shipMutation.mutateAsync({ data: { transferId: row.original.id } });
                 }}
                 className="h-7 px-2 rounded-md bg-info text-info-foreground text-[10px] font-medium"
               >
@@ -290,7 +296,7 @@ function TransferPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  void receiveMutation.mutateAsync({ data: { transferId: r.id } });
+                  void receiveMutation.mutateAsync({ data: { transferId: row.original.id } });
                 }}
                 className="h-7 px-2 rounded-md bg-success text-success-foreground text-[10px] font-medium"
               >
@@ -302,7 +308,7 @@ function TransferPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setCancelModal({ id: r.id, code: r.code });
+                  setCancelModal({ id: row.original.id, code: row.original.code });
                 }}
                 className="h-7 px-2 rounded-md bg-secondary text-secondary-foreground text-[10px] font-medium"
               >
@@ -312,7 +318,7 @@ function TransferPage() {
             )}
             <Link
               to="/stock-transfers/$trId"
-              params={{ trId: r.id }}
+              params={{ trId: row.original.id }}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
             >
               <ArrowRight className="h-4 w-4" />
