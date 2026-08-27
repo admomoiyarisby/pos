@@ -174,16 +174,24 @@ export default function DataTable<T extends RowData>({
   const tableColumns = useMemo(
     () =>
       columns.map((column) => {
-        // SAFETY: searchKeys are keys of T; string comparison is safe for column.key membership test.
+        // SAFETY: columns may define `key` (legacy), `accessorKey`, or `id`; resolve to a single data key for filtering/rendering.
+        const dataKey =
+          (column as { accessorKey?: string }).accessorKey ??
+          column.key ??
+          (column as { id?: string }).id ??
+          "";
+        // SAFETY: searchKeys are keys of T; string comparison is safe for dataKey membership test.
         const enableGlobalFilter = searchable
           ? searchKeys
-            ? (searchKeys as string[]).includes(column.key)
+            ? (searchKeys as string[]).includes(dataKey)
             : true
           : false;
         return {
           ...column,
-          // SAFETY: legacy Column uses `key`; if an accessorKey was already set on the ColumnDef, preserve it.
-          accessorKey: (column as { accessorKey?: string }).accessorKey ?? column.key,
+          // SAFETY: ensure both `key` and `accessorKey` are populated so TanStack and the fallback renderer agree.
+          key: dataKey,
+          // SAFETY: same dataKey invariant — preserve existing accessorKey if present.
+          accessorKey: (column as { accessorKey?: string }).accessorKey ?? dataKey,
           header: column.header,
           enableSorting: column.enableSorting ?? column.sortable ?? false,
           enableGlobalFilter,
@@ -194,10 +202,10 @@ export default function DataTable<T extends RowData>({
           cell:
             column.cell ??
             (({ row }: { row: { original: T } }) => {
-              // SAFETY: app columns use string keys for primitive display values.
+              // SAFETY: app columns use string keys for primitive display values; dataKey covers `key`/`accessorKey`/`id`.
               const value =
                 column.render?.(row.original) ??
-                (safeStr((row.original as Record<string, SortableCellValue>)[column.key]) || "-");
+                (safeStr((row.original as Record<string, SortableCellValue>)[dataKey]) || "-");
               return value;
             }),
         };
