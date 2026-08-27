@@ -418,7 +418,7 @@ function WastePage() {
             align: "right" as const,
             width: "w-32",
             enableSorting: true,
-            cell: ({ row: _row }: WasteRow) => formatRupiah(r.valuation),
+            cell: ({ row }) => formatRupiah(row.original.valuation),
           },
         ]),
     { accessorKey: "notes", header: "Keterangan", cell: ({ row }) => row.original.notes ?? "-" },
