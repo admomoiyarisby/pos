@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import {
   columnFilteringFeature,
+  columnVisibilityFeature,
   createFilteredRowModel,
   createPaginatedRowModel,
   createSortedRowModel,
@@ -59,6 +60,7 @@ const fuzzySort: SortingFn<unknown> = (rowA, rowB, columnId) => {
 // rowSortingFeature before sortedRowModel/sortFns, rowPaginationFeature before paginatedRowModel.
 const dataTableFeatures = tableFeatures({
   columnFilteringFeature,
+  columnVisibilityFeature,
   globalFilteringFeature,
   rowSortingFeature,
   rowPaginationFeature,
