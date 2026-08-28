@@ -80,16 +80,17 @@ export default function ModifierOptionKindEditor({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1.5">
+      {/* Segmented control — the primary decision. Track is muted, the active
+          segment is a raised surface (iOS-style), and switching kind clears
+          both kinds' links so exactly-one-kind holds on save. */}
+      <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
         {KIND_OPTIONS.map((opt) => {
           const active = draft.kind === opt.value;
           return (
             <button
               key={opt.value}
               type="button"
-              // Switching kind clears both kinds' links so exactly-one-kind
-              // holds (a text option must not carry a stale ingredient/recipe
-              // link, or the server rejects it on save).
+              aria-pressed={active}
               onClick={() =>
                 onChange({
                   kind: opt.value,
@@ -100,10 +101,10 @@ export default function ModifierOptionKindEditor({
                 })
               }
               className={
-                "h-7 rounded-md px-2.5 text-xs font-medium transition-colors " +
+                "h-8 rounded-md text-sm font-medium transition-colors " +
                 (active
-                  ? "bg-primary text-primary-foreground"
-                  : "border border-input bg-background text-muted-foreground hover:bg-accent hover:text-foreground")
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground")
               }
             >
               {opt.label}
@@ -111,6 +112,18 @@ export default function ModifierOptionKindEditor({
           );
         })}
       </div>
+
+      {draft.kind === "text" && (
+        <div className="space-y-1">
+          <Label className="text-xs">Nama</Label>
+          <Input
+            value={draft.name ?? ""}
+            onChange={(e) => onChange({ name: e.target.value })}
+            placeholder="Contoh: Level Pedas 1"
+            required
+          />
+        </div>
+      )}
 
       {draft.kind === "ingredient" && (
         <div className="flex items-end gap-2">
@@ -155,7 +168,7 @@ export default function ModifierOptionKindEditor({
               value={draft.ingredientQty ?? 1}
               onChange={(e) => onChange({ ingredientQty: Number(e.target.value) })}
               disabled={!draft.ingredientId}
-              className="h-8"
+              className="h-9"
             />
           </div>
         </div>
@@ -204,7 +217,7 @@ export default function ModifierOptionKindEditor({
               value={draft.recipeQty ?? 1}
               onChange={(e) => onChange({ recipeQty: Number(e.target.value) })}
               disabled={!draft.recipeId}
-              className="h-8"
+              className="h-9"
             />
           </div>
         </div>

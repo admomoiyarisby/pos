@@ -88,11 +88,37 @@ function SortableCard({
   };
 
   return (
-    <Card ref={setNodeRef} style={style} data-option-card className="p-3 mb-2">
+    <Card ref={setNodeRef} style={style} data-option-card className="p-3.5 mb-2.5">
       <div className="space-y-3">
+        {/* Header: grip + title + remove — the drag affordance lives at the
+            top with the option's title, not floating beside the fields. */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="cursor-grab touch-none text-muted-foreground hover:text-foreground shrink-0"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+          <span className="text-sm font-semibold flex-1 min-w-0 truncate">Opsi #{index + 1}</span>
+          {canRemove && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onRemove}
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+
         <ModifierOptionKindEditor
           draft={{
             kind: mod.kind,
+            name: mod.name,
             ingredientId: mod.ingredientId,
             ingredientQty: mod.ingredientQty,
             recipeId: mod.recipeId,
@@ -100,53 +126,22 @@ function SortableCard({
           }}
           onChange={(updates) => onChange({ ...mod, ...updates })}
         />
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="cursor-grab touch-none text-muted-foreground hover:text-foreground shrink-0 self-start"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-muted-foreground">Opsi #{index + 1}</span>
-              {canRemove && (
-                <Button type="button" variant="ghost" size="sm" onClick={onRemove}>
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              {/* The name is derived from the picked ingredient/recipe for
-                  those kinds; only text options have a free-text name. */}
-              {mod.kind === "text" && (
-                <div className="flex-1 space-y-1">
-                  <Label className="text-xs">Nama</Label>
-                  <Input
-                    value={mod.name}
-                    onChange={(e) => onChange({ ...mod, name: e.target.value })}
-                    required
-                  />
-                </div>
-              )}
-              <div className={mod.kind === "text" ? "w-24 space-y-1" : "flex-1 space-y-1"}>
-                <Label className="text-xs">Harga</Label>
-                <MoneyInput
-                  value={mod.price}
-                  onChange={(raw) => onChange({ ...mod, price: raw ?? 0 })}
-                  className="h-8 w-24"
-                />
-              </div>
-              <div className="flex items-center gap-2 pt-5">
-                <Switch
-                  checked={mod.isExclusion}
-                  onCheckedChange={(checked) => onChange({ ...mod, isExclusion: checked === true })}
-                />
-                <Label className="text-xs">Exclusion</Label>
-              </div>
-            </div>
+
+        {/* Secondary settings, separated from the kind content. */}
+        <div className="flex items-end gap-3 border-t border-border/60 pt-3">
+          <div className="flex-1 space-y-1">
+            <Label className="text-xs">Harga</Label>
+            <MoneyInput
+              value={mod.price}
+              onChange={(raw) => onChange({ ...mod, price: raw ?? 0 })}
+            />
+          </div>
+          <div className="flex items-center gap-2 pb-1.5">
+            <Switch
+              checked={mod.isExclusion}
+              onCheckedChange={(checked) => onChange({ ...mod, isExclusion: checked === true })}
+            />
+            <Label className="text-xs font-medium">Exclusion</Label>
           </div>
         </div>
       </div>
@@ -189,7 +184,7 @@ function SortableModifierRow({ mod }: { mod: any }) {
   };
 
   return (
-    <tr ref={setNodeRef} style={style} className="border-b hover:bg-muted/30">
+    <tr ref={setNodeRef} style={style} className="border-b hover:bg-muted/30 max-md:min-h-[44px]">
       <td className="w-8 px-2 py-2">
         <button
           type="button"
@@ -515,17 +510,18 @@ function ModifierGroupDetailPage() {
       <div className="space-y-6">
         <button
           onClick={goBack}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors h-10 -mx-2 px-2 rounded-md"
         >
           <ArrowLeft className="h-4 w-4" />
           Kembali
         </button>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">Kode: {group.code}</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold leading-tight truncate">{group.name}</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Kode: {group.code}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             <button
               onClick={() => setDeleteOpen(true)}
               className="h-10 md:h-9 px-3 rounded-md border text-sm text-destructive flex items-center gap-1.5 hover:bg-destructive/10"
@@ -552,7 +548,7 @@ function ModifierGroupDetailPage() {
 
         {isEditing ? (
           <form onSubmit={handleSave} className="space-y-4 max-w-xl">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Kode</Label>
                 <Input name="code" defaultValue={group.code} required />
@@ -592,6 +588,7 @@ function ModifierGroupDetailPage() {
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="max-md:h-10"
                   onClick={() =>
                     setModifiersInput([
                       ...modifiersInput,
@@ -644,10 +641,15 @@ function ModifierGroupDetailPage() {
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={cancelEditing}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={cancelEditing}
+                className="max-md:h-10"
+              >
                 Batal
               </Button>
-              <Button type="submit" disabled={updateMutation.isPending}>
+              <Button type="submit" disabled={updateMutation.isPending} className="max-md:h-10">
                 {updateMutation.isPending ? "Menyimpan..." : "Simpan"}
               </Button>
             </div>
@@ -733,7 +735,7 @@ function ModifierGroupDetailPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Menu Terkait</h2>
-                <Button variant="outline" size="sm" onClick={openLinkModal}>
+                <Button variant="outline" size="sm" className="max-md:h-10" onClick={openLinkModal}>
                   <Link2 className="h-3.5 w-3.5 mr-1.5" />
                   Atur Menu
                 </Button>
@@ -788,7 +790,7 @@ function ModifierGroupDetailPage() {
                   value={recipeSearch}
                   onChange={(e) => setRecipeSearch(e.target.value)}
                   placeholder="Cari menu..."
-                  className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="h-9 max-md:h-10 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
               </div>
               <p className="text-xs text-muted-foreground mb-2">
@@ -805,7 +807,7 @@ function ModifierGroupDetailPage() {
                     return (
                       <label
                         key={recipe.id}
-                        className="flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer hover:bg-accent"
+                        className="flex items-center gap-3 px-3 py-2 max-md:min-h-[44px] rounded-md cursor-pointer hover:bg-accent"
                       >
                         <Checkbox
                           checked={isChecked}

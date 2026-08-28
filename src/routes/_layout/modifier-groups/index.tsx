@@ -76,7 +76,7 @@ export const Route = createFileRoute("/_layout/modifier-groups/")({
 function DropIndicatorRow() {
   return (
     <tr>
-      <td colSpan={7} className="p-0">
+      <td colSpan={8} className="p-0">
         <div className="h-0.5 w-full bg-primary rounded-full" />
       </td>
     </tr>
@@ -97,7 +97,7 @@ function SortableGroupRow({ group }: { group: MGRow }) {
   };
 
   return (
-    <tr ref={setNodeRef} style={style} className="border-b hover:bg-muted/30">
+    <tr ref={setNodeRef} style={style} className="border-b hover:bg-muted/30 max-md:min-h-[44px]">
       <td className="w-8 px-2 py-2">
         <button
           type="button"
@@ -124,7 +124,7 @@ function SortableGroupRow({ group }: { group: MGRow }) {
         <Link
           to="/modifier-groups/$mgId"
           params={{ mgId: group.id }}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          className="inline-flex h-9 w-9 max-md:h-10 max-md:w-10 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         >
           <ArrowRight className="h-4 w-4" />
         </Link>
@@ -394,7 +394,7 @@ function ModifierGroupsPage() {
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Kode</Label>
               <Input name="code" required className="h-10 md:h-9" />
@@ -436,6 +436,7 @@ function ModifierGroupsPage() {
                 type="button"
                 variant="outline"
                 size="sm"
+                className="max-md:h-10"
                 onClick={() =>
                   setModifiersInput([
                     ...modifiersInput,
@@ -455,73 +456,66 @@ function ModifierGroupsPage() {
             </div>
             <div ref={optionsListRef}>
               {modifiersInput.map((mod, i) => (
-                <Card key={i} data-option-card className="p-3 mb-2">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-muted-foreground">Opsi #{i + 1}</span>
-                    {modifiersInput.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setModifiersInput(modifiersInput.filter((_, j) => j !== i))}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                  <ModifierOptionKindEditor
-                    draft={{
-                      kind: mod.kind,
-                      ingredientId: mod.ingredientId,
-                      ingredientQty: mod.ingredientQty,
-                      recipeId: mod.recipeId,
-                      recipeQty: mod.recipeQty,
-                    }}
-                    onChange={(updates) => {
-                      const next = [...modifiersInput];
-                      next[i] = { ...next[i], ...updates };
-                      setModifiersInput(next);
-                    }}
-                  />
-                  <div className="flex items-center gap-3">
-                    {/* The name is derived from the picked ingredient/recipe for
-                        those kinds; only text options have a free-text name. */}
-                    {mod.kind === "text" && (
+                <Card key={i} data-option-card className="p-3.5 mb-2.5">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold flex-1 min-w-0 truncate">
+                        Opsi #{i + 1}
+                      </span>
+                      {modifiersInput.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() =>
+                            setModifiersInput(modifiersInput.filter((_, j) => j !== i))
+                          }
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+
+                    <ModifierOptionKindEditor
+                      draft={{
+                        kind: mod.kind,
+                        name: mod.name,
+                        ingredientId: mod.ingredientId,
+                        ingredientQty: mod.ingredientQty,
+                        recipeId: mod.recipeId,
+                        recipeQty: mod.recipeQty,
+                      }}
+                      onChange={(updates) => {
+                        const next = [...modifiersInput];
+                        next[i] = { ...next[i], ...updates };
+                        setModifiersInput(next);
+                      }}
+                    />
+
+                    <div className="flex items-end gap-3 border-t border-border/60 pt-3">
                       <div className="flex-1 space-y-1">
-                        <Label className="text-xs">Nama</Label>
-                        <Input
-                          value={mod.name}
-                          onChange={(e) => {
+                        <Label className="text-xs">Harga</Label>
+                        <MoneyInput
+                          value={mod.price}
+                          onChange={(raw) => {
                             const next = [...modifiersInput];
-                            next[i] = { ...next[i], name: e.target.value };
+                            next[i] = { ...next[i], price: raw ?? 0 };
                             setModifiersInput(next);
                           }}
-                          required
                         />
                       </div>
-                    )}
-                    <div className={mod.kind === "text" ? "w-24 space-y-1" : "flex-1 space-y-1"}>
-                      <Label className="text-xs">Harga</Label>
-                      <MoneyInput
-                        value={mod.price}
-                        onChange={(raw) => {
-                          const next = [...modifiersInput];
-                          next[i] = { ...next[i], price: raw ?? 0 };
-                          setModifiersInput(next);
-                        }}
-                        className="h-8 w-24"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2 pt-5">
-                      <Switch
-                        checked={mod.isExclusion}
-                        onCheckedChange={(checked) => {
-                          const next = [...modifiersInput];
-                          next[i] = { ...next[i], isExclusion: checked };
-                          setModifiersInput(next);
-                        }}
-                      />
-                      <Label className="text-xs">Exclusion</Label>
+                      <div className="flex items-center gap-2 pb-1.5">
+                        <Switch
+                          checked={mod.isExclusion}
+                          onCheckedChange={(checked) => {
+                            const next = [...modifiersInput];
+                            next[i] = { ...next[i], isExclusion: checked };
+                            setModifiersInput(next);
+                          }}
+                        />
+                        <Label className="text-xs font-medium">Exclusion</Label>
+                      </div>
                     </div>
                   </div>
                 </Card>
@@ -549,7 +543,9 @@ function ModifierGroupsPage() {
             >
               Batal
             </Button>
-            <Button type="submit">Tambah</Button>
+            <Button type="submit" className="max-md:h-10">
+              Tambah
+            </Button>
           </div>
         </form>
       </Modal>
