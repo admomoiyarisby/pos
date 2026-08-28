@@ -109,7 +109,12 @@ function PlatformFeesPage() {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setDeleteInfoTarget(r.channel);
+                  // SAFETY: the action button is rendered inside a table row; closest("tr")
+                  // therefore returns the row carrying the platform-fee data attributes.
+                  setDeleteInfoTarget(
+                    (e.currentTarget.closest("tr") as HTMLTableRowElement | null)?.dataset
+                      .channel ?? "",
+                  );
                 }}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/40 cursor-not-allowed"
                 title="Biaya platform tidak dapat dihapus"

@@ -125,7 +125,7 @@ function BomWastePicker({
   const qtyOf = (line: RecipeBomLine) =>
     selection[line.ingredientId]?.qtyOverride ?? defaultQty(line);
 
-  const setLine = (line: RecipeBomLine, patch: Partial<BomSelection>) => {
+  const setLine = (line: RecipeBomLine, patch: Partial<BomSelection> & { qty?: number }) => {
     onSelectionChange({
       ...selection,
       [line.ingredientId]: {
@@ -468,9 +468,7 @@ function WastePage() {
     ENABLE_PORSI_WASTE_MODE ? "porsi" : "bom",
   );
   // Per-BOM-line checkbox + editable qty, keyed by ingredientId.
-  const [bomSelection, setBomSelection] = useState<
-    Record<string, { checked: boolean; qty: number }>
-  >({});
+  const [bomSelection, setBomSelection] = useState<Record<string, BomSelection>>({});
   // Controlled Jumlah (porsi count) — drives default BOM line quantities.
   const [quantityValue, setQuantityValue] = useState("1");
 
@@ -634,7 +632,9 @@ function WastePage() {
           .filter((l) => bomSelection[l.ingredientId]?.checked)
           .map((l) => ({
             ingredientId: l.ingredientId,
-            quantity: bomSelection[l.ingredientId]?.qty ?? 0,
+            quantity:
+              bomSelection[l.ingredientId]?.qtyOverride ??
+              Math.max(1, Math.round(l.perPorsi * (Number(quantityValue) || 1))),
           }));
         if (
           lines.length === 0 ||

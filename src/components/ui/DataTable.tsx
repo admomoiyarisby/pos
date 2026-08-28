@@ -23,27 +23,27 @@ import {
   tableFeatures,
   useTable,
 } from "@tanstack/react-table";
-import type { ColumnDef, FilterFn, RowData, SortingFn, TableOptions } from "@tanstack/react-table";
+import type { ColumnDef, FilterFn, RowData, SortFn, TableOptions } from "@tanstack/react-table";
 import { compareItems, rankItem } from "@tanstack/match-sorter-utils";
 import type { RankingInfo } from "@tanstack/match-sorter-utils";
 
 declare module "@tanstack/react-table" {
   interface FilterFns {
-    fuzzy: FilterFn<unknown>;
+    fuzzy: FilterFn<any, any>;
   }
   interface FilterMeta {
     itemRank: RankingInfo;
   }
 }
 
-const fuzzyFilter: FilterFn<unknown> = (row, columnId, value, addMeta) => {
+const fuzzyFilter: FilterFn<any, any> = (row, columnId, value, addMeta) => {
   // SAFETY: global/column filter value is a string search term; rankItem handles non-string via String(value) internally.
   const itemRank = rankItem(row.getValue(columnId), value as string);
   addMeta({ itemRank });
   return itemRank.passed;
 };
 
-const fuzzySort: SortingFn<unknown> = (rowA, rowB, columnId) => {
+const fuzzySort: SortFn<any, any> = (rowA, rowB, columnId) => {
   let dir = 0;
   if (rowA.columnFiltersMeta[columnId]) {
     dir = compareItems(
@@ -75,7 +75,7 @@ const dataTableFeatures = tableFeatures({
   },
 });
 
-export type Column<T extends RowData> = ColumnDef<unknown, T, unknown> & {
+export type Column<T extends RowData> = ColumnDef<any, T, any> & {
   key: string;
   header: React.ReactNode;
   width?: string;
@@ -113,7 +113,7 @@ interface DataTableProps<T extends RowData> {
   onSearchChange?: (value: string) => void;
   page?: number;
   onPageChange?: (page: number) => void;
-  tableOptions?: Omit<Partial<TableOptions<unknown, T>>, "data" | "columns" | "state">;
+  tableOptions?: Omit<Partial<TableOptions<any, T>>, "data" | "columns">;
   features?: DataTableFeatureOptions;
 }
 
@@ -198,7 +198,7 @@ export default function DataTable<T extends RowData>({
           // SAFETY: fuzzy filter is registered in filterFns; per-column filterFn uses the same ranking logic.
           filterFn: "fuzzy" as const,
           // SAFETY: fuzzy sort falls back to alphanumeric when no rank meta is present.
-          sortingFn: fuzzySort as SortingFn<unknown>,
+          sortFn: fuzzySort as SortFn<any, T>,
           cell:
             column.cell ??
             (({ row }: { row: { original: T } }) => {
@@ -219,7 +219,7 @@ export default function DataTable<T extends RowData>({
     features: dataTableFeatures,
     data: deduped,
     // SAFETY: tableColumns are built from validated Column<T> definitions and satisfy ColumnDef.
-    columns: tableColumns as ColumnDef<unknown, T, unknown>[],
+    columns: tableColumns as ColumnDef<any, T, any>[],
     state: {
       globalFilter: searchable && features.filtering ? searchValue : "",
       sorting: features.sorting ? sorting : [],
@@ -227,7 +227,7 @@ export default function DataTable<T extends RowData>({
       ...tableOptions?.state,
     },
     globalFilterFn: searchable && features.filtering ? "fuzzy" : undefined,
-  } as TableOptions<unknown, T>);
+  } as TableOptions<any, T>);
 
   const headerGroups = table.getHeaderGroups();
   const leafHeaderCount = headerGroups[0]?.headers.length ?? columns.length;

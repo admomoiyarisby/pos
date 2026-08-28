@@ -3,7 +3,7 @@ import { Pagination } from "#/components/ui/Pagination";
 
 interface WasteEntry {
   id: string;
-  ingredientId: string;
+  ingredientId: string | null;
   quantity: number;
 }
 
