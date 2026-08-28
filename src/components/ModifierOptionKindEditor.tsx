@@ -22,6 +22,10 @@ const KIND_OPTIONS: { value: ModifierKind; label: string }[] = [
 
 export interface ModifierKindDraft {
   kind: ModifierKind;
+  // Derived display name: for ingredient/recipe kinds this is filled from the
+  // picked item so the parent's Nama field (hidden for those kinds) stays in
+  // sync with what gets saved and shown at the POS.
+  name?: string;
   ingredientId?: string;
   ingredientQty?: number;
   recipeId?: string;
@@ -83,7 +87,18 @@ export default function ModifierOptionKindEditor({
             <button
               key={opt.value}
               type="button"
-              onClick={() => onChange({ kind: opt.value })}
+              // Switching kind clears both kinds' links so exactly-one-kind
+              // holds (a text option must not carry a stale ingredient/recipe
+              // link, or the server rejects it on save).
+              onClick={() =>
+                onChange({
+                  kind: opt.value,
+                  ingredientId: undefined,
+                  ingredientQty: undefined,
+                  recipeId: undefined,
+                  recipeQty: undefined,
+                })
+              }
               className={
                 "h-7 rounded-md px-2.5 text-xs font-medium transition-colors " +
                 (active
@@ -110,6 +125,7 @@ export default function ModifierOptionKindEditor({
                 onChange({
                   ingredientId: picked?.id,
                   ingredientQty: picked ? (draft.ingredientQty ?? 1) : undefined,
+                  name: picked?.name ?? "",
                 });
               }}
               items={ingredientOptions}
@@ -158,6 +174,7 @@ export default function ModifierOptionKindEditor({
                 onChange({
                   recipeId: picked?.id,
                   recipeQty: picked ? (draft.recipeQty ?? 1) : undefined,
+                  name: picked?.name ?? "",
                 });
               }}
               items={recipeOptions}

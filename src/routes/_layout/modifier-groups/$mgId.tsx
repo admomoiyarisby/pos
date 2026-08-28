@@ -119,15 +119,19 @@ function SortableCard({
               )}
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex-1 space-y-1">
-                <Label className="text-xs">Nama</Label>
-                <Input
-                  value={mod.name}
-                  onChange={(e) => onChange({ ...mod, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="w-24 space-y-1">
+              {/* The name is derived from the picked ingredient/recipe for
+                  those kinds; only text options have a free-text name. */}
+              {mod.kind === "text" && (
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs">Nama</Label>
+                  <Input
+                    value={mod.name}
+                    onChange={(e) => onChange({ ...mod, name: e.target.value })}
+                    required
+                  />
+                </div>
+              )}
+              <div className={mod.kind === "text" ? "w-24 space-y-1" : "flex-1 space-y-1"}>
                 <Label className="text-xs">Harga</Label>
                 <MoneyInput
                   value={mod.price}
