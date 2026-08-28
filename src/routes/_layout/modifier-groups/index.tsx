@@ -46,6 +46,8 @@ interface ModifierFormInput {
   isExclusion: boolean;
   ingredientId?: string;
   ingredientQty?: number;
+  recipeId?: string;
+  recipeQty?: number;
 }
 
 interface MGRow {
@@ -237,6 +239,8 @@ function ModifierGroupsPage() {
           isExclusion: m.isExclusion,
           ingredientId: m.ingredientId || undefined,
           ingredientQty: m.ingredientQty || undefined,
+          recipeId: m.recipeId || undefined,
+          recipeQty: m.recipeQty || undefined,
         })),
     };
     void createMutation.mutateAsync({ data });

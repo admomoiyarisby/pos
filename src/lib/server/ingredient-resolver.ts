@@ -7,6 +7,7 @@ import {
   recipeChildRecipes,
   recipeModifierExclusions,
   modifierIngredients,
+  modifierRecipes,
   orderItemModifiers,
   orderItemExclusions,
   orderItems,
@@ -140,6 +141,37 @@ async function resolveRecipeBOM(
         existing.cost = existing.cost + mi.cost * mi.qty;
       }
       ingredientMap.set(mi.ingredientId, existing);
+    }
+
+    const modRecipes = await conn
+      .select({
+        modifierId: modifierRecipes.modifierId,
+        recipeId: modifierRecipes.recipeId,
+        quantity: modifierRecipes.quantity,
+      })
+      .from(modifierRecipes)
+      .where(inArray(modifierRecipes.modifierId, addonModifierIds));
+
+    // A recipe add-on consumes the add-on recipe's BOM, including its child recipes.
+    for (const mr of modRecipes) {
+      const childLinks = await conn
+        .select()
+        .from(recipeChildRecipes)
+        .where(eq(recipeChildRecipes.parentRecipeId, mr.recipeId));
+      const recipeEntries: BOMEntry[] = [
+        { recipeId: mr.recipeId, quantity: mr.quantity },
+        ...childLinks.map((link) => ({
+          recipeId: link.childRecipeId,
+          quantity: link.quantity * mr.quantity,
+        })),
+      ];
+      const addOnIngredients = await resolveRecipeBOM(recipeEntries, [], includeCost, tx);
+      for (const [ingredientId, data] of addOnIngredients) {
+        const existing = ingredientMap.get(ingredientId) ?? { qty: 0, cost: 0 };
+        existing.qty += data.qty;
+        existing.cost += data.cost;
+        ingredientMap.set(ingredientId, existing);
+      }
     }
   }
 

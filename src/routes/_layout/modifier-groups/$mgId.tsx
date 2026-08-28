@@ -55,6 +55,8 @@ interface ModifierFormInput {
   sortOrder: number;
   ingredientId?: string;
   ingredientQty?: number;
+  recipeId?: string;
+  recipeQty?: number;
 }
 
 function SortableCard({
@@ -244,6 +246,10 @@ function ModifierGroupDetailPage() {
           price: m.price,
           isExclusion: m.isExclusion,
           sortOrder: m.sortOrder ?? 0,
+          ingredientId: m.ingredients?.[0]?.ingredientId,
+          ingredientQty: m.ingredients?.[0]?.quantity,
+          recipeId: m.recipes?.[0]?.recipeId,
+          recipeQty: m.recipes?.[0]?.quantity,
         })),
       );
     }
@@ -453,6 +459,10 @@ function ModifierGroupDetailPage() {
               price: m.price,
               isExclusion: m.isExclusion,
               sortOrder: idx,
+              recipeId: m.recipeId,
+              recipeQty: m.recipeQty,
+              ingredientId: m.ingredientId,
+              ingredientQty: m.ingredientQty,
             };
           }),
       },

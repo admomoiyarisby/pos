@@ -4,6 +4,7 @@ import {
   modifierGroups,
   modifiers,
   modifierIngredients,
+  modifierRecipes,
   recipes,
   recipeModifierGroups,
   recipeBranches,
@@ -25,6 +26,8 @@ const modifierInput = z.object({
   sortOrder: z.number().int().min(0).default(0),
   ingredientId: z.string().uuid().optional(),
   ingredientQty: z.number().int().min(1).optional(),
+  recipeId: z.string().uuid().optional(),
+  recipeQty: z.number().positive().optional(),
 });
 
 const modifierGroupInput = z.object({
@@ -136,13 +139,16 @@ export const getModifierGroup = createServerFn({ method: "GET" })
       .where(eq(modifiers.modifierGroupId, data.id))
       .orderBy(modifiers.sortOrder);
     const modIds = mods.map((m) => m.id);
-    const [modIngs, linkedRecipes] = await Promise.all([
+    const [modIngs, modRecipes, linkedRecipes] = await Promise.all([
       modIds.length > 0
         ? db
             .select()
             .from(modifierIngredients)
             .where(inArray(modifierIngredients.modifierId, modIds))
         : Promise.resolve<(typeof modifierIngredients.$inferSelect)[]>([]),
+      modIds.length > 0
+        ? db.select().from(modifierRecipes).where(inArray(modifierRecipes.modifierId, modIds))
+        : Promise.resolve<(typeof modifierRecipes.$inferSelect)[]>([]),
       db
         .select({
           id: recipes.id,
@@ -169,6 +175,7 @@ export const getModifierGroup = createServerFn({ method: "GET" })
       modifiers: mods.map((m) => ({
         ...m,
         ingredients: modIngs.filter((mi) => mi.modifierId === m.id),
+        recipes: modRecipes.filter((mr) => mr.modifierId === m.id),
       })),
       recipes: linkedRecipes,
     };
@@ -207,6 +214,13 @@ export const createModifierGroup = createServerFn({ method: "POST" })
           modifierId: createdMod.id,
           ingredientId: mod.ingredientId,
           quantity: mod.ingredientQty,
+        });
+      }
+      if (mod.recipeId && mod.recipeQty) {
+        await db.insert(modifierRecipes).values({
+          modifierId: createdMod.id,
+          recipeId: mod.recipeId,
+          quantity: mod.recipeQty,
         });
       }
     }
@@ -303,6 +317,7 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
           }
           for (const e of existing) {
             await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, e.id));
+            await tx.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, e.id));
           }
           await tx.delete(modifiers).where(eq(modifiers.modifierGroupId, id));
           for (const [idx, mod] of mods.entries()) {
@@ -352,6 +367,7 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
           }
           for (const delId of toDeleteIds) {
             await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, delId));
+            await tx.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, delId));
             await tx.delete(modifiers).where(eq(modifiers.id, delId));
           }
         }
@@ -369,11 +385,19 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
             if (mod.isExclusion !== undefined) set.isExclusion = mod.isExclusion;
             await tx.update(modifiers).set(set).where(eq(modifiers.id, mod.id));
             await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, mod.id));
+            await tx.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, mod.id));
             if (mod.ingredientId && mod.ingredientQty) {
               await tx.insert(modifierIngredients).values({
                 modifierId: mod.id,
                 ingredientId: mod.ingredientId,
                 quantity: mod.ingredientQty,
+              });
+            }
+            if (mod.recipeId && mod.recipeQty) {
+              await tx.insert(modifierRecipes).values({
+                modifierId: mod.id,
+                recipeId: mod.recipeId,
+                quantity: mod.recipeQty,
               });
             }
           } else if (!mod.id) {
@@ -545,6 +569,7 @@ export const deleteModifierGroup = createServerFn({ method: "POST" })
     // Delete cascade: modifiers → modifierIngredients (safe after guard)
     for (const m of existingMods) {
       await db.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, m.id));
+      await db.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, m.id));
     }
     await db.delete(modifiers).where(eq(modifiers.modifierGroupId, data.id));
     await db.delete(modifierGroups).where(eq(modifierGroups.id, data.id));

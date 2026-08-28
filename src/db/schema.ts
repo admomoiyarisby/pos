@@ -450,6 +450,21 @@ export const modifiers = pgTable("modifiers", {
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
 
+export const modifierRecipes = pgTable(
+  "modifier_recipes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    modifierId: uuid("modifier_id")
+      .notNull()
+      .references(() => modifiers.id, { onDelete: "cascade" }),
+    recipeId: uuid("recipe_id")
+      .notNull()
+      .references(() => recipes.id),
+    quantity: real("quantity").notNull(),
+  },
+  (t) => [unique("modifier_recipe_unique").on(t.modifierId, t.recipeId)],
+);
+
 export const modifierIngredients = pgTable(
   "modifier_ingredients",
   {
@@ -2077,6 +2092,17 @@ export const recipeModifierGroupsRelations = relations(recipeModifierGroups, ({ 
   modifierGroup: one(modifierGroups, {
     fields: [recipeModifierGroups.modifierGroupId],
     references: [modifierGroups.id],
+  }),
+}));
+
+export const modifierRecipesRelations = relations(modifierRecipes, ({ one }) => ({
+  modifier: one(modifiers, {
+    fields: [modifierRecipes.modifierId],
+    references: [modifiers.id],
+  }),
+  recipe: one(recipes, {
+    fields: [modifierRecipes.recipeId],
+    references: [recipes.id],
   }),
 }));
 

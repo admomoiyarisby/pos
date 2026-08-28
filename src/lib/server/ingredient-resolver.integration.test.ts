@@ -18,6 +18,8 @@ type ResolverFixture = {
   ingredientId: string;
   childIngredientId: string;
   addOnIngredientId: string;
+  recipeAddOnId: string;
+  recipeAddOnIngredientId: string;
   exclusionIngredientId: string;
   modifierGroupId: string;
   addOnModifierId: string;
@@ -32,6 +34,8 @@ async function createResolverFixture(db: TestDb): Promise<ResolverFixture> {
   const ingredientId = crypto.randomUUID();
   const childIngredientId = crypto.randomUUID();
   const addOnIngredientId = crypto.randomUUID();
+  const recipeAddOnId = crypto.randomUUID();
+  const recipeAddOnIngredientId = crypto.randomUUID();
   const exclusionIngredientId = crypto.randomUUID();
   const modifierGroupId = crypto.randomUUID();
   const addOnModifierId = crypto.randomUUID();
@@ -85,6 +89,17 @@ async function createResolverFixture(db: TestDb): Promise<ResolverFixture> {
       averageCost: 300,
     },
     {
+      id: recipeAddOnIngredientId,
+      code: `IT-RAI-${suffix}`,
+      name: "Recipe add-on ingredient",
+      category: "Fresh",
+      skuType: "RM",
+      purchaseUnit: "pcs",
+      stockUnit: "pcs",
+      conversionFactor: 1,
+      averageCost: 500,
+    },
+    {
       id: exclusionIngredientId,
       code: `IT-EI-${suffix}`,
       name: "Exclusion ingredient",
@@ -114,10 +129,19 @@ async function createResolverFixture(db: TestDb): Promise<ResolverFixture> {
       basePrice: 1000,
       status: "Active",
     },
+    {
+      id: recipeAddOnId,
+      code: `IT-RA-${suffix}`,
+      name: "Recipe add-on",
+      categoryId,
+      basePrice: 500,
+      status: "Active",
+    },
   ]);
   await db.insert(schema.recipeIngredients).values([
     { recipeId: parentRecipeId, ingredientId, quantity: 1 },
     { recipeId: childRecipeId, ingredientId: childIngredientId, quantity: 2 },
+    { recipeId: recipeAddOnId, ingredientId: recipeAddOnIngredientId, quantity: 3 },
   ]);
   await db.insert(schema.recipeChildRecipes).values({
     parentRecipeId,
@@ -151,6 +175,11 @@ async function createResolverFixture(db: TestDb): Promise<ResolverFixture> {
     ingredientId: addOnIngredientId,
     quantity: 4,
   });
+  await db.insert(schema.modifierRecipes).values({
+    modifierId: addOnModifierId,
+    recipeId: recipeAddOnId,
+    quantity: 2,
+  });
   await db.insert(schema.recipeModifierExclusions).values({
     recipeId: parentRecipeId,
     modifierId: exclusionModifierId,
@@ -164,6 +193,8 @@ async function createResolverFixture(db: TestDb): Promise<ResolverFixture> {
     ingredientId,
     childIngredientId,
     addOnIngredientId,
+    recipeAddOnId,
+    recipeAddOnIngredientId,
     exclusionIngredientId,
     modifierGroupId,
     addOnModifierId,
@@ -198,6 +229,10 @@ describe("ingredient resolver database integration", () => {
             expect.objectContaining({ ingredientId: fixture.ingredientId, quantity: 4 }),
             expect.objectContaining({ ingredientId: fixture.childIngredientId, quantity: 24 }),
             expect.objectContaining({ ingredientId: fixture.addOnIngredientId, quantity: 4 }),
+            expect.objectContaining({
+              ingredientId: fixture.recipeAddOnIngredientId,
+              quantity: 12,
+            }),
             expect.objectContaining({ ingredientId: fixture.exclusionIngredientId, quantity: -4 }),
           ]),
         );
