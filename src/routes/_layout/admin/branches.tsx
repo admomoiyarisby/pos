@@ -252,270 +252,272 @@ function BranchSheet({
   return (
     <>
       <Sheet open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-        <SheetContent className="w-full sm:max-w-[480px]">
-          <SheetHeader className="mb-6">
-            <SheetTitle>Detail Cabang</SheetTitle>
-            <SheetDescription>
-              {branch.name} ({branch.code})
-            </SheetDescription>
-          </SheetHeader>
+        <SheetContent className="w-full overflow-hidden p-4 sm:max-w-[480px] sm:p-6">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <SheetHeader className="mb-6">
+              <SheetTitle>Detail Cabang</SheetTitle>
+              <SheetDescription>
+                {branch.name} ({branch.code})
+              </SheetDescription>
+            </SheetHeader>
 
-          <div className="overflow-y-auto max-h-[calc(100vh-120px)] pr-2">
-            <Tabs defaultValue="info">
-              <TabsList className="w-full">
-                <TabsTrigger value="info" className="flex-1">
-                  <Store className="h-4 w-4 mr-1.5" />
-                  Info Dasar
-                </TabsTrigger>
-                <TabsTrigger value="contact" className="flex-1">
-                  <Phone className="h-4 w-4 mr-1.5" />
-                  Kontak & PIN
-                </TabsTrigger>
-                <TabsTrigger value="staff" className="flex-1">
-                  <Users className="h-4 w-4 mr-1.5" />
-                  Staf
-                </TabsTrigger>
-              </TabsList>
+            <div className="overflow-y-auto max-h-[calc(100vh-120px)] pr-2">
+              <Tabs defaultValue="info">
+                <TabsList className="w-full">
+                  <TabsTrigger value="info" className="flex-1">
+                    <Store className="h-4 w-4 mr-1.5" />
+                    Info Dasar
+                  </TabsTrigger>
+                  <TabsTrigger value="contact" className="flex-1">
+                    <Phone className="h-4 w-4 mr-1.5" />
+                    Kontak & PIN
+                  </TabsTrigger>
+                  <TabsTrigger value="staff" className="flex-1">
+                    <Users className="h-4 w-4 mr-1.5" />
+                    Staf
+                  </TabsTrigger>
+                </TabsList>
 
-              {/* Info Dasar Tab */}
-              <TabsContent value="info">
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Kode</label>
-                    <input
-                      name="code"
-                      defaultValue={branch.code}
-                      required
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Nama</label>
-                    <input
-                      name="name"
-                      defaultValue={branch.name}
-                      required
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Lokasi</label>
-                    <input
-                      name="location"
-                      defaultValue={branch.location}
-                      required
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Tipe</label>
-                    <select
-                      name="type"
-                      defaultValue={branch.type}
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="Central">Central</option>
-                      <option value="Outlet">Outlet</option>
-                    </select>
-                  </div>
-
-                  {updateMutation.isError && (
-                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                      {updateMutation.error.message}
-                    </div>
-                  )}
-
-                  <Button type="submit" className="w-full" disabled={updateMutation.isPending}>
-                    {updateMutation.isPending ? "Menyimpan..." : "Simpan Info Dasar"}
-                  </Button>
-                </form>
-
-                <div className="border-t pt-4 mt-6">
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    className="w-full"
-                    onClick={() => setDeleteBranchOpen(true)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Nonaktifkan Cabang
-                  </Button>
-                  <p className="text-xs text-muted-foreground mt-2 text-center">
-                    Menonaktifkan akan menghapus cabang dari daftar aktif
-                  </p>
-                </div>
-              </TabsContent>
-
-              {/* Kontak & PIN Tab */}
-              <TabsContent value="contact">
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">PIN Cabang</label>
-                    <div className="relative">
+                {/* Info Dasar Tab */}
+                <TabsContent value="info">
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Kode</label>
                       <input
-                        name="pin"
-                        type={showPin ? "text" : "password"}
-                        defaultValue={branch.pin ?? ""}
-                        maxLength={4}
-                        pattern="\d{4}"
-                        inputMode="numeric"
-                        placeholder="4 digit"
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm font-mono tracking-widest"
+                        name="code"
+                        defaultValue={branch.code}
+                        required
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowPin(!showPin)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Nama</label>
+                      <input
+                        name="name"
+                        defaultValue={branch.name}
+                        required
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Lokasi</label>
+                      <input
+                        name="location"
+                        defaultValue={branch.location}
+                        required
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Tipe</label>
+                      <select
+                        name="type"
+                        defaultValue={branch.type}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                       >
-                        {showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
+                        <option value="Central">Central</option>
+                        <option value="Outlet">Outlet</option>
+                      </select>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      PIN bersama untuk semua staf di cabang ini. Harus unik secara global.
-                    </p>
-                  </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Telepon</label>
-                    <input
-                      name="phone"
-                      defaultValue={branch.phone ?? ""}
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    />
-                  </div>
+                    {updateMutation.isError && (
+                      <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                        {updateMutation.error.message}
+                      </div>
+                    )}
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Telepon Aduan</label>
-                    <input
-                      name="complaintPhone"
-                      defaultValue={branch.complaintPhone ?? ""}
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Nomor telepon untuk pelaporan keluhan pelanggan
-                    </p>
-                  </div>
+                    <Button type="submit" className="w-full" disabled={updateMutation.isPending}>
+                      {updateMutation.isPending ? "Menyimpan..." : "Simpan Info Dasar"}
+                    </Button>
+                  </form>
 
-                  {updateMutation.isError && (
-                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                      {updateMutation.error.message}
-                    </div>
-                  )}
-
-                  <Button type="submit" className="w-full" disabled={updateMutation.isPending}>
-                    {updateMutation.isPending ? "Menyimpan..." : "Simpan Kontak & PIN"}
-                  </Button>
-                </form>
-              </TabsContent>
-
-              {/* Staf Tab */}
-              <TabsContent value="staff">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-semibold">Staf Cabang</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {branchUsers.filter((u) => u.status === "Active").length} staf aktif
-                        {branchUsers.some((u) => u.status === "Inactive") &&
-                          ` · ${branchUsers.filter((u) => u.status === "Inactive").length} nonaktif`}
-                      </p>
-                    </div>
+                  <div className="border-t pt-4 mt-6">
                     <Button
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setAddStaffOpen(true)}
+                      variant="destructive"
+                      className="w-full"
+                      onClick={() => setDeleteBranchOpen(true)}
                     >
-                      <UserPlus className="h-4 w-4 mr-1.5" />
-                      Tambah Staf
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Nonaktifkan Cabang
                     </Button>
+                    <p className="text-xs text-muted-foreground mt-2 text-center">
+                      Menonaktifkan akan menghapus cabang dari daftar aktif
+                    </p>
                   </div>
+                </TabsContent>
 
-                  {branchUsers.length === 0 ? (
-                    <div className="rounded-lg border border-dashed p-6 text-center">
-                      <Users className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                      <p className="text-sm text-muted-foreground">Belum ada staf terdaftar</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Klik "Tambah Staf" untuk menambahkan staf baru
+                {/* Kontak & PIN Tab */}
+                <TabsContent value="contact">
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">PIN Cabang</label>
+                      <div className="relative">
+                        <input
+                          name="pin"
+                          type={showPin ? "text" : "password"}
+                          defaultValue={branch.pin ?? ""}
+                          maxLength={4}
+                          pattern="\d{4}"
+                          inputMode="numeric"
+                          placeholder="4 digit"
+                          className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm font-mono tracking-widest"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPin(!showPin)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        PIN bersama untuk semua staf di cabang ini. Harus unik secara global.
                       </p>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {/* Active Staff */}
-                      {branchUsers
-                        .filter((u) => u.status === "Active")
-                        .map((user) => (
-                          <div
-                            key={user.id}
-                            className="flex items-center justify-between rounded-lg border p-3"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-medium">
-                                {user.name.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium">{user.name}</p>
-                                <p className="text-xs text-muted-foreground">{user.email}</p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteStaffTarget(user)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              title="Nonaktifkan staf"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ))}
 
-                      {/* Inactive Staff */}
-                      {branchUsers.some((u) => u.status === "Inactive") && (
-                        <>
-                          <div className="flex items-center gap-2 pt-2">
-                            <div className="h-px flex-1 bg-border" />
-                            <span className="text-xs text-muted-foreground">Staf Nonaktif</span>
-                            <div className="h-px flex-1 bg-border" />
-                          </div>
-                          {branchUsers
-                            .filter((u) => u.status === "Inactive")
-                            .map((user) => (
-                              <div
-                                key={user.id}
-                                className="flex items-center justify-between rounded-lg border border-dashed p-3 opacity-60"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground text-xs font-medium">
-                                    {user.name.charAt(0).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <p className="text-sm font-medium text-muted-foreground">
-                                      {user.name}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">{user.email}</p>
-                                  </div>
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setReactivateStaffTarget(user)}
-                                  className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                                >
-                                  Aktifkan
-                                </Button>
-                              </div>
-                            ))}
-                        </>
-                      )}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Telepon</label>
+                      <input
+                        name="phone"
+                        defaultValue={branch.phone ?? ""}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      />
                     </div>
-                  )}
-                </div>
-              </TabsContent>
-            </Tabs>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Telepon Aduan</label>
+                      <input
+                        name="complaintPhone"
+                        defaultValue={branch.complaintPhone ?? ""}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Nomor telepon untuk pelaporan keluhan pelanggan
+                      </p>
+                    </div>
+
+                    {updateMutation.isError && (
+                      <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                        {updateMutation.error.message}
+                      </div>
+                    )}
+
+                    <Button type="submit" className="w-full" disabled={updateMutation.isPending}>
+                      {updateMutation.isPending ? "Menyimpan..." : "Simpan Kontak & PIN"}
+                    </Button>
+                  </form>
+                </TabsContent>
+
+                {/* Staf Tab */}
+                <TabsContent value="staff">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-semibold">Staf Cabang</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {branchUsers.filter((u) => u.status === "Active").length} staf aktif
+                          {branchUsers.some((u) => u.status === "Inactive") &&
+                            ` · ${branchUsers.filter((u) => u.status === "Inactive").length} nonaktif`}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAddStaffOpen(true)}
+                      >
+                        <UserPlus className="h-4 w-4 mr-1.5" />
+                        Tambah Staf
+                      </Button>
+                    </div>
+
+                    {branchUsers.length === 0 ? (
+                      <div className="rounded-lg border border-dashed p-6 text-center">
+                        <Users className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                        <p className="text-sm text-muted-foreground">Belum ada staf terdaftar</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Klik "Tambah Staf" untuk menambahkan staf baru
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {/* Active Staff */}
+                        {branchUsers
+                          .filter((u) => u.status === "Active")
+                          .map((user) => (
+                            <div
+                              key={user.id}
+                              className="flex items-center justify-between rounded-lg border p-3"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-medium">
+                                  {user.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">{user.name}</p>
+                                  <p className="text-xs text-muted-foreground">{user.email}</p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteStaffTarget(user)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                title="Nonaktifkan staf"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+
+                        {/* Inactive Staff */}
+                        {branchUsers.some((u) => u.status === "Inactive") && (
+                          <>
+                            <div className="flex items-center gap-2 pt-2">
+                              <div className="h-px flex-1 bg-border" />
+                              <span className="text-xs text-muted-foreground">Staf Nonaktif</span>
+                              <div className="h-px flex-1 bg-border" />
+                            </div>
+                            {branchUsers
+                              .filter((u) => u.status === "Inactive")
+                              .map((user) => (
+                                <div
+                                  key={user.id}
+                                  className="flex items-center justify-between rounded-lg border border-dashed p-3 opacity-60"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground text-xs font-medium">
+                                      {user.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium text-muted-foreground">
+                                        {user.name}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                                    </div>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setReactivateStaffTarget(user)}
+                                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                  >
+                                    Aktifkan
+                                  </Button>
+                                </div>
+                              ))}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </div>
           </div>
         </SheetContent>
       </Sheet>
@@ -528,11 +530,15 @@ function BranchSheet({
           setGeneratedPassword("");
         }}
         title="Tambah Staf"
+        size="md"
       >
-        <form onSubmit={handleAddStaff} className="space-y-4">
+        <form onSubmit={handleAddStaff} className="space-y-5 sm:space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Nama</label>
+            <label htmlFor="new-staff-name" className="text-sm font-medium">
+              Nama
+            </label>
             <input
+              id="new-staff-name"
               name="name"
               required
               placeholder="Nama lengkap"
@@ -541,8 +547,11 @@ function BranchSheet({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Email</label>
+            <label htmlFor="new-staff-email" className="text-sm font-medium">
+              Email
+            </label>
             <input
+              id="new-staff-email"
               name="email"
               type="email"
               required
@@ -552,9 +561,12 @@ function BranchSheet({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Password</label>
-            <div className="flex gap-2">
+            <label htmlFor="new-staff-password" className="text-sm font-medium">
+              Password
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row">
               <input
+                id="new-staff-password"
                 name="password"
                 type="text"
                 required
@@ -562,12 +574,13 @@ function BranchSheet({
                 value={generatedPassword}
                 onChange={(e) => setGeneratedPassword(e.target.value)}
                 placeholder="Minimal 8 karakter"
-                className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm font-mono"
+                className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-sm font-mono sm:h-9 sm:rounded-md"
               />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="h-11 w-full rounded-xl sm:h-9 sm:w-auto sm:rounded-md"
                 onClick={() => setGeneratedPassword(generatePassword())}
               >
                 Generate
@@ -588,11 +601,20 @@ function BranchSheet({
             </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setAddStaffOpen(false)}>
+          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end sm:border-0 sm:pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 w-full rounded-xl sm:h-9 sm:w-auto sm:rounded-md"
+              onClick={() => setAddStaffOpen(false)}
+            >
               Batal
             </Button>
-            <Button type="submit" disabled={addStaffMutation.isPending}>
+            <Button
+              type="submit"
+              className="h-11 w-full rounded-xl sm:h-9 sm:w-auto sm:rounded-md"
+              disabled={addStaffMutation.isPending}
+            >
               {addStaffMutation.isPending ? "Menambahkan..." : "Tambah"}
             </Button>
           </div>
@@ -773,7 +795,7 @@ function BranchesPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
-      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center mb-4">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
         <Button
           onClick={() => setCreateModalOpen(true)}
           className="w-full sm:w-auto sm:ml-auto h-11 sm:h-9 rounded-xl sm:rounded-md shadow-sm"
@@ -784,7 +806,7 @@ function BranchesPage() {
       </div>
 
       {/* Card Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {branches.map((branch) => (
           <BranchCard
             key={branch.id}
@@ -817,7 +839,7 @@ function BranchesPage() {
 
       {/* Create Branch Modal */}
       <Modal open={createModalOpen} onClose={() => setCreateModalOpen(false)} title="Tambah Cabang">
-        <form onSubmit={handleCreate} className="space-y-4">
+        <form onSubmit={handleCreate} className="space-y-5 sm:space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Kode</label>
             <input

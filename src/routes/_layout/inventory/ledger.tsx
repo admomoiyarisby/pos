@@ -45,7 +45,9 @@ function LedgerPage() {
     bom?: string;
     bomRecipe?: string;
   }>(["branchId", "reference", "bom", "bomRecipe"]);
-  const branchId = filters.branchId ?? "";
+  // Branch Admin is always scoped by the server; hide the global branch picker
+  // and avoid presenting a misleading "Semua Cabang" control.
+  const branchId = user?.role === "branch_admin" ? "" : (filters.branchId ?? "");
   const reference = filters.reference ?? "";
   // Waste BOM filter (ADR 0013): review per-ingredient losses by recipe.
   const bomOnly = filters.bom === "true";

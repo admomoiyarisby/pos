@@ -39,17 +39,17 @@ export default function Modal({ open, onClose, title, children, size = "md" }: M
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
           className={cn(
-            "fixed inset-0 z-50 bg-black/50",
+            "fixed inset-0 z-[60] bg-black/50",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
             "data-[state=open]:animate-in data-[state=open]:fade-in-0",
           )}
         />
         <DialogPrimitive.Content
           className={cn(
-            "fixed inset-x-0 bottom-0 z-50 w-full sm:top-[50%] sm:left-[50%] sm:bottom-auto sm:inset-x-auto sm:max-w-[calc(100%-2rem)]",
-            "translate-y-0 sm:translate-x-[-50%] sm:translate-y-[-50%]",
+            "fixed inset-0 m-auto z-[60] h-fit w-[calc(100%-2rem)] max-h-[min(92vh,48rem)] sm:max-w-[32rem]",
+            "translate-x-0 translate-y-0",
             "rounded-t-2xl sm:rounded-lg border bg-card p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-6 shadow-lg",
-            "max-h-[min(92vh,48rem)] overflow-y-auto overscroll-contain",
+            "overflow-y-auto overscroll-contain",
             "duration-200 outline-none",
             "data-[state=closed]:sm:zoom-out-95 data-[state=open]:sm:zoom-in-95",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",

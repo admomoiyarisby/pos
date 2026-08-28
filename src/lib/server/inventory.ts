@@ -244,7 +244,13 @@ export const getStockLedger = createServerFn({ method: "GET" })
     }) => data,
   )
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
+    // Kartu Stok is branch-scoped for Branch Admin. Never trust a client-supplied
+    // branchId, and do not allow an omitted filter to become a global read.
+    const effectiveBranchId = user.role === "branch_admin" ? user.branchId : data.branchId;
+    if (user.role === "branch_admin" && !effectiveBranchId) {
+      throw new Error("Branch Admin tidak memiliki cabang");
+    }
 
     // Waste BOM ledger rows carry ingredientId (recipeId null); the recipe
     // context lives in the linked waste entry's notes tag — "Waste BOM <recipe>"
@@ -285,7 +291,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
       .leftJoin(branches, eq(stockLedger.branchId, branches.id))
       .where(
         and(
-          data.branchId ? eq(stockLedger.branchId, data.branchId) : undefined,
+          effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
           data.ingredientId ? eq(stockLedger.ingredientId, data.ingredientId) : undefined,
           data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
           data.reference ? eq(stockLedger.reference, data.reference) : undefined,
