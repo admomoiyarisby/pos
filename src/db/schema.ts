@@ -757,6 +757,37 @@ export const shiftEdits = pgTable(
   (t) => [index("se_shift_idx").on(t.shiftId)],
 );
 
+// Tracks each staff member's possession of an open POS shift, with the time
+// they took/handed over the shift. The current holder is the row whose
+// loggedOutAt is NULL; the first row (action 'open') is the shift's opener.
+export const shiftSessionActionEnum = pgEnum("shift_session_action", ["open", "take_over"]);
+
+export const shiftSessions = pgTable(
+  "shift_sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    shiftId: uuid("shift_id")
+      .notNull()
+      .references(() => shifts.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    action: shiftSessionActionEnum("action").notNull().default("open"),
+    loggedInAt: timestamp("logged_in_at", { mode: "date" }).notNull().defaultNow(),
+    loggedOutAt: timestamp("logged_out_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("ss_shift_idx").on(t.shiftId),
+    index("ss_branch_idx").on(t.branchId),
+    index("ss_user_idx").on(t.userId),
+    index("ss_open_idx").on(t.shiftId, t.loggedOutAt),
+  ],
+);
+
 // =============================================================================
 // MODULE 3 — DEEP INVENTORY
 // =============================================================================
@@ -1951,6 +1982,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   accounts: many(account),
   shifts: many(shifts),
   shiftEdits: many(shiftEdits),
+  shiftSessions: many(shiftSessions),
   stockOpnamesTriggered: many(stockOpnames, { relationName: "triggeredBy" }),
   stockOpnamesSubmitted: many(stockOpnames, { relationName: "submittedBy" }),
   stockOpnamesApproved: many(stockOpnames, { relationName: "approvedBy" }),
@@ -2231,11 +2263,18 @@ export const shiftsRelations = relations(shifts, ({ one, many }) => ({
   user: one(users, { fields: [shifts.userId], references: [users.id] }),
   orders: many(orders),
   shiftEdits: many(shiftEdits),
+  shiftSessions: many(shiftSessions),
 }));
 
 export const shiftEditsRelations = relations(shiftEdits, ({ one }) => ({
   shift: one(shifts, { fields: [shiftEdits.shiftId], references: [shifts.id] }),
   editedByUser: one(users, { fields: [shiftEdits.editedBy], references: [users.id] }),
+}));
+
+export const shiftSessionsRelations = relations(shiftSessions, ({ one }) => ({
+  shift: one(shifts, { fields: [shiftSessions.shiftId], references: [shifts.id] }),
+  branch: one(branches, { fields: [shiftSessions.branchId], references: [branches.id] }),
+  user: one(users, { fields: [shiftSessions.userId], references: [users.id] }),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({

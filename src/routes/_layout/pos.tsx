@@ -11,6 +11,7 @@ import {
   createOrder,
   getShiftStatus,
   openShift,
+  takeOverShift,
   closeShift,
   getOrders,
   voidOrder,
@@ -187,15 +188,12 @@ function PosPage() {
   let modifierModal = _q[0];
   let setModifierModal = _q[1];
 
-  let _r = useState<"open" | "close" | null>(null);
+  let _r = useState<"open" | "close" | "takeover" | null>(null);
   let shiftModal = _r[0];
   let setShiftModal = _r[1];
   let _s = useState("");
-  let cashFloat = _s[0];
-  let setCashFloat = _s[1];
-  let _t = useState("");
-  let actualCash = _t[0];
-  let setActualCash = _t[1];
+  let actualCash = _s[0];
+  let setActualCash = _s[1];
   let _u = useState<{
     orderId: string;
     reason: string;
@@ -468,7 +466,6 @@ function PosPage() {
     onSuccess: async function () {
       await queryClient.invalidateQueries({ queryKey: ["shift"] });
       setShiftModal(null);
-      setCashFloat("");
     },
   });
 
@@ -478,6 +475,17 @@ function PosPage() {
       void queryClient.invalidateQueries({ queryKey: ["shift"] });
       setShiftModal(null);
       setActualCash("");
+    },
+  });
+
+  let takeOverShiftMutation = useMutation({
+    mutationFn: takeOverShift,
+    onSuccess: function () {
+      void queryClient.invalidateQueries({ queryKey: ["shift"] });
+      setShiftModal(null);
+    },
+    onError: function (err) {
+      setCheckoutError(err instanceof Error ? err.message : "Gagal mengambil alih shift");
     },
   });
 
@@ -830,9 +838,18 @@ function PosPage() {
   }
 
   function handleOpenShift() {
-    if (!cashFloat || !user) return;
+    if (!user) return;
     void openShiftMutation.mutateAsync({
-      data: { branchId: activeBranchId, userId: user.id, cashFloat: Number(cashFloat) },
+      data: { branchId: activeBranchId, userId: user.id },
+    });
+  }
+
+  // Take over the currently active shift (shown to logged-in same-branch staff
+  // when another staff member holds it).
+  function handleTakeOverShift() {
+    if (!user || !activeShift) return;
+    void takeOverShiftMutation.mutateAsync({
+      data: { branchId: activeBranchId, userId: user.id, shiftId: activeShift.id },
     });
   }
 
@@ -907,15 +924,29 @@ function PosPage() {
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     Aktif
+                    {activeShift.holderName ? (
+                      <span className="hidden md:inline">— {activeShift.holderName}</span>
+                    ) : null}
                   </span>
-                  <button
-                    onClick={function () {
-                      setShiftModal("close");
-                    }}
-                    className="h-7 shrink-0 whitespace-nowrap rounded-full bg-card border px-3 text-xs font-medium hover:bg-muted"
-                  >
-                    Tutup
-                  </button>
+                  {activeShift.holderUserId && activeShift.holderUserId !== user?.id ? (
+                    <button
+                      onClick={function () {
+                        setShiftModal("takeover");
+                      }}
+                      className="h-7 shrink-0 whitespace-nowrap rounded-full bg-card border px-3 text-xs font-medium hover:bg-muted"
+                    >
+                      Take Over
+                    </button>
+                  ) : (
+                    <button
+                      onClick={function () {
+                        setShiftModal("close");
+                      }}
+                      className="h-7 shrink-0 whitespace-nowrap rounded-full bg-card border px-3 text-xs font-medium hover:bg-muted"
+                    >
+                      Tutup
+                    </button>
+                  )}
                 </span>
               ) : (
                 <button
@@ -1812,22 +1843,49 @@ function PosPage() {
         title="Buka Shift"
       >
         <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Modal Awal Laci (Rp)</label>
-            <MoneyInput
-              value={cashFloat ? Number(cashFloat) : null}
-              onChange={(raw) => setCashFloat(raw === null ? "" : String(raw))}
-              placeholder="0"
-              autoFocus
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Shift baru akan dibuka dan dicatat atas nama <strong>{user?.name ?? "kamu"}</strong>.
+          </p>
           <button
             onClick={handleOpenShift}
-            disabled={!cashFloat || openShiftMutation.isPending}
+            disabled={openShiftMutation.isPending}
             className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
           >
-            Buka Shift
+            {openShiftMutation.isPending ? "Membuka..." : "Buka Shift"}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={shiftModal === "takeover"}
+        onClose={function () {
+          setShiftModal(null);
+        }}
+        title="Take Over Shift"
+      >
+        <div className="space-y-4">
+          {activeShift && (
+            <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+              <p>
+                Shift ini saat ini{" "}
+                {activeShift.holderName ? `dipegang oleh ${activeShift.holderName}` : "aktif"}.{" "}
+                Ambil alih untuk menjadi pemegang shift saat ini.
+              </p>
+              <p>
+                Shift dimulai:{" "}
+                {new Date(activeShift.startTime).toLocaleTimeString("id-ID", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
+            </div>
+          )}
+          <button
+            onClick={handleTakeOverShift}
+            disabled={takeOverShiftMutation.isPending}
+            className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+          >
+            {takeOverShiftMutation.isPending ? "Mengambil alih..." : "Ambil Alih"}
           </button>
         </div>
       </Modal>
@@ -1842,13 +1900,13 @@ function PosPage() {
         <div className="space-y-4">
           {activeShift && (
             <div className="rounded-md bg-muted p-3 text-sm space-y-1">
-              <p>Modal Awal: Rp {activeShift.cashFloat.toLocaleString("id-ID")}</p>
               <p>
                 Shift dimulai:{" "}
                 {new Date(activeShift.startTime).toLocaleTimeString("id-ID", {
                   hour: "2-digit",
                   minute: "2-digit",
-                })}
+                })}{" "}
+                · dipegang oleh {activeShift.holderName ?? "-"}
               </p>
             </div>
           )}

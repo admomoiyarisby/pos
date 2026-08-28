@@ -20,6 +20,7 @@ import {
   recipeModifierExclusions,
   recipeBranches,
   shifts,
+  shiftSessions,
   platformFees,
   branches,
   categories,
@@ -30,8 +31,8 @@ import {
   users,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, desc, inArray } from "drizzle-orm";
-import { requireAuth, getCurrentUserRaw } from "./auth";
+import { eq, and, desc, inArray, isNull, gte, lte } from "drizzle-orm";
+import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { branchVisibleClause, getEffectiveBranchId } from "#/lib/server/branch-visibility";
 import { logSystemAction, logAudit } from "./logging";
 import {
@@ -317,6 +318,23 @@ export const getPosMenu = createServerFn({ method: "GET" })
       }));
   });
 
+// Returns the user currently holding an open shift (the session row with no
+// loggedOutAt), or null. The holder is the last staff member to open or take
+// over the shift.
+async function findCurrentHolder(shiftId: string) {
+  const [session] = await db
+    .select({
+      userId: shiftSessions.userId,
+      name: users.name,
+    })
+    .from(shiftSessions)
+    .innerJoin(users, eq(users.id, shiftSessions.userId))
+    .where(and(eq(shiftSessions.shiftId, shiftId), isNull(shiftSessions.loggedOutAt)))
+    .orderBy(desc(shiftSessions.loggedInAt), desc(shiftSessions.createdAt))
+    .limit(1);
+  return session ?? null;
+}
+
 export const getShiftStatus = createServerFn({ method: "GET" })
   .validator((data: { branchId: string; userId: string }) => data)
   .handler(async ({ data }) => {
@@ -329,24 +347,112 @@ export const getShiftStatus = createServerFn({ method: "GET" })
       .orderBy(shifts.startTime)
       .limit(1);
 
-    return openShift ?? null;
+    if (!openShift) return null;
+
+    const holder = await findCurrentHolder(openShift.id);
+    return {
+      ...openShift,
+      holderUserId: holder?.userId ?? null,
+      holderName: holder?.name ?? null,
+    };
   });
 
 export const openShift = createServerFn({ method: "POST" })
-  .validator((data: { branchId: string; userId: string; cashFloat: number }) => data)
+  .validator((data: { branchId: string; userId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
-    const [shift] = await db
-      .insert(shifts)
-      .values({
+    const [branch] = await db
+      .select({ name: branches.name })
+      .from(branches)
+      .where(eq(branches.id, data.branchId))
+      .limit(1);
+
+    const now = new Date();
+    const shift = await db.transaction(async (tx) => {
+      const [createdShift] = await tx
+        .insert(shifts)
+        .values({
+          branchId: data.branchId,
+          userId: data.userId,
+          startTime: now,
+          cashFloat: 0,
+          status: "Open",
+        })
+        .returning();
+
+      await tx.insert(shiftSessions).values({
+        shiftId: createdShift.id,
         branchId: data.branchId,
         userId: data.userId,
-        startTime: new Date(),
-        cashFloat: data.cashFloat,
-        status: "Open",
-      })
-      .returning();
+        action: "open",
+        loggedInAt: now,
+      });
+
+      return createdShift;
+    });
+
+    await logSystemAction(
+      user,
+      "Open Shift",
+      `Shift dibuka di cabang "${branch?.name ?? data.branchId}" oleh ${user.name}`,
+    );
+    await logAudit(user, "shifts", shift.id, "CREATE", undefined, shift);
+
+    return {
+      ...shift,
+      holderUserId: data.userId,
+      holderName: user.name,
+    };
+  });
+
+// Lets a staff member on the same branch claim an open shift from its current
+// holder. Closes the previous holder's session and opens a new one for the
+// taker, and updates shifts.userId so order/attribution views reflect the new
+// holder.
+export const takeOverShift = createServerFn({ method: "POST" })
+  .validator((data: { branchId: string; userId: string; shiftId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    // Only staff on the same branch may take over.
+    if (user.id !== data.userId || (user.branchId && user.branchId !== data.branchId)) {
+      throw new Error("Hanya staff dari cabang shift yang dapat mengambil alih shift");
+    }
+
+    const [shift] = await db
+      .select()
+      .from(shifts)
+      .where(and(eq(shifts.id, data.shiftId), eq(shifts.branchId, data.branchId)))
+      .limit(1);
+    if (!shift) throw new Error("Shift tidak ditemukan di cabang ini");
+    if (shift.status !== "Open") throw new Error("Shift sudah ditutup");
+    if (shift.userId === data.userId) {
+      throw new Error("Kamu sudah memegang shift ini");
+    }
+
+    const now = new Date();
+    const updatedShift = await db.transaction(async (tx) => {
+      await tx
+        .update(shiftSessions)
+        .set({ loggedOutAt: now })
+        .where(and(eq(shiftSessions.shiftId, data.shiftId), isNull(shiftSessions.loggedOutAt)));
+
+      await tx.insert(shiftSessions).values({
+        shiftId: data.shiftId,
+        branchId: data.branchId,
+        userId: data.userId,
+        action: "take_over",
+        loggedInAt: now,
+      });
+
+      const [updated] = await tx
+        .update(shifts)
+        .set({ userId: data.userId })
+        .where(eq(shifts.id, data.shiftId))
+        .returning();
+      return updated;
+    });
 
     const [branch] = await db
       .select({ name: branches.name })
@@ -356,12 +462,16 @@ export const openShift = createServerFn({ method: "POST" })
 
     await logSystemAction(
       user,
-      "Open Shift",
-      `Shift dibuka di cabang "${branch?.name ?? data.branchId}" oleh ${user.name}`,
+      "Take Over Shift",
+      `Shift di cabang "${branch?.name ?? data.branchId}" diambil alih oleh ${user.name}`,
     );
-    await logAudit(user, "shifts", shift.id, "CREATE", undefined, shift);
+    await logAudit(user, "shifts", data.shiftId, "UPDATE", shift, updatedShift);
 
-    return shift;
+    return {
+      ...updatedShift,
+      holderUserId: data.userId,
+      holderName: user.name,
+    };
   });
 
 export const closeShift = createServerFn({ method: "POST" })
@@ -371,16 +481,25 @@ export const closeShift = createServerFn({ method: "POST" })
 
     const [oldShift] = await db.select().from(shifts).where(eq(shifts.id, data.shiftId)).limit(1);
 
-    const [shift] = await db
-      .update(shifts)
-      .set({
-        endTime: new Date(),
-        actualCash: data.actualCash,
-        status: "Closed",
-        notes: data.notes,
-      })
-      .where(eq(shifts.id, data.shiftId))
-      .returning();
+    const now = new Date();
+    const shift = await db.transaction(async (tx) => {
+      const [closed] = await tx
+        .update(shifts)
+        .set({
+          endTime: now,
+          actualCash: data.actualCash,
+          status: "Closed",
+          notes: data.notes,
+        })
+        .where(eq(shifts.id, data.shiftId))
+        .returning();
+
+      await tx
+        .update(shiftSessions)
+        .set({ loggedOutAt: now })
+        .where(and(eq(shiftSessions.shiftId, data.shiftId), isNull(shiftSessions.loggedOutAt)));
+      return closed;
+    });
 
     const [branch] = await db
       .select({ name: branches.name })
@@ -396,6 +515,75 @@ export const closeShift = createServerFn({ method: "POST" })
     await logAudit(user, "shifts", data.shiftId, "UPDATE", oldShift, shift);
 
     return shift;
+  });
+
+// Admin view: shift session history — who held each shift and when they logged
+// in/out. The current holder of an open shift is the row with loggedOutAt null.
+export const getShiftSessions = createServerFn({ method: "GET" })
+  .validator(
+    (data: {
+      branchId?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      page?: number;
+      limit?: number;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "branch_admin", "area_manager");
+
+    const conditions = [];
+    if (user.role === "branch_admin") {
+      // Branch admins only ever see their own branch.
+      if (!user.branchId) return [];
+      conditions.push(eq(shiftSessions.branchId, user.branchId));
+    } else if (user.role === "area_manager") {
+      // Area managers see the branches they are assigned to. A requested
+      // branchId outside that set is ignored rather than honored.
+      const assigned = await db
+        .select({ branchId: areaManagerBranches.branchId })
+        .from(areaManagerBranches)
+        .where(eq(areaManagerBranches.userId, user.id));
+      const assignedBranchIds = assigned.map((a) => a.branchId);
+      if (assignedBranchIds.length === 0) return [];
+      if (data.branchId && assignedBranchIds.includes(data.branchId)) {
+        conditions.push(eq(shiftSessions.branchId, data.branchId));
+      } else {
+        conditions.push(inArray(shiftSessions.branchId, assignedBranchIds));
+      }
+    } else if (data.branchId) {
+      // Super admin may filter to any branch.
+      conditions.push(eq(shiftSessions.branchId, data.branchId));
+    }
+    if (data.dateFrom) conditions.push(gte(shiftSessions.loggedInAt, new Date(data.dateFrom)));
+    if (data.dateTo) conditions.push(lte(shiftSessions.loggedInAt, new Date(data.dateTo)));
+
+    const result = await db
+      .select({
+        id: shiftSessions.id,
+        shiftId: shiftSessions.shiftId,
+        branchId: shiftSessions.branchId,
+        branchCode: branches.code,
+        branchName: branches.name,
+        userId: shiftSessions.userId,
+        userName: users.name,
+        action: shiftSessions.action,
+        loggedInAt: shiftSessions.loggedInAt,
+        loggedOutAt: shiftSessions.loggedOutAt,
+        shiftStatus: shifts.status,
+        shiftStartTime: shifts.startTime,
+        shiftEndTime: shifts.endTime,
+      })
+      .from(shiftSessions)
+      .innerJoin(branches, eq(branches.id, shiftSessions.branchId))
+      .innerJoin(users, eq(users.id, shiftSessions.userId))
+      .innerJoin(shifts, eq(shifts.id, shiftSessions.shiftId))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(shiftSessions.loggedInAt))
+      .limit(data.limit ?? 50)
+      .offset((data.page ?? 0) * (data.limit ?? 50));
+
+    return result;
   });
 
 const orderItemInput = z.object({

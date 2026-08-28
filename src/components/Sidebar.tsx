@@ -91,6 +91,12 @@ const navGroups: NavGroup[] = [
         roles: ["super_admin"],
       },
       {
+        label: "Riwayat Shift",
+        to: "/admin/shift-sessions",
+        icon: History,
+        roles: ["super_admin", "branch_admin", "area_manager"],
+      },
+      {
         label: "Cetak Ulang",
         to: "/print-requests",
         icon: Printer,

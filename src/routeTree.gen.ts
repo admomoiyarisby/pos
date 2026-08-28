@@ -35,6 +35,7 @@ import { Route as LayoutAdminBranchesRouteImport } from './routes/_layout/admin/
 import { Route as LayoutAdminBrandsRouteImport } from './routes/_layout/admin/brands'
 import { Route as LayoutAdminPlatformFeesRouteImport } from './routes/_layout/admin/platform-fees'
 import { Route as LayoutAdminSalesRouteImport } from './routes/_layout/admin/sales'
+import { Route as LayoutAdminShiftSessionsRouteImport } from './routes/_layout/admin/shift-sessions'
 import { Route as LayoutAdminSystemLogsRouteImport } from './routes/_layout/admin/system-logs'
 import { Route as LayoutAdminUsersRouteImport } from './routes/_layout/admin/users'
 import { Route as LayoutAdminVouchersRouteImport } from './routes/_layout/admin/vouchers'
@@ -217,6 +218,12 @@ const LayoutAdminSalesRoute = LayoutAdminSalesRouteImport.update({
   path: '/admin/sales',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutAdminShiftSessionsRoute =
+  LayoutAdminShiftSessionsRouteImport.update({
+    id: '/admin/shift-sessions',
+    path: '/admin/shift-sessions',
+    getParentRoute: () => LayoutRoute,
+  } as any)
 const LayoutAdminSystemLogsRoute = LayoutAdminSystemLogsRouteImport.update({
   id: '/admin/system-logs',
   path: '/admin/system-logs',
@@ -524,6 +531,7 @@ export interface FileRoutesByFullPath {
   '/admin/brands': typeof LayoutAdminBrandsRoute
   '/admin/platform-fees': typeof LayoutAdminPlatformFeesRoute
   '/admin/sales': typeof LayoutAdminSalesRoute
+  '/admin/shift-sessions': typeof LayoutAdminShiftSessionsRoute
   '/admin/system-logs': typeof LayoutAdminSystemLogsRoute
   '/admin/users': typeof LayoutAdminUsersRoute
   '/admin/vouchers': typeof LayoutAdminVouchersRoute
@@ -603,6 +611,7 @@ export interface FileRoutesByTo {
   '/admin/brands': typeof LayoutAdminBrandsRoute
   '/admin/platform-fees': typeof LayoutAdminPlatformFeesRoute
   '/admin/sales': typeof LayoutAdminSalesRoute
+  '/admin/shift-sessions': typeof LayoutAdminShiftSessionsRoute
   '/admin/system-logs': typeof LayoutAdminSystemLogsRoute
   '/admin/users': typeof LayoutAdminUsersRoute
   '/admin/vouchers': typeof LayoutAdminVouchersRoute
@@ -684,6 +693,7 @@ export interface FileRoutesById {
   '/_layout/admin/brands': typeof LayoutAdminBrandsRoute
   '/_layout/admin/platform-fees': typeof LayoutAdminPlatformFeesRoute
   '/_layout/admin/sales': typeof LayoutAdminSalesRoute
+  '/_layout/admin/shift-sessions': typeof LayoutAdminShiftSessionsRoute
   '/_layout/admin/system-logs': typeof LayoutAdminSystemLogsRoute
   '/_layout/admin/users': typeof LayoutAdminUsersRoute
   '/_layout/admin/vouchers': typeof LayoutAdminVouchersRoute
@@ -765,6 +775,7 @@ export interface FileRouteTypes {
     | '/admin/brands'
     | '/admin/platform-fees'
     | '/admin/sales'
+    | '/admin/shift-sessions'
     | '/admin/system-logs'
     | '/admin/users'
     | '/admin/vouchers'
@@ -844,6 +855,7 @@ export interface FileRouteTypes {
     | '/admin/brands'
     | '/admin/platform-fees'
     | '/admin/sales'
+    | '/admin/shift-sessions'
     | '/admin/system-logs'
     | '/admin/users'
     | '/admin/vouchers'
@@ -924,6 +936,7 @@ export interface FileRouteTypes {
     | '/_layout/admin/brands'
     | '/_layout/admin/platform-fees'
     | '/_layout/admin/sales'
+    | '/_layout/admin/shift-sessions'
     | '/_layout/admin/system-logs'
     | '/_layout/admin/users'
     | '/_layout/admin/vouchers'
@@ -1176,6 +1189,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/sales'
       fullPath: '/admin/sales'
       preLoaderRoute: typeof LayoutAdminSalesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/admin/shift-sessions': {
+      id: '/_layout/admin/shift-sessions'
+      path: '/admin/shift-sessions'
+      fullPath: '/admin/shift-sessions'
+      preLoaderRoute: typeof LayoutAdminShiftSessionsRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/admin/system-logs': {
@@ -1562,6 +1582,7 @@ interface LayoutRouteChildren {
   LayoutAdminBrandsRoute: typeof LayoutAdminBrandsRoute
   LayoutAdminPlatformFeesRoute: typeof LayoutAdminPlatformFeesRoute
   LayoutAdminSalesRoute: typeof LayoutAdminSalesRoute
+  LayoutAdminShiftSessionsRoute: typeof LayoutAdminShiftSessionsRoute
   LayoutAdminSystemLogsRoute: typeof LayoutAdminSystemLogsRoute
   LayoutAdminUsersRoute: typeof LayoutAdminUsersRoute
   LayoutAdminVouchersRoute: typeof LayoutAdminVouchersRoute
@@ -1631,6 +1652,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAdminBrandsRoute: LayoutAdminBrandsRoute,
   LayoutAdminPlatformFeesRoute: LayoutAdminPlatformFeesRoute,
   LayoutAdminSalesRoute: LayoutAdminSalesRoute,
+  LayoutAdminShiftSessionsRoute: LayoutAdminShiftSessionsRoute,
   LayoutAdminSystemLogsRoute: LayoutAdminSystemLogsRoute,
   LayoutAdminUsersRoute: LayoutAdminUsersRoute,
   LayoutAdminVouchersRoute: LayoutAdminVouchersRoute,

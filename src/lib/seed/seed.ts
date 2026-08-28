@@ -22,6 +22,7 @@ import {
   vouchers as vouchersTable,
   inventory as inventoryTable,
   shifts as shiftsTable,
+  shiftSessions as shiftSessionsTable,
   orders as ordersTable,
   orderItems as orderItemsTable,
   stockLedger as stockLedgerTable,
@@ -670,13 +671,24 @@ export async function seedShifts(idMap: IdMap) {
       .where(and(eq(shiftsTable.userId, userId), eq(shiftsTable.branchId, branchId)))
       .limit(1);
     if (!existing[0]) {
-      await db.insert(shiftsTable).values({
+      const startTime = new Date(Date.now() - (shiftData.indexOf(sd) + 1) * 86400000);
+      const [createdShift] = await db
+        .insert(shiftsTable)
+        .values({
+          branchId: branchId,
+          userId: userId,
+          startTime: startTime,
+          cashFloat: 0,
+          status: "Open",
+          notes: `Shift demo ${sd.branchCode}`,
+        })
+        .returning();
+      await db.insert(shiftSessionsTable).values({
+        shiftId: createdShift.id,
         branchId: branchId,
         userId: userId,
-        startTime: new Date(Date.now() - (shiftData.indexOf(sd) + 1) * 86400000),
-        cashFloat: 500000,
-        status: "Open",
-        notes: `Shift demo ${sd.branchCode}`,
+        action: "open",
+        loggedInAt: startTime,
       });
     }
   }
