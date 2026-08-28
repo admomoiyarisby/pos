@@ -247,9 +247,27 @@ export const getStockLedger = createServerFn({ method: "GET" })
     const user = await requireAuth();
     // Kartu Stok is branch-scoped for Branch Admin. Never trust a client-supplied
     // branchId, and do not allow an omitted filter to become a global read.
-    const effectiveBranchId = user.role === "branch_admin" ? user.branchId : data.branchId;
+    let effectiveBranchId = user.role === "branch_admin" ? user.branchId : data.branchId;
     if (user.role === "branch_admin" && !effectiveBranchId) {
       throw new Error("Branch Admin tidak memiliki cabang");
+    }
+
+    // Area managers only read their assigned branches (mirrors getStockOpnames).
+    // A client-supplied branchId outside that set is ignored rather than honored,
+    // so the inArray scope below always applies.
+    let assignedBranchIds: string[] | undefined;
+    if (user.role === "area_manager") {
+      const assigned = await db
+        .select({ branchId: areaManagerBranches.branchId })
+        .from(areaManagerBranches)
+        .where(eq(areaManagerBranches.userId, user.id));
+      assignedBranchIds = assigned.map((a) => a.branchId);
+      if (assignedBranchIds.length === 0) {
+        return [];
+      }
+      if (effectiveBranchId && !assignedBranchIds.includes(effectiveBranchId)) {
+        effectiveBranchId = undefined;
+      }
     }
 
     // Waste BOM ledger rows carry ingredientId (recipeId null); the recipe
@@ -292,6 +310,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
       .where(
         and(
           effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
+          assignedBranchIds ? inArray(stockLedger.branchId, assignedBranchIds) : undefined,
           data.ingredientId ? eq(stockLedger.ingredientId, data.ingredientId) : undefined,
           data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
           data.reference ? eq(stockLedger.reference, data.reference) : undefined,

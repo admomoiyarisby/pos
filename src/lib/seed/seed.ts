@@ -114,7 +114,8 @@ async function createUserViaAuth(
       name,
       role,
       status: "Active",
-      branchId: branchCode && branchIdMap ? branchIdMap.get(branchCode) : undefined,
+      branchId:
+        branchCode && branchIdMap ? branchIdMap.get(`br-${branchCode.toLowerCase()}`) : undefined,
       pin,
     };
     await auth.api.signUpEmail({ body });
@@ -231,7 +232,7 @@ export async function seedUsers(idMap: IdMap) {
     .limit(1);
   if (areaUser[0]) {
     for (const bc of AREA_MANAGER_BRANCHES) {
-      const branchId = idMap.branch.get(bc);
+      const branchId = idMap.branch.get(`br-${bc.toLowerCase()}`);
       if (!branchId) continue;
       const existing = await db
         .select()

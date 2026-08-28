@@ -114,6 +114,38 @@ export const createUser = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
 
+    // Area managers must be assigned at least one branch
+    if (
+      data.role === "area_manager" &&
+      (!data.assignedBranches || data.assignedBranches.length === 0)
+    ) {
+      throw new Error("Area Manager harus memiliki minimal 1 cabang yang dikelola");
+    }
+    if (data.assignedBranches?.length) {
+      const found = await db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(inArray(branches.id, data.assignedBranches));
+      if (found.length !== data.assignedBranches.length) {
+        throw new Error("Salah satu cabang yang dipilih tidak ditemukan");
+      }
+    }
+
+    // Branch admins must be assigned a branch (F10: a branch-less branch admin
+    // is stranded — no POS terminal, no unique PIN scope)
+    if (data.role === "branch_admin" && !data.branchId) {
+      throw new Error("Branch Admin harus memiliki cabang");
+    }
+    if (data.branchId) {
+      const found = await db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(eq(branches.id, data.branchId));
+      if (found.length !== 1) {
+        throw new Error("Cabang yang dipilih tidak ditemukan");
+      }
+    }
+
     // Validate PIN uniqueness per branch
     if (data.pin && data.branchId) {
       const [existing] = await db
@@ -208,6 +240,41 @@ export const updateUser = createServerFn({ method: "POST" })
 
     if (!oldUser) throw new Error("User not found");
 
+    const nextRole = data.role ?? oldUser.role;
+
+    // Area managers must keep at least one assigned branch
+    if (
+      nextRole === "area_manager" &&
+      assignedBranches !== undefined &&
+      assignedBranches.length === 0
+    ) {
+      throw new Error("Area Manager harus memiliki minimal 1 cabang yang dikelola");
+    }
+    if (assignedBranches?.length) {
+      const found = await db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(inArray(branches.id, assignedBranches));
+      if (found.length !== assignedBranches.length) {
+        throw new Error("Salah satu cabang yang dipilih tidak ditemukan");
+      }
+    }
+
+    // Branch admins must keep a branch (F10: the client always sends branchId
+    // for this role; an explicit undefined means the branch was cleared)
+    if (nextRole === "branch_admin" && "branchId" in data && data.branchId === undefined) {
+      throw new Error("Branch Admin harus memiliki cabang");
+    }
+    if (data.branchId) {
+      const found = await db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(eq(branches.id, data.branchId));
+      if (found.length !== 1) {
+        throw new Error("Cabang yang dipilih tidak ditemukan");
+      }
+    }
+
     // Validate PIN uniqueness per branch
     if (data.pin) {
       // Determine the branchId to check: use new branchId if provided, otherwise current
@@ -281,6 +348,12 @@ export const updateUser = createServerFn({ method: "POST" })
     }
 
     await logAudit(user, "users", id, "UPDATE", oldUser, newUserData);
+
+    // When an area manager's role changes away from area_manager, drop their
+    // branch assignments so no orphan rows are left behind.
+    if (oldUser.role === "area_manager" && nextRole !== "area_manager") {
+      await db.delete(areaManagerBranches).where(eq(areaManagerBranches.userId, id));
+    }
 
     // Update area manager branches — atomic delete+insert (bad branchId must not leave 0 rows)
     if (assignedBranches !== undefined) {

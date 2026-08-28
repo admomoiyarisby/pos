@@ -602,6 +602,12 @@ function StaffPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [mutationError, setMutationError] = useState("");
+  // Bumped on every open so StaffModal remounts fresh: its useState initializers
+  // (selectedRole, amBranches) only run on mount, and the Radix Modal content
+  // remounts independently — without this, a stale selectedRole from a previous
+  // edit (e.g. area_manager) hides the branch select on the next create/edit,
+  // silently dropping the branch assignment (F10).
+  const [modalNonce, setModalNonce] = useState(0);
 
   const { data: users } = useQuery({
     queryKey: ["users"],
@@ -653,12 +659,14 @@ function StaffPage() {
   const handleOpenCreate = () => {
     setEditing(null);
     setMutationError("");
+    setModalNonce((n) => n + 1);
     setModalOpen(true);
   };
 
   const handleEditUser = (user: UserRow) => {
     setEditing(user);
     setMutationError("");
+    setModalNonce((n) => n + 1);
     setModalOpen(true);
   };
 
@@ -696,6 +704,7 @@ function StaffPage() {
       )}
 
       <StaffModal
+        key={modalNonce}
         user={editing}
         branches={branches}
         open={modalOpen}
