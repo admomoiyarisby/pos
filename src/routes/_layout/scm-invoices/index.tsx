@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import {
   getSCMInvoices,
   getSCMInvoice,
@@ -15,7 +15,6 @@ import {
   cancelSCMInvoice,
 } from "#/lib/server/scm";
 import { getDeliveryNotes } from "#/lib/server/scm";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -89,7 +88,7 @@ function SCMInvoicePage() {
 
   const receivedDns = dns.filter((d) => d.status === "Received");
 
-  const columns: ColumnDef<InvRow>[] = [
+  const columns: Column<InvRow>[] = [
     { accessorKey: "code", header: "Kode Invoice", width: "w-32", enableSorting: true },
     {
       accessorKey: "totalAmount",

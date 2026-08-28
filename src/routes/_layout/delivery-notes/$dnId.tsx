@@ -186,7 +186,7 @@ function DNDetailPage() {
                   vehicleNumber: dn.vehicleNumber ?? null,
                   status: dn.status,
                   items: dn.items.map((item: DNItem & { stockUnit?: string | null }) => ({
-                    ingredientName: item.ingredientName ?? item.ingredientCode,
+                    ingredientName: item.ingredientName ?? item.ingredientCode ?? "-",
                     quantity: item.quantity,
                     readyQuantity: item.readyQuantity,
                     stockUnit: item.stockUnit ?? null,

@@ -4,10 +4,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getPeriods, openPeriod, closePeriod } from "#/lib/server/finance";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -73,7 +72,7 @@ function PeriodControlPage() {
 
   const openPeriodCount = periods.filter((p) => p.status === "Open").length;
 
-  const columns: ColumnDef<PeriodRow>[] = [
+  const columns: Column<PeriodRow>[] = [
     { accessorKey: "periodName", header: "Nama Periode", enableSorting: true },
     {
       accessorKey: "status",

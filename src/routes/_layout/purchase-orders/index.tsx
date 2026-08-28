@@ -4,9 +4,8 @@ import { lookupLabel } from "#/lib/label-lookup";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import { getPurchaseOrders } from "#/lib/server/scm";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -49,7 +48,7 @@ function POPage() {
     initialData: initial,
   });
 
-  const columns: ColumnDef<PORow>[] = [
+  const columns: Column<PORow>[] = [
     { accessorKey: "code", header: "Kode PO", width: "w-28", enableSorting: true },
     {
       accessorKey: "fromBranchId",

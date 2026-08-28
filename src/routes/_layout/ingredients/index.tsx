@@ -9,7 +9,7 @@ import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { lookupLabel } from "#/lib/label-lookup";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import MoneyInput from "#/components/MoneyInput";
 import {
@@ -20,7 +20,6 @@ import {
 } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { toast } from "sonner";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Switch } from "#/components/ui/switch";
@@ -184,7 +183,7 @@ function IngredientsPage() {
     setPage(0);
   };
 
-  const columns: ColumnDef<IngredientRow>[] = [
+  const columns: Column<IngredientRow>[] = [
     { accessorKey: "code", header: "Kode", width: "w-24", enableSorting: true },
     { accessorKey: "name", header: "Nama Bahan", enableSorting: true },
     {

@@ -6,11 +6,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getStockOpnames, triggerStockOpname, getAssignedBranchIds } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { ArrowRight, Search, X, Plus, Building2, CalendarDays, FileText } from "lucide-react";
 
@@ -29,7 +28,7 @@ const statusColors = {
   "Under Investigation": "warning",
 } satisfies Record<string, "default" | "warning" | "success">;
 
-const columns: ColumnDef<SORow>[] = [
+const columns: Column<SORow>[] = [
   { accessorKey: "date", header: "Tanggal", enableSorting: true },
   { accessorKey: "branchName", header: "Cabang", enableSorting: true },
   {
@@ -112,9 +111,11 @@ function StockOpnamePage() {
     }
   }, [visibleBranches, selectedBranch]);
 
-  const canTrigger = ["super_admin", "admin_pusat", "area_manager", "branch_admin"].includes(
-    user?.role ?? "",
-  );
+  // Area managers can only trigger for branches they're assigned to; with no
+  // assigned branches the button is hidden and the empty state explains why.
+  const canTrigger =
+    ["super_admin", "admin_pusat", "branch_admin"].includes(user?.role ?? "") ||
+    (user?.role === "area_manager" && assignedBranchIds?.length !== 0);
 
   const { data: opnames } = useQuery({
     queryKey: ["stock-opnames"],
@@ -332,12 +333,22 @@ function StockOpnamePage() {
         <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center">
           <FileText className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
           <p className="text-sm font-medium">
-            {hasActiveFilters ? "Tidak ada hasil" : "Tidak ada Stock Opname"}
+            {hasActiveFilters
+              ? "Tidak ada hasil"
+              : user?.role === "area_manager" && assignedBranchIds?.length === 0
+                ? "Belum ada cabang yang dikelola"
+                : user?.role === "area_manager"
+                  ? "Belum ada Stock Opname"
+                  : "Tidak ada Stock Opname"}
           </p>
           <p className="text-muted-foreground text-xs mt-1 max-w-[32ch] mx-auto">
             {hasActiveFilters
               ? "Coba ubah filter atau pencarian."
-              : "Tidak ada Stock Opname yang aktif untuk cabang Anda. Hubungi Area Manager untuk memulai proses Stock Opname."}
+              : user?.role === "area_manager" && assignedBranchIds?.length === 0
+                ? "Anda belum ditetapkan ke cabang mana pun. Hubungi Super Admin untuk menetapkan cabang yang Anda kelola."
+                : user?.role === "area_manager"
+                  ? 'Belum ada Stock Opname untuk cabang Anda. Klik "Trigger SO" untuk memulai proses opname.'
+                  : "Tidak ada Stock Opname yang aktif untuk cabang Anda. Hubungi Area Manager untuk memulai proses Stock Opname."}
           </p>
           {hasActiveFilters && (
             <button

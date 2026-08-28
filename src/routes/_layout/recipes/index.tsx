@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { toast } from "sonner";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { RecipeWizard } from "#/components/RecipeWizard";
 import { getRecipes, createRecipe, recalculateAllRecipeCosts } from "#/lib/server/recipes";
@@ -15,7 +15,6 @@ import { getBranches } from "#/lib/server/branches";
 import { getCategories } from "#/lib/server/categories";
 import { getModifierGroups } from "#/lib/server/modifier-groups";
 import { useAuth } from "#/lib/auth-context";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -148,7 +147,7 @@ function RecipesPage() {
 
   usePageTitle("Menu / Resep", "Kelola master menu, BOM, dan bundling");
 
-  const columns: ColumnDef<RecipeRow>[] = [
+  const columns: Column<RecipeRow>[] = [
     {
       accessorKey: "image",
       header: "",

@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { AlertCircle, Search, X, Plus, CalendarDays, ArrowUp, ArrowDown } from "lucide-react";
 import {
@@ -32,7 +32,6 @@ import {
 import { getIngredients } from "#/lib/server/ingredients";
 import { getInventory } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { getFinancialClassificationLabel } from "#/lib/waste-categories";
 
@@ -729,7 +728,7 @@ function WastePage() {
   // Only super_admin (all branches) and area_manager (assigned branches) may cancel.
   const canCancel = user?.role === "super_admin" || user?.role === "area_manager";
 
-  const columns: ColumnDef<WasteRow>[] = [
+  const columns: Column<WasteRow>[] = [
     {
       accessorKey: "createdAt",
       header: "Waktu",
@@ -810,6 +809,9 @@ function WastePage() {
     ...(isBranchAdmin
       ? []
       : [
+          // SAFETY: the object literal has the same accessorKey/header/cell
+          // shape as the other WasteRow columns; the annotation restores the
+          // contextual typing that conditional-spread arrays lose.
           {
             accessorKey: "valuation",
             header: "Nilai Kerugian",
@@ -817,7 +819,7 @@ function WastePage() {
             width: "w-32",
             enableSorting: true,
             cell: ({ row }) => formatRupiah(row.original.valuation),
-          },
+          } as Column<WasteRow>,
         ]),
     { accessorKey: "notes", header: "Keterangan", cell: ({ row }) => row.original.notes ?? "-" },
     {

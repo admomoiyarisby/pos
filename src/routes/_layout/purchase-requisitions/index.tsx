@@ -7,7 +7,7 @@ import { lookupLabel } from "#/lib/label-lookup";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { AlertCircle } from "lucide-react";
 import {
@@ -28,7 +28,6 @@ import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { getInventory } from "#/lib/server/inventory";
 import { generateReorderRecommendations } from "#/lib/server/reorder";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -215,7 +214,7 @@ function PRPage() {
     });
   };
 
-  const columns: ColumnDef<PRRow>[] = [
+  const columns: Column<PRRow>[] = [
     { accessorKey: "code", header: "Kode PR", width: "w-28", enableSorting: true },
     { accessorKey: "branchName", header: "Cabang", enableSorting: true },
     {

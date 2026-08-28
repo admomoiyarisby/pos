@@ -23,7 +23,7 @@ export function computeWasteLoss(wasteEntries: WasteEntry[], ingredients: Ingred
       const lossAmount = w.quantity * costPerUnit;
       return {
         ...w,
-        ingredientName: ing?.name ?? w.ingredientId,
+        ingredientName: ing?.name ?? w.ingredientId ?? "Bahan tidak ditemukan",
         lossAmount,
       };
     })

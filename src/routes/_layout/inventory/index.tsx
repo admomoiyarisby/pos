@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import { getInventory } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
@@ -17,7 +17,6 @@ import StockAdjustmentModal from "#/components/inventory/StockAdjustmentModal";
 import CleanSlateModal from "#/components/inventory/CleanSlateModal";
 import type { IngredientOption } from "#/components/inventory/StockAdjustmentModal";
 import { useAuth } from "#/lib/auth-context";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 
 interface InvRow {
@@ -211,7 +210,7 @@ function InventoryPage() {
   const showBranchColumn =
     user?.role === "super_admin" || user?.role === "area_manager" || user?.role === "admin_pusat";
 
-  const columns: ColumnDef<InvRow>[] = [
+  const columns: Column<InvRow>[] = [
     { accessorKey: "ingredientCode", header: "Kode", width: "w-20", enableSorting: true },
     { accessorKey: "ingredientName", header: "Nama Bahan", enableSorting: true },
     {

@@ -6,12 +6,11 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
 import MoneyInput from "#/components/MoneyInput";
 import { getPlatformFees, updatePlatformFee } from "#/lib/server/platform-fees";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Trash2, Info } from "lucide-react";
 
 interface FeeRow {
@@ -30,7 +29,7 @@ const channelLabels = {
   Perlengkapan: "Perlengkapan",
 } satisfies Record<string, string>;
 
-const columns: ColumnDef<FeeRow>[] = [
+const columns: Column<FeeRow>[] = [
   {
     accessorKey: "channel",
     header: "Channel",

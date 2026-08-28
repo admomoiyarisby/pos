@@ -28,7 +28,6 @@ import { Route as ApiSeedRouteImport } from './routes/api/seed'
 import { Route as ApiSeedDataRouteImport } from './routes/api/seed-data'
 import { Route as ApiSetupRouteImport } from './routes/api/setup'
 import { Route as DemoBetterAuthRouteImport } from './routes/demo/better-auth'
-import { Route as DemoTableRouteImport } from './routes/demo/table'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as LayoutAdminIndexRouteImport } from './routes/_layout/admin/index'
 import { Route as LayoutAdminAuditLogsRouteImport } from './routes/_layout/admin/audit-logs'
@@ -181,11 +180,6 @@ const ApiSetupRoute = ApiSetupRouteImport.update({
 const DemoBetterAuthRoute = DemoBetterAuthRouteImport.update({
   id: '/demo/better-auth',
   path: '/demo/better-auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoTableRoute = DemoTableRouteImport.update({
-  id: '/demo/table',
-  path: '/demo/table',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
@@ -524,7 +518,6 @@ export interface FileRoutesByFullPath {
   '/api/seed-data': typeof ApiSeedDataRoute
   '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
-  '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
   '/admin/branches': typeof LayoutAdminBranchesRoute
@@ -603,7 +596,6 @@ export interface FileRoutesByTo {
   '/api/seed-data': typeof ApiSeedDataRoute
   '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
-  '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/': typeof LayoutIndexRoute
   '/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
@@ -685,7 +677,6 @@ export interface FileRoutesById {
   '/api/seed-data': typeof ApiSeedDataRoute
   '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
-  '/demo/table': typeof DemoTableRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
@@ -768,7 +759,6 @@ export interface FileRouteTypes {
     | '/api/seed-data'
     | '/api/setup'
     | '/demo/better-auth'
-    | '/demo/table'
     | '/demo/tanstack-query'
     | '/admin/audit-logs'
     | '/admin/branches'
@@ -847,7 +837,6 @@ export interface FileRouteTypes {
     | '/api/seed-data'
     | '/api/setup'
     | '/demo/better-auth'
-    | '/demo/table'
     | '/demo/tanstack-query'
     | '/'
     | '/admin/audit-logs'
@@ -928,7 +917,6 @@ export interface FileRouteTypes {
     | '/api/seed-data'
     | '/api/setup'
     | '/demo/better-auth'
-    | '/demo/table'
     | '/demo/tanstack-query'
     | '/_layout/'
     | '/_layout/admin/audit-logs'
@@ -1000,7 +988,6 @@ export interface RootRouteChildren {
   ApiSeedDataRoute: typeof ApiSeedDataRoute
   ApiSetupRoute: typeof ApiSetupRoute
   DemoBetterAuthRoute: typeof DemoBetterAuthRoute
-  DemoTableRoute: typeof DemoTableRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   DemoFormAddressRoute: typeof DemoFormAddressRoute
@@ -1140,13 +1127,6 @@ declare module '@tanstack/react-router' {
       path: '/demo/better-auth'
       fullPath: '/demo/better-auth'
       preLoaderRoute: typeof DemoBetterAuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/table': {
-      id: '/demo/table'
-      path: '/demo/table'
-      fullPath: '/demo/table'
-      preLoaderRoute: typeof DemoTableRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/tanstack-query': {
@@ -1716,7 +1696,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSeedDataRoute: ApiSeedDataRoute,
   ApiSetupRoute: ApiSetupRoute,
   DemoBetterAuthRoute: DemoBetterAuthRoute,
-  DemoTableRoute: DemoTableRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   DemoFormAddressRoute: DemoFormAddressRoute,

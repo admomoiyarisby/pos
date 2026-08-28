@@ -5,9 +5,8 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import { getCategories, createCategory } from "#/lib/server/categories";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import Modal from "#/components/ui/Modal";
@@ -23,7 +22,7 @@ interface CategoryRow {
   recipeCount: number;
 }
 
-const columns: ColumnDef<CategoryRow>[] = [
+const columns: Column<CategoryRow>[] = [
   {
     accessorKey: "name",
     header: "Kategori",

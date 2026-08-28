@@ -4,9 +4,8 @@ import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import { getSystemLogs } from "#/lib/server/system";
-import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 
 interface LogRow {
@@ -55,7 +54,7 @@ function SystemLogsPage() {
     initialData: initial,
   });
 
-  const columns: ColumnDef<LogRow>[] = [
+  const columns: Column<LogRow>[] = [
     {
       accessorKey: "createdAt",
       header: "Waktu",

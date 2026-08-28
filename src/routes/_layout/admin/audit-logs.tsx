@@ -7,10 +7,9 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getAuditLogs } from "#/lib/server/system";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Eye } from "lucide-react";
 
@@ -69,7 +68,7 @@ function AuditLogsPage() {
     initialData: initial,
   });
 
-  const columns: ColumnDef<AuditRow>[] = [
+  const columns: Column<AuditRow>[] = [
     {
       accessorKey: "createdAt",
       header: "Waktu",

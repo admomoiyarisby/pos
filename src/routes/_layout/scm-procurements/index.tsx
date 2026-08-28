@@ -7,12 +7,11 @@ import { useMemo } from "react";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Plus, Eye, FileText, Search, X, Building2, User, CalendarDays } from "lucide-react";
 import { listProcurements } from "#/lib/server/scm-queries";
-import type { ColumnDef } from "@tanstack/react-table";
 import { SCM_PROCUREMENT_STATUS_VALUES, type ScmProcurementStatus } from "#/lib/server/scm-fsm";
 import type { UnknownRecord } from "#/lib/unknown-record";
 
@@ -153,7 +152,7 @@ function ProcurementsListPage() {
     });
   };
 
-  const columns: ColumnDef<ProcurementRow>[] = [
+  const columns: Column<ProcurementRow>[] = [
     {
       accessorKey: "code",
       header: "Kode",
@@ -336,7 +335,16 @@ function ProcurementsListPage() {
             {hasActiveFilters && (
               <button
                 onClick={() => {
-                  void navigate({ search: () => ({}), replace: true });
+                  void navigate({
+                    search: () => ({
+                      status: undefined,
+                      search: undefined,
+                      page: undefined,
+                      sortKey: undefined,
+                      sortDir: undefined,
+                    }),
+                    replace: true,
+                  });
                   setSearch("");
                   setPage(0);
                 }}
@@ -367,7 +375,16 @@ function ProcurementsListPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    void navigate({ search: () => ({}), replace: true });
+                    void navigate({
+                      search: () => ({
+                        status: undefined,
+                        search: undefined,
+                        page: undefined,
+                        sortKey: undefined,
+                        sortDir: undefined,
+                      }),
+                      replace: true,
+                    });
                     setSearch("");
                     setPage(0);
                   }}

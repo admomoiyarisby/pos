@@ -7,10 +7,9 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getOrders, getOrderWithItems, updateOrderStatus } from "#/lib/server/pos";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Printer, Pencil } from "lucide-react";
 import { printReceipt } from "#/lib/pos-print";
@@ -43,7 +42,7 @@ const statusColors = {
   "Cancel Requested": "destructive",
 } satisfies Record<string, string>;
 
-const columns: ColumnDef<OrderRow>[] = [
+const columns: Column<OrderRow>[] = [
   {
     accessorKey: "createdAt",
     header: "Waktu",

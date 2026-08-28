@@ -31,7 +31,21 @@ function IndexComponent() {
         />
       );
     case "area_manager":
-      return <Navigate to="/inventory" search={{}} />;
+      return (
+        <Navigate
+          to="/inventory"
+          search={{
+            search: undefined,
+            page: undefined,
+            sortKey: undefined,
+            sortDir: undefined,
+            category: undefined,
+            branchId: undefined,
+            locationType: undefined,
+            negative: undefined,
+          }}
+        />
+      );
     case "central_kitchen":
       return <Navigate to="/yield-tracking" />;
     default:

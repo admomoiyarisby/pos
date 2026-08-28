@@ -10,7 +10,7 @@ import RoleGuard from "#/components/RoleGuard";
 import MoneyInput from "#/components/MoneyInput";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import {
   getSupplierDeliveries,
@@ -21,7 +21,6 @@ import {
   getSuppliers,
 } from "#/lib/server/supplier-deliveries";
 import { getIngredients } from "#/lib/server/ingredients";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Printer, Pencil, Trash2, CheckCircle } from "lucide-react";
 
@@ -257,7 +256,7 @@ function SupplierDeliveriesPage() {
     });
   };
 
-  const columns: ColumnDef<DeliveryRow>[] = [
+  const columns: Column<DeliveryRow>[] = [
     {
       accessorKey: "deliveryDate",
       header: "Tanggal",

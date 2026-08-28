@@ -12,7 +12,7 @@ import type { UnknownRecord } from "#/lib/unknown-record";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import {
   getStockTransfers,
@@ -25,7 +25,6 @@ import {
 } from "#/lib/server/scm";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import {
   AlertCircle,
@@ -187,7 +186,7 @@ function TransferPage() {
     });
   };
 
-  const columns: ColumnDef<TRRow>[] = [
+  const columns: Column<TRRow>[] = [
     { accessorKey: "code", header: "Kode", width: "w-28", enableSorting: true },
     {
       accessorKey: "fromBranchId",

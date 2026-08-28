@@ -8,7 +8,7 @@ import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import {
   getDeliveryNotes,
@@ -19,7 +19,6 @@ import {
 } from "#/lib/server/scm";
 import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -143,7 +142,7 @@ function DNPage() {
     void createMutation.mutateAsync({ data });
   };
 
-  const columns: ColumnDef<DNRow>[] = [
+  const columns: Column<DNRow>[] = [
     { accessorKey: "code", header: "Kode SJ", width: "w-28", enableSorting: true },
     {
       accessorKey: "fromBranchId",

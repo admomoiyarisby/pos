@@ -4,12 +4,11 @@ import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import { getStockLedger } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
 import { getRecipes } from "#/lib/server/recipes";
 import { useAuth } from "#/lib/auth-context";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Factory, X } from "lucide-react";
 
@@ -45,18 +44,33 @@ function LedgerPage() {
     bom?: string;
     bomRecipe?: string;
   }>(["branchId", "reference", "bom", "bomRecipe"]);
-  // Branch Admin is always scoped by the server; hide the global branch picker
-  // and avoid presenting a misleading "Semua Cabang" control.
-  const branchId = user?.role === "branch_admin" ? "" : (filters.branchId ?? "");
-  const reference = filters.reference ?? "";
-  // Waste BOM filter (ADR 0013): review per-ingredient losses by recipe.
-  const bomOnly = filters.bom === "true";
-  const bomRecipe = filters.bomRecipe ?? "";
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
     queryFn: () => getBranches({ data: {} }),
   });
+
+  // Branch Admin is always scoped by the server; hide the global branch picker
+  // and avoid presenting a misleading "Semua Cabang" control.
+  // Area managers can only filter among their assigned branches (the server
+  // enforces the same scope); a stale URL branchId outside that set is ignored.
+  const visibleBranches =
+    user?.role === "area_manager"
+      ? (branches ?? []).filter((b) => user.assignedBranches?.includes(b.id))
+      : (branches ?? []);
+  const branchId =
+    user?.role === "branch_admin"
+      ? ""
+      : user?.role === "area_manager" &&
+          branches &&
+          filters.branchId &&
+          !visibleBranches.some((b) => b.id === filters.branchId)
+        ? ""
+        : (filters.branchId ?? "");
+  const reference = filters.reference ?? "";
+  // Waste BOM filter (ADR 0013): review per-ingredient losses by recipe.
+  const bomOnly = filters.bom === "true";
+  const bomRecipe = filters.bomRecipe ?? "";
 
   const canFilterBranches =
     user?.role === "super_admin" || user?.role === "area_manager" || user?.role === "admin_pusat";
@@ -84,7 +98,12 @@ function LedgerPage() {
     initialData: initial,
   });
 
-  const columns: ColumnDef<LedgerRow>[] = [
+  // Branch Admin is always scoped to their own branch by the server, so the
+  // branch column would be constant noise; everyone else (Area Manager, Admin
+  // Pusat, Super Admin, Central Kitchen) can see multiple branches at once.
+  const showBranchColumn = user?.role !== "branch_admin";
+
+  const columns: Column<LedgerRow>[] = [
     {
       accessorKey: "createdAt",
       header: "Waktu",
@@ -115,6 +134,19 @@ function LedgerPage() {
         return row.original.ingredientName ?? "-";
       },
     },
+    ...(showBranchColumn
+      ? [
+          // SAFETY: the object literal has the same accessorKey/header/cell
+          // shape as the other LedgerRow columns; the annotation restores the
+          // contextual typing that conditional-spread arrays lose.
+          {
+            accessorKey: "branchName",
+            header: "Cabang",
+            enableSorting: true,
+            cell: ({ row }) => row.original.branchName ?? "-",
+          } as Column<LedgerRow>,
+        ]
+      : []),
     {
       accessorKey: "type",
       header: "Tipe",
@@ -203,7 +235,7 @@ function LedgerPage() {
             className="h-8 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value="">Semua Cabang</option>
-            {branches.map((b) => (
+            {visibleBranches.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
               </option>

@@ -8,7 +8,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import MoneyInput from "#/components/MoneyInput";
 import { Button } from "#/components/ui/button";
@@ -22,7 +22,6 @@ import {
   deactivateVoucher,
   deleteVoucher,
 } from "#/lib/server/vouchers";
-import type { ColumnDef } from "@tanstack/react-table";
 
 interface VoucherRow {
   id: string;
@@ -71,7 +70,7 @@ function voucherStatus(r: VoucherRow): VoucherStatusBadge {
   return { label: "Aktif", variant: "success" };
 }
 
-const columns: ColumnDef<VoucherRow>[] = [
+const columns: Column<VoucherRow>[] = [
   { accessorKey: "code", header: "Kode", width: "w-32", enableSorting: true },
   { accessorKey: "description", header: "Deskripsi", enableSorting: true },
   {
@@ -300,7 +299,7 @@ function VouchersPage() {
     },
 
     // SAFETY: tableColumns are validated VoucherRow ColumnDefs — action column augmentation.
-  ] as ColumnDef<VoucherRow>[];
+  ] as Column<VoucherRow>[];
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>

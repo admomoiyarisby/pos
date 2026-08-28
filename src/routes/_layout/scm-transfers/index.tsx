@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 import { getMutasiTransfers } from "#/lib/server/scm-transfers";
 import { canAmAct } from "#/lib/server/scm-transfer-queries";
-import type { ColumnDef } from "@tanstack/react-table";
 import { SCM_TRANSFER_STATUS_VALUES, type ScmTransferStatus } from "#/lib/server/scm-transfer-fsm";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { getBranches } from "#/lib/server/branches";
@@ -228,7 +227,7 @@ function TransfersListPage() {
 
   usePageTitle("Mutasi Stok", "Surat Jalan antar cabang");
 
-  const columns: ColumnDef<TransferRow>[] = [
+  const columns: Column<TransferRow>[] = [
     { accessorKey: "code", header: "Kode", width: "w-32", enableSorting: true },
     {
       accessorKey: "fromBranchId",
@@ -378,7 +377,16 @@ function TransfersListPage() {
             {hasActiveFilters && (
               <button
                 onClick={() => {
-                  void navigate({ search: () => ({}), replace: true });
+                  void navigate({
+                    search: () => ({
+                      status: undefined,
+                      search: undefined,
+                      page: undefined,
+                      sortKey: undefined,
+                      sortDir: undefined,
+                    }),
+                    replace: true,
+                  });
                   setSearch("");
                   setPage(0);
                 }}
@@ -411,7 +419,16 @@ function TransfersListPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    void navigate({ search: () => ({}), replace: true });
+                    void navigate({
+                      search: () => ({
+                        status: undefined,
+                        search: undefined,
+                        page: undefined,
+                        sortKey: undefined,
+                        sortDir: undefined,
+                      }),
+                      replace: true,
+                    });
                     setSearch("");
                     setPage(0);
                   }}

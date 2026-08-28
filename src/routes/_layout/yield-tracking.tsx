@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import {
   getYieldConversions,
@@ -23,7 +23,6 @@ import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { getInventory } from "#/lib/server/inventory";
 import { useAuth } from "#/lib/auth-context";
-import type { ColumnDef } from "@tanstack/react-table";
 import {
   AlertCircle,
   ArrowRightLeft,
@@ -565,7 +564,7 @@ function YieldTrackingPage() {
     </div>
   );
 
-  const columns: ColumnDef<ProductionRow>[] = [
+  const columns: Column<ProductionRow>[] = [
     {
       accessorKey: "productionDate",
       header: "Tanggal Produksi",

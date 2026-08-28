@@ -6,7 +6,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import {
   getSalesRecords,
@@ -17,7 +17,6 @@ import {
 } from "#/lib/server/sales";
 import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { getBranches } from "#/lib/server/branches";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { toast } from "sonner";
 import { AlertCircle, Search, X, Plus, Building2, CalendarDays, Tag } from "lucide-react";
@@ -168,7 +167,7 @@ function SalesAdminPage() {
 
   usePageTitle("Data Penjualan", "Rekap dan kelola data penjualan");
 
-  const columns: ColumnDef<SalesRow>[] = [
+  const columns: Column<SalesRow>[] = [
     {
       accessorKey: "createdAt",
       header: "Tanggal",

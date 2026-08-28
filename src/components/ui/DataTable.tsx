@@ -39,7 +39,7 @@ declare module "@tanstack/react-table" {
 const fuzzyFilter: FilterFn<any, any> = (row, columnId, value, addMeta) => {
   // SAFETY: global/column filter value is a string search term; rankItem handles non-string via String(value) internally.
   const itemRank = rankItem(row.getValue(columnId), value as string);
-  addMeta({ itemRank });
+  addMeta?.({ itemRank });
   return itemRank.passed;
 };
 
@@ -76,7 +76,7 @@ const dataTableFeatures = tableFeatures({
 });
 
 export type Column<T extends RowData> = ColumnDef<any, T, any> & {
-  key: string;
+  key?: string;
   header: React.ReactNode;
   width?: string;
   align?: "left" | "right" | "center";

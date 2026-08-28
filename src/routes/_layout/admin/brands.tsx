@@ -6,12 +6,11 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
-import DataTable from "#/components/ui/DataTable";
+import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
 import { getBrands, createBrand, updateBrand, deleteBrand } from "#/lib/server/brands";
 import { toast } from "sonner";
-import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
 import { Trash2, AlertTriangle, Search, X, Plus, Tag, ArrowRight } from "lucide-react";
 
@@ -23,7 +22,7 @@ interface BrandRow {
   status: string;
 }
 
-const columns: ColumnDef<BrandRow>[] = [
+const columns: Column<BrandRow>[] = [
   { accessorKey: "code", header: "Kode", width: "w-24", enableSorting: true },
   { accessorKey: "name", header: "Nama Brand", enableSorting: true },
   {
@@ -152,7 +151,7 @@ function BrandsPage() {
       ),
     },
     // SAFETY: action column is a validated BrandRow ColumnDef augmentation.
-  ] as ColumnDef<BrandRow>[];
+  ] as Column<BrandRow>[];
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
