@@ -30,13 +30,16 @@ export const pinAuth = () => ({
         const { pin } = ctx.body;
 
         // 1. Find user by PIN via Drizzle (direct query, reliable)
+        // SECURITY: only branch_admin is allowed through this endpoint — it
+        // resolves a PIN + branchId to a user, so elevated roles must use
+        // /non-branch-pin-login with their own individual PIN instead.
         const [user] = await db
           .select()
           .from(usersTable)
           .where(
             and(
               eq(usersTable.pin, pin),
-              // eq(usersTable.role, "branch_admin"),
+              eq(usersTable.role, "branch_admin"),
               eq(usersTable.status, "Active"),
             ),
           )
@@ -147,14 +150,25 @@ export const pinAuth = () => ({
           .where(and(eq(branchStaffNames.branchId, branch.id), eq(branchStaffNames.active, true)))
           .orderBy(branchStaffNames.name);
 
-        // Also get users assigned to this branch
+        // Also get users assigned to this branch.
+        // SECURITY: only branch_admin users may appear in the branch PIN name
+        // picker. Elevated roles (area_manager, super_admin, admin_pusat,
+        // central_kitchen) must log in with their own individual PIN via
+        // /non-branch-pin-login — the shared branch PIN must never be able to
+        // grant those roles.
         const branchUsers = await db
           .select({
             id: usersTable.id,
             name: usersTable.name,
           })
           .from(usersTable)
-          .where(and(eq(usersTable.branchId, branch.id), eq(usersTable.status, "Active")))
+          .where(
+            and(
+              eq(usersTable.branchId, branch.id),
+              eq(usersTable.role, "branch_admin"),
+              eq(usersTable.status, "Active"),
+            ),
+          )
           .orderBy(usersTable.name);
 
         // Merge and deduplicate by name
@@ -333,6 +347,18 @@ export const pinAuth = () => ({
         // 3. Find or create a user account for this staff member
         // If user already exists in users table, use that account
         let user = existingUser;
+
+        // SECURITY: the shared branch PIN may only ever grant a branch_admin
+        // session. If the selected name maps to an existing user with an
+        // elevated role (area_manager, super_admin, admin_pusat,
+        // central_kitchen), reject — that user must log in with their own
+        // individual PIN via /non-branch-pin-login.
+        if (user && user.role !== "branch_admin") {
+          throw APIError.from("UNAUTHORIZED", {
+            code: "ROLE_NOT_ALLOWED",
+            message: "Akun ini harus login menggunakan PIN sendiri",
+          });
+        }
 
         if (!user) {
           // Create a user account for this staff member
