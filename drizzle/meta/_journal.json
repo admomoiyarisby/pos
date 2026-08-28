@@ -323,6 +323,13 @@
       "when": 1788081000000,
       "tag": "0045_modifier_recipe_addons",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1788082000000,
+      "tag": "0046_modifier_kind",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,8 @@ import {
   recipeModifierGroups,
   modifierGroups,
   modifiers,
+  modifierIngredients,
+  modifierRecipes,
   inventory,
   stockLedger,
   orders,
@@ -138,6 +140,7 @@ export const getPosMenu = createServerFn({ method: "GET" })
               name: modifiers.name,
               price: modifiers.price,
               isExclusion: modifiers.isExclusion,
+              kind: modifiers.kind,
             })
             .from(modifiers)
             .where(inArray(modifiers.modifierGroupId, groupIds))
@@ -154,6 +157,100 @@ export const getPosMenu = createServerFn({ method: "GET" })
             .from(recipeModifierExclusions)
             .where(inArray(recipeModifierExclusions.modifierId, allModifierIds))
         : [];
+
+    // Per-option stock for ingredient/recipe-kind options (ADR-0014). The
+    // option's BOM (linked ingredient, or linked recipe + its children) is
+    // compared against the branch's inventory to yield available servings.
+    // Text options carry no stock. Batch-fetch everything involved.
+    const [modIngLinks, modRecipeLinks] = await Promise.all([
+      allModifierIds.length > 0
+        ? db
+            .select()
+            .from(modifierIngredients)
+            .where(inArray(modifierIngredients.modifierId, allModifierIds))
+        : [],
+      allModifierIds.length > 0
+        ? db
+            .select()
+            .from(modifierRecipes)
+            .where(inArray(modifierRecipes.modifierId, allModifierIds))
+        : [],
+    ]);
+    const modLinkedRecipeIds = [...new Set(modRecipeLinks.map((l) => l.recipeId))];
+    const [modLinkedBom, modLinkedChildren] = await Promise.all([
+      modLinkedRecipeIds.length > 0
+        ? db
+            .select()
+            .from(recipeIngredients)
+            .where(inArray(recipeIngredients.recipeId, modLinkedRecipeIds))
+        : [],
+      modLinkedRecipeIds.length > 0
+        ? db
+            .select()
+            .from(recipeChildRecipes)
+            .where(inArray(recipeChildRecipes.parentRecipeId, modLinkedRecipeIds))
+        : [],
+    ]);
+    const modChildIds = [...new Set(modLinkedChildren.map((c) => c.childRecipeId))];
+    const modChildBom =
+      modChildIds.length > 0
+        ? await db
+            .select()
+            .from(recipeIngredients)
+            .where(inArray(recipeIngredients.recipeId, modChildIds))
+        : [];
+    const involvedIngredientIds = [
+      ...new Set([
+        ...modIngLinks.map((l) => l.ingredientId),
+        ...modLinkedBom.map((r) => r.ingredientId),
+        ...modChildBom.map((r) => r.ingredientId),
+      ]),
+    ];
+    const branchInventory =
+      currentBranchId && involvedIngredientIds.length > 0
+        ? await db
+            .select()
+            .from(inventory)
+            .where(
+              and(
+                eq(inventory.branchId, currentBranchId),
+                inArray(inventory.ingredientId, involvedIngredientIds),
+              ),
+            )
+        : [];
+    const invByIngredient = new Map(branchInventory.map((i) => [i.ingredientId, i.quantity]));
+
+    // Available servings = min over the option's BOM ingredients of
+    // (stock on hand / quantity needed per order). null for text options.
+    const optionAvailableStock = (modId: string): number | null => {
+      const ingLink = modIngLinks.find((l) => l.modifierId === modId);
+      const recipeLink = modRecipeLinks.find((l) => l.modifierId === modId);
+      if (ingLink) {
+        const qty = ingLink.quantity;
+        if (qty <= 0) return null;
+        return (invByIngredient.get(ingLink.ingredientId) ?? 0) / qty;
+      }
+      if (recipeLink) {
+        const consumption = new Map<string, number>();
+        const bump = (ingredientId: string, qty: number) =>
+          consumption.set(ingredientId, (consumption.get(ingredientId) ?? 0) + qty);
+        for (const r of modLinkedBom.filter((b) => b.recipeId === recipeLink.recipeId)) {
+          bump(r.ingredientId, r.quantity * recipeLink.quantity);
+        }
+        for (const c of modLinkedChildren.filter((c) => c.parentRecipeId === recipeLink.recipeId)) {
+          for (const cb of modChildBom.filter((b) => b.recipeId === c.childRecipeId)) {
+            bump(cb.ingredientId, cb.quantity * c.quantity * recipeLink.quantity);
+          }
+        }
+        let min = Infinity;
+        for (const [ingredientId, qty] of consumption) {
+          if (qty <= 0) continue;
+          min = Math.min(min, (invByIngredient.get(ingredientId) ?? 0) / qty);
+        }
+        return Number.isFinite(min) ? min : null;
+      }
+      return null;
+    };
 
     return result
       .filter((r) => {
@@ -190,6 +287,7 @@ export const getPosMenu = createServerFn({ method: "GET" })
                 excludedIngredientId: m.isExclusion
                   ? (allExclusions.find((e) => e.modifierId === m.id)?.ingredientId ?? null)
                   : null,
+                availableStock: optionAvailableStock(m.id),
               })),
           })),
         ingredientIds: (() => {

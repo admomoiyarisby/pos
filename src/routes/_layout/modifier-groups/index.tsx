@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -39,10 +39,13 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ArrowRight, X, Plus, GripVertical, Search } from "lucide-react";
+import ModifierOptionKindEditor, { type ModifierKind } from "#/components/ModifierOptionKindEditor";
 
 interface ModifierFormInput {
   name: string;
   price: number;
+  // ADR-0014 kind discriminator.
+  kind: ModifierKind;
   isExclusion: boolean;
   ingredientId?: string;
   ingredientQty?: number;
@@ -136,13 +139,25 @@ function ModifierGroupsPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [modifiersInput, setModifiersInput] = useState<ModifierFormInput[]>([
-    { name: "", price: 0, isExclusion: false },
+    { name: "", price: 0, kind: "text", isExclusion: false },
   ]);
 
   // Tracks the active drag and the row being hovered for the drop-indicator
   // line. Cleared on drop / cancel.
   const [viewDragOverId, setViewDragOverId] = useState<string | null>(null);
   const [viewDragActiveId, setViewDragActiveId] = useState<string | null>(null);
+
+  // Scopes the create modal's option-card list and scrolls a freshly-added
+  // option into view. Without this, "Tambah Opsi" appends a blank card below
+  // the visible area of the scrollable modal and looks like a no-op.
+  const optionsListRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const last = modifiersInput[modifiersInput.length - 1];
+    if (!last) return;
+    const cards = optionsListRef.current?.querySelectorAll("[data-option-card]");
+    cards?.[cards.length - 1]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [modifiersInput]);
 
   const { data: groups } = useQuery({
     queryKey: ["modifier-groups"],
@@ -159,6 +174,7 @@ function ModifierGroupsPage() {
         {
           name: "",
           price: 0,
+          kind: "text",
           isExclusion: false,
           ingredientId: undefined,
           ingredientQty: undefined,
@@ -236,6 +252,7 @@ function ModifierGroupsPage() {
         .map((m) => ({
           name: m.name,
           price: m.price,
+          kind: m.kind,
           isExclusion: m.isExclusion,
           ingredientId: m.ingredientId || undefined,
           ingredientQty: m.ingredientQty || undefined,
@@ -366,6 +383,7 @@ function ModifierGroupsPage() {
             {
               name: "",
               price: 0,
+              kind: "text",
               isExclusion: false,
               ingredientId: undefined,
               ingredientQty: undefined,
@@ -424,6 +442,7 @@ function ModifierGroupsPage() {
                     {
                       name: "",
                       price: 0,
+                      kind: "text",
                       isExclusion: false,
                       ingredientId: undefined,
                       ingredientQty: undefined,
@@ -434,60 +453,76 @@ function ModifierGroupsPage() {
                 <Plus className="h-3 w-3 mr-1" /> Tambah Opsi
               </Button>
             </div>
-            {modifiersInput.map((mod, i) => (
-              <Card key={i} className="p-3 mb-2">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-muted-foreground">Opsi #{i + 1}</span>
-                  {modifiersInput.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setModifiersInput(modifiersInput.filter((_, j) => j !== i))}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 space-y-1">
-                    <Label className="text-xs">Nama</Label>
-                    <Input
-                      value={mod.name}
-                      onChange={(e) => {
-                        const next = [...modifiersInput];
-                        next[i] = { ...next[i], name: e.target.value };
-                        setModifiersInput(next);
-                      }}
-                      required
-                    />
+            <div ref={optionsListRef}>
+              {modifiersInput.map((mod, i) => (
+                <Card key={i} data-option-card className="p-3 mb-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-muted-foreground">Opsi #{i + 1}</span>
+                    {modifiersInput.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setModifiersInput(modifiersInput.filter((_, j) => j !== i))}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
-                  <div className="w-24 space-y-1">
-                    <Label className="text-xs">Harga</Label>
-                    <MoneyInput
-                      value={mod.price}
-                      onChange={(raw) => {
-                        const next = [...modifiersInput];
-                        next[i] = { ...next[i], price: raw ?? 0 };
-                        setModifiersInput(next);
-                      }}
-                      className="h-8 w-24"
-                    />
+                  <ModifierOptionKindEditor
+                    draft={{
+                      kind: mod.kind,
+                      ingredientId: mod.ingredientId,
+                      ingredientQty: mod.ingredientQty,
+                      recipeId: mod.recipeId,
+                      recipeQty: mod.recipeQty,
+                    }}
+                    onChange={(updates) => {
+                      const next = [...modifiersInput];
+                      next[i] = { ...next[i], ...updates };
+                      setModifiersInput(next);
+                    }}
+                  />
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">Nama</Label>
+                      <Input
+                        value={mod.name}
+                        onChange={(e) => {
+                          const next = [...modifiersInput];
+                          next[i] = { ...next[i], name: e.target.value };
+                          setModifiersInput(next);
+                        }}
+                        required
+                      />
+                    </div>
+                    <div className="w-24 space-y-1">
+                      <Label className="text-xs">Harga</Label>
+                      <MoneyInput
+                        value={mod.price}
+                        onChange={(raw) => {
+                          const next = [...modifiersInput];
+                          next[i] = { ...next[i], price: raw ?? 0 };
+                          setModifiersInput(next);
+                        }}
+                        className="h-8 w-24"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 pt-5">
+                      <Switch
+                        checked={mod.isExclusion}
+                        onCheckedChange={(checked) => {
+                          const next = [...modifiersInput];
+                          next[i] = { ...next[i], isExclusion: checked };
+                          setModifiersInput(next);
+                        }}
+                      />
+                      <Label className="text-xs">Exclusion</Label>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 pt-5">
-                    <Switch
-                      checked={mod.isExclusion}
-                      onCheckedChange={(checked) => {
-                        const next = [...modifiersInput];
-                        next[i] = { ...next[i], isExclusion: checked };
-                        setModifiersInput(next);
-                      }}
-                    />
-                    <Label className="text-xs">Exclusion</Label>
-                  </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ))}
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -500,6 +535,7 @@ function ModifierGroupsPage() {
                   {
                     name: "",
                     price: 0,
+                    kind: "text",
                     isExclusion: false,
                     ingredientId: undefined,
                     ingredientQty: undefined,

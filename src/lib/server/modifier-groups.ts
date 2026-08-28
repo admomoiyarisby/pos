@@ -19,9 +19,14 @@ import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { z } from "zod";
 
-const modifierInput = z.object({
+// ADR-0014 kind discriminator. `text` default keeps callers that don't set a
+// kind producing a valid no-link option.
+export const MODIFIER_KINDS = ["text", "ingredient", "recipe"] as const;
+
+export const modifierInput = z.object({
   name: z.string().min(1).max(100),
   price: z.number().int().min(0).default(0),
+  kind: z.enum(MODIFIER_KINDS).default("text"),
   isExclusion: z.boolean().default(false),
   sortOrder: z.number().int().min(0).default(0),
   ingredientId: z.string().uuid().optional(),
@@ -186,6 +191,8 @@ export const createModifierGroup = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
 
+    for (const mod of data.modifiers) assertKindMatchesJoins(mod);
+
     const [group] = await db
       .insert(modifierGroups)
       .values({
@@ -204,6 +211,7 @@ export const createModifierGroup = createServerFn({ method: "POST" })
           code: `${data.code}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
           name: mod.name,
           price: mod.price,
+          kind: mod.kind,
           isExclusion: mod.isExclusion,
           sortOrder: mod.sortOrder ?? idx,
         })
@@ -242,12 +250,13 @@ export const createModifierGroup = createServerFn({ method: "POST" })
 // Min/Max to 0/1, and a modifier omitting price would be re-created at Rp 0.
 // Strip the defaults so absent keys stay absent; re-add them as plain optionals.
 const updateModifierInput = modifierInput
-  .omit({ price: true, isExclusion: true, sortOrder: true })
+  .omit({ price: true, isExclusion: true, sortOrder: true, kind: true })
   .extend({
     id: z.string().uuid().optional(),
     price: z.number().int().min(0).optional(),
     isExclusion: z.boolean().optional(),
     sortOrder: z.number().int().min(0).optional(),
+    kind: z.enum(MODIFIER_KINDS).optional(),
   });
 
 const updateModifierGroupInput = modifierGroupInput
@@ -260,6 +269,39 @@ const updateModifierGroupInput = modifierGroupInput
     modifiers: z.array(updateModifierInput).optional(),
   });
 
+// ADR-0014 exactly-one-kind invariant: a modifier's `kind` must match which
+// joins are populated. `text` carries no links, `ingredient` exactly one
+// ingredient link (zero recipe links), `recipe` exactly one recipe link (zero
+// ingredient links). Throw on conflict so the DB state and the app agree.
+type ModifierKindLike = {
+  kind?: "text" | "ingredient" | "recipe";
+  ingredientId?: string | null;
+  recipeId?: string | null;
+};
+function assertKindMatchesJoins(mod: ModifierKindLike) {
+  // An update without `kind` sets nothing about it; nothing to check.
+  if (!mod.kind) return;
+  const hasIngredient = Boolean(mod.ingredientId);
+  const hasRecipe = Boolean(mod.recipeId);
+  const invalid =
+    (mod.kind === "text" && (hasIngredient || hasRecipe)) ||
+    (mod.kind === "ingredient" && !hasIngredient) ||
+    (mod.kind === "ingredient" && hasRecipe) ||
+    (mod.kind === "recipe" && !hasRecipe) ||
+    (mod.kind === "recipe" && hasIngredient);
+  if (invalid) {
+    throw new Error(
+      `Opsi "${mod.kind}" tidak cocok dengan isiannya: ${mod.kind} membutuhkan ${
+        mod.kind === "text"
+          ? "tanpa bahan/menu terpilih"
+          : mod.kind === "ingredient"
+            ? "satu bahan (tanpa menu)"
+            : "satu menu (tanpa bahan)"
+      }.`,
+    );
+  }
+}
+
 export const updateModifierGroup = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof updateModifierGroupInput>) =>
     updateModifierGroupInput.parse(data),
@@ -268,6 +310,8 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
     const user = await requireRole("super_admin", "admin_pusat");
 
     const { id, modifiers: mods, ...groupUpdates } = data;
+
+    if (mods) for (const mod of mods) assertKindMatchesJoins(mod);
 
     const [old] = await db.select().from(modifierGroups).where(eq(modifierGroups.id, id)).limit(1);
     if (!old) throw new Error("Modifier group not found");
@@ -328,6 +372,7 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
                 code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
                 name: mod.name,
                 price: mod.price ?? 0,
+                kind: mod.kind ?? "text",
                 isExclusion: mod.isExclusion ?? false,
                 sortOrder: mod.sortOrder ?? idx,
               })
@@ -337,6 +382,13 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
                 modifierId: createdMod.id,
                 ingredientId: mod.ingredientId,
                 quantity: mod.ingredientQty,
+              });
+            }
+            if (mod.recipeId && mod.recipeQty) {
+              await tx.insert(modifierRecipes).values({
+                modifierId: createdMod.id,
+                recipeId: mod.recipeId,
+                quantity: mod.recipeQty,
               });
             }
           }
@@ -383,6 +435,7 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
             };
             if (mod.price !== undefined) set.price = mod.price;
             if (mod.isExclusion !== undefined) set.isExclusion = mod.isExclusion;
+            if (mod.kind !== undefined) set.kind = mod.kind;
             await tx.update(modifiers).set(set).where(eq(modifiers.id, mod.id));
             await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, mod.id));
             await tx.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, mod.id));
@@ -408,6 +461,7 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
                 code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
                 name: mod.name,
                 price: mod.price ?? 0,
+                kind: mod.kind ?? "text",
                 isExclusion: mod.isExclusion ?? false,
                 sortOrder: mod.sortOrder ?? idx,
               })
@@ -417,6 +471,13 @@ export const updateModifierGroup = createServerFn({ method: "POST" })
                 modifierId: createdMod.id,
                 ingredientId: mod.ingredientId,
                 quantity: mod.ingredientQty,
+              });
+            }
+            if (mod.recipeId && mod.recipeQty) {
+              await tx.insert(modifierRecipes).values({
+                modifierId: createdMod.id,
+                recipeId: mod.recipeId,
+                quantity: mod.recipeQty,
               });
             }
           }

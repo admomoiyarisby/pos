@@ -205,6 +205,11 @@ export default function ModifierModal({
                           {mod.isExclusion && (
                             <span className="text-xs font-bold text-destructive">Exclude</span>
                           )}
+                          {mod.availableStock != null && mod.availableStock < 1 && (
+                            <span className="text-[10px] font-semibold text-amber-600">
+                              Stok kurang
+                            </span>
+                          )}
                         </div>
                       </button>
                     );

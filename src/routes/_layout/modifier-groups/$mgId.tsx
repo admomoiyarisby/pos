@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -42,6 +42,7 @@ import {
   reorderModifiers,
 } from "#/lib/server/modifier-groups";
 import { X, Plus, Pencil, Trash2, Link2, GripVertical, Search, ArrowLeft } from "lucide-react";
+import ModifierOptionKindEditor, { type ModifierKind } from "#/components/ModifierOptionKindEditor";
 
 interface ModifierFormInput {
   // Stable local key for dnd-kit identity. For existing modifiers this is the
@@ -51,6 +52,8 @@ interface ModifierFormInput {
   key: string;
   name: string;
   price: number;
+  // ADR-0014 kind discriminator.
+  kind: ModifierKind;
   isExclusion: boolean;
   sortOrder: number;
   ingredientId?: string;
@@ -85,48 +88,60 @@ function SortableCard({
   };
 
   return (
-    <Card ref={setNodeRef} style={style} className="p-3 mb-2">
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          className="cursor-grab touch-none text-muted-foreground hover:text-foreground shrink-0"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-muted-foreground">Opsi #{index + 1}</span>
-            {canRemove && (
-              <Button type="button" variant="ghost" size="sm" onClick={onRemove}>
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex-1 space-y-1">
-              <Label className="text-xs">Nama</Label>
-              <Input
-                value={mod.name}
-                onChange={(e) => onChange({ ...mod, name: e.target.value })}
-                required
-              />
+    <Card ref={setNodeRef} style={style} data-option-card className="p-3 mb-2">
+      <div className="space-y-3">
+        <ModifierOptionKindEditor
+          draft={{
+            kind: mod.kind,
+            ingredientId: mod.ingredientId,
+            ingredientQty: mod.ingredientQty,
+            recipeId: mod.recipeId,
+            recipeQty: mod.recipeQty,
+          }}
+          onChange={(updates) => onChange({ ...mod, ...updates })}
+        />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="cursor-grab touch-none text-muted-foreground hover:text-foreground shrink-0 self-start"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-muted-foreground">Opsi #{index + 1}</span>
+              {canRemove && (
+                <Button type="button" variant="ghost" size="sm" onClick={onRemove}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </div>
-            <div className="w-24 space-y-1">
-              <Label className="text-xs">Harga</Label>
-              <MoneyInput
-                value={mod.price}
-                onChange={(raw) => onChange({ ...mod, price: raw ?? 0 })}
-                className="h-8 w-24"
-              />
-            </div>
-            <div className="flex items-center gap-2 pt-5">
-              <Switch
-                checked={mod.isExclusion}
-                onCheckedChange={(checked) => onChange({ ...mod, isExclusion: checked === true })}
-              />
-              <Label className="text-xs">Exclusion</Label>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 space-y-1">
+                <Label className="text-xs">Nama</Label>
+                <Input
+                  value={mod.name}
+                  onChange={(e) => onChange({ ...mod, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="w-24 space-y-1">
+                <Label className="text-xs">Harga</Label>
+                <MoneyInput
+                  value={mod.price}
+                  onChange={(raw) => onChange({ ...mod, price: raw ?? 0 })}
+                  className="h-8 w-24"
+                />
+              </div>
+              <div className="flex items-center gap-2 pt-5">
+                <Switch
+                  checked={mod.isExclusion}
+                  onCheckedChange={(checked) => onChange({ ...mod, isExclusion: checked === true })}
+                />
+                <Label className="text-xs">Exclusion</Label>
+              </div>
             </div>
           </div>
         </div>
@@ -231,6 +246,21 @@ function ModifierGroupDetailPage() {
 
   const [modifiersInput, setModifiersInput] = useState<ModifierFormInput[]>([]);
 
+  // The edit form's option-card list wrapper. Used to scroll a freshly-added
+  // option into view. Without this, clicking "Tambah Opsi" appends a blank
+  // card below the fold on mobile and looks like a no-op.
+  const optionsListRef = useRef<HTMLDivElement>(null);
+
+  // Scroll the last option card into view only when an option is *added*
+  // (its key always starts with `new-`). The initial edit-mode populate uses
+  // real DB ids, so it is ignored.
+  useEffect(() => {
+    const last = modifiersInput[modifiersInput.length - 1];
+    if (!last?.key.startsWith("new-")) return;
+    const cards = optionsListRef.current?.querySelectorAll("[data-option-card]");
+    cards?.[cards.length - 1]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [modifiersInput]);
+
   // Tracks the active drag and the row being hovered for the view-mode
   // table's drop-indicator line. Cleared on drop / cancel.
   const [viewDragOverId, setViewDragOverId] = useState<string | null>(null);
@@ -244,6 +274,7 @@ function ModifierGroupDetailPage() {
           key: m.id,
           name: m.name,
           price: m.price,
+          kind: m.kind ?? "text",
           isExclusion: m.isExclusion,
           sortOrder: m.sortOrder ?? 0,
           ingredientId: m.ingredients?.[0]?.ingredientId,
@@ -444,26 +475,26 @@ function ModifierGroupDetailPage() {
           .map((m, idx) => {
             // Include the DB id for existing rows so the server can UPDATE
             // in place and preserve order history. Synthetic `new-*` keys
-            // are omitted so the server INSERTs instead.
-            if (m.key.startsWith("new-")) {
-              return {
-                name: m.name,
-                price: m.price,
-                isExclusion: m.isExclusion,
-                sortOrder: idx,
-              };
-            }
-            return {
-              id: m.key,
+            // are omitted so the server INSERTs instead. Both branches send
+            // kind + the ingredient/recipe links so new options persist them
+            // too (previously `new-*` options dropped these links).
+            const base = {
+              kind: m.kind,
               name: m.name,
               price: m.price,
               isExclusion: m.isExclusion,
               sortOrder: idx,
-              recipeId: m.recipeId,
-              recipeQty: m.recipeQty,
+            };
+            const links = {
               ingredientId: m.ingredientId,
               ingredientQty: m.ingredientQty,
+              recipeId: m.recipeId,
+              recipeQty: m.recipeQty,
             };
+            if (m.key.startsWith("new-")) {
+              return { ...base, ...links };
+            }
+            return { ...base, id: m.key, ...links };
           }),
       },
     });
@@ -564,10 +595,13 @@ function ModifierGroupDetailPage() {
                         key: `new-${Date.now()}-${modifiersInput.length}`,
                         name: "",
                         price: 0,
+                        kind: "text",
                         isExclusion: false,
-                        ingredientId: undefined,
                         sortOrder: modifiersInput.length,
+                        ingredientId: undefined,
                         ingredientQty: undefined,
+                        recipeId: undefined,
+                        recipeQty: undefined,
                       },
                     ])
                   }
@@ -584,21 +618,23 @@ function ModifierGroupDetailPage() {
                   items={modifiersInput.map((m) => m.key)}
                   strategy={verticalListSortingStrategy}
                 >
-                  {modifiersInput.map((mod, i) => (
-                    <SortableCard
-                      key={mod.key}
-                      id={mod.key}
-                      mod={mod}
-                      index={i}
-                      canRemove={modifiersInput.length > 1}
-                      onRemove={() => setModifiersInput(modifiersInput.filter((_, j) => j !== i))}
-                      onChange={(updated) => {
-                        const next = [...modifiersInput];
-                        next[i] = updated;
-                        setModifiersInput(next);
-                      }}
-                    />
-                  ))}
+                  <div ref={optionsListRef}>
+                    {modifiersInput.map((mod, i) => (
+                      <SortableCard
+                        key={mod.key}
+                        id={mod.key}
+                        mod={mod}
+                        index={i}
+                        canRemove={modifiersInput.length > 1}
+                        onRemove={() => setModifiersInput(modifiersInput.filter((_, j) => j !== i))}
+                        onChange={(updated) => {
+                          const next = [...modifiersInput];
+                          next[i] = updated;
+                          setModifiersInput(next);
+                        }}
+                      />
+                    ))}
+                  </div>
                 </SortableContext>
               </DndContext>
             </div>

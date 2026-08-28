@@ -437,6 +437,12 @@ export const recipeModifierGroups = pgTable(
   (t) => [unique("recipe_mod_group_unique").on(t.recipeId, t.modifierGroupId)],
 );
 
+// The kind of a Modifier option. `text` is a priced label with no stock/COGS
+// link; `ingredient` links exactly one `modifier_ingredients` row; `recipe`
+// links exactly one `modifier_recipes` row. Each option is exactly one kind.
+// See ADR-0014 (docs/adr/0014-modifier-option-kind.md).
+export const modifierKindEnum = pgEnum("modifier_kind", ["text", "ingredient", "recipe"]);
+
 export const modifiers = pgTable("modifiers", {
   id: uuid("id").defaultRandom().primaryKey(),
   code: text("code").notNull().unique(),
@@ -445,6 +451,9 @@ export const modifiers = pgTable("modifiers", {
     .references(() => modifierGroups.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   price: integer("price").notNull().default(0),
+  // Explicit kind discriminator (ADR-0014). `text` is the default so legacy
+  // insert writers that don't pass kind still produce a valid no-link option.
+  kind: modifierKindEnum("kind").notNull().default("text"),
   isExclusion: boolean("is_exclusion").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),

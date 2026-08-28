@@ -56,7 +56,7 @@ A named, ordered collection of Modifiers (options) with a min/max selection cons
 _Avoid_: Option group, add-on group, modifier set
 
 **Modifier**:
-An optional add-on or exclusion attached to an order item. A modifier can add ingredients (add-on BOM) or remove ingredients (exclusion, via `recipeModifierExclusions`).
+An optional add-on or exclusion attached to an order item. A modifier is exactly one of three **kinds** — `text` (a priced label, no stock/COGS link), `ingredient` (links an ingredient with a quantity, add-on BOM), or `recipe` (links another recipe with a quantity, add-on BOM). Ingredient/recipe modifiers are stock-checked and COGS'd at transaction time. Exclusion (`isExclusion`, via `recipeModifierExclusions`) is a modifier-wide toggle that works for all three kinds.
 _Avoid_: Add-on, option, up-sell
 
 **Shift**:

@@ -26,6 +26,10 @@ export interface MenuItemModifier {
   price: number;
   isExclusion: boolean;
   excludedIngredientId: string | null;
+  // ADR-0014: for ingredient/recipe-kind options, the branch's available
+  // servings of the option's BOM; null for text options. Computed server-side
+  // in getPosMenu; the modifier modal warns (does not block) when < 1.
+  availableStock: number | null;
 }
 
 export interface ModifierGroup {
