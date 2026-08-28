@@ -185,10 +185,11 @@ function DNDetailPage() {
                   driverName: dn.driverName,
                   vehicleNumber: dn.vehicleNumber ?? null,
                   status: dn.status,
-                  items: dn.items.map((item: any) => ({
+                  items: dn.items.map((item: DNItem & { stockUnit?: string | null }) => ({
                     ingredientName: item.ingredientName ?? item.ingredientCode,
                     quantity: item.quantity,
                     readyQuantity: item.readyQuantity,
+                    stockUnit: item.stockUnit ?? null,
                   })),
                   createdAt: dn.createdAt,
                 });

@@ -713,6 +713,7 @@ export const getDeliveryNote = createServerFn({ method: "GET" })
         discrepancyNote: deliveryNoteItems.discrepancyNote,
         ingredientName: ingredients.name,
         ingredientCode: ingredients.code,
+        stockUnit: ingredients.stockUnit,
       })
       .from(deliveryNoteItems)
       .leftJoin(ingredients, eq(deliveryNoteItems.ingredientId, ingredients.id))

@@ -227,7 +227,12 @@ export function printSuratJalan(dn: {
   driverName: string | null;
   vehicleNumber: string | null;
   status: string;
-  items: { ingredientName: string; quantity: number; readyQuantity: number | null }[];
+  items: {
+    ingredientName: string;
+    quantity: number;
+    readyQuantity: number | null;
+    stockUnit: string | null;
+  }[];
   createdAt: Date;
 }) {
   const lines: string[] = [
@@ -262,7 +267,7 @@ export function printSuratJalan(dn: {
     "</div>",
     '<div class="divider"></div>',
     "<table>",
-    "<thead><tr><th>Bahan</th><th>Order</th><th>Ready</th></tr></thead>",
+    "<thead><tr><th>Bahan</th><th>Order</th><th>Ready</th><th>Satuan</th></tr></thead>",
     "<tbody>",
   ];
 
@@ -274,6 +279,8 @@ export function printSuratJalan(dn: {
         item.quantity +
         "</td><td>" +
         (item.readyQuantity ?? "-") +
+        "</td><td>" +
+        (item.stockUnit || "-") +
         "</td></tr>",
     );
   }

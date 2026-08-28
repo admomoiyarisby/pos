@@ -19,6 +19,7 @@ import {
 interface SuratJalanItem {
   id: string;
   ingredientName: string;
+  stockUnit: string | null;
   pickedQuantity: number | null;
 }
 
@@ -44,7 +45,7 @@ function buildSuratJalanHtml(d: SuratJalanData): string {
           <td style="text-align:center;">${idx + 1}</td>
           <td>${escapeHtml(it.ingredientName)}</td>
           <td style="text-align:right;">${it.pickedQuantity ?? 0}</td>
-          <td style="text-align:left;"></td>
+          <td style="text-align:left;">${escapeHtml(it.stockUnit ?? "-")}</td>
         </tr>`,
     )
     .join("");
@@ -140,6 +141,7 @@ export const printSuratJalan = createServerFn({ method: "GET" })
       .select({
         id: scmProcurementItems.id,
         ingredientName: ingredients.name,
+        stockUnit: ingredients.stockUnit,
         pickedQuantity: scmProcurementItems.pickedQuantity,
       })
       .from(scmProcurementItems)
