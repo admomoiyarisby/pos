@@ -77,6 +77,11 @@ export const wasteCategoryEnum = pgEnum("waste_category", [
   "Denda",
 ]);
 
+// Waste entry lifecycle: `Active` ⇄ `Cancelled`. Cancellation is a status
+// tombstone (row + history preserved, ADR 0012 pattern) — the record stays
+// visible with a badge, and the stock effect is reversed with an IN ledger row.
+export const wasteEntryStatusEnum = pgEnum("waste_entry_status", ["Active", "Cancelled"]);
+
 export const stockOpnameStatusEnum = pgEnum("stock_opname_status", [
   "Submitted",
   "Approved",
@@ -1460,9 +1465,8 @@ export const wasteEntries = pgTable(
     branchId: uuid("branch_id")
       .notNull()
       .references(() => branches.id),
-    ingredientId: uuid("ingredient_id")
-      .notNull()
-      .references(() => ingredients.id),
+    ingredientId: uuid("ingredient_id").references(() => ingredients.id),
+    recipeId: uuid("recipe_id").references(() => recipes.id),
     quantity: integer("quantity").notNull(),
     category: wasteCategoryEnum("category").notNull(),
     staffName: text("staff_name"), // For Denda category: who the penalty is assigned to
@@ -1473,11 +1477,22 @@ export const wasteEntries = pgTable(
       .notNull()
       .references(() => users.id),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    status: wasteEntryStatusEnum("status").notNull().default("Active"),
+    cancelledAt: timestamp("cancelled_at", { mode: "date" }),
+    cancelledBy: uuid("cancelled_by").references(() => users.id),
+    cancelReason: text("cancel_reason"),
   },
   (t) => [
     index("waste_branch_idx").on(t.branchId),
     index("waste_category_idx").on(t.category),
     index("waste_created_idx").on(t.createdAt),
+    index("waste_status_idx").on(t.status),
+    index("waste_ingredient_idx").on(t.ingredientId),
+    index("waste_recipe_idx").on(t.recipeId),
+    check(
+      "waste_exactly_one_target",
+      sql`((CASE WHEN ${t.ingredientId} IS NOT NULL THEN 1 ELSE 0 END) + (CASE WHEN ${t.recipeId} IS NOT NULL THEN 1 ELSE 0 END)) = 1`,
+    ),
   ],
 );
 
@@ -2616,6 +2631,10 @@ export const wasteEntriesRelations = relations(wasteEntries, ({ one, many }) => 
   ingredient: one(ingredients, {
     fields: [wasteEntries.ingredientId],
     references: [ingredients.id],
+  }),
+  recipe: one(recipes, {
+    fields: [wasteEntries.recipeId],
+    references: [recipes.id],
   }),
   submittedByUser: one(users, { fields: [wasteEntries.submittedBy], references: [users.id] }),
   linkedOperationalExpense: many(operationalExpenses),

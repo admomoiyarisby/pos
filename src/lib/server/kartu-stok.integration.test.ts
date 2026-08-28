@@ -23,6 +23,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "#/db/schema";
 import { getTestDatabaseUrl } from "./test-database";
+import { applyWasteCancellation } from "./waste";
 
 type TestDb = NodePgDatabase<typeof schema>;
 const testDatabaseUrl = getTestDatabaseUrl();
@@ -2359,6 +2360,105 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
           .then((r) => r[0]);
         expect(op).toBeDefined();
         expect(op.amount).toBe(7500);
+      });
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "W2: applyWasteCancellation — status → Cancelled, IN ledger on same reference, inventory restored, linked operational expense deleted",
+    async () => {
+      await withTx(async (db) => {
+        const branchId = await createBranch(db, suid("BR-W2"));
+        const ingId = await createIngredient(db, suid("ING-W2"), 1500);
+        await setInventory(db, branchId, ingId, 20);
+        const actorId = await createUser(db, branchId, "super_admin");
+        // Simulate createWasteEntry (Biaya Operasional): entry + OE row + OUT
+        // ledger (reference = entry.id) + inventory decremented to 15.
+        const qty = 5;
+        const [entry] = await db
+          .insert(schema.wasteEntries)
+          .values({
+            branchId,
+            ingredientId: ingId,
+            quantity: qty,
+            category: "Biaya Operasional",
+            valuation: qty * 1500,
+            submittedBy: actorId,
+          })
+          .returning();
+        await db.insert(schema.operationalExpenses).values({
+          branchId,
+          wasteEntryId: entry.id,
+          category: "Biaya Operasional",
+          amount: qty * 1500,
+          date: new Date().toISOString().split("T")[0],
+          notes: `Waste ${entry.id}`,
+          submittedBy: actorId,
+        });
+        const [inv] = await db
+          .select()
+          .from(schema.inventory)
+          .where(
+            and(eq(schema.inventory.branchId, branchId), eq(schema.inventory.ingredientId, ingId)),
+          )
+          .limit(1);
+        await db
+          .update(schema.inventory)
+          .set({ quantity: inv.quantity - qty })
+          .where(eq(schema.inventory.id, inv.id));
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingId,
+          type: "OUT",
+          quantity: qty,
+          balance: inv.quantity - qty,
+          reference: entry.id,
+          notes: "Waste: Biaya Operasional",
+        });
+
+        // Cancel — the exact mutation `cancelWasteEntry` runs inside its transaction.
+        await applyWasteCancellation(
+          db as unknown as Parameters<typeof applyWasteCancellation>[0],
+          entry,
+          { id: actorId },
+          "Salah catat",
+        );
+
+        // Status flipped, cancel metadata written.
+        const [after] = await db
+          .select()
+          .from(schema.wasteEntries)
+          .where(eq(schema.wasteEntries.id, entry.id));
+        expect(after.status).toBe("Cancelled");
+        expect(after.cancelledBy).toBe(actorId);
+        expect(after.cancelReason).toBe("Salah catat");
+
+        // Linked operational expense deleted — the books no longer count it.
+        const oe = await db
+          .select()
+          .from(schema.operationalExpenses)
+          .where(eq(schema.operationalExpenses.wasteEntryId, entry.id))
+          .limit(1);
+        expect(oe).toHaveLength(0);
+
+        // Inventory restored to the pre-waste level (20).
+        const [invAfter] = await db
+          .select()
+          .from(schema.inventory)
+          .where(
+            and(eq(schema.inventory.branchId, branchId), eq(schema.inventory.ingredientId, ingId)),
+          )
+          .limit(1);
+        expect(invAfter.quantity).toBe(20);
+
+        // OUT + IN on the same reference; the IN row restores the balance.
+        const rows = await ledgerRows(db, entry.id);
+        expect(rows.filter((r) => r.type === "OUT")).toHaveLength(1);
+        const inRow = rows.find((r) => r.type === "IN");
+        expect(inRow).toBeDefined();
+        expect(inRow!.quantity).toBe(qty);
+        expect(inRow!.balance).toBe(20);
+        expect(inRow!.notes).toContain("Waste dibatalkan");
       });
     },
   );

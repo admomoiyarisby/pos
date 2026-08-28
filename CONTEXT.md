@@ -119,6 +119,18 @@ _Avoid_: receiving inventory, dock stock, in-branch staging
 The shared `in_transit_inventory` ledger used by three flows: (1) legacy delivery-note flow (with `deliveryNoteId` set), (2) Pengadaan (with `scmProcurementId` set, per ADR 0002), and (3) Mutasi Stok (with `scmTransferId` set). Stock that has left the source branch but not yet reached the destination. Exactly one of the three FK columns is set per row (a check constraint enforces this).
 _Avoid_: transit stock, in-transit ledger
 
+**Waste (Waste Entry)**:
+A record of stock loss at a branch for either an ingredient or a finished menu (recipe) — exactly one of `ingredientId` / `recipeId` is set — in one of four categories — `Beban Makan` (staff meal allowance), `Biaya Operasional` (operational expense), `Spoiled` (spoiled/broken, including spilled/dropped glasses such as iced tea), or `Denda` (employee fine). Recording deducts the quantity from the branch's ingredient inventory (`inventory`) or recipe inventory (`recipeInventory`) and writes an OUT row to the stock ledger (Kartu Stok) on the matching column (`stockLedger.ingredientId` or `stockLedger.recipeId`); a `Biaya Operasional` entry also creates an operational expense. An entry is `Active` until cancelled. `Spoiled` is not split by target — the target type (Bahan vs Menu) distinguishes ingredient spoilage from menu spoilage.
+_Avoid_: shrinkage, loss, buang
+
+**Waste Cancellation (Pembatalan Waste)**:
+Setting a waste entry's status to `Cancelled` — allowed only for `super_admin` (any branch) and `area_manager` (assigned branches only), with a required reason. The stock effect is reversed: the quantity is restored to the same inventory surface it was deducted from (`inventory` for ingredients, `recipeInventory` for recipes) with an IN row on the same stock ledger reference. The cancelled entry stays visible with a badge, stops counting toward loss totals, and can no longer be edited or investigated. Mirrors Production cancellation (ADR 0012).
+_Avoid_: waste void, delete waste
+
+**Recipe Inventory**:
+Finished-good stock per branch (`recipeInventory`): the quantity of a recipe's plated units held at a branch (e.g., ready iced teas at an outlet). Upserted-from-0 when first stocked or first wasted; negative allowed with warning, consistent with ingredient inventory / POS / Production (ADR 0012). Movements are written to Kartu Stok via `stockLedger.recipeId` (production IN via `assignRecipeStock`, waste OUT, cancellation IN). Not to be confused with `inventory` (ingredient stock) or BOM ingredients.
+_Avoid_: menu stock (ambiguous), finished-goods inventory (when referring to the ingredient FG skuType)
+
 **Mutasi Unit Price**:
 The price per unit (in IDR) that the **Receiver Branch** pays the **Sender Branch** for an ingredient in a specific Mutasi transfer. Snapshotted from `ingredients.averageCost` at the **sender's** branch (i.e., the `inventory.averageCost` at the `fromBranchId` location) at item-creation time. Frozen on the item row — subsequent changes to `averageCost` do not affect existing transfers. The Mutasi invoice is generated as `receivedQuantity * unitPrice`, summing to a `totalAmount` paid by the receiver to the sender. Mirrors Pengadaan's pricing model (ADR 0003) but the snapshot source is the _sender_ branch's inventory, not a Central warehouse.
 _Avoid_: transfer cost, mutasi cost

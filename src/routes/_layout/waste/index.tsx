@@ -19,7 +19,13 @@ import {
   ComboboxItem,
   ComboboxEmpty,
 } from "#/components/ui/combobox";
-import { getWasteEntries, createWasteEntry, addInvestigationNote } from "#/lib/server/waste";
+import {
+  getWasteEntries,
+  createWasteEntry,
+  addInvestigationNote,
+  cancelWasteEntry,
+  getRecipeInventoryForWaste,
+} from "#/lib/server/waste";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getInventory } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
@@ -32,6 +38,10 @@ interface WasteRow {
   createdAt: Date;
   ingredientName: string | null;
   ingredientCode: string | null;
+  recipeName: string | null;
+  recipeCode: string | null;
+  ingredientId: string | null;
+  recipeId: string | null;
   quantity: number;
   category: "Beban Makan" | "Biaya Operasional" | "Spoiled" | "Denda";
   staffName: string | null;
@@ -40,7 +50,13 @@ interface WasteRow {
   valuation: number;
   branchName: string | null;
   currentInventoryQty: number | null;
+  currentRecipeQty: number | null;
   stockUnit: string | null;
+  status: "Active" | "Cancelled";
+  cancelledAt: Date | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
+  cancelledByName: string | null;
 }
 
 const catColors = {
@@ -89,7 +105,7 @@ function WastePage() {
   const {
     page,
     setPage,
-    filters: { category, dateFrom, dateTo, sortBy, sortDir, noInvestigation },
+    filters: { category, dateFrom, dateTo, sortBy, sortDir, noInvestigation, status },
     setFilter,
   } = useTableUrlState<{
     category?: string;
@@ -98,11 +114,16 @@ function WastePage() {
     sortBy?: string;
     sortDir?: string;
     noInvestigation?: string;
-  }>(["category", "dateFrom", "dateTo", "sortBy", "sortDir", "noInvestigation"]);
+    status?: string;
+  }>(["category", "dateFrom", "dateTo", "sortBy", "sortDir", "noInvestigation", "status"]);
   const [investigationModalOpen, setInvestigationModalOpen] = useState(false);
   const [investigationEntryId, setInvestigationEntryId] = useState<string | null>(null);
   const [investigationNoteText, setInvestigationNoteText] = useState("");
   const [investigationError, setInvestigationError] = useState<string | null>(null);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelEntryId, setCancelEntryId] = useState<string | null>(null);
+  const [cancelReasonText, setCancelReasonText] = useState("");
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   // Default date range (26th prev month to 25th current month) used when the
   // URL carries no explicit dateFrom/dateTo.
@@ -138,14 +159,25 @@ function WastePage() {
     return branches;
   }, [branches, user]);
 
-  // Effective branch ID for inventory lookup
-  const effectiveBranchId = user?.branchId ?? filteredBranches[0]?.id;
+  // Branch picked in the modal's Cabang dropdown. Drives the inventory query so
+  // stock shown matches the branch selected (central users can preview any
+  // branch; branch-scoped roles stay locked to their session branch).
+  const [selectedBranchId, setSelectedBranchId] = useState(
+    user?.branchId ?? filteredBranches[0]?.id ?? "",
+  );
 
-  // Fetch inventory for the selected branch
+  // Fetch inventory for the selected branch. `limit: 1000` keeps every
+  // inventory row (getInventory defaults to 50, which truncates larger
+  // branches), and `includeNonCatalog: true` shows actual branch stock even
+  // for items outside the outlet catalog — a branch can physically hold and
+  // waste items that aren't in its display catalog.
   const { data: inventoryResult } = useQuery({
-    queryKey: ["inventory-branch", effectiveBranchId],
-    queryFn: () => getInventory({ data: { branchId: effectiveBranchId } }),
-    enabled: !!effectiveBranchId,
+    queryKey: ["inventory-branch", selectedBranchId],
+    queryFn: () =>
+      getInventory({
+        data: { branchId: selectedBranchId, limit: 1000, includeNonCatalog: true },
+      }),
+    enabled: !!selectedBranchId,
   });
 
   // Map ingredientId → available qty
@@ -206,6 +238,50 @@ function WastePage() {
   >(null);
   const [ingredientInputValue, setIngredientInputValue] = useState("");
 
+  // ── Menu (recipe) waste — Bahan vs Menu toggle ──
+  const [wasteTarget, setWasteTarget] = useState<"bahan" | "menu">("bahan");
+  const { data: recipeInventoryResult } = useQuery({
+    queryKey: ["recipe-inventory", selectedBranchId],
+    queryFn: () => getRecipeInventoryForWaste({ data: { branchId: selectedBranchId } }),
+    enabled: !!selectedBranchId,
+  });
+  const stockByRecipe = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of recipeInventoryResult ?? []) m.set(r.recipeId, r.quantity);
+    return m;
+  }, [recipeInventoryResult]);
+  const branchHasRecipe = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of recipeInventoryResult ?? []) if (r.hasRow) s.add(r.recipeId);
+    return s;
+  }, [recipeInventoryResult]);
+  const recipeOptions = useMemo(() => {
+    const rows = recipeInventoryResult ?? [];
+    // Map recipeId → hasRow/qty for quick lookup, then build options for all visible recipes (rows)
+    // If recipeInventoryResult is empty, we still have ingredient-only fallback; recipes without row show 0
+    return rows
+      .map((r) => ({
+        id: r.recipeId,
+        value: r.recipeId,
+        label: `${r.name} (porsi)`,
+        stockQty: r.quantity,
+        stockUnit: "porsi" as const,
+        hasInventory: r.hasRow,
+        totalCogs: r.totalCogs,
+        keywords: [r.code ?? "", "porsi"],
+      }))
+      .sort((a, b) => {
+        if (a.hasInventory && !b.hasInventory) return -1;
+        if (!a.hasInventory && b.hasInventory) return 1;
+        if (a.stockQty > 0 && b.stockQty <= 0) return -1;
+        if (a.stockQty <= 0 && b.stockQty > 0) return 1;
+        if (b.stockQty !== a.stockQty) return b.stockQty - a.stockQty;
+        return a.label.localeCompare(b.label);
+      });
+  }, [recipeInventoryResult]);
+  const [selectedRecipe, setSelectedRecipe] = useState<(typeof recipeOptions)[number] | null>(null);
+  const [recipeInputValue, setRecipeInputValue] = useState("");
+
   const { data: entries } = useQuery({
     queryKey: ["waste-entries", category, committedSearch],
     queryFn: () =>
@@ -227,6 +303,10 @@ function WastePage() {
     if (noInvestigation === "true") {
       result = result.filter((e) => !e.investigationNote || e.investigationNote.trim() === "");
     }
+
+    // Filter by cancellation status
+    if (status === "Active") result = result.filter((e) => e.status === "Active");
+    if (status === "Cancelled") result = result.filter((e) => e.status === "Cancelled");
 
     // Filter by date range
     if (effectiveDateFrom && effectiveDateTo) {
@@ -255,6 +335,7 @@ function WastePage() {
   }, [
     entries,
     noInvestigation,
+    status,
     effectiveDateFrom,
     effectiveDateTo,
     effectiveSortBy,
@@ -266,6 +347,8 @@ function WastePage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["waste-entries"] });
       void queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      void queryClient.invalidateQueries({ queryKey: ["recipe-inventory"] });
+      void queryClient.invalidateQueries({ queryKey: ["inventory-branch"] });
       setModalOpen(false);
       setSubmitError(null);
     },
@@ -290,35 +373,59 @@ function WastePage() {
     },
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: cancelWasteEntry,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["waste-entries"] });
+      void queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      void queryClient.invalidateQueries({ queryKey: ["recipe-inventory"] });
+      void queryClient.invalidateQueries({ queryKey: ["inventory-branch"] });
+      setCancelModalOpen(false);
+      setCancelEntryId(null);
+      setCancelReasonText("");
+      setCancelError(null);
+    },
+    onError: (err) => {
+      setCancelError(err instanceof Error ? err.message : "Gagal membatalkan waste");
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const quantity = Number(fd.get("quantity"));
+    if (quantity < 1 || !Number.isFinite(quantity)) {
+      setSubmitError("Jumlah harus >= 1");
+      return;
+    }
+    if (wasteTarget === "menu") {
+      if (!selectedRecipe) {
+        setIngredientError("Pilih menu terlebih dahulu");
+        return;
+      }
+      setIngredientError(null);
+      // Warn, don't block — allow negative with visual warning (decision #153). Server upserts-from-0.
+      const data = {
+        branchId: selectedBranchId || (user?.branchId ?? ""),
+        recipeId: selectedRecipe.id,
+        quantity,
+        category: z
+          .enum(["Beban Makan", "Biaya Operasional", "Spoiled", "Denda"])
+          .parse(formText(fd, "category")),
+        staffName: formText(fd, "staffName") || undefined,
+        notes: formText(fd, "notes") || undefined,
+      };
+      void createMutation.mutateAsync({ data });
+      return;
+    }
     if (!selectedIngredient) {
       setIngredientError("Pilih bahan terlebih dahulu");
       return;
     }
     setIngredientError(null);
-    const fd = new FormData(e.currentTarget);
-    const quantity = Number(fd.get("quantity"));
-
-    // Check if ingredient exists in branch inventory
-    if (!branchHasIngredient.has(selectedIngredient.id)) {
-      setSubmitError("Bahan ini belum pernah ada di cabang ini");
-      return;
-    }
-
-    // Check stock availability
-    const availableStock = stockByIngredient.get(selectedIngredient.id) ?? 0;
-    if (availableStock <= 0) {
-      setSubmitError("Stok bahan ini sudah habis");
-      return;
-    }
-    if (quantity > availableStock) {
-      setSubmitError(`Jumlah waste (${quantity}) melebihi stok tersedia (${availableStock})`);
-      return;
-    }
-
+    // Warn, don't block — allow-negative now (decision #153). Previous clamp removed.
     const data = {
-      branchId: formText(fd, "branchId") || (user?.branchId ?? ""),
+      branchId: selectedBranchId || (user?.branchId ?? ""),
       ingredientId: selectedIngredient.id,
       quantity,
       category: z
@@ -345,10 +452,27 @@ function WastePage() {
     setInvestigationModalOpen(true);
   };
 
+  const handleOpenCancel = (entry: WasteRow) => {
+    setCancelEntryId(entry.id);
+    setCancelReasonText("");
+    setCancelError(null);
+    setCancelModalOpen(true);
+  };
+
+  const handleCancelSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!cancelEntryId || !cancelReasonText.trim()) return;
+    void cancelMutation.mutateAsync({
+      data: { wasteEntryId: cancelEntryId, reason: cancelReasonText.trim() },
+    });
+  };
+
   usePageTitle("Waste", "Pencatatan sisa produksi, jatah makan, dan barang rusak");
 
   // Branch admins must not see the HPP-derived valuation (qty × averageCost).
   const isBranchAdmin = user?.role === "branch_admin";
+  // Only super_admin (all branches) and area_manager (assigned branches) may cancel.
+  const canCancel = user?.role === "super_admin" || user?.role === "area_manager";
 
   const columns: ColumnDef<WasteRow>[] = [
     {
@@ -365,7 +489,25 @@ function WastePage() {
         }),
     },
     { accessorKey: "branchName", header: "Cabang", enableSorting: true },
-    { accessorKey: "ingredientName", header: "Bahan", enableSorting: true },
+    {
+      accessorKey: "ingredientName",
+      header: "Target",
+      enableSorting: true,
+      cell: ({ row }) => {
+        const isRecipe = !!row.original.recipeId;
+        return (
+          <div>
+            <div className="font-medium">
+              {isRecipe ? (row.original.recipeName ?? "—") : (row.original.ingredientName ?? "—")}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {isRecipe ? (row.original.recipeCode ?? "") : (row.original.ingredientCode ?? "")} ·{" "}
+              {isRecipe ? "Menu" : "Bahan"}
+            </div>
+          </div>
+        );
+      },
+    },
     {
       accessorKey: "category",
       header: "Kategori",
@@ -389,18 +531,20 @@ function WastePage() {
       width: "w-24",
       enableSorting: true,
       cell: ({ row }) => {
-        const currentInv = row.original.currentInventoryQty ?? 0;
+        const isRecipe = !!row.original.recipeId;
+        const current = isRecipe
+          ? (row.original.currentRecipeQty ?? 0)
+          : (row.original.currentInventoryQty ?? 0);
         const wastePercentage =
-          currentInv + row.original.quantity > 0
-            ? (row.original.quantity / (currentInv + row.original.quantity)) * 100
+          current + row.original.quantity > 0
+            ? (row.original.quantity / (current + row.original.quantity)) * 100
             : 0;
-        const isAnomaly = wastePercentage > 5;
+        const isAnomaly = row.original.status !== "Cancelled" && wastePercentage > 5;
+        const unit = isRecipe ? "porsi" : (row.original.stockUnit ?? "");
         return (
           <div className={isAnomaly ? "text-rose-600 font-medium" : ""}>
             {row.original.quantity.toLocaleString("id-ID")}
-            {row.original.stockUnit && (
-              <span className="text-muted-foreground ml-0.5">{row.original.stockUnit}</span>
-            )}
+            {unit && <span className="text-muted-foreground ml-0.5">{unit}</span>}
             {isAnomaly && (
               <div className="text-xs text-rose-500">({wastePercentage.toFixed(1)}%)</div>
             )}
@@ -431,8 +575,26 @@ function WastePage() {
           currentInv + row.original.quantity > 0
             ? (row.original.quantity / (currentInv + row.original.quantity)) * 100
             : 0;
-        const isAnomaly = wastePercentage > 5;
+        const isAnomaly = row.original.status !== "Cancelled" && wastePercentage > 5;
         const canInvestigate = user?.role === "super_admin" || user?.role === "area_manager";
+
+        if (row.original.status === "Cancelled") {
+          return (
+            <div className="space-y-1">
+              <Badge variant="secondary" className="text-xs">
+                Dibatalkan
+              </Badge>
+              <div className="text-xs text-muted-foreground line-clamp-2 max-w-[160px]">
+                {row.original.cancelReason ?? "-"}
+              </div>
+              {row.original.cancelledByName && (
+                <div className="text-[11px] text-muted-foreground">
+                  oleh {row.original.cancelledByName}
+                </div>
+              )}
+            </div>
+          );
+        }
 
         if (row.original.investigationNote) {
           return (
@@ -468,10 +630,32 @@ function WastePage() {
         return <span className="text-muted-foreground text-xs">-</span>;
       },
     },
+    // Cancel action — only super_admin / area_manager, and only while Active.
+    ...(canCancel
+      ? [
+          {
+            accessorKey: "cancel",
+            header: "",
+            width: "w-20",
+            cell: ({ row }: { row: { original: WasteRow } }) =>
+              row.original.status === "Cancelled" ? null : (
+                <button
+                  onClick={() => handleOpenCancel(row.original)}
+                  className="text-xs px-2.5 py-1 rounded-md border border-input text-foreground hover:bg-muted transition-colors"
+                >
+                  Batalkan
+                </button>
+              ),
+          },
+        ]
+      : []),
   ];
 
   const totalValuation = useMemo(() => {
-    return filteredEntries.reduce((sum, e) => sum + (e.valuation ?? 0), 0);
+    return filteredEntries.reduce(
+      (sum, e) => sum + (e.status === "Cancelled" ? 0 : (e.valuation ?? 0)),
+      0,
+    );
   }, [filteredEntries]);
 
   const wasteCategories = ["Beban Makan", "Biaya Operasional", "Spoiled", "Denda"] as const;
@@ -623,6 +807,25 @@ function WastePage() {
               );
             })}
           </div>
+          <div className="flex items-center gap-1.5 shrink-0 snap-start">
+            {(["", "Active", "Cancelled"] as const).map((s) => {
+              const label = s === "" ? "Semua" : s === "Active" ? "Aktif" : "Dibatalkan";
+              const active = (status ?? "") === s;
+              return (
+                <button
+                  key={s}
+                  onClick={() => {
+                    setFilter("status", active ? "" : s);
+                    setPage(0);
+                  }}
+                  aria-pressed={active}
+                  className={`shrink-0 snap-start inline-flex items-center h-8 px-3.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${active ? "bg-foreground text-background border-foreground shadow-sm" : "bg-background border-border hover:bg-muted text-foreground"}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
           <div className="shrink-0 h-5 w-px bg-border mx-1 hidden sm:block" />
           <div className="flex items-center gap-1.5 shrink-0 snap-start">
             <select
@@ -669,6 +872,7 @@ function WastePage() {
                 setFilter("sortBy", "");
                 setFilter("sortDir", "");
                 setFilter("noInvestigation", "");
+                setFilter("status", "");
                 setSearch("");
                 setPage(0);
               }}
@@ -689,12 +893,13 @@ function WastePage() {
           </div>
         ) : (
           pagedEntries.map((row) => {
-            const currentInv = row.currentInventoryQty ?? 0;
+            const isRecipeRow = !!row.recipeId;
+            const current = isRecipeRow
+              ? (row.currentRecipeQty ?? 0)
+              : (row.currentInventoryQty ?? 0);
             const wastePct =
-              currentInv + row.quantity > 0
-                ? (row.quantity / (currentInv + row.quantity)) * 100
-                : 0;
-            const isAnomaly = wastePct > 5;
+              current + row.quantity > 0 ? (row.quantity / (current + row.quantity)) * 100 : 0;
+            const isAnomaly = row.status !== "Cancelled" && wastePct > 5;
             const canInvestigate = user?.role === "super_admin" || user?.role === "area_manager";
             return (
               <div
@@ -705,13 +910,16 @@ function WastePage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm truncate">
-                        {row.ingredientName ?? "—"}
+                        {(row.recipeId ? row.recipeName : row.ingredientName) ?? "—"}
                       </span>
-                      {row.ingredientCode && (
+                      {(row.recipeId ? row.recipeCode : row.ingredientCode) && (
                         <span className="text-[11px] text-muted-foreground font-mono">
-                          {row.ingredientCode}
+                          {row.recipeId ? row.recipeCode : row.ingredientCode}
                         </span>
                       )}
+                      <span className="text-[11px] text-muted-foreground">
+                        {row.recipeId ? "Menu" : "Bahan"}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       <Badge
@@ -733,11 +941,9 @@ function WastePage() {
                       className={`text-sm font-semibold tabular-nums ${isAnomaly ? "text-rose-600" : ""}`}
                     >
                       {row.quantity.toLocaleString("id-ID")}
-                      {row.stockUnit ? (
-                        <span className="text-xs font-normal text-muted-foreground ml-1">
-                          {row.stockUnit}
-                        </span>
-                      ) : null}
+                      <span className="text-xs font-normal text-muted-foreground ml-1">
+                        {row.recipeId ? "porsi" : (row.stockUnit ?? "")}
+                      </span>
                     </div>
                     {!isBranchAdmin && (
                       <div className="text-xs tabular-nums text-muted-foreground">
@@ -776,7 +982,18 @@ function WastePage() {
                   )}
                 </div>
                 <div className="mt-2.5 pt-2.5 border-t flex items-center justify-between gap-2">
-                  {row.investigationNote ? (
+                  {row.status === "Cancelled" ? (
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium flex items-center gap-1">
+                        <Badge variant="secondary" className="text-[11px] h-4 px-1.5">
+                          Dibatalkan
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                        {row.cancelReason ?? "-"}
+                      </div>
+                    </div>
+                  ) : row.investigationNote ? (
                     <div className="min-w-0 flex-1">
                       <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium flex items-center gap-1">
                         <Badge variant="secondary" className="text-[11px] h-4 px-1.5">
@@ -802,6 +1019,14 @@ function WastePage() {
                     )
                   ) : (
                     <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                  {canCancel && row.status !== "Cancelled" && (
+                    <button
+                      onClick={() => handleOpenCancel(row)}
+                      className="inline-flex items-center justify-center h-8 px-3 rounded-full border text-xs font-medium hover:bg-muted active:scale-[0.98] transition-all shrink-0"
+                    >
+                      Batalkan
+                    </button>
                   )}
                   <span className="text-[11px] text-muted-foreground hidden sm:inline">
                     {getFinancialClassificationLabel(row.category)}
@@ -844,10 +1069,10 @@ function WastePage() {
           page={page}
           onPageChange={setPage}
           rowClassName={(r) => {
-            const currentInv = r.currentInventoryQty ?? 0;
+            const cur = r.recipeId ? (r.currentRecipeQty ?? 0) : (r.currentInventoryQty ?? 0);
             const wastePercentage =
-              currentInv + r.quantity > 0 ? (r.quantity / (currentInv + r.quantity)) * 100 : 0;
-            return wastePercentage > 5 ? "bg-rose-50/30" : "";
+              cur + r.quantity > 0 ? (r.quantity / (cur + r.quantity)) * 100 : 0;
+            return r.status !== "Cancelled" && wastePercentage > 5 ? "bg-rose-50/30" : "";
           }}
         />
       </div>
@@ -874,7 +1099,8 @@ function WastePage() {
             <label className="text-sm font-medium">Cabang</label>
             <select
               name="branchId"
-              defaultValue={user?.branchId ?? ""}
+              value={selectedBranchId}
+              onChange={(e) => setSelectedBranchId(e.target.value)}
               disabled={!!user?.branchId || user?.role === "area_manager"}
               className="h-11 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
             >
@@ -886,78 +1112,168 @@ function WastePage() {
             </select>
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Bahan</label>
-            <Combobox
-              value={selectedIngredient}
-              onValueChange={(val) => {
-                setSelectedIngredient(val);
-                setIngredientInputValue(val ? val.label : "");
-                if (val) setIngredientError(null);
-              }}
-              inputValue={ingredientInputValue}
-              onInputValueChange={setIngredientInputValue}
-              items={ingredientOptions}
-              itemToStringValue={(item) => item.id}
-              itemToStringLabel={(item) => item.label}
-              isItemEqualToValue={(a, b) => a?.id === b?.id}
-            >
-              <ComboboxInput
-                showTrigger
-                showClear={!!selectedIngredient}
-                placeholder="Pilih bahan..."
-                className={ingredientError ? "border-destructive" : ""}
-              />
-              <ComboboxContent container={formRef.current}>
-                <ComboboxList>
-                  {(item: (typeof ingredientOptions)[number]) => (
-                    <ComboboxItem key={item.id} value={item}>
-                      <div className="flex items-center justify-between w-full">
-                        <span
-                          className={!item.hasInventory || item.stockQty <= 0 ? "opacity-50" : ""}
-                        >
-                          {item.label}
-                        </span>
-                        <span
-                          className={
-                            "text-xs " +
-                            (!item.hasInventory
-                              ? "text-muted-foreground italic"
-                              : item.stockQty <= 0
-                                ? "text-destructive font-medium"
-                                : "text-muted-foreground")
-                          }
-                        >
-                          {!item.hasInventory
-                            ? "belum pernah ada"
-                            : item.stockQty <= 0
-                              ? "habis"
-                              : `Stok: ${item.stockQty}`}
-                        </span>
-                      </div>
-                    </ComboboxItem>
-                  )}
-                </ComboboxList>
-                <ComboboxEmpty>Tidak ada bahan yang cocok</ComboboxEmpty>
-              </ComboboxContent>
-            </Combobox>
-            {ingredientError && <p className="text-xs text-destructive">{ingredientError}</p>}
-            <input type="hidden" name="ingredientId" value={selectedIngredient?.id ?? ""} />
-            {selectedIngredient && (
-              <p
-                className={`text-xs ${
-                  !branchHasIngredient.has(selectedIngredient.id)
-                    ? "text-muted-foreground italic"
-                    : (stockByIngredient.get(selectedIngredient.id) ?? 0) <= 0
-                      ? "text-destructive font-medium"
-                      : "text-muted-foreground"
-                }`}
+            <label className="text-sm font-medium">Target</label>
+            <div className="flex rounded-full bg-muted p-1 w-fit gap-1">
+              <button
+                type="button"
+                onClick={() => setWasteTarget("bahan")}
+                className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${wasteTarget === "bahan" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground"}`}
               >
-                {!branchHasIngredient.has(selectedIngredient.id)
-                  ? "Bahan ini belum pernah ada di cabang ini"
-                  : `Stok tersedia: ${stockByIngredient.get(selectedIngredient.id) ?? 0} ${selectedIngredient.stockUnit}${(stockByIngredient.get(selectedIngredient.id) ?? 0) <= 0 ? " — tidak bisa dicatat sebagai waste" : ""}`}
-              </p>
-            )}
+                Bahan
+              </button>
+              <button
+                type="button"
+                onClick={() => setWasteTarget("menu")}
+                className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${wasteTarget === "menu" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground"}`}
+              >
+                Menu
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {wasteTarget === "bahan"
+                ? "Mengurangi inventory bahan → stockLedger.ingredientId"
+                : "Mengurangi recipeInventory menu → stockLedger.recipeId (mis. iced tea glass spilled)"}
+            </p>
           </div>
+          {wasteTarget === "bahan" ? (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Bahan</label>
+              <Combobox
+                value={selectedIngredient}
+                onValueChange={(val) => {
+                  setSelectedIngredient(val);
+                  setIngredientInputValue(val ? val.label : "");
+                  if (val) setIngredientError(null);
+                }}
+                inputValue={ingredientInputValue}
+                onInputValueChange={setIngredientInputValue}
+                items={ingredientOptions}
+                itemToStringValue={(item) => item.id}
+                itemToStringLabel={(item) => item.label}
+                isItemEqualToValue={(a, b) => a?.id === b?.id}
+              >
+                <ComboboxInput
+                  showTrigger
+                  showClear={!!selectedIngredient}
+                  placeholder="Pilih bahan..."
+                  className={ingredientError ? "border-destructive" : ""}
+                />
+                <ComboboxContent container={formRef.current}>
+                  <ComboboxList>
+                    {(item: (typeof ingredientOptions)[number]) => (
+                      <ComboboxItem key={item.id} value={item}>
+                        <div className="flex items-center justify-between w-full">
+                          <span
+                            className={!item.hasInventory || item.stockQty <= 0 ? "opacity-50" : ""}
+                          >
+                            {item.label}
+                          </span>
+                          <span
+                            className={
+                              "text-xs " +
+                              (!item.hasInventory
+                                ? "text-muted-foreground italic"
+                                : item.stockQty <= 0
+                                  ? "text-destructive font-medium"
+                                  : "text-muted-foreground")
+                            }
+                          >
+                            {!item.hasInventory
+                              ? "belum pernah ada"
+                              : item.stockQty <= 0
+                                ? "habis"
+                                : `Stok: ${item.stockQty}`}
+                          </span>
+                        </div>
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                  <ComboboxEmpty>Tidak ada bahan yang cocok</ComboboxEmpty>
+                </ComboboxContent>
+              </Combobox>
+              {ingredientError && <p className="text-xs text-destructive">{ingredientError}</p>}
+              {selectedIngredient && (
+                <p
+                  className={`text-xs ${!branchHasIngredient.has(selectedIngredient.id) ? "text-amber-600" : (stockByIngredient.get(selectedIngredient.id) ?? 0) <= 0 ? "text-amber-600" : "text-muted-foreground"}`}
+                >
+                  {!branchHasIngredient.has(selectedIngredient.id)
+                    ? `Belum pernah ada di cabang ini — akan dibuat (0 → ${(stockByIngredient.get(selectedIngredient.id) ?? 0) - 1} ${selectedIngredient.stockUnit}) ⚠ negative allowed`
+                    : `Stok tersedia: ${stockByIngredient.get(selectedIngredient.id) ?? 0} ${selectedIngredient.stockUnit} → sisa ${(stockByIngredient.get(selectedIngredient.id) ?? 0) - 1} ${selectedIngredient.stockUnit} ${(stockByIngredient.get(selectedIngredient.id) ?? 0) <= 0 ? " ⚠ akan negative" : ""}`}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Menu</label>
+              <Combobox
+                value={selectedRecipe}
+                onValueChange={(val) => {
+                  setSelectedRecipe(val);
+                  setRecipeInputValue(val ? val.label : "");
+                  if (val) setIngredientError(null);
+                }}
+                inputValue={recipeInputValue}
+                onInputValueChange={setRecipeInputValue}
+                items={recipeOptions}
+                itemToStringValue={(item) => item.id}
+                itemToStringLabel={(item) => item.label}
+                isItemEqualToValue={(a, b) => a?.id === b?.id}
+              >
+                <ComboboxInput
+                  showTrigger
+                  showClear={!!selectedRecipe}
+                  placeholder="Pilih menu (mis. Iced Tea)..."
+                  className={ingredientError ? "border-destructive" : ""}
+                />
+                <ComboboxContent container={formRef.current}>
+                  <ComboboxList>
+                    {(item: (typeof recipeOptions)[number]) => (
+                      <ComboboxItem key={item.id} value={item}>
+                        <div className="flex items-center justify-between w-full">
+                          <span
+                            className={!item.hasInventory || item.stockQty <= 0 ? "opacity-50" : ""}
+                          >
+                            {item.label}
+                          </span>
+                          <span
+                            className={
+                              "text-xs " +
+                              (!item.hasInventory
+                                ? "text-muted-foreground italic"
+                                : item.stockQty <= 0
+                                  ? "text-amber-600 font-medium"
+                                  : "text-muted-foreground")
+                            }
+                          >
+                            {!item.hasInventory
+                              ? "belum pernah ada (0)"
+                              : item.stockQty <= 0
+                                ? "habis"
+                                : `Stok: ${item.stockQty} porsi`}
+                          </span>
+                        </div>
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                  <ComboboxEmpty>Tidak ada menu yang cocok</ComboboxEmpty>
+                </ComboboxContent>
+              </Combobox>
+              {ingredientError && <p className="text-xs text-destructive">{ingredientError}</p>}
+              {selectedRecipe && (
+                <p
+                  className={`text-xs ${!branchHasRecipe.has(selectedRecipe.id) ? "text-amber-600" : (stockByRecipe.get(selectedRecipe.id) ?? 0) <= 0 ? "text-amber-600" : "text-muted-foreground"}`}
+                >
+                  {!branchHasRecipe.has(selectedRecipe.id)
+                    ? `Belum pernah ada di cabang ini — akan dibuat (0 → ${(stockByRecipe.get(selectedRecipe.id) ?? 0) - 1} porsi) ⚠ negative allowed`
+                    : `Stok tersedia: ${stockByRecipe.get(selectedRecipe.id) ?? 0} porsi → sisa ${(stockByRecipe.get(selectedRecipe.id) ?? 0) - 1} porsi ${(stockByRecipe.get(selectedRecipe.id) ?? 0) <= 0 ? " ⚠ akan negative" : ""}`}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Nilai kerugian: qty × totalCogs (HPP per porsi) — snapshot saat simpan. Iced tea
+                glass spilled = 1 porsi.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Kategori</label>
@@ -1016,6 +1332,62 @@ function WastePage() {
               className="h-11 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
             >
               {createMutation.isPending ? "Menyimpan..." : "Simpan"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={cancelModalOpen}
+        onClose={() => {
+          setCancelModalOpen(false);
+          setCancelEntryId(null);
+          setCancelReasonText("");
+          setCancelError(null);
+        }}
+        title="Batalkan Waste"
+        size="sm"
+      >
+        <form onSubmit={handleCancelSubmit} className="space-y-4">
+          {cancelError && (
+            <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{cancelError}</span>
+            </div>
+          )}
+          <p className="text-sm text-muted-foreground">
+            Stok akan dikembalikan ke inventori dan nilai kerugian dihapus dari total. Tindakan ini
+            tidak dapat dibatalkan.
+          </p>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Alasan Pembatalan</label>
+            <textarea
+              value={cancelReasonText}
+              onChange={(e) => setCancelReasonText(e.target.value)}
+              required
+              placeholder="Tulis alasan pembatalan..."
+              className="w-full rounded-md border border-input bg-background px-3 py-3 md:py-2 text-sm min-h-[140px] md:min-h-[120px] resize-none"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setCancelModalOpen(false);
+                setCancelEntryId(null);
+                setCancelReasonText("");
+                setCancelError(null);
+              }}
+              className="h-11 md:h-9 px-4 rounded-md border text-sm"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={cancelMutation.isPending}
+              className="h-11 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+            >
+              {cancelMutation.isPending ? "Menyimpan..." : "Batalkan Waste"}
             </button>
           </div>
         </form>

@@ -25,6 +25,10 @@ export const getInventory = createServerFn({ method: "GET" })
       category?: "Fresh" | "Dry" | "Packaging" | null;
       skuType?: "RM" | "SFG" | "FG" | null;
       locationType?: "Central" | "Outlet" | null; // ID18
+      // Skip the outlet-catalog (isBranchVisible) filter and return the branch's
+      // actual stock — used by the waste modal, where a branch can physically
+      // hold and waste items outside its display catalog.
+      includeNonCatalog?: boolean;
       page?: number;
       limit?: number;
       sortBy?: string;
@@ -57,11 +61,11 @@ export const getInventory = createServerFn({ method: "GET" })
 
     // Outlet branches only see their branch (outlet) catalog — same rule as the
     // stock-opname catalog and the ingredient master (getIngredients). Central
-    // warehouse and management views keep everything.
-    const branchCatalogCondition = or(
-      ne(branches.type, "Outlet"),
-      eq(ingredients.isBranchVisible, true),
-    );
+    // warehouse and management views keep everything. Callers that need actual
+    // stock (waste modal) opt out via `includeNonCatalog`.
+    const branchCatalogCondition = data.includeNonCatalog
+      ? undefined
+      : or(ne(branches.type, "Outlet"), eq(ingredients.isBranchVisible, true));
 
     let useFallback = false;
     const conditions = [

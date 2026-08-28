@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Waste — Spoiled Menu Prototype</title>
+    <style>
+      :root {
+        --bg: #fafafa;
+        --card: #fff;
+        --border: #e5e7eb;
+        --muted: #6b7280;
+        --fg: #111827;
+        --primary: #111827;
+        --rose: #e11d48;
+        --amber: #f59e0b;
+        --ring: #111827;
+        --radius: 12px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Helvetica,
+          Arial;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 8px 0 4px;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 20px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 420px 1fr;
+        gap: 20px;
+      }
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      }
+      .card h2 {
+        font-size: 14px;
+        margin: 0 0 8px;
+        letter-spacing: 0.02em;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .seg {
+        display: flex;
+        background: #f3f4f6;
+        border-radius: 999px;
+        padding: 3px;
+        gap: 3px;
+        width: fit-content;
+      }
+      .seg button {
+        border: 0;
+        background: transparent;
+        padding: 7px 14px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        color: var(--muted);
+      }
+      .seg button.active {
+        background: var(--fg);
+        color: #fff;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+      }
+      label {
+        font-size: 12px;
+        font-weight: 600;
+        display: block;
+        margin: 12px 0 6px;
+      }
+      select,
+      input,
+      textarea {
+        width: 100%;
+        height: 38px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 0 12px;
+        background: #fff;
+        font-size: 13px;
+      }
+      textarea {
+        height: 72px;
+        padding: 10px 12px;
+        resize: none;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .preview {
+        margin-top: 10px;
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+        padding: 10px;
+        background: #f9fafb;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .preview .warn {
+        color: var(--rose);
+        font-weight: 700;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .preview .ok {
+        color: #059669;
+        font-weight: 600;
+      }
+      .btn {
+        height: 38px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #fff;
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+        padding: 0 14px;
+      }
+      .btn-primary {
+        background: var(--fg);
+        color: #fff;
+        border-color: var(--fg);
+      }
+      .btn:disabled {
+        opacity: 0.4;
+      }
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 12px 0;
+      }
+      .pill {
+        height: 28px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .pill.active {
+        background: var(--fg);
+        color: #fff;
+        border-color: var(--fg);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      td {
+        padding: 10px;
+        border-bottom: 1px solid #f3f4f6;
+        vertical-align: top;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        height: 20px;
+        padding: 0 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        border: 1px solid transparent;
+      }
+      .b-default {
+        background: #eef2ff;
+        color: #3730a3;
+        border-color: #e0e7ff;
+      }
+      .b-warning {
+        background: #fef3c7;
+        color: #92400e;
+        border-color: #fde68a;
+      }
+      .b-destructive {
+        background: #ffe4e6;
+        color: #9f1239;
+        border-color: #fecdd3;
+      }
+      .b-secondary {
+        background: #f3f4f6;
+        color: #374151;
+        border-color: #e5e7eb;
+      }
+      .target {
+        font-weight: 600;
+      }
+      .target small {
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 11px;
+      }
+      .note {
+        font-size: 12px;
+        color: var(--muted);
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px;
+        margin-top: 12px;
+      }
+      .kpi {
+        font-size: 18px;
+        font-weight: 800;
+      }
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>/waste — Input Waste (Bahan + Menu) · Prototype</h1>
+      <div class="sub">
+        Map #148 · T154 · rough, non-final. Decisions baked: finished-good deduct, single
+        <b>Spoiled</b>, all 4 categories for both, <code>recipeInventory</code> upsert-from-0
+        allow-negative with warning.
+      </div>
+
+      <div class="grid">
+        <!-- LEFT: Modal -->
+        <div class="card">
+          <h2>Input Waste</h2>
+          <label>Cabang</label>
+          <select id="branch">
+            <option>Outlet Tebet (Outlet)</option>
+            <option>Central Warehouse (Central)</option>
+          </select>
+
+          <label>Target</label>
+          <div class="seg" style="margin-bottom: 6px">
+            <button id="segBahan" class="active" onclick="setTarget('bahan')">Bahan</button>
+            <button id="segMenu" onclick="setTarget('menu')">Menu</button>
+          </div>
+          <div class="muted" id="targetHint">
+            Bahan mengurangi <code>inventory</code> → <code>stockLedger.ingredientId</code>. Menu
+            mengurangi <code>recipeInventory</code> → <code>stockLedger.recipeId</code>.
+          </div>
+
+          <label id="pickLabel">Bahan</label>
+          <select id="picker"></select>
+          <div class="preview" id="stockPreview"></div>
+
+          <div class="row">
+            <div>
+              <label>Kategori</label>
+              <select id="cat">
+                <option>Beban Makan</option>
+                <option>Biaya Operasional</option>
+                <option selected>Spoiled</option>
+                <option>Denda</option>
+              </select>
+            </div>
+            <div>
+              <label>Jumlah</label>
+              <input id="qty" type="number" min="1" value="1" oninput="renderPreview()" />
+            </div>
+          </div>
+          <div id="staffWrap" style="display: none">
+            <label>Nama Staff (untuk Denda)</label
+            ><input placeholder="Nama karyawan yang kena denda" />
+          </div>
+          <label>Keterangan</label>
+          <textarea placeholder="Iced tea glass spilled — dropped on pass"></textarea>
+          <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px">
+            <button class="btn">Batal</button>
+            <button class="btn btn-primary" id="saveBtn" onclick="toast()">Simpan</button>
+          </div>
+          <div class="note" id="valuationNote"></div>
+        </div>
+
+        <!-- RIGHT: Listing -->
+        <div class="card">
+          <h2>Ringkasan</h2>
+          <div style="display: flex; justify-content: space-between; align-items: end; gap: 12px">
+            <div>
+              <div
+                class="muted"
+                style="
+                  font-size: 11px;
+                  letter-spacing: 0.12em;
+                  text-transform: uppercase;
+                  font-weight: 700;
+                "
+              >
+                Total Kerugian (aktif)
+              </div>
+              <div class="kpi">Rp 1.250.000</div>
+              <div class="muted">
+                26 Feb — 25 Mar · 6 entri ·
+                <span style="text-decoration: underline">valuation snapshot</span> (qty ×
+                averageCost / qty × totalCogs). Branch_admin sees Rp0.
+              </div>
+            </div>
+            <div class="muted" style="text-align: right">Cancelled excluded</div>
+          </div>
+
+          <div class="toolbar">
+            <input
+              id="search"
+              placeholder="Cari bahan/menu, kode, catatan…"
+              style="height: 32px; max-width: 260px"
+            />
+            <span style="flex: 1"></span>
+            <button class="pill active">Semua Target</button>
+            <button class="pill">Bahan</button>
+            <button class="pill">Menu</button>
+            <span style="width: 1px; height: 18px; background: var(--border); margin: 0 4px"></span>
+            <button class="pill active">Semua</button>
+            <button class="pill">Spoiled</button>
+            <button class="pill">Beban Makan</button>
+            <button class="pill">Biaya Operasional</button>
+            <button class="pill">Denda</button>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Target</th>
+                <th>Kategori</th>
+                <th style="text-align: right">Qty</th>
+                <th style="text-align: right">Nilai</th>
+                <th>Keterangan</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>18 Mar 14:02</td>
+                <td>
+                  <div class="target">Iced Tea <small class="mono">RCP-012</small></div>
+                  <div class="muted">Menu · porsi</div>
+                </td>
+                <td><span class="badge b-destructive">Spoiled</span></td>
+                <td style="text-align: right"><b>1</b> <span class="muted">porsi</span></td>
+                <td style="text-align: right">Rp 4.500</td>
+                <td>Glass spilled on pass</td>
+                <td><button class="btn" style="height: 26px; font-size: 11px">Batalkan</button></td>
+              </tr>
+              <tr>
+                <td>17 Mar 09:11</td>
+                <td>
+                  <div class="target">Gula Pasir <small class="mono">ING-008</small></div>
+                  <div class="muted">Bahan · gr</div>
+                </td>
+                <td><span class="badge b-warning">Biaya Operasional</span></td>
+                <td style="text-align: right"><b>500</b> <span class="muted">gr</span></td>
+                <td style="text-align: right">Rp 7.500</td>
+                <td>Spilled sugar</td>
+                <td>
+                  <span class="badge b-secondary">Dibatalkan</span>
+                  <div class="muted" style="font-size: 11px">Salah catat</div>
+                </td>
+              </tr>
+              <tr>
+                <td>16 Mar 20:40</td>
+                <td>
+                  <div class="target">Ayam Karage <small class="mono">RCP-004</small></div>
+                  <div class="muted">Menu · porsi</div>
+                </td>
+                <td><span class="badge b-default">Beban Makan</span></td>
+                <td style="text-align: right"><b>2</b> <span class="muted">porsi</span></td>
+                <td style="text-align: right">Rp 18.000</td>
+                <td>Staff meal — outlet Tebet</td>
+                <td><span class="muted">—</span></td>
+              </tr>
+              <tr style="background: #fff1f2">
+                <td>16 Mar 12:03</td>
+                <td>
+                  <div class="target">Teh Botol Daun <small class="mono">ING-021</small></div>
+                  <div class="muted">Bahan · gr</div>
+                </td>
+                <td><span class="badge b-destructive">Spoiled</span></td>
+                <td style="text-align: right; color: var(--rose)">
+                  <b>10</b> <span class="muted">gr</span>
+                  <div style="font-size: 11px">33% of stock</div>
+                </td>
+                <td style="text-align: right">Rp 15.000</td>
+                <td>Need investigation</td>
+                <td>
+                  <button
+                    class="btn"
+                    style="
+                      height: 26px;
+                      font-size: 11px;
+                      background: #e11d48;
+                      color: #fff;
+                      border-color: #e11d48;
+                    "
+                  >
+                    Investigasi
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="note">
+            <b>Listing decisions:</b> Single unified table (no tabs) — filter by Target pill
+            (Semua/Bahan/Menu). Columns: Waktu / Target (name+code+type) / Kategori / Qty (unit vs
+            porsi) / Nilai Kerugian (masked for branch_admin) / Keterangan / Investigasi-Cancel.
+            Anomaly (>5%) uses <code>currentQty+qty</code> denominator per target store. Cancel
+            badge shows <code>cancelReason</code>.
+          </div>
+          <div class="note">
+            <b>Kartu Stok linkage:</b> No per-row Kartu Stok deep-link yet —
+            <code>getStockLedger</code> lacks <code>reference</code> filter (same as yield #140).
+            Reuse <code>reference = wasteEntry.id</code> for ledger audit; add filter later if
+            needed.
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 16px">
+        <h2>Data flow (for implementer)</h2>
+        <div class="row" style="grid-template-columns: 1fr 1fr; font-size: 12px; line-height: 1.6">
+          <div>
+            <b>getInventory (existing):</b>
+            <code
+              >["inventory-branch", branchId] → getInventory({branchId, limit:1000,
+              includeNonCatalog:true})</code
+            ><br />
+            → <code>stockByIngredient</code>, <code>branchHasIngredient</code>, sorted
+            ingredientOptions<br />
+            <b>New: getRecipeInventory:</b>
+            <code>["recipe-inventory", branchId] → getRecipeInventory({branchId})</code> —
+            branch-centric query <code>SELECT recipeInventory JOIN recipes WHERE branchId</code> +
+            <code>recipes.totalCogs, code, name</code> +
+            <code>branchVisibleClause(recipeBranches)</code><br />
+            Picker: Bahan mode uses ingredientOptions; Menu mode uses recipeOptions (same sort:
+            hasRow → stock desc → alpha).
+          </div>
+          <div>
+            <b>createWasteEntry:</b> transactional <code>db.transaction</code> covering
+            <code>wasteEntries</code> + <code>operationalExpenses</code> +
+            <code>inventory/recipeInventory</code> + <code>stockLedger</code> (typed column) +
+            logs.<br />
+            <b>Search:</b> server <code>fuzzySearch</code> across <code>ingredients.name</code>
+            <i>and</i> <code>recipes.name</code> (or codes) — unified waste search.<br />
+            <b>Copy:</b> Bahan = <code>gr / ml / pcs stockUnit</code>, Menu = <code>porsi</code>;
+            valuation column hidden for <code>branch_admin</code> for both.
+          </div>
+        </div>
+        <div
+          id="toast"
+          style="
+            display: none;
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 10px;
+            background: #111827;
+            color: #fff;
+            font-size: 12px;
+          "
+        >
+          ✓ Waste disimpan — stok akan berkurang (menu: recipeInventory → Kartu Stok recipeId).
+          Batalkan untuk revert.
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const ingredients = [
+        { id: "i1", label: "Gula Pasir (gr)", qty: 1200, has: true, unit: "gr", code: "ING-008" },
+        { id: "i2", label: "Teh Botol Daun (gr)", qty: 20, has: true, unit: "gr", code: "ING-021" },
+        { id: "i3", label: "Es Batu (gr)", qty: 0, has: true, unit: "gr", code: "ING-015" },
+        { id: "i4", label: "Mirin Halal (ml)", qty: 0, has: false, unit: "ml", code: "ING-025" },
+      ];
+      const recipes = [
+        {
+          id: "r1",
+          label: "Iced Tea (porsi)",
+          qty: 4,
+          has: true,
+          unit: "porsi",
+          code: "RCP-012",
+          cogs: 4500,
+        },
+        {
+          id: "r2",
+          label: "Ayam Karage (porsi)",
+          qty: 0,
+          has: false,
+          unit: "porsi",
+          code: "RCP-004",
+          cogs: 9000,
+        },
+        {
+          id: "r3",
+          label: "Nasi Putih (porsi)",
+          qty: 12,
+          has: true,
+          unit: "porsi",
+          code: "RCP-001",
+          cogs: 3500,
+        },
+      ];
+      let target = "bahan";
+      function setTarget(t) {
+        target = t;
+        document.getElementById("segBahan").className = t === "bahan" ? "active" : "";
+        document.getElementById("segMenu").className = t === "menu" ? "active" : "";
+        document.getElementById("pickLabel").textContent =
+          t === "bahan" ? "Bahan" : "Menu (Recipe)";
+        document.getElementById("targetHint").textContent =
+          t === "bahan"
+            ? "Bahan mengurangi inventory → stockLedger.ingredientId. Valuation qty × averageCost."
+            : "Menu mengurangi recipeInventory → stockLedger.recipeId. Valuation qty × totalCogs (porsi). Upsert-from-0, negative allowed.";
+        fillPicker();
+        renderPreview();
+      }
+      function fillPicker() {
+        const sel = document.getElementById("picker");
+        sel.innerHTML = "";
+        const list = target === "bahan" ? ingredients : recipes;
+        list.forEach((o) => {
+          const opt = document.createElement("option");
+          const suffix = !o.has
+            ? " — belum pernah ada"
+            : o.qty <= 0
+              ? " — habis (0)"
+              : ` — Stok: ${o.qty} ${o.unit}`;
+          opt.textContent = o.label + suffix;
+          opt.value = o.id;
+          sel.appendChild(opt);
+        });
+        sel.onchange = renderPreview;
+      }
+      function renderPreview() {
+        const sel = document.getElementById("picker");
+        const list = target === "bahan" ? ingredients : recipes;
+        const cur = list.find((x) => x.id === sel.value) || list[0];
+        const qty = parseInt(document.getElementById("qty").value || "1", 10);
+        const showStaff = document.getElementById("cat").value === "Denda";
+        document.getElementById("staffWrap").style.display = showStaff ? "block" : "none";
+        const stock = cur.has ? cur.qty : 0;
+        const sisa = stock - qty;
+        const hasRow = cur.has;
+        let html = `<div><b>${cur.label}</b> <span class="mono">${cur.code}</span></div>`;
+        html += `<div>Stok saat ini: <b>${hasRow ? stock + " " + cur.unit : "belum pernah ada (0)"}</b> → sisa: <b>${sisa} ${cur.unit}</b></div>`;
+        if (!hasRow) {
+          html += `<div class="warn">⚠ Belum pernah ada di cabang ini — akan dibuat (0 → ${sisa}). Negative allowed, tercatat sebagai waste.</div>`;
+        } else if (stock <= 0) {
+          html += `<div class="warn">⚠ Stok habis — sisa akan negative (${sisa}). Warn, don't block (komitmen #153).</div>`;
+        } else if (sisa < 0) {
+          html += `<div class="warn">⚠ Akan negative (${sisa} ${cur.unit}). Warn, don't block — iced tea glass spilled tetap tercatat.</div>`;
+        } else if (sisa >= 0) {
+          html += `<div class="ok">✓ Sisa ${sisa} ${cur.unit} — dalam batas.</div>`;
+        }
+        const val = target === "bahan" ? qty * 1250 : qty * (cur.cogs || 4500);
+        html += `<div style="margin-top:6px" class="muted">Nilai kerugian (snapshot): <b>Rp${val.toLocaleString("id-ID")}</b> — ${target === "bahan" ? "qty × averageCost" : "qty × totalCogs"} → <code>wasteEntries.valuation</code>. ${target === "menu" ? "Biaya Operasional also creates <code>operationalExpenses</code>." : ""}</div>`;
+        document.getElementById("stockPreview").innerHTML = html;
+        const btn = document.getElementById("saveBtn");
+        // Prototype allows submit always (warn, don't block)
+        btn.disabled = false;
+        btn.textContent = "Simpan";
+        const note = document.getElementById("valuationNote");
+        note.innerHTML = `Server: <code>db.transaction</code> — insert <code>wasteEntries{${target === "bahan" ? "ingredientId" : "recipeId"}}</code> + ${document.getElementById("cat").value === "Biaya Operasional" ? "OE row +" : ""} <code>${target === "bahan" ? "inventory" : "recipeInventory"}</code> OUT + <code>stockLedger.${target === "bahan" ? "ingredientId" : "recipeId"}</code> OUT <code>reference=entry.id balance=sisa</code>. Batalkan → IN same reference (guard: <code>stockLedger.reference</code>).`;
+        const branchAdminNote = `<br/><span class="muted">branch_admin sees valuation=0 (masked).</span>`;
+        note.innerHTML += branchAdminNote;
+      }
+      function toast() {
+        const t = document.getElementById("toast");
+        t.style.display = "block";
+        setTimeout(() => (t.style.display = "none"), 2200);
+      }
+      document.getElementById("cat").onchange = renderPreview;
+      fillPicker();
+      renderPreview();
+    </script>
+  </body>
+</html>
