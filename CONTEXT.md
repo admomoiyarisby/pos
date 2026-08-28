@@ -121,6 +121,8 @@ _Avoid_: transit stock, in-transit ledger
 
 **Waste (Waste Entry)**:
 A record of stock loss at a branch for either an ingredient or a finished menu (recipe) — exactly one of `ingredientId` / `recipeId` is set — in one of four categories — `Beban Makan` (staff meal allowance), `Biaya Operasional` (operational expense), `Spoiled` (spoiled/broken, including spilled/dropped glasses such as iced tea), or `Denda` (employee fine). Recording deducts the quantity from the branch's ingredient inventory (`inventory`) or recipe inventory (`recipeInventory`) and writes an OUT row to the stock ledger (Kartu Stok) on the matching column (`stockLedger.ingredientId` or `stockLedger.recipeId`); a `Biaya Operasional` entry also creates an operational expense. An entry is `Active` until cancelled. `Spoiled` is not split by target — the target type (Bahan vs Menu) distinguishes ingredient spoilage from menu spoilage.
+
+Menu waste has two modes (ADR 0013): **Porsi jadi** deducts the finished-porsi shelf (`recipeInventory`) only; **Bahan (BOM)** deducts a user-chosen subset of the recipe's flat per-porsi BOM ingredients (resolved with the same math as POS order intake) as one entry per ingredient, tagged `Waste BOM <recipe>` in notes, leaving the porsi shelf untouched.
 _Avoid_: shrinkage, loss, buang
 
 **Waste Cancellation (Pembatalan Waste)**:

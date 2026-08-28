@@ -3,7 +3,7 @@ import { z } from "zod";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { formText } from "#/lib/utils";
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -25,6 +25,9 @@ import {
   addInvestigationNote,
   cancelWasteEntry,
   getRecipeInventoryForWaste,
+  getRecipeBomForWaste,
+  createBomWasteEntry,
+  type RecipeBomLine,
 } from "#/lib/server/waste";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getInventory } from "#/lib/server/inventory";
@@ -59,6 +62,12 @@ interface WasteRow {
   cancelledByName: string | null;
 }
 
+// FEATURE FLAG: "Porsi jadi" menu waste (deducts the ready-units porsi shelf)
+// is hidden for now — Bahan (BOM) is the default and only exposed menu-waste
+// mode (ADR 0013). Outlets never stock the porsi shelf, so its picker label
+// ("belum pernah ada (0)") was pure noise. Flip to true to re-expose the toggle.
+const ENABLE_PORSI_WASTE_MODE = false;
+
 const catColors = {
   "Beban Makan": "default",
   "Biaya Operasional": "warning",
@@ -79,6 +88,176 @@ function formatLocalDate(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+interface BomSelection {
+  checked: boolean;
+  /** Optional manual override; otherwise qty follows perPorsi × overall menu qty. */
+  qtyOverride?: number;
+}
+
+/**
+ * BOM picker for menu waste in "Bahan (BOM)" mode (ADR 0013): shows the
+ * recipe's flat per-porsi BOM (same math as POS order intake) and lets the
+ * user pick which ingredients were actually wasted, with editable integer
+ * quantities. Defaults scale with the porsi count.
+ */
+function BomWastePicker({
+  lines,
+  pending,
+  selection,
+  onSelectionChange,
+  porsiQty,
+  showCost,
+}: {
+  lines: RecipeBomLine[];
+  pending: boolean;
+  selection: Record<string, BomSelection>;
+  onSelectionChange: (next: Record<string, BomSelection>) => void;
+  porsiQty: number;
+  showCost: boolean;
+}) {
+  const validPorsiQty = Number.isInteger(porsiQty) && porsiQty >= 1 ? porsiQty : 1;
+  const defaultQty = (line: RecipeBomLine) =>
+    Math.max(1, Math.round(line.perPorsi * validPorsiQty));
+
+  const isChecked = (id: string) => selection[id]?.checked ?? false;
+  const qtyOf = (line: RecipeBomLine) =>
+    selection[line.ingredientId]?.qtyOverride ?? defaultQty(line);
+
+  const setLine = (line: RecipeBomLine, patch: Partial<BomSelection>) => {
+    onSelectionChange({
+      ...selection,
+      [line.ingredientId]: {
+        checked: patch.checked ?? isChecked(line.ingredientId),
+        qtyOverride:
+          patch.qty !== undefined ? patch.qty : selection[line.ingredientId]?.qtyOverride,
+      },
+    });
+  };
+
+  const toggleAll = (checked: boolean) => {
+    const next: Record<string, BomSelection> = {};
+    if (checked) {
+      for (const line of lines) next[line.ingredientId] = { checked: true };
+    }
+    onSelectionChange(next);
+  };
+
+  const checkedCount = lines.filter((l) => isChecked(l.ingredientId)).length;
+  const estimatedLoss = lines.reduce(
+    (sum, l) => sum + (isChecked(l.ingredientId) ? qtyOf(l) * (l.averageCost ?? 0) : 0),
+    0,
+  );
+
+  if (pending) {
+    return <p className="text-xs text-muted-foreground">Memuat BOM…</p>;
+  }
+  if (lines.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Resep ini tidak memiliki BOM. Gunakan mode “Porsi jadi” untuk waste menu jadi.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          Bahan terbuang ({checkedCount}/{lines.length} dipilih)
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => toggleAll(true)}
+            className="text-xs text-primary hover:underline underline-offset-4"
+          >
+            Pilih semua
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleAll(false)}
+            className="text-xs text-muted-foreground hover:underline underline-offset-4"
+          >
+            Kosongkan
+          </button>
+        </div>
+      </div>{" "}
+      <div className="rounded-lg border overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/50 text-left text-muted-foreground">
+            <tr>
+              <th className="w-8 py-1.5 pl-2 pr-0 font-medium" aria-label="Pilih" />
+              <th className="py-1.5 px-2 font-medium">Bahan</th>
+              <th className="py-1.5 px-2 font-medium text-right">Kebutuhan/porsi</th>
+              <th className="py-1.5 px-2 font-medium text-right">Stok</th>
+              <th className="py-1.5 px-2 font-medium text-right">Jumlah terbuang</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((line) => {
+              const checked = isChecked(line.ingredientId);
+              return (
+                <tr key={line.ingredientId} className={checked ? "bg-primary/5" : ""}>
+                  <td className="py-1.5 pl-2 pr-0 align-middle">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => setLine(line, { checked: e.target.checked })}
+                      aria-label={`Waste ${line.name}`}
+                      className="h-3.5 w-3.5 accent-primary"
+                    />
+                  </td>
+                  <td className="py-1.5 px-2">
+                    <div className={checked ? "font-medium" : "text-muted-foreground"}>
+                      {line.name}
+                    </div>
+                    {line.code && (
+                      <div className="text-[10px] text-muted-foreground font-mono">{line.code}</div>
+                    )}
+                  </td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground">
+                    ×{line.perPorsi.toLocaleString("id-ID", { maximumFractionDigits: 3 })}{" "}
+                    {line.stockUnit}
+                  </td>
+                  <td className="py-1.5 px-2 text-right tabular-nums">
+                    {line.currentQty === null ? (
+                      <span className="italic text-muted-foreground">belum pernah ada</span>
+                    ) : line.currentQty <= 0 ? (
+                      <span className="text-amber-600 font-medium">habis</span>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {line.currentQty.toLocaleString("id-ID")}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-1.5 px-2 text-right">
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={qtyOf(line)}
+                      disabled={!checked}
+                      onChange={(e) => {
+                        const v = Math.floor(Number(e.target.value));
+                        setLine(line, { qty: Number.isFinite(v) && v >= 1 ? v : 1 });
+                      }}
+                      aria-label={`Jumlah waste ${line.name}`}
+                      className="h-9 w-24 rounded-md border border-input bg-background px-2 text-right text-sm tabular-nums disabled:opacity-40 sm:h-7 sm:w-20 sm:text-xs"
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {showCost && checkedCount > 0 && (
+        <p className="text-xs font-medium">Estimasi kerugian: {formatRupiah(estimatedLoss)}</p>
+      )}
+    </div>
+  );
 }
 
 export const Route = createFileRoute("/_layout/waste/")({
@@ -282,6 +461,34 @@ function WastePage() {
   const [selectedRecipe, setSelectedRecipe] = useState<(typeof recipeOptions)[number] | null>(null);
   const [recipeInputValue, setRecipeInputValue] = useState("");
 
+  // ── Menu waste mode (ADR 0013): "porsi" deducts the ready-units shelf
+  // (recipeInventory); "bom" deducts selected BOM ingredients instead.
+  // Porsi mode is hidden behind ENABLE_PORSI_WASTE_MODE — BOM is the default. ──
+  const [menuWasteMode, setMenuWasteMode] = useState<"porsi" | "bom">(
+    ENABLE_PORSI_WASTE_MODE ? "porsi" : "bom",
+  );
+  // Per-BOM-line checkbox + editable qty, keyed by ingredientId.
+  const [bomSelection, setBomSelection] = useState<
+    Record<string, { checked: boolean; qty: number }>
+  >({});
+  // Controlled Jumlah (porsi count) — drives default BOM line quantities.
+  const [quantityValue, setQuantityValue] = useState("1");
+
+  const { data: bomResult, isPending: bomPending } = useQuery({
+    queryKey: ["recipe-bom-waste", selectedRecipe?.id, selectedBranchId],
+    queryFn: () =>
+      getRecipeBomForWaste({
+        data: { recipeId: selectedRecipe!.id, branchId: selectedBranchId },
+      }),
+    enabled:
+      wasteTarget === "menu" && menuWasteMode === "bom" && !!selectedRecipe && !!selectedBranchId,
+  });
+
+  // Fresh selection whenever the recipe or branch changes.
+  useEffect(() => {
+    setBomSelection({});
+  }, [selectedRecipe?.id, selectedBranchId]);
+
   const { data: entries } = useQuery({
     queryKey: ["waste-entries", category, committedSearch],
     queryFn: () =>
@@ -357,6 +564,21 @@ function WastePage() {
     },
   });
 
+  const bomWasteMutation = useMutation({
+    mutationFn: createBomWasteEntry,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["waste-entries"] });
+      void queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      void queryClient.invalidateQueries({ queryKey: ["inventory-branch"] });
+      void queryClient.invalidateQueries({ queryKey: ["recipe-bom-waste"] });
+      setModalOpen(false);
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      setSubmitError(err instanceof Error ? err.message : "Gagal mencatat waste BOM");
+    },
+  });
+
   const investigationMutation = useMutation({
     mutationFn: addInvestigationNote,
     onSuccess: () => {
@@ -394,13 +616,46 @@ function WastePage() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const quantity = Number(fd.get("quantity"));
-    if (quantity < 1 || !Number.isFinite(quantity)) {
-      setSubmitError("Jumlah harus >= 1");
+    if (quantity < 1 || !Number.isInteger(quantity) || !Number.isFinite(quantity)) {
+      setSubmitError(
+        wasteTarget === "menu"
+          ? "Jumlah menu/porsi harus bilangan bulat >= 1"
+          : "Jumlah harus >= 1",
+      );
       return;
     }
     if (wasteTarget === "menu") {
       if (!selectedRecipe) {
         setIngredientError("Pilih menu terlebih dahulu");
+        return;
+      }
+      if (menuWasteMode === "bom") {
+        const lines = (bomResult?.lines ?? [])
+          .filter((l) => bomSelection[l.ingredientId]?.checked)
+          .map((l) => ({
+            ingredientId: l.ingredientId,
+            quantity: bomSelection[l.ingredientId]?.qty ?? 0,
+          }));
+        if (
+          lines.length === 0 ||
+          lines.some((l) => !Number.isInteger(l.quantity) || l.quantity < 1)
+        ) {
+          setIngredientError("Pilih minimal satu bahan dengan jumlah ≥ 1");
+          return;
+        }
+        setIngredientError(null);
+        void bomWasteMutation.mutateAsync({
+          data: {
+            branchId: selectedBranchId || (user?.branchId ?? ""),
+            recipeId: selectedRecipe.id,
+            lines,
+            category: z
+              .enum(["Beban Makan", "Biaya Operasional", "Spoiled", "Denda"])
+              .parse(formText(fd, "category")),
+            staffName: formText(fd, "staffName") || undefined,
+            notes: formText(fd, "notes") || undefined,
+          },
+        });
         return;
       }
       setIngredientError(null);
@@ -1088,7 +1343,7 @@ function WastePage() {
         title="Input Waste"
         size="lg"
       >
-        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-5 sm:space-y-4">
           {submitError && (
             <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -1096,8 +1351,11 @@ function WastePage() {
             </div>
           )}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Cabang</label>
+            <label htmlFor="waste-branch" className="text-sm font-medium">
+              Cabang
+            </label>
             <select
+              id="waste-branch"
               name="branchId"
               value={selectedBranchId}
               onChange={(e) => setSelectedBranchId(e.target.value)}
@@ -1111,30 +1369,25 @@ function WastePage() {
               ))}
             </select>
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Target</label>
-            <div className="flex rounded-full bg-muted p-1 w-fit gap-1">
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Target</legend>
+            <div className="flex w-full rounded-xl bg-muted p-1 gap-1 sm:w-fit sm:rounded-full">
               <button
                 type="button"
                 onClick={() => setWasteTarget("bahan")}
-                className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${wasteTarget === "bahan" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground"}`}
+                className={`flex-1 px-4 py-2 rounded-lg text-xs font-semibold transition-colors sm:flex-none sm:rounded-full ${wasteTarget === "bahan" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground"}`}
               >
                 Bahan
               </button>
               <button
                 type="button"
                 onClick={() => setWasteTarget("menu")}
-                className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${wasteTarget === "menu" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground"}`}
+                className={`flex-1 px-4 py-2 rounded-lg text-xs font-semibold transition-colors sm:flex-none sm:rounded-full ${wasteTarget === "menu" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground"}`}
               >
                 Menu
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {wasteTarget === "bahan"
-                ? "Mengurangi inventory bahan → stockLedger.ingredientId"
-                : "Mengurangi recipeInventory menu → stockLedger.recipeId (mis. iced tea glass spilled)"}
-            </p>
-          </div>
+          </fieldset>
           {wasteTarget === "bahan" ? (
             <div className="space-y-2">
               <label className="text-sm font-medium">Bahan</label>
@@ -1231,26 +1484,24 @@ function WastePage() {
                       <ComboboxItem key={item.id} value={item}>
                         <div className="flex items-center justify-between w-full">
                           <span
-                            className={!item.hasInventory || item.stockQty <= 0 ? "opacity-50" : ""}
+                            className={item.hasInventory && item.stockQty <= 0 ? "opacity-50" : ""}
                           >
                             {item.label}
                           </span>
-                          <span
-                            className={
-                              "text-xs " +
-                              (!item.hasInventory
-                                ? "text-muted-foreground italic"
-                                : item.stockQty <= 0
+                          {/* No recipeInventory row → no label: outlets never stock
+                              the porsi shelf, so "belum pernah ada (0)" was noise. */}
+                          {item.hasInventory && (
+                            <span
+                              className={
+                                "text-xs " +
+                                (item.stockQty <= 0
                                   ? "text-amber-600 font-medium"
                                   : "text-muted-foreground")
-                            }
-                          >
-                            {!item.hasInventory
-                              ? "belum pernah ada (0)"
-                              : item.stockQty <= 0
-                                ? "habis"
-                                : `Stok: ${item.stockQty} porsi`}
-                          </span>
+                              }
+                            >
+                              {item.stockQty <= 0 ? "habis" : `Stok: ${item.stockQty} porsi`}
+                            </span>
+                          )}
                         </div>
                       </ComboboxItem>
                     )}
@@ -1260,21 +1511,56 @@ function WastePage() {
               </Combobox>
               {ingredientError && <p className="text-xs text-destructive">{ingredientError}</p>}
               {selectedRecipe && (
-                <p
-                  className={`text-xs ${!branchHasRecipe.has(selectedRecipe.id) ? "text-amber-600" : (stockByRecipe.get(selectedRecipe.id) ?? 0) <= 0 ? "text-amber-600" : "text-muted-foreground"}`}
-                >
-                  {!branchHasRecipe.has(selectedRecipe.id)
-                    ? `Belum pernah ada di cabang ini — akan dibuat (0 → ${(stockByRecipe.get(selectedRecipe.id) ?? 0) - 1} porsi) ⚠ negative allowed`
-                    : `Stok tersedia: ${stockByRecipe.get(selectedRecipe.id) ?? 0} porsi → sisa ${(stockByRecipe.get(selectedRecipe.id) ?? 0) - 1} porsi ${(stockByRecipe.get(selectedRecipe.id) ?? 0) <= 0 ? " ⚠ akan negative" : ""}`}
-                </p>
+                <div className="space-y-2">
+                  {/* Waste mode (ADR 0013): deduct the porsi shelf, or explode into BOM
+                      ingredients. The porsi toggle is hidden behind a feature flag. */}
+                  {ENABLE_PORSI_WASTE_MODE && (
+                    <div className="flex rounded-full bg-muted p-1 w-fit gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setMenuWasteMode("porsi")}
+                        className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${menuWasteMode === "porsi" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground"}`}
+                      >
+                        Porsi jadi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMenuWasteMode("bom")}
+                        className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${menuWasteMode === "bom" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground"}`}
+                      >
+                        Bahan (BOM)
+                      </button>
+                    </div>
+                  )}
+                  {menuWasteMode === "porsi" ? (
+                    <>
+                      <p
+                        className={`text-xs ${!branchHasRecipe.has(selectedRecipe.id) ? "text-amber-600" : (stockByRecipe.get(selectedRecipe.id) ?? 0) <= 0 ? "text-amber-600" : "text-muted-foreground"}`}
+                      >
+                        {!branchHasRecipe.has(selectedRecipe.id)
+                          ? `Belum pernah ada di cabang ini — akan dibuat (0 → ${(stockByRecipe.get(selectedRecipe.id) ?? 0) - 1} porsi) ⚠ negative allowed`
+                          : `Stok tersedia: ${stockByRecipe.get(selectedRecipe.id) ?? 0} porsi → sisa ${(stockByRecipe.get(selectedRecipe.id) ?? 0) - 1} porsi ${(stockByRecipe.get(selectedRecipe.id) ?? 0) <= 0 ? " ⚠ akan negative" : ""}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Nilai kerugian: qty × totalCogs (HPP per porsi) — snapshot saat simpan. Iced
+                        tea glass spilled = 1 porsi.
+                      </p>
+                    </>
+                  ) : (
+                    <BomWastePicker
+                      lines={bomResult?.lines ?? []}
+                      pending={bomPending}
+                      selection={bomSelection}
+                      onSelectionChange={setBomSelection}
+                      porsiQty={Number(quantityValue) || 1}
+                      showCost={!isBranchAdmin}
+                    />
+                  )}
+                </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                Nilai kerugian: qty × totalCogs (HPP per porsi) — snapshot saat simpan. Iced tea
-                glass spilled = 1 porsi.
-              </p>
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium">Kategori</label>
               <select
@@ -1290,12 +1576,17 @@ function WastePage() {
               </select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Jumlah</label>
+              <label className="text-sm font-medium">
+                {wasteTarget === "menu" ? "Jumlah Porsi" : "Jumlah bahan"}
+              </label>
               <input
                 name="quantity"
                 type="number"
                 min={1}
+                step={1}
                 required
+                value={quantityValue}
+                onChange={(e) => setQuantityValue(e.target.value)}
                 className="h-11 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
@@ -1315,21 +1606,22 @@ function WastePage() {
             <label className="text-sm font-medium">Keterangan</label>
             <textarea
               name="notes"
-              className="w-full rounded-md border border-input bg-background px-3 py-3 md:py-2 text-sm min-h-[80px] md:min-h-[60px] resize-none"
+              aria-label="Keterangan"
+              className="w-full rounded-md border border-input bg-background px-3 py-3 text-sm min-h-[96px] resize-none sm:min-h-[60px] sm:py-2"
             />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end sm:border-0 sm:pt-2">
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="h-11 md:h-9 px-4 rounded-md border text-sm"
+              className="h-11 w-full rounded-xl border px-4 text-sm sm:h-9 sm:w-auto sm:rounded-md"
             >
               Batal
             </button>
             <button
               type="submit"
-              disabled={createMutation.isPending}
-              className="h-11 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+              disabled={createMutation.isPending || bomWasteMutation.isPending}
+              className="h-11 w-full rounded-xl bg-primary px-4 text-sm text-primary-foreground disabled:opacity-50 sm:h-9 sm:w-auto sm:rounded-md"
             >
               {createMutation.isPending ? "Menyimpan..." : "Simpan"}
             </button>
@@ -1369,7 +1661,7 @@ function WastePage() {
               className="w-full rounded-md border border-input bg-background px-3 py-3 md:py-2 text-sm min-h-[140px] md:min-h-[120px] resize-none"
             />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end sm:border-0 sm:pt-2">
             <button
               type="button"
               onClick={() => {
@@ -1378,14 +1670,14 @@ function WastePage() {
                 setCancelReasonText("");
                 setCancelError(null);
               }}
-              className="h-11 md:h-9 px-4 rounded-md border text-sm"
+              className="h-11 w-full rounded-xl border px-4 text-sm sm:h-9 sm:w-auto sm:rounded-md"
             >
               Batal
             </button>
             <button
               type="submit"
               disabled={cancelMutation.isPending}
-              className="h-11 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+              className="h-11 w-full rounded-xl bg-primary px-4 text-sm text-primary-foreground disabled:opacity-50 sm:h-9 sm:w-auto sm:rounded-md"
             >
               {cancelMutation.isPending ? "Menyimpan..." : "Batalkan Waste"}
             </button>
@@ -1421,7 +1713,7 @@ function WastePage() {
               className="w-full rounded-md border border-input bg-background px-3 py-3 md:py-2 text-sm min-h-[140px] md:min-h-[120px] resize-none"
             />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end sm:border-0 sm:pt-2">
             <button
               type="button"
               onClick={() => {
@@ -1430,14 +1722,14 @@ function WastePage() {
                 setInvestigationNoteText("");
                 setInvestigationError(null);
               }}
-              className="h-11 md:h-9 px-4 rounded-md border text-sm"
+              className="h-11 w-full rounded-xl border px-4 text-sm sm:h-9 sm:w-auto sm:rounded-md"
             >
               Batal
             </button>
             <button
               type="submit"
               disabled={investigationMutation.isPending}
-              className="h-11 md:h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+              className="h-11 w-full rounded-xl bg-primary px-4 text-sm text-primary-foreground disabled:opacity-50 sm:h-9 sm:w-auto sm:rounded-md"
             >
               {investigationMutation.isPending ? "Menyimpan..." : "Simpan"}
             </button>

@@ -12,6 +12,7 @@ import {
   areaManagerBranches,
 } from "#/db/schema";
 import { eq, and, or, desc, asc, count, inArray, sql, ilike, ne } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
@@ -201,6 +202,29 @@ export const getInventory = createServerFn({ method: "GET" })
     return { data: result, total };
   });
 
+/**
+ * ADR 0013 — predicate matching ledger rows written by Waste BOM entries: the
+ * row's reference is a waste entry with ingredientId set and a
+ * `Waste BOM <recipe>` notes tag. When `bomRecipeName` is given, the tag must
+ * match that recipe exactly (or `Waste BOM <recipe> - <notes>`), so "Iced Tea"
+ * never catches "Iced Tea Latte".
+ */
+export function wasteBomLedgerFilter(bomRecipeName: string | null): SQL {
+  const conditions = [
+    // reference is text, waste_entries.id is uuid — cast the uuid side to text
+    // so rows with non-UUID references (YIELD-*, PROD-*) don't break the scan.
+    sql`we.id::text = ${stockLedger.reference}`,
+    sql`we.ingredient_id IS NOT NULL`,
+    sql`we.notes LIKE 'Waste BOM %'`,
+  ];
+  if (bomRecipeName) {
+    conditions.push(
+      sql`(we.notes = ${`Waste BOM ${bomRecipeName}`} OR we.notes LIKE ${`Waste BOM ${bomRecipeName} - %`})`,
+    );
+  }
+  return sql`EXISTS (SELECT 1 FROM waste_entries we WHERE ${sql.join(conditions, sql` AND `)})`;
+}
+
 export const getStockLedger = createServerFn({ method: "GET" })
   .validator(
     (data: {
@@ -213,10 +237,30 @@ export const getStockLedger = createServerFn({ method: "GET" })
       dateTo?: string;
       page?: number;
       limit?: number;
+      /** ADR 0013: only ledger rows written by Waste BOM entries. */
+      wasteBomOnly?: boolean;
+      /** ADR 0013: Waste BOM rows scoped to one recipe (implies wasteBomOnly). */
+      wasteBomRecipeId?: string;
     }) => data,
   )
   .handler(async ({ data }) => {
     await requireAuth();
+
+    // Waste BOM ledger rows carry ingredientId (recipeId null); the recipe
+    // context lives in the linked waste entry's notes tag — "Waste BOM <recipe>"
+    // exactly, or "Waste BOM <recipe> - <user notes>". Resolve the recipe name
+    // once so the tag match is exact rather than a fuzzy prefix ("Iced Tea"
+    // must not catch "Iced Tea Latte").
+    let bomRecipeName: string | null = null;
+    if (data.wasteBomRecipeId) {
+      const [bomRecipe] = await db
+        .select({ name: recipes.name })
+        .from(recipes)
+        .where(eq(recipes.id, data.wasteBomRecipeId))
+        .limit(1);
+      if (!bomRecipe) return [];
+      bomRecipeName = bomRecipe.name;
+    }
 
     const result = await db
       .select({
@@ -250,6 +294,9 @@ export const getStockLedger = createServerFn({ method: "GET" })
                 [ingredients.name, recipes.name, stockLedger.reference, stockLedger.notes],
                 data.search,
               )
+            : undefined,
+          data.wasteBomOnly || data.wasteBomRecipeId
+            ? wasteBomLedgerFilter(bomRecipeName)
             : undefined,
         ),
       )

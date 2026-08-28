@@ -822,8 +822,11 @@ export const stockLedger = pgTable(
     // ledger row tracks a recipe's produced units rather than a raw ingredient.
     recipeId: uuid("recipe_id").references(() => recipes.id),
     type: stockLedgerTypeEnum("type").notNull(),
-    quantity: integer("quantity").notNull(),
-    balance: integer("balance").notNull(),
+    // real (not integer) to match inventory.quantity: BOM yields can be
+    // fractional (e.g. 0.5 kg flour per order), and the ledger balance must
+    // equal the post-write inventory quantity exactly.
+    quantity: real("quantity").notNull(),
+    balance: real("balance").notNull(),
     reference: text("reference").notNull(),
     notes: text("notes"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),

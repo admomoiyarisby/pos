@@ -15,6 +15,7 @@ import {
 } from "#/db/schema";
 import { eq, and, desc, inArray, or, sql } from "drizzle-orm";
 import { fuzzySearch } from "./fuzzy";
+import { resolveNewItemIngredients } from "./ingredient-resolver";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { requireAuth } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
@@ -715,4 +716,280 @@ export const getRecipeInventoryForWaste = createServerFn({ method: "GET" })
       quantity: r.quantity ?? 0,
       hasRow: r.quantity != null,
     }));
+  });
+
+// =============================================================================
+// BOM waste — menu waste that deducts the recipe's BOM ingredients instead of
+// the finished-porsi shelf (ADR 0013).
+// =============================================================================
+
+export interface RecipeBomLine {
+  ingredientId: string;
+  name: string;
+  code: string | null;
+  stockUnit: string;
+  /** Flat per-porsi requirement (includes BOGO ×2 and bundle child multipliers). */
+  perPorsi: number;
+  /** Current branch stock; null = no inventory row yet ("belum pernah ada"). */
+  currentQty: number | null;
+  /** Per-unit cost for the estimated-loss preview; null for branch_admin (no HPP view). */
+  averageCost: number | null;
+}
+
+export interface RecipeBomResult {
+  recipe: { id: string; name: string; code: string | null };
+  lines: RecipeBomLine[];
+}
+
+/**
+ * Flat BOM of a recipe at a branch, for the waste picker's "Bahan (BOM)" mode.
+ *
+ * Uses the same ingredient resolver as POS order intake (`resolveNewItemIngredients`)
+ * so the shown per-porsi quantities match exactly what a sale would consume
+ * (BOGO doubled, bundle children scaled by their link quantity).
+ */
+export const getRecipeBomForWaste = createServerFn({ method: "GET" })
+  .validator((data: { recipeId: string; branchId: string }) => data)
+  .handler(async ({ data }): Promise<RecipeBomResult> => {
+    const user = await requireAuth();
+    let branchId = data.branchId;
+    if (user.role === "branch_admin" && user.branchId) branchId = user.branchId;
+
+    const [recipe] = await db
+      .select({ id: recipes.id, name: recipes.name, code: recipes.code })
+      .from(recipes)
+      .where(
+        and(
+          eq(recipes.id, data.recipeId),
+          eq(recipes.status, "Active"),
+          branchVisibleClause({
+            linkTable: recipeBranches,
+            linkRowId: recipeBranches.recipeId,
+            rowId: recipes.id,
+            linkBranchId: recipeBranches.branchId,
+            currentBranchId: user.branchId,
+          }),
+        ),
+      )
+      .limit(1);
+    if (!recipe) throw new Error("Recipe not found or not available to your branch");
+
+    // Per-porsi flat BOM (porsiQty = 1) — identical math to a POS sale of 1 unit.
+    const resolved = await resolveNewItemIngredients(recipe.id, 1, [], {});
+
+    const ingredientIds = resolved.ingredients.map((i) => i.ingredientId);
+    const metaRows = ingredientIds.length
+      ? await db
+          .select({
+            id: ingredients.id,
+            name: ingredients.name,
+            code: ingredients.code,
+            stockUnit: ingredients.stockUnit,
+            averageCost: ingredients.averageCost,
+          })
+          .from(ingredients)
+          .where(inArray(ingredients.id, ingredientIds))
+      : [];
+    const metaById = new Map(metaRows.map((m) => [m.id, m]));
+
+    const invRows = ingredientIds.length
+      ? await db
+          .select({ ingredientId: inventory.ingredientId, quantity: inventory.quantity })
+          .from(inventory)
+          .where(
+            and(eq(inventory.branchId, branchId), inArray(inventory.ingredientId, ingredientIds)),
+          )
+      : [];
+    const qtyById = new Map(invRows.map((r) => [r.ingredientId, r.quantity]));
+
+    // Branch admins must not see HPP-derived costs (same rule as the waste list).
+    const hideCost = user.role === "branch_admin";
+
+    return {
+      recipe: { id: recipe.id, name: recipe.name, code: recipe.code },
+      lines: resolved.ingredients.map((i) => {
+        const meta = metaById.get(i.ingredientId);
+        return {
+          ingredientId: i.ingredientId,
+          name: meta?.name ?? i.ingredientName,
+          code: meta?.code ?? null,
+          stockUnit: meta?.stockUnit ?? "",
+          perPorsi: i.quantity,
+          currentQty: qtyById.get(i.ingredientId) ?? null,
+          averageCost: hideCost ? null : (meta?.averageCost ?? 0),
+        };
+      }),
+    };
+  });
+
+const createBomWasteEntryInput = z.object({
+  branchId: z.string().uuid(),
+  recipeId: z.string().uuid(),
+  /** Checked BOM lines; one waste entry is created per line (ADR 0013). */
+  lines: z
+    .array(
+      z.object({
+        ingredientId: z.string().uuid(),
+        quantity: z.number().int().min(1),
+      }),
+    )
+    .min(1),
+  category: z.enum(["Beban Makan", "Biaya Operasional", "Spoiled", "Denda"]),
+  staffName: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+/**
+ * Record a menu waste at the ingredient (BOM) level.
+ *
+ * Each checked line becomes its own `wasteEntries` row (the schema requires
+ * exactly one of ingredientId/recipeId per row), tagged in `notes` with the
+ * source recipe so the list groups them. The recipe's own `recipeInventory`
+ * (porsi shelf) is NOT touched — BOM waste and porsi waste are separate
+ * surfaces (ADR 0013). Inventory deduction is upsert-from-0, allow-negative,
+ * mirroring `createWasteEntry`.
+ */
+export const createBomWasteEntry = createServerFn({ method: "POST" })
+  .validator((data: z.input<typeof createBomWasteEntryInput>) =>
+    createBomWasteEntryInput.parse(data),
+  )
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    const branchId = data.branchId || (user.role === "branch_admin" ? user.branchId : undefined);
+    if (!branchId) throw new Error("Branch is required");
+
+    if (user.role === "branch_admin" && branchId !== user.branchId) {
+      throw new Error("Unauthorized branch");
+    }
+
+    const [recipe] = await db
+      .select({ id: recipes.id, name: recipes.name })
+      .from(recipes)
+      .where(
+        and(
+          eq(recipes.id, data.recipeId),
+          eq(recipes.status, "Active"),
+          branchVisibleClause({
+            linkTable: recipeBranches,
+            linkRowId: recipeBranches.recipeId,
+            rowId: recipes.id,
+            linkBranchId: recipeBranches.branchId,
+            currentBranchId: user.branchId,
+          }),
+        ),
+      )
+      .limit(1);
+    if (!recipe) throw new Error("Forbidden: recipe is not available to your branch");
+
+    // Merge duplicate lines defensively (client normally sends distinct ids).
+    const qtyByIngredient = new Map<string, number>();
+    for (const line of data.lines) {
+      qtyByIngredient.set(
+        line.ingredientId,
+        (qtyByIngredient.get(line.ingredientId) ?? 0) + line.quantity,
+      );
+    }
+
+    const tag = `Waste BOM ${recipe.name}`;
+    const noteText = data.notes ? `${tag} - ${data.notes}` : tag;
+
+    const entries = await db.transaction(async (tx) => {
+      const inserted: Array<typeof wasteEntries.$inferSelect> = [];
+
+      for (const [ingredientId, quantity] of qtyByIngredient) {
+        const [ing] = await tx
+          .select()
+          .from(ingredients)
+          .where(
+            and(
+              eq(ingredients.id, ingredientId),
+              branchVisibleClause({
+                linkTable: ingredientBranches,
+                linkRowId: ingredientBranches.ingredientId,
+                rowId: ingredients.id,
+                linkBranchId: ingredientBranches.branchId,
+                currentBranchId: user.branchId,
+              }),
+            ),
+          )
+          .limit(1);
+        if (!ing) throw new Error("Forbidden: an ingredient is not available to your branch");
+
+        const valuation = Math.round(quantity * (ing.averageCost ?? 0));
+
+        const [entry] = await tx
+          .insert(wasteEntries)
+          .values({
+            branchId,
+            ingredientId,
+            recipeId: null,
+            quantity,
+            category: data.category,
+            staffName: data.staffName,
+            notes: noteText,
+            valuation,
+            submittedBy: user.id,
+          })
+          .returning();
+        inserted.push(entry);
+
+        if (data.category === "Biaya Operasional") {
+          await tx.insert(operationalExpenses).values({
+            branchId,
+            wasteEntryId: entry.id,
+            category: "Biaya Operasional",
+            amount: valuation,
+            date: new Date().toISOString().split("T")[0],
+            notes: data.notes ?? `Auto-generated from Waste Entry ${entry.id}`,
+            submittedBy: user.id,
+          });
+        }
+
+        // Upsert-from-0 inventory deduction (allow-negative) — mirrors createWasteEntry.
+        const [inv] = await tx
+          .select()
+          .from(inventory)
+          .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, ingredientId)))
+          .for("update")
+          .limit(1);
+
+        const newQty = (inv?.quantity ?? 0) - quantity;
+        if (inv) {
+          await tx
+            .update(inventory)
+            .set({ quantity: newQty, lastUpdated: new Date() })
+            .where(eq(inventory.id, inv.id));
+        } else {
+          await tx.insert(inventory).values({
+            branchId,
+            ingredientId,
+            quantity: newQty,
+          });
+        }
+
+        await tx.insert(stockLedger).values({
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity,
+          balance: Math.round(newQty),
+          reference: entry.id,
+          notes: `Waste: ${data.category}${data.notes ? " - " + data.notes : ""}`,
+        });
+      }
+
+      return inserted;
+    });
+
+    await logSystemAction(
+      user,
+      "Create BOM Waste Entries",
+      `Waste BOM untuk "${recipe.name}" (${entries.length} bahan) dicatat oleh ${user.name}`,
+    );
+    for (const entry of entries) {
+      await logAudit(user, "wasteEntries", entry.id, "CREATE", undefined, entry);
+    }
+
+    return entries;
   });

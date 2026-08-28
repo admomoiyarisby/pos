@@ -7,6 +7,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable from "#/components/ui/DataTable";
 import { getStockLedger } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
+import { getRecipes } from "#/lib/server/recipes";
 import { useAuth } from "#/lib/auth-context";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "#/components/ui/badge";
@@ -41,9 +42,14 @@ function LedgerPage() {
   const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState<{
     branchId?: string;
     reference?: string;
-  }>(["branchId", "reference"]);
+    bom?: string;
+    bomRecipe?: string;
+  }>(["branchId", "reference", "bom", "bomRecipe"]);
   const branchId = filters.branchId ?? "";
   const reference = filters.reference ?? "";
+  // Waste BOM filter (ADR 0013): review per-ingredient losses by recipe.
+  const bomOnly = filters.bom === "true";
+  const bomRecipe = filters.bomRecipe ?? "";
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -53,8 +59,14 @@ function LedgerPage() {
   const canFilterBranches =
     user?.role === "super_admin" || user?.role === "area_manager" || user?.role === "admin_pusat";
 
+  const { data: recipes } = useQuery({
+    queryKey: ["recipes-filter-active"],
+    queryFn: () => getRecipes({ data: { status: "Active" } }),
+    enabled: bomOnly,
+  });
+
   const { data: ledger } = useQuery({
-    queryKey: ["stock-ledger", page, branchId, reference, committedSearch],
+    queryKey: ["stock-ledger", page, branchId, reference, committedSearch, bomOnly, bomRecipe],
     queryFn: () =>
       getStockLedger({
         data: {
@@ -63,6 +75,8 @@ function LedgerPage() {
           branchId: branchId || undefined,
           reference: reference || undefined,
           search: committedSearch || undefined,
+          wasteBomOnly: bomOnly,
+          wasteBomRecipeId: bomOnly && bomRecipe ? bomRecipe : undefined,
         },
       }),
     initialData: initial,
@@ -190,6 +204,38 @@ function LedgerPage() {
             {branches.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {/* Waste BOM filter (ADR 0013): review per-ingredient losses by recipe */}
+        <select
+          value={bomOnly ? "bom" : ""}
+          onChange={(e) => {
+            setFilter("bom", e.target.value === "bom" ? "true" : "");
+            setFilter("bomRecipe", "");
+            setPage(0);
+          }}
+          aria-label="Jenis mutasi"
+          className="h-8 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          <option value="">Semua Mutasi</option>
+          <option value="bom">Waste BOM</option>
+        </select>
+        {bomOnly && (
+          <select
+            value={bomRecipe}
+            onChange={(e) => {
+              setFilter("bomRecipe", e.target.value);
+              setPage(0);
+            }}
+            aria-label="Resep (Waste BOM)"
+            className="h-8 max-w-[220px] rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="">Semua Resep</option>
+            {(recipes ?? []).map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
               </option>
             ))}
           </select>

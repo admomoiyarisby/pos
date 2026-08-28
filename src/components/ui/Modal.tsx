@@ -46,20 +46,23 @@ export default function Modal({ open, onClose, title, children, size = "md" }: M
         />
         <DialogPrimitive.Content
           className={cn(
-            "fixed top-[50%] left-[50%] z-50 w-full max-w-[calc(100%-2rem)]",
-            "translate-x-[-50%] translate-y-[-50%]",
-            "rounded-lg border bg-card p-4 sm:p-6 shadow-lg",
-            "max-h-[calc(100vh-2rem)] overflow-y-auto",
+            "fixed inset-x-0 bottom-0 z-50 w-full sm:top-[50%] sm:left-[50%] sm:bottom-auto sm:inset-x-auto sm:max-w-[calc(100%-2rem)]",
+            "translate-y-0 sm:translate-x-[-50%] sm:translate-y-[-50%]",
+            "rounded-t-2xl sm:rounded-lg border bg-card p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-6 shadow-lg",
+            "max-h-[min(92vh,48rem)] overflow-y-auto overscroll-contain",
             "duration-200 outline-none",
-            "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
-            "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+            "data-[state=closed]:sm:zoom-out-95 data-[state=open]:sm:zoom-in-95",
+            "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
+            "data-[state=open]:animate-in data-[state=open]:fade-in-0",
             sizeClasses[size],
           )}
         >
-          <div className="flex items-center justify-between mb-4">
-            <DialogPrimitive.Title className="text-lg font-semibold">{title}</DialogPrimitive.Title>
+          <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-4 flex items-center justify-between border-b bg-card/95 px-4 py-3 backdrop-blur-sm sm:static sm:mx-0 sm:mt-0 sm:border-0 sm:bg-transparent sm:p-0">
+            <DialogPrimitive.Title className="text-base font-semibold sm:text-lg">
+              {title}
+            </DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
-            <DialogPrimitive.Close className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground">
+            <DialogPrimitive.Close className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8 sm:w-8 sm:rounded-md">
               <X className="h-5 w-5" />
               <span className="sr-only">Tutup</span>
             </DialogPrimitive.Close>

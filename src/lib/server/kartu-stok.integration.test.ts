@@ -24,6 +24,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "#/db/schema";
 import { getTestDatabaseUrl } from "./test-database";
 import { applyWasteCancellation } from "./waste";
+import { wasteBomLedgerFilter } from "./inventory";
 
 type TestDb = NodePgDatabase<typeof schema>;
 const testDatabaseUrl = getTestDatabaseUrl();
@@ -3029,6 +3030,246 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
         const ledgers = await ledgerRows(db, ref);
         expect(ledgers).toHaveLength(1); // kept
         // alsoLedger=true would delete ledgers too — not asserted here as it is destructive
+      });
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Waste (BOM mode) — src/lib/server/waste.ts (W4) — ADR 0013
+  // Menu waste at the ingredient level: one waste_entries row per checked BOM
+  // line (recipeId null, notes tagged with the source recipe), inventory
+  // upsert-from-0 deduction per line, one OUT ledger row per entry reference.
+  // recipeInventory (porsi shelf) is NOT touched — BOM waste and porsi waste
+  // are separate surfaces. Simulation style matches P1/R1/Y1.
+  // ---------------------------------------------------------------------------
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "W4: createBomWasteEntry — per-ingredient entries, inventory upsert-from-0 deduction, OUT ledger per entry, recipeInventory untouched; cancel restores",
+    async () => {
+      await withTx(async (db) => {
+        const actorId = await createUser(db, null, "super_admin");
+        const branchId = await createBranch(db, suid("BR-W2"));
+        const ingA = await createIngredient(db, suid("ING-W2A"), 1500);
+        const ingB = await createIngredient(db, suid("ING-W2B"), 2000);
+        // ingA intentionally has NO inventory row — BOM waste upserts from 0
+        await setInventory(db, branchId, ingB, 100);
+        const catId = await createCategory(db);
+        const recipeCode = suid("R-W2");
+        const recipeId = await createRecipe(db, catId, recipeCode);
+        // createRecipe names recipes `Recipe <code>` — matching the real tag format.
+        const recipeName = `Recipe ${recipeCode}`;
+        const bomTag = `Waste BOM ${recipeName}`;
+        await db.insert(schema.recipeIngredients).values([
+          { recipeId, ingredientId: ingA, quantity: 2 },
+          { recipeId, ingredientId: ingB, quantity: 3 },
+        ]);
+
+        // Simulate createBomWasteEntry for 2 porsi: lines qty 4 and 6.
+        const avgCost = new Map([
+          [ingA, 1500],
+          [ingB, 2000],
+        ]);
+        const lines = [
+          { ingredientId: ingA, quantity: 4 },
+          { ingredientId: ingB, quantity: 6 },
+        ];
+        const inserted: (typeof schema.wasteEntries.$inferSelect)[] = [];
+        for (const line of lines) {
+          const [entry] = await db
+            .insert(schema.wasteEntries)
+            .values({
+              branchId,
+              ingredientId: line.ingredientId,
+              recipeId: null,
+              quantity: line.quantity,
+              category: "Spoiled",
+              notes: bomTag,
+              valuation: Math.round(line.quantity * (avgCost.get(line.ingredientId) ?? 0)),
+              submittedBy: actorId,
+            })
+            .returning();
+          inserted.push(entry);
+
+          // Upsert-from-0 inventory deduction (allow-negative).
+          const [inv] = await db
+            .select()
+            .from(schema.inventory)
+            .where(
+              and(
+                eq(schema.inventory.branchId, branchId),
+                eq(schema.inventory.ingredientId, line.ingredientId),
+              ),
+            )
+            .limit(1);
+          const newQty = (inv?.quantity ?? 0) - line.quantity;
+          if (inv) {
+            await db
+              .update(schema.inventory)
+              .set({ quantity: newQty })
+              .where(eq(schema.inventory.id, inv.id));
+          } else {
+            await db
+              .insert(schema.inventory)
+              .values({ branchId, ingredientId: line.ingredientId, quantity: newQty });
+          }
+          await db.insert(schema.stockLedger).values({
+            branchId,
+            ingredientId: line.ingredientId,
+            type: "OUT",
+            quantity: line.quantity,
+            balance: Math.round(newQty),
+            reference: entry.id,
+            notes: "Waste: Spoiled",
+          });
+        }
+
+        // One waste entry per line; recipeId null; notes tagged.
+        expect(inserted).toHaveLength(2);
+        for (const entry of inserted) {
+          expect(entry.ingredientId).not.toBeNull();
+          expect(entry.recipeId).toBeNull();
+          expect(entry.notes).toContain("Waste BOM");
+        }
+
+        // ingA row created from nothing at -4 (upsert-from-0, allow-negative);
+        // ingB deducted 100 → 94.
+        const [invA] = await db
+          .select()
+          .from(schema.inventory)
+          .where(
+            and(eq(schema.inventory.branchId, branchId), eq(schema.inventory.ingredientId, ingA)),
+          )
+          .limit(1);
+        expect(invA.quantity).toBe(-4);
+        const [invB] = await db
+          .select()
+          .from(schema.inventory)
+          .where(
+            and(eq(schema.inventory.branchId, branchId), eq(schema.inventory.ingredientId, ingB)),
+          )
+          .limit(1);
+        expect(invB.quantity).toBe(94);
+
+        // One OUT ledger row per entry reference with post-write balance.
+        const aRows = await ledgerRows(db, inserted[0].id);
+        expect(aRows).toHaveLength(1);
+        expect(aRows[0].type).toBe("OUT");
+        expect(aRows[0].quantity).toBe(4);
+        expect(aRows[0].balance).toBe(-4);
+        const bRows = await ledgerRows(db, inserted[1].id);
+        expect(bRows).toHaveLength(1);
+        expect(bRows[0].type).toBe("OUT");
+        expect(bRows[0].quantity).toBe(6);
+        expect(bRows[0].balance).toBe(94);
+
+        // The porsi shelf is untouched — no recipeInventory row for (recipe, branch).
+        const ri = await db
+          .select()
+          .from(schema.recipeInventory)
+          .where(
+            and(
+              eq(schema.recipeInventory.recipeId, recipeId),
+              eq(schema.recipeInventory.branchId, branchId),
+            ),
+          );
+        expect(ri).toHaveLength(0);
+
+        // Cancel the first entry via the real cancellation — restores +4 → 0.
+        await applyWasteCancellation(
+          db as unknown as Parameters<typeof applyWasteCancellation>[0],
+          inserted[0],
+          { id: actorId },
+          "Salah catat",
+        );
+        const [invAAfter] = await db
+          .select()
+          .from(schema.inventory)
+          .where(
+            and(eq(schema.inventory.branchId, branchId), eq(schema.inventory.ingredientId, ingA)),
+          )
+          .limit(1);
+        expect(invAAfter.quantity).toBe(0);
+        const aAfterRows = await ledgerRows(db, inserted[0].id);
+        const inRow = aAfterRows.find((r) => r.type === "IN");
+        expect(inRow).toBeDefined();
+        expect(inRow!.quantity).toBe(4);
+        expect(inRow!.balance).toBe(0);
+
+        // ── Ledger Waste BOM filter (ADR 0013) ──
+        // Decoy 1: a regular ingredient waste (no BOM tag) written the same way.
+        const [decoyEntry] = await db
+          .insert(schema.wasteEntries)
+          .values({
+            branchId,
+            ingredientId: ingB,
+            recipeId: null,
+            quantity: 1,
+            category: "Spoiled",
+            notes: "Waste biasa (bukan BOM)",
+            valuation: 0,
+            submittedBy: actorId,
+          })
+          .returning();
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingB,
+          type: "OUT",
+          quantity: 1,
+          balance: 93,
+          reference: decoyEntry.id,
+          notes: "Waste: Spoiled",
+        });
+        // Decoy 2: BOM tag of a name-colliding recipe ("<name> Latte") — the
+        // scoped filter for "<name>" must not match it.
+        const latteCode = suid("R-W2L");
+        await createRecipe(db, catId, latteCode);
+        const [latteEntry] = await db
+          .insert(schema.wasteEntries)
+          .values({
+            branchId,
+            ingredientId: ingB,
+            recipeId: null,
+            quantity: 1,
+            category: "Spoiled",
+            notes: `Waste BOM Recipe ${latteCode}`,
+            valuation: 0,
+            submittedBy: actorId,
+          })
+          .returning();
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId: ingB,
+          type: "OUT",
+          quantity: 1,
+          balance: 92,
+          reference: latteEntry.id,
+          notes: "Waste: Spoiled",
+        });
+
+        // Unscoped: every BOM-tagged row, never a plain waste row.
+        const allBomRefs = (
+          await db
+            .select({ reference: schema.stockLedger.reference })
+            .from(schema.stockLedger)
+            .where(wasteBomLedgerFilter(null))
+        ).map((r) => r.reference);
+        expect(allBomRefs).toContain(inserted[0].id);
+        expect(allBomRefs).toContain(inserted[1].id);
+        expect(allBomRefs).toContain(latteEntry.id);
+        expect(allBomRefs).not.toContain(decoyEntry.id);
+
+        // Scoped to the recipe: exact tag (or "<tag> - <notes>") only — the
+        // "<name> Latte" collision and the plain waste row are excluded.
+        const scopedRefs = (
+          await db
+            .select({ reference: schema.stockLedger.reference })
+            .from(schema.stockLedger)
+            .where(wasteBomLedgerFilter(recipeName))
+        ).map((r) => r.reference);
+        expect(scopedRefs).toContain(inserted[0].id);
+        expect(scopedRefs).toContain(inserted[1].id);
+        expect(scopedRefs).not.toContain(latteEntry.id);
+        expect(scopedRefs).not.toContain(decoyEntry.id);
       });
     },
   );
