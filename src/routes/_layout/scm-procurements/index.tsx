@@ -248,6 +248,8 @@ function ProcurementsListPage() {
 
   const hasActiveFilters = !!(statusFilter || search.trim());
 
+  const canCreate = user?.role === "branch_admin" || user?.role === "super_admin";
+
   usePageTitle(
     "Pengadaan",
     "Restock dari Central ke Cabang. Satu dokumen mengikuti seluruh siklus dari Draft sampai Lunas.",
@@ -281,14 +283,23 @@ function ProcurementsListPage() {
               </button>
             ) : null}
           </div>
-          {user?.role === "branch_admin" || user?.role === "super_admin" ? (
+          {canCreate ? (
             <Link to="/scm-procurements/new" className="sm:ml-auto shrink-0 w-full sm:w-auto">
               <Button className="w-full sm:w-auto h-11 sm:h-9 rounded-xl sm:rounded-md shadow-sm">
                 <Plus className="h-4 w-4" />
                 Buat Pengadaan
               </Button>
             </Link>
-          ) : null}
+          ) : (
+            <Button
+              disabled
+              title="Hanya branch admin atau super admin yang dapat membuat pengadaan"
+              className="sm:ml-auto shrink-0 w-full sm:w-auto h-11 sm:h-9 rounded-xl sm:rounded-md shadow-sm cursor-not-allowed opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              Buat Pengadaan
+            </Button>
+          )}
         </div>
 
         {/* Status filter — pills scroller (mobile-friendly) */}
@@ -392,9 +403,11 @@ function ProcurementsListPage() {
                   Reset filter
                 </Button>
               )}
-              <Link to="/scm-procurements/new" search={() => ({ status: undefined })}>
-                <Button size="sm">Buat pengadaan baru</Button>
-              </Link>
+              {canCreate && (
+                <Link to="/scm-procurements/new" search={() => ({ status: undefined })}>
+                  <Button size="sm">Buat pengadaan baru</Button>
+                </Link>
+              )}
             </div>
           </div>
         ) : (

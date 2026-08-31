@@ -236,7 +236,7 @@ function NewMutasiPage() {
   const senderBranch = branches.find((b) => b.id === fromBranchId);
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "branch_admin"]}>
+    <RoleGuard allowedRoles={["super_admin", "branch_admin"]} deniedTo="/scm-transfers">
       <form onSubmit={handleSubmit} className="space-y-4 max-w-3xl mx-auto">
         <div className="flex items-center justify-between">
           <Button

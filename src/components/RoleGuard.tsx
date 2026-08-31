@@ -7,9 +7,16 @@ interface RoleGuardProps {
   allowedRoles: UserRole[];
   children: React.ReactNode;
   fallback?: React.ReactNode;
+  /**
+   * Where to send a role-denied user. By default they land on "/", which
+   * the index route resolves to the role-based home. Pass the page's sibling
+   * list route (e.g. "/scm-transfers" from "/scm-transfers/new") so a denied
+   * visitor lands back on the list they came from instead of the role home.
+   */
+  deniedTo?: string;
 }
 
-export default function RoleGuard({ allowedRoles, children, fallback }: RoleGuardProps) {
+export default function RoleGuard({ allowedRoles, children, fallback, deniedTo }: RoleGuardProps) {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
@@ -38,7 +45,7 @@ export default function RoleGuard({ allowedRoles, children, fallback }: RoleGuar
 
   if (!allowedRoles.includes(user.role)) {
     if (fallback) return <>{fallback}</>;
-    return <Navigate to="/" />;
+    return <Navigate to={deniedTo ?? "/"} replace />;
   }
 
   return <>{children}</>;

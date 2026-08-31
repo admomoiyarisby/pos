@@ -198,7 +198,7 @@ function NewProcurementPage() {
   );
 
   return (
-    <RoleGuard allowedRoles={["branch_admin", "super_admin"]}>
+    <RoleGuard allowedRoles={["branch_admin", "super_admin"]} deniedTo="/scm-procurements">
       <div className="space-y-4 p-4 md:p-6">
         <div className="flex justify-end">
           <Link

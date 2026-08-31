@@ -225,6 +225,8 @@ function TransfersListPage() {
   );
   const hasActiveFilters = !!(statusFilter || search.trim());
 
+  const canCreate = user?.role === "branch_admin" || user?.role === "super_admin";
+
   usePageTitle("Mutasi Stok", "Surat Jalan antar cabang");
 
   const columns: Column<TransferRow>[] = [
@@ -324,13 +326,22 @@ function TransfersListPage() {
               </button>
             ) : null}
           </div>
-          {(user?.role === "branch_admin" || user?.role === "super_admin") && (
+          {canCreate ? (
             <Link to="/scm-transfers/new" className="sm:ml-auto shrink-0 w-full sm:w-auto">
               <Button className="w-full sm:w-auto h-11 sm:h-9 rounded-xl sm:rounded-md shadow-sm">
                 <Plus className="h-4 w-4" />
                 Buat Mutasi
               </Button>
             </Link>
+          ) : (
+            <Button
+              disabled
+              title="Hanya branch admin atau super admin yang dapat membuat mutasi"
+              className="sm:ml-auto shrink-0 w-full sm:w-auto h-11 sm:h-9 rounded-xl sm:rounded-md shadow-sm cursor-not-allowed opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              Buat Mutasi
+            </Button>
           )}
         </div>
 
@@ -436,9 +447,11 @@ function TransfersListPage() {
                   Reset filter
                 </Button>
               )}
-              <Link to="/scm-transfers/new">
-                <Button size="sm">Buat mutasi</Button>
-              </Link>
+              {canCreate && (
+                <Link to="/scm-transfers/new">
+                  <Button size="sm">Buat mutasi</Button>
+                </Link>
+              )}
             </div>
           </div>
         ) : (

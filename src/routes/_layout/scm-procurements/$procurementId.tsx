@@ -116,7 +116,10 @@ function ProcurementDetailPage() {
 
   if (procurementQ.isLoading) {
     return (
-      <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
+      <RoleGuard
+        allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}
+        deniedTo="/scm-procurements"
+      >
         <div className="space-y-4">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-24 w-full" />
@@ -144,7 +147,10 @@ function ProcurementDetailPage() {
   const invoice = invoiceQ.data ?? null;
 
   return (
-    <RoleGuard allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}>
+    <RoleGuard
+      allowedRoles={["branch_admin", "admin_pusat", "super_admin", "area_manager"]}
+      deniedTo="/scm-procurements"
+    >
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2 -mb-1">
           <Link

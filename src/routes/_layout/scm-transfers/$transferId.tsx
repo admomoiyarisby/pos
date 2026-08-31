@@ -111,7 +111,10 @@ function TransferDetailPage() {
 
   if (isLoading && !result) {
     return (
-      <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
+      <RoleGuard
+        allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}
+        deniedTo="/scm-transfers"
+      >
         <div className="space-y-4">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-24 w-full" />
@@ -123,7 +126,10 @@ function TransferDetailPage() {
 
   if (!result || !user) {
     return (
-      <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
+      <RoleGuard
+        allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}
+        deniedTo="/scm-transfers"
+      >
         <div className="p-6 text-muted-foreground">Mutasi tidak ditemukan</div>
       </RoleGuard>
     );
@@ -142,7 +148,10 @@ function TransferDetailPage() {
   const toName = branchById.get(transfer.toBranchId)?.name ?? transfer.toBranchId.slice(0, 8);
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
+    <RoleGuard
+      allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}
+      deniedTo="/scm-transfers"
+    >
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2 -mb-1">
           <Button
