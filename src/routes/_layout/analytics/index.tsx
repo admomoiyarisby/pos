@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -9,18 +9,12 @@ import { getBranches } from "#/lib/server/branches";
 import { BarChart3, AlertCircle, RefreshCw, Calendar, PieChart as PieIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
+import { barX, defineChart } from "@tanstack/charts";
+import { scaleBand } from "@tanstack/charts/scales/band";
+import { scaleLinear } from "@tanstack/charts/scales/linear";
+import { tooltip } from "@tanstack/charts/tooltip";
+import { Chart } from "@tanstack/charts/react";
+import { pie, polar, radialArc } from "@tanstack/charts/polar";
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8", "#82ca9d"];
 
@@ -78,11 +72,92 @@ function AnalyticsPage() {
     })) ?? [];
   const topSales = analytics?.topSales ?? [];
   const topSalesChartData = topSales.map((t) => ({
+    recipeId: t.recipeId,
     name: t.name.length > 15 ? t.name.slice(0, 15) + "..." : t.name,
     qty: t.totalQty,
     revenue: t.totalRevenue,
   }));
   const isPageEmpty = !isPending && !isError && channelData.length === 0 && topSales.length === 0;
+
+  const channelDonutDefinition = useMemo(() => {
+    const slices = pie(channelData, {
+      value: "value",
+      gapAngle: (5 * Math.PI) / 180,
+    });
+    return defineChart({
+      marks: [
+        polar({
+          radiusRatio: 0.62,
+          scales: {
+            angle: null,
+            radius: null,
+          },
+          marks: [
+            radialArc(slices, {
+              key: "name",
+              color: "name",
+              innerRadius: ({ radius }) => radius * 0.75,
+            }),
+          ],
+        }),
+      ],
+      scales: { x: null, y: null },
+      color: {
+        domain: channelData.map((d) => d.name),
+        range: COLORS,
+      },
+      margin: 0,
+      theme: { muted: "var(--color-muted-foreground)" },
+      tooltip: {
+        use: tooltip,
+        items: [
+          { field: "name", label: "Channel" },
+          {
+            id: "revenue",
+            label: "Pendapatan",
+            text: (point) => formatRp(point.datum.value),
+          },
+        ],
+      },
+    });
+  }, [channelData]);
+
+  const topSalesDefinition = useMemo(
+    () =>
+      defineChart({
+        marks: [
+          barX(topSalesChartData, {
+            x: "qty",
+            y: "name",
+            fill: "#0088FE",
+            radius: 4,
+            inset: 2,
+            key: "recipeId",
+          }),
+        ],
+        scales: {
+          x: {
+            scale: scaleLinear,
+            nice: true,
+            grid: true,
+            axis: { line: false, ticks: { size: 0 }, tickLabels: { fontSize: 10 } },
+          },
+          y: {
+            scale: () => scaleBand<string>().padding(0.3),
+            axis: { line: false, ticks: { size: 0 }, tickLabels: { fontSize: 11 } },
+          },
+        },
+        theme: {
+          grid: "var(--color-border)",
+          muted: "var(--color-muted-foreground)",
+        },
+        tooltip: {
+          use: tooltip,
+          items: [{ id: "qty", label: "Qty Terjual", text: (point) => String(point.xValue) }],
+        },
+      }),
+    [topSalesChartData],
+  );
 
   function handleResetRange() {
     const next = getThirtyDayRange();
@@ -146,27 +221,11 @@ function AnalyticsPage() {
                 ) : (
                   <>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={channelData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={80}
-                            paddingAngle={5}
-                            dataKey="value"
-                          >
-                            {channelData.map((c, index) => (
-                              <Cell
-                                key={`cell-${c.name}-${index}`}
-                                fill={COLORS[index % COLORS.length]}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(value) => formatRp(Number(value))} />
-                        </PieChart>
-                      </ResponsiveContainer>
+                      <Chart
+                        definition={channelDonutDefinition}
+                        height={256}
+                        ariaLabel="Distribusi channel pada rentang tanggal terpilih"
+                      />
                     </div>
                     <div className="flex flex-wrap justify-center gap-3 mt-2">
                       {channelData.map((c, i) => (
@@ -193,15 +252,11 @@ function AnalyticsPage() {
                   />
                 ) : (
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={topSalesChartData} layout="vertical" margin={{ left: 80 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis type="number" />
-                        <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} />
-                        <Tooltip />
-                        <Bar dataKey="qty" fill="#0088FE" radius={[0, 4, 4, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    <Chart
+                      definition={topSalesDefinition}
+                      height={256}
+                      ariaLabel="Top menu berdasarkan kuantitas terjual pada rentang tanggal terpilih"
+                    />
                   </div>
                 )}
               </div>

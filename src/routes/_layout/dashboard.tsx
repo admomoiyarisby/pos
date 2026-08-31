@@ -126,18 +126,29 @@ function DashboardPage() {
       severity: "warning",
     });
   }
-  const lowStockItems: UnsafeStockItem[] = inventory
-    .filter((i) => i.quantity < 100)
-    .map((i) => {
-      const ing = ingredients.find((ig) => ig.id === i.ingredientId);
-      return {
-        ingredientId: i.ingredientId,
-        ingredientName: ing?.name ?? i.ingredientId,
-        quantity: i.quantity,
-        rop: ing?.rop ?? 0,
-        stockUnit: ing?.stockUnit,
-      };
-    })
+  // Aggregate per ingredient. The dashboard inventory spans branches, so the
+  // same ingredientId can appear once per branch, but UnsafeStockItem is
+  // ingredient-level (no branch column). Collapse to one row per ingredient
+  // using the worst-case (lowest) stock so the ingredientId React keys stay
+  // unique and the table reflects where each item is most at risk.
+  const byIngredient = new Map<string, UnsafeStockItem>();
+  for (const i of inventory) {
+    if (i.quantity >= 100) continue;
+    const existing = byIngredient.get(i.ingredientId);
+    if (existing) {
+      existing.quantity = Math.min(existing.quantity, i.quantity);
+      continue;
+    }
+    const ing = ingredients.find((ig) => ig.id === i.ingredientId);
+    byIngredient.set(i.ingredientId, {
+      ingredientId: i.ingredientId,
+      ingredientName: ing?.name ?? i.ingredientId,
+      quantity: i.quantity,
+      rop: ing?.rop ?? 0,
+      stockUnit: ing?.stockUnit,
+    });
+  }
+  const lowStockItems: UnsafeStockItem[] = [...byIngredient.values()]
     .sort((a, b) => a.quantity - b.quantity)
     .slice(0, 10);
   if (lowStockItems.length > 0) {
