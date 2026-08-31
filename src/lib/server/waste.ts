@@ -18,6 +18,7 @@ import { fuzzySearch } from "./fuzzy";
 import { resolveNewItemIngredients } from "./ingredient-resolver";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { requireAuth } from "./auth";
+import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { z } from "zod";
@@ -140,180 +141,191 @@ export const createWasteEntry = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof createWasteEntryInput>) => createWasteEntryInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireAuth();
+    return createWasteEntryCore(user, data);
+  });
 
-    const branchId = data.branchId || (user.role === "branch_admin" ? user.branchId : undefined);
-    if (!branchId) throw new Error("Branch is required");
+/** The business logic behind `createWasteEntry`, parameterized by an explicit
+ *  user so it can be driven directly (e.g. from integration tests). */
+export async function createWasteEntryCore(
+  user: AppUser,
+  data: z.infer<typeof createWasteEntryInput>,
+) {
+  // The wrapper's zod validator enforces this over HTTP; the core re-checks so
+  // direct callers (e.g. integration tests) get the same contract.
+  if (!!data.ingredientId === !!data.recipeId) {
+    throw new Error("Exactly one of ingredientId or recipeId must be set");
+  }
 
-    if (user.role === "branch_admin" && branchId !== user.branchId) {
-      throw new Error("Unauthorized branch");
+  const branchId = data.branchId || (user.role === "branch_admin" ? user.branchId : undefined);
+  if (!branchId) throw new Error("Branch is required");
+
+  if (user.role === "branch_admin" && branchId !== user.branchId) {
+    throw new Error("Unauthorized branch");
+  }
+
+  const isRecipe = !!data.recipeId;
+  let valuation = 0;
+  let displayName = "";
+  let stockUnit = "";
+
+  // Fetch target and validate branch visibility
+  if (isRecipe) {
+    const [recipe] = await db
+      .select()
+      .from(recipes)
+      .where(
+        and(
+          eq(recipes.id, data.recipeId!),
+          branchVisibleClause({
+            linkTable: recipeBranches,
+            linkRowId: recipeBranches.recipeId,
+            rowId: recipes.id,
+            linkBranchId: recipeBranches.branchId,
+            currentBranchId: user.branchId,
+          }),
+        ),
+      )
+      .limit(1);
+    if (!recipe) throw new Error("Forbidden: recipe is not available to your branch");
+    valuation = data.quantity * (recipe.totalCogs ?? 0);
+    displayName = recipe.name;
+    stockUnit = "porsi";
+  } else {
+    const [ing] = await db
+      .select()
+      .from(ingredients)
+      .where(
+        and(
+          eq(ingredients.id, data.ingredientId!),
+          branchVisibleClause({
+            linkTable: ingredientBranches,
+            linkRowId: ingredientBranches.ingredientId,
+            rowId: ingredients.id,
+            linkBranchId: ingredientBranches.branchId,
+            currentBranchId: user.branchId,
+          }),
+        ),
+      )
+      .limit(1);
+    if (!ing) throw new Error("Forbidden: ingredient is not available to your branch");
+    valuation = data.quantity * (ing.averageCost ?? 0);
+    displayName = ing.name;
+    stockUnit = ing.stockUnit ?? "";
+  }
+
+  // Transactional insert + OE + inventory + ledger (ADR 0012 pattern)
+  const entry = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(wasteEntries)
+      .values({
+        branchId,
+        ingredientId: data.ingredientId ?? null,
+        recipeId: data.recipeId ?? null,
+        quantity: data.quantity,
+        category: data.category,
+        staffName: data.staffName,
+        notes: data.notes,
+        valuation,
+        submittedBy: user.id,
+      })
+      .returning();
+
+    if (data.category === "Biaya Operasional") {
+      await tx.insert(operationalExpenses).values({
+        branchId,
+        wasteEntryId: inserted.id,
+        category: "Biaya Operasional",
+        amount: valuation,
+        date: new Date().toISOString().split("T")[0],
+        notes: data.notes ?? `Auto-generated from Waste Entry ${inserted.id}`,
+        submittedBy: user.id,
+      });
     }
 
-    const isRecipe = !!data.recipeId;
-    let valuation = 0;
-    let displayName = "";
-    let stockUnit = "";
-
-    // Fetch target and validate branch visibility
     if (isRecipe) {
-      const [recipe] = await db
+      const [ri] = await tx
         .select()
-        .from(recipes)
+        .from(recipeInventory)
         .where(
-          and(
-            eq(recipes.id, data.recipeId!),
-            branchVisibleClause({
-              linkTable: recipeBranches,
-              linkRowId: recipeBranches.recipeId,
-              rowId: recipes.id,
-              linkBranchId: recipeBranches.branchId,
-              currentBranchId: user.branchId,
-            }),
-          ),
+          and(eq(recipeInventory.branchId, branchId), eq(recipeInventory.recipeId, data.recipeId!)),
         )
+        .for("update")
         .limit(1);
-      if (!recipe) throw new Error("Forbidden: recipe is not available to your branch");
-      valuation = data.quantity * (recipe.totalCogs ?? 0);
-      displayName = recipe.name;
-      stockUnit = "porsi";
-    } else {
-      const [ing] = await db
-        .select()
-        .from(ingredients)
-        .where(
-          and(
-            eq(ingredients.id, data.ingredientId!),
-            branchVisibleClause({
-              linkTable: ingredientBranches,
-              linkRowId: ingredientBranches.ingredientId,
-              rowId: ingredients.id,
-              linkBranchId: ingredientBranches.branchId,
-              currentBranchId: user.branchId,
-            }),
-          ),
-        )
-        .limit(1);
-      if (!ing) throw new Error("Forbidden: ingredient is not available to your branch");
-      valuation = data.quantity * (ing.averageCost ?? 0);
-      displayName = ing.name;
-      stockUnit = ing.stockUnit ?? "";
-    }
 
-    // Transactional insert + OE + inventory + ledger (ADR 0012 pattern)
-    const entry = await db.transaction(async (tx) => {
-      const [inserted] = await tx
-        .insert(wasteEntries)
-        .values({
-          branchId,
-          ingredientId: data.ingredientId ?? null,
-          recipeId: data.recipeId ?? null,
-          quantity: data.quantity,
-          category: data.category,
-          staffName: data.staffName,
-          notes: data.notes,
-          valuation,
-          submittedBy: user.id,
-        })
-        .returning();
-
-      if (data.category === "Biaya Operasional") {
-        await tx.insert(operationalExpenses).values({
-          branchId,
-          wasteEntryId: inserted.id,
-          category: "Biaya Operasional",
-          amount: valuation,
-          date: new Date().toISOString().split("T")[0],
-          notes: data.notes ?? `Auto-generated from Waste Entry ${inserted.id}`,
-          submittedBy: user.id,
-        });
-      }
-
-      if (isRecipe) {
-        const [ri] = await tx
-          .select()
-          .from(recipeInventory)
-          .where(
-            and(
-              eq(recipeInventory.branchId, branchId),
-              eq(recipeInventory.recipeId, data.recipeId!),
-            ),
-          )
-          .for("update")
-          .limit(1);
-
-        const newQty = (ri?.quantity ?? 0) - data.quantity;
-        if (ri) {
-          await tx
-            .update(recipeInventory)
-            .set({ quantity: newQty, lastUpdated: new Date() })
-            .where(eq(recipeInventory.id, ri.id));
-        } else {
-          await tx.insert(recipeInventory).values({
-            branchId,
-            recipeId: data.recipeId!,
-            quantity: newQty,
-          });
-        }
-
-        await tx.insert(stockLedger).values({
+      const newQty = (ri?.quantity ?? 0) - data.quantity;
+      if (ri) {
+        await tx
+          .update(recipeInventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(recipeInventory.id, ri.id));
+      } else {
+        await tx.insert(recipeInventory).values({
           branchId,
           recipeId: data.recipeId!,
-          type: "OUT",
-          quantity: data.quantity,
-          balance: Math.round(newQty),
-          reference: inserted.id,
-          notes: `Waste: ${data.category}${data.notes ? " - " + data.notes : ""}`,
-        });
-      } else {
-        const [inv] = await tx
-          .select()
-          .from(inventory)
-          .where(
-            and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, data.ingredientId!)),
-          )
-          .for("update")
-          .limit(1);
-
-        const hadRow = !!inv;
-        const newQty = (inv?.quantity ?? 0) - data.quantity;
-
-        if (hadRow) {
-          await tx
-            .update(inventory)
-            .set({ quantity: newQty, lastUpdated: new Date() })
-            .where(eq(inventory.id, inv!.id));
-        } else {
-          // Upsert-from-0 for ingredient waste at branch with no prior row (allow-negative)
-          await tx.insert(inventory).values({
-            branchId,
-            ingredientId: data.ingredientId!,
-            quantity: newQty,
-          });
-        }
-
-        // Only write ledger if there was an inventory row or we just created one — always write now (allow-negative)
-        await tx.insert(stockLedger).values({
-          branchId,
-          ingredientId: data.ingredientId!,
-          type: "OUT",
-          quantity: data.quantity,
-          balance: Math.round(newQty),
-          reference: inserted.id,
-          notes: `Waste: ${data.category}${data.notes ? " - " + data.notes : ""}`,
+          quantity: newQty,
         });
       }
 
-      return inserted;
-    });
+      await tx.insert(stockLedger).values({
+        branchId,
+        recipeId: data.recipeId!,
+        type: "OUT",
+        quantity: data.quantity,
+        balance: Math.round(newQty),
+        reference: inserted.id,
+        notes: `Waste: ${data.category}${data.notes ? " - " + data.notes : ""}`,
+      });
+    } else {
+      const [inv] = await tx
+        .select()
+        .from(inventory)
+        .where(
+          and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, data.ingredientId!)),
+        )
+        .for("update")
+        .limit(1);
 
-    await logSystemAction(
-      user,
-      "Create Waste Entry",
-      `Waste entry untuk "${displayName}" (${data.quantity} ${stockUnit}, nilai: Rp${valuation.toLocaleString()}) dicatat oleh ${user.name}`,
-    );
-    await logAudit(user, "wasteEntries", entry.id, "CREATE", undefined, entry);
+      const hadRow = !!inv;
+      const newQty = (inv?.quantity ?? 0) - data.quantity;
 
-    return entry;
+      if (hadRow) {
+        await tx
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, inv!.id));
+      } else {
+        // Upsert-from-0 for ingredient waste at branch with no prior row (allow-negative)
+        await tx.insert(inventory).values({
+          branchId,
+          ingredientId: data.ingredientId!,
+          quantity: newQty,
+        });
+      }
+
+      // Only write ledger if there was an inventory row or we just created one — always write now (allow-negative)
+      await tx.insert(stockLedger).values({
+        branchId,
+        ingredientId: data.ingredientId!,
+        type: "OUT",
+        quantity: data.quantity,
+        balance: Math.round(newQty),
+        reference: inserted.id,
+        notes: `Waste: ${data.category}${data.notes ? " - " + data.notes : ""}`,
+      });
+    }
+
+    return inserted;
   });
+
+  await logSystemAction(
+    user,
+    "Create Waste Entry",
+    `Waste entry untuk "${displayName}" (${data.quantity} ${stockUnit}, nilai: Rp${valuation.toLocaleString()}) dicatat oleh ${user.name}`,
+  );
+  await logAudit(user, "wasteEntries", entry.id, "CREATE", undefined, entry);
+
+  return entry;
+}
 
 const addInvestigationNoteInput = z.object({
   wasteEntryId: z.string().uuid(),
@@ -326,46 +338,52 @@ export const addInvestigationNote = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    if (user.role !== "super_admin" && user.role !== "area_manager") {
-      throw new Error(
-        "Unauthorized: hanya super_admin dan area_manager yang dapat menambahkan catatan investigasi",
-      );
-    }
-
-    const [existing] = await db
-      .select()
-      .from(wasteEntries)
-      .where(eq(wasteEntries.id, data.wasteEntryId))
-      .limit(1);
-
-    if (!existing) throw new Error("Waste entry tidak ditemukan");
-    if (existing.status === "Cancelled") {
-      throw new Error("Waste entry sudah dibatalkan — tidak dapat diubah");
-    }
-
-    const [updated] = await db
-      .update(wasteEntries)
-      .set({ investigationNote: data.investigationNote })
-      .where(eq(wasteEntries.id, data.wasteEntryId))
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Add Investigation Note",
-      `Catatan investigasi ditambahkan pada waste entry ${data.wasteEntryId} oleh ${user.name}`,
-    );
-    await logAudit(
-      user,
-      "wasteEntries",
-      data.wasteEntryId,
-      "UPDATE",
-      { investigationNote: existing.investigationNote },
-      { investigationNote: data.investigationNote },
-    );
-
-    return updated;
+    return addInvestigationNoteCore(user, data);
   });
+
+export async function addInvestigationNoteCore(
+  user: AppUser,
+  data: z.infer<typeof addInvestigationNoteInput>,
+) {
+  if (user.role !== "super_admin" && user.role !== "area_manager") {
+    throw new Error(
+      "Unauthorized: hanya super_admin dan area_manager yang dapat menambahkan catatan investigasi",
+    );
+  }
+
+  const [existing] = await db
+    .select()
+    .from(wasteEntries)
+    .where(eq(wasteEntries.id, data.wasteEntryId))
+    .limit(1);
+
+  if (!existing) throw new Error("Waste entry tidak ditemukan");
+  if (existing.status === "Cancelled") {
+    throw new Error("Waste entry sudah dibatalkan — tidak dapat diubah");
+  }
+
+  const [updated] = await db
+    .update(wasteEntries)
+    .set({ investigationNote: data.investigationNote })
+    .where(eq(wasteEntries.id, data.wasteEntryId))
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Add Investigation Note",
+    `Catatan investigasi ditambahkan pada waste entry ${data.wasteEntryId} oleh ${user.name}`,
+  );
+  await logAudit(
+    user,
+    "wasteEntries",
+    data.wasteEntryId,
+    "UPDATE",
+    { investigationNote: existing.investigationNote },
+    { investigationNote: data.investigationNote },
+  );
+
+  return updated;
+}
 
 const updateWasteEntryInput = z.object({
   wasteEntryId: z.string().uuid(),
@@ -377,49 +395,55 @@ export const updateWasteEntry = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof updateWasteEntryInput>) => updateWasteEntryInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [existing] = await db
-      .select()
-      .from(wasteEntries)
-      .where(eq(wasteEntries.id, data.wasteEntryId))
-      .limit(1);
-
-    if (!existing) throw new Error("Waste entry tidak ditemukan");
-    if (existing.status === "Cancelled") {
-      throw new Error("Waste entry sudah dibatalkan — tidak dapat diubah");
-    }
-
-    if (user.role === "branch_admin" && existing.submittedBy !== user.id) {
-      throw new Error("Unauthorized: hanya dapat mengedit waste entry sendiri");
-    }
-
-    const updates: UnknownRecord = {};
-    if (data.notes !== undefined) updates.notes = data.notes;
-    if (data.investigationNote !== undefined) updates.investigationNote = data.investigationNote;
-
-    if (user.role !== "super_admin" && user.role !== "area_manager") {
-      delete updates.investigationNote;
-    }
-
-    if (Object.keys(updates).length === 0) {
-      throw new Error("Tidak ada perubahan");
-    }
-
-    const [updated] = await db
-      .update(wasteEntries)
-      .set(updates)
-      .where(eq(wasteEntries.id, data.wasteEntryId))
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Update Waste Entry",
-      `Waste entry ${data.wasteEntryId} diperbarui oleh ${user.name}`,
-    );
-    await logAudit(user, "wasteEntries", data.wasteEntryId, "UPDATE", existing, updated);
-
-    return updated;
+    return updateWasteEntryCore(user, data);
   });
+
+export async function updateWasteEntryCore(
+  user: AppUser,
+  data: z.infer<typeof updateWasteEntryInput>,
+) {
+  const [existing] = await db
+    .select()
+    .from(wasteEntries)
+    .where(eq(wasteEntries.id, data.wasteEntryId))
+    .limit(1);
+
+  if (!existing) throw new Error("Waste entry tidak ditemukan");
+  if (existing.status === "Cancelled") {
+    throw new Error("Waste entry sudah dibatalkan — tidak dapat diubah");
+  }
+
+  if (user.role === "branch_admin" && existing.submittedBy !== user.id) {
+    throw new Error("Unauthorized: hanya dapat mengedit waste entry sendiri");
+  }
+
+  const updates: UnknownRecord = {};
+  if (data.notes !== undefined) updates.notes = data.notes;
+  if (data.investigationNote !== undefined) updates.investigationNote = data.investigationNote;
+
+  if (user.role !== "super_admin" && user.role !== "area_manager") {
+    delete updates.investigationNote;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    throw new Error("Tidak ada perubahan");
+  }
+
+  const [updated] = await db
+    .update(wasteEntries)
+    .set(updates)
+    .where(eq(wasteEntries.id, data.wasteEntryId))
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Update Waste Entry",
+    `Waste entry ${data.wasteEntryId} diperbarui oleh ${user.name}`,
+  );
+  await logAudit(user, "wasteEntries", data.wasteEntryId, "UPDATE", existing, updated);
+
+  return updated;
+}
 
 // ─── Waste Cancellation (super_admin / area_manager, ADR 0012 pattern) ──────
 // Cancelling a waste entry flips its status to `Cancelled` (row + history
@@ -558,44 +582,50 @@ export const cancelWasteEntry = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof cancelWasteEntryInput>) => cancelWasteEntryInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    if (user.role !== "super_admin" && user.role !== "area_manager") {
-      throw new Error(
-        "Unauthorized: hanya super_admin dan area_manager yang dapat membatalkan waste entry",
-      );
-    }
-
-    const reason = (data.reason ?? "").trim();
-    if (!reason) throw new Error("Alasan pembatalan wajib diisi");
-
-    const [entry] = await db
-      .select()
-      .from(wasteEntries)
-      .where(eq(wasteEntries.id, data.wasteEntryId))
-      .limit(1);
-    if (!entry) throw new Error("Waste entry tidak ditemukan");
-    if (entry.status === "Cancelled") throw new Error("Waste entry sudah dibatalkan");
-
-    if (user.role === "area_manager" && !user.assignedBranches?.includes(entry.branchId)) {
-      throw new Error(
-        "Unauthorized: Area Manager hanya dapat membatalkan untuk cabang yang ditugaskan",
-      );
-    }
-
-    // SAFETY: entry fetched from wasteEntries above — same row type, just narrowed by select().
-    const updated = await db.transaction(async (tx) =>
-      applyWasteCancellation(tx, entry as typeof wasteEntries.$inferSelect, user, reason),
-    );
-
-    await logSystemAction(
-      user,
-      "Cancel Waste Entry",
-      `Waste entry ${entry.id.slice(0, 8)} dibatalkan oleh ${user.name}. Alasan: ${reason}`,
-    );
-    await logAudit(user, "wasteEntries", entry.id, "STATUS_CHANGE", entry, updated);
-
-    return updated;
+    return cancelWasteEntryCore(user, data);
   });
+
+export async function cancelWasteEntryCore(
+  user: AppUser,
+  data: z.infer<typeof cancelWasteEntryInput>,
+) {
+  if (user.role !== "super_admin" && user.role !== "area_manager") {
+    throw new Error(
+      "Unauthorized: hanya super_admin dan area_manager yang dapat membatalkan waste entry",
+    );
+  }
+
+  const reason = (data.reason ?? "").trim();
+  if (!reason) throw new Error("Alasan pembatalan wajib diisi");
+
+  const [entry] = await db
+    .select()
+    .from(wasteEntries)
+    .where(eq(wasteEntries.id, data.wasteEntryId))
+    .limit(1);
+  if (!entry) throw new Error("Waste entry tidak ditemukan");
+  if (entry.status === "Cancelled") throw new Error("Waste entry sudah dibatalkan");
+
+  if (user.role === "area_manager" && !user.assignedBranches?.includes(entry.branchId)) {
+    throw new Error(
+      "Unauthorized: Area Manager hanya dapat membatalkan untuk cabang yang ditugaskan",
+    );
+  }
+
+  // SAFETY: entry fetched from wasteEntries above — same row type, just narrowed by select().
+  const updated = await db.transaction(async (tx) =>
+    applyWasteCancellation(tx, entry as typeof wasteEntries.$inferSelect, user, reason),
+  );
+
+  await logSystemAction(
+    user,
+    "Cancel Waste Entry",
+    `Waste entry ${entry.id.slice(0, 8)} dibatalkan oleh ${user.name}. Alasan: ${reason}`,
+  );
+  await logAudit(user, "wasteEntries", entry.id, "STATUS_CHANGE", entry, updated);
+
+  return updated;
+}
 
 export const getBrokenStock = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string }) => data)
@@ -855,141 +885,147 @@ export const createBomWasteEntry = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
+    return createBomWasteEntryCore(user, data);
+  });
 
-    const branchId = data.branchId || (user.role === "branch_admin" ? user.branchId : undefined);
-    if (!branchId) throw new Error("Branch is required");
+export async function createBomWasteEntryCore(
+  user: AppUser,
+  data: z.infer<typeof createBomWasteEntryInput>,
+) {
+  const branchId = data.branchId || (user.role === "branch_admin" ? user.branchId : undefined);
+  if (!branchId) throw new Error("Branch is required");
 
-    if (user.role === "branch_admin" && branchId !== user.branchId) {
-      throw new Error("Unauthorized branch");
-    }
+  if (user.role === "branch_admin" && branchId !== user.branchId) {
+    throw new Error("Unauthorized branch");
+  }
 
-    const [recipe] = await db
-      .select({ id: recipes.id, name: recipes.name })
-      .from(recipes)
-      .where(
-        and(
-          eq(recipes.id, data.recipeId),
-          eq(recipes.status, "Active"),
-          branchVisibleClause({
-            linkTable: recipeBranches,
-            linkRowId: recipeBranches.recipeId,
-            rowId: recipes.id,
-            linkBranchId: recipeBranches.branchId,
-            currentBranchId: user.branchId,
-          }),
-        ),
-      )
-      .limit(1);
-    if (!recipe) throw new Error("Forbidden: recipe is not available to your branch");
+  const [recipe] = await db
+    .select({ id: recipes.id, name: recipes.name })
+    .from(recipes)
+    .where(
+      and(
+        eq(recipes.id, data.recipeId),
+        eq(recipes.status, "Active"),
+        branchVisibleClause({
+          linkTable: recipeBranches,
+          linkRowId: recipeBranches.recipeId,
+          rowId: recipes.id,
+          linkBranchId: recipeBranches.branchId,
+          currentBranchId: user.branchId,
+        }),
+      ),
+    )
+    .limit(1);
+  if (!recipe) throw new Error("Forbidden: recipe is not available to your branch");
 
-    // Merge duplicate lines defensively (client normally sends distinct ids).
-    const qtyByIngredient = new Map<string, number>();
-    for (const line of data.lines) {
-      qtyByIngredient.set(
-        line.ingredientId,
-        (qtyByIngredient.get(line.ingredientId) ?? 0) + line.quantity,
-      );
-    }
+  // Merge duplicate lines defensively (client normally sends distinct ids).
+  const qtyByIngredient = new Map<string, number>();
+  for (const line of data.lines) {
+    qtyByIngredient.set(
+      line.ingredientId,
+      (qtyByIngredient.get(line.ingredientId) ?? 0) + line.quantity,
+    );
+  }
 
-    const tag = `Waste BOM ${recipe.name}`;
-    const noteText = data.notes ? `${tag} - ${data.notes}` : tag;
+  const tag = `Waste BOM ${recipe.name}`;
+  const noteText = data.notes ? `${tag} - ${data.notes}` : tag;
 
-    const entries = await db.transaction(async (tx) => {
-      const inserted: Array<typeof wasteEntries.$inferSelect> = [];
+  const entries = await db.transaction(async (tx) => {
+    const inserted: Array<typeof wasteEntries.$inferSelect> = [];
 
-      for (const [ingredientId, quantity] of qtyByIngredient) {
-        const [ing] = await tx
-          .select()
-          .from(ingredients)
-          .where(
-            and(
-              eq(ingredients.id, ingredientId),
-              branchVisibleClause({
-                linkTable: ingredientBranches,
-                linkRowId: ingredientBranches.ingredientId,
-                rowId: ingredients.id,
-                linkBranchId: ingredientBranches.branchId,
-                currentBranchId: user.branchId,
-              }),
-            ),
-          )
-          .limit(1);
-        if (!ing) throw new Error("Forbidden: an ingredient is not available to your branch");
+    for (const [ingredientId, quantity] of qtyByIngredient) {
+      const [ing] = await tx
+        .select()
+        .from(ingredients)
+        .where(
+          and(
+            eq(ingredients.id, ingredientId),
+            branchVisibleClause({
+              linkTable: ingredientBranches,
+              linkRowId: ingredientBranches.ingredientId,
+              rowId: ingredients.id,
+              linkBranchId: ingredientBranches.branchId,
+              currentBranchId: user.branchId,
+            }),
+          ),
+        )
+        .limit(1);
+      if (!ing) throw new Error("Forbidden: an ingredient is not available to your branch");
 
-        const valuation = Math.round(quantity * (ing.averageCost ?? 0));
+      const valuation = Math.round(quantity * (ing.averageCost ?? 0));
 
-        const [entry] = await tx
-          .insert(wasteEntries)
-          .values({
-            branchId,
-            ingredientId,
-            recipeId: null,
-            quantity,
-            category: data.category,
-            staffName: data.staffName,
-            notes: noteText,
-            valuation,
-            submittedBy: user.id,
-          })
-          .returning();
-        inserted.push(entry);
-
-        if (data.category === "Biaya Operasional") {
-          await tx.insert(operationalExpenses).values({
-            branchId,
-            wasteEntryId: entry.id,
-            category: "Biaya Operasional",
-            amount: valuation,
-            date: new Date().toISOString().split("T")[0],
-            notes: data.notes ?? `Auto-generated from Waste Entry ${entry.id}`,
-            submittedBy: user.id,
-          });
-        }
-
-        // Upsert-from-0 inventory deduction (allow-negative) — mirrors createWasteEntry.
-        const [inv] = await tx
-          .select()
-          .from(inventory)
-          .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, ingredientId)))
-          .for("update")
-          .limit(1);
-
-        const newQty = (inv?.quantity ?? 0) - quantity;
-        if (inv) {
-          await tx
-            .update(inventory)
-            .set({ quantity: newQty, lastUpdated: new Date() })
-            .where(eq(inventory.id, inv.id));
-        } else {
-          await tx.insert(inventory).values({
-            branchId,
-            ingredientId,
-            quantity: newQty,
-          });
-        }
-
-        await tx.insert(stockLedger).values({
+      const [entry] = await tx
+        .insert(wasteEntries)
+        .values({
           branchId,
           ingredientId,
-          type: "OUT",
+          recipeId: null,
           quantity,
-          balance: Math.round(newQty),
-          reference: entry.id,
-          notes: `Waste: ${data.category}${data.notes ? " - " + data.notes : ""}`,
+          category: data.category,
+          staffName: data.staffName,
+          notes: noteText,
+          valuation,
+          submittedBy: user.id,
+        })
+        .returning();
+      inserted.push(entry);
+
+      if (data.category === "Biaya Operasional") {
+        await tx.insert(operationalExpenses).values({
+          branchId,
+          wasteEntryId: entry.id,
+          category: "Biaya Operasional",
+          amount: valuation,
+          date: new Date().toISOString().split("T")[0],
+          notes: data.notes ?? `Auto-generated from Waste Entry ${entry.id}`,
+          submittedBy: user.id,
         });
       }
 
-      return inserted;
-    });
+      // Upsert-from-0 inventory deduction (allow-negative) — mirrors createWasteEntry.
+      const [inv] = await tx
+        .select()
+        .from(inventory)
+        .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, ingredientId)))
+        .for("update")
+        .limit(1);
 
-    await logSystemAction(
-      user,
-      "Create BOM Waste Entries",
-      `Waste BOM untuk "${recipe.name}" (${entries.length} bahan) dicatat oleh ${user.name}`,
-    );
-    for (const entry of entries) {
-      await logAudit(user, "wasteEntries", entry.id, "CREATE", undefined, entry);
+      const newQty = (inv?.quantity ?? 0) - quantity;
+      if (inv) {
+        await tx
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, inv.id));
+      } else {
+        await tx.insert(inventory).values({
+          branchId,
+          ingredientId,
+          quantity: newQty,
+        });
+      }
+
+      await tx.insert(stockLedger).values({
+        branchId,
+        ingredientId,
+        type: "OUT",
+        quantity,
+        balance: Math.round(newQty),
+        reference: entry.id,
+        notes: `Waste: ${data.category}${data.notes ? " - " + data.notes : ""}`,
+      });
     }
 
-    return entries;
+    return inserted;
   });
+
+  await logSystemAction(
+    user,
+    "Create BOM Waste Entries",
+    `Waste BOM untuk "${recipe.name}" (${entries.length} bahan) dicatat oleh ${user.name}`,
+  );
+  for (const entry of entries) {
+    await logAudit(user, "wasteEntries", entry.id, "CREATE", undefined, entry);
+  }
+
+  return entries;
+}

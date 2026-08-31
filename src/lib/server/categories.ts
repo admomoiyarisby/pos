@@ -3,6 +3,7 @@ import { db } from "#/lib/server/db";
 import { recipes, categories, recipeBranches } from "#/db/schema";
 import { and, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
+import type { AppUser } from "./auth";
 import { logSystemAction } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { z } from "zod";
@@ -83,50 +84,63 @@ const assignRecipesToCategoryInput = z.object({
   destinationCategoryId: z.string().uuid().optional(),
 });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function assignRecipesToCategoryCore(
+  user: AppUser,
+  data: z.output<typeof assignRecipesToCategoryInput>,
+) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    if (data.recipeIds.length > 0) {
+      await tx
+        .update(recipes)
+        .set({ categoryId: data.categoryId })
+        .where(inArray(recipes.id, data.recipeIds));
+    }
+
+    if (data.removedRecipeIds.length > 0 && data.destinationCategoryId) {
+      await tx
+        .update(recipes)
+        .set({ categoryId: data.destinationCategoryId })
+        .where(inArray(recipes.id, data.removedRecipeIds));
+    }
+  });
+
+  const cat = await db
+    .select({ name: categories.name })
+    .from(categories)
+    .where(eq(categories.id, data.categoryId))
+    .then((r) => r[0]);
+
+  const destCat = data.destinationCategoryId
+    ? await db
+        .select({ name: categories.name })
+        .from(categories)
+        .where(eq(categories.id, data.destinationCategoryId))
+        .then((r) => r[0])
+    : null;
+
+  await logSystemAction(
+    user,
+    "Assign Recipes to Category",
+    `${data.recipeIds.length} menu ke "${cat?.name ?? data.categoryId}"${data.removedRecipeIds.length > 0 && destCat ? `, ${data.removedRecipeIds.length} menu pindah ke "${destCat.name}"` : ""} oleh ${user.name}`,
+  );
+
+  return { success: true };
+}
+
 export const assignRecipesToCategory = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof assignRecipesToCategoryInput>) =>
     assignRecipesToCategoryInput.parse(data),
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    await db.transaction(async (tx) => {
-      if (data.recipeIds.length > 0) {
-        await tx
-          .update(recipes)
-          .set({ categoryId: data.categoryId })
-          .where(inArray(recipes.id, data.recipeIds));
-      }
-
-      if (data.removedRecipeIds.length > 0 && data.destinationCategoryId) {
-        await tx
-          .update(recipes)
-          .set({ categoryId: data.destinationCategoryId })
-          .where(inArray(recipes.id, data.removedRecipeIds));
-      }
-    });
-
-    const cat = await db
-      .select({ name: categories.name })
-      .from(categories)
-      .where(eq(categories.id, data.categoryId))
-      .then((r) => r[0]);
-
-    const destCat = data.destinationCategoryId
-      ? await db
-          .select({ name: categories.name })
-          .from(categories)
-          .where(eq(categories.id, data.destinationCategoryId))
-          .then((r) => r[0])
-      : null;
-
-    await logSystemAction(
-      user,
-      "Assign Recipes to Category",
-      `${data.recipeIds.length} menu ke "${cat?.name ?? data.categoryId}"${data.removedRecipeIds.length > 0 && destCat ? `, ${data.removedRecipeIds.length} menu pindah ke "${destCat.name}"` : ""} oleh ${user.name}`,
-    );
-
-    return { success: true };
+    return assignRecipesToCategoryCore(user, data);
   });
 
 const createCategoryInput = z.object({
@@ -134,23 +148,33 @@ const createCategoryInput = z.object({
   name: z.string().min(1).max(100),
 });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function createCategoryCore(user: AppUser, data: z.input<typeof createCategoryInput>) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  const [cat] = await db
+    .insert(categories)
+    .values({ code: data.code, name: data.name })
+    .returning({ id: categories.id, code: categories.code, name: categories.name });
+
+  await logSystemAction(
+    user,
+    "Create Category",
+    `Kategori "${cat.name}" (${cat.code}) dibuat oleh ${user.name}`,
+  );
+
+  return { category: cat };
+}
+
 export const createCategory = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof createCategoryInput>) => createCategoryInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    const [cat] = await db
-      .insert(categories)
-      .values({ code: data.code, name: data.name })
-      .returning({ id: categories.id, code: categories.code, name: categories.name });
-
-    await logSystemAction(
-      user,
-      "Create Category",
-      `Kategori "${cat.name}" (${cat.code}) dibuat oleh ${user.name}`,
-    );
-
-    return { category: cat };
+    return createCategoryCore(user, data);
   });
 
 const deleteCategoryInput = z.object({
@@ -158,37 +182,47 @@ const deleteCategoryInput = z.object({
   destinationCategoryId: z.string().uuid(),
 });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function deleteCategoryCore(user: AppUser, data: z.input<typeof deleteCategoryInput>) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  const cat = await db
+    .select({ name: categories.name, code: categories.code })
+    .from(categories)
+    .where(eq(categories.id, data.categoryId))
+    .then((r) => r[0]);
+
+  if (!cat) {
+    return { success: false, error: "Kategori tidak ditemukan" };
+  }
+
+  await db.transaction(async (tx) => {
+    // Reassign orphaned recipes to destination category
+    await tx
+      .update(recipes)
+      .set({ categoryId: data.destinationCategoryId })
+      .where(eq(recipes.categoryId, data.categoryId));
+
+    // Delete the category
+    await tx.delete(categories).where(eq(categories.id, data.categoryId));
+  });
+
+  await logSystemAction(
+    user,
+    "Delete Category",
+    `Kategori "${cat.name}" (${cat.code}) dihapus oleh ${user.name}`,
+  );
+
+  return { success: true };
+}
+
 export const deleteCategory = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof deleteCategoryInput>) => deleteCategoryInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    const cat = await db
-      .select({ name: categories.name, code: categories.code })
-      .from(categories)
-      .where(eq(categories.id, data.categoryId))
-      .then((r) => r[0]);
-
-    if (!cat) {
-      return { success: false, error: "Kategori tidak ditemukan" };
-    }
-
-    await db.transaction(async (tx) => {
-      // Reassign orphaned recipes to destination category
-      await tx
-        .update(recipes)
-        .set({ categoryId: data.destinationCategoryId })
-        .where(eq(recipes.categoryId, data.categoryId));
-
-      // Delete the category
-      await tx.delete(categories).where(eq(categories.id, data.categoryId));
-    });
-
-    await logSystemAction(
-      user,
-      "Delete Category",
-      `Kategori "${cat.name}" (${cat.code}) dihapus oleh ${user.name}`,
-    );
-
-    return { success: true };
+    return deleteCategoryCore(user, data);
   });

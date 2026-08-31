@@ -31,6 +31,20 @@ import {
 import { nextTransferCode, nextTransferInvoiceCode } from "./scm-transfer-codes";
 import { buildNotificationsForEvent, insertNotifications } from "./scm-transfer-notifications";
 
+/**
+ * Authorized-user shape passed to the user-parameterized Mutasi *core* functions
+ * (the real business logic that the `createServerFn` transport wrappers run).
+ * Mirrors what `requireAuth()` resolves: id, role, and the branch / AM branch
+ * set used by the branch and FSM guards. Integration tests impersonate users
+ * with this shape and call the cores directly.
+ */
+export type MutasiActorUser = {
+  id: string;
+  role: string;
+  branchId?: string;
+  assignedBranches?: string[] | null;
+};
+
 // -----------------------------------------------------------------------------
 // Soft stock check (Q9 / Phase 3.3.1)
 // -----------------------------------------------------------------------------
@@ -206,94 +220,97 @@ export interface CreateMutasiTransferResult {
   warnings: Array<{ ingredientId: string; requested: number; available: number }>;
 }
 
+export async function createMutasiTransferCore(
+  user: MutasiActorUser,
+  data: CreateMutasiTransferInput,
+): Promise<CreateMutasiTransferResult> {
+  // Branch-level guard: only branch_admin (at their own branch) or
+  // super_admin (on behalf of any branch) can create.
+  if (user.role !== "super_admin") {
+    if (user.role !== "branch_admin" || user.branchId !== data.fromBranchId) {
+      throw new Error("Only the Branch Admin at the sender branch can create a Mutasi transfer");
+    }
+  }
+  if (data.fromBranchId === data.toBranchId) {
+    throw new Error("Sender and receiver must be different branches");
+  }
+  if (!data.items.length) {
+    throw new Error("At least one item is required");
+  }
+
+  // Hard stock guardrail: block submit if any item exceeds available stock.
+  await hardStockCheck(data.fromBranchId, data.items);
+
+  // Soft stock check (kept for UX feedback — returns warnings alongside the result)
+  const warnings = await softStockCheck(data.fromBranchId, data.items);
+
+  // Snapshot the unitPrice from the global ingredients.averageCost at this
+  // moment. (Q11 / ADR 0006 sub-decision: matches Pengadaan's pattern in
+  // ADR 0003. Per-branch inventory.averageCost is a future migration.)
+  // Write-path defense: fold the shared branch-visibility clause into this
+  // query so restricted ingredients are excluded from avgById; then reject if
+  // any requested ingredient is missing. Central users (no branchId) are
+  // unfiltered.
+  const branchClause = branchVisibleClause({
+    linkTable: ingredientBranches,
+    linkRowId: ingredientBranches.ingredientId,
+    rowId: ingredients.id,
+    linkBranchId: ingredientBranches.branchId,
+    currentBranchId: user.branchId,
+  });
+  const ingredientRows = await db
+    .select({ id: ingredients.id, averageCost: ingredients.averageCost })
+    .from(ingredients)
+    .where(branchClause);
+  const avgById = new Map(ingredientRows.map((i) => [i.id, i.averageCost]));
+
+  const itemIngredientIds = [...new Set(data.items.map((it) => it.ingredientId))];
+  if (itemIngredientIds.some((id) => !avgById.has(id))) {
+    throw new Error("Forbidden: one or more ingredients are not available to your branch");
+  }
+
+  // Get branch code for document code generation
+  const [fromBranch] = await db
+    .select({ code: branches.code })
+    .from(branches)
+    .where(eq(branches.id, data.fromBranchId))
+    .limit(1);
+  if (!fromBranch) throw new Error("Sender branch not found");
+
+  const code = await nextTransferCode(fromBranch.code);
+
+  // Insert the transfer row
+  const [transfer] = await db
+    .insert(scmTransfers)
+    .values({
+      code,
+      fromBranchId: data.fromBranchId,
+      toBranchId: data.toBranchId,
+      status: "SuratJalanDraft",
+      requestedById: user.id,
+      notes: data.notes ?? null,
+    })
+    .returning();
+
+  // Insert the item rows
+  if (data.items.length > 0) {
+    await db.insert(scmTransferItems).values(
+      data.items.map((it, idx) => ({
+        scmTransferId: transfer.id,
+        ingredientId: it.ingredientId,
+        sortOrder: idx,
+        quantity: it.quantity,
+        unitPrice: avgById.get(it.ingredientId) ?? 0,
+      })),
+    );
+  }
+
+  return { transfer, warnings };
+}
+
 export const createMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: CreateMutasiTransferInput) => data)
-  .handler(async ({ data }): Promise<CreateMutasiTransferResult> => {
-    const user = await requireAuth();
-
-    // Branch-level guard: only branch_admin (at their own branch) or
-    // super_admin (on behalf of any branch) can create.
-    if (user.role !== "super_admin") {
-      if (user.role !== "branch_admin" || user.branchId !== data.fromBranchId) {
-        throw new Error("Only the Branch Admin at the sender branch can create a Mutasi transfer");
-      }
-    }
-    if (data.fromBranchId === data.toBranchId) {
-      throw new Error("Sender and receiver must be different branches");
-    }
-    if (!data.items.length) {
-      throw new Error("At least one item is required");
-    }
-
-    // Hard stock guardrail: block submit if any item exceeds available stock.
-    await hardStockCheck(data.fromBranchId, data.items);
-
-    // Soft stock check (kept for UX feedback — returns warnings alongside the result)
-    const warnings = await softStockCheck(data.fromBranchId, data.items);
-
-    // Snapshot the unitPrice from the global ingredients.averageCost at this
-    // moment. (Q11 / ADR 0006 sub-decision: matches Pengadaan's pattern in
-    // ADR 0003. Per-branch inventory.averageCost is a future migration.)
-    // Write-path defense: fold the shared branch-visibility clause into this
-    // query so restricted ingredients are excluded from avgById; then reject if
-    // any requested ingredient is missing. Central users (no branchId) are
-    // unfiltered.
-    const branchClause = branchVisibleClause({
-      linkTable: ingredientBranches,
-      linkRowId: ingredientBranches.ingredientId,
-      rowId: ingredients.id,
-      linkBranchId: ingredientBranches.branchId,
-      currentBranchId: user.branchId,
-    });
-    const ingredientRows = await db
-      .select({ id: ingredients.id, averageCost: ingredients.averageCost })
-      .from(ingredients)
-      .where(branchClause);
-    const avgById = new Map(ingredientRows.map((i) => [i.id, i.averageCost]));
-
-    const itemIngredientIds = [...new Set(data.items.map((it) => it.ingredientId))];
-    if (itemIngredientIds.some((id) => !avgById.has(id))) {
-      throw new Error("Forbidden: one or more ingredients are not available to your branch");
-    }
-
-    // Get branch code for document code generation
-    const [fromBranch] = await db
-      .select({ code: branches.code })
-      .from(branches)
-      .where(eq(branches.id, data.fromBranchId))
-      .limit(1);
-    if (!fromBranch) throw new Error("Sender branch not found");
-
-    const code = await nextTransferCode(fromBranch.code);
-
-    // Insert the transfer row
-    const [transfer] = await db
-      .insert(scmTransfers)
-      .values({
-        code,
-        fromBranchId: data.fromBranchId,
-        toBranchId: data.toBranchId,
-        status: "SuratJalanDraft",
-        requestedById: user.id,
-        notes: data.notes ?? null,
-      })
-      .returning();
-
-    // Insert the item rows
-    if (data.items.length > 0) {
-      await db.insert(scmTransferItems).values(
-        data.items.map((it, idx) => ({
-          scmTransferId: transfer.id,
-          ingredientId: it.ingredientId,
-          sortOrder: idx,
-          quantity: it.quantity,
-          unitPrice: avgById.get(it.ingredientId) ?? 0,
-        })),
-      );
-    }
-
-    return { transfer, warnings };
-  });
+  .handler(async ({ data }) => createMutasiTransferCore(await requireAuth(), data));
 
 // =============================================================================
 // UPDATE: in-draft item edits (not a state transition; no FSM call)
@@ -453,96 +470,158 @@ async function runTransition(args: {
 // TRANSITION wrappers — one per event
 // =============================================================================
 
+export async function submitMutasiTransferCore(
+  user: MutasiActorUser,
+  data: { transferId: string },
+) {
+  return runTransition({
+    transferId: data.transferId,
+    event: "submit",
+    user,
+    branchGuard: "sender",
+  });
+}
+
 export const submitMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    return runTransition({
-      transferId: data.transferId,
-      event: "submit",
-      user,
-      branchGuard: "sender",
-    });
+  .handler(async ({ data }) => submitMutasiTransferCore(await requireAuth(), data));
+
+export async function approveMutasiTransferCore(
+  user: MutasiActorUser,
+  data: { transferId: string; notes?: string },
+) {
+  if (user.role !== "area_manager" && user.role !== "super_admin") {
+    throw new Error("Only an Area Manager can approve a Mutasi transfer");
+  }
+  return runTransition({
+    transferId: data.transferId,
+    event: "approve",
+    user,
+    payload: { notes: data.notes },
   });
+}
 
 export const approveMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string; notes?: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    if (user.role !== "area_manager" && user.role !== "super_admin") {
-      throw new Error("Only an Area Manager can approve a Mutasi transfer");
-    }
-    return runTransition({
-      transferId: data.transferId,
-      event: "approve",
-      user,
-      payload: { notes: data.notes },
-    });
+  .handler(async ({ data }) => approveMutasiTransferCore(await requireAuth(), data));
+
+export async function rejectMutasiTransferCore(
+  user: MutasiActorUser,
+  data: { transferId: string; reason: string },
+) {
+  if (user.role !== "area_manager" && user.role !== "super_admin") {
+    throw new Error("Only an Area Manager can reject a Mutasi transfer");
+  }
+  if (!data.reason.trim()) throw new Error("A rejection reason is required");
+  return runTransition({
+    transferId: data.transferId,
+    event: "reject",
+    user,
+    payload: { reason: data.reason },
   });
+}
 
 export const rejectMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string; reason: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    if (user.role !== "area_manager" && user.role !== "super_admin") {
-      throw new Error("Only an Area Manager can reject a Mutasi transfer");
-    }
-    if (!data.reason.trim()) throw new Error("A rejection reason is required");
-    return runTransition({
-      transferId: data.transferId,
-      event: "reject",
-      user,
-      payload: { reason: data.reason },
-    });
+  .handler(async ({ data }) => rejectMutasiTransferCore(await requireAuth(), data));
+
+export async function withdrawMutasiTransferCore(
+  user: MutasiActorUser,
+  data: { transferId: string },
+) {
+  return runTransition({
+    transferId: data.transferId,
+    event: "withdraw",
+    user,
+    branchGuard: "sender",
   });
+}
 
 export const withdrawMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    return runTransition({
-      transferId: data.transferId,
-      event: "withdraw",
-      user,
-      branchGuard: "sender",
-    });
+  .handler(async ({ data }) => withdrawMutasiTransferCore(await requireAuth(), data));
+
+export async function shipMutasiTransferCore(user: MutasiActorUser, data: { transferId: string }) {
+  return runTransition({
+    transferId: data.transferId,
+    event: "ship",
+    user,
+    branchGuard: "sender",
   });
+}
 
 export const shipMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    return runTransition({
-      transferId: data.transferId,
-      event: "ship",
-      user,
-      branchGuard: "sender",
-    });
+  .handler(async ({ data }) => shipMutasiTransferCore(await requireAuth(), data));
+
+export async function markDeliveredMutasiTransferCore(
+  user: MutasiActorUser,
+  data: { transferId: string },
+) {
+  return runTransition({
+    transferId: data.transferId,
+    event: "mark-delivered",
+    user,
+    branchGuard: "receiver",
   });
+}
 
 export const markDeliveredMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    return runTransition({
-      transferId: data.transferId,
-      event: "mark-delivered",
-      user,
-      branchGuard: "receiver",
-    });
+  .handler(async ({ data }) => markDeliveredMutasiTransferCore(await requireAuth(), data));
+
+export async function openReceiveMutasiTransferCore(
+  user: MutasiActorUser,
+  data: { transferId: string },
+) {
+  return runTransition({
+    transferId: data.transferId,
+    event: "open-receive",
+    user,
+    branchGuard: "receiver",
   });
+}
 
 export const openReceiveMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    return runTransition({
-      transferId: data.transferId,
-      event: "open-receive",
-      user,
-      branchGuard: "receiver",
-    });
+  .handler(async ({ data }) => openReceiveMutasiTransferCore(await requireAuth(), data));
+
+export async function finishReceiveMutasiTransferCore(
+  user: MutasiActorUser,
+  data: {
+    transferId: string;
+    items: Array<{
+      id: string;
+      receivedQuantity: number;
+      rejectedQuantity: number;
+      reason?: string;
+    }>;
+  },
+) {
+  // Get the transfer to find the receiver branch code
+  const [transfer] = await db
+    .select({ toBranchId: scmTransfers.toBranchId })
+    .from(scmTransfers)
+    .where(eq(scmTransfers.id, data.transferId))
+    .limit(1);
+  if (!transfer) throw new Error("Transfer not found");
+
+  const [toBranch] = await db
+    .select({ code: branches.code })
+    .from(branches)
+    .where(eq(branches.id, transfer.toBranchId))
+    .limit(1);
+  if (!toBranch) throw new Error("Receiver branch not found");
+
+  const invoiceCode = await nextTransferInvoiceCode(toBranch.code);
+  return runTransition({
+    transferId: data.transferId,
+    event: "finish-receive",
+    user,
+    branchGuard: "receiver",
+    payload: { items: data.items, invoiceCode },
   });
+}
 
 export const finishReceiveMutasiTransfer = createServerFn({ method: "POST" })
   .validator(
@@ -556,55 +635,37 @@ export const finishReceiveMutasiTransfer = createServerFn({ method: "POST" })
       }>;
     }) => data,
   )
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
+  .handler(async ({ data }) => finishReceiveMutasiTransferCore(await requireAuth(), data));
 
-    // Get the transfer to find the receiver branch code
-    const [transfer] = await db
-      .select({ toBranchId: scmTransfers.toBranchId })
-      .from(scmTransfers)
-      .where(eq(scmTransfers.id, data.transferId))
-      .limit(1);
-    if (!transfer) throw new Error("Transfer not found");
-
-    const [toBranch] = await db
-      .select({ code: branches.code })
-      .from(branches)
-      .where(eq(branches.id, transfer.toBranchId))
-      .limit(1);
-    if (!toBranch) throw new Error("Receiver branch not found");
-
-    const invoiceCode = await nextTransferInvoiceCode(toBranch.code);
-    return runTransition({
-      transferId: data.transferId,
-      event: "finish-receive",
-      user,
-      branchGuard: "receiver",
-      payload: { items: data.items, invoiceCode },
-    });
+export async function markPaidMutasiTransferCore(
+  user: MutasiActorUser,
+  data: { transferId: string },
+) {
+  return runTransition({
+    transferId: data.transferId,
+    event: "mark-paid",
+    user,
+    branchGuard: "sender",
   });
+}
 
 export const markPaidMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    return runTransition({
-      transferId: data.transferId,
-      event: "mark-paid",
-      user,
-      branchGuard: "sender",
-    });
+  .handler(async ({ data }) => markPaidMutasiTransferCore(await requireAuth(), data));
+
+export async function cancelMutasiTransferCore(
+  user: MutasiActorUser,
+  data: { transferId: string; reason: string },
+) {
+  if (!data.reason.trim()) throw new Error("A cancellation reason is required");
+  return runTransition({
+    transferId: data.transferId,
+    event: "cancel",
+    user,
+    payload: { reason: data.reason },
   });
+}
 
 export const cancelMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string; reason: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    if (!data.reason.trim()) throw new Error("A cancellation reason is required");
-    return runTransition({
-      transferId: data.transferId,
-      event: "cancel",
-      user,
-      payload: { reason: data.reason },
-    });
-  });
+  .handler(async ({ data }) => cancelMutasiTransferCore(await requireAuth(), data));

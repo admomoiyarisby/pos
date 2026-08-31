@@ -16,11 +16,15 @@ import {
 import {
   SCM_PROCUREMENT_EVENT_VALUES,
   UpdateItemPatchSchema,
+  type ScmProcurementEvent,
   type ScmProcurementStatus,
+  type TransitionResult,
+  type UpdateItemPatch,
+  type UpdateItemResult,
 } from "./scm-fsm";
 import { availableEvents, transition, updateItem } from "./scm-fsm";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
-import { FsmPayloadSchema } from "./scm-effects";
+import { FsmPayloadSchema, type FsmPayload } from "./scm-effects";
 import { z } from "zod";
 import { generateDocumentCode } from "./document-codes";
 
@@ -68,6 +72,110 @@ async function assertProcurementAccess(
 // createProcurement
 // =============================================================================
 
+export async function createProcurementCore(
+  user: { id: string; role: string; branchId?: string },
+  data: {
+    branchId: string;
+    items: Array<{
+      ingredientId: string;
+      quantity: number;
+      sortOrder?: number;
+    }>;
+    notes?: string;
+    requestSource?: string;
+  },
+) {
+  if (user.role !== "branch_admin" && user.role !== "super_admin") {
+    throw new Error("Only branch_admin or super_admin can create a procurement");
+  }
+
+  // Branch guard: a branch_admin may only request stock for their own
+  // branch (super_admin can create on behalf of any branch). Previously
+  // any branch_admin could create a PR for an arbitrary branchId.
+  assertProcurementBranchAccess(user, data.branchId);
+
+  // Look up branch code for the document code format:
+  // PR/<branch_code>/ddmmyy/serial (see document-codes.ts)
+  const [branch] = await db
+    .select({ code: branches.code })
+    .from(branches)
+    .where(eq(branches.id, data.branchId))
+    .limit(1);
+  if (!branch) throw new Error("Branch not found");
+
+  const code = await generateDocumentCode("PR", branch.code);
+
+  const [proc] = await db
+    .insert(scmProcurements)
+    .values({
+      code,
+      branchId: data.branchId,
+      status: "Draft",
+      requestedById: user.id,
+      notes: data.notes,
+      requestSource: data.requestSource,
+    })
+    .returning();
+
+  if (!proc) throw new Error("Failed to create procurement");
+
+  if (data.items.length > 0) {
+    // Snapshot unitPrice from ingredients.averageCost for each item
+    // (ADR 0003). One query for all items, then a Map lookup in the
+    // insert below. If an ingredient somehow doesn't exist (FK
+    // guarantees it does at insert time, but defensively), unitPrice
+    // is null and the invoice will show Rp 0 for that line.
+    // Write-path defense: only ingredients visible to the caller's branch may
+    // be added. Folding the shared clause into this query drops any restricted
+    // (or non-existent) ingredient from priceById; we then reject if any
+    // requested id is missing. Central users (no branchId) are unfiltered.
+    const ingredientIds = data.items.map((it) => it.ingredientId);
+    const priceRows = await db
+      .select({ id: ingredients.id, averageCost: ingredients.averageCost })
+      .from(ingredients)
+      .where(
+        and(
+          inArray(ingredients.id, ingredientIds),
+          branchVisibleClause({
+            linkTable: ingredientBranches,
+            linkRowId: ingredientBranches.ingredientId,
+            rowId: ingredients.id,
+            linkBranchId: ingredientBranches.branchId,
+            currentBranchId: user.branchId,
+          }),
+        ),
+      );
+    const priceById = new Map(priceRows.map((p) => [p.id, p.averageCost]));
+    const uniqueIngredientIds = [...new Set(ingredientIds)];
+    if (uniqueIngredientIds.some((id) => !priceById.has(id))) {
+      throw new Error("Forbidden: one or more ingredients are not available to your branch");
+    }
+
+    await db.insert(scmProcurementItems).values(
+      data.items.map((it, idx) => ({
+        scmProcurementId: proc.id,
+        ingredientId: it.ingredientId,
+        quantity: it.quantity,
+        sortOrder: it.sortOrder ?? idx,
+        unitPrice: priceById.get(it.ingredientId) ?? null,
+      })),
+    );
+  }
+
+  // Audit log: 'create' event
+  await db.insert(scmProcurementAuditLog).values({
+    scmProcurementId: proc.id,
+    event: "create",
+    fromState: null,
+    toState: "Draft",
+    actorId: user.id,
+    actorRole: user.role,
+    note: null,
+  });
+
+  return { id: proc.id, code: proc.code };
+}
+
 export const createProcurement = createServerFn({ method: "POST" })
   .validator(
     (data: {
@@ -81,95 +189,9 @@ export const createProcurement = createServerFn({ method: "POST" })
       requestSource?: string;
     }) => data,
   )
-  .handler(async ({ data }) => {
-    const user = await requireRole("branch_admin", "super_admin");
-
-    // Branch guard: a branch_admin may only request stock for their own
-    // branch (super_admin can create on behalf of any branch). Previously
-    // any branch_admin could create a PR for an arbitrary branchId.
-    assertProcurementBranchAccess(user, data.branchId);
-
-    // Look up branch code for the document code format:
-    // PR/<branch_code>/ddmmyy/serial (see document-codes.ts)
-    const [branch] = await db
-      .select({ code: branches.code })
-      .from(branches)
-      .where(eq(branches.id, data.branchId))
-      .limit(1);
-    if (!branch) throw new Error("Branch not found");
-
-    const code = await generateDocumentCode("PR", branch.code);
-
-    const [proc] = await db
-      .insert(scmProcurements)
-      .values({
-        code,
-        branchId: data.branchId,
-        status: "Draft",
-        requestedById: user.id,
-        notes: data.notes,
-        requestSource: data.requestSource,
-      })
-      .returning();
-
-    if (!proc) throw new Error("Failed to create procurement");
-
-    if (data.items.length > 0) {
-      // Snapshot unitPrice from ingredients.averageCost for each item
-      // (ADR 0003). One query for all items, then a Map lookup in the
-      // insert below. If an ingredient somehow doesn't exist (FK
-      // guarantees it does at insert time, but defensively), unitPrice
-      // is null and the invoice will show Rp 0 for that line.
-      // Write-path defense: only ingredients visible to the caller's branch may
-      // be added. Folding the shared clause into this query drops any restricted
-      // (or non-existent) ingredient from priceById; we then reject if any
-      // requested id is missing. Central users (no branchId) are unfiltered.
-      const ingredientIds = data.items.map((it) => it.ingredientId);
-      const priceRows = await db
-        .select({ id: ingredients.id, averageCost: ingredients.averageCost })
-        .from(ingredients)
-        .where(
-          and(
-            inArray(ingredients.id, ingredientIds),
-            branchVisibleClause({
-              linkTable: ingredientBranches,
-              linkRowId: ingredientBranches.ingredientId,
-              rowId: ingredients.id,
-              linkBranchId: ingredientBranches.branchId,
-              currentBranchId: user.branchId,
-            }),
-          ),
-        );
-      const priceById = new Map(priceRows.map((p) => [p.id, p.averageCost]));
-      const uniqueIngredientIds = [...new Set(ingredientIds)];
-      if (uniqueIngredientIds.some((id) => !priceById.has(id))) {
-        throw new Error("Forbidden: one or more ingredients are not available to your branch");
-      }
-
-      await db.insert(scmProcurementItems).values(
-        data.items.map((it, idx) => ({
-          scmProcurementId: proc.id,
-          ingredientId: it.ingredientId,
-          quantity: it.quantity,
-          sortOrder: it.sortOrder ?? idx,
-          unitPrice: priceById.get(it.ingredientId) ?? null,
-        })),
-      );
-    }
-
-    // Audit log: 'create' event
-    await db.insert(scmProcurementAuditLog).values({
-      scmProcurementId: proc.id,
-      event: "create",
-      fromState: null,
-      toState: "Draft",
-      actorId: user.id,
-      actorRole: user.role,
-      note: null,
-    });
-
-    return { id: proc.id, code: proc.code };
-  });
+  .handler(async ({ data }) =>
+    createProcurementCore(await requireRole("branch_admin", "super_admin"), data),
+  );
 
 // =============================================================================
 // listProcurements
@@ -377,20 +399,27 @@ export interface ScmProcurementInvoiceLineItem {
  * can change a procurement's state. The wrapper does input validation and
  * returns either { success: true, status } or { success: false, error }.
  */
+export async function transitionProcurementCore(
+  user: { id: string; role: string },
+  data: { procurementId: string; event: ScmProcurementEvent; payload: FsmPayload },
+): Promise<TransitionResult> {
+  return transition(data.procurementId, data.event, data.payload, { id: user.id, role: user.role });
+}
+
 export const transitionProcurement = createServerFn({ method: "POST" })
   .validator((data: { procurementId: string; event: string; payload?: UnknownRecord }) => ({
     procurementId: data.procurementId,
     event: z.enum(SCM_PROCUREMENT_EVENT_VALUES).parse(data.event),
     payload: FsmPayloadSchema.parse(data.payload ?? {}),
   }))
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    const result = await transition(data.procurementId, data.event, data.payload, {
-      id: user.id,
-      role: user.role,
-    });
-    return result;
-  });
+  .handler(async ({ data }) => transitionProcurementCore(await requireAuth(), data));
+
+export async function updateProcurementItemCore(
+  user: { id: string; role: string },
+  data: { procurementId: string; itemId: string; patch: UpdateItemPatch },
+): Promise<UpdateItemResult> {
+  return updateItem(data.procurementId, data.itemId, data.patch, { id: user.id, role: user.role });
+}
 
 export const updateProcurementItem = createServerFn({ method: "POST" })
   .validator((data: { procurementId: string; itemId: string; patch: UnknownRecord }) => ({
@@ -398,14 +427,7 @@ export const updateProcurementItem = createServerFn({ method: "POST" })
     itemId: data.itemId,
     patch: UpdateItemPatchSchema.parse(data.patch),
   }))
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    const result = await updateItem(data.procurementId, data.itemId, data.patch, {
-      id: user.id,
-      role: user.role,
-    });
-    return result;
-  });
+  .handler(async ({ data }) => updateProcurementItemCore(await requireAuth(), data));
 
 // =============================================================================
 // addProcurementItem (Draft-only)

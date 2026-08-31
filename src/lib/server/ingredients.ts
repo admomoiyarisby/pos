@@ -4,6 +4,7 @@ import { ingredients, recipeIngredients, ingredientBranches } from "#/db/schema"
 import { eq, and, ne } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
+import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
@@ -145,25 +146,37 @@ export const createIngredient = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof ingredientInput>) => ingredientInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat", "central_kitchen");
-
-    const { branchIds, ...ingredientValues } = data;
-    const [result] = await db.insert(ingredients).values(ingredientValues).returning();
-
-    if (branchIds?.length) {
-      await db
-        .insert(ingredientBranches)
-        .values(branchIds.map((branchId) => ({ ingredientId: result.id, branchId })));
-    }
-
-    await logSystemAction(
-      user,
-      "Create Ingredient",
-      `Bahan baku "${result.name}" (${result.code}) dibuat oleh ${user.name}`,
-    );
-    await logAudit(user, "ingredients", result.id, "CREATE", undefined, result);
-
-    return result;
+    return createIngredientCore(user, data);
   });
+
+/** The business logic behind `createIngredient`, parameterized by an explicit
+ *  user so it can be driven directly (e.g. from integration tests). Mirrors
+ *  the wrapper's `requireRole(...)` guard. */
+export async function createIngredientCore(user: AppUser, data: z.input<typeof ingredientInput>) {
+  if (!["super_admin", "admin_pusat", "central_kitchen"].includes(user.role)) {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat | central_kitchen)`,
+    );
+  }
+
+  const { branchIds, ...ingredientValues } = data;
+  const [result] = await db.insert(ingredients).values(ingredientValues).returning();
+
+  if (branchIds?.length) {
+    await db
+      .insert(ingredientBranches)
+      .values(branchIds.map((branchId) => ({ ingredientId: result.id, branchId })));
+  }
+
+  await logSystemAction(
+    user,
+    "Create Ingredient",
+    `Bahan baku "${result.name}" (${result.code}) dibuat oleh ${user.name}`,
+  );
+  await logAudit(user, "ingredients", result.id, "CREATE", undefined, result);
+
+  return result;
+}
 
 // Same partial-update trap as updateRecipe: `ingredientInput` defaults
 // rop/roq/moq/countable, and zod re-applies those defaults for keys absent from
@@ -186,47 +199,60 @@ export const updateIngredient = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof updateIngredientInput>) => updateIngredientInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat", "central_kitchen");
+    return updateIngredientCore(user, data);
+  });
 
-    const { id, branchIds, ...updates } = data;
+export async function updateIngredientCore(
+  user: AppUser,
+  data: z.infer<typeof updateIngredientInput>,
+) {
+  if (!["super_admin", "admin_pusat", "central_kitchen"].includes(user.role)) {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat | central_kitchen)`,
+    );
+  }
 
-    const [old] = await db.select().from(ingredients).where(eq(ingredients.id, id)).limit(1);
+  const { id, branchIds, ...updates } = data;
 
-    // Branch visibility delete+insert must be atomic — a bad branchId must not leave
-    // 0 rows (visible everywhere). Wrap base update + branch links in one txn.
-    const [result] = await db.transaction(async (tx) => {
-      const [r] = await tx
-        .update(ingredients)
-        .set({ ...updates, updatedAt: new Date() })
-        .where(eq(ingredients.id, id))
-        .returning();
+  const [old] = await db.select().from(ingredients).where(eq(ingredients.id, id)).limit(1);
+  if (!old) throw new Error("Ingredient not found");
 
-      // Update branch visibility (mirrors updateRecipe): empty array = all branches.
-      if (branchIds !== undefined && branchIds !== null) {
-        await tx.delete(ingredientBranches).where(eq(ingredientBranches.ingredientId, id));
-        if (branchIds.length > 0) {
-          await tx
-            .insert(ingredientBranches)
-            .values(branchIds.map((branchId) => ({ ingredientId: id, branchId })));
-        }
+  // Branch visibility delete+insert must be atomic — a bad branchId must not leave
+  // 0 rows (visible everywhere). Wrap base update + branch links in one txn.
+  const [result] = await db.transaction(async (tx) => {
+    const [r] = await tx
+      .update(ingredients)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(ingredients.id, id))
+      .returning();
+
+    // Update branch visibility (mirrors updateRecipe): empty array = all branches.
+    if (branchIds !== undefined && branchIds !== null) {
+      await tx.delete(ingredientBranches).where(eq(ingredientBranches.ingredientId, id));
+      if (branchIds.length > 0) {
+        await tx
+          .insert(ingredientBranches)
+          .values(branchIds.map((branchId) => ({ ingredientId: id, branchId })));
       }
-
-      return [r];
-    });
-
-    // Trigger BOM cost roll-up if averageCost changed
-    if ("averageCost" in updates) {
-      await recalculateRecipeCostsForIngredient(id);
     }
 
-    await logSystemAction(
-      user,
-      "Update Ingredient",
-      `Bahan baku "${result.name}" diperbarui oleh ${user.name}`,
-    );
-    await logAudit(user, "ingredients", id, "UPDATE", old, result);
-
-    return result;
+    return [r];
   });
+
+  // Trigger BOM cost roll-up if averageCost changed
+  if ("averageCost" in updates) {
+    await recalculateRecipeCostsForIngredient(id);
+  }
+
+  await logSystemAction(
+    user,
+    "Update Ingredient",
+    `Bahan baku "${result.name}" diperbarui oleh ${user.name}`,
+  );
+  await logAudit(user, "ingredients", id, "UPDATE", old, result);
+
+  return result;
+}
 
 // =============================================================================
 // DELETE INGREDIENT (SOFT DELETE)
@@ -241,45 +267,57 @@ export const deleteIngredient = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof deleteIngredientInput>) => deleteIngredientInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat", "central_kitchen");
-
-    const { id, hardDelete } = data;
-
-    // Check if ingredient is referenced in any recipe
-    const [recipeRefCount] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(recipeIngredients)
-      .where(eq(recipeIngredients.ingredientId, id))
-      .limit(1);
-
-    const referencedInRecipes = recipeRefCount?.count ?? 0;
-
-    if (hardDelete && referencedInRecipes > 0) {
-      throw new Error(
-        `Cannot hard delete ingredient referenced in ${referencedInRecipes} recipe(s). Use soft delete or remove from recipes first.`,
-      );
-    }
-
-    const [old] = await db.select().from(ingredients).where(eq(ingredients.id, id)).limit(1);
-
-    if (!old) {
-      throw new Error("Ingredient not found");
-    }
-
-    // Soft delete tombstone (ADR-0009 mirror): status → Deleted. The row is
-    // preserved for historical references, hidden from every list, and restore
-    // is DB-only (the UI never re-activates a Deleted ingredient).
-    const [result] = await db
-      .update(ingredients)
-      .set({ status: "Deleted", updatedAt: new Date() })
-      .where(eq(ingredients.id, id))
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Delete Ingredient",
-      `Bahan baku "${old.name}" (${old.code}) dihapus oleh ${user.name}`,
-    );
-    await logAudit(user, "ingredients", id, "DELETE", old, result);
-
-    return { success: true, wasSoftDelete: true };
+    return deleteIngredientCore(user, data);
   });
+
+export async function deleteIngredientCore(
+  user: AppUser,
+  data: z.infer<typeof deleteIngredientInput>,
+) {
+  if (!["super_admin", "admin_pusat", "central_kitchen"].includes(user.role)) {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat | central_kitchen)`,
+    );
+  }
+
+  const { id, hardDelete } = data;
+
+  // Check if ingredient is referenced in any recipe
+  const [recipeRefCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(recipeIngredients)
+    .where(eq(recipeIngredients.ingredientId, id))
+    .limit(1);
+
+  const referencedInRecipes = recipeRefCount?.count ?? 0;
+
+  if (hardDelete && referencedInRecipes > 0) {
+    throw new Error(
+      `Cannot hard delete ingredient referenced in ${referencedInRecipes} recipe(s). Use soft delete or remove from recipes first.`,
+    );
+  }
+
+  const [old] = await db.select().from(ingredients).where(eq(ingredients.id, id)).limit(1);
+
+  if (!old) {
+    throw new Error("Ingredient not found");
+  }
+
+  // Soft delete tombstone (ADR-0009 mirror): status → Deleted. The row is
+  // preserved for historical references, hidden from every list, and restore
+  // is DB-only (the UI never re-activates a Deleted ingredient).
+  const [result] = await db
+    .update(ingredients)
+    .set({ status: "Deleted", updatedAt: new Date() })
+    .where(eq(ingredients.id, id))
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Delete Ingredient",
+    `Bahan baku "${old.name}" (${old.code}) dihapus oleh ${user.name}`,
+  );
+  await logAudit(user, "ingredients", id, "DELETE", old, result);
+
+  return { success: true, wasSoftDelete: true };
+}

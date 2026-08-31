@@ -28,6 +28,7 @@ import {
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole } from "./auth";
+import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, formatRupiah } from "./html-utils";
 
@@ -238,39 +239,100 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
     }));
   });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function upsertDailyOverrideCore(
+  user: AppUser,
+  data: { branchId: string; date: string; field: string; value: number },
+) {
+  if (user.role !== "super_admin") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin)`,
+    );
+  }
+
+  const existing = await db
+    .select()
+    .from(dailyOverrides)
+    .where(
+      and(
+        eq(dailyOverrides.branchId, data.branchId),
+        eq(dailyOverrides.date, data.date),
+        eq(dailyOverrides.field, data.field),
+      ),
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    await db
+      .update(dailyOverrides)
+      .set({ value: data.value, updatedAt: new Date() })
+      .where(eq(dailyOverrides.id, existing[0].id));
+  } else {
+    await db.insert(dailyOverrides).values({
+      branchId: data.branchId,
+      date: data.date,
+      field: data.field,
+      value: data.value,
+    });
+  }
+
+  return { success: true };
+}
+
 export const upsertDailyOverride = createServerFn({ method: "POST" })
   .validator((data: { branchId: string; date: string; field: string; value: number }) => data)
   .handler(async ({ data }) => {
-    await requireRole("super_admin");
-
-    const existing = await db
-      .select()
-      .from(dailyOverrides)
-      .where(
-        and(
-          eq(dailyOverrides.branchId, data.branchId),
-          eq(dailyOverrides.date, data.date),
-          eq(dailyOverrides.field, data.field),
-        ),
-      )
-      .limit(1);
-
-    if (existing.length > 0) {
-      await db
-        .update(dailyOverrides)
-        .set({ value: data.value, updatedAt: new Date() })
-        .where(eq(dailyOverrides.id, existing[0].id));
-    } else {
-      await db.insert(dailyOverrides).values({
-        branchId: data.branchId,
-        date: data.date,
-        field: data.field,
-        value: data.value,
-      });
-    }
-
-    return { success: true };
+    const user = await requireRole("super_admin");
+    return upsertDailyOverrideCore(user, data);
   });
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function createManualRevenueCore(
+  user: AppUser,
+  data: {
+    branchId: string;
+    date: string;
+    amount: number;
+    brandBreakdown?: { brandId: string; amount: number }[];
+    notes?: string;
+  },
+) {
+  if (user.role !== "super_admin") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin)`,
+    );
+  }
+
+  const [revenue] = await db
+    .insert(manualRevenues)
+    .values({
+      branchId: data.branchId,
+      date: data.date,
+      amount: data.amount,
+      notes: data.notes,
+      submittedBy: user.id,
+    })
+    .returning();
+
+  if (data.brandBreakdown?.length) {
+    await db.insert(manualRevenueBrandBreakdowns).values(
+      data.brandBreakdown.map((b) => ({
+        manualRevenueId: revenue.id,
+        brandId: b.brandId,
+        amount: b.amount,
+      })),
+    );
+  }
+
+  await logSystemAction(
+    user,
+    "Create Manual Revenue",
+    `Manual revenue Rp${data.amount.toLocaleString()} (${data.branchId}) dicatat oleh ${user.name}`,
+  );
+  await logAudit(user, "revenues", revenue.id, "CREATE", undefined, revenue);
+
+  return revenue;
+}
 
 export const createManualRevenue = createServerFn({ method: "POST" })
   .validator(
@@ -284,36 +346,7 @@ export const createManualRevenue = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
-
-    const [revenue] = await db
-      .insert(manualRevenues)
-      .values({
-        branchId: data.branchId,
-        date: data.date,
-        amount: data.amount,
-        notes: data.notes,
-        submittedBy: user.id,
-      })
-      .returning();
-
-    if (data.brandBreakdown?.length) {
-      await db.insert(manualRevenueBrandBreakdowns).values(
-        data.brandBreakdown.map((b) => ({
-          manualRevenueId: revenue.id,
-          brandId: b.brandId,
-          amount: b.amount,
-        })),
-      );
-    }
-
-    await logSystemAction(
-      user,
-      "Create Manual Revenue",
-      `Manual revenue Rp${data.amount.toLocaleString()} (${data.branchId}) dicatat oleh ${user.name}`,
-    );
-    await logAudit(user, "revenues", revenue.id, "CREATE", undefined, revenue);
-
-    return revenue;
+    return createManualRevenueCore(user, data);
   });
 
 export const getChannelRevenues = createServerFn({ method: "GET" })
@@ -335,6 +368,45 @@ export const getChannelRevenues = createServerFn({ method: "GET" })
     return result;
   });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function createChannelRevenueCore(
+  user: AppUser,
+  data: {
+    branchId: string;
+    date: string;
+    channel: (typeof ORDER_CHANNEL_VALUES)[number];
+    amount: number;
+    notes?: string;
+  },
+) {
+  if (user.role !== "super_admin") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin)`,
+    );
+  }
+
+  const [revenue] = await db
+    .insert(channelRevenues)
+    .values({
+      branchId: data.branchId,
+      date: data.date,
+      channel: data.channel,
+      amount: data.amount,
+      notes: data.notes,
+      submittedBy: user.id,
+    })
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Create Channel Revenue",
+    `Channel revenue Rp${data.amount.toLocaleString()} (${data.channel}) dicatat oleh ${user.name}`,
+  );
+  await logAudit(user, "revenues", revenue.id, "CREATE", undefined, revenue);
+
+  return revenue;
+}
+
 export const createChannelRevenue = createServerFn({ method: "POST" })
   .validator(
     (data: {
@@ -347,27 +419,7 @@ export const createChannelRevenue = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
-
-    const [revenue] = await db
-      .insert(channelRevenues)
-      .values({
-        branchId: data.branchId,
-        date: data.date,
-        channel: data.channel,
-        amount: data.amount,
-        notes: data.notes,
-        submittedBy: user.id,
-      })
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Create Channel Revenue",
-      `Channel revenue Rp${data.amount.toLocaleString()} (${data.channel}) dicatat oleh ${user.name}`,
-    );
-    await logAudit(user, "revenues", revenue.id, "CREATE", undefined, revenue);
-
-    return revenue;
+    return createChannelRevenueCore(user, data);
   });
 
 // ─── Manual Expenses ───
@@ -401,6 +453,39 @@ export const getManualExpenses = createServerFn({ method: "GET" })
     return result;
   });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function createManualExpenseCore(
+  user: AppUser,
+  data: { branchId: string; date: string; category: string; amount: number; notes?: string },
+) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  const [expense] = await db
+    .insert(operationalExpenses)
+    .values({
+      branchId: data.branchId,
+      date: data.date,
+      category: data.category,
+      amount: data.amount,
+      notes: data.notes,
+      submittedBy: user.id,
+    })
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Create Manual Expense",
+    `Manual expense Rp${data.amount.toLocaleString()} (${data.category}) dicatat oleh ${user.name}`,
+  );
+  await logAudit(user, "expenses", expense.id, "CREATE", undefined, expense);
+
+  return expense;
+}
+
 export const createManualExpense = createServerFn({ method: "POST" })
   .validator(
     (data: { branchId: string; date: string; category: string; amount: number; notes?: string }) =>
@@ -408,54 +493,44 @@ export const createManualExpense = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    const [expense] = await db
-      .insert(operationalExpenses)
-      .values({
-        branchId: data.branchId,
-        date: data.date,
-        category: data.category,
-        amount: data.amount,
-        notes: data.notes,
-        submittedBy: user.id,
-      })
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Create Manual Expense",
-      `Manual expense Rp${data.amount.toLocaleString()} (${data.category}) dicatat oleh ${user.name}`,
-    );
-    await logAudit(user, "expenses", expense.id, "CREATE", undefined, expense);
-
-    return expense;
+    return createManualExpenseCore(user, data);
   });
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function deleteManualExpenseCore(user: AppUser, data: { id: string }) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  const [expense] = await db
+    .select()
+    .from(operationalExpenses)
+    .where(eq(operationalExpenses.id, data.id))
+    .limit(1);
+
+  if (!expense) {
+    throw new Error("Pengeluaran tidak ditemukan");
+  }
+
+  await db.delete(operationalExpenses).where(eq(operationalExpenses.id, data.id));
+
+  await logSystemAction(
+    user,
+    "Delete Manual Expense",
+    `Manual expense Rp${expense.amount.toLocaleString()} (${expense.category}) dihapus oleh ${user.name}`,
+  );
+  await logAudit(user, "expenses", expense.id, "DELETE", expense, undefined);
+
+  return { success: true };
+}
 
 export const deleteManualExpense = createServerFn({ method: "POST" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    const [expense] = await db
-      .select()
-      .from(operationalExpenses)
-      .where(eq(operationalExpenses.id, data.id))
-      .limit(1);
-
-    if (!expense) {
-      throw new Error("Pengeluaran tidak ditemukan");
-    }
-
-    await db.delete(operationalExpenses).where(eq(operationalExpenses.id, data.id));
-
-    await logSystemAction(
-      user,
-      "Delete Manual Expense",
-      `Manual expense Rp${expense.amount.toLocaleString()} (${expense.category}) dihapus oleh ${user.name}`,
-    );
-    await logAudit(user, "expenses", expense.id, "DELETE", expense, undefined);
-
-    return { success: true };
+    return deleteManualExpenseCore(user, data);
   });
 
 // ─── Analytics ───
@@ -571,253 +646,270 @@ export const getPeriodDetail = createServerFn({ method: "GET" })
     return { ...period, balances };
   });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function openPeriodCore(user: AppUser, data: { periodName: string }) {
+  if (user.role !== "super_admin") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin)`,
+    );
+  }
+
+  // Check if there's an existing open period
+  const [existingOpen] = await db
+    .select()
+    .from(periodLogs)
+    .where(eq(periodLogs.status, "Open"))
+    .limit(1);
+
+  if (existingOpen) {
+    throw new Error("Tutup periode yang sedang aktif terlebih dahulu");
+  }
+
+  // Get current inventory as opening balances
+  const currentInv = await db.select().from(inventory);
+
+  const [period] = await db
+    .insert(periodLogs)
+    .values({
+      periodName: data.periodName,
+      status: "Open",
+      openedAt: new Date(),
+      openedBy: user.id,
+    })
+    .returning();
+
+  // Create opening balances
+  for (const inv of currentInv) {
+    await db.insert(periodBalances).values({
+      periodLogId: period.id,
+      branchId: inv.branchId,
+      ingredientId: inv.ingredientId,
+      balanceType: "opening",
+      quantity: inv.quantity,
+    });
+  }
+
+  await logSystemAction(
+    user,
+    "Open Period",
+    `Periode "${data.periodName}" dibuka oleh ${user.name}`,
+  );
+  await logAudit(user, "periodLogs", period.id, "CREATE", undefined, period);
+
+  return period;
+}
+
 export const openPeriod = createServerFn({ method: "POST" })
   .validator((data: { periodName: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
-
-    // Check if there's an existing open period
-    const [existingOpen] = await db
-      .select()
-      .from(periodLogs)
-      .where(eq(periodLogs.status, "Open"))
-      .limit(1);
-
-    if (existingOpen) {
-      throw new Error("Tutup periode yang sedang aktif terlebih dahulu");
-    }
-
-    // Get current inventory as opening balances
-    const currentInv = await db.select().from(inventory);
-
-    const [period] = await db
-      .insert(periodLogs)
-      .values({
-        periodName: data.periodName,
-        status: "Open",
-        openedAt: new Date(),
-        openedBy: user.id,
-      })
-      .returning();
-
-    // Create opening balances
-    for (const inv of currentInv) {
-      await db.insert(periodBalances).values({
-        periodLogId: period.id,
-        branchId: inv.branchId,
-        ingredientId: inv.ingredientId,
-        balanceType: "opening",
-        quantity: inv.quantity,
-      });
-    }
-
-    await logSystemAction(
-      user,
-      "Open Period",
-      `Periode "${data.periodName}" dibuka oleh ${user.name}`,
-    );
-    await logAudit(user, "periodLogs", period.id, "CREATE", undefined, period);
-
-    return period;
+    return openPeriodCore(user, data);
   });
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function closePeriodCore(user: AppUser, data: { periodId: string }) {
+  if (user.role !== "super_admin") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin)`,
+    );
+  }
+
+  const [period] = await db
+    .select()
+    .from(periodLogs)
+    .where(eq(periodLogs.id, data.periodId))
+    .limit(1);
+
+  if (!period) throw new Error("Periode tidak ditemukan");
+  if (period.status !== "Open") throw new Error("Periode sudah ditutup");
+
+  // Exhaustive verification checklist
+  const checks: { name: string; passed: boolean; message: string }[] = [];
+
+  // 1. Check all SO are approved
+  const pendingSO = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(stockOpnames)
+    .where(
+      and(
+        gte(stockOpnames.createdAt, period.openedAt),
+        eq(stockOpnames.status, "Under Investigation"),
+      ),
+    );
+  const soPassed = (pendingSO[0]?.count ?? 0) === 0;
+  checks.push({
+    name: "Stock Opname",
+    passed: soPassed,
+    message: soPassed
+      ? "Semua SO sudah approved"
+      : `${pendingSO[0]?.count ?? 0} SO masih Under Investigation`,
+  });
+
+  // 2. Check no pending cancel requests
+  const pendingCancels = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(cancelRequests)
+    .where(eq(cancelRequests.status, "Pending"));
+  const cancelPassed = (pendingCancels[0]?.count ?? 0) === 0;
+  checks.push({
+    name: "Cancel Requests",
+    passed: cancelPassed,
+    message: cancelPassed
+      ? "Tidak ada request cancel pending"
+      : `${pendingCancels[0]?.count ?? 0} cancel request pending`,
+  });
+
+  // 3. Check no unpaid SCM invoices
+  const unpaidInvoices = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(scmInvoices)
+    .where(eq(scmInvoices.status, "Unpaid"));
+  const invoicePassed = (unpaidInvoices[0]?.count ?? 0) === 0;
+  checks.push({
+    name: "Invoice SCM",
+    passed: invoicePassed,
+    message: invoicePassed
+      ? "Semua invoice sudah dibayar"
+      : `${unpaidInvoices[0]?.count ?? 0} invoice belum dibayar`,
+  });
+
+  // 4. Check no negative inventory
+  const negativeInv = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(inventory)
+    .where(lte(inventory.quantity, 0));
+  const negInvPassed = (negativeInv[0]?.count ?? 0) === 0;
+  checks.push({
+    name: "Stok Negatif",
+    passed: negInvPassed,
+    message: negInvPassed
+      ? "Tidak ada stok negatif"
+      : `${negativeInv[0]?.count ?? 0} item stok negatif`,
+  });
+
+  // 5. Check waste >5% has investigation comments
+  const highWasteNoComment = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(wasteEntries)
+    .leftJoin(
+      inventory,
+      and(
+        eq(inventory.branchId, wasteEntries.branchId),
+        eq(inventory.ingredientId, wasteEntries.ingredientId),
+      ),
+    )
+    .where(
+      and(
+        gte(wasteEntries.createdAt, period.openedAt),
+        sql`${wasteEntries.investigationNote} IS NULL OR ${wasteEntries.investigationNote} = ''`,
+        sql`COALESCE(${inventory.quantity}, 0) > 0`,
+        sql`(${wasteEntries.quantity}::float / (${wasteEntries.quantity} + COALESCE(${inventory.quantity}, 0))::float * 100) > 5`,
+      ),
+    );
+  const wastePassed = (highWasteNoComment[0]?.count ?? 0) === 0;
+  checks.push({
+    name: "Waste Investigation",
+    passed: wastePassed,
+    message: wastePassed
+      ? "Semua waste entry memiliki komentar investigasi"
+      : `${highWasteNoComment[0]?.count ?? 0} waste entry tanpa komentar investigasi`,
+  });
+
+  // 6. Check no pending stock transfers
+  const pendingTransfers = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(stockTransfers)
+    .where(
+      and(gte(stockTransfers.createdAt, period.openedAt), eq(stockTransfers.status, "In Transit")),
+    );
+  const transferPassed = (pendingTransfers[0]?.count ?? 0) === 0;
+  checks.push({
+    name: "Mutasi Stok",
+    passed: transferPassed,
+    message: transferPassed
+      ? "Tidak ada mutasi stok dalam perjalanan"
+      : `${pendingTransfers[0]?.count ?? 0} mutasi stok masih In Transit`,
+  });
+
+  // 7. Check no SJ still in In Transit
+  const pendingSJs = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(deliveryNotes)
+    .where(
+      and(gte(deliveryNotes.createdAt, period.openedAt), eq(deliveryNotes.status, "In Transit")),
+    );
+  const sjPassed = (pendingSJs[0]?.count ?? 0) === 0;
+  checks.push({
+    name: "Surat Jalan",
+    passed: sjPassed,
+    message: sjPassed
+      ? "Tidak ada SJ dalam perjalanan"
+      : `${pendingSJs[0]?.count ?? 0} SJ masih In Transit`,
+  });
+
+  const allPassed = checks.every((c) => c.passed);
+
+  if (!allPassed) {
+    return { success: false, checks, message: "Verifikasi gagal. Perbaiki masalah di atas." };
+  }
+
+  // Save closing balances
+  const currentInv = await db.select().from(inventory);
+  for (const inv of currentInv) {
+    await db.insert(periodBalances).values({
+      periodLogId: period.id,
+      branchId: inv.branchId,
+      ingredientId: inv.ingredientId,
+      balanceType: "closing",
+      quantity: inv.quantity,
+    });
+  }
+
+  // Close period
+  await db
+    .update(periodLogs)
+    .set({
+      status: "Closed",
+      closedAt: new Date(),
+      closedBy: user.id,
+    })
+    .where(eq(periodLogs.id, data.periodId));
+
+  const [updatedPeriod] = await db
+    .select()
+    .from(periodLogs)
+    .where(eq(periodLogs.id, data.periodId))
+    .limit(1);
+
+  // Notify all active users that period is closed
+  const allActiveUsers = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.status, "Active"));
+  for (const u of allActiveUsers) {
+    await db.insert(systemNotifications).values({
+      userId: u.id,
+      title: "Periode Ditutup",
+      message: `Periode "${period.periodName}" telah ditutup oleh ${user.name}`,
+      type: "warning",
+    });
+  }
+
+  await logSystemAction(
+    user,
+    "Close Period",
+    `Periode "${period.periodName}" ditutup oleh ${user.name}`,
+  );
+  await logAudit(user, "periodLogs", data.periodId, "UPDATE", period, updatedPeriod);
+
+  return { success: true, checks, message: "Periode berhasil ditutup" };
+}
 
 export const closePeriod = createServerFn({ method: "POST" })
   .validator((data: { periodId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
-
-    const [period] = await db
-      .select()
-      .from(periodLogs)
-      .where(eq(periodLogs.id, data.periodId))
-      .limit(1);
-
-    if (!period) throw new Error("Periode tidak ditemukan");
-    if (period.status !== "Open") throw new Error("Periode sudah ditutup");
-
-    // Exhaustive verification checklist
-    const checks: { name: string; passed: boolean; message: string }[] = [];
-
-    // 1. Check all SO are approved
-    const pendingSO = await db
-      .select({ count: sql<number>`COUNT(*)::int` })
-      .from(stockOpnames)
-      .where(
-        and(
-          gte(stockOpnames.createdAt, period.openedAt),
-          eq(stockOpnames.status, "Under Investigation"),
-        ),
-      );
-    const soPassed = (pendingSO[0]?.count ?? 0) === 0;
-    checks.push({
-      name: "Stock Opname",
-      passed: soPassed,
-      message: soPassed
-        ? "Semua SO sudah approved"
-        : `${pendingSO[0]?.count ?? 0} SO masih Under Investigation`,
-    });
-
-    // 2. Check no pending cancel requests
-    const pendingCancels = await db
-      .select({ count: sql<number>`COUNT(*)::int` })
-      .from(cancelRequests)
-      .where(eq(cancelRequests.status, "Pending"));
-    const cancelPassed = (pendingCancels[0]?.count ?? 0) === 0;
-    checks.push({
-      name: "Cancel Requests",
-      passed: cancelPassed,
-      message: cancelPassed
-        ? "Tidak ada request cancel pending"
-        : `${pendingCancels[0]?.count ?? 0} cancel request pending`,
-    });
-
-    // 3. Check no unpaid SCM invoices
-    const unpaidInvoices = await db
-      .select({ count: sql<number>`COUNT(*)::int` })
-      .from(scmInvoices)
-      .where(eq(scmInvoices.status, "Unpaid"));
-    const invoicePassed = (unpaidInvoices[0]?.count ?? 0) === 0;
-    checks.push({
-      name: "Invoice SCM",
-      passed: invoicePassed,
-      message: invoicePassed
-        ? "Semua invoice sudah dibayar"
-        : `${unpaidInvoices[0]?.count ?? 0} invoice belum dibayar`,
-    });
-
-    // 4. Check no negative inventory
-    const negativeInv = await db
-      .select({ count: sql<number>`COUNT(*)::int` })
-      .from(inventory)
-      .where(lte(inventory.quantity, 0));
-    const negInvPassed = (negativeInv[0]?.count ?? 0) === 0;
-    checks.push({
-      name: "Stok Negatif",
-      passed: negInvPassed,
-      message: negInvPassed
-        ? "Tidak ada stok negatif"
-        : `${negativeInv[0]?.count ?? 0} item stok negatif`,
-    });
-
-    // 5. Check waste >5% has investigation comments
-    const highWasteNoComment = await db
-      .select({ count: sql<number>`COUNT(*)::int` })
-      .from(wasteEntries)
-      .leftJoin(
-        inventory,
-        and(
-          eq(inventory.branchId, wasteEntries.branchId),
-          eq(inventory.ingredientId, wasteEntries.ingredientId),
-        ),
-      )
-      .where(
-        and(
-          gte(wasteEntries.createdAt, period.openedAt),
-          sql`${wasteEntries.investigationNote} IS NULL OR ${wasteEntries.investigationNote} = ''`,
-          sql`COALESCE(${inventory.quantity}, 0) > 0`,
-          sql`(${wasteEntries.quantity}::float / (${wasteEntries.quantity} + COALESCE(${inventory.quantity}, 0))::float * 100) > 5`,
-        ),
-      );
-    const wastePassed = (highWasteNoComment[0]?.count ?? 0) === 0;
-    checks.push({
-      name: "Waste Investigation",
-      passed: wastePassed,
-      message: wastePassed
-        ? "Semua waste entry memiliki komentar investigasi"
-        : `${highWasteNoComment[0]?.count ?? 0} waste entry tanpa komentar investigasi`,
-    });
-
-    // 6. Check no pending stock transfers
-    const pendingTransfers = await db
-      .select({ count: sql<number>`COUNT(*)::int` })
-      .from(stockTransfers)
-      .where(
-        and(
-          gte(stockTransfers.createdAt, period.openedAt),
-          eq(stockTransfers.status, "In Transit"),
-        ),
-      );
-    const transferPassed = (pendingTransfers[0]?.count ?? 0) === 0;
-    checks.push({
-      name: "Mutasi Stok",
-      passed: transferPassed,
-      message: transferPassed
-        ? "Tidak ada mutasi stok dalam perjalanan"
-        : `${pendingTransfers[0]?.count ?? 0} mutasi stok masih In Transit`,
-    });
-
-    // 7. Check no SJ still in In Transit
-    const pendingSJs = await db
-      .select({ count: sql<number>`COUNT(*)::int` })
-      .from(deliveryNotes)
-      .where(
-        and(gte(deliveryNotes.createdAt, period.openedAt), eq(deliveryNotes.status, "In Transit")),
-      );
-    const sjPassed = (pendingSJs[0]?.count ?? 0) === 0;
-    checks.push({
-      name: "Surat Jalan",
-      passed: sjPassed,
-      message: sjPassed
-        ? "Tidak ada SJ dalam perjalanan"
-        : `${pendingSJs[0]?.count ?? 0} SJ masih In Transit`,
-    });
-
-    const allPassed = checks.every((c) => c.passed);
-
-    if (!allPassed) {
-      return { success: false, checks, message: "Verifikasi gagal. Perbaiki masalah di atas." };
-    }
-
-    // Save closing balances
-    const currentInv = await db.select().from(inventory);
-    for (const inv of currentInv) {
-      await db.insert(periodBalances).values({
-        periodLogId: period.id,
-        branchId: inv.branchId,
-        ingredientId: inv.ingredientId,
-        balanceType: "closing",
-        quantity: inv.quantity,
-      });
-    }
-
-    // Close period
-    await db
-      .update(periodLogs)
-      .set({
-        status: "Closed",
-        closedAt: new Date(),
-        closedBy: user.id,
-      })
-      .where(eq(periodLogs.id, data.periodId));
-
-    const [updatedPeriod] = await db
-      .select()
-      .from(periodLogs)
-      .where(eq(periodLogs.id, data.periodId))
-      .limit(1);
-
-    // Notify all active users that period is closed
-    const allActiveUsers = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.status, "Active"));
-    for (const u of allActiveUsers) {
-      await db.insert(systemNotifications).values({
-        userId: u.id,
-        title: "Periode Ditutup",
-        message: `Periode "${period.periodName}" telah ditutup oleh ${user.name}`,
-        type: "warning",
-      });
-    }
-
-    await logSystemAction(
-      user,
-      "Close Period",
-      `Periode "${period.periodName}" ditutup oleh ${user.name}`,
-    );
-    await logAudit(user, "periodLogs", data.periodId, "UPDATE", period, updatedPeriod);
-
-    return { success: true, checks, message: "Periode berhasil ditutup" };
+    return closePeriodCore(user, data);
   });
 
 export interface HourlyDataPoint {
@@ -1261,6 +1353,56 @@ export const getPencatatanManualSummary = createServerFn({ method: "GET" })
  * Save fixed costs (Gaji, ListrikAir, Wifi, Sewa) for a branch + month.
  * Deletes existing entries in that category/date range and creates a single new one.
  */
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth (any
+// authenticated user may save fixed costs — no role guard).
+export async function saveFixedCostsCore(
+  user: AppUser,
+  data: {
+    branchId: string;
+    dateFrom: string;
+    dateTo: string;
+    gaji: number;
+    listrikAir: number;
+    wifi: number;
+    sewa: number;
+  },
+) {
+  const categories = [
+    { category: "Gaji", value: data.gaji },
+    { category: "ListrikAir", value: data.listrikAir },
+    { category: "Wifi", value: data.wifi },
+    { category: "Sewa", value: data.sewa },
+  ];
+
+  for (const cat of categories) {
+    // Delete existing entries for this category + branch + date range
+    await db
+      .delete(operationalExpenses)
+      .where(
+        and(
+          eq(operationalExpenses.branchId, data.branchId),
+          eq(operationalExpenses.category, cat.category),
+          gte(operationalExpenses.date, data.dateFrom),
+          lte(operationalExpenses.date, data.dateTo),
+        ),
+      );
+
+    // Create new entry if value > 0
+    if (cat.value > 0) {
+      await db.insert(operationalExpenses).values({
+        branchId: data.branchId,
+        category: cat.category,
+        amount: cat.value,
+        date: data.dateFrom,
+        notes: cat.category,
+        submittedBy: user.id,
+      });
+    }
+  }
+
+  return { success: true };
+}
+
 export const saveFixedCosts = createServerFn({ method: "POST" })
   .validator(
     (data: {
@@ -1275,39 +1417,5 @@ export const saveFixedCosts = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const categories = [
-      { category: "Gaji", value: data.gaji },
-      { category: "ListrikAir", value: data.listrikAir },
-      { category: "Wifi", value: data.wifi },
-      { category: "Sewa", value: data.sewa },
-    ];
-
-    for (const cat of categories) {
-      // Delete existing entries for this category + branch + date range
-      await db
-        .delete(operationalExpenses)
-        .where(
-          and(
-            eq(operationalExpenses.branchId, data.branchId),
-            eq(operationalExpenses.category, cat.category),
-            gte(operationalExpenses.date, data.dateFrom),
-            lte(operationalExpenses.date, data.dateTo),
-          ),
-        );
-
-      // Create new entry if value > 0
-      if (cat.value > 0) {
-        await db.insert(operationalExpenses).values({
-          branchId: data.branchId,
-          category: cat.category,
-          amount: cat.value,
-          date: data.dateFrom,
-          notes: cat.category,
-          submittedBy: user.id,
-        });
-      }
-    }
-
-    return { success: true };
+    return saveFixedCostsCore(user, data);
   });

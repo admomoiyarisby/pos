@@ -14,6 +14,7 @@ import {
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
+import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import type { UnknownRecord } from "#/lib/unknown-record";
@@ -186,61 +187,74 @@ export const getModifierGroup = createServerFn({ method: "GET" })
     };
   });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function createModifierGroupCore(
+  user: AppUser,
+  data: z.input<typeof modifierGroupInput>,
+) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  for (const mod of data.modifiers) assertKindMatchesJoins(mod);
+
+  const [group] = await db
+    .insert(modifierGroups)
+    .values({
+      code: data.code,
+      name: data.name,
+      minSelection: data.minSelection,
+      maxSelection: data.maxSelection,
+    })
+    .returning();
+
+  for (const [idx, mod] of data.modifiers.entries()) {
+    const [createdMod] = await db
+      .insert(modifiers)
+      .values({
+        modifierGroupId: group.id,
+        code: `${data.code}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
+        name: mod.name,
+        price: mod.price,
+        kind: mod.kind,
+        isExclusion: mod.isExclusion,
+        sortOrder: mod.sortOrder ?? idx,
+      })
+      .returning();
+
+    if (mod.ingredientId && mod.ingredientQty) {
+      await db.insert(modifierIngredients).values({
+        modifierId: createdMod.id,
+        ingredientId: mod.ingredientId,
+        quantity: mod.ingredientQty,
+      });
+    }
+    if (mod.recipeId && mod.recipeQty) {
+      await db.insert(modifierRecipes).values({
+        modifierId: createdMod.id,
+        recipeId: mod.recipeId,
+        quantity: mod.recipeQty,
+      });
+    }
+  }
+
+  await logSystemAction(
+    user,
+    "Create Modifier Group",
+    `Modifier group "${group.name}" dibuat oleh ${user.name}`,
+  );
+  await logAudit(user, "modifierGroups", group.id, "CREATE", undefined, group);
+
+  return group;
+}
+
 export const createModifierGroup = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof modifierGroupInput>) => modifierGroupInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    for (const mod of data.modifiers) assertKindMatchesJoins(mod);
-
-    const [group] = await db
-      .insert(modifierGroups)
-      .values({
-        code: data.code,
-        name: data.name,
-        minSelection: data.minSelection,
-        maxSelection: data.maxSelection,
-      })
-      .returning();
-
-    for (const [idx, mod] of data.modifiers.entries()) {
-      const [createdMod] = await db
-        .insert(modifiers)
-        .values({
-          modifierGroupId: group.id,
-          code: `${data.code}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
-          name: mod.name,
-          price: mod.price,
-          kind: mod.kind,
-          isExclusion: mod.isExclusion,
-          sortOrder: mod.sortOrder ?? idx,
-        })
-        .returning();
-
-      if (mod.ingredientId && mod.ingredientQty) {
-        await db.insert(modifierIngredients).values({
-          modifierId: createdMod.id,
-          ingredientId: mod.ingredientId,
-          quantity: mod.ingredientQty,
-        });
-      }
-      if (mod.recipeId && mod.recipeQty) {
-        await db.insert(modifierRecipes).values({
-          modifierId: createdMod.id,
-          recipeId: mod.recipeId,
-          quantity: mod.recipeQty,
-        });
-      }
-    }
-
-    await logSystemAction(
-      user,
-      "Create Modifier Group",
-      `Modifier group "${group.name}" dibuat oleh ${user.name}`,
-    );
-    await logAudit(user, "modifierGroups", group.id, "CREATE", undefined, group);
-
-    return group;
+    return createModifierGroupCore(user, data);
   });
 
 // Same partial-update trap as updateRecipe: `modifierGroupInput`/`modifierInput`
@@ -302,203 +316,216 @@ function assertKindMatchesJoins(mod: ModifierKindLike) {
   }
 }
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function updateModifierGroupCore(
+  user: AppUser,
+  data: z.input<typeof updateModifierGroupInput>,
+) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  const { id, modifiers: mods, ...groupUpdates } = data;
+
+  if (mods) for (const mod of mods) assertKindMatchesJoins(mod);
+
+  const [old] = await db.select().from(modifierGroups).where(eq(modifierGroups.id, id)).limit(1);
+  if (!old) throw new Error("Modifier group not found");
+
+  // Only set fields that were actually provided — absent optionals parse to
+  // `undefined` now (no default injection), and drizzle throws on an empty set.
+  const groupUpdateSet: UnknownRecord = {};
+  for (const [key, value] of Object.entries(groupUpdates)) {
+    if (value !== undefined) groupUpdateSet[key] = value;
+  }
+
+  if (Object.keys(groupUpdateSet).length > 0) {
+    await db.update(modifierGroups).set(groupUpdateSet).where(eq(modifierGroups.id, id));
+  }
+
+  if (mods !== undefined) {
+    // SAFETY: data.code is validated by zod as string | undefined; fallback to stored code.
+    const groupCode = (data.code as string | undefined) ?? old.code;
+
+    await db.transaction(async (tx) => {
+      const existing = await tx.select().from(modifiers).where(eq(modifiers.modifierGroupId, id));
+      const existingMap = new Map(existing.map((e) => [e.id, e]));
+      const incomingIds = new Set(
+        mods.filter((m): m is typeof m & { id: string } => m.id !== undefined).map((m) => m.id),
+      );
+      const hasIds = incomingIds.size > 0;
+      const legacyNoIds = !hasIds && mods.length > 0;
+
+      if (legacyNoIds && existing.length > 0) {
+        // Legacy payload without ids — cannot diff by identity. Guard the
+        // FK on order_item_modifiers.modifier_id (restrict) so Postgres
+        // doesn't surface a bare `Failed query: delete from "modifiers"`.
+        const referenced = await tx
+          .select({ rid: orderItemModifiers.modifierId })
+          .from(orderItemModifiers)
+          .where(
+            inArray(
+              orderItemModifiers.modifierId,
+              existing.map((e) => e.id),
+            ),
+          )
+          .limit(1);
+        if (referenced.length > 0) {
+          throw new Error(
+            "Tidak dapat mengubah opsi modifier karena sudah dipakai di riwayat pesanan. Hapus pemakaian atau edit opsi satu per satu (nama/harga) tanpa menghapus opsi yang sudah terpakai.",
+          );
+        }
+        for (const e of existing) {
+          await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, e.id));
+          await tx.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, e.id));
+        }
+        await tx.delete(modifiers).where(eq(modifiers.modifierGroupId, id));
+        for (const [idx, mod] of mods.entries()) {
+          const [createdMod] = await tx
+            .insert(modifiers)
+            .values({
+              modifierGroupId: id,
+              code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
+              name: mod.name,
+              price: mod.price ?? 0,
+              kind: mod.kind ?? "text",
+              isExclusion: mod.isExclusion ?? false,
+              sortOrder: mod.sortOrder ?? idx,
+            })
+            .returning();
+          if (mod.ingredientId && mod.ingredientQty) {
+            await tx.insert(modifierIngredients).values({
+              modifierId: createdMod.id,
+              ingredientId: mod.ingredientId,
+              quantity: mod.ingredientQty,
+            });
+          }
+          if (mod.recipeId && mod.recipeQty) {
+            await tx.insert(modifierRecipes).values({
+              modifierId: createdMod.id,
+              recipeId: mod.recipeId,
+              quantity: mod.recipeQty,
+            });
+          }
+        }
+        return;
+      }
+
+      // Id-aware diff: update existing, insert new, delete removed.
+      for (const incomingId of incomingIds) {
+        if (!existingMap.has(incomingId)) {
+          throw new Error(`Modifier ${incomingId} tidak ditemukan di grup ini`);
+        }
+      }
+
+      const toDeleteIds = existing.filter((e) => !incomingIds.has(e.id)).map((e) => e.id);
+      if (toDeleteIds.length > 0) {
+        const referenced = await tx
+          .select({ rid: orderItemModifiers.modifierId })
+          .from(orderItemModifiers)
+          .where(inArray(orderItemModifiers.modifierId, toDeleteIds));
+        if (referenced.length > 0) {
+          const names = existing
+            .filter((e) => referenced.some((r) => r.rid === e.id))
+            .map((e) => e.name)
+            .join(", ");
+          throw new Error(
+            `Tidak dapat menghapus opsi "${names}" karena sudah dipakai di riwayat pesanan. Ubah nama/harga opsi tersebut tanpa menghapusnya, atau hapus pesanan terkait terlebih dahulu.`,
+          );
+        }
+        for (const delId of toDeleteIds) {
+          await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, delId));
+          await tx.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, delId));
+          await tx.delete(modifiers).where(eq(modifiers.id, delId));
+        }
+      }
+
+      // Also handle the case where mods is an empty array (remove all) —
+      // toDeleteIds already covers it, so just handle upserts below (no-op).
+      for (const [idx, mod] of mods.entries()) {
+        if (mod.id && existingMap.has(mod.id)) {
+          const set: UnknownRecord = {
+            name: mod.name,
+            sortOrder: mod.sortOrder ?? idx,
+            code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
+          };
+          if (mod.price !== undefined) set.price = mod.price;
+          if (mod.isExclusion !== undefined) set.isExclusion = mod.isExclusion;
+          if (mod.kind !== undefined) set.kind = mod.kind;
+          await tx.update(modifiers).set(set).where(eq(modifiers.id, mod.id));
+          await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, mod.id));
+          await tx.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, mod.id));
+          if (mod.ingredientId && mod.ingredientQty) {
+            await tx.insert(modifierIngredients).values({
+              modifierId: mod.id,
+              ingredientId: mod.ingredientId,
+              quantity: mod.ingredientQty,
+            });
+          }
+          if (mod.recipeId && mod.recipeQty) {
+            await tx.insert(modifierRecipes).values({
+              modifierId: mod.id,
+              recipeId: mod.recipeId,
+              quantity: mod.recipeQty,
+            });
+          }
+        } else if (!mod.id) {
+          const [createdMod] = await tx
+            .insert(modifiers)
+            .values({
+              modifierGroupId: id,
+              code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
+              name: mod.name,
+              price: mod.price ?? 0,
+              kind: mod.kind ?? "text",
+              isExclusion: mod.isExclusion ?? false,
+              sortOrder: mod.sortOrder ?? idx,
+            })
+            .returning();
+          if (mod.ingredientId && mod.ingredientQty) {
+            await tx.insert(modifierIngredients).values({
+              modifierId: createdMod.id,
+              ingredientId: mod.ingredientId,
+              quantity: mod.ingredientQty,
+            });
+          }
+          if (mod.recipeId && mod.recipeQty) {
+            await tx.insert(modifierRecipes).values({
+              modifierId: createdMod.id,
+              recipeId: mod.recipeId,
+              quantity: mod.recipeQty,
+            });
+          }
+        }
+      }
+    });
+  }
+
+  const [updated] = await db
+    .select()
+    .from(modifierGroups)
+    .where(eq(modifierGroups.id, id))
+    .limit(1);
+
+  await logSystemAction(
+    user,
+    "Update Modifier Group",
+    `Modifier group "${updated?.name}" diperbarui oleh ${user.name}`,
+  );
+  await logAudit(user, "modifierGroups", id, "UPDATE", old, updated);
+
+  return { success: true };
+}
+
 export const updateModifierGroup = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof updateModifierGroupInput>) =>
     updateModifierGroupInput.parse(data),
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    const { id, modifiers: mods, ...groupUpdates } = data;
-
-    if (mods) for (const mod of mods) assertKindMatchesJoins(mod);
-
-    const [old] = await db.select().from(modifierGroups).where(eq(modifierGroups.id, id)).limit(1);
-    if (!old) throw new Error("Modifier group not found");
-
-    // Only set fields that were actually provided — absent optionals parse to
-    // `undefined` now (no default injection), and drizzle throws on an empty set.
-    const groupUpdateSet: UnknownRecord = {};
-    for (const [key, value] of Object.entries(groupUpdates)) {
-      if (value !== undefined) groupUpdateSet[key] = value;
-    }
-
-    if (Object.keys(groupUpdateSet).length > 0) {
-      await db.update(modifierGroups).set(groupUpdateSet).where(eq(modifierGroups.id, id));
-    }
-
-    if (mods !== undefined) {
-      // SAFETY: data.code is validated by zod as string | undefined; fallback to stored code.
-      const groupCode = (data.code as string | undefined) ?? old.code;
-
-      await db.transaction(async (tx) => {
-        const existing = await tx.select().from(modifiers).where(eq(modifiers.modifierGroupId, id));
-        const existingMap = new Map(existing.map((e) => [e.id, e]));
-        const incomingIds = new Set(
-          mods.filter((m): m is typeof m & { id: string } => m.id !== undefined).map((m) => m.id),
-        );
-        const hasIds = incomingIds.size > 0;
-        const legacyNoIds = !hasIds && mods.length > 0;
-
-        if (legacyNoIds && existing.length > 0) {
-          // Legacy payload without ids — cannot diff by identity. Guard the
-          // FK on order_item_modifiers.modifier_id (restrict) so Postgres
-          // doesn't surface a bare `Failed query: delete from "modifiers"`.
-          const referenced = await tx
-            .select({ rid: orderItemModifiers.modifierId })
-            .from(orderItemModifiers)
-            .where(
-              inArray(
-                orderItemModifiers.modifierId,
-                existing.map((e) => e.id),
-              ),
-            )
-            .limit(1);
-          if (referenced.length > 0) {
-            throw new Error(
-              "Tidak dapat mengubah opsi modifier karena sudah dipakai di riwayat pesanan. Hapus pemakaian atau edit opsi satu per satu (nama/harga) tanpa menghapus opsi yang sudah terpakai.",
-            );
-          }
-          for (const e of existing) {
-            await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, e.id));
-            await tx.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, e.id));
-          }
-          await tx.delete(modifiers).where(eq(modifiers.modifierGroupId, id));
-          for (const [idx, mod] of mods.entries()) {
-            const [createdMod] = await tx
-              .insert(modifiers)
-              .values({
-                modifierGroupId: id,
-                code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
-                name: mod.name,
-                price: mod.price ?? 0,
-                kind: mod.kind ?? "text",
-                isExclusion: mod.isExclusion ?? false,
-                sortOrder: mod.sortOrder ?? idx,
-              })
-              .returning();
-            if (mod.ingredientId && mod.ingredientQty) {
-              await tx.insert(modifierIngredients).values({
-                modifierId: createdMod.id,
-                ingredientId: mod.ingredientId,
-                quantity: mod.ingredientQty,
-              });
-            }
-            if (mod.recipeId && mod.recipeQty) {
-              await tx.insert(modifierRecipes).values({
-                modifierId: createdMod.id,
-                recipeId: mod.recipeId,
-                quantity: mod.recipeQty,
-              });
-            }
-          }
-          return;
-        }
-
-        // Id-aware diff: update existing, insert new, delete removed.
-        for (const incomingId of incomingIds) {
-          if (!existingMap.has(incomingId)) {
-            throw new Error(`Modifier ${incomingId} tidak ditemukan di grup ini`);
-          }
-        }
-
-        const toDeleteIds = existing.filter((e) => !incomingIds.has(e.id)).map((e) => e.id);
-        if (toDeleteIds.length > 0) {
-          const referenced = await tx
-            .select({ rid: orderItemModifiers.modifierId })
-            .from(orderItemModifiers)
-            .where(inArray(orderItemModifiers.modifierId, toDeleteIds));
-          if (referenced.length > 0) {
-            const names = existing
-              .filter((e) => referenced.some((r) => r.rid === e.id))
-              .map((e) => e.name)
-              .join(", ");
-            throw new Error(
-              `Tidak dapat menghapus opsi "${names}" karena sudah dipakai di riwayat pesanan. Ubah nama/harga opsi tersebut tanpa menghapusnya, atau hapus pesanan terkait terlebih dahulu.`,
-            );
-          }
-          for (const delId of toDeleteIds) {
-            await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, delId));
-            await tx.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, delId));
-            await tx.delete(modifiers).where(eq(modifiers.id, delId));
-          }
-        }
-
-        // Also handle the case where mods is an empty array (remove all) —
-        // toDeleteIds already covers it, so just handle upserts below (no-op).
-        for (const [idx, mod] of mods.entries()) {
-          if (mod.id && existingMap.has(mod.id)) {
-            const set: UnknownRecord = {
-              name: mod.name,
-              sortOrder: mod.sortOrder ?? idx,
-              code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
-            };
-            if (mod.price !== undefined) set.price = mod.price;
-            if (mod.isExclusion !== undefined) set.isExclusion = mod.isExclusion;
-            if (mod.kind !== undefined) set.kind = mod.kind;
-            await tx.update(modifiers).set(set).where(eq(modifiers.id, mod.id));
-            await tx.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, mod.id));
-            await tx.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, mod.id));
-            if (mod.ingredientId && mod.ingredientQty) {
-              await tx.insert(modifierIngredients).values({
-                modifierId: mod.id,
-                ingredientId: mod.ingredientId,
-                quantity: mod.ingredientQty,
-              });
-            }
-            if (mod.recipeId && mod.recipeQty) {
-              await tx.insert(modifierRecipes).values({
-                modifierId: mod.id,
-                recipeId: mod.recipeId,
-                quantity: mod.recipeQty,
-              });
-            }
-          } else if (!mod.id) {
-            const [createdMod] = await tx
-              .insert(modifiers)
-              .values({
-                modifierGroupId: id,
-                code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
-                name: mod.name,
-                price: mod.price ?? 0,
-                kind: mod.kind ?? "text",
-                isExclusion: mod.isExclusion ?? false,
-                sortOrder: mod.sortOrder ?? idx,
-              })
-              .returning();
-            if (mod.ingredientId && mod.ingredientQty) {
-              await tx.insert(modifierIngredients).values({
-                modifierId: createdMod.id,
-                ingredientId: mod.ingredientId,
-                quantity: mod.ingredientQty,
-              });
-            }
-            if (mod.recipeId && mod.recipeQty) {
-              await tx.insert(modifierRecipes).values({
-                modifierId: createdMod.id,
-                recipeId: mod.recipeId,
-                quantity: mod.recipeQty,
-              });
-            }
-          }
-        }
-      });
-    }
-
-    const [updated] = await db
-      .select()
-      .from(modifierGroups)
-      .where(eq(modifierGroups.id, id))
-      .limit(1);
-
-    await logSystemAction(
-      user,
-      "Update Modifier Group",
-      `Modifier group "${updated?.name}" diperbarui oleh ${user.name}`,
-    );
-    await logAudit(user, "modifierGroups", id, "UPDATE", old, updated);
-
-    return { success: true };
+    return updateModifierGroupCore(user, data);
   });
 
 const linkRecipesToModifierGroupInput = z.object({
@@ -506,34 +533,47 @@ const linkRecipesToModifierGroupInput = z.object({
   recipeIds: z.array(z.string().uuid()),
 });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function linkRecipesToModifierGroupCore(
+  user: AppUser,
+  data: z.input<typeof linkRecipesToModifierGroupInput>,
+) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  // Replace all recipe links for this modifier group
+  await db
+    .delete(recipeModifierGroups)
+    .where(eq(recipeModifierGroups.modifierGroupId, data.modifierGroupId));
+
+  if (data.recipeIds.length > 0) {
+    await db.insert(recipeModifierGroups).values(
+      data.recipeIds.map((recipeId) => ({
+        recipeId,
+        modifierGroupId: data.modifierGroupId,
+      })),
+    );
+  }
+
+  await logSystemAction(
+    user,
+    "Link Recipes to Modifier Group",
+    `Modifier group ${data.modifierGroupId} dihubungkan ke ${data.recipeIds.length} menu oleh ${user.name}`,
+  );
+
+  return { success: true };
+}
+
 export const linkRecipesToModifierGroup = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof linkRecipesToModifierGroupInput>) =>
     linkRecipesToModifierGroupInput.parse(data),
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    // Replace all recipe links for this modifier group
-    await db
-      .delete(recipeModifierGroups)
-      .where(eq(recipeModifierGroups.modifierGroupId, data.modifierGroupId));
-
-    if (data.recipeIds.length > 0) {
-      await db.insert(recipeModifierGroups).values(
-        data.recipeIds.map((recipeId) => ({
-          recipeId,
-          modifierGroupId: data.modifierGroupId,
-        })),
-      );
-    }
-
-    await logSystemAction(
-      user,
-      "Link Recipes to Modifier Group",
-      `Modifier group ${data.modifierGroupId} dihubungkan ke ${data.recipeIds.length} menu oleh ${user.name}`,
-    );
-
-    return { success: true };
+    return linkRecipesToModifierGroupCore(user, data);
   });
 
 export const reorderModifiersInput = z.object({
@@ -541,106 +581,139 @@ export const reorderModifiersInput = z.object({
   modifierIds: z.array(z.string().uuid()),
 });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function reorderModifiersCore(
+  user: AppUser,
+  data: z.input<typeof reorderModifiersInput>,
+) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  // Update sort_order based on array position
+  await db.transaction(async (tx) => {
+    for (const [idx, modifierId] of data.modifierIds.entries()) {
+      await tx.update(modifiers).set({ sortOrder: idx }).where(eq(modifiers.id, modifierId));
+    }
+  });
+
+  return { success: true };
+}
+
 export const reorderModifiers = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof reorderModifiersInput>) => reorderModifiersInput.parse(data))
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
-
-    // Update sort_order based on array position
-    await db.transaction(async (tx) => {
-      for (const [idx, modifierId] of data.modifierIds.entries()) {
-        await tx.update(modifiers).set({ sortOrder: idx }).where(eq(modifiers.id, modifierId));
-      }
-    });
-
-    return { success: true };
+    const user = await requireRole("super_admin", "admin_pusat");
+    return reorderModifiersCore(user, data);
   });
 
 export const reorderModifierGroupsInput = z.object({
   modifierGroupIds: z.array(z.string().uuid()),
 });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function reorderModifierGroupsCore(
+  user: AppUser,
+  data: z.input<typeof reorderModifierGroupsInput>,
+) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  // Update sort_order based on array position
+  await db.transaction(async (tx) => {
+    for (const [idx, groupId] of data.modifierGroupIds.entries()) {
+      await tx.update(modifierGroups).set({ sortOrder: idx }).where(eq(modifierGroups.id, groupId));
+    }
+  });
+
+  return { success: true };
+}
+
 export const reorderModifierGroups = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof reorderModifierGroupsInput>) =>
     reorderModifierGroupsInput.parse(data),
   )
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
-
-    // Update sort_order based on array position
-    await db.transaction(async (tx) => {
-      for (const [idx, groupId] of data.modifierGroupIds.entries()) {
-        await tx
-          .update(modifierGroups)
-          .set({ sortOrder: idx })
-          .where(eq(modifierGroups.id, groupId));
-      }
-    });
-
-    return { success: true };
+    const user = await requireRole("super_admin", "admin_pusat");
+    return reorderModifierGroupsCore(user, data);
   });
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
+export async function deleteModifierGroupCore(user: AppUser, data: { id: string }) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  const [old] = await db
+    .select()
+    .from(modifierGroups)
+    .where(eq(modifierGroups.id, data.id))
+    .limit(1);
+  if (!old) throw new Error("Modifier group not found");
+
+  // Guard FK: order_item_modifiers restricts deletion of a modifier that has
+  // been used in order history. Surface a friendly message instead of a raw
+  // Postgres FK violation.
+  const existingMods = await db
+    .select()
+    .from(modifiers)
+    .where(eq(modifiers.modifierGroupId, data.id));
+  if (existingMods.length > 0) {
+    const referenced = await db
+      .select({ rid: orderItemModifiers.modifierId })
+      .from(orderItemModifiers)
+      .where(
+        inArray(
+          orderItemModifiers.modifierId,
+          existingMods.map((m) => m.id),
+        ),
+      )
+      .limit(1);
+    if (referenced.length > 0) {
+      throw new Error(
+        "Tidak dapat menghapus grup modifier karena salah satu opsinya sudah dipakai di riwayat pesanan.",
+      );
+    }
+    // Also check modifier_group_id FK from order_item_modifiers
+    const groupReferenced = await db
+      .select({ rid: orderItemModifiers.modifierGroupId })
+      .from(orderItemModifiers)
+      .where(eq(orderItemModifiers.modifierGroupId, data.id))
+      .limit(1);
+    if (groupReferenced.length > 0) {
+      throw new Error(
+        "Tidak dapat menghapus grup modifier karena grup ini sudah dipakai di riwayat pesanan.",
+      );
+    }
+  }
+  // Delete cascade: modifiers → modifierIngredients (safe after guard)
+  for (const m of existingMods) {
+    await db.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, m.id));
+    await db.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, m.id));
+  }
+  await db.delete(modifiers).where(eq(modifiers.modifierGroupId, data.id));
+  await db.delete(modifierGroups).where(eq(modifierGroups.id, data.id));
+
+  await logSystemAction(
+    user,
+    "Delete Modifier Group",
+    `Modifier group "${old.name}" dihapus oleh ${user.name}`,
+  );
+  await logAudit(user, "modifierGroups", data.id, "DELETE", old, undefined);
+
+  return { success: true };
+}
 
 export const deleteModifierGroup = createServerFn({ method: "POST" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    const [old] = await db
-      .select()
-      .from(modifierGroups)
-      .where(eq(modifierGroups.id, data.id))
-      .limit(1);
-    if (!old) throw new Error("Modifier group not found");
-
-    // Guard FK: order_item_modifiers restricts deletion of a modifier that has
-    // been used in order history. Surface a friendly message instead of a raw
-    // Postgres FK violation.
-    const existingMods = await db
-      .select()
-      .from(modifiers)
-      .where(eq(modifiers.modifierGroupId, data.id));
-    if (existingMods.length > 0) {
-      const referenced = await db
-        .select({ rid: orderItemModifiers.modifierId })
-        .from(orderItemModifiers)
-        .where(
-          inArray(
-            orderItemModifiers.modifierId,
-            existingMods.map((m) => m.id),
-          ),
-        )
-        .limit(1);
-      if (referenced.length > 0) {
-        throw new Error(
-          "Tidak dapat menghapus grup modifier karena salah satu opsinya sudah dipakai di riwayat pesanan.",
-        );
-      }
-      // Also check modifier_group_id FK from order_item_modifiers
-      const groupReferenced = await db
-        .select({ rid: orderItemModifiers.modifierGroupId })
-        .from(orderItemModifiers)
-        .where(eq(orderItemModifiers.modifierGroupId, data.id))
-        .limit(1);
-      if (groupReferenced.length > 0) {
-        throw new Error(
-          "Tidak dapat menghapus grup modifier karena grup ini sudah dipakai di riwayat pesanan.",
-        );
-      }
-    }
-    // Delete cascade: modifiers → modifierIngredients (safe after guard)
-    for (const m of existingMods) {
-      await db.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, m.id));
-      await db.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, m.id));
-    }
-    await db.delete(modifiers).where(eq(modifiers.modifierGroupId, data.id));
-    await db.delete(modifierGroups).where(eq(modifierGroups.id, data.id));
-
-    await logSystemAction(
-      user,
-      "Delete Modifier Group",
-      `Modifier group "${old.name}" dihapus oleh ${user.name}`,
-    );
-    await logAudit(user, "modifierGroups", data.id, "DELETE", old, undefined);
-
-    return { success: true };
+    return deleteModifierGroupCore(user, data);
   });

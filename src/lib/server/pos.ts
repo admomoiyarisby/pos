@@ -33,6 +33,7 @@ import {
 } from "#/db/schema";
 import { eq, and, desc, inArray, isNull, gte, lte } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
+import type { AppUser } from "./auth";
 import { branchVisibleClause, getEffectiveBranchId } from "#/lib/server/branch-visibility";
 import { logSystemAction, logAudit } from "./logging";
 import {
@@ -357,164 +358,184 @@ export const getShiftStatus = createServerFn({ method: "GET" })
     };
   });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth (no role
+// guard — any authenticated staff may open a shift).
+export async function openShiftCore(user: AppUser, data: { branchId: string; userId: string }) {
+  const [branch] = await db
+    .select({ name: branches.name })
+    .from(branches)
+    .where(eq(branches.id, data.branchId))
+    .limit(1);
+
+  const now = new Date();
+  const shift = await db.transaction(async (tx) => {
+    const [createdShift] = await tx
+      .insert(shifts)
+      .values({
+        branchId: data.branchId,
+        userId: data.userId,
+        startTime: now,
+        cashFloat: 0,
+        status: "Open",
+      })
+      .returning();
+
+    await tx.insert(shiftSessions).values({
+      shiftId: createdShift.id,
+      branchId: data.branchId,
+      userId: data.userId,
+      action: "open",
+      loggedInAt: now,
+    });
+
+    return createdShift;
+  });
+
+  await logSystemAction(
+    user,
+    "Open Shift",
+    `Shift dibuka di cabang "${branch?.name ?? data.branchId}" oleh ${user.name}`,
+  );
+  await logAudit(user, "shifts", shift.id, "CREATE", undefined, shift);
+
+  return {
+    ...shift,
+    holderUserId: data.userId,
+    holderName: user.name,
+  };
+}
+
 export const openShift = createServerFn({ method: "POST" })
   .validator((data: { branchId: string; userId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [branch] = await db
-      .select({ name: branches.name })
-      .from(branches)
-      .where(eq(branches.id, data.branchId))
-      .limit(1);
-
-    const now = new Date();
-    const shift = await db.transaction(async (tx) => {
-      const [createdShift] = await tx
-        .insert(shifts)
-        .values({
-          branchId: data.branchId,
-          userId: data.userId,
-          startTime: now,
-          cashFloat: 0,
-          status: "Open",
-        })
-        .returning();
-
-      await tx.insert(shiftSessions).values({
-        shiftId: createdShift.id,
-        branchId: data.branchId,
-        userId: data.userId,
-        action: "open",
-        loggedInAt: now,
-      });
-
-      return createdShift;
-    });
-
-    await logSystemAction(
-      user,
-      "Open Shift",
-      `Shift dibuka di cabang "${branch?.name ?? data.branchId}" oleh ${user.name}`,
-    );
-    await logAudit(user, "shifts", shift.id, "CREATE", undefined, shift);
-
-    return {
-      ...shift,
-      holderUserId: data.userId,
-      holderName: user.name,
-    };
+    return openShiftCore(user, data);
   });
 
 // Lets a staff member on the same branch claim an open shift from its current
 // holder. Closes the previous holder's session and opens a new one for the
 // taker, and updates shifts.userId so order/attribution views reflect the new
 // holder.
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth; the inline
+// same-branch guard stays as-is.
+export async function takeOverShiftCore(
+  user: AppUser,
+  data: { branchId: string; userId: string; shiftId: string },
+) {
+  // Only staff on the same branch may take over.
+  if (user.id !== data.userId || (user.branchId && user.branchId !== data.branchId)) {
+    throw new Error("Hanya staff dari cabang shift yang dapat mengambil alih shift");
+  }
+
+  const [shift] = await db
+    .select()
+    .from(shifts)
+    .where(and(eq(shifts.id, data.shiftId), eq(shifts.branchId, data.branchId)))
+    .limit(1);
+  if (!shift) throw new Error("Shift tidak ditemukan di cabang ini");
+  if (shift.status !== "Open") throw new Error("Shift sudah ditutup");
+  if (shift.userId === data.userId) {
+    throw new Error("Kamu sudah memegang shift ini");
+  }
+
+  const now = new Date();
+  const updatedShift = await db.transaction(async (tx) => {
+    await tx
+      .update(shiftSessions)
+      .set({ loggedOutAt: now })
+      .where(and(eq(shiftSessions.shiftId, data.shiftId), isNull(shiftSessions.loggedOutAt)));
+
+    await tx.insert(shiftSessions).values({
+      shiftId: data.shiftId,
+      branchId: data.branchId,
+      userId: data.userId,
+      action: "take_over",
+      loggedInAt: now,
+    });
+
+    const [updated] = await tx
+      .update(shifts)
+      .set({ userId: data.userId })
+      .where(eq(shifts.id, data.shiftId))
+      .returning();
+    return updated;
+  });
+
+  const [branch] = await db
+    .select({ name: branches.name })
+    .from(branches)
+    .where(eq(branches.id, data.branchId))
+    .limit(1);
+
+  await logSystemAction(
+    user,
+    "Take Over Shift",
+    `Shift di cabang "${branch?.name ?? data.branchId}" diambil alih oleh ${user.name}`,
+  );
+  await logAudit(user, "shifts", data.shiftId, "UPDATE", shift, updatedShift);
+
+  return {
+    ...updatedShift,
+    holderUserId: data.userId,
+    holderName: user.name,
+  };
+}
+
 export const takeOverShift = createServerFn({ method: "POST" })
   .validator((data: { branchId: string; userId: string; shiftId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    // Only staff on the same branch may take over.
-    if (user.id !== data.userId || (user.branchId && user.branchId !== data.branchId)) {
-      throw new Error("Hanya staff dari cabang shift yang dapat mengambil alih shift");
-    }
-
-    const [shift] = await db
-      .select()
-      .from(shifts)
-      .where(and(eq(shifts.id, data.shiftId), eq(shifts.branchId, data.branchId)))
-      .limit(1);
-    if (!shift) throw new Error("Shift tidak ditemukan di cabang ini");
-    if (shift.status !== "Open") throw new Error("Shift sudah ditutup");
-    if (shift.userId === data.userId) {
-      throw new Error("Kamu sudah memegang shift ini");
-    }
-
-    const now = new Date();
-    const updatedShift = await db.transaction(async (tx) => {
-      await tx
-        .update(shiftSessions)
-        .set({ loggedOutAt: now })
-        .where(and(eq(shiftSessions.shiftId, data.shiftId), isNull(shiftSessions.loggedOutAt)));
-
-      await tx.insert(shiftSessions).values({
-        shiftId: data.shiftId,
-        branchId: data.branchId,
-        userId: data.userId,
-        action: "take_over",
-        loggedInAt: now,
-      });
-
-      const [updated] = await tx
-        .update(shifts)
-        .set({ userId: data.userId })
-        .where(eq(shifts.id, data.shiftId))
-        .returning();
-      return updated;
-    });
-
-    const [branch] = await db
-      .select({ name: branches.name })
-      .from(branches)
-      .where(eq(branches.id, data.branchId))
-      .limit(1);
-
-    await logSystemAction(
-      user,
-      "Take Over Shift",
-      `Shift di cabang "${branch?.name ?? data.branchId}" diambil alih oleh ${user.name}`,
-    );
-    await logAudit(user, "shifts", data.shiftId, "UPDATE", shift, updatedShift);
-
-    return {
-      ...updatedShift,
-      holderUserId: data.userId,
-      holderName: user.name,
-    };
+    return takeOverShiftCore(user, data);
   });
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+export async function closeShiftCore(
+  user: AppUser,
+  data: { shiftId: string; actualCash: number; notes?: string },
+) {
+  const [oldShift] = await db.select().from(shifts).where(eq(shifts.id, data.shiftId)).limit(1);
+
+  const now = new Date();
+  const shift = await db.transaction(async (tx) => {
+    const [closed] = await tx
+      .update(shifts)
+      .set({
+        endTime: now,
+        actualCash: data.actualCash,
+        status: "Closed",
+        notes: data.notes,
+      })
+      .where(eq(shifts.id, data.shiftId))
+      .returning();
+
+    await tx
+      .update(shiftSessions)
+      .set({ loggedOutAt: now })
+      .where(and(eq(shiftSessions.shiftId, data.shiftId), isNull(shiftSessions.loggedOutAt)));
+    return closed;
+  });
+
+  const [branch] = await db
+    .select({ name: branches.name })
+    .from(branches)
+    .where(eq(branches.id, shift.branchId))
+    .limit(1);
+
+  await logSystemAction(
+    user,
+    "Close Shift",
+    `Shift ditutup di cabang "${branch?.name ?? shift.branchId}" oleh ${user.name}`,
+  );
+  await logAudit(user, "shifts", data.shiftId, "UPDATE", oldShift, shift);
+
+  return shift;
+}
 
 export const closeShift = createServerFn({ method: "POST" })
   .validator((data: { shiftId: string; actualCash: number; notes?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [oldShift] = await db.select().from(shifts).where(eq(shifts.id, data.shiftId)).limit(1);
-
-    const now = new Date();
-    const shift = await db.transaction(async (tx) => {
-      const [closed] = await tx
-        .update(shifts)
-        .set({
-          endTime: now,
-          actualCash: data.actualCash,
-          status: "Closed",
-          notes: data.notes,
-        })
-        .where(eq(shifts.id, data.shiftId))
-        .returning();
-
-      await tx
-        .update(shiftSessions)
-        .set({ loggedOutAt: now })
-        .where(and(eq(shiftSessions.shiftId, data.shiftId), isNull(shiftSessions.loggedOutAt)));
-      return closed;
-    });
-
-    const [branch] = await db
-      .select({ name: branches.name })
-      .from(branches)
-      .where(eq(branches.id, shift.branchId))
-      .limit(1);
-
-    await logSystemAction(
-      user,
-      "Close Shift",
-      `Shift ditutup di cabang "${branch?.name ?? shift.branchId}" oleh ${user.name}`,
-    );
-    await logAudit(user, "shifts", data.shiftId, "UPDATE", oldShift, shift);
-
-    return shift;
+    return closeShiftCore(user, data);
   });
 
 // Admin view: shift session history — who held each shift and when they logged
@@ -604,63 +625,161 @@ const orderItemInput = z.object({
   notes: z.string().optional(),
 });
 
-export const createOrder = createServerFn({ method: "POST" })
-  .validator(
-    (data: {
-      branchId: string;
-      channel: (typeof ORDER_CHANNEL_VALUES)[number];
-      customerName?: string;
-      orderCode?: string;
-      items: z.infer<typeof orderItemInput>[];
-      voucherCode?: string;
-      voucherDiscount?: number;
-      taxAmount?: number;
-      paymentMethod?: string;
-      shiftId?: string;
-      notes?: string;
-    }) => data,
-  )
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
+export interface CreateOrderInput {
+  branchId: string;
+  channel: (typeof ORDER_CHANNEL_VALUES)[number];
+  customerName?: string;
+  orderCode?: string;
+  items: z.infer<typeof orderItemInput>[];
+  voucherCode?: string;
+  voucherDiscount?: number;
+  taxAmount?: number;
+  paymentMethod?: string;
+  shiftId?: string;
+  notes?: string;
+}
 
-    const [branchInfo] = await db
-      .select({ name: branches.name })
-      .from(branches)
-      .where(eq(branches.id, data.branchId))
-      .limit(1);
-    const branchName = branchInfo?.name ?? data.branchId;
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. Creates the
+// order, deducts inventory with FOR UPDATE row locks, writes Kartu Stok, and
+// (outside the transaction) raises Stok Minus notifications for any shortfall.
+export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
+  const [branchInfo] = await db
+    .select({ name: branches.name })
+    .from(branches)
+    .where(eq(branches.id, data.branchId))
+    .limit(1);
+  const branchName = branchInfo?.name ?? data.branchId;
 
-    // ─── Resolve ingredients ONCE per item (batched, includes cost) ───
-    const resolvedPerItem = await Promise.all(
-      data.items.map((item) =>
-        resolveNewItemIngredients(item.recipeId, item.quantity, item.selectedModifiers, {
-          includeCost: true,
-        }),
-      ),
-    );
+  // ─── Resolve ingredients ONCE per item (batched, includes cost) ───
+  const resolvedPerItem = await Promise.all(
+    data.items.map((item) =>
+      resolveNewItemIngredients(item.recipeId, item.quantity, item.selectedModifiers, {
+        includeCost: true,
+      }),
+    ),
+  );
 
-    // ─── Soft stock check + COGS calculation (read-only) ───
-    const negativeStockAlerts: { ingredientName: string; shortfall: number; branchName: string }[] =
-      [];
-    let subtotal = 0;
-    let totalCogs = 0;
-    const voucherDiscount = data.voucherDiscount ?? 0;
-    const taxAmount = data.taxAmount ?? 0;
-    const itemCogsList: number[] = [];
+  // ─── Soft stock check + COGS calculation (read-only) ───
+  const negativeStockAlerts: { ingredientName: string; shortfall: number; branchName: string }[] =
+    [];
+  let subtotal = 0;
+  let totalCogs = 0;
+  const voucherDiscount = data.voucherDiscount ?? 0;
+  const taxAmount = data.taxAmount ?? 0;
+  const itemCogsList: number[] = [];
 
+  for (let i = 0; i < data.items.length; i++) {
+    const item = data.items[i];
+    const resolved = resolvedPerItem[i];
+
+    subtotal += item.price * item.quantity;
+
+    const itemCogs = resolved.ingredients.reduce((sum, ing) => sum + (ing.cost ?? 0), 0);
+    itemCogsList.push(itemCogs);
+    totalCogs += itemCogs;
+
+    for (const ing of resolved.ingredients) {
+      if (ing.quantity <= 0) continue;
+      const [inv] = await db
+        .select()
+        .from(inventory)
+        .where(
+          and(eq(inventory.branchId, data.branchId), eq(inventory.ingredientId, ing.ingredientId)),
+        )
+        .limit(1);
+      const currentQty = inv?.quantity ?? 0;
+      if (currentQty < ing.quantity) {
+        negativeStockAlerts.push({
+          ingredientName: ing.ingredientName,
+          shortfall: ing.quantity - currentQty,
+          branchName,
+        });
+      }
+    }
+  }
+
+  const totalAmount = subtotal - voucherDiscount + taxAmount;
+
+  const [fee] = await db
+    .select()
+    .from(platformFees)
+    .where(eq(platformFees.channel, data.channel))
+    .limit(1);
+  const mdrFee = fee ? Math.round((subtotal * fee.feePercentage) / 100) + fee.fixedFee : 0;
+  const netSales = totalAmount - mdrFee;
+
+  // ─── All writes inside a single transaction ───
+  const order = await db.transaction(async (tx) => {
+    // Create order
+    const [newOrder] = await tx
+      .insert(orders)
+      .values({
+        branchId: data.branchId,
+        channel: data.channel,
+        subtotal,
+        taxAmount,
+        totalAmount,
+        totalCogs,
+        mdrFee,
+        netSales,
+        orderCode: data.orderCode,
+        customerName: data.customerName,
+        paymentMethod: data.paymentMethod,
+        voucherCode: data.voucherCode,
+        voucherDiscount,
+        notes: data.notes,
+        shiftId: data.shiftId,
+      })
+      .returning();
+
+    // Create order items, modifiers, exclusions
     for (let i = 0; i < data.items.length; i++) {
       const item = data.items[i];
+      const itemCogs = itemCogsList[i];
       const resolved = resolvedPerItem[i];
 
-      subtotal += item.price * item.quantity;
+      const [orderItem] = await tx
+        .insert(orderItems)
+        .values({
+          orderId: newOrder.id,
+          recipeId: item.recipeId,
+          brandId: item.brandId || undefined,
+          quantity: item.quantity,
+          price: item.price,
+          cogsAtTransaction:
+            item.quantity > 0 ? Math.max(0, Math.round(itemCogs / item.quantity)) : 0,
+          notes: item.notes,
+        })
+        .returning();
 
-      const itemCogs = resolved.ingredients.reduce((sum, ing) => sum + (ing.cost ?? 0), 0);
-      itemCogsList.push(itemCogs);
-      totalCogs += itemCogs;
+      if (item.selectedModifiers?.length) {
+        for (const mod of item.selectedModifiers) {
+          await tx.insert(orderItemModifiers).values({
+            orderItemId: orderItem.id,
+            modifierGroupId: mod.groupId,
+            modifierId: mod.modifierId,
+          });
+        }
+      }
 
+      for (const ex of resolved.exclusionRecords) {
+        await tx.insert(orderItemExclusions).values({
+          orderItemId: orderItem.id,
+          ingredientId: ex.ingredientId,
+          quantity: ex.quantity,
+        });
+      }
+    }
+
+    // Deduct inventory (with FOR UPDATE row locks to prevent double-spend)
+    const seenIngredients = new Set<string>();
+    for (let i = 0; i < data.items.length; i++) {
+      const resolved = resolvedPerItem[i];
       for (const ing of resolved.ingredients) {
-        if (ing.quantity <= 0) continue;
-        const [inv] = await db
+        if (seenIngredients.has(ing.ingredientId)) continue;
+        seenIngredients.add(ing.ingredientId);
+
+        const [inv] = await tx
           .select()
           .from(inventory)
           .where(
@@ -669,172 +788,77 @@ export const createOrder = createServerFn({ method: "POST" })
               eq(inventory.ingredientId, ing.ingredientId),
             ),
           )
+          .for("update")
           .limit(1);
-        const currentQty = inv?.quantity ?? 0;
-        if (currentQty < ing.quantity) {
-          negativeStockAlerts.push({
-            ingredientName: ing.ingredientName,
-            shortfall: ing.quantity - currentQty,
-            branchName,
+
+        if (inv) {
+          // Calculate net delta: sum across all items for this ingredient
+          let netDelta = 0;
+          for (let j = 0; j < data.items.length; j++) {
+            const r = resolvedPerItem[j];
+            const match = r.ingredients.find((x) => x.ingredientId === ing.ingredientId);
+            if (match) netDelta += match.quantity;
+          }
+
+          const newQty = inv.quantity - netDelta;
+          await tx
+            .update(inventory)
+            .set({ quantity: newQty, lastUpdated: new Date() })
+            .where(eq(inventory.id, inv.id));
+
+          await tx.insert(stockLedger).values({
+            branchId: data.branchId,
+            ingredientId: ing.ingredientId,
+            type: netDelta > 0 ? "OUT" : "IN",
+            quantity: Math.abs(netDelta),
+            balance: newQty,
+            reference: newOrder.id,
+            notes:
+              netDelta > 0
+                ? `POS Order ${newOrder.id.slice(0, 8)}`
+                : `Exclusion restore: ${newOrder.id.slice(0, 8)}`,
           });
         }
       }
     }
 
-    const totalAmount = subtotal - voucherDiscount + taxAmount;
+    return newOrder;
+  });
 
-    const [fee] = await db
-      .select()
-      .from(platformFees)
-      .where(eq(platformFees.channel, data.channel))
-      .limit(1);
-    const mdrFee = fee ? Math.round((subtotal * fee.feePercentage) / 100) + fee.fixedFee : 0;
-    const netSales = totalAmount - mdrFee;
+  // ─── Notifications (non-critical, outside transaction) ───
+  if (negativeStockAlerts.length > 0) {
+    const ams = await db
+      .select({ userId: areaManagerBranches.userId })
+      .from(areaManagerBranches)
+      .where(eq(areaManagerBranches.branchId, data.branchId));
 
-    // ─── All writes inside a single transaction ───
-    const order = await db.transaction(async (tx) => {
-      // Create order
-      const [newOrder] = await tx
-        .insert(orders)
-        .values({
-          branchId: data.branchId,
-          channel: data.channel,
-          subtotal,
-          taxAmount,
-          totalAmount,
-          totalCogs,
-          mdrFee,
-          netSales,
-          orderCode: data.orderCode,
-          customerName: data.customerName,
-          paymentMethod: data.paymentMethod,
-          voucherCode: data.voucherCode,
-          voucherDiscount,
-          notes: data.notes,
-          shiftId: data.shiftId,
-        })
-        .returning();
-
-      // Create order items, modifiers, exclusions
-      for (let i = 0; i < data.items.length; i++) {
-        const item = data.items[i];
-        const itemCogs = itemCogsList[i];
-        const resolved = resolvedPerItem[i];
-
-        const [orderItem] = await tx
-          .insert(orderItems)
-          .values({
-            orderId: newOrder.id,
-            recipeId: item.recipeId,
-            brandId: item.brandId || undefined,
-            quantity: item.quantity,
-            price: item.price,
-            cogsAtTransaction:
-              item.quantity > 0 ? Math.max(0, Math.round(itemCogs / item.quantity)) : 0,
-            notes: item.notes,
-          })
-          .returning();
-
-        if (item.selectedModifiers?.length) {
-          for (const mod of item.selectedModifiers) {
-            await tx.insert(orderItemModifiers).values({
-              orderItemId: orderItem.id,
-              modifierGroupId: mod.groupId,
-              modifierId: mod.modifierId,
-            });
-          }
-        }
-
-        for (const ex of resolved.exclusionRecords) {
-          await tx.insert(orderItemExclusions).values({
-            orderItemId: orderItem.id,
-            ingredientId: ex.ingredientId,
-            quantity: ex.quantity,
-          });
-        }
-      }
-
-      // Deduct inventory (with FOR UPDATE row locks to prevent double-spend)
-      const seenIngredients = new Set<string>();
-      for (let i = 0; i < data.items.length; i++) {
-        const resolved = resolvedPerItem[i];
-        for (const ing of resolved.ingredients) {
-          if (seenIngredients.has(ing.ingredientId)) continue;
-          seenIngredients.add(ing.ingredientId);
-
-          const [inv] = await tx
-            .select()
-            .from(inventory)
-            .where(
-              and(
-                eq(inventory.branchId, data.branchId),
-                eq(inventory.ingredientId, ing.ingredientId),
-              ),
-            )
-            .for("update")
-            .limit(1);
-
-          if (inv) {
-            // Calculate net delta: sum across all items for this ingredient
-            let netDelta = 0;
-            for (let j = 0; j < data.items.length; j++) {
-              const r = resolvedPerItem[j];
-              const match = r.ingredients.find((x) => x.ingredientId === ing.ingredientId);
-              if (match) netDelta += match.quantity;
-            }
-
-            const newQty = inv.quantity - netDelta;
-            await tx
-              .update(inventory)
-              .set({ quantity: newQty, lastUpdated: new Date() })
-              .where(eq(inventory.id, inv.id));
-
-            await tx.insert(stockLedger).values({
-              branchId: data.branchId,
-              ingredientId: ing.ingredientId,
-              type: netDelta > 0 ? "OUT" : "IN",
-              quantity: Math.abs(netDelta),
-              balance: newQty,
-              reference: newOrder.id,
-              notes:
-                netDelta > 0
-                  ? `POS Order ${newOrder.id.slice(0, 8)}`
-                  : `Exclusion restore: ${newOrder.id.slice(0, 8)}`,
-            });
-          }
-        }
-      }
-
-      return newOrder;
-    });
-
-    // ─── Notifications (non-critical, outside transaction) ───
-    if (negativeStockAlerts.length > 0) {
-      const ams = await db
-        .select({ userId: areaManagerBranches.userId })
-        .from(areaManagerBranches)
-        .where(eq(areaManagerBranches.branchId, data.branchId));
-
-      for (const alert of negativeStockAlerts) {
-        for (const am of ams) {
-          await db.insert(systemNotifications).values({
-            userId: am.userId,
-            title: "Stok Minus",
-            message: `${alert.ingredientName}: minus ${alert.shortfall} di ${branchName}. Order #${order.id.slice(0, 8)}`,
-            type: "alert",
-          });
-        }
+    for (const alert of negativeStockAlerts) {
+      for (const am of ams) {
+        await db.insert(systemNotifications).values({
+          userId: am.userId,
+          title: "Stok Minus",
+          message: `${alert.ingredientName}: minus ${alert.shortfall} di ${branchName}. Order #${order.id.slice(0, 8)}`,
+          type: "alert",
+        });
       }
     }
+  }
 
-    await logSystemAction(
-      user,
-      "Create Order",
-      `Order #${order.orderCode ?? order.id.slice(0, 8)} (${data.channel}) Rp${totalAmount.toLocaleString()} dibuat oleh ${user.name}`,
-    );
-    await logAudit(user, "orders", order.id, "CREATE", undefined, order);
+  await logSystemAction(
+    user,
+    "Create Order",
+    `Order #${order.orderCode ?? order.id.slice(0, 8)} (${data.channel}) Rp${totalAmount.toLocaleString()} dibuat oleh ${user.name}`,
+  );
+  await logAudit(user, "orders", order.id, "CREATE", undefined, order);
 
-    return order;
+  return order;
+}
+
+export const createOrder = createServerFn({ method: "POST" })
+  .validator((data: CreateOrderInput) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    return createOrderCore(user, data);
   });
 
 export const getOrders = createServerFn({ method: "GET" })
@@ -929,28 +953,32 @@ export const getOrderWithItems = createServerFn({ method: "GET" })
     };
   });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+export async function completeOrderCore(user: AppUser, data: { orderId: string }) {
+  const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
+  if (!old) throw new Error("Order not found");
+
+  const [order] = await db
+    .update(orders)
+    .set({ status: "Completed", completedAt: new Date() })
+    .where(eq(orders.id, data.orderId))
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Complete Order",
+    `Order #${order.orderCode ?? order.id.slice(0, 8)} diselesaikan oleh ${user.name}`,
+  );
+  await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, order);
+
+  return order;
+}
+
 export const completeOrder = createServerFn({ method: "POST" })
   .validator((data: { orderId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
-    if (!old) throw new Error("Order not found");
-
-    const [order] = await db
-      .update(orders)
-      .set({ status: "Completed", completedAt: new Date() })
-      .where(eq(orders.id, data.orderId))
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Complete Order",
-      `Order #${order.orderCode ?? order.id.slice(0, 8)} diselesaikan oleh ${user.name}`,
-    );
-    await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, order);
-
-    return order;
+    return completeOrderCore(user, data);
   });
 
 // ─── Shared helper: restore inventory for a voided order ───
@@ -1002,37 +1030,61 @@ async function restoreInventoryForVoid(
   }
 }
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+export async function voidOrderCore(user: AppUser, data: { orderId: string; reason: string }) {
+  const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
+  if (!old) throw new Error("Order not found");
+  if (old.status === "Void") throw new Error("Order sudah dibatalkan");
+
+  const order = await db.transaction(async (tx) => {
+    const [updatedOrder] = await tx
+      .update(orders)
+      .set({ status: "Void", voidReason: data.reason })
+      .where(eq(orders.id, data.orderId))
+      .returning();
+
+    await restoreInventoryForVoid(data.orderId, old.branchId, data.reason, tx);
+
+    return updatedOrder;
+  });
+
+  await logSystemAction(
+    user,
+    "Void Order",
+    `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name}. Alasan: ${data.reason}`,
+    "Warning",
+  );
+  await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, order);
+
+  return order;
+}
+
 export const voidOrder = createServerFn({ method: "POST" })
   .validator((data: { orderId: string; reason: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
-    if (!old) throw new Error("Order not found");
-    if (old.status === "Void") throw new Error("Order sudah dibatalkan");
-
-    const order = await db.transaction(async (tx) => {
-      const [updatedOrder] = await tx
-        .update(orders)
-        .set({ status: "Void", voidReason: data.reason })
-        .where(eq(orders.id, data.orderId))
-        .returning();
-
-      await restoreInventoryForVoid(data.orderId, old.branchId, data.reason, tx);
-
-      return updatedOrder;
-    });
-
-    await logSystemAction(
-      user,
-      "Void Order",
-      `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name}. Alasan: ${data.reason}`,
-      "Warning",
-    );
-    await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, order);
-
-    return order;
+    return voidOrderCore(user, data);
   });
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+export async function updateOrderStatusCore(
+  user: AppUser,
+  data: { orderId: string; newStatus: "New" | "Processing" | "In Delivery" | "Completed" },
+) {
+  const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
+
+  if (!old) throw new Error("Order not found");
+
+  const [updated] = await db
+    .update(orders)
+    .set({ status: data.newStatus })
+    .where(eq(orders.id, data.orderId))
+    .returning();
+
+  await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, updated);
+
+  return updated;
+}
 
 export const updateOrderStatus = createServerFn({ method: "POST" })
   .validator(
@@ -1043,57 +1095,54 @@ export const updateOrderStatus = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
-
-    if (!old) throw new Error("Order not found");
-
-    const [updated] = await db
-      .update(orders)
-      .set({ status: data.newStatus })
-      .where(eq(orders.id, data.orderId))
-      .returning();
-
-    await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, updated);
-
-    return updated;
+    return updateOrderStatusCore(user, data);
   });
 
 // ─── Print Request (Re-print Approval Flow) ───
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. Returning an
+// already-pending request is a `{...existing, alreadyPending:true}` signal, not
+// a throw — callers must narrow the union before reading `alreadyPending`.
+// (No role guard; any authenticated user may request a reprint.)
+export async function requestReprintCore(
+  user: AppUser,
+  data: { orderId: string; requestType?: string },
+) {
+  // Return existing Pending request (don't create duplicates)
+  const [existing] = await db
+    .select()
+    .from(printRequests)
+    .where(and(eq(printRequests.orderId, data.orderId), eq(printRequests.status, "Pending")))
+    .limit(1);
+
+  if (existing) {
+    return { ...existing, alreadyPending: true };
+  }
+
+  const [req] = await db
+    .insert(printRequests)
+    .values({
+      orderId: data.orderId,
+      requestType: data.requestType ?? "reprint",
+      requestedBy: user.id,
+      status: "Pending",
+    })
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Request Reprint",
+    `Permintaan cetak ulang untuk order #${data.orderId.slice(0, 8)} oleh ${user.name}`,
+  );
+
+  return req;
+}
 
 export const requestReprint = createServerFn({ method: "POST" })
   .validator((data: { orderId: string; requestType?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    // Return existing Pending request (don't create duplicates)
-    const [existing] = await db
-      .select()
-      .from(printRequests)
-      .where(and(eq(printRequests.orderId, data.orderId), eq(printRequests.status, "Pending")))
-      .limit(1);
-
-    if (existing) {
-      return { ...existing, alreadyPending: true };
-    }
-
-    const [req] = await db
-      .insert(printRequests)
-      .values({
-        orderId: data.orderId,
-        requestType: data.requestType ?? "reprint",
-        requestedBy: user.id,
-        status: "Pending",
-      })
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Request Reprint",
-      `Permintaan cetak ulang untuk order #${data.orderId.slice(0, 8)} oleh ${user.name}`,
-    );
-
-    return req;
+    return requestReprintCore(user, data);
   });
 
 export const getReprintRequestStatus = createServerFn({ method: "GET" })
@@ -1151,122 +1200,163 @@ export const getPendingPrintRequests = createServerFn({ method: "GET" })
     return result;
   });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+export async function approveReprintCore(user: AppUser, data: { requestId: string }) {
+  const [old] = await db
+    .select()
+    .from(printRequests)
+    .where(eq(printRequests.id, data.requestId))
+    .limit(1);
+
+  if (!old) throw new Error("Print request not found");
+  if (old.status !== "Pending") throw new Error("Request sudah diproses");
+
+  const [req] = await db
+    .update(printRequests)
+    .set({
+      status: "Approved",
+      approvedBy: user.id,
+      approvedAt: new Date(),
+    })
+    .where(eq(printRequests.id, data.requestId))
+    .returning();
+
+  // Notify the requesting cashier
+  await db.insert(systemNotifications).values({
+    userId: old.requestedBy,
+    title: "Print Request Approved",
+    message: `Permintaan cetak ulang untuk order #${old.orderId.slice(0, 8)} telah disetujui. Klik tombol Cetak untuk mencetak.`,
+    type: "info",
+  });
+
+  await logSystemAction(
+    user,
+    "Approve Reprint",
+    `Print request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}`,
+  );
+  await logAudit(user, "printRequests", data.requestId, "STATUS_CHANGE", old, req);
+
+  return req;
+}
+
 export const approveReprint = createServerFn({ method: "POST" })
   .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [old] = await db
-      .select()
-      .from(printRequests)
-      .where(eq(printRequests.id, data.requestId))
-      .limit(1);
-
-    if (!old) throw new Error("Print request not found");
-    if (old.status !== "Pending") throw new Error("Request sudah diproses");
-
-    const [req] = await db
-      .update(printRequests)
-      .set({
-        status: "Approved",
-        approvedBy: user.id,
-        approvedAt: new Date(),
-      })
-      .where(eq(printRequests.id, data.requestId))
-      .returning();
-
-    // Notify the requesting cashier
-    await db.insert(systemNotifications).values({
-      userId: old.requestedBy,
-      title: "Print Request Approved",
-      message: `Permintaan cetak ulang untuk order #${old.orderId.slice(0, 8)} telah disetujui. Klik tombol Cetak untuk mencetak.`,
-      type: "info",
-    });
-
-    await logSystemAction(
-      user,
-      "Approve Reprint",
-      `Print request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}`,
-    );
-    await logAudit(user, "printRequests", data.requestId, "STATUS_CHANGE", old, req);
-
-    return req;
+    return approveReprintCore(user, data);
   });
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+export async function rejectReprintCore(user: AppUser, data: { requestId: string }) {
+  const [old] = await db
+    .select()
+    .from(printRequests)
+    .where(eq(printRequests.id, data.requestId))
+    .limit(1);
+
+  if (!old) throw new Error("Print request not found");
+
+  const [req] = await db
+    .update(printRequests)
+    .set({
+      status: "Rejected",
+      approvedBy: user.id,
+      approvedAt: new Date(),
+    })
+    .where(eq(printRequests.id, data.requestId))
+    .returning();
+
+  // Notify the requesting cashier
+  await db.insert(systemNotifications).values({
+    userId: old.requestedBy,
+    title: "Print Request Rejected",
+    message: `Permintaan cetak ulang untuk order #${old.orderId.slice(0, 8)} ditolak`,
+    type: "warning",
+  });
+
+  await logSystemAction(
+    user,
+    "Reject Reprint",
+    `Print request #${data.requestId.slice(0, 8)} ditolak oleh ${user.name}`,
+  );
+
+  return req;
+}
 
 export const rejectReprint = createServerFn({ method: "POST" })
   .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [old] = await db
-      .select()
-      .from(printRequests)
-      .where(eq(printRequests.id, data.requestId))
-      .limit(1);
-
-    if (!old) throw new Error("Print request not found");
-
-    const [req] = await db
-      .update(printRequests)
-      .set({
-        status: "Rejected",
-        approvedBy: user.id,
-        approvedAt: new Date(),
-      })
-      .where(eq(printRequests.id, data.requestId))
-      .returning();
-
-    // Notify the requesting cashier
-    await db.insert(systemNotifications).values({
-      userId: old.requestedBy,
-      title: "Print Request Rejected",
-      message: `Permintaan cetak ulang untuk order #${old.orderId.slice(0, 8)} ditolak`,
-      type: "warning",
-    });
-
-    await logSystemAction(
-      user,
-      "Reject Reprint",
-      `Print request #${data.requestId.slice(0, 8)} ditolak oleh ${user.name}`,
-    );
-
-    return req;
+    return rejectReprintCore(user, data);
   });
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+export async function consumePrintRequestCore(user: AppUser, data: { requestId: string }) {
+  const [old] = await db
+    .select()
+    .from(printRequests)
+    .where(eq(printRequests.id, data.requestId))
+    .limit(1);
+
+  if (!old) throw new Error("Print request not found");
+  if (old.status !== "Approved")
+    throw new Error("Hanya request dengan status Approved yang dapat dikonsumsi");
+
+  const [req] = await db
+    .update(printRequests)
+    .set({
+      status: "Consumed",
+    })
+    .where(eq(printRequests.id, data.requestId))
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Consume Print Request",
+    `Print request #${data.requestId.slice(0, 8)} telah digunakan oleh ${user.name}`,
+  );
+  await logAudit(user, "printRequests", data.requestId, "STATUS_CHANGE", old, req);
+
+  return req;
+}
 
 export const consumePrintRequest = createServerFn({ method: "POST" })
   .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [old] = await db
-      .select()
-      .from(printRequests)
-      .where(eq(printRequests.id, data.requestId))
-      .limit(1);
-
-    if (!old) throw new Error("Print request not found");
-    if (old.status !== "Approved")
-      throw new Error("Hanya request dengan status Approved yang dapat dikonsumsi");
-
-    const [req] = await db
-      .update(printRequests)
-      .set({
-        status: "Consumed",
-      })
-      .where(eq(printRequests.id, data.requestId))
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Consume Print Request",
-      `Print request #${data.requestId.slice(0, 8)} telah digunakan oleh ${user.name}`,
-    );
-    await logAudit(user, "printRequests", data.requestId, "STATUS_CHANGE", old, req);
-
-    return req;
+    return consumePrintRequestCore(user, data);
   });
 
 // ─── Cancel Requests ───
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+export async function createCancelRequestCore(
+  user: AppUser,
+  data: {
+    orderId: string;
+    reason: "Stok Habis" | "Salah Input" | "Customer Cancel";
+    detail?: string;
+  },
+) {
+  const [req] = await db
+    .insert(cancelRequests)
+    .values({
+      orderId: data.orderId,
+      reason: data.reason,
+      detail: data.detail,
+      requestedBy: user.id,
+      status: "Pending",
+    })
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Create Cancel Request",
+    `Cancel request untuk order #${data.orderId.slice(0, 8)} dibuat oleh ${user.name}. Alasan: ${data.reason}`,
+  );
+
+  return req;
+}
 
 export const createCancelRequest = createServerFn({ method: "POST" })
   .validator(
@@ -1278,25 +1368,7 @@ export const createCancelRequest = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [req] = await db
-      .insert(cancelRequests)
-      .values({
-        orderId: data.orderId,
-        reason: data.reason,
-        detail: data.detail,
-        requestedBy: user.id,
-        status: "Pending",
-      })
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Create Cancel Request",
-      `Cancel request untuk order #${data.orderId.slice(0, 8)} dibuat oleh ${user.name}. Alasan: ${data.reason}`,
-    );
-
-    return req;
+    return createCancelRequestCore(user, data);
   });
 
 export const getCancelRequests = createServerFn({ method: "GET" })
@@ -1339,128 +1411,142 @@ export const getCancelRequests = createServerFn({ method: "GET" })
     return result;
   });
 
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+export async function approveCancelRequestCore(user: AppUser, data: { requestId: string }) {
+  const [old] = await db
+    .select()
+    .from(cancelRequests)
+    .where(eq(cancelRequests.id, data.requestId))
+    .limit(1);
+
+  if (!old) throw new Error("Cancel request not found");
+  if (old.status !== "Pending") throw new Error("Request sudah diproses");
+
+  const [req] = await db
+    .update(cancelRequests)
+    .set({ status: "Approved", approvedBy: user.id, approvedAt: new Date() })
+    .where(eq(cancelRequests.id, data.requestId))
+    .returning();
+
+  // Notify the requesting cashier
+  await db.insert(systemNotifications).values({
+    userId: old.requestedBy,
+    title: "Cancel Request Approved",
+    message: `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} telah disetujui. Klik tombol Batal untuk menjalankan pembatalan.`,
+    type: "info",
+  });
+
+  await logSystemAction(
+    user,
+    "Approve Cancel Request",
+    `Cancel request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}`,
+  );
+  await logAudit(user, "cancelRequests", data.requestId, "STATUS_CHANGE", old, req);
+
+  return req;
+}
+
 export const approveCancelRequest = createServerFn({ method: "POST" })
   .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [old] = await db
-      .select()
-      .from(cancelRequests)
-      .where(eq(cancelRequests.id, data.requestId))
-      .limit(1);
-
-    if (!old) throw new Error("Cancel request not found");
-    if (old.status !== "Pending") throw new Error("Request sudah diproses");
-
-    const [req] = await db
-      .update(cancelRequests)
-      .set({ status: "Approved", approvedBy: user.id, approvedAt: new Date() })
-      .where(eq(cancelRequests.id, data.requestId))
-      .returning();
-
-    // Notify the requesting cashier
-    await db.insert(systemNotifications).values({
-      userId: old.requestedBy,
-      title: "Cancel Request Approved",
-      message: `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} telah disetujui. Klik tombol Batal untuk menjalankan pembatalan.`,
-      type: "info",
-    });
-
-    await logSystemAction(
-      user,
-      "Approve Cancel Request",
-      `Cancel request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}`,
-    );
-    await logAudit(user, "cancelRequests", data.requestId, "STATUS_CHANGE", old, req);
-
-    return req;
+    return approveCancelRequestCore(user, data);
   });
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+export async function rejectCancelRequestCore(user: AppUser, data: { requestId: string }) {
+  const [old] = await db
+    .select()
+    .from(cancelRequests)
+    .where(eq(cancelRequests.id, data.requestId))
+    .limit(1);
+
+  if (!old) throw new Error("Cancel request not found");
+
+  const [req] = await db
+    .update(cancelRequests)
+    .set({ status: "Rejected", approvedBy: user.id, approvedAt: new Date() })
+    .where(eq(cancelRequests.id, data.requestId))
+    .returning();
+
+  // Notify the requesting cashier
+  await db.insert(systemNotifications).values({
+    userId: old.requestedBy,
+    title: "Cancel Request Rejected",
+    message: `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} ditolak`,
+    type: "warning",
+  });
+
+  await logSystemAction(
+    user,
+    "Reject Cancel Request",
+    `Cancel request #${data.requestId.slice(0, 8)} ditolak oleh ${user.name}`,
+  );
+
+  return req;
+}
 
 export const rejectCancelRequest = createServerFn({ method: "POST" })
   .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [old] = await db
-      .select()
-      .from(cancelRequests)
-      .where(eq(cancelRequests.id, data.requestId))
-      .limit(1);
-
-    if (!old) throw new Error("Cancel request not found");
-
-    const [req] = await db
-      .update(cancelRequests)
-      .set({ status: "Rejected", approvedBy: user.id, approvedAt: new Date() })
-      .where(eq(cancelRequests.id, data.requestId))
-      .returning();
-
-    // Notify the requesting cashier
-    await db.insert(systemNotifications).values({
-      userId: old.requestedBy,
-      title: "Cancel Request Rejected",
-      message: `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} ditolak`,
-      type: "warning",
-    });
-
-    await logSystemAction(
-      user,
-      "Reject Cancel Request",
-      `Cancel request #${data.requestId.slice(0, 8)} ditolak oleh ${user.name}`,
-    );
-
-    return req;
+    return rejectCancelRequestCore(user, data);
   });
 
 // ─── Execute Approved Cancel (cashier-side) ───
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. Executes an
+// approved cancel by voiding the order and restoring inventory, and marks the
+// request Executed.
+export async function executeApprovedCancelCore(user: AppUser, data: { requestId: string }) {
+  const [old] = await db
+    .select()
+    .from(cancelRequests)
+    .where(eq(cancelRequests.id, data.requestId))
+    .limit(1);
+
+  if (!old) throw new Error("Cancel request not found");
+  if (old.status !== "Approved") throw new Error("Request belum disetujui atau sudah dieksekusi");
+
+  const [order] = await db.select().from(orders).where(eq(orders.id, old.orderId)).limit(1);
+
+  if (!order) throw new Error("Order not found");
+  if (order.status === "Void") throw new Error("Order sudah dibatalkan");
+
+  const voidedOrder = await db.transaction(async (tx) => {
+    // Mark the request as Executed
+    await tx
+      .update(cancelRequests)
+      .set({ status: "Executed" })
+      .where(eq(cancelRequests.id, data.requestId));
+
+    // Void the order
+    const [updatedOrder] = await tx
+      .update(orders)
+      .set({ status: "Void", voidReason: `Cancel: ${old.reason}` })
+      .where(eq(orders.id, old.orderId))
+      .returning();
+
+    await restoreInventoryForVoid(old.orderId, order.branchId, old.reason, tx);
+
+    return updatedOrder;
+  });
+
+  await logSystemAction(
+    user,
+    "Execute Cancel",
+    `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name} (cancel request #${data.requestId.slice(0, 8)}). Alasan: ${old.reason}`,
+  );
+  await logAudit(user, "orders", old.orderId, "STATUS_CHANGE", order, voidedOrder);
+
+  return voidedOrder;
+}
 
 export const executeApprovedCancel = createServerFn({ method: "POST" })
   .validator((data: { requestId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [old] = await db
-      .select()
-      .from(cancelRequests)
-      .where(eq(cancelRequests.id, data.requestId))
-      .limit(1);
-
-    if (!old) throw new Error("Cancel request not found");
-    if (old.status !== "Approved") throw new Error("Request belum disetujui atau sudah dieksekusi");
-
-    const [order] = await db.select().from(orders).where(eq(orders.id, old.orderId)).limit(1);
-
-    if (!order) throw new Error("Order not found");
-    if (order.status === "Void") throw new Error("Order sudah dibatalkan");
-
-    const voidedOrder = await db.transaction(async (tx) => {
-      // Mark the request as Executed
-      await tx
-        .update(cancelRequests)
-        .set({ status: "Executed" })
-        .where(eq(cancelRequests.id, data.requestId));
-
-      // Void the order
-      const [updatedOrder] = await tx
-        .update(orders)
-        .set({ status: "Void", voidReason: `Cancel: ${old.reason}` })
-        .where(eq(orders.id, old.orderId))
-        .returning();
-
-      await restoreInventoryForVoid(old.orderId, order.branchId, old.reason, tx);
-
-      return updatedOrder;
-    });
-
-    await logSystemAction(
-      user,
-      "Execute Cancel",
-      `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name} (cancel request #${data.requestId.slice(0, 8)}). Alasan: ${old.reason}`,
-    );
-    await logAudit(user, "orders", old.orderId, "STATUS_CHANGE", order, voidedOrder);
-
-    return voidedOrder;
+    return executeApprovedCancelCore(user, data);
   });
 
 // ─── Active Requests for Orders (POS polling source) ───

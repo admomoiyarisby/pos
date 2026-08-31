@@ -4,6 +4,7 @@ import { branches, users } from "#/db/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
+import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { z } from "zod";
@@ -98,31 +99,43 @@ export const getBranch = createServerFn({ method: "GET" })
 export const createBranch = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof branchInput>) => branchInput.parse(data))
   .handler(async ({ data }) => {
-    await requireRole("super_admin", "admin_pusat");
-
-    // Validate PIN uniqueness if provided
-    if (data.pin) {
-      await validatePinUnique(data.pin);
-    }
-
-    const [result] = await db
-      .insert(branches)
-      .values({
-        code: data.code,
-        name: data.name,
-        location: data.location,
-        type: data.type,
-        active: data.active ?? true,
-        isOnline: data.isOnline ?? true,
-        pb1Rate: data.pb1Rate ?? 11,
-        pin: data.pin,
-        phone: data.phone,
-        complaintPhone: data.complaintPhone,
-      })
-      .returning();
-
-    return result;
+    const user = await requireRole("super_admin", "admin_pusat");
+    return createBranchCore(user, data);
   });
+
+/** The business logic behind `createBranch`, parameterized by an explicit user
+ *  so it can be driven directly (e.g. from integration tests). Mirrors the
+ *  wrapper's `requireRole(...)` guard. */
+export async function createBranchCore(user: AppUser, data: z.infer<typeof branchInput>) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  // Validate PIN uniqueness if provided
+  if (data.pin) {
+    await validatePinUnique(data.pin);
+  }
+
+  const [result] = await db
+    .insert(branches)
+    .values({
+      code: data.code,
+      name: data.name,
+      location: data.location,
+      type: data.type,
+      active: data.active ?? true,
+      isOnline: data.isOnline ?? true,
+      pb1Rate: data.pb1Rate ?? 11,
+      pin: data.pin,
+      phone: data.phone,
+      complaintPhone: data.complaintPhone,
+    })
+    .returning();
+
+  return result;
+}
 
 // For updates, all fields except id are optional and can be null
 const updateBranchInput = z.object({
@@ -143,61 +156,80 @@ export const updateBranch = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof updateBranchInput>) => updateBranchInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    const { id, ...updates } = data;
-
-    // Filter out null and undefined values - only update fields that were actually provided
-    const filteredUpdates: UnknownRecord = {};
-    for (const [key, value] of Object.entries(updates)) {
-      if (value !== null && value !== undefined) {
-        filteredUpdates[key] = value;
-      }
-    }
-
-    // Validate PIN uniqueness if being updated
-    const pin = z.string().optional().catch(undefined).parse(filteredUpdates.pin);
-    if (pin) {
-      await validatePinUnique(pin, id);
-    }
-
-    const [old] = await db.select().from(branches).where(eq(branches.id, id)).limit(1);
-
-    const [result] = await db
-      .update(branches)
-      .set({ ...filteredUpdates, updatedAt: new Date() })
-      .where(eq(branches.id, id))
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Update Branch",
-      `Cabang "${result.name}" diperbarui oleh ${user.name}`,
-    );
-    await logAudit(user, "branches", id, "UPDATE", old, result);
-
-    return result;
+    return updateBranchCore(user, data);
   });
+
+export async function updateBranchCore(user: AppUser, data: z.infer<typeof updateBranchInput>) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  const { id, ...updates } = data;
+
+  // Filter out null and undefined values - only update fields that were actually provided
+  const filteredUpdates: UnknownRecord = {};
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== null && value !== undefined) {
+      filteredUpdates[key] = value;
+    }
+  }
+
+  // Validate PIN uniqueness if being updated
+  const pin = z.string().optional().catch(undefined).parse(filteredUpdates.pin);
+  if (pin) {
+    await validatePinUnique(pin, id);
+  }
+
+  const [old] = await db.select().from(branches).where(eq(branches.id, id)).limit(1);
+  if (!old) throw new Error("Branch not found");
+
+  const [result] = await db
+    .update(branches)
+    .set({ ...filteredUpdates, updatedAt: new Date() })
+    .where(eq(branches.id, id))
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Update Branch",
+    `Cabang "${result.name}" diperbarui oleh ${user.name}`,
+  );
+  await logAudit(user, "branches", id, "UPDATE", old, result);
+
+  return result;
+}
 
 export const deleteBranch = createServerFn({ method: "POST" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    const [old] = await db.select().from(branches).where(eq(branches.id, data.id)).limit(1);
-    if (!old) throw new Error("Branch not found");
-
-    const [result] = await db
-      .update(branches)
-      .set({ active: false, updatedAt: new Date() })
-      .where(eq(branches.id, data.id))
-      .returning();
-
-    await logSystemAction(
-      user,
-      "Delete Branch",
-      `Cabang "${result.name}" dinonaktifkan oleh ${user.name}`,
-    );
-    await logAudit(user, "branches", data.id, "DELETE", old, result);
-
-    return { success: true };
+    return deleteBranchCore(user, data);
   });
+
+export async function deleteBranchCore(user: AppUser, data: { id: string }) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  const [old] = await db.select().from(branches).where(eq(branches.id, data.id)).limit(1);
+  if (!old) throw new Error("Branch not found");
+
+  const [result] = await db
+    .update(branches)
+    .set({ active: false, updatedAt: new Date() })
+    .where(eq(branches.id, data.id))
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Delete Branch",
+    `Cabang "${result.name}" dinonaktifkan oleh ${user.name}`,
+  );
+  await logAudit(user, "branches", data.id, "DELETE", old, result);
+
+  return { success: true };
+}

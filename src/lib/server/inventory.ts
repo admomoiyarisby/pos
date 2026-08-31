@@ -15,6 +15,7 @@ import { eq, and, or, desc, asc, count, inArray, sql, ilike, ne } from "drizzle-
 import type { SQL } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
+import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, buildPrintHtml } from "./html-utils";
 
@@ -336,72 +337,87 @@ export const triggerStockOpname = createServerFn({ method: "POST" })
   .validator((data: { branchId: string; date: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-    // ID11: branch_admin can now trigger SO for their own branch
     await requireRole("super_admin", "admin_pusat", "area_manager", "branch_admin");
-
-    // Branch admin can only trigger for their own branch
-    if (user.role === "branch_admin" && user.branchId && data.branchId !== user.branchId) {
-      throw new Error("Branch Admin hanya bisa trigger SO untuk cabang sendiri");
-    }
-
-    // Outlet SOs only carry the branch (outlet) catalog (isBranchVisible = true);
-    // central-warehouse SOs include everything. Deleted ingredients are
-    // tombstoned from the master and never appear in an SO (mirrors getIngredients).
-    const [branch] = await db
-      .select({ type: branches.type })
-      .from(branches)
-      .where(eq(branches.id, data.branchId))
-      .limit(1);
-    const isOutlet = branch?.type === "Outlet";
-
-    // Get current inventory for the branch (only countable items)
-    const invItems = await db
-      .select({
-        ingredientId: inventory.ingredientId,
-        quantity: inventory.quantity,
-      })
-      .from(inventory)
-      .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
-      .where(
-        and(
-          eq(inventory.branchId, data.branchId),
-          eq(ingredients.countable, true),
-          ne(ingredients.status, "Deleted"),
-          isOutlet ? eq(ingredients.isBranchVisible, true) : undefined,
-        ),
-      );
-
-    // Create stock opname
-    const [so] = await db
-      .insert(stockOpnames)
-      .values({
-        branchId: data.branchId,
-        date: data.date,
-        triggeredBy: user.id,
-        submittedBy: user.id,
-      })
-      .returning();
-
-    // Create SO items with system stock
-    for (const item of invItems) {
-      await db.insert(stockOpnameItems).values({
-        stockOpnameId: so.id,
-        ingredientId: item.ingredientId,
-        systemStock: item.quantity,
-        physicalStock: 0,
-        variance: 0,
-      });
-    }
-
-    await logSystemAction(
-      user,
-      "Trigger Stock Opname",
-      `Stock opname "${so.id}" dimulai untuk cabang ${data.branchId} oleh ${user.name}`,
-    );
-    await logAudit(user, "stockOpnames", so.id, "CREATE", undefined, so);
-
-    return so;
+    return triggerStockOpnameCore(user, data);
   });
+
+/** The business logic behind `triggerStockOpname`, parameterized by an
+ *  explicit user so it can be driven directly (e.g. from integration tests).
+ *  Mirrors the wrapper's `requireRole(...)` guard so wrong-role actors are
+ *  rejected even when called without the HTTP session. */
+export async function triggerStockOpnameCore(
+  user: AppUser,
+  data: { branchId: string; date: string },
+) {
+  if (!["super_admin", "admin_pusat", "area_manager", "branch_admin"].includes(user.role)) {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat | area_manager | branch_admin)`,
+    );
+  }
+
+  // Branch admin can only trigger for their own branch
+  if (user.role === "branch_admin" && user.branchId && data.branchId !== user.branchId) {
+    throw new Error("Branch Admin hanya bisa trigger SO untuk cabang sendiri");
+  }
+
+  // Outlet SOs only carry the branch (outlet) catalog (isBranchVisible = true);
+  // central-warehouse SOs include everything. Deleted ingredients are
+  // tombstoned from the master and never appear in an SO (mirrors getIngredients).
+  const [branch] = await db
+    .select({ type: branches.type })
+    .from(branches)
+    .where(eq(branches.id, data.branchId))
+    .limit(1);
+  const isOutlet = branch?.type === "Outlet";
+
+  // Get current inventory for the branch (only countable items)
+  const invItems = await db
+    .select({
+      ingredientId: inventory.ingredientId,
+      quantity: inventory.quantity,
+    })
+    .from(inventory)
+    .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
+    .where(
+      and(
+        eq(inventory.branchId, data.branchId),
+        eq(ingredients.countable, true),
+        ne(ingredients.status, "Deleted"),
+        isOutlet ? eq(ingredients.isBranchVisible, true) : undefined,
+      ),
+    );
+
+  // Create stock opname
+  const [so] = await db
+    .insert(stockOpnames)
+    .values({
+      branchId: data.branchId,
+      date: data.date,
+      triggeredBy: user.id,
+      submittedBy: user.id,
+    })
+    .returning();
+
+  // Create SO items with system stock
+  for (const item of invItems) {
+    await db.insert(stockOpnameItems).values({
+      stockOpnameId: so.id,
+      ingredientId: item.ingredientId,
+      systemStock: item.quantity,
+      physicalStock: 0,
+      variance: 0,
+    });
+  }
+
+  await logSystemAction(
+    user,
+    "Trigger Stock Opname",
+    `Stock opname "${so.id}" dimulai untuk cabang ${data.branchId} oleh ${user.name}`,
+  );
+  await logAudit(user, "stockOpnames", so.id, "CREATE", undefined, so);
+
+  return so;
+}
 
 export const getStockOpnames = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string }) => data)
@@ -554,320 +570,349 @@ export const submitStockOpname = createServerFn({ method: "POST" })
   .validator((data: { soId: string; items: { itemId: string; physicalStock: number }[] }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
+    return submitStockOpnameCore(user, data);
+  });
 
-    const [oldSo] = await db
+export async function submitStockOpnameCore(
+  user: AppUser,
+  data: { soId: string; items: { itemId: string; physicalStock: number }[] },
+) {
+  const [oldSo] = await db
+    .select()
+    .from(stockOpnames)
+    .where(eq(stockOpnames.id, data.soId))
+    .limit(1);
+
+  if (!oldSo) throw new Error("Stock opname not found");
+
+  // Branch access check
+  if (user.role === "branch_admin" && user.branchId && oldSo.branchId !== user.branchId) {
+    throw new Error("Unauthorized: you can only submit Stock Opnames for your branch");
+  }
+
+  for (const item of data.items) {
+    // Get current system stock
+    const [soItem] = await db
       .select()
-      .from(stockOpnames)
-      .where(eq(stockOpnames.id, data.soId))
+      .from(stockOpnameItems)
+      .where(eq(stockOpnameItems.id, item.itemId))
       .limit(1);
 
-    if (!oldSo) throw new Error("Stock opname not found");
+    if (!soItem) continue;
 
-    // Branch access check
-    if (user.role === "branch_admin" && user.branchId && oldSo.branchId !== user.branchId) {
-      throw new Error("Unauthorized: you can only submit Stock Opnames for your branch");
-    }
-
-    for (const item of data.items) {
-      // Get current system stock
-      const [soItem] = await db
-        .select()
-        .from(stockOpnameItems)
-        .where(eq(stockOpnameItems.id, item.itemId))
-        .limit(1);
-
-      if (!soItem) continue;
-
-      const variance = item.physicalStock - soItem.systemStock;
-      const variancePercentage =
-        soItem.systemStock > 0
-          ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
-          : 0;
-
-      await db
-        .update(stockOpnameItems)
-        .set({
-          physicalStock: item.physicalStock,
-          variance,
-          variancePercentage: String(variancePercentage),
-        })
-        .where(eq(stockOpnameItems.id, item.itemId));
-    }
-
-    // Always set to "Submitted" — supervisor decides if investigation is needed
-    const newStatus = "Submitted";
+    const variance = item.physicalStock - soItem.systemStock;
+    const variancePercentage =
+      soItem.systemStock > 0
+        ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
+        : 0;
 
     await db
-      .update(stockOpnames)
+      .update(stockOpnameItems)
       .set({
-        status: newStatus,
-        submittedBy: user.id,
+        physicalStock: item.physicalStock,
+        variance,
+        variancePercentage: String(variancePercentage),
       })
-      .where(eq(stockOpnames.id, data.soId));
+      .where(eq(stockOpnameItems.id, item.itemId));
+  }
 
-    await logSystemAction(
-      user,
-      "Submit Stock Opname",
-      `Stock opname "${data.soId}" disubmit oleh ${user.name}`,
-    );
-    await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
-      ...oldSo,
+  // Always set to "Submitted" — supervisor decides if investigation is needed
+  const newStatus = "Submitted";
+
+  await db
+    .update(stockOpnames)
+    .set({
       status: newStatus,
-    });
+      submittedBy: user.id,
+    })
+    .where(eq(stockOpnames.id, data.soId));
 
-    return { success: true, status: newStatus };
+  await logSystemAction(
+    user,
+    "Submit Stock Opname",
+    `Stock opname "${data.soId}" disubmit oleh ${user.name}`,
+  );
+  await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
+    ...oldSo,
+    status: newStatus,
   });
+
+  return { success: true, status: newStatus };
+}
 
 export const markStockOpnameInvestigation = createServerFn({ method: "POST" })
   .validator((data: { soId: string; investigationNote?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     await requireRole("super_admin", "area_manager");
-
-    const [so] = await db
-      .select()
-      .from(stockOpnames)
-      .where(eq(stockOpnames.id, data.soId))
-      .limit(1);
-
-    if (!so) throw new Error("Stock opname not found");
-    if (so.status !== "Submitted") throw new Error("Stock opname is not in Submitted status");
-
-    const oldSo = { ...so };
-
-    await db
-      .update(stockOpnames)
-      .set({
-        status: "Under Investigation",
-        investigationNote: data.investigationNote || null,
-      })
-      .where(eq(stockOpnames.id, data.soId));
-
-    await logSystemAction(
-      user,
-      "Mark SO Investigation",
-      `Stock opname "${data.soId}" ditandai Under Investigation oleh ${user.name}`,
-    );
-    await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
-      ...oldSo,
-      status: "Under Investigation",
-      investigationNote: data.investigationNote,
-    });
-
-    // Notify branch admin
-    await db.insert(systemNotifications).values({
-      userId: so.submittedBy,
-      title: "SO Under Investigation",
-      message: `Stock opname memerlukan hitung ulang. ${data.investigationNote ? "Catatan: " + data.investigationNote : ""}`,
-      type: "warning",
-    });
-
-    return { success: true };
+    return markStockOpnameInvestigationCore(user, data);
   });
+
+export async function markStockOpnameInvestigationCore(
+  user: AppUser,
+  data: { soId: string; investigationNote?: string },
+) {
+  if (user.role !== "super_admin" && user.role !== "area_manager") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | area_manager)`,
+    );
+  }
+
+  const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.soId)).limit(1);
+
+  if (!so) throw new Error("Stock opname not found");
+  if (so.status !== "Submitted") throw new Error("Stock opname is not in Submitted status");
+
+  const oldSo = { ...so };
+
+  await db
+    .update(stockOpnames)
+    .set({
+      status: "Under Investigation",
+      investigationNote: data.investigationNote || null,
+    })
+    .where(eq(stockOpnames.id, data.soId));
+
+  await logSystemAction(
+    user,
+    "Mark SO Investigation",
+    `Stock opname "${data.soId}" ditandai Under Investigation oleh ${user.name}`,
+  );
+  await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
+    ...oldSo,
+    status: "Under Investigation",
+    investigationNote: data.investigationNote,
+  });
+
+  // Notify branch admin
+  await db.insert(systemNotifications).values({
+    userId: so.submittedBy,
+    title: "SO Under Investigation",
+    message: `Stock opname memerlukan hitung ulang. ${data.investigationNote ? "Catatan: " + data.investigationNote : ""}`,
+    type: "warning",
+  });
+
+  return { success: true };
+}
 
 export const approveStockOpname = createServerFn({ method: "POST" })
   .validator((data: { soId: string; investigationNote?: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     await requireRole("super_admin", "area_manager");
+    return approveStockOpnameCore(user, data);
+  });
 
-    // Get the SO
-    const [so] = await db
+export async function approveStockOpnameCore(
+  user: AppUser,
+  data: { soId: string; investigationNote?: string },
+) {
+  if (user.role !== "super_admin" && user.role !== "area_manager") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | area_manager)`,
+    );
+  }
+
+  // Get the SO
+  const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.soId)).limit(1);
+
+  if (!so) throw new Error("Stock opname not found");
+
+  // State guard: approval only proceeds from a counted SO (Submitted or
+  // Under Investigation), and never re-approves an Approved one. A freshly
+  // triggered SO is also "Submitted" (no enum for triggered), so the
+  // blank-count guard below is what stops approving an uncounted SO.
+  if (so.status === "Approved") {
+    throw new Error("Stock opname sudah di-approve");
+  }
+  if (so.status !== "Submitted" && so.status !== "Under Investigation") {
+    throw new Error(
+      "Stock opname harus berstatus Submitted atau Under Investigation untuk di-approve",
+    );
+  }
+
+  const oldSo = { ...so };
+
+  // Adjust inventory to physical stock
+  const items = await db
+    .select()
+    .from(stockOpnameItems)
+    .where(eq(stockOpnameItems.stockOpnameId, data.soId));
+
+  // Blank-submit guard (FRD §4.3 pattern 1): never approve an SO whose
+  // counts were never entered — approving one would zero out inventory.
+  if (items.length > 0 && items.every((i) => i.physicalStock === 0)) {
+    throw new Error(
+      "Belum ada stok fisik yang diisi. Simpan opname (submit) terlebih dahulu sebelum approve.",
+    );
+  }
+
+  for (const item of items) {
+    // Find inventory record
+    const [inv] = await db
       .select()
-      .from(stockOpnames)
-      .where(eq(stockOpnames.id, data.soId))
+      .from(inventory)
+      .where(
+        and(eq(inventory.branchId, so.branchId), eq(inventory.ingredientId, item.ingredientId)),
+      )
       .limit(1);
 
-    if (!so) throw new Error("Stock opname not found");
+    if (inv) {
+      await db
+        .update(inventory)
+        .set({
+          quantity: item.physicalStock,
+          lastUpdated: new Date(),
+        })
+        .where(eq(inventory.id, inv.id));
 
-    // State guard: approval only proceeds from a counted SO (Submitted or
-    // Under Investigation), and never re-approves an Approved one. A freshly
-    // triggered SO is also "Submitted" (no enum for triggered), so the
-    // blank-count guard below is what stops approving an uncounted SO.
-    if (so.status === "Approved") {
-      throw new Error("Stock opname sudah di-approve");
-    }
-    if (so.status !== "Submitted" && so.status !== "Under Investigation") {
-      throw new Error(
-        "Stock opname harus berstatus Submitted atau Under Investigation untuk di-approve",
-      );
-    }
-
-    const oldSo = { ...so };
-
-    // Adjust inventory to physical stock
-    const items = await db
-      .select()
-      .from(stockOpnameItems)
-      .where(eq(stockOpnameItems.stockOpnameId, data.soId));
-
-    // Blank-submit guard (FRD §4.3 pattern 1): never approve an SO whose
-    // counts were never entered — approving one would zero out inventory.
-    if (items.length > 0 && items.every((i) => i.physicalStock === 0)) {
-      throw new Error(
-        "Belum ada stok fisik yang diisi. Simpan opname (submit) terlebih dahulu sebelum approve.",
-      );
-    }
-
-    for (const item of items) {
-      // Find inventory record
-      const [inv] = await db
-        .select()
-        .from(inventory)
-        .where(
-          and(eq(inventory.branchId, so.branchId), eq(inventory.ingredientId, item.ingredientId)),
-        )
-        .limit(1);
-
-      if (inv) {
-        await db
-          .update(inventory)
-          .set({
-            quantity: item.physicalStock,
-            lastUpdated: new Date(),
-          })
-          .where(eq(inventory.id, inv.id));
-
-        // Create ledger adjustment entry using current inventory as reference
-        const currentVariance = item.physicalStock - inv.quantity;
-        if (currentVariance !== 0) {
-          await db.insert(stockLedger).values({
-            branchId: so.branchId,
-            ingredientId: item.ingredientId,
-            type: currentVariance > 0 ? "IN" : "OUT",
-            quantity: Math.abs(currentVariance),
-            balance: item.physicalStock,
-            reference: data.soId,
-            notes: `SO Adjustment${data.investigationNote ? ": " + data.investigationNote : ""}`,
-          });
-        }
-
-        // Alert if inventory went negative
-        if (item.physicalStock < 0) {
-          await db.insert(systemNotifications).values({
-            userId: so.submittedBy,
-            title: "⚠️ Stok Negatif setelah SO",
-            message: `Item ${item.ingredientId} menjadi ${item.physicalStock} setelah penyesuaian SO.`,
-            type: "alert",
-          });
-        }
+      // Create ledger adjustment entry using current inventory as reference
+      const currentVariance = item.physicalStock - inv.quantity;
+      if (currentVariance !== 0) {
+        await db.insert(stockLedger).values({
+          branchId: so.branchId,
+          ingredientId: item.ingredientId,
+          type: currentVariance > 0 ? "IN" : "OUT",
+          quantity: Math.abs(currentVariance),
+          balance: item.physicalStock,
+          reference: data.soId,
+          notes: `SO Adjustment${data.investigationNote ? ": " + data.investigationNote : ""}`,
+        });
       }
-    }
 
-    await db
-      .update(stockOpnames)
-      .set({
-        status: "Approved",
-        approvedBy: user.id,
-        investigationNote: data.investigationNote || null,
-      })
-      .where(eq(stockOpnames.id, data.soId));
-
-    // Notify the branch admin who submitted the SO
-    await db.insert(systemNotifications).values({
-      userId: so.submittedBy,
-      title: "Stock Opname Approved",
-      message: `Stock opname cabang telah disetujui oleh ${user.name}${data.investigationNote ? ". Catatan: " + data.investigationNote : ""}`,
-      type: "info",
-    });
-
-    // Also notify area managers if there was significant variance
-    const soItems = await db
-      .select()
-      .from(stockOpnameItems)
-      .where(eq(stockOpnameItems.stockOpnameId, data.soId));
-    const highVariance = soItems.filter((i) => {
-      const pct = i.variancePercentage ? Number(i.variancePercentage) : 0;
-      return pct > 3;
-    });
-    if (highVariance.length > 0) {
-      const ams = await db
-        .select({ userId: areaManagerBranches.userId })
-        .from(areaManagerBranches)
-        .where(eq(areaManagerBranches.branchId, so.branchId));
-      for (const am of ams) {
+      // Alert if inventory went negative
+      if (item.physicalStock < 0) {
         await db.insert(systemNotifications).values({
-          userId: am.userId,
-          title: "⚠️ Variance SO Signifikan",
-          message: `${highVariance.length} item memiliki variance > 3% pada SO ${data.soId.slice(0, 8)}`,
+          userId: so.submittedBy,
+          title: "⚠️ Stok Negatif setelah SO",
+          message: `Item ${item.ingredientId} menjadi ${item.physicalStock} setelah penyesuaian SO.`,
           type: "alert",
         });
       }
     }
+  }
 
-    await logSystemAction(
-      user,
-      "Approve Stock Opname",
-      `Stock opname "${data.soId}" diapprove oleh ${user.name}`,
-    );
-    await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
-      ...oldSo,
+  await db
+    .update(stockOpnames)
+    .set({
       status: "Approved",
       approvedBy: user.id,
-    });
+      investigationNote: data.investigationNote || null,
+    })
+    .where(eq(stockOpnames.id, data.soId));
 
-    return { success: true };
+  // Notify the branch admin who submitted the SO
+  await db.insert(systemNotifications).values({
+    userId: so.submittedBy,
+    title: "Stock Opname Approved",
+    message: `Stock opname cabang telah disetujui oleh ${user.name}${data.investigationNote ? ". Catatan: " + data.investigationNote : ""}`,
+    type: "info",
   });
+
+  // Also notify area managers if there was significant variance
+  const soItems = await db
+    .select()
+    .from(stockOpnameItems)
+    .where(eq(stockOpnameItems.stockOpnameId, data.soId));
+  const highVariance = soItems.filter((i) => {
+    const pct = i.variancePercentage ? Number(i.variancePercentage) : 0;
+    return pct > 3;
+  });
+  if (highVariance.length > 0) {
+    const ams = await db
+      .select({ userId: areaManagerBranches.userId })
+      .from(areaManagerBranches)
+      .where(eq(areaManagerBranches.branchId, so.branchId));
+    for (const am of ams) {
+      await db.insert(systemNotifications).values({
+        userId: am.userId,
+        title: "⚠️ Variance SO Signifikan",
+        message: `${highVariance.length} item memiliki variance > 3% pada SO ${data.soId.slice(0, 8)}`,
+        type: "alert",
+      });
+    }
+  }
+
+  await logSystemAction(
+    user,
+    "Approve Stock Opname",
+    `Stock opname "${data.soId}" diapprove oleh ${user.name}`,
+  );
+  await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
+    ...oldSo,
+    status: "Approved",
+    approvedBy: user.id,
+  });
+
+  return { success: true };
+}
 
 export const updateStockOpnameCounts = createServerFn({ method: "POST" })
   .validator((data: { soId: string; items: { itemId: string; physicalStock: number }[] }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-    // Branch admin and supervisors can update during investigation
     await requireRole("branch_admin", "super_admin", "area_manager");
+    return updateStockOpnameCountsCore(user, data);
+  });
 
-    const [so] = await db
+export async function updateStockOpnameCountsCore(
+  user: AppUser,
+  data: { soId: string; items: { itemId: string; physicalStock: number }[] },
+) {
+  if (!["branch_admin", "super_admin", "area_manager"].includes(user.role)) {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: branch_admin | super_admin | area_manager)`,
+    );
+  }
+
+  const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.soId)).limit(1);
+
+  if (!so) throw new Error("Stock opname not found");
+  if (so.status !== "Under Investigation")
+    throw new Error("Stock opname is not under investigation");
+  // Branch admin can only update their own branch SOs
+  if (user.role === "branch_admin" && user.branchId && so.branchId !== user.branchId)
+    throw new Error("Unauthorized: you can only update Stock Opnames for your branch");
+
+  const oldSo = { ...so };
+
+  for (const item of data.items) {
+    const [soItem] = await db
       .select()
-      .from(stockOpnames)
-      .where(eq(stockOpnames.id, data.soId))
+      .from(stockOpnameItems)
+      .where(eq(stockOpnameItems.id, item.itemId))
       .limit(1);
 
-    if (!so) throw new Error("Stock opname not found");
-    if (so.status !== "Under Investigation")
-      throw new Error("Stock opname is not under investigation");
-    // Branch admin can only update their own branch SOs
-    if (user.role === "branch_admin" && user.branchId && so.branchId !== user.branchId)
-      throw new Error("Unauthorized: you can only update Stock Opnames for your branch");
+    if (!soItem) continue;
 
-    const oldSo = { ...so };
+    const variance = item.physicalStock - soItem.systemStock;
+    const variancePercentage =
+      soItem.systemStock > 0
+        ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
+        : 0;
 
-    for (const item of data.items) {
-      const [soItem] = await db
-        .select()
-        .from(stockOpnameItems)
-        .where(eq(stockOpnameItems.id, item.itemId))
-        .limit(1);
+    await db
+      .update(stockOpnameItems)
+      .set({
+        physicalStock: item.physicalStock,
+        variance,
+        variancePercentage: String(variancePercentage),
+      })
+      .where(eq(stockOpnameItems.id, item.itemId));
+  }
 
-      if (!soItem) continue;
-
-      const variance = item.physicalStock - soItem.systemStock;
-      const variancePercentage =
-        soItem.systemStock > 0
-          ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
-          : 0;
-
-      await db
-        .update(stockOpnameItems)
-        .set({
-          physicalStock: item.physicalStock,
-          variance,
-          variancePercentage: String(variancePercentage),
-        })
-        .where(eq(stockOpnameItems.id, item.itemId));
-    }
-
-    await logSystemAction(
-      user,
-      "Update SO Counts",
-      `Branch Admin updated counts for SO ${data.soId}`,
-    );
-    await logAudit(user, "stockOpnames", data.soId, "UPDATE", oldSo, {
-      ...oldSo,
-      items: data.items,
-    });
-
-    return { success: true };
+  await logSystemAction(
+    user,
+    "Update SO Counts",
+    `Branch Admin updated counts for SO ${data.soId}`,
+  );
+  await logAudit(user, "stockOpnames", data.soId, "UPDATE", oldSo, {
+    ...oldSo,
+    items: data.items,
   });
+
+  return { success: true };
+}
 
 export const getAssignedBranchIds = createServerFn({ method: "GET" }).handler(async () => {
   const user = await requireAuth();
@@ -889,161 +934,163 @@ export const realizeStockOpname = createServerFn({ method: "POST" })
   .validator((data: { soId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
+    return realizeStockOpnameCore(user, data);
+  });
 
-    // 1. Verify current date is the 25th
-    const today = new Date();
-    if (today.getDate() !== 25) {
-      throw new Error("Stock Opname hanya bisa di-realize pada tanggal 25");
-    }
+export async function realizeStockOpnameCore(user: AppUser, data: { soId: string }) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
 
-    // 2. Get the SO and verify status is Approved
-    const [so] = await db
-      .select()
-      .from(stockOpnames)
-      .where(eq(stockOpnames.id, data.soId))
-      .limit(1);
+  // 1. Verify current date is the 25th
+  const today = new Date();
+  if (today.getDate() !== 25) {
+    throw new Error("Stock Opname hanya bisa di-realize pada tanggal 25");
+  }
 
-    if (!so) {
-      throw new Error("Stock Opname tidak ditemukan");
-    }
+  // 2. Get the SO and verify status is Approved
+  const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.soId)).limit(1);
 
-    if (so.status !== "Approved") {
-      throw new Error("Stock Opname harus di-approve terlebih dahulu");
-    }
+  if (!so) {
+    throw new Error("Stock Opname tidak ditemukan");
+  }
 
-    if (so.realizedAt) {
-      throw new Error("Stock Opname sudah di-realize sebelumnya");
-    }
+  if (so.status !== "Approved") {
+    throw new Error("Stock Opname harus di-approve terlebih dahulu");
+  }
 
-    // 3. Get SO items with ingredient info
-    const items = await db
-      .select({
-        id: stockOpnameItems.id,
-        ingredientId: stockOpnameItems.ingredientId,
-        physicalStock: stockOpnameItems.physicalStock,
-        isNasi: ingredients.isNasi,
-        ingredientName: ingredients.name,
-      })
-      .from(stockOpnameItems)
-      .innerJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
-      .where(eq(stockOpnameItems.stockOpnameId, data.soId));
+  if (so.realizedAt) {
+    throw new Error("Stock Opname sudah di-realize sebelumnya");
+  }
 
-    // Import Nasi conversion
-    const { calculateNasiConversion } = await import("./nasi-conversion");
-    const { ingredients: ingredientsTable } = await import("#/db/schema");
+  // 3. Get SO items with ingredient info
+  const items = await db
+    .select({
+      id: stockOpnameItems.id,
+      ingredientId: stockOpnameItems.ingredientId,
+      physicalStock: stockOpnameItems.physicalStock,
+      isNasi: ingredients.isNasi,
+      ingredientName: ingredients.name,
+    })
+    .from(stockOpnameItems)
+    .innerJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
+    .where(eq(stockOpnameItems.stockOpnameId, data.soId));
 
-    // 4. For each item, adjust inventory to match physical stock
-    for (const item of items) {
-      // Special handling for Nasi: convert to raw ingredients
-      if (item.isNasi) {
-        const nasiPortions = item.physicalStock; // Physical stock = portions of Nasi
-        const conversions = calculateNasiConversion(nasiPortions);
+  // Import Nasi conversion
+  const { calculateNasiConversion } = await import("./nasi-conversion");
+  const { ingredients: ingredientsTable } = await import("#/db/schema");
 
-        for (const conv of conversions) {
-          // Find the raw ingredient by name
-          const [rawIngredient] = await db
-            .select({ id: ingredientsTable.id })
-            .from(ingredientsTable)
-            .where(eq(ingredientsTable.name, conv.ingredientName))
-            .limit(1);
+  // 4. For each item, adjust inventory to match physical stock
+  for (const item of items) {
+    // Special handling for Nasi: convert to raw ingredients
+    if (item.isNasi) {
+      const nasiPortions = item.physicalStock; // Physical stock = portions of Nasi
+      const conversions = calculateNasiConversion(nasiPortions);
 
-          if (!rawIngredient) continue;
+      for (const conv of conversions) {
+        // Find the raw ingredient by name
+        const [rawIngredient] = await db
+          .select({ id: ingredientsTable.id })
+          .from(ingredientsTable)
+          .where(eq(ingredientsTable.name, conv.ingredientName))
+          .limit(1);
 
-          // Get current inventory for this raw ingredient
-          const [inv] = await db
-            .select()
-            .from(inventory)
-            .where(
-              and(
-                eq(inventory.branchId, so.branchId),
-                eq(inventory.ingredientId, rawIngredient.id),
-              ),
-            )
-            .limit(1);
+        if (!rawIngredient) continue;
 
-          if (inv) {
-            // Nasi was made from raw ingredients, so subtract them
-            const rawAmount = conv.totalAmount;
-            const newQty = Math.max(0, inv.quantity - rawAmount);
+        // Get current inventory for this raw ingredient
+        const [inv] = await db
+          .select()
+          .from(inventory)
+          .where(
+            and(eq(inventory.branchId, so.branchId), eq(inventory.ingredientId, rawIngredient.id)),
+          )
+          .limit(1);
 
-            await db
-              .update(inventory)
-              .set({ quantity: newQty, lastUpdated: new Date() })
-              .where(eq(inventory.id, inv.id));
+        if (inv) {
+          // Nasi was made from raw ingredients, so subtract them
+          const rawAmount = conv.totalAmount;
+          const newQty = Math.max(0, inv.quantity - rawAmount);
 
-            if (rawAmount > 0) {
-              await db.insert(stockLedger).values({
-                branchId: so.branchId,
-                ingredientId: rawIngredient.id,
-                type: "OUT",
-                quantity: rawAmount,
-                balance: newQty,
-                reference: `SO:${data.soId}`,
-                notes: `SO Realization: Nasi ${nasiPortions} porsi → ${conv.ingredientName} -${rawAmount}${conv.unit}`,
-              });
-            }
+          await db
+            .update(inventory)
+            .set({ quantity: newQty, lastUpdated: new Date() })
+            .where(eq(inventory.id, inv.id));
+
+          if (rawAmount > 0) {
+            await db.insert(stockLedger).values({
+              branchId: so.branchId,
+              ingredientId: rawIngredient.id,
+              type: "OUT",
+              quantity: rawAmount,
+              balance: newQty,
+              reference: `SO:${data.soId}`,
+              notes: `SO Realization: Nasi ${nasiPortions} porsi → ${conv.ingredientName} -${rawAmount}${conv.unit}`,
+            });
           }
         }
-        // Skip the normal inventory adjustment for Nasi
-        continue;
       }
-
-      // Normal items: adjust inventory to match physical stock
-      const [inv] = await db
-        .select()
-        .from(inventory)
-        .where(
-          and(eq(inventory.branchId, so.branchId), eq(inventory.ingredientId, item.ingredientId)),
-        )
-        .limit(1);
-
-      if (inv) {
-        const oldQty = inv.quantity;
-        const newQty = item.physicalStock;
-        const delta = newQty - oldQty;
-
-        // Update inventory
-        await db
-          .update(inventory)
-          .set({
-            quantity: newQty,
-            lastUpdated: new Date(),
-          })
-          .where(eq(inventory.id, inv.id));
-
-        // Create stock ledger entry for the adjustment
-        if (delta !== 0) {
-          await db.insert(stockLedger).values({
-            branchId: so.branchId,
-            ingredientId: item.ingredientId,
-            type: delta > 0 ? "IN" : "OUT",
-            quantity: Math.abs(delta),
-            balance: newQty,
-            reference: `SO:${data.soId}`,
-            notes: `SO Realization: Adjusted from ${oldQty} to ${newQty}`,
-          });
-        }
-      }
+      // Skip the normal inventory adjustment for Nasi
+      continue;
     }
 
-    // 5. Mark SO as realized
-    await db
-      .update(stockOpnames)
-      .set({
-        realizedAt: new Date(),
-        realizedBy: user.id,
-      })
-      .where(eq(stockOpnames.id, data.soId));
+    // Normal items: adjust inventory to match physical stock
+    const [inv] = await db
+      .select()
+      .from(inventory)
+      .where(
+        and(eq(inventory.branchId, so.branchId), eq(inventory.ingredientId, item.ingredientId)),
+      )
+      .limit(1);
 
-    // 6. Log the action
-    await logSystemAction(
-      user,
-      "Realize SO",
-      `Stock Opname ${data.soId} realized by ${user.name}. Inventory adjusted for ${items.length} items.`,
-    );
+    if (inv) {
+      const oldQty = inv.quantity;
+      const newQty = item.physicalStock;
+      const delta = newQty - oldQty;
 
-    return { success: true, itemsAdjusted: items.length };
-  });
+      // Update inventory
+      await db
+        .update(inventory)
+        .set({
+          quantity: newQty,
+          lastUpdated: new Date(),
+        })
+        .where(eq(inventory.id, inv.id));
+
+      // Create stock ledger entry for the adjustment
+      if (delta !== 0) {
+        await db.insert(stockLedger).values({
+          branchId: so.branchId,
+          ingredientId: item.ingredientId,
+          type: delta > 0 ? "IN" : "OUT",
+          quantity: Math.abs(delta),
+          balance: newQty,
+          reference: `SO:${data.soId}`,
+          notes: `SO Realization: Adjusted from ${oldQty} to ${newQty}`,
+        });
+      }
+    }
+  }
+
+  // 5. Mark SO as realized
+  await db
+    .update(stockOpnames)
+    .set({
+      realizedAt: new Date(),
+      realizedBy: user.id,
+    })
+    .where(eq(stockOpnames.id, data.soId));
+
+  // 6. Log the action
+  await logSystemAction(
+    user,
+    "Realize SO",
+    `Stock Opname ${data.soId} realized by ${user.name}. Inventory adjusted for ${items.length} items.`,
+  );
+
+  return { success: true, itemsAdjusted: items.length };
+}
 
 // ID13: Print Stock Opname to PDF (HTML + browser print)
 export const printStockOpname = createServerFn({ method: "GET" })
