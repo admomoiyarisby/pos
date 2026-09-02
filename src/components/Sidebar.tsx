@@ -268,12 +268,6 @@ const navGroups: NavGroup[] = [
       { label: "Kontrol Periode", to: "/period-control", icon: Calendar, roles: ["super_admin"] },
       // { label: "Log Audit", to: "/admin/audit-logs", icon: ShieldCheck, roles: ["super_admin"] },
       { label: "Log Sistem", to: "/admin/system-logs", icon: ScrollText, roles: ["super_admin"] },
-      {
-        label: "Data Penjualan",
-        to: "/admin/sales",
-        icon: DollarSign,
-        roles: ["super_admin", "admin_pusat"],
-      },
       { label: "Pengaturan", to: "/admin", icon: Settings, roles: ["super_admin", "admin_pusat"] },
     ],
   },
