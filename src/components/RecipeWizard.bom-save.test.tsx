@@ -90,6 +90,7 @@ async function click(button: HTMLElement) {
 const stepZeroPatch = {
   code: "REC-TEST",
   name: "Test Menu",
+  alias: null,
   categoryId: "cat-makanan",
   basePrice: 10000,
   brandIds: [],

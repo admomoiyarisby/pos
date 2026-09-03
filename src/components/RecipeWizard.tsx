@@ -23,6 +23,7 @@ import {
 export interface WizardData {
   code: string;
   name: string;
+  alias?: string | null;
   // The categories table is the master; the wizard submits the category row's
   // id (FK), not a legacy enum code. Replaces the dropped recipe_category enum.
   categoryId: string;
@@ -134,6 +135,7 @@ export function RecipeWizard({
   const [currentStep, setCurrentStep] = useState(0);
   const [code, setCode] = useState(initialData?.code ?? "");
   const [name, setName] = useState(initialData?.name ?? "");
+  const [alias, setAlias] = useState(initialData?.alias ?? "");
   const [categoryId, setCategoryId] = useState(initialData?.categoryId ?? "");
   const [basePrice, setBasePrice] = useState(initialData?.basePrice ?? 0);
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>(initialData?.brandIds ?? []);
@@ -216,7 +218,14 @@ export function RecipeWizard({
   const resolvedCategoryId = categoryId || categoryOptions[0]?.id || "";
   const buildStepPatch = (): Partial<WizardData> =>
     currentStep === 0
-      ? { code, name, categoryId: resolvedCategoryId, basePrice, brandIds: selectedBrandIds }
+      ? {
+          code,
+          name,
+          alias: alias?.trim() ? alias.trim() : null,
+          categoryId: resolvedCategoryId,
+          basePrice,
+          brandIds: selectedBrandIds,
+        }
       : currentStep === 1
         ? {
             ingredients: enrichedSelectedIngredients.map((si) => ({
@@ -287,6 +296,7 @@ export function RecipeWizard({
     const data: WizardData = {
       code,
       name,
+      alias: alias?.trim() ? alias.trim() : null,
       categoryId: categoryId || categoryOptions[0]?.id || "",
       basePrice,
       brandIds: selectedBrandIds,
@@ -406,6 +416,19 @@ export function RecipeWizard({
                   placeholder="Contoh: Nasi Goreng Spesial"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Alias (opsional)</label>
+              <input
+                name="alias"
+                value={alias}
+                onChange={(e) => setAlias(e.target.value)}
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                placeholder="Mask nama asli, contoh: Chicken HOT Level 1 — kosong = pakai nama asli"
+              />
+              <p className="text-xs text-muted-foreground">
+                Kosong = tampilkan nama asli di POS & cetak
+              </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">

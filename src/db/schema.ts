@@ -284,6 +284,7 @@ export const ingredients = pgTable("ingredients", {
   id: uuid("id").defaultRandom().primaryKey(),
   code: text("code").notNull().unique(),
   name: text("name").notNull(),
+  alias: text("alias"),
   category: ingredientCategoryEnum("category").notNull(),
   skuType: skuTypeEnum("sku_type").notNull(),
   purchaseUnit: text("purchase_unit").notNull(),
@@ -326,6 +327,7 @@ export const recipes = pgTable("recipes", {
   id: uuid("id").defaultRandom().primaryKey(),
   code: text("code").notNull().unique(),
   name: text("name").notNull(),
+  alias: text("alias"),
   description: text("description"),
   imageUrl: text("image_url"),
   // The categories table (managed on /categories) is the single source of
@@ -450,6 +452,7 @@ export const modifiers = pgTable("modifiers", {
     .notNull()
     .references(() => modifierGroups.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  alias: text("alias"),
   price: integer("price").notNull().default(0),
   // Explicit kind discriminator (ADR-0014). `text` is the default so legacy
   // insert writers that don't pass kind still produce a valid no-link option.

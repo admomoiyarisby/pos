@@ -26,6 +26,7 @@ export interface ModifierKindDraft {
   // picked item so the parent's Nama field (hidden for those kinds) stays in
   // sync with what gets saved and shown at the POS.
   name?: string;
+  alias?: string | null;
   ingredientId?: string;
   ingredientQty?: number;
   recipeId?: string;
@@ -126,48 +127,59 @@ export default function ModifierOptionKindEditor({
       )}
 
       {draft.kind === "ingredient" && (
-        <div className="flex items-end gap-2">
-          <div className="flex-1 space-y-1">
-            <Label className="text-xs">Bahan</Label>
-            <Combobox
-              value={selectedIngredient}
-              onValueChange={(val) => {
-                // SAFETY: the combobox is fed ingredientOptions, so a non-null
-                // value is always one of those IngredientOption values.
-                const picked = val as IngredientOption | null;
-                onChange({
-                  ingredientId: picked?.id,
-                  ingredientQty: picked ? (draft.ingredientQty ?? 1) : undefined,
-                  name: picked?.name ?? "",
-                });
-              }}
-              items={ingredientOptions}
-              itemToStringValue={(item: IngredientOption | null) => item?.id ?? ""}
-              itemToStringLabel={(item: IngredientOption | null) => item?.name ?? ""}
-              isItemEqualToValue={(a, b) => a?.id === b?.id}
-            >
-              <ComboboxInput showTrigger showClear placeholder="Cari bahan…" className="w-full" />
-              <ComboboxContent>
-                <ComboboxList>
-                  {(item: IngredientOption) => (
-                    <ComboboxItem key={item.id} value={item}>
-                      <span>{item.name}</span>
-                    </ComboboxItem>
-                  )}
-                </ComboboxList>
-                <ComboboxEmpty>Tidak ada bahan yang cocok</ComboboxEmpty>
-              </ComboboxContent>
-            </Combobox>
+        <div className="space-y-2">
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-1">
+              <Label className="text-xs">Bahan</Label>
+              <Combobox
+                value={selectedIngredient}
+                onValueChange={(val) => {
+                  // SAFETY: the combobox is fed ingredientOptions, so a non-null
+                  // value is always one of those IngredientOption values.
+                  const picked = val as IngredientOption | null;
+                  onChange({
+                    ingredientId: picked?.id,
+                    ingredientQty: picked ? (draft.ingredientQty ?? 1) : undefined,
+                    name: picked?.name ?? "",
+                  });
+                }}
+                items={ingredientOptions}
+                itemToStringValue={(item: IngredientOption | null) => item?.id ?? ""}
+                itemToStringLabel={(item: IngredientOption | null) => item?.name ?? ""}
+                isItemEqualToValue={(a, b) => a?.id === b?.id}
+              >
+                <ComboboxInput showTrigger showClear placeholder="Cari bahan…" className="w-full" />
+                <ComboboxContent>
+                  <ComboboxList>
+                    {(item: IngredientOption) => (
+                      <ComboboxItem key={item.id} value={item}>
+                        <span>{item.name}</span>
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                  <ComboboxEmpty>Tidak ada bahan yang cocok</ComboboxEmpty>
+                </ComboboxContent>
+              </Combobox>
+            </div>
+            <div className="w-20 space-y-1">
+              <Label className="text-xs">Qty</Label>
+              <Input
+                type="number"
+                min={0}
+                step="any"
+                value={draft.ingredientQty ?? 1}
+                onChange={(e) => onChange({ ingredientQty: Number(e.target.value) })}
+                disabled={!draft.ingredientId}
+                className="h-9"
+              />
+            </div>
           </div>
-          <div className="w-20 space-y-1">
-            <Label className="text-xs">Qty</Label>
+          <div className="space-y-1">
+            <Label className="text-xs">Alias (opsional)</Label>
             <Input
-              type="number"
-              min={0}
-              step="any"
-              value={draft.ingredientQty ?? 1}
-              onChange={(e) => onChange({ ingredientQty: Number(e.target.value) })}
-              disabled={!draft.ingredientId}
+              value={draft.alias ?? ""}
+              onChange={(e) => onChange({ alias: e.target.value || null })}
+              placeholder="Contoh: Chicken HOT Level 1 — kosong = pakai nama asli"
               className="h-9"
             />
           </div>
@@ -175,48 +187,59 @@ export default function ModifierOptionKindEditor({
       )}
 
       {draft.kind === "recipe" && (
-        <div className="flex items-end gap-2">
-          <div className="flex-1 space-y-1">
-            <Label className="text-xs">Menu</Label>
-            <Combobox
-              value={selectedRecipe}
-              onValueChange={(val) => {
-                // SAFETY: the combobox is fed recipeOptions, so a non-null
-                // value is always one of those RecipeOption values.
-                const picked = val as RecipeOption | null;
-                onChange({
-                  recipeId: picked?.id,
-                  recipeQty: picked ? (draft.recipeQty ?? 1) : undefined,
-                  name: picked?.name ?? "",
-                });
-              }}
-              items={recipeOptions}
-              itemToStringValue={(item: RecipeOption | null) => item?.id ?? ""}
-              itemToStringLabel={(item: RecipeOption | null) => item?.name ?? ""}
-              isItemEqualToValue={(a, b) => a?.id === b?.id}
-            >
-              <ComboboxInput showTrigger showClear placeholder="Cari menu…" className="w-full" />
-              <ComboboxContent>
-                <ComboboxList>
-                  {(item: RecipeOption) => (
-                    <ComboboxItem key={item.id} value={item}>
-                      <span>{item.name}</span>
-                    </ComboboxItem>
-                  )}
-                </ComboboxList>
-                <ComboboxEmpty>Tidak ada menu yang cocok</ComboboxEmpty>
-              </ComboboxContent>
-            </Combobox>
+        <div className="space-y-2">
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-1">
+              <Label className="text-xs">Menu</Label>
+              <Combobox
+                value={selectedRecipe}
+                onValueChange={(val) => {
+                  // SAFETY: the combobox is fed recipeOptions, so a non-null
+                  // value is always one of those RecipeOption values.
+                  const picked = val as RecipeOption | null;
+                  onChange({
+                    recipeId: picked?.id,
+                    recipeQty: picked ? (draft.recipeQty ?? 1) : undefined,
+                    name: picked?.name ?? "",
+                  });
+                }}
+                items={recipeOptions}
+                itemToStringValue={(item: RecipeOption | null) => item?.id ?? ""}
+                itemToStringLabel={(item: RecipeOption | null) => item?.name ?? ""}
+                isItemEqualToValue={(a, b) => a?.id === b?.id}
+              >
+                <ComboboxInput showTrigger showClear placeholder="Cari menu…" className="w-full" />
+                <ComboboxContent>
+                  <ComboboxList>
+                    {(item: RecipeOption) => (
+                      <ComboboxItem key={item.id} value={item}>
+                        <span>{item.name}</span>
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                  <ComboboxEmpty>Tidak ada menu yang cocok</ComboboxEmpty>
+                </ComboboxContent>
+              </Combobox>
+            </div>
+            <div className="w-20 space-y-1">
+              <Label className="text-xs">Qty</Label>
+              <Input
+                type="number"
+                min={0}
+                step="any"
+                value={draft.recipeQty ?? 1}
+                onChange={(e) => onChange({ recipeQty: Number(e.target.value) })}
+                disabled={!draft.recipeId}
+                className="h-9"
+              />
+            </div>
           </div>
-          <div className="w-20 space-y-1">
-            <Label className="text-xs">Qty</Label>
+          <div className="space-y-1">
+            <Label className="text-xs">Alias (opsional)</Label>
             <Input
-              type="number"
-              min={0}
-              step="any"
-              value={draft.recipeQty ?? 1}
-              onChange={(e) => onChange({ recipeQty: Number(e.target.value) })}
-              disabled={!draft.recipeId}
+              value={draft.alias ?? ""}
+              onChange={(e) => onChange({ alias: e.target.value || null })}
+              placeholder="Contoh: Chicken HOT Level 1 — kosong = pakai nama asli"
               className="h-9"
             />
           </div>

@@ -330,6 +330,20 @@
       "when": 1788082000000,
       "tag": "0046_modifier_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1788182000000,
+      "tag": "0047_shift_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788183000000,
+      "tag": "0048_alias",
+      "breakpoints": true
     }
   ]
 }

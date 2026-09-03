@@ -286,8 +286,11 @@ function RecipeDetailPage() {
             </div>
             <div className="min-w-0">
               <h1 className="text-base sm:text-lg font-semibold tracking-tight truncate">
-                {recipe.name}
+                {recipe.alias ?? recipe.name}
               </h1>
+              {recipe.alias && recipe.alias !== recipe.name && (
+                <p className="text-xs text-muted-foreground truncate">Nama asli: {recipe.name}</p>
+              )}
               <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 font-mono truncate">
                 {recipe.code} • {recipe.categoryName ?? "—"}
               </p>
@@ -375,6 +378,7 @@ function RecipeDetailPage() {
               initialData={{
                 code: recipe.code,
                 name: recipe.name,
+                alias: recipe.alias ?? "",
                 categoryId: recipe.categoryId,
                 basePrice: recipe.basePrice,
                 brandIds: recipe.brands?.map((b: any) => b.brandId) ?? [],

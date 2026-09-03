@@ -26,6 +26,7 @@ export const MODIFIER_KINDS = ["text", "ingredient", "recipe"] as const;
 
 export const modifierInput = z.object({
   name: z.string().min(1).max(100),
+  alias: z.string().max(100).optional().nullable(),
   price: z.number().int().min(0).default(0),
   kind: z.enum(MODIFIER_KINDS).default("text"),
   isExclusion: z.boolean().default(false),
@@ -217,6 +218,7 @@ export async function createModifierGroupCore(
         modifierGroupId: group.id,
         code: `${data.code}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
         name: mod.name,
+        alias: mod.alias ?? null,
         price: mod.price,
         kind: mod.kind,
         isExclusion: mod.isExclusion,
@@ -267,6 +269,7 @@ const updateModifierInput = modifierInput
   .omit({ price: true, isExclusion: true, sortOrder: true, kind: true })
   .extend({
     id: z.string().uuid().optional(),
+    alias: z.string().max(100).optional().nullable(),
     price: z.number().int().min(0).optional(),
     isExclusion: z.boolean().optional(),
     sortOrder: z.number().int().min(0).optional(),
@@ -383,12 +386,15 @@ export async function updateModifierGroupCore(
         }
         await tx.delete(modifiers).where(eq(modifiers.modifierGroupId, id));
         for (const [idx, mod] of mods.entries()) {
+          // SAFETY: mod is validated by updateModifierInput which includes optional alias
+          const aliasVal = (mod as { alias?: string | null }).alias ?? null;
           const [createdMod] = await tx
             .insert(modifiers)
             .values({
               modifierGroupId: id,
               code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
               name: mod.name,
+              alias: aliasVal,
               price: mod.price ?? 0,
               kind: mod.kind ?? "text",
               isExclusion: mod.isExclusion ?? false,
@@ -451,6 +457,9 @@ export async function updateModifierGroupCore(
             sortOrder: mod.sortOrder ?? idx,
             code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
           };
+          // SAFETY: mod validated by updateModifierInput includes optional alias
+          const aliasChecked = (mod as { alias?: string | null }).alias;
+          if (aliasChecked !== undefined) set.alias = aliasChecked ?? null;
           if (mod.price !== undefined) set.price = mod.price;
           if (mod.isExclusion !== undefined) set.isExclusion = mod.isExclusion;
           if (mod.kind !== undefined) set.kind = mod.kind;
@@ -472,12 +481,15 @@ export async function updateModifierGroupCore(
             });
           }
         } else if (!mod.id) {
+          // SAFETY: mod validated by updateModifierInput includes optional alias
+          const aliasVal2 = (mod as { alias?: string | null }).alias ?? null;
           const [createdMod] = await tx
             .insert(modifiers)
             .values({
               modifierGroupId: id,
               code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
               name: mod.name,
+              alias: aliasVal2,
               price: mod.price ?? 0,
               kind: mod.kind ?? "text",
               isExclusion: mod.isExclusion ?? false,

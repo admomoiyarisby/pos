@@ -42,6 +42,7 @@ const recipeChildInput = z.object({
 const recipeInput = z.object({
   code: z.string().min(1).max(30),
   name: z.string().min(1).max(100),
+  alias: z.string().max(100).optional().nullable(),
   description: z.string().optional(),
   imageUrl: z.string().optional(),
   // The categories table is the master; the wizard submits the category row's
@@ -72,7 +73,7 @@ export const getRecipes = createServerFn({ method: "GET" })
     const whereConditions: import("drizzle-orm").SQL[] = [];
 
     if (data.search) {
-      whereConditions.push(fuzzySearch(recipes.name, data.search));
+      whereConditions.push(fuzzySearch([recipes.name, recipes.alias], data.search));
     }
 
     // ADR-0009: tombstoned (Deleted) recipes never appear in the UI. An optional
@@ -99,6 +100,7 @@ export const getRecipes = createServerFn({ method: "GET" })
         id: recipes.id,
         code: recipes.code,
         name: recipes.name,
+        alias: recipes.alias,
         description: recipes.description,
         imageUrl: recipes.imageUrl,
         categoryId: recipes.categoryId,
@@ -112,7 +114,7 @@ export const getRecipes = createServerFn({ method: "GET" })
       .from(recipes)
       .leftJoin(categories, eq(recipes.categoryId, categories.id))
       .where(and(...whereConditions))
-      .orderBy(data.search ? fuzzyRank(recipes.name, data.search) : recipes.name);
+      .orderBy(data.search ? fuzzyRank([recipes.name, recipes.alias], data.search) : recipes.name);
 
     // Get brands for each recipe
     const recipeIds = result.map((r) => r.id);

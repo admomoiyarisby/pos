@@ -43,6 +43,7 @@ import ModifierOptionKindEditor, { type ModifierKind } from "#/components/Modifi
 
 interface ModifierFormInput {
   name: string;
+  alias?: string | null;
   price: number;
   // ADR-0014 kind discriminator.
   kind: ModifierKind;
@@ -139,7 +140,7 @@ function ModifierGroupsPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [modifiersInput, setModifiersInput] = useState<ModifierFormInput[]>([
-    { name: "", price: 0, kind: "text", isExclusion: false },
+    { name: "", alias: null, price: 0, kind: "text", isExclusion: false },
   ]);
 
   // Tracks the active drag and the row being hovered for the drop-indicator
@@ -173,6 +174,7 @@ function ModifierGroupsPage() {
       setModifiersInput([
         {
           name: "",
+          alias: null,
           price: 0,
           kind: "text",
           isExclusion: false,
@@ -251,6 +253,7 @@ function ModifierGroupsPage() {
         .filter((m) => m.name.trim())
         .map((m) => ({
           name: m.name,
+          alias: m.alias?.trim() ? m.alias.trim() : null,
           price: m.price,
           kind: m.kind,
           isExclusion: m.isExclusion,
@@ -382,6 +385,7 @@ function ModifierGroupsPage() {
           setModifiersInput([
             {
               name: "",
+              alias: null,
               price: 0,
               kind: "text",
               isExclusion: false,
@@ -532,6 +536,7 @@ function ModifierGroupsPage() {
                 setModifiersInput([
                   {
                     name: "",
+                    alias: null,
                     price: 0,
                     kind: "text",
                     isExclusion: false,

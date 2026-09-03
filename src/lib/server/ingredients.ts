@@ -14,6 +14,7 @@ import { sql } from "drizzle-orm";
 const ingredientInput = z.object({
   code: z.string().min(1).max(30),
   name: z.string().min(1).max(100),
+  alias: z.string().max(100).optional().nullable(),
   category: z.enum(["Fresh", "Dry", "Packaging"]),
   skuType: z.enum(["RM", "SFG", "FG"]),
   purchaseUnit: z.string().min(1),
@@ -51,7 +52,9 @@ export const getIngredients = createServerFn({ method: "GET" })
     // Inactive stays visible (search/sort/filter); only Deleted is hidden.
     conditions.push(ne(ingredients.status, "Deleted"));
     if (data.search) {
-      conditions.push(fuzzySearch([ingredients.name, ingredients.code], data.search));
+      conditions.push(
+        fuzzySearch([ingredients.name, ingredients.code, ingredients.alias], data.search),
+      );
     }
     if (data.category) {
       conditions.push(eq(ingredients.category, data.category));
@@ -91,7 +94,7 @@ export const getIngredients = createServerFn({ method: "GET" })
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(
         data.search
-          ? fuzzyRank([ingredients.name, ingredients.code], data.search)
+          ? fuzzyRank([ingredients.name, ingredients.code, ingredients.alias], data.search)
           : ingredients.name,
       );
 

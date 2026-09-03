@@ -76,6 +76,7 @@ export const getPosMenu = createServerFn({ method: "GET" })
         id: recipes.id,
         code: recipes.code,
         name: recipes.name,
+        alias: recipes.alias,
         imageUrl: recipes.imageUrl,
         categoryId: recipes.categoryId,
         categoryName: categories.name,
@@ -140,6 +141,7 @@ export const getPosMenu = createServerFn({ method: "GET" })
               modifierGroupId: modifiers.modifierGroupId,
               code: modifiers.code,
               name: modifiers.name,
+              alias: modifiers.alias,
               price: modifiers.price,
               isExclusion: modifiers.isExclusion,
               kind: modifiers.kind,
@@ -272,6 +274,8 @@ export const getPosMenu = createServerFn({ method: "GET" })
       })
       .map((r) => ({
         ...r,
+        // SAFETY: r is recipe row with alias selected above
+        name: (r as { alias?: string | null; name: string }).alias ?? r.name,
         brands: brandLinks
           .filter((b) => b.recipeId === r.id)
           .map((b) => ({ id: b.brandId, name: b.brandName })),
@@ -283,7 +287,7 @@ export const getPosMenu = createServerFn({ method: "GET" })
               .filter((m) => m.modifierGroupId === g.modifierGroupId)
               .map((m) => ({
                 id: m.id,
-                name: m.name,
+                name: m.alias ?? m.name,
                 price: m.price,
                 isExclusion: m.isExclusion,
                 excludedIngredientId: m.isExclusion

@@ -58,10 +58,12 @@ function IngredientDetailPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const aliasRaw = formText(fd, "alias");
     const data = {
       id: ingId,
       code: formText(fd, "code"),
       name: formText(fd, "name"),
+      alias: aliasRaw || null,
       category: z.enum(["Fresh", "Dry", "Packaging"]).parse(formText(fd, "category")),
       skuType: z.enum(["RM", "SFG", "FG"]).parse(formText(fd, "skuType")),
       purchaseUnit: formText(fd, "purchaseUnit"),
@@ -101,7 +103,12 @@ function IngredientDetailPage() {
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">{ingredient.name}</h1>
+            <h1 className="text-2xl font-bold tracking-tight">
+              {ingredient.alias ?? ingredient.name}
+            </h1>
+            {ingredient.alias && ingredient.alias !== ingredient.name && (
+              <p className="text-sm text-muted-foreground mt-0.5">Nama asli: {ingredient.name}</p>
+            )}
             <p className="text-sm text-muted-foreground mt-1">Kode: {ingredient.code}</p>
           </div>
           <button
@@ -135,6 +142,16 @@ function IngredientDetailPage() {
                   className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Alias (opsional)</label>
+              <input
+                name="alias"
+                defaultValue={ingredient.alias ?? ""}
+                placeholder="Mask nama asli, contoh: Chicken HOT Level 1"
+                className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+              <p className="text-xs text-muted-foreground">Kosong = tampilkan nama asli</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">

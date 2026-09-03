@@ -51,6 +51,7 @@ interface ModifierFormInput {
   // duplicates and breaks the moment the field is cleared).
   key: string;
   name: string;
+  alias?: string | null;
   price: number;
   // ADR-0014 kind discriminator.
   kind: ModifierKind;
@@ -119,6 +120,7 @@ function SortableCard({
           draft={{
             kind: mod.kind,
             name: mod.name,
+            alias: mod.alias ?? null,
             ingredientId: mod.ingredientId,
             ingredientQty: mod.ingredientQty,
             recipeId: mod.recipeId,
@@ -195,7 +197,12 @@ function SortableModifierRow({ mod }: { mod: any }) {
           <GripVertical className="h-4 w-4" />
         </button>
       </td>
-      <td className="px-4 py-2">{mod.name}</td>
+      <td className="px-4 py-2">
+        <div>{mod.alias ?? mod.name}</div>
+        {mod.alias && mod.alias !== mod.name && (
+          <div className="text-xs text-muted-foreground">{mod.name}</div>
+        )}
+      </td>
       <td className="px-4 py-2 text-right">
         {mod.price > 0 ? `Rp ${mod.price.toLocaleString("id-ID")}` : "—"}
       </td>
@@ -272,6 +279,7 @@ function ModifierGroupDetailPage() {
         group.modifiers.map((m: any) => ({
           key: m.id,
           name: m.name,
+          alias: m.alias ?? null,
           price: m.price,
           kind: m.kind ?? "text",
           isExclusion: m.isExclusion,
@@ -480,6 +488,7 @@ function ModifierGroupDetailPage() {
             const base = {
               kind: m.kind,
               name: m.name,
+              alias: m.alias?.trim() ? m.alias.trim() : null,
               price: m.price,
               isExclusion: m.isExclusion,
               sortOrder: idx,
@@ -595,6 +604,7 @@ function ModifierGroupDetailPage() {
                       {
                         key: `new-${Date.now()}-${modifiersInput.length}`,
                         name: "",
+                        alias: null,
                         price: 0,
                         kind: "text",
                         isExclusion: false,
