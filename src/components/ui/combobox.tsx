@@ -106,7 +106,24 @@ function ComboboxContent({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="isolate z-[70]"
+        // Radix modal Dialogs (our Modal) set `body { pointer-events: none }`
+        // while open and only re-enable descendants of the dialog content.
+        // This popup portals to `body`, so without an explicit override it
+        // stays visible (z-[70]) but mouse-dead: items can't be clicked and
+        // the list can't be scrolled, while keyboard still works. Re-enable
+        // hit-testing here; harmless outside modals where `auto` is default.
+        className="isolate z-[70] pointer-events-auto"
+        // Radix also scroll-locks the page while a modal is open: a
+        // bubble-phase `wheel`/`touchmove` listener on `document`
+        // (react-remove-scroll) calls `preventDefault()` on anything
+        // outside the dialog content — which includes this body-level popup.
+        // Stopping propagation here keeps those gestures scrolling the
+        // dropdown list instead of being swallowed. Native scrolling itself
+        // is unaffected (stopPropagation only skips listeners, and React
+        // wheel/touch listeners are passive-safe for this). Outside modals
+        // there is no document-level interceptor, so this is a no-op.
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
       >
         <ComboboxPrimitive.Popup
           data-slot="combobox-content"

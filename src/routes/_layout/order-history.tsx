@@ -106,6 +106,63 @@ export const Route = createFileRoute("/_layout/order-history")({
   },
 });
 
+function OrderItemsTray({ orderId }: { orderId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["order-items", orderId],
+    queryFn: () => getOrderWithItems({ data: { id: orderId } }),
+  });
+
+  if (isLoading) {
+    return <p className="text-xs text-muted-foreground px-1 py-2">Memuat menu…</p>;
+  }
+
+  const items = data?.items ?? [];
+  if (items.length === 0) {
+    return <p className="text-xs text-muted-foreground px-1 py-2">Tidak ada item.</p>;
+  }
+
+  return (
+    <div className="rounded-md border bg-background overflow-hidden">
+      <table className="w-full text-xs sm:text-sm">
+        <thead>
+          <tr className="border-b bg-muted/50 text-muted-foreground">
+            <th className="text-left font-medium py-1.5 px-3">Menu</th>
+            <th className="text-right font-medium py-1.5 px-2 w-14">Qty</th>
+            <th className="text-right font-medium py-1.5 px-2 w-28">Harga</th>
+            <th className="text-right font-medium py-1.5 px-3 w-32">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item: any) => {
+            const lineTotal = (item.price ?? 0) * item.quantity;
+            return (
+              <tr key={item.id ?? item.recipeId} className="border-b last:border-b-0">
+                <td className="py-1.5 px-3">
+                  <p className="font-medium">{item.recipeName ?? "-"}</p>
+                  {(item.modifiers?.length > 0 || item.notes) && (
+                    <p className="text-muted-foreground text-[11px] sm:text-xs mt-0.5">
+                      {item.modifiers?.filter(Boolean).join(", ")}
+                      {item.modifiers?.length > 0 && item.notes ? " · " : ""}
+                      {item.notes}
+                    </p>
+                  )}
+                </td>
+                <td className="py-1.5 px-2 text-right tabular-nums">{item.quantity}×</td>
+                <td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground">
+                  Rp {(item.price ?? 0).toLocaleString("id-ID")}
+                </td>
+                <td className="py-1.5 px-3 text-right tabular-nums font-medium">
+                  Rp {lineTotal.toLocaleString("id-ID")}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function OrderHistoryPage() {
   const [search, setSearch] = useTableSearch();
   const { page, setPage, sort, setSort } = useTableUrlState();
@@ -159,6 +216,7 @@ function OrderHistoryPage() {
         data={filteredOrders}
         keyExtractor={(r) => r.id}
         onRowClick={(r) => setSelectedOrder(r)}
+        renderExpanded={(r) => <OrderItemsTray orderId={r.id} />}
         search={search}
         onSearchChange={setSearch}
         page={page}

@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   Search,
@@ -97,6 +98,10 @@ interface DataTableProps<T extends RowData> {
   columns: Column<T>[];
   data: T[];
   keyExtractor: (row: T) => string;
+  renderExpanded?: (row: T) => React.ReactNode;
+  expandedIds?: string[];
+  onExpandedChange?: (ids: string[]) => void;
+  getRowExpandable?: (row: T) => boolean;
   pageSize?: number;
   pagination?: boolean;
   searchable?: boolean;
@@ -121,6 +126,10 @@ export default function DataTable<T extends RowData>({
   columns,
   data,
   keyExtractor,
+  renderExpanded,
+  expandedIds,
+  onExpandedChange,
+  getRowExpandable,
   pageSize = 15,
   pagination = true,
   searchable = true,
@@ -145,6 +154,17 @@ export default function DataTable<T extends RowData>({
   const [internalSort, setInternalSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(
     defaultSort ?? null,
   );
+  const [internalExpanded, setInternalExpanded] = useState<string[]>([]);
+  const hasExpansion = !!renderExpanded;
+  const expandedList = expandedIds ?? internalExpanded;
+  const expandedSet = useMemo(() => new Set(expandedList), [expandedList]);
+  const toggleExpanded = (key: string) => {
+    const next = expandedSet.has(key)
+      ? expandedList.filter((k) => k !== key)
+      : [...expandedList, key];
+    if (onExpandedChange) onExpandedChange(next);
+    else setInternalExpanded(next);
+  };
   const page = externalPage ?? internalPage;
   const sort = externalSort !== undefined ? externalSort : internalSort;
   const searchValue = externalSearch ?? search;
@@ -287,6 +307,14 @@ export default function DataTable<T extends RowData>({
                 key={headerGroup.id}
                 className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
               >
+                {hasExpansion && (
+                  <th
+                    aria-label="Expand"
+                    className={"h-10 w-10 px-2 text-left align-middle " + stickyClass}
+                  >
+                    <span className="sr-only">Expand</span>
+                  </th>
+                )}
                 {headerGroup.headers.map((header, colIdx) => {
                   // SAFETY: tableColumns are created directly from the legacy Column<T> definitions above.
                   // SAFETY: tableColumns are created directly from the legacy Column<T> definitions above.
@@ -308,7 +336,7 @@ export default function DataTable<T extends RowData>({
                         "h-10 px-3 text-left align-middle font-medium whitespace-nowrap min-w-[80px] " +
                         (col.width ?? "") +
                         (canSort ? "cursor-pointer select-none " : "") +
-                        (colIdx === 0 ? stickyClass : "") +
+                        (!hasExpansion && colIdx === 0 ? stickyClass : "") +
                         " " +
                         (col.cellClassName ?? "") +
                         " " +
@@ -344,7 +372,9 @@ export default function DataTable<T extends RowData>({
             {loading ? (
               Array.from({ length: loadingRows }).map((_, i) => (
                 <tr key={`skeleton-${i}`} className="border-b">
-                  {Array.from({ length: leafHeaderCount }).map((_, colIdx) => (
+                  {Array.from({
+                    length: leafHeaderCount + (hasExpansion ? 1 : 0),
+                  }).map((_, colIdx) => (
                     <td
                       key={`skeleton-${i}-${colIdx}`}
                       className={"p-3 align-middle " + (colIdx === 0 ? stickyClass : "")}
@@ -356,41 +386,83 @@ export default function DataTable<T extends RowData>({
               ))
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={leafHeaderCount} className="h-24 text-center text-muted-foreground">
+                <td
+                  colSpan={leafHeaderCount + (hasExpansion ? 1 : 0)}
+                  className="h-24 text-center text-muted-foreground"
+                >
                   {emptyMessage}
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
-                <tr
-                  key={row.id}
-                  onClick={() => {
-                    // SAFETY: deduped rows are keyed by keyExtractor; row.original is the source T.
-                    const original = row.original as T;
-                    onRowClick?.(original);
-                  }}
-                  // SAFETY: row.original is the source T for rowClassName.
-                  className={`border-b transition-colors hover:bg-muted/50 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(row.original as T) ?? ""} max-md:min-h-[44px]`}
-                >
-                  {row.getVisibleCells().map((cell, colIdx) => (
-                    <td
-                      key={cell.id}
-                      // SAFETY: tableColumns preserve Column<T> metadata in columnDef.
-                      className={
-                        "p-3 align-middle whitespace-nowrap min-w-[80px] max-w-[300px] " +
-                        (colIdx === 0 ? stickyClass : "") +
-                        ((cell.column.columnDef as Column<T>).cellClassName ?? "")
-                      }
-                      // SAFETY: same Column<T> metadata invariant.
-                      style={{ textAlign: (cell.column.columnDef as Column<T>).align ?? "left" }}
+              rows.map((row) => {
+                // SAFETY: deduped rows are keyed by keyExtractor; row.original is the source T.
+                const original = row.original as T;
+                const rowKey = keyExtractor(original);
+                const isExpanded = hasExpansion && expandedSet.has(rowKey);
+                const expandable = hasExpansion ? (getRowExpandable?.(original) ?? true) : false;
+                return (
+                  <Fragment key={row.id}>
+                    <tr
+                      onClick={() => {
+                        onRowClick?.(original);
+                      }}
+                      // SAFETY: row.original is the source T for rowClassName.
+                      className={`border-b transition-colors hover:bg-muted/50 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(original) ?? ""} max-md:min-h-[44px] ${isExpanded ? "bg-muted/30" : ""}`}
                     >
-                      <div className="truncate min-w-0">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </div>
-                    </td>
-                  ))}
-                </tr>
-              ))
+                      {hasExpansion && (
+                        <td className={"p-2 align-middle w-10 " + stickyClass}>
+                          {expandable ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpanded(rowKey);
+                              }}
+                              aria-expanded={isExpanded}
+                              aria-label={isExpanded ? "Tutup detail" : "Lihat detail"}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                            </button>
+                          ) : null}
+                        </td>
+                      )}
+                      {row.getVisibleCells().map((cell, colIdx) => (
+                        <td
+                          key={cell.id}
+                          // SAFETY: tableColumns preserve Column<T> metadata in columnDef.
+                          className={
+                            "p-3 align-middle whitespace-nowrap min-w-[80px] max-w-[300px] " +
+                            (!hasExpansion && colIdx === 0 ? stickyClass : "") +
+                            ((cell.column.columnDef as Column<T>).cellClassName ?? "")
+                          }
+                          // SAFETY: same Column<T> metadata invariant.
+                          style={{
+                            textAlign: (cell.column.columnDef as Column<T>).align ?? "left",
+                          }}
+                        >
+                          <div className="truncate min-w-0">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
+                    {isExpanded && renderExpanded && (
+                      <tr className="border-b bg-muted/20">
+                        <td colSpan={leafHeaderCount + 1} className="px-4 py-3 sm:px-6 align-top">
+                          <div className="animate-in fade-in-0 slide-in-from-top-1 duration-200">
+                            {renderExpanded(original)}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>

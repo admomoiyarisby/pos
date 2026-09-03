@@ -47,6 +47,31 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     const user = await getCurrentUser();
     return { user };
   },
+  errorComponent: ({ error, reset }) => (
+    <div className="flex h-screen items-center justify-center bg-background">
+      <div className="max-w-md text-center">
+        <h1 className="text-4xl font-bold text-foreground">Terjadi kesalahan</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {error instanceof Error ? error.message : "Coba muat ulang halaman."}
+        </p>
+        <div className="mt-6 flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => reset()}
+            className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
+          >
+            Coba lagi
+          </button>
+          <a
+            href="/"
+            className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm font-medium transition hover:bg-accent"
+          >
+            Kembali ke Beranda
+          </a>
+        </div>
+      </div>
+    </div>
+  ),
   component: RootDocument,
 });
 
