@@ -820,9 +820,11 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
         procurementId: procurement.id,
         itemId: it.id,
         patch: {
-          receivedQuantity: it.receivedQuantity,
-          rejectedQuantity: it.rejectedQuantity,
-          reason: it.reason,
+          // Coalesce null → undefined: untouched fields are omitted, and the
+          // server keeps the existing values. Zod's .optional() rejects null.
+          receivedQuantity: it.receivedQuantity ?? undefined,
+          rejectedQuantity: it.rejectedQuantity ?? undefined,
+          reason: it.reason ?? undefined,
         },
       });
     }
