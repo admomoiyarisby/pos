@@ -10,13 +10,16 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
 import { getOrders, getOrderWithItems, updateOrderStatus } from "#/lib/server/pos";
+import OrderItemsTray from "#/components/pos/OrderItemsTray";
+import HistoryDateFilter, { isoDateDaysAgo } from "#/components/pos/HistoryDateFilter";
 import { Badge } from "#/components/ui/badge";
-import { Printer, Pencil } from "lucide-react";
+import { Printer, Pencil, Store } from "lucide-react";
 import { printReceipt } from "#/lib/pos-print";
 
 interface OrderRow {
   id: string;
   branchId: string;
+  branchName: string | null;
   channel: string;
   orderCode: string | null;
   customerName: string | null;
@@ -67,6 +70,18 @@ const columns: Column<OrderRow>[] = [
     ),
   },
   {
+    accessorKey: "branchName",
+    header: "Cabang",
+    width: "w-40",
+    enableSorting: true,
+    cell: ({ row }) => (
+      <span className="inline-flex items-center gap-1.5 min-w-0">
+        <Store className="h-3 w-3 text-muted-foreground shrink-0" />
+        <span className="truncate">{row.original.branchName ?? "-"}</span>
+      </span>
+    ),
+  },
+  {
     accessorKey: "orderCode",
     header: "Kode",
     enableSorting: true,
@@ -101,67 +116,13 @@ const allowedStatusLabels = {
 export const Route = createFileRoute("/_layout/order-history")({
   component: OrderHistoryPage,
   loader: async () => {
-    const orders = await getOrders({ data: {} });
+    // Default to the trailing week (same as the POS history) so the table
+    // isn't cluttered; the filter can widen it. Fetches up to 500 rows so
+    // client-side search/sort/pagination have a useful dataset.
+    const orders = await getOrders({ data: { dateFrom: isoDateDaysAgo(6), limit: 500 } });
     return { orders };
   },
 });
-
-function OrderItemsTray({ orderId }: { orderId: string }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["order-items", orderId],
-    queryFn: () => getOrderWithItems({ data: { id: orderId } }),
-  });
-
-  if (isLoading) {
-    return <p className="text-xs text-muted-foreground px-1 py-2">Memuat menu…</p>;
-  }
-
-  const items = data?.items ?? [];
-  if (items.length === 0) {
-    return <p className="text-xs text-muted-foreground px-1 py-2">Tidak ada item.</p>;
-  }
-
-  return (
-    <div className="rounded-md border bg-background overflow-hidden">
-      <table className="w-full text-xs sm:text-sm">
-        <thead>
-          <tr className="border-b bg-muted/50 text-muted-foreground">
-            <th className="text-left font-medium py-1.5 px-3">Menu</th>
-            <th className="text-right font-medium py-1.5 px-2 w-14">Qty</th>
-            <th className="text-right font-medium py-1.5 px-2 w-28">Harga</th>
-            <th className="text-right font-medium py-1.5 px-3 w-32">Subtotal</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item: any) => {
-            const lineTotal = (item.price ?? 0) * item.quantity;
-            return (
-              <tr key={item.id ?? item.recipeId} className="border-b last:border-b-0">
-                <td className="py-1.5 px-3">
-                  <p className="font-medium">{item.recipeName ?? "-"}</p>
-                  {(item.modifiers?.length > 0 || item.notes) && (
-                    <p className="text-muted-foreground text-[11px] sm:text-xs mt-0.5">
-                      {item.modifiers?.filter(Boolean).join(", ")}
-                      {item.modifiers?.length > 0 && item.notes ? " · " : ""}
-                      {item.notes}
-                    </p>
-                  )}
-                </td>
-                <td className="py-1.5 px-2 text-right tabular-nums">{item.quantity}×</td>
-                <td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground">
-                  Rp {(item.price ?? 0).toLocaleString("id-ID")}
-                </td>
-                <td className="py-1.5 px-3 text-right tabular-nums font-medium">
-                  Rp {lineTotal.toLocaleString("id-ID")}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 function OrderHistoryPage() {
   const [search, setSearch] = useTableSearch();
@@ -169,27 +130,36 @@ function OrderHistoryPage() {
   const { orders: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
+  const [dateFrom, setDateFrom] = useState(isoDateDaysAgo(6));
+  const [dateTo, setDateTo] = useState("");
 
   const [statusModalOrder, setStatusModalOrder] = useState<OrderRow | null>(null);
   const [targetStatus, setTargetStatus] = useState<
     "" | "New" | "Processing" | "In Delivery" | "Completed"
   >("");
 
-  const { data: rawOrders } = useQuery({
-    queryKey: ["orders"],
-    queryFn: () => getOrders({ data: {} }),
-    initialData: initial,
+  const { data: rawOrders, isFetching } = useQuery({
+    queryKey: ["orders", dateFrom, dateTo],
+    queryFn: () =>
+      getOrders({
+        data: {
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+          limit: 500,
+        },
+      }),
   });
 
-  // Deduplicate by id — safeguard against duplicate rows in DB
+  // Deduplicate by id — safeguard against duplicate rows in DB. Falls back to
+  // the loader's rows (fetched with the default range) while a refetch runs.
   const orders = useMemo(() => {
     const seen = new Set<string>();
-    return (rawOrders ?? []).filter((r) => {
+    return (rawOrders ?? initial).filter((r) => {
       if (seen.has(r.id)) return false;
       seen.add(r.id);
       return true;
     });
-  }, [rawOrders]);
+  }, [rawOrders, initial]);
 
   const statusFilter = searchStringParam(Route.useSearch(), "status");
   const filteredOrders = statusFilter ? orders.filter((o) => o.status === statusFilter) : orders;
@@ -211,19 +181,38 @@ function OrderHistoryPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
-      <DataTable
-        columns={columns}
-        data={filteredOrders}
-        keyExtractor={(r) => r.id}
-        onRowClick={(r) => setSelectedOrder(r)}
-        renderExpanded={(r) => <OrderItemsTray orderId={r.id} />}
-        search={search}
-        onSearchChange={setSearch}
-        page={page}
-        onPageChange={setPage}
-        sort={sort}
-        onSortChange={setSort}
-      />
+      <div className="space-y-3">
+        <div className="rounded-md border bg-card px-3 py-2.5">
+          <div className="flex flex-col gap-2">
+            <HistoryDateFilter
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              onChange={function (from: string, to: string) {
+                setDateFrom(from);
+                setDateTo(to);
+              }}
+            />
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>Menampilkan maks. 500 pesanan terbaru pada rentang tanggal</span>
+              {isFetching && !rawOrders && <span>Memuat…</span>}
+            </div>
+          </div>
+        </div>
+
+        <DataTable
+          columns={columns}
+          data={filteredOrders}
+          keyExtractor={(r) => r.id}
+          onRowClick={(r) => setSelectedOrder(r)}
+          renderExpanded={(r) => <OrderItemsTray orderId={r.id} branchName={r.branchName} />}
+          search={search}
+          onSearchChange={setSearch}
+          page={page}
+          onPageChange={setPage}
+          sort={sort}
+          onSortChange={setSort}
+        />
+      </div>
 
       <Modal open={!!selectedOrder} onClose={handleCloseModal} title="Detail Pesanan" size="lg">
         {selectedOrder && (
@@ -232,6 +221,10 @@ function OrderHistoryPage() {
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground uppercase">ID Pesanan</p>
                 <p className="font-medium">{selectedOrder.id.slice(0, 8)}</p>
+              </div>
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground uppercase">Cabang</p>
+                <p className="font-medium">{selectedOrder.branchName ?? "-"}</p>
               </div>
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground uppercase">Channel</p>
@@ -273,12 +266,12 @@ function OrderHistoryPage() {
                   </button>
                 </div>
               </div>
-            </div>
-            <div className="rounded-md border p-3">
-              <p className="text-xs text-muted-foreground uppercase">Waktu</p>
-              <p className="font-medium">
-                {new Date(selectedOrder.createdAt).toLocaleString("id-ID")}
-              </p>
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground uppercase">Waktu</p>
+                <p className="font-medium">
+                  {new Date(selectedOrder.createdAt).toLocaleString("id-ID")}
+                </p>
+              </div>
             </div>
 
             <div className="border-t pt-4">
@@ -324,7 +317,7 @@ function OrderHistoryPage() {
                   printReceipt({
                     order: printOrder,
                     cartItems,
-                    branchName: "",
+                    branchName: selectedOrder.branchName ?? "",
                   });
                 }}
                 className="w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2"

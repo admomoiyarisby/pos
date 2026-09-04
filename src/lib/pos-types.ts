@@ -70,6 +70,8 @@ export interface Voucher {
 export interface OrderResult {
   id: string;
   branchId: string;
+  /** Branch display name — present when the order was fetched with the branch joined (getOrders / getOrderWithItems). */
+  branchName?: string | null;
   channel: string;
   subtotal: number;
   taxAmount: number;

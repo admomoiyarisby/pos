@@ -82,7 +82,7 @@ const navGroups: NavGroup[] = [
         label: "Entry Pesanan (POS)",
         to: "/pos",
         icon: ShoppingCart,
-        roles: ["super_admin", "branch_admin"],
+        roles: ["super_admin", "branch_admin", "area_manager"],
       },
       {
         label: "Riwayat Pemesanan",

@@ -31,7 +31,7 @@ import {
   users,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, desc, inArray, isNull, gte, lte } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull, gte, lte, sql, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import type { AppUser } from "./auth";
 import { branchVisibleClause, getEffectiveBranchId } from "#/lib/server/branch-visibility";
@@ -53,11 +53,19 @@ export const getPosMenu = createServerFn({ method: "GET" })
 
     // Central admins can preview the selected POS branch. Branch admins stay
     // bound to their session branch so the client cannot switch their scope.
-    const currentBranchId = getEffectiveBranchId({
+    let currentBranchId = getEffectiveBranchId({
       role: user?.role ?? "branch_admin",
       sessionBranchId: user?.branchId,
       requestedBranchId: data.branchId,
     });
+
+    // Area managers may only operate the POS at a branch they supervise; a
+    // requested branch outside their assignment falls back to no branch filter.
+    if (user?.role === "area_manager") {
+      const assigned = user?.assignedBranches ?? [];
+      currentBranchId =
+        data.branchId && assigned.includes(data.branchId) ? data.branchId : undefined;
+    }
 
     // A recipe with no recipe_branches rows is visible everywhere; otherwise
     // it is visible only at the effective branch.
@@ -878,15 +886,49 @@ export const getOrders = createServerFn({ method: "GET" })
     }) => data,
   )
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     const limit = data.limit ?? 20;
     const offset = (data.page ?? 0) * limit;
+
+    // Role-scoped branch bound (branch-visibility pattern): central roles
+    // (super_admin / admin_pusat) may read any branch — or all branches when
+    // no branch is requested — area managers only their assigned branches,
+    // and branch admins only their own session branch, even if the client
+    // sends a different branch id.
+    const whereClauses: SQL[] = [];
+    if (user.role === "branch_admin" && user.branchId) {
+      whereClauses.push(eq(orders.branchId, user.branchId));
+    } else if (user.role === "area_manager") {
+      const assigned = user.assignedBranches ?? [];
+      whereClauses.push(
+        data.branchId && assigned.includes(data.branchId)
+          ? eq(orders.branchId, data.branchId)
+          : inArray(orders.branchId, assigned),
+      );
+    } else if (data.branchId) {
+      whereClauses.push(eq(orders.branchId, data.branchId));
+    }
+
+    // Optional date range bound. Dates arrive as "YYYY-MM-DD" and are
+    // compared against the order's Jakarta-local calendar day (same pattern
+    // as finance.ts) so the boundary matches what the store sees.
+    if (data.dateFrom) {
+      whereClauses.push(
+        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
+    }
+    if (data.dateTo) {
+      whereClauses.push(
+        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
+    }
 
     const result = await db
       .select({
         id: orders.id,
         branchId: orders.branchId,
+        branchName: branches.name,
         channel: orders.channel,
         subtotal: orders.subtotal,
         taxAmount: orders.taxAmount,
@@ -905,7 +947,8 @@ export const getOrders = createServerFn({ method: "GET" })
         completedAt: orders.completedAt,
       })
       .from(orders)
-      .where(data.branchId ? eq(orders.branchId, data.branchId) : undefined)
+      .leftJoin(branches, eq(branches.id, orders.branchId))
+      .where(whereClauses.length > 0 ? and(...whereClauses) : undefined)
       .orderBy(desc(orders.createdAt))
       .limit(limit)
       .offset(offset);
@@ -916,10 +959,26 @@ export const getOrders = createServerFn({ method: "GET" })
 export const getOrderWithItems = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
-    const [order] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1);
-    if (!order) return null;
+    const [row] = await db
+      .select({ order: orders, branchName: branches.name })
+      .from(orders)
+      .leftJoin(branches, eq(branches.id, orders.branchId))
+      .where(eq(orders.id, data.id))
+      .limit(1);
+    if (!row) return null;
+    const order = row.order;
+
+    // Detail view stays inside the same role-based branch bound as the list:
+    // branch admins may only open their own branch's orders, area managers
+    // only orders from their assigned branches.
+    if (user.role === "branch_admin" && user.branchId && order.branchId !== user.branchId) {
+      return null;
+    }
+    if (user.role === "area_manager" && !(user.assignedBranches ?? []).includes(order.branchId)) {
+      return null;
+    }
 
     const items = await db
       .select({
@@ -950,6 +1009,7 @@ export const getOrderWithItems = createServerFn({ method: "GET" })
 
     return {
       ...order,
+      branchName: row.branchName,
       items: items.map((i) => ({
         ...i,
         modifiers: mods.filter((m) => m.orderItemId === i.id).map((m) => m.modifierName),

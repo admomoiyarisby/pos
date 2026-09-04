@@ -40,6 +40,8 @@ import {
   Receipt,
   Store,
   Clock3,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { usePageTitle } from "#/hooks/usePageTitle";
 
@@ -50,6 +52,9 @@ import { getStockQuantity } from "#/lib/pos-utils";
 import MenuGrid from "#/components/pos/MenuGrid";
 import CartSidebar from "#/components/pos/CartSidebar";
 import OrderHistory from "#/components/pos/OrderHistory";
+import OrderItemsTray from "#/components/pos/OrderItemsTray";
+import HistoryDateFilter, { isoDateDaysAgo } from "#/components/pos/HistoryDateFilter";
+import HistoryPagination from "#/components/pos/HistoryPagination";
 import { default as SuccessModal } from "#/components/pos/SuccessModal";
 import { default as ModifierModalComp } from "#/components/pos/ModifierModal";
 
@@ -61,6 +66,10 @@ const channels = [
   { key: "TikTok", label: "TikTok" },
   { key: "Perlengkapan", label: "Perlengkapan" },
 ];
+
+// Number of orders fetched per history page; the server also enforces its own
+// default limit but honors this via the limit/page params.
+const HISTORY_PAGE_SIZE = 20;
 
 export const Route = createFileRoute("/_layout/pos")({
   component: PosPage,
@@ -126,12 +135,26 @@ function PosPage() {
   ];
 
   let isAdmin = user?.role === "super_admin" || user?.role === "admin_pusat";
+  let isAreaManager = user?.role === "area_manager";
   let canBypassShift = user?.role === "super_admin";
   let userBranch = allBranches.find(function (b) {
     return b.id === user?.branchId;
   });
 
-  let _a = useState(user?.branchId ?? allBranches[0]?.id ?? "");
+  // Branch choices: central roles (super_admin / admin_pusat) get every
+  // branch; area managers only the branches under their supervision;
+  // branch admins are fixed to their own branch.
+  let visibleBranches = isAdmin
+    ? allBranches
+    : isAreaManager
+      ? allBranches.filter(function (b) {
+          return (user?.assignedBranches ?? []).includes(b.id);
+        })
+      : allBranches.filter(function (b) {
+          return b.id === user?.branchId;
+        });
+
+  let _a = useState(user?.branchId ?? visibleBranches[0]?.id ?? "");
   let activeBranchId = _a[0];
   let setActiveBranchId = _a[1];
   let _b = useState("");
@@ -208,6 +231,22 @@ function PosPage() {
   let _w = useState<"menu" | "cart" | "history">("menu");
   let mobileTab = _w[0];
   let setMobileTab = _w[1];
+  let _x = useState<string | null>(null);
+  let expandedOrderId = _x[0];
+  let setExpandedOrderId = _x[1];
+  // History date range — defaults to the trailing week so the list stays
+  // uncluttered; both the desktop sidebar and the mobile history tab share it.
+  let _y = useState(isoDateDaysAgo(6));
+  let orderDateFrom = _y[0];
+  let setOrderDateFrom = _y[1];
+  let _z = useState("");
+  let orderDateTo = _z[0];
+  let setOrderDateTo = _z[1];
+  // History page index (0-based, newest first). Reset whenever the branch or
+  // date range changes so the user always lands back at the newest page.
+  let historyPageState = useState(0);
+  let historyPage = historyPageState[0];
+  let setHistoryPage = historyPageState[1];
   // PB1 rate from branch config
   let pb1Rate = 11;
   let activeBranch = allBranches.find(function (b) {
@@ -217,15 +256,48 @@ function PosPage() {
     pb1Rate = activeBranch.pb1Rate;
   }
 
+  // Recent orders are bounded by the user's role scope: branch admins see only
+  // their own branch; super_admin / admin_pusat see every branch's transactions
+  // and area managers see all branches under their supervision. The server
+  // enforces the same bound regardless of what the client sends.
+  let isBranchScopedUser = user?.role === "branch_admin";
+  let hasHistoryDateFilter = !!orderDateFrom || !!orderDateTo;
   let ordersResult = useQuery({
-    queryKey: ["pos-recent-orders", activeBranchId],
+    queryKey: [
+      "pos-recent-orders",
+      activeBranchId,
+      user?.role,
+      orderDateFrom,
+      orderDateTo,
+      historyPage,
+    ],
     queryFn: function () {
-      return getOrders({ data: { branchId: activeBranchId, limit: 20 } });
+      return getOrders({
+        data: {
+          branchId: isBranchScopedUser ? activeBranchId : undefined,
+          dateFrom: orderDateFrom || undefined,
+          dateTo: orderDateTo || undefined,
+          limit: HISTORY_PAGE_SIZE,
+          page: historyPage,
+        },
+      });
     },
-    enabled: !!activeBranchId,
+    enabled: isBranchScopedUser ? !!activeBranchId : true,
     retry: 1,
   });
   let recentOrders = ordersResult.data || [];
+  // A full page strongly suggests older orders exist on the next page.
+  let hasMoreOrders = (ordersResult.data ?? []).length === HISTORY_PAGE_SIZE;
+
+  // When the list spans more than one branch (super_admin / area_manager),
+  // label each row with its branch so the transactions are easy to tell
+  // apart. Single-branch users (branch_admin) already see it in the header.
+  let historySpansMultipleBranches =
+    new Set(
+      recentOrders.map(function (o) {
+        return o.branchId;
+      }),
+    ).size > 1;
 
   // ─── Active Requests (print / cancel) polling ───
   let orderIds = recentOrders.map(function (o) {
@@ -345,6 +417,7 @@ function PosPage() {
       // OrderResult field (channel enum widens to string).
       setSuccessOrder(order as OrderResult);
       setMobileCartOpen(false);
+      setHistoryPage(0);
       void queryClient.invalidateQueries({ queryKey: ["pos-recent-orders"] });
       void queryClient.invalidateQueries({ queryKey: ["inventory"] });
     },
@@ -865,7 +938,7 @@ function PosPage() {
   let canDirectPrint = !canRequestCancel; // super_admin, admin_pusat skip approval
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "branch_admin"]}>
+    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "branch_admin", "area_manager"]}>
       <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:items-start gap-4 lg:gap-6 -m-4 md:-m-6 overflow-hidden lg:overflow-visible">
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 p-4 md:p-6 min-h-0 overflow-hidden lg:overflow-visible gap-4 isolate">
@@ -873,27 +946,32 @@ function PosPage() {
           <fieldset className="shrink-0 rounded-xl border bg-card px-3 py-3 md:px-4 space-y-3 shadow-sm">
             <legend className="px-2 text-xs font-medium flex items-center gap-1.5 ml-1 bg-card">
               <Store className="h-3 w-3 text-muted-foreground" />
-              {isAdmin ? (
-                <select
-                  value={activeBranchId}
-                  onChange={function (e) {
-                    setActiveBranchId(e.target.value);
-                    setSelectedBrandId("");
-                    setSelectedCategory("");
-                    setSearchQuery("");
-                    setCart([]);
-                    setCheckoutError(null);
-                  }}
-                  className="h-5 bg-transparent border-0 p-0 pr-4 text-xs font-medium focus:ring-0 focus:outline-none truncate max-w-[160px] sm:max-w-[200px]"
-                >
-                  {allBranches.map(function (b) {
-                    return (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    );
-                  })}
-                </select>
+              {isAdmin || isAreaManager ? (
+                visibleBranches.length > 0 ? (
+                  <select
+                    value={activeBranchId}
+                    onChange={function (e) {
+                      setActiveBranchId(e.target.value);
+                      setSelectedBrandId("");
+                      setSelectedCategory("");
+                      setSearchQuery("");
+                      setCart([]);
+                      setCheckoutError(null);
+                      setHistoryPage(0);
+                    }}
+                    className="h-5 bg-transparent border-0 p-0 pr-4 text-xs font-medium focus:ring-0 focus:outline-none truncate max-w-[160px] sm:max-w-[200px]"
+                  >
+                    {visibleBranches.map(function (b) {
+                      return (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      );
+                    })}
+                  </select>
+                ) : (
+                  <span className="truncate max-w-[160px] sm:max-w-[200px]">—</span>
+                )
               ) : (
                 <span className="truncate max-w-[160px] sm:max-w-[200px]">
                   {userBranch?.name ?? "Unknown"}
@@ -1326,14 +1404,33 @@ function PosPage() {
                       <History className="h-4 w-4" /> Riwayat Pesanan
                     </h3>
                     <span className="text-xs text-muted-foreground">
-                      {recentOrders.length} pesanan
+                      {hasMoreOrders || historyPage > 0
+                        ? "Hal " + (historyPage + 1)
+                        : recentOrders.length + " pesanan"}
                     </span>
+                  </div>
+                  <div className="px-3 py-2 border-b bg-muted/20">
+                    <HistoryDateFilter
+                      dateFrom={orderDateFrom}
+                      dateTo={orderDateTo}
+                      onChange={function (from, to) {
+                        setOrderDateFrom(from);
+                        setOrderDateTo(to);
+                        setHistoryPage(0);
+                      }}
+                    />
                   </div>
                   <div className="divide-y max-h-[60vh] overflow-y-auto md:max-h-none">
                     {recentOrders.length === 0 ? (
                       <div className="py-12 text-center">
                         <History className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
-                        <p className="text-sm text-muted-foreground">Belum ada pesanan</p>
+                        <p className="text-sm text-muted-foreground">
+                          {historyPage > 0
+                            ? "Tidak ada pesanan lagi di halaman ini"
+                            : hasHistoryDateFilter
+                              ? "Belum ada pesanan pada rentang tanggal ini"
+                              : "Belum ada pesanan"}
+                        </p>
                       </div>
                     ) : (
                       recentOrders.map(function (o) {
@@ -1357,115 +1454,172 @@ function PosPage() {
                             : cancelStatus === "Pending"
                               ? "pending"
                               : "neutral";
+                        const isExpanded = expandedOrderId === o.id;
                         return (
-                          <div key={o.id} className="flex items-center justify-between px-3 py-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded font-medium">
-                                  #{(o.id || "").slice(0, 6).toUpperCase()}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {new Date(o.createdAt).toLocaleTimeString("id-ID", {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
-                                </span>
-                                {isVoid && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive font-bold">
-                                    VOID
+                          <div key={o.id}>
+                            <div
+                              className="flex items-center justify-between px-3 py-3 cursor-pointer select-none"
+                              onClick={function () {
+                                setExpandedOrderId(isExpanded ? null : o.id);
+                              }}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded font-medium">
+                                    #{(o.id || "").slice(0, 6).toUpperCase()}
                                   </span>
-                                )}
-                                {!isVoid && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full border text-muted-foreground">
-                                    {o.status}
+                                  <span className="text-xs text-muted-foreground">
+                                    {new Date(o.createdAt).toLocaleTimeString("id-ID", {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
                                   </span>
-                                )}
+                                  {isVoid && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive font-bold">
+                                      VOID
+                                    </span>
+                                  )}
+                                  {!isVoid && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full border text-muted-foreground">
+                                      {o.status}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-1 min-w-0">
+                                  {historySpansMultipleBranches && o.branchName && (
+                                    <span
+                                      title={o.branchName}
+                                      className="shrink-0 inline-flex items-center gap-1 max-w-[150px] text-[10px] px-1.5 py-0.5 rounded-full border text-muted-foreground"
+                                    >
+                                      <Store className="h-2.5 w-2.5 shrink-0" />
+                                      <span className="min-w-0 truncate">{o.branchName}</span>
+                                    </span>
+                                  )}
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {o.channel} • {o.orderCode || o.customerName || "-"}
+                                  </p>
+                                </div>
                               </div>
-                              <p className="text-xs text-muted-foreground mt-1 truncate">
-                                {o.channel} • {o.orderCode || o.customerName || "-"}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                              <span className="text-sm font-semibold">
-                                Rp {o.totalAmount.toLocaleString("id-ID")}
-                              </span>
-                              {printState !== "hidden" && (
-                                <button
-                                  onClick={function () {
-                                    if (canDirectPrint) {
-                                      void printApprovedOrder(o.id);
-                                      return;
+                              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                <span className="text-sm font-semibold">
+                                  Rp {o.totalAmount.toLocaleString("id-ID")}
+                                </span>
+                                {printState !== "hidden" && (
+                                  <button
+                                    onClick={function (e: React.MouseEvent) {
+                                      e.stopPropagation();
+                                      if (canDirectPrint) {
+                                        void printApprovedOrder(o.id);
+                                        return;
+                                      }
+                                      let rs = printStatus;
+                                      let rid = req?.print?.requestId;
+                                      if (rs === "Approved") {
+                                        if (rid)
+                                          void consumePrintMutation.mutateAsync({
+                                            data: { requestId: rid },
+                                          });
+                                        void printApprovedOrder(o.id);
+                                      } else if (!rs || rs === "Rejected") handleReprint(o.id);
+                                    }}
+                                    disabled={printState === "pending"}
+                                    className={
+                                      "h-8 w-8 inline-flex items-center justify-center rounded-full border " +
+                                      (printState === "direct" || printState === "active"
+                                        ? "bg-primary text-primary-foreground border-primary"
+                                        : printState === "pending"
+                                          ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
+                                          : "bg-card")
                                     }
-                                    let rs = printStatus;
-                                    let rid = req?.print?.requestId;
-                                    if (rs === "Approved") {
-                                      if (rid)
-                                        void consumePrintMutation.mutateAsync({
-                                          data: { requestId: rid },
+                                  >
+                                    <Receipt className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                {!canVoid && canRequestCancel && cancelState !== "hidden" && (
+                                  <button
+                                    onClick={function (e: React.MouseEvent) {
+                                      e.stopPropagation();
+                                      let cs = cancelStatus;
+                                      if (cs === "Approved" && req?.cancel?.requestId)
+                                        setVoidModal({
+                                          orderId: o.id,
+                                          reason: req?.cancel?.reason ?? "",
+                                          mode: "execute",
+                                          requestId: req.cancel.requestId,
                                         });
-                                      void printApprovedOrder(o.id);
-                                    } else if (!rs || rs === "Rejected") handleReprint(o.id);
-                                  }}
-                                  disabled={printState === "pending"}
-                                  className={
-                                    "h-8 w-8 inline-flex items-center justify-center rounded-full border " +
-                                    (printState === "direct" || printState === "active"
-                                      ? "bg-primary text-primary-foreground border-primary"
-                                      : printState === "pending"
-                                        ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
-                                        : "bg-card")
-                                  }
-                                >
-                                  <Receipt className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                              {!canVoid && canRequestCancel && cancelState !== "hidden" && (
+                                      else if (!cs || cs === "Rejected")
+                                        setVoidModal({
+                                          orderId: o.id,
+                                          reason: "",
+                                          mode: "request",
+                                        });
+                                    }}
+                                    disabled={cancelState === "pending"}
+                                    className={
+                                      "h-8 px-2 inline-flex items-center justify-center rounded-full border text-xs font-medium " +
+                                      (cancelState === "active"
+                                        ? "bg-primary text-primary-foreground border-primary"
+                                        : cancelState === "pending"
+                                          ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
+                                          : "border-destructive/30 text-destructive")
+                                    }
+                                  >
+                                    {cancelState === "pending"
+                                      ? "..."
+                                      : cancelState === "active"
+                                        ? "Batal"
+                                        : "Btl"}
+                                  </button>
+                                )}
+                                {canVoid && !isVoid && (
+                                  <button
+                                    onClick={function (e: React.MouseEvent) {
+                                      e.stopPropagation();
+                                      setVoidModal({ orderId: o.id, reason: "" });
+                                    }}
+                                    className="h-8 w-8 inline-flex items-center justify-center rounded-full border text-destructive"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                {/* ── Detail tray toggle ── */}
                                 <button
-                                  onClick={function () {
-                                    let cs = cancelStatus;
-                                    if (cs === "Approved" && req?.cancel?.requestId)
-                                      setVoidModal({
-                                        orderId: o.id,
-                                        reason: req?.cancel?.reason ?? "",
-                                        mode: "execute",
-                                        requestId: req.cancel.requestId,
-                                      });
-                                    else if (!cs || cs === "Rejected")
-                                      setVoidModal({ orderId: o.id, reason: "", mode: "request" });
+                                  onClick={function (e: React.MouseEvent) {
+                                    e.stopPropagation();
+                                    setExpandedOrderId(isExpanded ? null : o.id);
                                   }}
-                                  disabled={cancelState === "pending"}
-                                  className={
-                                    "h-8 px-2 inline-flex items-center justify-center rounded-full border text-xs font-medium " +
-                                    (cancelState === "active"
-                                      ? "bg-primary text-primary-foreground border-primary"
-                                      : cancelState === "pending"
-                                        ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
-                                        : "border-destructive/30 text-destructive")
-                                  }
+                                  aria-expanded={isExpanded}
+                                  aria-label={isExpanded ? "Tutup detail" : "Lihat detail"}
+                                  className="h-8 w-8 inline-flex items-center justify-center rounded-full border bg-card text-muted-foreground"
                                 >
-                                  {cancelState === "pending"
-                                    ? "..."
-                                    : cancelState === "active"
-                                      ? "Batal"
-                                      : "Btl"}
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <ChevronRight className="h-3.5 w-3.5" />
+                                  )}
                                 </button>
-                              )}
-                              {canVoid && !isVoid && (
-                                <button
-                                  onClick={function () {
-                                    setVoidModal({ orderId: o.id, reason: "" });
-                                  }}
-                                  className="h-8 w-8 inline-flex items-center justify-center rounded-full border text-destructive"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              )}
+                              </div>
                             </div>
+                            {/* ── Order detail tray (mimics /order-history expandable row) ── */}
+                            {isExpanded && (
+                              <div className="px-3 pb-3 animate-in fade-in-0 slide-in-from-top-1 duration-200">
+                                <OrderItemsTray
+                                  orderId={o.id}
+                                  compact
+                                  branchName={historySpansMultipleBranches ? o.branchName : null}
+                                />
+                              </div>
+                            )}
                           </div>
                         );
                       })
                     )}
                   </div>
+                  <HistoryPagination
+                    page={historyPage}
+                    hasNext={hasMoreOrders}
+                    onPageChange={setHistoryPage}
+                  />
                 </div>
               </div>
             )}
@@ -1588,6 +1742,16 @@ function PosPage() {
             canRequestCancel={canRequestCancel}
             canDirectPrint={canDirectPrint}
             activeRequests={activeRequestsMap}
+            dateFrom={orderDateFrom}
+            dateTo={orderDateTo}
+            onDateChange={function (from: string, to: string) {
+              setOrderDateFrom(from);
+              setOrderDateTo(to);
+              setHistoryPage(0);
+            }}
+            page={historyPage}
+            hasNextPage={hasMoreOrders}
+            onPageChange={setHistoryPage}
             onPrintClick={function (orderId: string) {
               if (canDirectPrint) {
                 void printApprovedOrder(orderId);
