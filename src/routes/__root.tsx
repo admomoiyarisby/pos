@@ -3,6 +3,7 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import { AuthProvider } from "../lib/auth-context";
+import { AuthSessionWatcher } from "../components/AuthSessionWatcher";
 import { getCurrentUser } from "../lib/server/auth";
 import type { QueryClient } from "@tanstack/react-query";
 import type { AuthUser } from "../lib/auth-context";
@@ -88,6 +89,7 @@ function RootDocument() {
         <TopProgressBar />
         <Toaster position="top-right" richColors closeButton />
         <AuthProvider user={user ?? null} isLoading={false}>
+          <AuthSessionWatcher />
           <Outlet />
           <TanStackDevtools
             config={{ position: "bottom-right" }}
