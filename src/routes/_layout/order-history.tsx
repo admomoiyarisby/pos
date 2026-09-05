@@ -15,6 +15,7 @@ import HistoryDateFilter, { isoDateDaysAgo } from "#/components/pos/HistoryDateF
 import { Badge } from "#/components/ui/badge";
 import { Printer, Pencil, Store } from "lucide-react";
 import { printReceipt } from "#/lib/pos-print";
+import { ORDER_CHANNEL_OPTIONS, channelLabel } from "#/lib/order-channels";
 
 interface OrderRow {
   id: string;
@@ -27,15 +28,6 @@ interface OrderRow {
   status: string;
   createdAt: Date;
 }
-
-const channelLabels = {
-  Gofood: "Gofood",
-  Grabfood: "Grabfood",
-  ShopeeFood: "ShopeeFood",
-  "Dine-in": "Dine-in",
-  TikTok: "TikTok",
-  Perlengkapan: "Perlengkapan",
-} satisfies Record<string, string>;
 
 const statusColors = {
   Completed: "success",
@@ -63,11 +55,7 @@ const columns: Column<OrderRow>[] = [
     accessorKey: "channel",
     header: "Channel",
     enableSorting: true,
-    cell: ({ row }) => (
-      <Badge variant="outline">
-        {lookupLabel(channelLabels, row.original.channel) ?? row.original.channel}
-      </Badge>
-    ),
+    cell: ({ row }) => <Badge variant="outline">{channelLabel(row.original.channel)}</Badge>,
   },
   {
     accessorKey: "branchName",
@@ -126,7 +114,7 @@ export const Route = createFileRoute("/_layout/order-history")({
 
 function OrderHistoryPage() {
   const [search, setSearch] = useTableSearch();
-  const { page, setPage, sort, setSort } = useTableUrlState();
+  const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState(["channel"]);
   const { orders: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
@@ -162,7 +150,12 @@ function OrderHistoryPage() {
   }, [rawOrders, initial]);
 
   const statusFilter = searchStringParam(Route.useSearch(), "status");
-  const filteredOrders = statusFilter ? orders.filter((o) => o.status === statusFilter) : orders;
+  const channelFilter = searchStringParam(filters, "channel");
+  const filteredOrders = orders.filter((o) => {
+    if (statusFilter && o.status !== statusFilter) return false;
+    if (channelFilter && o.channel !== channelFilter) return false;
+    return true;
+  });
 
   const updateStatusMutation = useMutation({
     mutationFn: updateOrderStatus,
@@ -192,6 +185,26 @@ function OrderHistoryPage() {
                 setDateTo(to);
               }}
             />
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={channelFilter ?? ""}
+                onChange={function (e) {
+                  setFilter("channel", e.target.value || undefined);
+                  setPage(0);
+                }}
+                aria-label="Filter channel"
+                className="h-8 rounded-md border border-input bg-background px-2.5 text-xs font-medium"
+              >
+                <option value="">Semua Channel</option>
+                {ORDER_CHANNEL_OPTIONS.map(function (c) {
+                  return (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
             <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
               <span>Menampilkan maks. 500 pesanan terbaru pada rentang tanggal</span>
               {isFetching && !rawOrders && <span>Memuat…</span>}
@@ -228,9 +241,7 @@ function OrderHistoryPage() {
               </div>
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground uppercase">Channel</p>
-                <p className="font-medium">
-                  {lookupLabel(channelLabels, selectedOrder.channel) ?? selectedOrder.channel}
-                </p>
+                <p className="font-medium">{channelLabel(selectedOrder.channel)}</p>
               </div>
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground uppercase">Total</p>

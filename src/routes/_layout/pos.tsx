@@ -57,15 +57,7 @@ import HistoryDateFilter, { isoDateDaysAgo } from "#/components/pos/HistoryDateF
 import HistoryPagination from "#/components/pos/HistoryPagination";
 import { default as SuccessModal } from "#/components/pos/SuccessModal";
 import { default as ModifierModalComp } from "#/components/pos/ModifierModal";
-
-const channels = [
-  { key: "Dine-in", label: "Dine-in" },
-  { key: "Gofood", label: "Gofood" },
-  { key: "Grabfood", label: "Grabfood" },
-  { key: "ShopeeFood", label: "ShopeeFood" },
-  { key: "TikTok", label: "TikTok" },
-  { key: "Perlengkapan", label: "Perlengkapan" },
-];
+import { ORDER_CHANNEL_OPTIONS, channelLabel } from "#/lib/order-channels";
 
 // Number of orders fetched per history page; the server also enforces its own
 // default limit but honors this via the limit/page params.
@@ -242,6 +234,11 @@ function PosPage() {
   let _z = useState("");
   let orderDateTo = _z[0];
   let setOrderDateTo = _z[1];
+  // History channel filter — "" means all channels; filters server-side so
+  // pagination stays consistent.
+  let orderChannelFilterState = useState("");
+  let orderChannelFilter = orderChannelFilterState[0];
+  let setOrderChannelFilter = orderChannelFilterState[1];
   // History page index (0-based, newest first). Reset whenever the branch or
   // date range changes so the user always lands back at the newest page.
   let historyPageState = useState(0);
@@ -269,6 +266,7 @@ function PosPage() {
       user?.role,
       orderDateFrom,
       orderDateTo,
+      orderChannelFilter,
       historyPage,
     ],
     queryFn: function () {
@@ -277,6 +275,7 @@ function PosPage() {
           branchId: isBranchScopedUser ? activeBranchId : undefined,
           dateFrom: orderDateFrom || undefined,
           dateTo: orderDateTo || undefined,
+          channel: orderChannelFilter || undefined,
           limit: HISTORY_PAGE_SIZE,
           page: historyPage,
         },
@@ -988,7 +987,7 @@ function PosPage() {
                 }}
                 className="h-8 flex-1 min-w-[140px] sm:flex-none sm:min-w-[160px] rounded-full border border-input bg-background px-3 text-sm font-medium"
               >
-                {channels.map(function (c) {
+                {ORDER_CHANNEL_OPTIONS.map(function (c) {
                   return (
                     <option key={c.key} value={c.key}>
                       {c.label}
@@ -1419,6 +1418,26 @@ function PosPage() {
                         setHistoryPage(0);
                       }}
                     />
+                    <div className="mt-1.5">
+                      <select
+                        value={orderChannelFilter}
+                        onChange={function (e) {
+                          setOrderChannelFilter(e.target.value);
+                          setHistoryPage(0);
+                        }}
+                        aria-label="Filter channel"
+                        className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs font-medium text-foreground"
+                      >
+                        <option value="">Semua Channel</option>
+                        {ORDER_CHANNEL_OPTIONS.map(function (c) {
+                          return (
+                            <option key={c.key} value={c.key}>
+                              {c.label}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
                   </div>
                   <div className="divide-y max-h-[60vh] overflow-y-auto md:max-h-none">
                     {recentOrders.length === 0 ? (
@@ -1486,6 +1505,12 @@ function PosPage() {
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-1 min-w-0">
+                                  <span
+                                    title={o.channel}
+                                    className="shrink-0 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-primary/20 bg-primary/5 text-primary font-medium"
+                                  >
+                                    {channelLabel(o.channel)}
+                                  </span>
                                   {historySpansMultipleBranches && o.branchName && (
                                     <span
                                       title={o.branchName}
@@ -1496,7 +1521,7 @@ function PosPage() {
                                     </span>
                                   )}
                                   <p className="text-xs text-muted-foreground truncate">
-                                    {o.channel} • {o.orderCode || o.customerName || "-"}
+                                    {o.orderCode || o.customerName || "-"}
                                   </p>
                                 </div>
                               </div>
@@ -1747,6 +1772,11 @@ function PosPage() {
             onDateChange={function (from: string, to: string) {
               setOrderDateFrom(from);
               setOrderDateTo(to);
+              setHistoryPage(0);
+            }}
+            channelFilter={orderChannelFilter}
+            onChannelFilterChange={function (channel: string) {
+              setOrderChannelFilter(channel);
               setHistoryPage(0);
             }}
             page={historyPage}

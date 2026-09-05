@@ -8,6 +8,7 @@ import type { OrderResult } from "#/lib/pos-types";
 import OrderItemsTray from "#/components/pos/OrderItemsTray";
 import HistoryDateFilter from "#/components/pos/HistoryDateFilter";
 import HistoryPagination from "#/components/pos/HistoryPagination";
+import { ORDER_CHANNEL_OPTIONS, channelLabel } from "#/lib/order-channels";
 
 interface RequestStatus {
   status: string;
@@ -23,6 +24,9 @@ interface OrderHistoryProps {
   dateFrom: string;
   dateTo: string;
   onDateChange: (dateFrom: string, dateTo: string) => void;
+  /** Active channel filter ("" = all channels); drives server-side getOrders. */
+  channelFilter: string;
+  onChannelFilterChange: (channel: string) => void;
   page: number;
   hasNextPage: boolean;
   onPageChange: (page: number) => void;
@@ -40,6 +44,8 @@ export default function OrderHistory({
   dateFrom,
   dateTo,
   onDateChange,
+  channelFilter,
+  onChannelFilterChange,
   page,
   hasNextPage,
   onPageChange,
@@ -63,6 +69,25 @@ export default function OrderHistory({
         </h3>
         <div className="mt-1.5">
           <HistoryDateFilter dateFrom={dateFrom} dateTo={dateTo} onChange={onDateChange} />
+        </div>
+        <div className="mt-1.5">
+          <select
+            value={channelFilter}
+            onChange={function (e) {
+              onChannelFilterChange(e.target.value);
+            }}
+            aria-label="Filter channel"
+            className="h-7 w-full rounded-md border border-input bg-background px-2 text-[11px] font-medium text-foreground"
+          >
+            <option value="">Semua Channel</option>
+            {ORDER_CHANNEL_OPTIONS.map(function (c) {
+              return (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
+              );
+            })}
+          </select>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-2.5 space-y-1">
@@ -121,6 +146,12 @@ export default function OrderHistory({
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
+                    </span>
+                    <span
+                      title={o.channel}
+                      className="shrink-0 text-[9px] px-1 py-0.5 rounded border border-primary/20 bg-primary/5 text-primary font-medium"
+                    >
+                      {channelLabel(o.channel)}
                     </span>
                     {spansMultipleBranches && o.branchName && (
                       <span

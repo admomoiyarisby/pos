@@ -43,27 +43,41 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 flex-wrap min-w-0">
-      {/* Preset chips */}
-      <div className="flex items-center gap-1 flex-wrap">
-        {presetButtons.map(function (key) {
-          const active = isPresetActive(key);
-          return (
-            <button
-              key={key}
-              onClick={function () {
-                applyPreset(key);
-              }}
-              className={
-                "h-6 px-2.5 rounded-full border text-[10px] font-medium transition-colors " +
-                (active
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "text-muted-foreground hover:bg-accent")
-              }
-            >
-              {key === "all" ? "Semua" : HISTORY_PRESETS[key].label}
-            </button>
-          );
-        })}
+      {/* Preset chips — chips left, Reset right, spread across the row */}
+      <div className="flex items-center justify-between gap-1 flex-wrap">
+        <div className="flex items-center gap-1 flex-wrap">
+          {presetButtons.map(function (key) {
+            const active = isPresetActive(key);
+            return (
+              <button
+                key={key}
+                onClick={function () {
+                  applyPreset(key);
+                }}
+                className={
+                  "h-6 px-2.5 rounded-full border text-[10px] font-medium transition-colors " +
+                  (active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "text-muted-foreground hover:bg-accent")
+                }
+              >
+                {key === "all" ? "Semua" : HISTORY_PRESETS[key].label}
+              </button>
+            );
+          })}
+        </div>
+        {(dateFrom || dateTo) && (
+          <button
+            onClick={function () {
+              onChange("", "");
+            }}
+            aria-label="Hapus filter tanggal"
+            title="Hapus filter tanggal"
+            className="h-6 px-2.5 rounded-full border text-[10px] font-medium transition-colors text-muted-foreground hover:bg-accent"
+          >
+            Reset
+          </button>
+        )}
       </div>
       {/* From / To date inputs */}
       <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground min-w-0 flex-wrap">
@@ -93,18 +107,6 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
           }}
           className="h-7 w-[124px] rounded-md border border-input bg-background px-1.5 text-[11px] text-foreground"
         />
-        {(dateFrom || dateTo) && (
-          <button
-            onClick={function () {
-              onChange("", "");
-            }}
-            aria-label="Hapus filter tanggal"
-            title="Hapus filter tanggal"
-            className="ml-auto h-6 px-2 rounded-full border text-[10px] text-muted-foreground hover:bg-accent shrink-0"
-          >
-            Reset
-          </button>
-        )}
       </div>
     </div>
   );

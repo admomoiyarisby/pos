@@ -881,9 +881,15 @@ export const getOrders = createServerFn({ method: "GET" })
       dateTo?: string;
       status?: string;
       search?: string;
+      channel?: string;
       limit?: number;
       page?: number;
-    }) => data,
+    }) => ({
+      ...data,
+      // Normalize the channel filter at the boundary: only the enum's values
+      // are meaningful; anything else (including "" and garbage) → undefined.
+      channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+    }),
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
@@ -922,6 +928,11 @@ export const getOrders = createServerFn({ method: "GET" })
       whereClauses.push(
         sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
       );
+    }
+
+    // Optional channel bound (e.g. POS history filtered to ShopeeFood only).
+    if (data.channel) {
+      whereClauses.push(eq(orders.channel, data.channel));
     }
 
     const result = await db
