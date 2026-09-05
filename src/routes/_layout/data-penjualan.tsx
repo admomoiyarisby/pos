@@ -1,11 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useCallback } from "react";
+import HistoryDateFilter, { isoDateDaysAgo } from "#/components/pos/HistoryDateFilter";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { lookupLabel } from "#/lib/label-lookup";
 import { toast } from "sonner";
-import { Trash2, Pencil, Plus, ChevronDown, ChevronRight, Search } from "lucide-react";
+import {
+  Trash2,
+  Pencil,
+  Plus,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  CalendarDays,
+  Store,
+} from "lucide-react";
 import RoleGuard from "#/components/RoleGuard";
 import Modal from "#/components/ui/Modal";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -56,24 +66,36 @@ function DataPenjualanPage() {
 
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const now = new Date();
 
-  // URL-persisted filters (month/branch/channel/search) + page so the exact
-  // list view survives reload and back-navigation. Defaults: current month,
-  // all branches, all channels.
+  // URL-persisted filters (date range/branch/channel/search) + page so the
+  // exact list view survives reload and back-navigation. Defaults: trailing 7
+  // days (same as /order-history), all branches, all channels. Like
+  // /order-history, the range is a free-form date filter (with 7/30-hari
+  // presets) instead of a month picker.
   const {
     page,
     setPage,
-    filters: { month, branchId: branchIdFilter, channel, q },
+    filters: {
+      dateFrom: dateFromFilter,
+      dateTo: dateToFilter,
+      branchId: branchIdFilter,
+      channel,
+      q,
+    },
     setFilter,
   } = useTableUrlState<{
-    month?: string;
+    dateFrom?: string;
+    dateTo?: string;
     branchId?: string;
     channel?: string;
     q?: string;
-  }>(["month", "branchId", "channel", "q"]);
-  const selectedMonth =
-    month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }>(["dateFrom", "dateTo", "branchId", "channel", "q"]);
+  // Default to the trailing week when the URL has no explicit range. The flag
+  // disables the fallback after the user picks "Semua" (which clears both URL
+  // keys), so unbounded stays unbounded instead of snapping back to 7 days.
+  const [rangeTouched, setRangeTouched] = useState(false);
+  const dateFrom = dateFromFilter ?? (rangeTouched ? "" : isoDateDaysAgo(6));
+  const dateTo = dateToFilter ?? "";
   const selectedBranchId = branchIdFilter ?? "";
   const selectedChannel = channel ?? "all";
   const searchQuery = q ?? "";
@@ -84,16 +106,6 @@ function DataPenjualanPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [deletingOrder, setDeletingOrder] = useState<any>(null);
-
-  // Compute date range
-  const { dateFrom, dateTo } = useMemo(() => {
-    const [y, m] = selectedMonth.split("-").map(Number);
-    const lastDay = new Date(y, m, 0).getDate();
-    return {
-      dateFrom: `${selectedMonth}-01`,
-      dateTo: `${selectedMonth}-${String(lastDay).padStart(2, "0")}`,
-    };
-  }, [selectedMonth]);
 
   const branchId = selectedBranchId || undefined;
 
@@ -156,19 +168,20 @@ function DataPenjualanPage() {
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3 mb-6 p-4 rounded-lg border">
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Bulan</label>
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => {
-              setFilter("month", e.target.value);
+        <div className="w-full lg:w-auto space-y-1">
+          <label className="text-xs text-muted-foreground">Tanggal</label>
+          <HistoryDateFilter
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onChange={(from, to) => {
+              setRangeTouched(true);
+              setFilter("dateFrom", from || undefined);
+              setFilter("dateTo", to || undefined);
               setPage(0);
             }}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
           />
         </div>
-        <div className="space-y-1">
+        <div className="w-full sm:w-auto space-y-1">
           <label className="text-xs text-muted-foreground">Cabang</label>
           <select
             value={selectedBranchId}
@@ -186,7 +199,7 @@ function DataPenjualanPage() {
             ))}
           </select>
         </div>
-        <div className="space-y-1">
+        <div className="w-full sm:w-auto space-y-1">
           <label className="text-xs text-muted-foreground">Channel</label>
           <select
             value={selectedChannel}
@@ -203,7 +216,7 @@ function DataPenjualanPage() {
             ))}
           </select>
         </div>
-        <div className="flex-1 min-w-[200px] space-y-1">
+        <div className="w-full sm:flex-1 sm:min-w-[200px] space-y-1">
           <label className="text-xs text-muted-foreground">Cari</label>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -250,8 +263,38 @@ function DataPenjualanPage() {
         </div>
       )}
 
-      {/* Data Table */}
-      <div className="rounded-lg border overflow-hidden">
+      {/* Mobile: card list */}
+      <div className="md:hidden space-y-3">
+        {isLoading ? (
+          <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+            Memuat data…
+          </div>
+        ) : filteredOrders.length > 0 ? (
+          filteredOrders.map((order) => (
+            <MobileOrderCard
+              key={order.id}
+              order={order}
+              branchName={branches.find((b) => b.id === order.branchId)?.name ?? "-"}
+              onEdit={() => {
+                setEditingOrder(order);
+                setEditModalOpen(true);
+              }}
+              onDelete={() => {
+                setDeletingOrder(order);
+                setDeleteModalOpen(true);
+              }}
+              canEdit={canEdit}
+            />
+          ))
+        ) : (
+          <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+            Tidak ada data penjualan
+          </div>
+        )}
+      </div>
+
+      {/* Desktop: data table */}
+      <div className="hidden md:block rounded-lg border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -306,17 +349,17 @@ function DataPenjualanPage() {
 
       {/* Pagination */}
       {salesData && salesData.total > limit && (
-        <div className="flex items-center justify-between mt-4">
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 mt-4">
           <p className="text-sm text-muted-foreground">
             Menampilkan {page * limit + 1}–{Math.min((page + 1) * limit, salesData.total)} dari{" "}
             {salesData.total}
           </p>
-          <div className="flex gap-2">
+          <div className="flex gap-2 justify-end">
             <button
               type="button"
               onClick={() => setPage(Math.max(0, page - 1))}
               disabled={page === 0}
-              className="h-9 px-3 rounded-md border text-sm disabled:opacity-50"
+              className="h-9 min-w-[96px] px-3 rounded-md border text-sm disabled:opacity-50"
             >
               Sebelumnya
             </button>
@@ -324,7 +367,7 @@ function DataPenjualanPage() {
               type="button"
               onClick={() => setPage(page + 1)}
               disabled={(page + 1) * limit >= salesData.total}
-              className="h-9 px-3 rounded-md border text-sm disabled:opacity-50"
+              className="h-9 min-w-[96px] px-3 rounded-md border text-sm disabled:opacity-50"
             >
               Selanjutnya
             </button>
@@ -338,7 +381,7 @@ function DataPenjualanPage() {
           order={editingOrder}
           recipes={recipes ?? []}
           branches={branches}
-          defaultDate={dateFrom}
+          defaultDate={dateFrom || undefined}
           onClose={() => {
             setEditModalOpen(false);
             setEditingOrder(null);
@@ -424,6 +467,8 @@ function OrderRow({
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
+            aria-expanded={expanded}
+            aria-label={expanded ? "Sembunyikan detail" : "Lihat detail"}
             className="p-1 hover:bg-muted rounded"
           >
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -564,6 +609,180 @@ function OrderRow({
         </tr>
       )}
     </>
+  );
+}
+
+/* ─── Mobile Order Card ──────────────────────────────────────── */
+
+function MobileOrderCard({
+  order,
+  branchName,
+  onEdit,
+  onDelete,
+  canEdit,
+}: {
+  order: any;
+  branchName: string;
+  onEdit: () => void;
+  onDelete: () => void;
+  canEdit: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const profit = order.totalAmount - order.totalCogs;
+
+  // Same lazy detail fetch as the desktop row — shares the query cache so
+  // switching breakpoints never refetches an already-opened order.
+  const { data: detail, isLoading: detailLoading } = useQuery({
+    queryKey: ["sales-order-detail", order.id],
+    queryFn: () => getSalesOrderDetail({ data: { id: order.id } }),
+    enabled: expanded,
+  });
+
+  return (
+    <div className="rounded-xl border bg-card p-3.5 shadow-xs">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CalendarDays className="h-3 w-3 shrink-0" />
+            {order.createdAt
+              ? new Date(order.createdAt).toLocaleDateString("id-ID", {
+                  day: "numeric",
+                  month: "short",
+                })
+              : "-"}
+            <span className="text-muted-foreground">•</span>
+            <span className="font-medium truncate">{order.orderCode ?? "-"}</span>
+          </div>
+          {order.customerName && (
+            <div className="font-medium text-sm truncate mt-1">{order.customerName}</div>
+          )}
+          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+            <span
+              className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${lookupLabel(CHANNEL_COLORS, order.channel) ?? "bg-gray-100"}`}
+            >
+              {order.channel}
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground min-w-0">
+              <Store className="h-3 w-3 shrink-0" />
+              <span className="truncate">{branchName}</span>
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Sembunyikan detail" : "Lihat detail"}
+          className="shrink-0 p-1.5 rounded hover:bg-muted text-muted-foreground"
+        >
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
+      </div>
+
+      <div className="mt-2.5 space-y-2 border-t pt-2.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs text-muted-foreground">Omzet</span>
+          <span className="text-sm font-semibold tabular-nums">{formatRp(order.totalAmount)}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground">HPP</p>
+            <p className="truncate text-sm tabular-nums text-muted-foreground">
+              {formatRp(order.totalCogs)}
+            </p>
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground">Profit</p>
+            <p
+              className={`truncate text-sm font-semibold tabular-nums ${profit >= 0 ? "text-emerald-600" : "text-destructive"}`}
+            >
+              {formatRp(profit)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {canEdit && (
+        <div className="mt-2.5 flex items-center justify-end gap-2 border-t pt-2.5">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex h-9 items-center gap-1 rounded-full border bg-background px-3 text-xs font-medium hover:bg-muted"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="inline-flex h-9 items-center gap-1 rounded-full bg-destructive px-3 text-xs font-medium text-destructive-foreground hover:bg-destructive/90"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Hapus
+          </button>
+        </div>
+      )}
+
+      {expanded && (
+        <div className="mt-2.5 space-y-3 border-t pt-2.5">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-1.5">Menu Terjual</p>
+            {detailLoading ? (
+              <p className="text-xs text-muted-foreground">Memuat menu…</p>
+            ) : detail?.items && detail.items.length > 0 ? (
+              <div className="divide-y divide-border rounded-md border bg-background">
+                {detail.items.map((item: any) => {
+                  const lineTotal = (item.price ?? 0) * item.quantity;
+                  const lineCogs = (item.cogsAtTransaction ?? 0) * item.quantity;
+                  const lineProfit = lineTotal - lineCogs;
+                  return (
+                    <div key={item.id ?? item.recipeId} className="px-3 py-2">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0 truncate text-xs font-medium">
+                          {item.recipeName ?? "-"}
+                          {item.notes && (
+                            <span className="ml-1 text-muted-foreground">({item.notes})</span>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-xs tabular-nums">{item.quantity}×</span>
+                      </div>
+                      <div className="mt-0.5 flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="tabular-nums">{formatRp(item.price)}</span>
+                        <span className="tabular-nums">HPP {formatRp(lineCogs)}</span>
+                      </div>
+                      <div className="mt-0.5 flex items-center justify-between text-xs">
+                        <span
+                          className={`font-medium tabular-nums ${lineProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}
+                        >
+                          {formatRp(lineProfit)}
+                        </span>
+                        <span className="font-medium tabular-nums">{formatRp(lineTotal)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Tidak ada item.</p>
+            )}
+          </div>
+
+          <div className="space-y-1 text-xs text-muted-foreground">
+            {order.notes && <p>Catatan: {order.notes}</p>}
+            <p>
+              Subtotal: {formatRp(order.subtotal)} · Diskon:{" "}
+              {formatRp(order.merchantDiscount + order.platformDiscount)} · Pajak:{" "}
+              {formatRp(order.taxAmount)} · MDR: {formatRp(order.mdrFee)} · Net:{" "}
+              {formatRp(order.netSales)}
+            </p>
+            <p className="text-muted-foreground/70">
+              ID: {order.id.slice(0, 8)} · Dibuat:{" "}
+              {order.createdAt ? new Date(order.createdAt).toLocaleString("id-ID") : "-"}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -714,7 +933,7 @@ function OrderEditModal({
       ) : (
         <div className="space-y-4 max-h-[70vh] overflow-y-auto">
           {/* Basic Info */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">Tanggal</label>
               <input
@@ -800,7 +1019,65 @@ function OrderEditModal({
                 <Plus className="h-3 w-3" /> Tambah Item
               </button>
             </div>
-            <div className="rounded-lg border overflow-hidden">
+            {/* Mobile: stacked item rows */}
+            <div className="md:hidden space-y-2">
+              {items.map((item, i) => (
+                <div key={i} className="rounded-lg border p-3">
+                  <div className="flex items-start gap-2">
+                    <select
+                      value={item.recipeId}
+                      onChange={(e) => updateItem(i, "recipeId", e.target.value)}
+                      className="h-9 min-w-0 flex-1 rounded border border-input bg-background px-2 text-sm"
+                    >
+                      <option value="">Pilih menu…</option>
+                      {recipes.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => removeItem(i)}
+                      title="Hapus item"
+                      className="shrink-0 p-2 rounded hover:bg-destructive/10 text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="block text-xs text-muted-foreground">Qty</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={item.quantity}
+                          onChange={(e) => updateItem(i, "quantity", Number(e.target.value) || 1)}
+                          className="h-9 w-full rounded border border-input bg-background px-2 text-sm text-right tabular-nums"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs text-muted-foreground">Harga</label>
+                        <MoneyInput
+                          value={item.price}
+                          onChange={(raw) => updateItem(i, "price", raw ?? 0)}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex h-9 items-center justify-between rounded-md border px-2">
+                      <span className="text-xs text-muted-foreground">Subtotal</span>
+                      <span className="text-sm font-medium tabular-nums">
+                        {formatRp(item.price * item.quantity)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop: item table */}
+            <div className="hidden md:block rounded-lg border overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
