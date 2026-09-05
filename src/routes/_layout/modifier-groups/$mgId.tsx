@@ -621,6 +621,10 @@ function ModifierGroupDetailPage() {
                 </Button>
               </div>
               <DndContext
+                // Explicit id so dnd-kit's aria-describedby (built from a
+                // module-level counter otherwise) is identical on server and
+                // client — without it, hydration mismatches on every handle.
+                id="modifier-group-edit-dnd"
                 sensors={sensors}
                 collisionDetection={closestCenter}
                 onDragEnd={handleDragEnd}
@@ -696,6 +700,10 @@ function ModifierGroupDetailPage() {
                 <p className="text-sm text-muted-foreground">Tidak ada opsi</p>
               ) : (
                 <DndContext
+                  // Explicit id so dnd-kit's aria-describedby (built from a
+                  // module-level counter otherwise) is identical on server and
+                  // client — without it, hydration mismatches on every handle.
+                  id="modifier-group-view-dnd"
                   sensors={sensors}
                   collisionDetection={closestCenter}
                   onDragOver={handleViewDragOver}

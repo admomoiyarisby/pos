@@ -315,6 +315,10 @@ function ModifierGroupsPage() {
         </div>
 
         <DndContext
+          // Explicit id so dnd-kit's aria-describedby (built from a module-level
+          // counter otherwise) is identical on server and client — without it,
+          // hydration mismatches on every drag handle.
+          id="modifier-groups-view-dnd"
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragOver={handleViewDragOver}
@@ -485,6 +489,7 @@ function ModifierGroupsPage() {
                       draft={{
                         kind: mod.kind,
                         name: mod.name,
+                        alias: mod.alias ?? null,
                         ingredientId: mod.ingredientId,
                         ingredientQty: mod.ingredientQty,
                         recipeId: mod.recipeId,
