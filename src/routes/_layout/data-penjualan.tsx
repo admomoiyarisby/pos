@@ -601,7 +601,11 @@ function OrderRow({
                 </p>
                 <p className="text-muted-foreground/70">
                   ID: {order.id.slice(0, 8)} · Dibuat:{" "}
-                  {order.createdAt ? new Date(order.createdAt).toLocaleString("id-ID") : "-"}
+                  {order.createdAt
+                    ? new Date(order.createdAt).toLocaleString("id-ID", {
+                        timeZone: "Asia/Jakarta",
+                      })
+                    : "-"}
                 </p>
               </div>
             </div>
@@ -777,7 +781,11 @@ function MobileOrderCard({
             </p>
             <p className="text-muted-foreground/70">
               ID: {order.id.slice(0, 8)} · Dibuat:{" "}
-              {order.createdAt ? new Date(order.createdAt).toLocaleString("id-ID") : "-"}
+              {order.createdAt
+                ? new Date(order.createdAt).toLocaleString("id-ID", {
+                    timeZone: "Asia/Jakarta",
+                  })
+                : "-"}
             </p>
           </div>
         </div>

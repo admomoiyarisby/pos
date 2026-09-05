@@ -1023,7 +1023,16 @@ export const getOrderWithItems = createServerFn({ method: "GET" })
       branchName: row.branchName,
       items: items.map((i) => ({
         ...i,
-        modifiers: mods.filter((m) => m.orderItemId === i.id).map((m) => m.modifierName),
+        modifiers: mods
+          .filter((m) => m.orderItemId === i.id)
+          .map((m) => ({
+            modifierGroupId: m.modifierGroupId,
+            modifierGroupName: m.modifierGroupName,
+            modifierId: m.modifierId,
+            modifierName: m.modifierName,
+            isExclusion: m.isExclusion ?? false,
+            price: m.price ?? 0,
+          })),
       })),
     };
   });
@@ -1105,11 +1114,16 @@ async function restoreInventoryForVoid(
   }
 }
 
-// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. Branch
+// bound mirrors getOrders/getOrderWithItems: area managers may only void orders
+// from their assigned branches.
 export async function voidOrderCore(user: AppUser, data: { orderId: string; reason: string }) {
   const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
   if (!old) throw new Error("Order not found");
   if (old.status === "Void") throw new Error("Order sudah dibatalkan");
+  if (user.role === "area_manager" && !(user.assignedBranches ?? []).includes(old.branchId)) {
+    throw new Error("Forbidden: order is outside your assigned branches");
+  }
 
   const order = await db.transaction(async (tx) => {
     const [updatedOrder] = await tx

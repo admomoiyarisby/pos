@@ -9,11 +9,12 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getOrders, getOrderWithItems, updateOrderStatus } from "#/lib/server/pos";
+import { getOrders, getOrderWithItems, updateOrderStatus, voidOrder } from "#/lib/server/pos";
 import OrderItemsTray from "#/components/pos/OrderItemsTray";
 import HistoryDateFilter, { isoDateDaysAgo } from "#/components/pos/HistoryDateFilter";
 import { Badge } from "#/components/ui/badge";
-import { Printer, Pencil, Store } from "lucide-react";
+import { Printer, Pencil, Store, X } from "lucide-react";
+import { toast } from "sonner";
 import { printReceipt } from "#/lib/pos-print";
 import { ORDER_CHANNEL_OPTIONS, channelLabel } from "#/lib/order-channels";
 
@@ -49,6 +50,10 @@ const columns: Column<OrderRow>[] = [
         month: "short",
         hour: "2-digit",
         minute: "2-digit",
+        // Fixed app timezone (mirrors formatJakartaDateTime) so SSR and the
+        // client render the identical wall-clock time — without it the server
+        // (UTC) and browser (WIB) disagree and hydration fails.
+        timeZone: "Asia/Jakarta",
       }),
   },
   {
@@ -125,6 +130,8 @@ function OrderHistoryPage() {
   const [targetStatus, setTargetStatus] = useState<
     "" | "New" | "Processing" | "In Delivery" | "Completed"
   >("");
+  const [voidModalOrder, setVoidModalOrder] = useState<OrderRow | null>(null);
+  const [voidReason, setVoidReason] = useState("");
 
   const { data: rawOrders, isFetching } = useQuery({
     queryKey: ["orders", dateFrom, dateTo],
@@ -166,6 +173,18 @@ function OrderHistoryPage() {
     },
   });
 
+  const voidMutation = useMutation({
+    mutationFn: voidOrder,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      setVoidModalOrder(null);
+      setVoidReason("");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal membatalkan pesanan", { description: error.message });
+    },
+  });
+
   usePageTitle("Riwayat Pemesanan", "Daftar lengkap pesanan dari semua cabang");
 
   const handleCloseModal = () => {
@@ -173,7 +192,7 @@ function OrderHistoryPage() {
   };
 
   return (
-    <RoleGuard allowedRoles={["super_admin"]}>
+    <RoleGuard allowedRoles={["super_admin", "area_manager"]}>
       <div className="space-y-3">
         <div className="rounded-md border bg-card px-3 py-2.5">
           <div className="flex flex-col gap-2">
@@ -280,12 +299,26 @@ function OrderHistoryPage() {
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground uppercase">Waktu</p>
                 <p className="font-medium">
-                  {new Date(selectedOrder.createdAt).toLocaleString("id-ID")}
+                  {new Date(selectedOrder.createdAt).toLocaleString("id-ID", {
+                    timeZone: "Asia/Jakarta",
+                  })}
                 </p>
               </div>
             </div>
 
-            <div className="border-t pt-4">
+            <div className="border-t pt-4 space-y-2">
+              {selectedOrder.status !== "Void" && (
+                <button
+                  onClick={function () {
+                    setVoidModalOrder(selectedOrder);
+                    setVoidReason("");
+                  }}
+                  className="w-full h-10 rounded-md border border-destructive/40 text-destructive text-sm font-medium flex items-center justify-center gap-2 hover:bg-destructive/5"
+                >
+                  <X className="h-4 w-4" />
+                  Batalkan Pesanan
+                </button>
+              )}
               <button
                 onClick={async function () {
                   const orderData = await getOrderWithItems({ data: { id: selectedOrder.id } });
@@ -335,6 +368,61 @@ function OrderHistoryPage() {
               >
                 <Printer className="h-4 w-4" />
                 Cetak Invoice
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Void (Cancel) Confirm Modal ── */}
+      <Modal
+        open={!!voidModalOrder}
+        onClose={function () {
+          setVoidModalOrder(null);
+          setVoidReason("");
+        }}
+        title="Batalkan Pesanan"
+        size="sm"
+      >
+        {voidModalOrder && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Apakah Anda yakin ingin membatalkan pesanan ini? Stok bahan baku akan dikembalikan.
+            </p>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Alasan Pembatalan</label>
+              <input
+                type="text"
+                value={voidReason}
+                onChange={function (e) {
+                  setVoidReason(e.target.value);
+                }}
+                placeholder="Alasan pembatalan..."
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={function () {
+                  setVoidModalOrder(null);
+                  setVoidReason("");
+                }}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={function () {
+                  voidMutation.mutate({
+                    data: { orderId: voidModalOrder.id, reason: voidReason },
+                  });
+                }}
+                disabled={!voidReason.trim() || voidMutation.isPending}
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
+              >
+                {voidMutation.isPending ? "Memproses..." : "Batalkan Pesanan"}
               </button>
             </div>
           </div>

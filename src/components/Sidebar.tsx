@@ -88,7 +88,7 @@ const navGroups: NavGroup[] = [
         label: "Riwayat Pemesanan",
         to: "/order-history",
         icon: History,
-        roles: ["super_admin"],
+        roles: ["super_admin", "area_manager"],
       },
       {
         label: "Riwayat Shift",
