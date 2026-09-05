@@ -124,7 +124,14 @@ export const getPosMenu = createServerFn({ method: "GET" })
             })
             .from(recipeModifierGroups)
             .leftJoin(modifierGroups, eq(recipeModifierGroups.modifierGroupId, modifierGroups.id))
-            .where(inArray(recipeModifierGroups.recipeId, recipeIds))
+            // ADR-0009 mirror: tombstoned (soft-deleted) modifier groups never
+            // appear in the POS modifier modal.
+            .where(
+              and(
+                inArray(recipeModifierGroups.recipeId, recipeIds),
+                isNull(modifierGroups.deletedAt),
+              ),
+            )
             // Honor the manual group order set on /modifier-groups so the POS
             // ModifierModal shows groups in the operator's chosen order.
             .orderBy(modifierGroups.sortOrder)
@@ -1006,15 +1013,34 @@ export const getOrderWithItems = createServerFn({ method: "GET" })
       .where(eq(orderItems.orderId, data.id));
 
     const itemIds = items.map((i) => i.id);
-    let mods: { orderItemId: string; modifierName: string | null }[] = [];
+    // Structured modifier rows: each applied option carries its group id + name
+    // and its own name/price/exclusion flag, so history views (order-history,
+    // POS history sidebar, receipts) can render "Group: options" instead of a
+    // flat name list. Soft-deleted groups/modifiers are still joined — the
+    // rows are preserved precisely so history keeps resolving them.
+    let mods: {
+      orderItemId: string;
+      modifierGroupId: string;
+      modifierGroupName: string | null;
+      modifierId: string;
+      modifierName: string | null;
+      isExclusion: boolean | null;
+      price: number | null;
+    }[] = [];
     if (itemIds.length > 0) {
       mods = await db
         .select({
           orderItemId: orderItemModifiers.orderItemId,
+          modifierGroupId: orderItemModifiers.modifierGroupId,
+          modifierGroupName: modifierGroups.name,
+          modifierId: orderItemModifiers.modifierId,
           modifierName: modifiers.name,
+          isExclusion: modifiers.isExclusion,
+          price: modifiers.price,
         })
         .from(orderItemModifiers)
         .leftJoin(modifiers, eq(orderItemModifiers.modifierId, modifiers.id))
+        .leftJoin(modifierGroups, eq(orderItemModifiers.modifierGroupId, modifierGroups.id))
         .where(inArray(orderItemModifiers.orderItemId, itemIds));
     }
 
@@ -1151,7 +1177,7 @@ export async function voidOrderCore(user: AppUser, data: { orderId: string; reas
 export const voidOrder = createServerFn({ method: "POST" })
   .validator((data: { orderId: string; reason: string }) => data)
   .handler(async ({ data }) => {
-    const user = await requireAuth();
+    const user = await requireRole("super_admin", "admin_pusat", "area_manager");
     return voidOrderCore(user, data);
   });
 

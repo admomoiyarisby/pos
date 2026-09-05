@@ -18,7 +18,7 @@ import {
   orderItems,
   categories,
 } from "#/db/schema";
-import { eq, inArray, sql, and, ne } from "drizzle-orm";
+import { eq, inArray, sql, and, ne, isNull } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import type { AppUser } from "./auth";
@@ -241,7 +241,9 @@ export const getRecipeDetail = createServerFn({ method: "GET" })
           })
           .from(recipeModifierGroups)
           .leftJoin(modifierGroups, eq(recipeModifierGroups.modifierGroupId, modifierGroups.id))
-          .where(eq(recipeModifierGroups.recipeId, data.id))
+          // ADR-0009 mirror: tombstoned (soft-deleted) modifier groups never
+          // appear on the recipe detail/edit page.
+          .where(and(eq(recipeModifierGroups.recipeId, data.id), isNull(modifierGroups.deletedAt)))
           // Honor the manual group order set on /modifier-groups so the recipe
           // detail page lists modifier groups in the operator's chosen order.
           .orderBy(modifierGroups.sortOrder),

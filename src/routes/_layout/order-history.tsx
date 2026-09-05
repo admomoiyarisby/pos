@@ -329,12 +329,12 @@ function OrderHistoryPage() {
                     name: item.recipeName ?? item.recipeId,
                     price: item.price,
                     quantity: item.quantity,
-                    modifiers: (item.modifiers ?? []).map((mName: string) => ({
-                      groupId: "",
-                      modifierId: "",
-                      name: mName,
-                      price: 0,
-                      isExclusion: false,
+                    modifiers: (item.modifiers ?? []).map((m: any) => ({
+                      groupId: m.modifierGroupId ?? "",
+                      modifierId: m.modifierId ?? "",
+                      name: m.modifierName ?? "",
+                      price: m.price ?? 0,
+                      isExclusion: m.isExclusion ?? false,
                     })),
                     notes: item.notes ?? "",
                   }));

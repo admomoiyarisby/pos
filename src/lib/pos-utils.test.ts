@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
-import { calculateCartCount, calculateCartTotal, getStockQuantity } from "#/lib/pos-utils";
+import {
+  appliedModifierLines,
+  appliedModifiersSummary,
+  calculateCartCount,
+  calculateCartTotal,
+  getStockQuantity,
+} from "#/lib/pos-utils";
+import type { AppliedModifier } from "#/lib/pos-utils";
 import type { CartItem, MenuItem } from "#/lib/pos-types";
 
 const baseItem: MenuItem = {
@@ -79,5 +86,56 @@ describe("cart calculations", () => {
   it("returns zero for an empty cart", () => {
     expect(calculateCartTotal([])).toBe(0);
     expect(calculateCartCount([])).toBe(0);
+  });
+});
+
+describe("applied modifier formatting", () => {
+  const pedas: AppliedModifier = {
+    modifierGroupId: "g1",
+    modifierGroupName: "Level Pedas",
+    modifierId: "m1",
+    modifierName: "Pedas",
+    isExclusion: false,
+  };
+  const normal: AppliedModifier = {
+    modifierGroupId: "g1",
+    modifierGroupName: "Level Pedas",
+    modifierId: "m2",
+    modifierName: "Normal",
+    isExclusion: false,
+  };
+  const keju: AppliedModifier = {
+    modifierGroupId: "g2",
+    modifierGroupName: "Topping",
+    modifierId: "m3",
+    modifierName: "Keju",
+    isExclusion: false,
+  };
+
+  it("groups options under their modifier group name", () => {
+    expect(appliedModifierLines([pedas, keju, normal])).toEqual([
+      "Level Pedas: Pedas, Normal",
+      "Topping: Keju",
+    ]);
+  });
+
+  it("preserves the applied order within a group", () => {
+    expect(appliedModifierLines([normal, pedas])).toEqual(["Level Pedas: Normal, Pedas"]);
+  });
+
+  it("falls back for missing group/option names", () => {
+    expect(
+      appliedModifierLines([
+        { modifierGroupId: "g", modifierGroupName: null, modifierId: "m", modifierName: null },
+      ]),
+    ).toEqual(["Modifier: Opsi"]);
+  });
+
+  it("returns an empty array when no modifiers were applied", () => {
+    expect(appliedModifierLines([])).toEqual([]);
+  });
+
+  it("joins group lines into a single summary string", () => {
+    expect(appliedModifiersSummary([pedas, keju])).toBe("Level Pedas: Pedas · Topping: Keju");
   });
 });

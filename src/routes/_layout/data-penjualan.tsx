@@ -32,6 +32,7 @@ import {
   deleteSalesOrder,
 } from "#/lib/server/sales-data";
 import { formatRp } from "#/lib/utils";
+import { appliedModifierLines } from "#/lib/pos-utils";
 
 export const Route = createFileRoute("/_layout/data-penjualan")({
   component: DataPenjualanPage,
@@ -556,7 +557,14 @@ function OrderRow({
                           return (
                             <tr key={item.id ?? item.recipeId} className="border-b last:border-b-0">
                               <td className="py-1.5 px-3">
-                                {item.recipeName ?? "-"}
+                                <span>{item.recipeName ?? "-"}</span>
+                                {item.modifiers?.length > 0 && (
+                                  <div className="text-muted-foreground">
+                                    {appliedModifierLines(item.modifiers).map((line, i) => (
+                                      <div key={i}>{line}</div>
+                                    ))}
+                                  </div>
+                                )}
                                 {item.notes && (
                                   <span className="text-muted-foreground ml-1">({item.notes})</span>
                                 )}
@@ -742,12 +750,23 @@ function MobileOrderCard({
                   return (
                     <div key={item.id ?? item.recipeId} className="px-3 py-2">
                       <div className="flex items-baseline justify-between gap-2">
-                        <span className="min-w-0 truncate text-xs font-medium">
-                          {item.recipeName ?? "-"}
-                          {item.notes && (
-                            <span className="ml-1 text-muted-foreground">({item.notes})</span>
+                        <div className="min-w-0 text-xs font-medium">
+                          <span className="truncate">{item.recipeName ?? "-"}</span>
+                          {item.modifiers?.length > 0 && (
+                            <div className="text-muted-foreground font-normal">
+                              {appliedModifierLines(item.modifiers).map((line, i) => (
+                                <div key={i} className="truncate">
+                                  {line}
+                                </div>
+                              ))}
+                            </div>
                           )}
-                        </span>
+                          {item.notes && (
+                            <span className="ml-1 text-muted-foreground font-normal">
+                              ({item.notes})
+                            </span>
+                          )}
+                        </div>
                         <span className="shrink-0 text-xs tabular-nums">{item.quantity}×</span>
                       </div>
                       <div className="mt-0.5 flex items-center justify-between text-xs text-muted-foreground">

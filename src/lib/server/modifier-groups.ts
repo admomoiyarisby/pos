@@ -11,7 +11,7 @@ import {
   categories,
   orderItemModifiers,
 } from "#/db/schema";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import type { AppUser } from "./auth";
@@ -65,7 +65,13 @@ export const getModifierGroups = createServerFn({ method: "GET" })
     const groups = await db
       .select()
       .from(modifierGroups)
-      .where(data.search ? fuzzySearch(modifierGroups.name, data.search) : undefined)
+      // ADR-0009 mirror: tombstoned (soft-deleted) groups never appear in the
+      // UI, so every browse/search result must exclude them.
+      .where(
+        data.search
+          ? and(isNull(modifierGroups.deletedAt), fuzzySearch(modifierGroups.name, data.search))
+          : isNull(modifierGroups.deletedAt),
+      )
       // Browse (no search) honors the manual group order so the drag-and-drop
       // reorder on /modifier-groups is reflected; searching keeps relevance
       // ranking (fuzzyRank) so results aren't buried by sort order.
@@ -136,7 +142,9 @@ export const getModifierGroup = createServerFn({ method: "GET" })
     const [group] = await db
       .select()
       .from(modifierGroups)
-      .where(eq(modifierGroups.id, data.id))
+      // ADR-0009 mirror: a tombstoned (soft-deleted) group reads as not-found
+      // so stale detail-page URLs / bookmarks land on the empty state.
+      .where(and(eq(modifierGroups.id, data.id), isNull(modifierGroups.deletedAt)))
       .limit(1);
     if (!group) return null;
 
@@ -336,6 +344,9 @@ export async function updateModifierGroupCore(
 
   const [old] = await db.select().from(modifierGroups).where(eq(modifierGroups.id, id)).limit(1);
   if (!old) throw new Error("Modifier group not found");
+  // ADR-0009 mirror: a tombstoned group is not editable from the UI. Restore is
+  // DB-only (clear deleted_at), same as recipes/ingredients/vouchers.
+  if (old.deletedAt) throw new Error("Modifier group sudah dihapus");
 
   // Only set fields that were actually provided — absent optionals parse to
   // `undefined` now (no default injection), and drizzle throws on an empty set.
@@ -670,55 +681,22 @@ export async function deleteModifierGroupCore(user: AppUser, data: { id: string 
     .limit(1);
   if (!old) throw new Error("Modifier group not found");
 
-  // Guard FK: order_item_modifiers restricts deletion of a modifier that has
-  // been used in order history. Surface a friendly message instead of a raw
-  // Postgres FK violation.
-  const existingMods = await db
-    .select()
-    .from(modifiers)
-    .where(eq(modifiers.modifierGroupId, data.id));
-  if (existingMods.length > 0) {
-    const referenced = await db
-      .select({ rid: orderItemModifiers.modifierId })
-      .from(orderItemModifiers)
-      .where(
-        inArray(
-          orderItemModifiers.modifierId,
-          existingMods.map((m) => m.id),
-        ),
-      )
-      .limit(1);
-    if (referenced.length > 0) {
-      throw new Error(
-        "Tidak dapat menghapus grup modifier karena salah satu opsinya sudah dipakai di riwayat pesanan.",
-      );
-    }
-    // Also check modifier_group_id FK from order_item_modifiers
-    const groupReferenced = await db
-      .select({ rid: orderItemModifiers.modifierGroupId })
-      .from(orderItemModifiers)
-      .where(eq(orderItemModifiers.modifierGroupId, data.id))
-      .limit(1);
-    if (groupReferenced.length > 0) {
-      throw new Error(
-        "Tidak dapat menghapus grup modifier karena grup ini sudah dipakai di riwayat pesanan.",
-      );
-    }
-  }
-  // Delete cascade: modifiers → modifierIngredients (safe after guard)
-  for (const m of existingMods) {
-    await db.delete(modifierIngredients).where(eq(modifierIngredients.modifierId, m.id));
-    await db.delete(modifierRecipes).where(eq(modifierRecipes.modifierId, m.id));
-  }
-  await db.delete(modifiers).where(eq(modifiers.modifierGroupId, data.id));
-  await db.delete(modifierGroups).where(eq(modifierGroups.id, data.id));
+  // Soft delete → tombstone (ADR-0009 mirror). The row, its modifiers, and its
+  // recipe links are preserved so order history still resolves the group and
+  // the options that were applied (order_item_modifiers FKs stay valid). The
+  // UI never lists tombstoned groups; restore is DB-only (clear deleted_at).
+  const [result] = await db
+    .update(modifierGroups)
+    .set({ deletedAt: new Date() })
+    .where(eq(modifierGroups.id, data.id))
+    .returning();
 
   await logSystemAction(
     user,
     "Delete Modifier Group",
     `Modifier group "${old.name}" dihapus oleh ${user.name}`,
   );
-  await logAudit(user, "modifierGroups", data.id, "DELETE", old, undefined);
+  await logAudit(user, "modifierGroups", data.id, "DELETE", old, result);
 
   return { success: true };
 }

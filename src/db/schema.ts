@@ -423,6 +423,10 @@ export const modifierGroups = pgTable("modifier_groups", {
   // order of modifier groups in the POS ModifierModal and the recipe-edit menu.
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  // Soft-delete tombstone (ADR-0009 mirror): set on delete, row + modifiers
+  // preserved so order history still resolves the group and its applied
+  // options. The UI never lists tombstoned groups; restore is DB-only.
+  deletedAt: timestamp("deleted_at", { mode: "date" }),
 });
 
 export const recipeModifierGroups = pgTable(

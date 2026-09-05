@@ -11,14 +11,17 @@ import { z } from "zod";
 import {
   orders,
   orderItems,
+  orderItemModifiers,
   recipes,
+  modifierGroups,
+  modifiers,
   systemNotifications,
   users,
   areaManagerBranches,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { requireAuth, requireRole } from "#/lib/server/auth";
-import { eq, and, gte, lte, sql, desc, count } from "drizzle-orm";
+import { eq, and, gte, lte, sql, desc, count, inArray } from "drizzle-orm";
 
 /**
  * Get aggregated sales data for the sales data page.
@@ -131,7 +134,48 @@ export const getSalesOrderDetail = createServerFn({ method: "GET" })
       .leftJoin(recipes, eq(orderItems.recipeId, recipes.id))
       .where(eq(orderItems.orderId, data.id));
 
-    return { ...order, items };
+    // Structured modifier rows (group + applied option), same shape as
+    // getOrderWithItems so the detail views render "Group: options" per item.
+    const itemIds = items.map((i) => i.id);
+    let mods: {
+      orderItemId: string;
+      modifierGroupId: string;
+      modifierGroupName: string | null;
+      modifierId: string;
+      modifierName: string | null;
+      isExclusion: boolean | null;
+    }[] = [];
+    if (itemIds.length > 0) {
+      mods = await db
+        .select({
+          orderItemId: orderItemModifiers.orderItemId,
+          modifierGroupId: orderItemModifiers.modifierGroupId,
+          modifierGroupName: modifierGroups.name,
+          modifierId: orderItemModifiers.modifierId,
+          modifierName: modifiers.name,
+          isExclusion: modifiers.isExclusion,
+        })
+        .from(orderItemModifiers)
+        .leftJoin(modifiers, eq(orderItemModifiers.modifierId, modifiers.id))
+        .leftJoin(modifierGroups, eq(orderItemModifiers.modifierGroupId, modifierGroups.id))
+        .where(inArray(orderItemModifiers.orderItemId, itemIds));
+    }
+
+    return {
+      ...order,
+      items: items.map((i) => ({
+        ...i,
+        modifiers: mods
+          .filter((m) => m.orderItemId === i.id)
+          .map((m) => ({
+            modifierGroupId: m.modifierGroupId,
+            modifierGroupName: m.modifierGroupName,
+            modifierId: m.modifierId,
+            modifierName: m.modifierName,
+            isExclusion: m.isExclusion ?? false,
+          })),
+      })),
+    };
   });
 
 /**

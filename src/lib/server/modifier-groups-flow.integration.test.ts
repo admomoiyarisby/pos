@@ -105,6 +105,15 @@ async function groupExists(id: string): Promise<boolean> {
   return Boolean(row);
 }
 
+async function groupDeletedAt(id: string): Promise<Date | null> {
+  const [row] = await db
+    .select({ deletedAt: schema.modifierGroups.deletedAt })
+    .from(schema.modifierGroups)
+    .where(eq(schema.modifierGroups.id, id))
+    .limit(1);
+  return row?.deletedAt ?? null;
+}
+
 beforeAll(async () => {
   if (!hasTestDatabaseUrl) return;
   // SAFETY: guarded by hasTestDatabaseUrl; when the test DB is absent beforeAll returns early and every test is skipped, so db is never read unset.
@@ -274,10 +283,11 @@ describe("Modifier groups — wrong-role, not-found, and ADR-0014 negatives", ()
         "Modifier group not found",
       );
 
-      // Delete works
+      // Delete works — soft-delete tombstone: row preserved with deleted_at set
       const del = await mgApi.deleteModifierGroupCore(superAdmin, { id: created.id });
       expect(del.success).toBe(true);
-      expect(await groupExists(created.id)).toBe(false);
+      expect(await groupExists(created.id)).toBe(true);
+      expect(await groupDeletedAt(created.id)).not.toBeNull();
     },
   );
 });

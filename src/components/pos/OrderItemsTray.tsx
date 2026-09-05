@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Store } from "lucide-react";
 import { getOrderWithItems } from "#/lib/server/pos";
+import { appliedModifierLines } from "#/lib/pos-utils";
 
 interface OrderItemsTrayProps {
   orderId: string;
@@ -58,7 +59,12 @@ export default function OrderItemsTray({ orderId, compact, branchName }: OrderIt
                   <p className="font-medium">{item.recipeName ?? "-"}</p>
                   {(item.modifiers?.length > 0 || item.notes) && (
                     <p className="text-muted-foreground text-[11px] sm:text-xs mt-0.5">
-                      {item.modifiers?.filter(Boolean).join(", ")}
+                      {item.modifiers?.length > 0 &&
+                        appliedModifierLines(item.modifiers).map((line, i) => (
+                          <span key={i} className="block">
+                            {line}
+                          </span>
+                        ))}
                       {item.modifiers?.length > 0 && item.notes ? " · " : ""}
                       {item.notes}
                     </p>
