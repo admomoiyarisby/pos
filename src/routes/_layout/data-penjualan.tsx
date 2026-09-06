@@ -232,16 +232,21 @@ function DataPenjualanPage() {
         </div>
       </div>
 
-      {/* Summary bar */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-6 py-3 px-4 rounded-lg border bg-muted/30">
-        <SummaryItem label="Order" value={String(summary?.totals.orderCount ?? 0)} />
-        <SummaryItem label="Omzet" value={formatRp(summary?.totals.totalAmount ?? 0)} />
-        <SummaryItem label="HPP" value={formatRp(summary?.totals.totalCogs ?? 0)} />
-        <SummaryItem
-          label="Profit"
-          value={formatRp((summary?.totals.totalAmount ?? 0) - (summary?.totals.totalCogs ?? 0))}
-          positive={(summary?.totals.totalAmount ?? 0) - (summary?.totals.totalCogs ?? 0) >= 0}
-        />
+      {/* Summary bar — Void transactions are excluded from totals */}
+      <div className="mb-6">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 py-3 px-4 rounded-lg border bg-muted/30">
+          <SummaryItem label="Order" value={String(summary?.totals.orderCount ?? 0)} />
+          <SummaryItem label="Omzet" value={formatRp(summary?.totals.totalAmount ?? 0)} />
+          <SummaryItem label="HPP" value={formatRp(summary?.totals.totalCogs ?? 0)} />
+          <SummaryItem
+            label="Profit"
+            value={formatRp((summary?.totals.totalAmount ?? 0) - (summary?.totals.totalCogs ?? 0))}
+            positive={(summary?.totals.totalAmount ?? 0) - (summary?.totals.totalCogs ?? 0) >= 0}
+          />
+        </div>
+        <p className="mt-1.5 px-1 text-xs text-muted-foreground">
+          Total di atas tidak termasuk transaksi Void.
+        </p>
       </div>
 
       {/* Channel breakdown */}
