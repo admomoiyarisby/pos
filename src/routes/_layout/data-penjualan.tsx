@@ -452,6 +452,7 @@ function OrderRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const profit = order.totalAmount - order.totalCogs;
+  const isVoid = order.status === "Void";
 
   // Lazily fetch the menu items sold in this order only when the row is
   // expanded, so the list view stays light (one query per expanded order).
@@ -463,7 +464,9 @@ function OrderRow({
 
   return (
     <>
-      <tr className="border-b hover:bg-muted/30">
+      <tr
+        className={`border-b hover:bg-muted/30 ${isVoid ? "bg-muted/40 text-muted-foreground" : ""}`}
+      >
         <td className="py-2 px-3">
           <button
             type="button"
@@ -491,7 +494,19 @@ function OrderRow({
           </span>
         </td>
         <td className="py-2 px-3">{branchName}</td>
-        <td className="py-2 px-3 font-medium">{order.orderCode ?? "-"}</td>
+        <td className="py-2 px-3 font-medium">
+          <span className="flex items-center gap-1.5 flex-wrap">
+            <span className={isVoid ? "line-through" : ""}>{order.orderCode ?? "-"}</span>
+            {isVoid && (
+              <span
+                className="inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                title={order.voidReason ?? "Void"}
+              >
+                Void
+              </span>
+            )}
+          </span>
+        </td>
         <td className="py-2 px-3 text-right tabular-nums">{order.itemCount}</td>
         <td className="py-2 px-3 text-right tabular-nums font-medium">
           {formatRp(order.totalAmount)}
@@ -641,6 +656,7 @@ function MobileOrderCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const profit = order.totalAmount - order.totalCogs;
+  const isVoid = order.status === "Void";
 
   // Same lazy detail fetch as the desktop row — shares the query cache so
   // switching breakpoints never refetches an already-opened order.
@@ -651,10 +667,20 @@ function MobileOrderCard({
   });
 
   return (
-    <div className="rounded-xl border bg-card p-3.5 shadow-xs">
+    <div
+      className={`rounded-xl border bg-card p-3.5 shadow-xs ${isVoid ? "opacity-70 bg-muted/40" : ""}`}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
+            {isVoid && (
+              <span
+                className="inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                title={order.voidReason ?? "Void"}
+              >
+                Void
+              </span>
+            )}
             <CalendarDays className="h-3 w-3 shrink-0" />
             {order.createdAt
               ? new Date(order.createdAt).toLocaleDateString("id-ID", {

@@ -21,7 +21,7 @@ import {
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { requireAuth, requireRole } from "#/lib/server/auth";
-import { eq, and, gte, lte, sql, desc, count, inArray } from "drizzle-orm";
+import { eq, ne, and, gte, lte, sql, desc, count, inArray } from "drizzle-orm";
 
 /**
  * Get aggregated sales data for the sales data page.
@@ -68,7 +68,9 @@ export const getSalesData = createServerFn({ method: "GET" })
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Get orders with item count and total COGS
+    // List intentionally includes Void orders so they stay visible in the
+    // table (marked void in the UI). Aggregates exclude them — see
+    // getSalesSummary. Pagination total below counts all rows shown.
     const result = await db
       .select({
         id: orders.id,
@@ -85,6 +87,7 @@ export const getSalesData = createServerFn({ method: "GET" })
         mdrFee: orders.mdrFee,
         netSales: orders.netSales,
         status: orders.status,
+        voidReason: orders.voidReason,
         notes: orders.notes,
         createdAt: orders.createdAt,
         itemCount: count(orderItems.id),
@@ -444,7 +447,8 @@ export const getSalesSummary = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     await requireAuth();
 
-    const conditions = [];
+    // Void orders stay visible in the list but never contribute to totals.
+    const conditions = [ne(orders.status, "Void")];
     if (data.branchId) {
       conditions.push(eq(orders.branchId, data.branchId));
     }
