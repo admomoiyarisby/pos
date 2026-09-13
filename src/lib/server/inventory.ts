@@ -264,7 +264,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
         .where(eq(areaManagerBranches.userId, user.id));
       assignedBranchIds = assigned.map((a) => a.branchId);
       if (assignedBranchIds.length === 0) {
-        return [];
+        return { data: [], total: 0 };
       }
       if (effectiveBranchId && !assignedBranchIds.includes(effectiveBranchId)) {
         effectiveBranchId = undefined;
@@ -283,9 +283,27 @@ export const getStockLedger = createServerFn({ method: "GET" })
         .from(recipes)
         .where(eq(recipes.id, data.wasteBomRecipeId))
         .limit(1);
-      if (!bomRecipe) return [];
+      if (!bomRecipe) return { data: [], total: 0 };
       bomRecipeName = bomRecipe.name;
     }
+
+    // Build the filter list once so the page query and the pagination count
+    // stay consistent. fuzzySearch references ingredients/recipes columns, so
+    // any query using it must carry the same left joins as the page query.
+    const ledgerFilters = and(
+      effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
+      assignedBranchIds ? inArray(stockLedger.branchId, assignedBranchIds) : undefined,
+      data.ingredientId ? eq(stockLedger.ingredientId, data.ingredientId) : undefined,
+      data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
+      data.reference ? eq(stockLedger.reference, data.reference) : undefined,
+      data.search
+        ? fuzzySearch(
+            [ingredients.name, recipes.name, stockLedger.reference, stockLedger.notes],
+            data.search,
+          )
+        : undefined,
+      data.wasteBomOnly || data.wasteBomRecipeId ? wasteBomLedgerFilter(bomRecipeName) : undefined,
+    );
 
     const result = await db
       .select({
@@ -308,29 +326,21 @@ export const getStockLedger = createServerFn({ method: "GET" })
       .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
       .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
       .leftJoin(branches, eq(stockLedger.branchId, branches.id))
-      .where(
-        and(
-          effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
-          assignedBranchIds ? inArray(stockLedger.branchId, assignedBranchIds) : undefined,
-          data.ingredientId ? eq(stockLedger.ingredientId, data.ingredientId) : undefined,
-          data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
-          data.reference ? eq(stockLedger.reference, data.reference) : undefined,
-          data.search
-            ? fuzzySearch(
-                [ingredients.name, recipes.name, stockLedger.reference, stockLedger.notes],
-                data.search,
-              )
-            : undefined,
-          data.wasteBomOnly || data.wasteBomRecipeId
-            ? wasteBomLedgerFilter(bomRecipeName)
-            : undefined,
-        ),
-      )
+      .where(ledgerFilters)
       .orderBy(desc(stockLedger.createdAt))
       .limit(data.limit ?? 50)
       .offset((data.page ?? 0) * (data.limit ?? 50));
 
-    return result;
+    // Total row count under the same filters, so the client can compute the
+    // real page count for pagination (sales-data.ts pattern).
+    const [totalRow] = await db
+      .select({ count: count() })
+      .from(stockLedger)
+      .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
+      .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
+      .where(ledgerFilters);
+
+    return { data: result, total: totalRow?.count ?? 0 };
   });
 
 export const triggerStockOpname = createServerFn({ method: "POST" })

@@ -12,6 +12,9 @@ export interface TableSortState {
 /**
  * URL-persisted table state: page, sort, and arbitrary filter params.
  *
+ * The `page` URL param is 1-indexed (human-readable: page 2 → "?page=2"),
+ * while the `page` value exposed to callers is 0-indexed.
+ *
  * Extends ADR-0008's search-only persistence to the full "where I was in the
  * table" state. Because every param lives in the URL query string, the list
  * page restores the exact page/sort/filter when the user comes back from a
@@ -31,8 +34,11 @@ export function useTableUrlState<F extends Record<string, string | number | null
   // record to read page/sort/filter keys that live outside it.
   const loose: UnknownRecord = urlSearch as UnknownRecord;
 
-  // Page: absent / non-numeric → 0 (the default, so it's omitted from the URL).
-  const page = z.coerce.number().int().min(0).catch(0).parse(loose.page);
+  // Page: stored 1-indexed in the URL (human-friendly: "page=2" is page 2),
+  // exposed 0-indexed to callers. Absent / non-numeric → 1 (page one, the
+  // default, so it's omitted from the URL).
+  const urlPage = z.coerce.number().int().min(1).catch(1).parse(loose.page);
+  const page = urlPage - 1;
 
   // Sort: sortKey + sortDir. Only a valid (key, dir) pair is a real sort.
   const sortKey = searchStringParam(loose, "sortKey");
@@ -69,8 +75,8 @@ export function useTableUrlState<F extends Record<string, string | number | null
               next[k] = v;
             }
           }
-          // Page 0 is the default → omit.
-          if (next.page === 0) delete next.page;
+          // Page 1 is the default → omit (URL page numbers are 1-indexed).
+          if (next.page === 1 || next.page === 0) delete next.page;
           // SAFETY: we only add/remove string/number keys we own; navigate
           // accepts the widened search shape.
           return next as never;
@@ -81,7 +87,8 @@ export function useTableUrlState<F extends Record<string, string | number | null
     [navigate],
   );
 
-  const setPage = useCallback((p: number) => commit({ page: Math.max(0, p) }), [commit]);
+  // Callers use 0-indexed pages; the URL stores the 1-indexed equivalent.
+  const setPage = useCallback((p: number) => commit({ page: Math.max(0, p) + 1 }), [commit]);
 
   const setSort = useCallback(
     (s: TableSortState | null) => commit({ sortKey: s?.key, sortDir: s?.dir, page: undefined }),

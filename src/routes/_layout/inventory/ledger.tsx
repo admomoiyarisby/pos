@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
@@ -5,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
+import { Pagination } from "#/components/ui/Pagination";
 import { getStockLedger } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
 import { getRecipes } from "#/lib/server/recipes";
@@ -81,13 +83,14 @@ function LedgerPage() {
     enabled: bomOnly,
   });
 
+  const PAGE_SIZE = 15;
   const { data: ledger } = useQuery({
     queryKey: ["stock-ledger", page, branchId, reference, committedSearch, bomOnly, bomRecipe],
     queryFn: () =>
       getStockLedger({
         data: {
           page,
-          limit: 15,
+          limit: PAGE_SIZE,
           branchId: branchId || undefined,
           reference: reference || undefined,
           search: committedSearch || undefined,
@@ -97,6 +100,16 @@ function LedgerPage() {
       }),
     initialData: initial,
   });
+  // Server returns { data, total }: total drives the real page count.
+  const total = ledger?.total ?? 0;
+  const rows = ledger?.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Keep the URL page within range (e.g. after a filter shrinks the result set).
+  useEffect(() => {
+    if (page >= totalPages && page > 0) {
+      setPage(totalPages - 1);
+    }
+  }, [page, totalPages, setPage]);
 
   // Branch Admin is always scoped to their own branch by the server, so the
   // branch column would be constant noise; everyone else (Area Manager, Admin
@@ -291,12 +304,16 @@ function LedgerPage() {
         )}
       </div>
 
+      {/* Paging is server-side: data is already the current page's rows, so the
+          client-side pagination feature must stay off or it would slice the
+          15 returned rows again (page 2+ would render empty). */}
       <DataTable
         columns={columns}
-        data={ledger}
+        data={rows}
         keyExtractor={(r) => r.id}
-        pageSize={15}
+        pageSize={PAGE_SIZE}
         pagination={false}
+        features={{ filtering: true, sorting: true, pagination: false }}
         search={search}
         onSearchChange={setSearch}
         page={page}
@@ -305,19 +322,7 @@ function LedgerPage() {
         onSortChange={setSort}
       />
 
-      <div className="flex items-center justify-between mt-4">
-        <button
-          onClick={() => setPage(Math.max(0, page - 1))}
-          disabled={page === 0}
-          className="h-9 px-4 rounded-md border text-sm disabled:opacity-50"
-        >
-          Sebelumnya
-        </button>
-        <span className="text-sm text-muted-foreground">Halaman {page + 1}</span>
-        <button onClick={() => setPage(page + 1)} className="h-9 px-4 rounded-md border text-sm">
-          Berikutnya
-        </button>
-      </div>
+      <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
     </RoleGuard>
   );
 }

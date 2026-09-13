@@ -33,8 +33,8 @@ export const Route = createFileRoute("/_layout/scm-transfers/")({
   validateSearch: (search: UnknownRecord) => ({
     status: z.enum(SCM_TRANSFER_STATUS_VALUES).optional().catch(undefined).parse(search.status),
     search: z.string().optional().catch(undefined).parse(search.search),
-    // URL-persisted table state (see useTableUrlState).
-    page: z.coerce.number().int().min(0).optional().catch(undefined).parse(search.page),
+    // URL page is 1-indexed (human-readable, see useTableUrlState).
+    page: z.coerce.number().int().min(1).optional().catch(undefined).parse(search.page),
     sortKey: z.string().optional().catch(undefined).parse(search.sortKey),
     sortDir: z.enum(["asc", "desc"]).optional().catch(undefined).parse(search.sortDir),
   }),
