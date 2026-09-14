@@ -273,9 +273,13 @@ export const getPosMenu = createServerFn({ method: "GET" })
 
     return result
       .filter((r) => {
+        // All filters are independent AND-clauses — an early `return` here
+        // would make one filter (e.g. brand) silently disable the others
+        // (category, search), so filtering by Omoiyari froze the category
+        // tabs in place.
         if (data.brandId) {
           const rb = brandLinks.filter((b) => b.recipeId === r.id);
-          return rb.some((b) => b.brandId === data.brandId);
+          if (!rb.some((b) => b.brandId === data.brandId)) return false;
         }
         // Category filtering runs on the categories table FK (recipes.category_id)
         // — not the legacy enum — so non-enum categories like "Jatah Makan Staff"
