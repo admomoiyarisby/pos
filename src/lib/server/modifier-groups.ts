@@ -24,6 +24,41 @@ import { z } from "zod";
 // kind producing a valid no-link option.
 export const MODIFIER_KINDS = ["text", "ingredient", "recipe"] as const;
 
+// `modifiers.code` carries a GLOBAL unique constraint, but the code is derived
+// from `${groupCode}-${name slug}` — so it collides whenever two options share
+// a name (same or different groups) or a tombstoned (soft-deleted) group still
+// holds the slug: the UPDATE then fails with a bare `Failed query: update
+// "modifiers" ...` (unique_violation) and the whole group save is lost.
+// Deduplicate by probing the DB and appending `-2`, `-3`, … on collision.
+export async function uniqueModifierCode(
+  dbLike: Pick<typeof db, "select">,
+  code: string,
+): Promise<string> {
+  const taken = new Set(
+    (
+      await dbLike
+        .select({ code: modifiers.code })
+        .from(modifiers)
+        // LIKE with escaped wildcards so a name like "50% Off" can't match
+        // unrelated codes; the trailing % finds the -2/-3 suffixes.
+        .where(sql`${modifiers.code} LIKE ${escapeLike(code)} || '%'`)
+    ).map((r) => r.code),
+  );
+  if (!taken.has(code)) return code;
+  let n = 2;
+  while (taken.has(`${code}-${n}`)) n += 1;
+  return `${code}-${n}`;
+}
+
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+// Derive the base code for a modifier option from its group code + name.
+function modifierBaseCode(groupCode: string, name: string): string {
+  return `${groupCode}-${name.toLowerCase().replace(/\s+/g, "-")}`;
+}
+
 export const modifierInput = z.object({
   name: z.string().min(1).max(100),
   alias: z.string().max(100).optional().nullable(),
@@ -224,7 +259,7 @@ export async function createModifierGroupCore(
       .insert(modifiers)
       .values({
         modifierGroupId: group.id,
-        code: `${data.code}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
+        code: await uniqueModifierCode(db, modifierBaseCode(data.code, mod.name)),
         name: mod.name,
         alias: mod.alias ?? null,
         price: mod.price,
@@ -376,6 +411,8 @@ export async function updateModifierGroupCore(
         // Legacy payload without ids — cannot diff by identity. Guard the
         // FK on order_item_modifiers.modifier_id (restrict) so Postgres
         // doesn't surface a bare `Failed query: delete from "modifiers"`.
+        // (Codes are minted via uniqueModifierCode below so re-seeding the
+        // same names inside this transaction can't trip the unique index.)
         const referenced = await tx
           .select({ rid: orderItemModifiers.modifierId })
           .from(orderItemModifiers)
@@ -403,7 +440,7 @@ export async function updateModifierGroupCore(
             .insert(modifiers)
             .values({
               modifierGroupId: id,
-              code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
+              code: await uniqueModifierCode(tx, modifierBaseCode(groupCode, mod.name)),
               name: mod.name,
               alias: aliasVal,
               price: mod.price ?? 0,
@@ -463,11 +500,18 @@ export async function updateModifierGroupCore(
       // toDeleteIds already covers it, so just handle upserts below (no-op).
       for (const [idx, mod] of mods.entries()) {
         if (mod.id && existingMap.has(mod.id)) {
+          // Only rewrite the code when the derived base actually changed —
+          // otherwise a no-op save of every option in the group would fight
+          // over slugs mid-transaction (row A gets the free slug, row B's
+          // update then collides) even though nothing needed renumbering.
+          const baseCode = modifierBaseCode(groupCode, mod.name);
           const set: UnknownRecord = {
             name: mod.name,
             sortOrder: mod.sortOrder ?? idx,
-            code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
           };
+          if (existingMap.get(mod.id)!.code !== baseCode) {
+            set.code = await uniqueModifierCode(tx, baseCode);
+          }
           // SAFETY: mod validated by updateModifierInput includes optional alias
           const aliasChecked = (mod as { alias?: string | null }).alias;
           if (aliasChecked !== undefined) set.alias = aliasChecked ?? null;
@@ -498,7 +542,7 @@ export async function updateModifierGroupCore(
             .insert(modifiers)
             .values({
               modifierGroupId: id,
-              code: `${groupCode}-${mod.name.toLowerCase().replace(/\s+/g, "-")}`,
+              code: await uniqueModifierCode(tx, modifierBaseCode(groupCode, mod.name)),
               name: mod.name,
               alias: aliasVal2,
               price: mod.price ?? 0,
