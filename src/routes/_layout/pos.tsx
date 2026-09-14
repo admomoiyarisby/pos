@@ -44,6 +44,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { usePageTitle } from "#/hooks/usePageTitle";
+import { toast } from "sonner";
 
 import type { CartModifier, CartItem, MenuItem, Voucher, OrderResult } from "#/lib/pos-types";
 import { printReceipt, printBill } from "#/lib/pos-print";
@@ -539,6 +540,13 @@ function PosPage() {
       await queryClient.invalidateQueries({ queryKey: ["shift"] });
       setShiftModal(null);
     },
+    onError: function (err) {
+      // Surface guard failures (e.g. a shift is already open at this branch)
+      // — previously the modal just stayed open with no feedback.
+      toast.error("Gagal membuka shift", {
+        description: err instanceof Error ? err.message : "Terjadi kesalahan",
+      });
+    },
   });
 
   let closeShiftMutation = useMutation({
@@ -547,6 +555,11 @@ function PosPage() {
       void queryClient.invalidateQueries({ queryKey: ["shift"] });
       setShiftModal(null);
       setActualCash("");
+    },
+    onError: function (err) {
+      toast.error("Gagal menutup shift", {
+        description: err instanceof Error ? err.message : "Terjadi kesalahan",
+      });
     },
   });
 
