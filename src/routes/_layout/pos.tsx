@@ -13,6 +13,7 @@ import {
   openShift,
   takeOverShift,
   closeShift,
+  adjustCashFloat,
   getOrders,
   voidOrder,
   requestReprint,
@@ -204,12 +205,24 @@ function PosPage() {
   let modifierModal = _q[0];
   let setModifierModal = _q[1];
 
-  let _r = useState<"open" | "close" | "takeover" | null>(null);
+  let _r = useState<"open" | "close" | "takeover" | "adjust-cash" | null>(null);
   let shiftModal = _r[0];
   let setShiftModal = _r[1];
   let _s = useState("");
   let actualCash = _s[0];
   let setActualCash = _s[1];
+  let _s2 = useState("");
+  let cashFloat = _s2[0];
+  let setCashFloat = _s2[1];
+  let _s3 = useState("");
+  let cashAdjustAmount = _s3[0];
+  let setCashAdjustAmount = _s3[1];
+  let _s4 = useState<"add" | "drop">("add");
+  let cashAdjustMode = _s4[0];
+  let setCashAdjustMode = _s4[1];
+  let _s5 = useState("");
+  let cashAdjustReason = _s5[0];
+  let setCashAdjustReason = _s5[1];
   let _u = useState<{
     orderId: string;
     reason: string;
@@ -539,6 +552,7 @@ function PosPage() {
     onSuccess: async function () {
       await queryClient.invalidateQueries({ queryKey: ["shift"] });
       setShiftModal(null);
+      setCashFloat("");
     },
     onError: function (err) {
       // Surface guard failures (e.g. a shift is already open at this branch)
@@ -558,6 +572,22 @@ function PosPage() {
     },
     onError: function (err) {
       toast.error("Gagal menutup shift", {
+        description: err instanceof Error ? err.message : "Terjadi kesalahan",
+      });
+    },
+  });
+
+  let adjustCashFloatMutation = useMutation({
+    mutationFn: adjustCashFloat,
+    onSuccess: function () {
+      void queryClient.invalidateQueries({ queryKey: ["shift"] });
+      setShiftModal(null);
+      setCashAdjustAmount("");
+      setCashAdjustReason("");
+      toast.success("Uang kas disesuaikan");
+    },
+    onError: function (err) {
+      toast.error("Gagal menyesuaikan uang kas", {
         description: err instanceof Error ? err.message : "Terjadi kesalahan",
       });
     },
@@ -923,9 +953,9 @@ function PosPage() {
   }
 
   function handleOpenShift() {
-    if (!user) return;
+    if (!user || !cashFloat) return;
     void openShiftMutation.mutateAsync({
-      data: { branchId: activeBranchId, userId: user.id },
+      data: { branchId: activeBranchId, userId: user.id, cashFloat: Number(cashFloat) },
     });
   }
 
@@ -935,6 +965,19 @@ function PosPage() {
     if (!user || !activeShift) return;
     void takeOverShiftMutation.mutateAsync({
       data: { branchId: activeBranchId, userId: user.id, shiftId: activeShift.id },
+    });
+  }
+
+  function handleAdjustCashFloat() {
+    if (!activeShift || !cashAdjustAmount) return;
+    const amount = Number(cashAdjustAmount);
+    if (!amount || amount <= 0) return;
+    void adjustCashFloatMutation.mutateAsync({
+      data: {
+        shiftId: activeShift.id,
+        amountDelta: cashAdjustMode === "add" ? amount : -amount,
+        reason: cashAdjustReason || undefined,
+      },
     });
   }
 
@@ -2053,9 +2096,19 @@ function PosPage() {
           <p className="text-sm text-muted-foreground">
             Shift baru akan dibuka dan dicatat atas nama <strong>{user?.name ?? "kamu"}</strong>.
           </p>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Uang Kas / Modal Awal Laci (Rp)</label>
+            <MoneyInput
+              value={cashFloat ? Number(cashFloat) : null}
+              onChange={(raw) => setCashFloat(raw === null ? "" : String(raw))}
+              placeholder="0"
+              autoFocus
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </div>
           <button
             onClick={handleOpenShift}
-            disabled={openShiftMutation.isPending}
+            disabled={!cashFloat || openShiftMutation.isPending}
             className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
           >
             {openShiftMutation.isPending ? "Membuka..." : "Buka Shift"}
@@ -2117,15 +2170,60 @@ function PosPage() {
               </p>
             </div>
           )}
+          {activeShift && (
+            <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Uang Kas (modal awal)</span>
+                <span className="font-medium flex items-center gap-2">
+                  Rp {(activeShift.cashFloat ?? 0).toLocaleString("id-ID")}
+                  <button
+                    onClick={function () {
+                      setShiftModal("adjust-cash");
+                    }}
+                    className="h-6 rounded-full border bg-card px-2 text-xs font-medium hover:bg-muted"
+                  >
+                    Sesuaikan
+                  </button>
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Penjualan tunai shift ini</span>
+                <span className="font-medium">
+                  Rp {(activeShift.cashSalesSoFar ?? 0).toLocaleString("id-ID")}
+                </span>
+              </div>
+              <div className="flex justify-between border-t pt-1 font-semibold">
+                <span>Perkiraan uang di laci</span>
+                <span>Rp {(activeShift.expectedCash ?? 0).toLocaleString("id-ID")}</span>
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Uang Fisik Aktual di Laci (Rp)</label>
             <MoneyInput
               value={actualCash ? Number(actualCash) : null}
               onChange={(raw) => setActualCash(raw === null ? "" : String(raw))}
               placeholder="0"
-              autoFocus
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
+            {activeShift && actualCash && (
+              <p className="text-xs text-muted-foreground">
+                Selisih vs perkiraan:{" "}
+                <span
+                  className={
+                    Number(actualCash) - activeShift.expectedCash === 0
+                      ? "text-success"
+                      : "text-destructive font-medium"
+                  }
+                >
+                  {Number(actualCash) - activeShift.expectedCash === 0
+                    ? "cocok"
+                    : `${Number(actualCash) - activeShift.expectedCash > 0 ? "+" : ""}${(
+                        Number(actualCash) - activeShift.expectedCash
+                      ).toLocaleString("id-ID")}`}
+                </span>
+              </p>
+            )}
           </div>
           <button
             onClick={handleCloseShift}
@@ -2133,6 +2231,83 @@ function PosPage() {
             className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
           >
             Tutup Shift
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={shiftModal === "adjust-cash"}
+        onClose={function () {
+          setShiftModal(null);
+        }}
+        title="Sesuaikan Uang Kas"
+      >
+        <div className="space-y-4">
+          {activeShift && (
+            <div className="rounded-md bg-muted p-3 text-sm flex justify-between">
+              <span className="text-muted-foreground">Uang kas saat ini</span>
+              <span className="font-medium">
+                Rp {(activeShift.cashFloat ?? 0).toLocaleString("id-ID")}
+              </span>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={function () {
+                setCashAdjustMode("add");
+              }}
+              className={
+                "h-9 rounded-md border text-sm font-medium " +
+                (cashAdjustMode === "add"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background hover:bg-muted")
+              }
+            >
+              Tambah Kas
+            </button>
+            <button
+              onClick={function () {
+                setCashAdjustMode("drop");
+              }}
+              className={
+                "h-9 rounded-md border text-sm font-medium " +
+                (cashAdjustMode === "drop"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background hover:bg-muted")
+              }
+            >
+              Ambil dari Laci
+            </button>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Nominal (Rp)</label>
+            <MoneyInput
+              value={cashAdjustAmount ? Number(cashAdjustAmount) : null}
+              onChange={(raw) => setCashAdjustAmount(raw === null ? "" : String(raw))}
+              placeholder="0"
+              autoFocus
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Alasan (opsional)</label>
+            <input
+              value={cashAdjustReason}
+              onChange={(e) => setCashAdjustReason(e.target.value)}
+              placeholder="Contoh: setoran sebagian ke safe / tambah uang kembalian"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </div>
+          <button
+            onClick={handleAdjustCashFloat}
+            disabled={
+              !cashAdjustAmount ||
+              Number(cashAdjustAmount) <= 0 ||
+              adjustCashFloatMutation.isPending
+            }
+            className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+          >
+            {adjustCashFloatMutation.isPending ? "Menyimpan..." : "Simpan Penyesuaian"}
           </button>
         </div>
       </Modal>

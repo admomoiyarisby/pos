@@ -171,8 +171,10 @@ describe("POS — shift lifecycle via the real server-function cores", () => {
       const opened = await posApi.openShiftCore(cashier1, {
         branchId,
         userId: cashier1.id,
+        cashFloat: 200000,
       });
       expect(opened.status).toBe("Open");
+      expect(opened.cashFloat).toBe(200000);
       expect(await shiftStatus(opened.id)).toBe("Open");
 
       // A second open while a shift is open is allowed (separate row); the
@@ -204,7 +206,32 @@ describe("POS — shift lifecycle via the real server-function cores", () => {
         }),
       ).rejects.toThrow("Shift tidak ditemukan di cabang ini");
 
-      // Close
+      // Mid-shift cash adjustment: add 50k, audit row is written.
+      const adjusted = await posApi.adjustCashFloatCore(cashier2, {
+        shiftId: opened.id,
+        amountDelta: 50000,
+        reason: "tambah uang kembalian",
+      });
+      expect(adjusted.cashFloat).toBe(250000);
+      const [auditRow] = await db
+        .select()
+        .from(schema.shiftEdits)
+        .where(eq(schema.shiftEdits.shiftId, opened.id))
+        .limit(1);
+      expect(auditRow.fieldName).toBe("cashFloat");
+      expect(auditRow.oldValue).toBe("200000");
+      expect(auditRow.newValue).toBe("250000");
+      expect(auditRow.editedBy).toBe(cashier2.id);
+
+      // Guard rails: zero delta, overdrawing the drawer, closed shift.
+      await expect(
+        posApi.adjustCashFloatCore(cashier2, { shiftId: opened.id, amountDelta: 0 }),
+      ).rejects.toThrow("Penyesuaian kas tidak boleh nol");
+      await expect(
+        posApi.adjustCashFloatCore(cashier2, { shiftId: opened.id, amountDelta: -999999 }),
+      ).rejects.toThrow("Uang kas tidak boleh menjadi negatif");
+
+      // Close — expected cash = float (200k + 50k) + no cash sales this shift.
       const closed = await posApi.closeShiftCore(cashier2, {
         shiftId: opened.id,
         actualCash: 100000,
@@ -212,6 +239,12 @@ describe("POS — shift lifecycle via the real server-function cores", () => {
       });
       expect(closed.status).toBe("Closed");
       expect(closed.actualCash).toBe(100000);
+      expect(closed.expectedCash).toBe(250000);
+
+      // Adjusting a closed shift is refused.
+      await expect(
+        posApi.adjustCashFloatCore(cashier2, { shiftId: opened.id, amountDelta: 1000 }),
+      ).rejects.toThrow("Shift tidak ditemukan atau sudah ditutup");
     },
   );
 });
@@ -425,6 +458,7 @@ describe("POS — negatives: not-found and wrong-state guards with no side effec
       const opened = await posApi.openShiftCore(cashier, {
         branchId,
         userId: cashier.id,
+        cashFloat: 50000,
       });
       expect(opened.status).toBe("Open");
     },

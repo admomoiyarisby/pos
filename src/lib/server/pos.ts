@@ -21,6 +21,7 @@ import {
   recipeBranches,
   shifts,
   shiftSessions,
+  shiftEdits,
   platformFees,
   branches,
   categories,
@@ -31,7 +32,7 @@ import {
   users,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, desc, inArray, isNull, gte, lte, sql, type SQL } from "drizzle-orm";
+import { eq, and, ne, desc, inArray, isNull, gte, lte, sql, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import type { AppUser } from "./auth";
 import { branchVisibleClause, getEffectiveBranchId } from "#/lib/server/branch-visibility";
@@ -374,16 +375,36 @@ export const getShiftStatus = createServerFn({ method: "GET" })
     if (!openShift) return null;
 
     const holder = await findCurrentHolder(openShift.id);
+
+    // Cash sales so far this shift (non-voided) — the close-shift modal uses
+    // this to preview the expected drawer total before the cashier counts.
+    const [cashAgg] = await db
+      .select({ total: sql<number>`coalesce(sum(${orders.totalAmount}), 0)` })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.shiftId, openShift.id),
+          eq(orders.paymentMethod, "Cash"),
+          ne(orders.status, "Void"),
+        ),
+      );
+    const cashSalesSoFar = Number(cashAgg?.total ?? 0);
+
     return {
       ...openShift,
       holderUserId: holder?.userId ?? null,
       holderName: holder?.name ?? null,
+      cashSalesSoFar,
+      expectedCash: openShift.cashFloat + cashSalesSoFar,
     };
   });
 
 // User-parameterized core (ADR-0015). Mirrors the wrapper's auth (no role
 // guard — any authenticated staff may open a shift).
-export async function openShiftCore(user: AppUser, data: { branchId: string; userId: string }) {
+export async function openShiftCore(
+  user: AppUser,
+  data: { branchId: string; userId: string; cashFloat: number },
+) {
   const [branch] = await db
     .select({ name: branches.name })
     .from(branches)
@@ -398,7 +419,7 @@ export async function openShiftCore(user: AppUser, data: { branchId: string; use
         branchId: data.branchId,
         userId: data.userId,
         startTime: now,
-        cashFloat: 0,
+        cashFloat: data.cashFloat,
         status: "Open",
       })
       .returning();
@@ -429,7 +450,7 @@ export async function openShiftCore(user: AppUser, data: { branchId: string; use
 }
 
 export const openShift = createServerFn({ method: "POST" })
-  .validator((data: { branchId: string; userId: string }) => data)
+  .validator((data: { branchId: string; userId: string; cashFloat: number }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
     return openShiftCore(user, data);
@@ -520,11 +541,27 @@ export async function closeShiftCore(
 
   const now = new Date();
   const shift = await db.transaction(async (tx) => {
+    // Expected cash in drawer = opening float + cash sales this shift
+    // (non-voided orders paid with method "Cash"). Computed in the same tx as
+    // the close so a concurrent order can't land between them.
+    const [cashAgg] = await tx
+      .select({ total: sql<number>`coalesce(sum(${orders.totalAmount}), 0)` })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.shiftId, data.shiftId),
+          eq(orders.paymentMethod, "Cash"),
+          ne(orders.status, "Void"),
+        ),
+      );
+    const expectedCash = (oldShift?.cashFloat ?? 0) + Number(cashAgg?.total ?? 0);
+
     const [closed] = await tx
       .update(shifts)
       .set({
         endTime: now,
         actualCash: data.actualCash,
+        expectedCash,
         status: "Closed",
         notes: data.notes,
       })
@@ -559,6 +596,72 @@ export const closeShift = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireAuth();
     return closeShiftCore(user, data);
+  });
+
+// Mid-shift cash adjustment (cash drop from drawer or added change fund).
+// Every adjustment writes a shiftEdits audit row with the old/new amounts so
+// the expected-cash math at close stays auditable. Only the current shift
+// holder may adjust; the shift must still be open.
+export async function adjustCashFloatCore(
+  user: AppUser,
+  data: { shiftId: string; amountDelta: number; reason?: string },
+) {
+  const [shift] = await db
+    .select()
+    .from(shifts)
+    .where(and(eq(shifts.id, data.shiftId), eq(shifts.status, "Open")))
+    .limit(1);
+  if (!shift) throw new Error("Shift tidak ditemukan atau sudah ditutup");
+  if (data.amountDelta === 0) throw new Error("Penyesuaian kas tidak boleh nol");
+
+  const oldFloat = shift.cashFloat;
+  const newFloat = oldFloat + data.amountDelta;
+  // Drawer can't go negative — a cash drop larger than what's in it is a
+  // data error, not a ledger entry.
+  if (newFloat < 0) throw new Error("Uang kas tidak boleh menjadi negatif");
+
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(shifts)
+      .set({ cashFloat: newFloat })
+      .where(and(eq(shifts.id, data.shiftId), eq(shifts.status, "Open")))
+      .returning();
+    if (!row) throw new Error("Shift tidak ditemukan atau sudah ditutup");
+
+    await tx.insert(shiftEdits).values({
+      shiftId: data.shiftId,
+      fieldName: "cashFloat",
+      oldValue: String(oldFloat),
+      newValue: String(newFloat),
+      editedBy: user.id,
+    });
+    return row;
+  });
+
+  await logSystemAction(
+    user,
+    "Adjust Cash Float",
+    `Uang kas shift di ${data.shiftId} disesuaikan ${data.amountDelta > 0 ? "+" : ""}${data.amountDelta} (${oldFloat} → ${newFloat})${data.reason ? ` — ${data.reason}` : ""}`,
+  );
+  await logAudit(
+    user,
+    "shifts",
+    data.shiftId,
+    "UPDATE",
+    { cashFloat: oldFloat },
+    {
+      cashFloat: newFloat,
+    },
+  );
+
+  return updated;
+}
+
+export const adjustCashFloat = createServerFn({ method: "POST" })
+  .validator((data: { shiftId: string; amountDelta: number; reason?: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    return adjustCashFloatCore(user, data);
   });
 
 // Admin view: shift session history — who held each shift and when they logged
@@ -617,6 +720,9 @@ export const getShiftSessions = createServerFn({ method: "GET" })
         shiftStatus: shifts.status,
         shiftStartTime: shifts.startTime,
         shiftEndTime: shifts.endTime,
+        shiftCashFloat: shifts.cashFloat,
+        shiftActualCash: shifts.actualCash,
+        shiftExpectedCash: shifts.expectedCash,
       })
       .from(shiftSessions)
       .innerJoin(branches, eq(branches.id, shiftSessions.branchId))
