@@ -18,6 +18,7 @@ import {
 } from "#/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "#/components/ui/tabs";
 import { getBranches, createBranch, updateBranch, deleteBranch } from "#/lib/server/branches";
+import { branchInfoPayload, branchContactPayload } from "#/lib/branch-form";
 import { getBranchUsers, createUser, updateUser } from "#/lib/server/users";
 import {
   Store,
@@ -30,6 +31,11 @@ import {
   UserPlus,
   Phone,
 } from "lucide-react";
+
+/** Either tab's payload — both are accepted by the shared update mutation. */
+type BranchUpdatePayload =
+  | ReturnType<typeof branchInfoPayload>
+  | ReturnType<typeof branchContactPayload>;
 
 interface BranchRow {
   id: string;
@@ -146,11 +152,14 @@ function BranchSheet({
     enabled: !!branch,
   });
 
+  // The sheet's tabs save different things, so the confirmation rides along with
+  // the variables instead of every save claiming to have stored basic info.
   const updateMutation = useMutation({
-    mutationFn: updateBranch,
-    onSuccess: () => {
+    mutationFn: (vars: { data: BranchUpdatePayload; successMessage: string }) =>
+      updateBranch({ data: vars.data }),
+    onSuccess: (_d, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["branches"] });
-      toast.success("Info cabang disimpan");
+      toast.success(vars.successMessage);
     },
     onError: (err) => {
       toast.error(err.message);
@@ -215,36 +224,23 @@ function BranchSheet({
 
   if (!branch) return null;
 
-  // Each tab has its own form, so each needs its own handler: the payload must
-  // only read fields that form actually renders. Reading a field that belongs to
-  // the other tab yields "" — harmless for the optional strings, but
-  // `type` is a non-empty enum, so parsing "" threw inside the submit handler and
-  // the Kontak & PIN button silently did nothing.
+  // Each tab renders its own <form>, so each gets its own payload builder — see
+  // `#/lib/branch-form` for why sharing one silently broke the contact tab.
   const handleSubmitInfo = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const data = {
-      id: branch.id,
-      code: formText(fd, "code"),
-      name: formText(fd, "name"),
-      location: formText(fd, "location"),
-      type: z.enum(["Central", "Outlet"]).parse(formText(fd, "type")),
-    };
-    void updateMutation.mutateAsync({ data });
+    void updateMutation.mutateAsync({
+      data: branchInfoPayload(branch.id, fd),
+      successMessage: "Info cabang disimpan",
+    });
   };
 
   const handleSubmitContact = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    // Omitted fields are filtered out server-side, so a blank PIN/phone leaves the
-    // stored value untouched rather than clearing it.
     void updateMutation.mutateAsync({
-      data: {
-        id: branch.id,
-        pin: formText(fd, "pin").trim() || undefined,
-        phone: formText(fd, "phone").trim() || undefined,
-        complaintPhone: formText(fd, "complaintPhone").trim() || undefined,
-      },
+      data: branchContactPayload(branch.id, fd),
+      successMessage: "Kontak & PIN disimpan",
     });
   };
 
