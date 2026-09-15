@@ -9,76 +9,6 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-// Demo users for quick access (email mode only)
-const demoUsers = [
-  {
-    name: "Super Admin",
-    email: "superadmin@omoiyari.net",
-    role: "super_admin",
-    pin: "1111",
-  },
-  {
-    name: "Admin Pusat",
-    email: "pusat@omoiyari.net",
-    role: "admin_pusat",
-    pin: "2222",
-  },
-  {
-    name: "Area Mgr East Java",
-    email: "manager.east@omoiyari.net",
-    role: "area_manager",
-    pin: "3333",
-  },
-  {
-    name: "Andi (Wiyung)",
-    email: "andi.wiyung@omoiyari.net",
-    role: "branch_admin",
-    pin: "1234",
-  },
-  {
-    name: "Budi (Darmo Permai)",
-    email: "budi.darmo@omoiyari.net",
-    role: "branch_admin",
-    pin: "2345",
-  },
-  {
-    name: "Citra (Tenggilis)",
-    email: "citra.tenggilis@omoiyari.net",
-    role: "branch_admin",
-    pin: "3456",
-  },
-  {
-    name: "Dewi (Mulyorejo)",
-    email: "dewi.mulyorejo@omoiyari.net",
-    role: "branch_admin",
-    pin: "4567",
-  },
-  {
-    name: "Eko (Jambangan)",
-    email: "eko.jambangan@omoiyari.net",
-    role: "branch_admin",
-    pin: "5678",
-  },
-  {
-    name: "Fitri (Pucang)",
-    email: "fitri.pucang@omoiyari.net",
-    role: "branch_admin",
-    pin: "6789",
-  },
-  {
-    name: "Gilang (Siwalankerto)",
-    email: "gilang.siwalankerto@omoiyari.net",
-    role: "branch_admin",
-    pin: "7890",
-  },
-  {
-    name: "Central Kitchen",
-    email: "ck@omoiyari.net",
-    role: "central_kitchen",
-    pin: "0000",
-  },
-];
-
 type BranchPinStep = "branch-select" | "pin-entry" | "name-picker";
 
 function LoginPage() {
@@ -575,33 +505,6 @@ function LoginPage() {
               )}
             </button>
           </form>
-        )}
-
-        {/* Demo Quick Access (Email Mode Only) */}
-        {mode === "email" && (
-          <div className="pt-2 border-t border-border">
-            <p className="text-xs text-muted-foreground text-center mb-3">Quick Access (Demo)</p>
-            <div className="grid grid-cols-2 gap-2">
-              {demoUsers.map((u) => (
-                <button
-                  key={u.email}
-                  type="button"
-                  onClick={() => {
-                    setEmail(u.email);
-                    setPassword("password123");
-                    setTimeout(() => {
-                      const form = document.querySelector("form");
-                      if (form) form.requestSubmit();
-                    }, 0);
-                  }}
-                  className="py-2 px-3 text-xs font-medium text-left rounded-lg border hover:bg-muted transition-colors flex flex-col"
-                >
-                  <span className="font-bold truncate text-foreground">{u.name}</span>
-                  <span className="text-[10px] text-muted-foreground mt-0.5">{u.email}</span>
-                </button>
-              ))}
-            </div>
-          </div>
         )}
       </div>
     </div>
