@@ -723,6 +723,21 @@ export const getShiftSessions = createServerFn({ method: "GET" })
         shiftCashFloat: shifts.cashFloat,
         shiftActualCash: shifts.actualCash,
         shiftExpectedCash: shifts.expectedCash,
+        // Net cash movement through the drawer during the shift: non-void
+        // Cash-method orders (always in) plus mid-shift float adjustments
+        // (adds in, drops out) from the shiftEdits audit rows.
+        shiftCashSales: sql<number>`(
+          SELECT COALESCE(SUM(o.total_amount), 0)
+          FROM orders o
+          WHERE o.shift_id = ${shifts.id}
+            AND o.payment_method = 'Cash'
+            AND o.status <> 'Void'
+        ) + COALESCE((
+          SELECT SUM(se.new_value::bigint - se.old_value::bigint)
+          FROM shift_edits se
+          WHERE se.shift_id = ${shifts.id}
+            AND se.field_name = 'cashFloat'
+        ), 0)`,
       })
       .from(shiftSessions)
       .innerJoin(branches, eq(branches.id, shiftSessions.branchId))
@@ -733,7 +748,7 @@ export const getShiftSessions = createServerFn({ method: "GET" })
       .limit(data.limit ?? 50)
       .offset((data.page ?? 0) * (data.limit ?? 50));
 
-    return result;
+    return result.map((r) => ({ ...r, shiftCashSales: Number(r.shiftCashSales) }));
   });
 
 const orderItemInput = z.object({

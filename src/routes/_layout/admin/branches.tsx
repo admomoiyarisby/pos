@@ -215,7 +215,12 @@ function BranchSheet({
 
   if (!branch) return null;
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  // Each tab has its own form, so each needs its own handler: the payload must
+  // only read fields that form actually renders. Reading a field that belongs to
+  // the other tab yields "" — harmless for the optional strings, but
+  // `type` is a non-empty enum, so parsing "" threw inside the submit handler and
+  // the Kontak & PIN button silently did nothing.
+  const handleSubmitInfo = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const data = {
@@ -224,11 +229,23 @@ function BranchSheet({
       name: formText(fd, "name"),
       location: formText(fd, "location"),
       type: z.enum(["Central", "Outlet"]).parse(formText(fd, "type")),
-      pin: formText(fd, "pin") || undefined,
-      phone: formText(fd, "phone") || undefined,
-      complaintPhone: formText(fd, "complaintPhone") || undefined,
     };
     void updateMutation.mutateAsync({ data });
+  };
+
+  const handleSubmitContact = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    // Omitted fields are filtered out server-side, so a blank PIN/phone leaves the
+    // stored value untouched rather than clearing it.
+    void updateMutation.mutateAsync({
+      data: {
+        id: branch.id,
+        pin: formText(fd, "pin").trim() || undefined,
+        phone: formText(fd, "phone").trim() || undefined,
+        complaintPhone: formText(fd, "complaintPhone").trim() || undefined,
+      },
+    });
   };
 
   const handleAddStaff = (e: React.FormEvent<HTMLFormElement>) => {
@@ -280,7 +297,7 @@ function BranchSheet({
 
                 {/* Info Dasar Tab */}
                 <TabsContent value="info">
-                  <form onSubmit={handleSubmit} className="space-y-4">
+                  <form onSubmit={handleSubmitInfo} className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Kode</label>
                       <input
@@ -352,7 +369,7 @@ function BranchSheet({
 
                 {/* Kontak & PIN Tab */}
                 <TabsContent value="contact">
-                  <form onSubmit={handleSubmit} className="space-y-4">
+                  <form onSubmit={handleSubmitContact} className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">PIN Cabang</label>
                       <div className="relative">

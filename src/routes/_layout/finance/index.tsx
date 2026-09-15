@@ -8,6 +8,8 @@ import MoneyInput from "#/components/MoneyInput";
 import {
   getDailyFinanceSummary,
   getDailyHppBreakdown,
+  getShiftCashVariance,
+  getShiftCashTransactions,
   upsertDailyOverride,
   createManualRevenue,
   createChannelRevenue,
@@ -16,7 +18,22 @@ import {
 } from "#/lib/server/finance";
 import { getBrokenStock } from "#/lib/server/waste";
 import { getBranches } from "#/lib/server/branches";
-import { ChevronRight, Lock, Pencil, Printer, Package } from "lucide-react";
+import {
+  ChevronRight,
+  Lock,
+  Pencil,
+  Printer,
+  Package,
+  ArrowDownLeft,
+  ArrowUpRight,
+  ShoppingCart,
+  ArrowLeftRight,
+  Calculator,
+  HandCoins,
+  CalendarDays,
+  Wallet,
+  PackageX,
+} from "lucide-react";
 import { z } from "zod";
 import { formatRp, formText } from "#/lib/utils";
 import { openPrintWindow } from "#/lib/print-window";
@@ -89,20 +106,25 @@ function getMonthsList() {
   return months;
 }
 
-// Inline editable Omzet cell — only active when no channel filter (day-level override)
+// Inline editable Omzet cell — only active when no channel filter (day-level override).
+// `fullWidth` is used by the mobile day cards (comfortable tap target, no fixed
+// 144px column); the desktop table keeps the fixed-width cell.
 function EditableOmzetCell({
   value,
   hasOverride,
   disabled,
+  fullWidth = false,
   onSave,
 }: {
   value: number;
   hasOverride: boolean;
   disabled: boolean;
+  fullWidth?: boolean;
   onSave: (newValue: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(value);
+  const cellSize = fullWidth ? "w-full h-10" : "w-36 h-8";
 
   const handleSave = useCallback(() => {
     if (editValue !== value) onSave(editValue);
@@ -119,7 +141,7 @@ function EditableOmzetCell({
           if (e.key === "Enter") handleSave();
           if (e.key === "Escape") setEditing(false);
         }}
-        className="w-36 h-8 rounded border border-primary bg-background px-2 text-sm text-right font-medium tabular-nums"
+        className={`${cellSize} rounded border border-primary bg-background px-2 text-sm text-right font-medium tabular-nums`}
         autoFocus
       />
     );
@@ -128,7 +150,7 @@ function EditableOmzetCell({
   if (disabled) {
     return (
       <span
-        className="inline-flex items-center gap-1.5 w-36 h-8 px-2 rounded border border-dashed border-muted-foreground/30 bg-muted/30 text-sm text-right text-muted-foreground tabular-nums cursor-not-allowed"
+        className={`inline-flex items-center gap-1.5 ${cellSize} px-2 rounded border border-dashed border-muted-foreground/30 bg-muted/30 text-sm text-right text-muted-foreground tabular-nums cursor-not-allowed`}
         title="Filter channel aktif — omzet hanya diedit per hari"
       >
         {formatRp(value)}
@@ -145,7 +167,7 @@ function EditableOmzetCell({
         setEditValue(value);
         setEditing(true);
       }}
-      className={`inline-flex items-center gap-1.5 w-36 h-8 px-2 rounded border text-sm text-right font-medium tabular-nums transition-colors ${
+      className={`inline-flex items-center gap-1.5 ${cellSize} px-2 rounded border text-sm text-right font-medium tabular-nums transition-colors ${
         hasOverride
           ? "border-blue-300 bg-blue-50 hover:bg-blue-100"
           : "border-input bg-background hover:bg-muted/60"
@@ -158,8 +180,9 @@ function EditableOmzetCell({
   );
 }
 
-// Expandable HPP-per-bahan breakdown for a single day
-function HppBreakdownRow({
+// HPP-per-bahan breakdown for a single day. The content is shared by the
+// desktop table row and the mobile day card, so both stay in sync.
+function HppBreakdownContent({
   branchId,
   date,
   channel,
@@ -177,23 +200,11 @@ function HppBreakdownRow({
   });
 
   if (isLoading) {
-    return (
-      <tr className="bg-muted/30">
-        <td colSpan={6} className="px-4 py-3 text-sm text-muted-foreground">
-          Memuat rincian HPP per bahan…
-        </td>
-      </tr>
-    );
+    return <p className="text-sm text-muted-foreground">Memuat rincian HPP per bahan…</p>;
   }
 
   if (!data || data.length === 0) {
-    return (
-      <tr className="bg-muted/30">
-        <td colSpan={6} className="px-4 py-3 text-sm text-muted-foreground">
-          Tidak ada rincian bahan untuk hari ini.
-        </td>
-      </tr>
-    );
+    return <p className="text-sm text-muted-foreground">Tidak ada rincian bahan untuk hari ini.</p>;
   }
 
   const total = data.reduce((s, d) => s + d.cost, 0);
@@ -203,27 +214,211 @@ function HppBreakdownRow({
   });
 
   return (
+    <>
+      <div className="text-xs font-medium text-muted-foreground mb-2">
+        Rincian HPP per Bahan — {dateStr}
+      </div>
+      <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
+        {data.map((d) => (
+          <div
+            key={d.ingredientId}
+            className="flex items-center justify-between text-sm py-1 border-b border-border/40"
+          >
+            <span className="truncate pr-2">{d.name}</span>
+            <span className="tabular-nums font-medium shrink-0">{formatRp(d.cost)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end mt-2 pt-2 border-t text-sm font-semibold">
+        Total HPP: <span className="tabular-nums ml-2">{formatRp(total)}</span>
+      </div>
+    </>
+  );
+}
+
+function HppBreakdownRow({
+  branchId,
+  date,
+  channel,
+}: {
+  branchId: string;
+  date: string;
+  channel: string;
+}) {
+  return (
     <tr className="bg-muted/30">
       <td colSpan={6} className="px-4 py-3">
-        <div className="text-xs font-medium text-muted-foreground mb-2">
-          Rincian HPP per Bahan — {dateStr}
-        </div>
-        <div className="grid grid-cols-2 gap-x-8 gap-y-0">
-          {data.map((d) => (
-            <div
-              key={d.ingredientId}
-              className="flex items-center justify-between text-sm py-1 border-b border-border/40"
-            >
-              <span className="truncate pr-2">{d.name}</span>
-              <span className="tabular-nums font-medium shrink-0">{formatRp(d.cost)}</span>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-end mt-2 pt-2 border-t text-sm font-semibold">
-          Total HPP: <span className="tabular-nums ml-2">{formatRp(total)}</span>
-        </div>
+        <HppBreakdownContent branchId={branchId} date={date} channel={channel} />
       </td>
     </tr>
+  );
+}
+
+// Expandable detail for one shift in the Selisih Kas table: every cash
+// movement in order — the opening float, each Cash sale (in), each mid-shift
+// adjustment (±) — then the reconciliation summary the system computed
+// (Perkiraan = what should be in the drawer) and what the kasir actually
+// counted at close. Direction: in = down-left arrow, out = up-right; kind is
+// carried by the icon (cart = sale, arrows = float adjustment), so the two
+// dimensions stay readable independently. Shared by the desktop table row and
+// the mobile shift card.
+function CashDetailContent({
+  shiftId,
+  cashFloat,
+  expectedCash,
+  actualCash,
+}: {
+  shiftId: string;
+  cashFloat: number;
+  expectedCash: number;
+  actualCash: number;
+}) {
+  const { data: txs, isLoading } = useQuery({
+    queryKey: ["shift-cash-tx", shiftId],
+    queryFn: () => getShiftCashTransactions({ data: { shiftId } }),
+  });
+  const movements = txs ?? [];
+  const variance = actualCash - expectedCash;
+
+  return (
+    <>
+      <div className="text-xs font-medium text-muted-foreground mb-2">Rincian Kas Shift</div>
+      <div className="rounded-md border bg-card divide-y">
+        <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
+            Uang Kas Awal (modal)
+          </span>
+          <span className="tabular-nums font-medium">{formatRp(cashFloat)}</span>
+        </div>
+        {isLoading ? (
+          <div className="px-3 py-3 text-sm text-muted-foreground">Memuat rincian…</div>
+        ) : (
+          movements.map((tx, i) => {
+            const isIn = tx.direction === "in";
+            const meta = [
+              new Date(tx.occurredAt).toLocaleTimeString("id-ID", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+              tx.label,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <div key={i} className="flex items-start justify-between gap-3 px-3 py-2 text-sm">
+                <span className="flex min-w-0 items-start gap-2">
+                  {isIn ? (
+                    <ArrowDownLeft className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  ) : (
+                    <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                  )}
+                  <span className="flex min-w-0 flex-col">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      {tx.type === "order" ? (
+                        <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
+                      ) : (
+                        <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span className="truncate">
+                        {tx.type === "order" ? "Penjualan tunai" : "Penyesuaian kas"}
+                      </span>
+                    </span>
+                    {meta && (
+                      <span className="truncate text-xs text-muted-foreground tabular-nums">
+                        {meta}
+                      </span>
+                    )}
+                  </span>
+                </span>
+                <span
+                  className={`shrink-0 tabular-nums font-medium ${
+                    isIn ? "text-emerald-600" : "text-amber-600"
+                  }`}
+                >
+                  {isIn ? "+" : "−"}
+                  {formatRp(tx.amount)}
+                </span>
+              </div>
+            );
+          })
+        )}
+        {movements.length === 0 && !isLoading && (
+          <div className="px-3 py-3 text-sm text-muted-foreground">
+            Tidak ada transaksi tunai pada shift ini.
+          </div>
+        )}
+        {/* Reconciliation close-out: what the system expected vs what the
+            kasir counted — the two numbers the Selisih compares. */}
+        <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm bg-muted/40 border-t">
+          <span className="flex items-center gap-2">
+            <Calculator className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            Perkiraan (seharusnya)
+          </span>
+          <span className="tabular-nums font-semibold">{formatRp(expectedCash)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+          <span className="flex items-center gap-2">
+            <HandCoins className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            Kas Akhir diinput kasir
+          </span>
+          <span className="tabular-nums font-semibold">{formatRp(actualCash)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+          <span className="font-medium">Selisih</span>
+          <span
+            className={`tabular-nums font-semibold ${
+              variance === 0
+                ? "text-emerald-600"
+                : variance > 0
+                  ? "text-amber-600"
+                  : "text-destructive"
+            }`}
+          >
+            {variance === 0 ? "Cocok" : `${variance > 0 ? "+" : ""}${formatRp(variance)}`}
+          </span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function CashDetailRow({
+  shiftId,
+  cashFloat,
+  expectedCash,
+  actualCash,
+}: {
+  shiftId: string;
+  cashFloat: number;
+  expectedCash: number;
+  actualCash: number;
+}) {
+  return (
+    <tr className="bg-muted/30">
+      <td colSpan={8} className="px-4 py-3">
+        <CashDetailContent
+          shiftId={shiftId}
+          cashFloat={cashFloat}
+          expectedCash={expectedCash}
+          actualCash={actualCash}
+        />
+      </td>
+    </tr>
+  );
+}
+
+// Variance badge shared by the desktop table and the mobile shift card, so a
+// mismatch reads identically in both.
+function VarianceBadge({ variance }: { variance: number }) {
+  if (variance === 0) return <span className="font-medium text-emerald-600">Cocok</span>;
+  return (
+    <span
+      className={`font-medium tabular-nums ${variance > 0 ? "text-amber-600" : "text-destructive"}`}
+    >
+      {variance > 0 ? "+" : ""}
+      {formatRp(variance)}
+    </span>
   );
 }
 
@@ -267,6 +462,8 @@ function FinancePage() {
 
   // Expandable HPP row
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  // Expandable Selisih Kas detail row (per shift)
+  const [expandedCashShift, setExpandedCashShift] = useState<string | null>(null);
 
   const months = useMemo(() => getMonthsList(), []);
   const weeks = useMemo(() => {
@@ -308,10 +505,43 @@ function FinancePage() {
   });
 
   // Broken stock query (for Barang Rusak tab)
-  const { data: brokenStockEntries } = useQuery({
+  const { data: brokenStockEntries, isLoading: brokenStockLoading } = useQuery({
     queryKey: ["broken-stock", effectiveDateRange.from, effectiveDateRange.to, branchId],
     queryFn: () => getBrokenStock({ data: {} }),
   });
+
+  // Per-shift cash reconciliation (Selisih Kas). Channel-agnostic — shifts
+  // hold mixed-channel cash sales — so it's only shown without a channel
+  // filter, where the ledger numbers are also channel-aggregated.
+  const showCashRecon = !channel;
+  const { data: cashVariances, isLoading: cashReconLoading } = useQuery({
+    queryKey: ["shift-cash-variance", effectiveDateRange.from, effectiveDateRange.to, branchId],
+    queryFn: () =>
+      getShiftCashVariance({
+        data: {
+          dateFrom: effectiveDateRange.from || undefined,
+          dateTo: effectiveDateRange.to || undefined,
+          branchId,
+        },
+      }),
+    enabled: showCashRecon,
+  });
+
+  const cashRecon = useMemo(() => {
+    const rows = cashVariances ?? [];
+    const expected = rows.reduce((s, r) => s + r.expectedCash, 0);
+    const actual = rows.reduce((s, r) => s + r.actualCash, 0);
+    const mismatches = rows.filter((r) => r.variance !== 0);
+    return {
+      rows,
+      shiftCount: rows.length,
+      expected,
+      actual,
+      variance: actual - expected,
+      mismatches,
+      mismatchTotal: mismatches.reduce((s, r) => s + r.variance, 0),
+    };
+  }, [cashVariances]);
 
   // Filter broken stock by date range and branch
   const filteredBrokenStock = useMemo(() => {
@@ -338,6 +568,21 @@ function FinancePage() {
     },
     onError: (err) => toast.error("Gagal memperbarui omzet", { description: err.message }),
   });
+
+  // Omzet edits need a branch to attach the day-level override to; shared by
+  // the desktop cell and the mobile day card so both behave identically.
+  const saveOmzet = useCallback(
+    (date: string, newValue: number) => {
+      if (!branchId) {
+        toast.error("Pilih cabang terlebih dahulu untuk mengedit Omzet");
+        return;
+      }
+      void upsertOverrideMutation.mutateAsync({
+        data: { branchId, date, field: "omzet", value: newValue },
+      });
+    },
+    [branchId, upsertOverrideMutation],
+  );
 
   const createManualMutation = useMutation({
     mutationFn: createManualRevenue,
@@ -403,53 +648,57 @@ function FinancePage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
-      {/* Top bar */}
-      <div className="flex flex-wrap items-center justify-end gap-3 mb-6">
+      {/* Top bar — one full-width primary action on phones; right-aligned row
+          from sm. The wrapper collapses into the flex row at sm (sm:contents). */}
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+          className="h-11 rounded-md bg-primary text-primary-foreground text-sm font-medium transition-colors hover:bg-primary/90 active:scale-[0.99] sm:h-9 sm:px-4"
         >
           Input Revenue
         </button>
-        <button
-          type="button"
-          onClick={() => setExpenseModalOpen(true)}
-          className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted transition-colors"
-        >
-          Input Pengeluaran
-        </button>
-        <button
-          type="button"
-          onClick={async () => {
-            try {
-              const result = await printFinancePage({
-                data: {
-                  dateFrom: effectiveDateRange.from || undefined,
-                  dateTo: effectiveDateRange.to || undefined,
-                  branchId,
-                  channel,
-                },
-              });
-              openPrintWindow(result.html);
-            } catch (err) {
-              toast.error("Gagal mencetak", {
-                description: err instanceof Error ? err.message : String(err),
-              });
-            }
-          }}
-          className="h-9 px-4 rounded-md border text-sm font-medium hover:bg-muted transition-colors inline-flex items-center gap-2"
-        >
-          <Printer className="h-4 w-4" /> Cetak PDF
-        </button>
+        <div className="grid grid-cols-2 gap-2 sm:contents">
+          <button
+            type="button"
+            onClick={() => setExpenseModalOpen(true)}
+            className="h-11 rounded-md border text-sm font-medium transition-colors hover:bg-muted active:scale-[0.99] sm:h-9 sm:px-4"
+          >
+            Input Pengeluaran
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const result = await printFinancePage({
+                  data: {
+                    dateFrom: effectiveDateRange.from || undefined,
+                    dateTo: effectiveDateRange.to || undefined,
+                    branchId,
+                    channel,
+                  },
+                });
+                openPrintWindow(result.html);
+              } catch (err) {
+                toast.error("Gagal mencetak", {
+                  description: err instanceof Error ? err.message : String(err),
+                });
+              }
+            }}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-md border text-sm font-medium transition-colors hover:bg-muted active:scale-[0.99] sm:h-9 sm:px-4"
+          >
+            <Printer className="h-4 w-4" /> Cetak PDF
+          </button>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-4 p-1 rounded-lg border bg-muted/30 w-fit">
+      {/* Tabs — full-width split on phones (bigger touch targets), pill-sized
+          from sm where there is room to sit left. */}
+      <div className="mb-4 flex w-full gap-1 rounded-lg border bg-muted/30 p-1 sm:w-fit">
         <button
           type="button"
           onClick={() => setActiveTab("keuangan")}
-          className={`h-9 px-4 rounded-md text-sm font-medium transition-colors ${
+          className={`h-10 flex-1 rounded-md text-sm font-medium transition-colors sm:h-9 sm:flex-none sm:px-4 ${
             activeTab === "keuangan"
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
@@ -460,7 +709,7 @@ function FinancePage() {
         <button
           type="button"
           onClick={() => setActiveTab("barang-rusak")}
-          className={`h-9 px-4 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 ${
+          className={`inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors sm:h-9 sm:flex-none sm:px-4 ${
             activeTab === "barang-rusak"
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
@@ -471,10 +720,10 @@ function FinancePage() {
         </button>
       </div>
 
-      {/* Single filter row */}
-      <div className="flex flex-wrap items-end gap-3 mb-4 p-4 rounded-lg border">
+      {/* Single filter row — stacked full-width controls on phones, inline from sm */}
+      <div className="mb-4 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:flex-wrap sm:items-end sm:p-4">
         {/* Period segmented control */}
-        <div className="flex rounded-md border overflow-hidden">
+        <div className="flex w-full overflow-hidden rounded-md border sm:w-auto">
           {
             // SAFETY: the three literal periods are exactly the PeriodType
             // union values; the annotation only asserts that for .map().
@@ -483,7 +732,7 @@ function FinancePage() {
                 key={p}
                 type="button"
                 onClick={() => setPeriodType(p)}
-                className={`h-9 px-4 text-sm font-medium transition-colors ${
+                className={`h-10 flex-1 text-sm font-medium transition-colors sm:h-9 sm:flex-none sm:px-4 ${
                   periodType === p
                     ? "bg-primary text-primary-foreground"
                     : "bg-background hover:bg-muted"
@@ -497,12 +746,13 @@ function FinancePage() {
 
         {/* Contextual date picker */}
         {periodType === "bulanan" && (
-          <div className="space-y-1">
+          <div className="w-full space-y-1 sm:w-auto">
             <label className="text-xs text-muted-foreground">Bulan</label>
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+              aria-label="Bulan"
+              className="block h-10 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:w-auto sm:text-sm"
             >
               {months.map((m) => (
                 <option key={m.value} value={m.value}>
@@ -513,8 +763,8 @@ function FinancePage() {
           </div>
         )}
         {periodType === "mingguan" && (
-          <>
-            <div className="space-y-1">
+          <div className="grid grid-cols-2 gap-3 sm:contents">
+            <div className="w-full space-y-1 sm:w-auto">
               <label className="text-xs text-muted-foreground">Bulan</label>
               <select
                 value={selectedMonth}
@@ -522,7 +772,8 @@ function FinancePage() {
                   setSelectedMonth(e.target.value);
                   setSelectedWeek(0);
                 }}
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+                aria-label="Bulan"
+                className="block h-10 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:w-auto sm:text-sm"
               >
                 {months.map((m) => (
                   <option key={m.value} value={m.value}>
@@ -531,12 +782,13 @@ function FinancePage() {
                 ))}
               </select>
             </div>
-            <div className="space-y-1">
+            <div className="w-full space-y-1 sm:w-auto">
               <label className="text-xs text-muted-foreground">Minggu</label>
               <select
                 value={selectedWeek}
                 onChange={(e) => setSelectedWeek(Number(e.target.value))}
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+                aria-label="Minggu"
+                className="block h-10 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:w-auto sm:text-sm"
               >
                 {weeks.map((w, i) => (
                   <option key={i} value={i}>
@@ -545,27 +797,29 @@ function FinancePage() {
                 ))}
               </select>
             </div>
-          </>
+          </div>
         )}
         {periodType === "harian" && (
-          <div className="space-y-1">
+          <div className="w-full space-y-1 sm:w-auto">
             <label className="text-xs text-muted-foreground">Tanggal</label>
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+              aria-label="Tanggal"
+              className="block h-10 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:w-auto sm:text-sm"
             />
           </div>
         )}
 
         {/* Branch */}
-        <div className="space-y-1">
+        <div className="w-full space-y-1 sm:w-auto">
           <label className="text-xs text-muted-foreground">Cabang</label>
           <select
             value={selectedBranchId}
             onChange={(e) => setSelectedBranchId(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+            aria-label="Cabang"
+            className="block h-10 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:w-auto sm:text-sm"
           >
             <option value="">Semua Cabang</option>
             {branches.map((b) => (
@@ -577,12 +831,13 @@ function FinancePage() {
         </div>
 
         {/* Channel */}
-        <div className="space-y-1">
+        <div className="w-full space-y-1 sm:w-auto">
           <label className="text-xs text-muted-foreground">Channel</label>
           <select
             value={selectedChannel}
             onChange={(e) => setSelectedChannel(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+            aria-label="Channel"
+            className="block h-10 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:w-auto sm:text-sm"
           >
             {CHANNELS.map((c) => (
               <option key={c.label} value={c.value}>
@@ -593,120 +848,517 @@ function FinancePage() {
         </div>
       </div>
 
-      {/* Ledger table - Keuangan tab */}
+      {/* Ledger - Keuangan tab. Cards own everything below lg: from md (768px)
+          the fixed 16rem sidebar leaves only ~460px of content width, less than
+          the table's natural width, so the table would scroll horizontally. */}
       {activeTab === "keuangan" && (
-        <div className="rounded-lg border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left py-2.5 px-3 font-medium w-10"></th>
-                  <th className="text-left py-2.5 px-3 font-medium">Tanggal</th>
-                  <th className="text-right py-2.5 px-3 font-medium w-36">HPP</th>
-                  <th className="text-right py-2.5 px-3 font-medium w-44">Omzet</th>
-                  <th className="text-right py-2.5 px-3 font-medium w-36">Gross Profit</th>
-                  <th className="text-right py-2.5 px-3 font-medium w-20">Margin</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dailyRows && dailyRows.length > 0 ? (
-                  dailyRows.map((row) => {
-                    const isOpen = expandedDay === row.tanggal;
-                    return (
-                      <Fragment key={row.tanggal}>
-                        <tr
-                          className={`border-b ${isOpen ? "bg-muted/20" : "hover:bg-muted/40"} transition-colors`}
-                        >
-                          <td className="py-2 px-3">
-                            <button
-                              type="button"
-                              onClick={() => setExpandedDay(isOpen ? null : row.tanggal)}
-                              className="h-7 w-7 rounded flex items-center justify-center hover:bg-muted transition-colors"
-                              title="Lihat rincian HPP per bahan"
-                            >
-                              <ChevronRight
-                                className={`h-4 w-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                              />
-                            </button>
-                          </td>
-                          <td className="py-2 px-3">
+        <>
+          <div className="space-y-2.5 lg:hidden">
+            {dailyRows && dailyRows.length > 0 ? (
+              <>
+                {dailyRows.map((row) => {
+                  const isOpen = expandedDay === row.tanggal;
+                  return (
+                    <div
+                      key={row.tanggal}
+                      className={`overflow-hidden rounded-xl border bg-card shadow-xs ${
+                        isOpen ? "border-foreground/20" : ""
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setExpandedDay(isOpen ? null : row.tanggal)}
+                        aria-expanded={isOpen}
+                        className="flex w-full items-center justify-between gap-3 p-3.5 text-left transition-colors active:bg-muted/40"
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold">
                             {new Date(row.tanggal + "T00:00:00").toLocaleDateString("id-ID", {
-                              weekday: "short",
+                              weekday: "long",
                               day: "numeric",
                               month: "short",
                             })}
-                          </td>
-                          <td className="py-2 px-3 text-right tabular-nums">{formatRp(row.hpp)}</td>
-                          <td className="py-2 px-3 text-right">
-                            <EditableOmzetCell
-                              value={row.omzet}
-                              hasOverride={row.hasOmzetOverride}
-                              disabled={!!channel}
-                              onSave={(newValue) => {
-                                if (!branchId) {
-                                  toast.error("Pilih cabang terlebih dahulu untuk mengedit Omzet");
-                                  return;
-                                }
-                                void upsertOverrideMutation.mutateAsync({
-                                  data: {
-                                    branchId,
-                                    date: row.tanggal,
-                                    field: "omzet",
-                                    value: newValue,
-                                  },
-                                });
-                              }}
+                          </span>
+                          <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                            Rincian HPP per bahan
+                            <ChevronRight
+                              className={`h-3.5 w-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
                             />
-                          </td>
-                          <td
-                            className={`py-2 px-3 text-right tabular-nums font-medium ${row.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          <span className="block text-xs text-muted-foreground">Gross Profit</span>
+                          <span
+                            className={`block text-sm font-semibold tabular-nums ${
+                              row.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"
+                            }`}
                           >
                             {formatRp(row.grossProfit)}
-                          </td>
-                          <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
+                          </span>
+                        </span>
+                      </button>
+                      <div className="grid grid-cols-2 gap-3 border-t px-3.5 py-3">
+                        <div>
+                          <div className="text-xs text-muted-foreground">HPP</div>
+                          <div className="text-sm font-medium tabular-nums">
+                            {formatRp(row.hpp)}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs text-muted-foreground">Margin</div>
+                          <div className="text-sm font-medium tabular-nums">
                             {(row.margin * 100).toFixed(1)}%
-                          </td>
-                        </tr>
-                        {isOpen && (
-                          <HppBreakdownRow
+                          </div>
+                        </div>
+                        <div className="col-span-2">
+                          <div className="mb-1 text-xs text-muted-foreground">Omzet</div>
+                          <EditableOmzetCell
+                            fullWidth
+                            value={row.omzet}
+                            hasOverride={row.hasOmzetOverride}
+                            disabled={!!channel}
+                            onSave={(newValue) => saveOmzet(row.tanggal, newValue)}
+                          />
+                        </div>
+                      </div>
+                      {isOpen && (
+                        <div className="border-t bg-muted/30 px-3.5 py-3">
+                          <HppBreakdownContent
                             branchId={selectedBranchId}
                             date={row.tanggal}
                             channel={selectedChannel}
                           />
-                        )}
-                      </Fragment>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={6} className="py-10 text-center text-muted-foreground">
-                      Tidak ada data untuk periode ini
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {dailyRows && dailyRows.length > 0 && (
-                <tfoot>
-                  <tr className="border-t-2 font-semibold bg-muted/40">
-                    <td className="py-2.5 px-3"></td>
-                    <td className="py-2.5 px-3">TOTAL</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.hpp)}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">
-                      {formatRp(totals.omzet)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">
-                      {formatRp(totals.gross)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">
-                      {totals.omzet > 0
-                        ? `${((totals.gross / totals.omzet) * 100).toFixed(1)}%`
-                        : "-"}
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {/* Totals — mirrors the desktop table footer */}
+                <div className="rounded-xl border bg-muted/40 p-3.5">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Total
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-xs text-muted-foreground">HPP</div>
+                      <div className="text-sm font-semibold tabular-nums">
+                        {formatRp(totals.hpp)}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground">Gross Profit</div>
+                      <div className="text-sm font-semibold tabular-nums">
+                        {formatRp(totals.gross)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Omzet</div>
+                      <div className="text-sm font-semibold tabular-nums">
+                        {formatRp(totals.omzet)}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground">Margin</div>
+                      <div className="text-sm font-semibold tabular-nums">
+                        {totals.omzet > 0
+                          ? `${((totals.gross / totals.omzet) * 100).toFixed(1)}%`
+                          : "-"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center">
+                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                  <CalendarDays className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <p className="mt-3 text-sm font-medium">Tidak ada data untuk periode ini</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Ubah periode atau cabang untuk melihat ledger harian.
+                </p>
+              </div>
+            )}
           </div>
+
+          {/* Desktop table */}
+          <div className="hidden lg:block rounded-lg border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left py-2.5 px-3 font-medium w-10"></th>
+                    <th className="text-left py-2.5 px-3 font-medium">Tanggal</th>
+                    <th className="text-right py-2.5 px-3 font-medium w-36">HPP</th>
+                    <th className="text-right py-2.5 px-3 font-medium w-44">Omzet</th>
+                    <th className="text-right py-2.5 px-3 font-medium w-36">Gross Profit</th>
+                    <th className="text-right py-2.5 px-3 font-medium w-20">Margin</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyRows && dailyRows.length > 0 ? (
+                    dailyRows.map((row) => {
+                      const isOpen = expandedDay === row.tanggal;
+                      return (
+                        <Fragment key={row.tanggal}>
+                          <tr
+                            className={`border-b ${isOpen ? "bg-muted/20" : "hover:bg-muted/40"} transition-colors`}
+                          >
+                            <td className="py-2 px-3">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedDay(isOpen ? null : row.tanggal)}
+                                className="h-7 w-7 rounded flex items-center justify-center hover:bg-muted transition-colors"
+                                title="Lihat rincian HPP per bahan"
+                              >
+                                <ChevronRight
+                                  className={`h-4 w-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                                />
+                              </button>
+                            </td>
+                            <td className="py-2 px-3">
+                              {new Date(row.tanggal + "T00:00:00").toLocaleDateString("id-ID", {
+                                weekday: "short",
+                                day: "numeric",
+                                month: "short",
+                              })}
+                            </td>
+                            <td className="py-2 px-3 text-right tabular-nums">
+                              {formatRp(row.hpp)}
+                            </td>
+                            <td className="py-2 px-3 text-right">
+                              <EditableOmzetCell
+                                value={row.omzet}
+                                hasOverride={row.hasOmzetOverride}
+                                disabled={!!channel}
+                                onSave={(newValue) => saveOmzet(row.tanggal, newValue)}
+                              />
+                            </td>
+                            <td
+                              className={`py-2 px-3 text-right tabular-nums font-medium ${row.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}
+                            >
+                              {formatRp(row.grossProfit)}
+                            </td>
+                            <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
+                              {(row.margin * 100).toFixed(1)}%
+                            </td>
+                          </tr>
+                          {isOpen && (
+                            <HppBreakdownRow
+                              branchId={selectedBranchId}
+                              date={row.tanggal}
+                              channel={selectedChannel}
+                            />
+                          )}
+                        </Fragment>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="py-10 text-center text-muted-foreground">
+                        Tidak ada data untuk periode ini
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {dailyRows && dailyRows.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold bg-muted/40">
+                      <td className="py-2.5 px-3"></td>
+                      <td className="py-2.5 px-3">TOTAL</td>
+                      <td className="py-2.5 px-3 text-right tabular-nums">
+                        {formatRp(totals.hpp)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right tabular-nums">
+                        {formatRp(totals.omzet)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right tabular-nums">
+                        {formatRp(totals.gross)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right tabular-nums">
+                        {totals.omzet > 0
+                          ? `${((totals.gross / totals.omzet) * 100).toFixed(1)}%`
+                          : "-"}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Selisih Kas — per-shift cash reconciliation (Keuangan tab only) */}
+      {activeTab === "keuangan" && showCashRecon && (
+        <div className="mt-6 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold tracking-tight">Selisih Kas</h2>
+            <span className="text-xs text-muted-foreground">
+              {cashRecon.shiftCount} shift ditutup dalam periode ini
+            </span>
+          </div>
+
+          {cashReconLoading ? (
+            /* Without this the empty state flashes while the query is in flight,
+               which reads as "no shifts closed" rather than "still loading". */
+            <div className="space-y-2.5">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="animate-pulse rounded-xl border bg-card p-3.5"
+                  style={{ animationDelay: `${i * 120}ms` }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="h-3.5 w-28 rounded bg-muted" />
+                      <div className="mt-2 h-3 w-20 rounded bg-muted" />
+                    </div>
+                    <div className="h-5 w-20 rounded bg-muted" />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 border-t pt-3">
+                    <div className="h-3 w-16 rounded bg-muted" />
+                    <div className="h-3 w-16 rounded bg-muted" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : cashRecon.shiftCount === 0 ? (
+            <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                <Wallet className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-sm font-medium">Belum ada data rekonsiliasi kas</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Shift yang ditutup dengan hitungan kas akan muncul di sini.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Summary strip */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-lg border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">Perkiraan Kas</div>
+                  <div className="text-base font-semibold tabular-nums sm:text-lg">
+                    {formatRp(cashRecon.expected)}
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">Kas Fisik Dihitung</div>
+                  <div className="text-base font-semibold tabular-nums sm:text-lg">
+                    {formatRp(cashRecon.actual)}
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">Total Selisih</div>
+                  <div
+                    className={`text-base font-semibold tabular-nums sm:text-lg ${
+                      cashRecon.variance === 0
+                        ? "text-emerald-600"
+                        : cashRecon.variance > 0
+                          ? "text-amber-600"
+                          : "text-destructive"
+                    }`}
+                  >
+                    {cashRecon.variance > 0 ? "+" : ""}
+                    {formatRp(cashRecon.variance)}
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">Shift Tidak Cocok</div>
+                  <div
+                    className={`text-base font-semibold tabular-nums sm:text-lg ${
+                      cashRecon.mismatches.length === 0 ? "text-emerald-600" : "text-destructive"
+                    }`}
+                  >
+                    {cashRecon.mismatches.length}
+                    {cashRecon.mismatches.length > 0 && (
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                        ({cashRecon.mismatchTotal > 0 ? "+" : ""}
+                        {formatRp(cashRecon.mismatchTotal)})
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Per-shift rows — expandable to show each cash movement.
+                  Cards below xl (not lg, unlike the other tables): eight columns
+                  of Rupiah need ~950px, which the 720px content column at
+                  1024px cannot hold, so a table there would scroll sideways. */}
+              <div className="space-y-2.5 xl:hidden">
+                {cashRecon.rows.map((r) => {
+                  const isOpen = expandedCashShift === r.shiftId;
+                  const mutation = r.cashSales + r.cashAdjustments;
+                  return (
+                    <div
+                      key={r.shiftId}
+                      className={`overflow-hidden rounded-xl border bg-card shadow-xs ${
+                        r.variance !== 0 ? "border-destructive/30" : ""
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setExpandedCashShift(isOpen ? null : r.shiftId)}
+                        aria-expanded={isOpen}
+                        className="flex w-full items-center justify-between gap-3 p-3.5 text-left transition-colors active:bg-muted/40"
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold tabular-nums">
+                            {r.closedAt
+                              ? new Date(r.closedAt).toLocaleString("id-ID", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "-"}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                            {r.branchName ?? "-"}
+                          </span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2.5">
+                          <span className="text-right">
+                            <span className="block text-xs text-muted-foreground">Selisih</span>
+                            <VarianceBadge variance={r.variance} />
+                          </span>
+                          <ChevronRight
+                            className={`h-4 w-4 text-muted-foreground transition-transform ${
+                              isOpen ? "rotate-90" : ""
+                            }`}
+                          />
+                        </span>
+                      </button>
+                      <div className="grid grid-cols-2 gap-3 border-t px-3.5 py-3">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Kas Awal</div>
+                          <div className="text-sm font-medium tabular-nums">
+                            {formatRp(r.cashFloat)}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs text-muted-foreground">Mutasi Kas</div>
+                          <div className="text-sm font-medium tabular-nums">
+                            {mutation > 0 ? "+" : ""}
+                            {formatRp(mutation)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Perkiraan</div>
+                          <div className="text-sm font-medium tabular-nums">
+                            {formatRp(r.expectedCash)}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs leading-tight text-muted-foreground">
+                            Kas Akhir (Input Kasir)
+                          </div>
+                          <div className="text-sm font-medium tabular-nums">
+                            {formatRp(r.actualCash)}
+                          </div>
+                        </div>
+                      </div>
+                      {isOpen && (
+                        <div className="border-t bg-muted/30 px-3.5 py-3">
+                          <CashDetailContent
+                            shiftId={r.shiftId}
+                            cashFloat={r.cashFloat}
+                            expectedCash={r.expectedCash}
+                            actualCash={r.actualCash}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden xl:block rounded-lg border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="text-left py-2.5 px-3 font-medium w-10"></th>
+                        <th className="text-left py-2.5 px-3 font-medium">Ditutup</th>
+                        <th className="text-left py-2.5 px-3 font-medium">Cabang</th>
+                        <th className="text-right py-2.5 px-3 font-medium w-32">Kas Awal</th>
+                        <th className="text-right py-2.5 px-3 font-medium w-36">Mutasi Kas</th>
+                        <th className="text-right py-2.5 px-3 font-medium w-36">Perkiraan</th>
+                        <th className="text-right py-2.5 px-3 font-medium w-36">
+                          Kas Akhir (Input Kasir)
+                        </th>
+                        <th className="text-right py-2.5 px-3 font-medium w-32">Selisih</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cashRecon.rows.map((r) => {
+                        const isOpen = expandedCashShift === r.shiftId;
+                        return (
+                          <Fragment key={r.shiftId}>
+                            <tr
+                              className={`border-b ${r.variance !== 0 ? "bg-destructive/[0.04]" : ""} hover:bg-muted/40 transition-colors`}
+                            >
+                              <td className="py-2.5 px-3">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedCashShift(isOpen ? null : r.shiftId)}
+                                  className="h-7 w-7 rounded flex items-center justify-center hover:bg-muted transition-colors"
+                                  title="Lihat rincian transaksi kas"
+                                >
+                                  <ChevronRight
+                                    className={`h-4 w-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                                  />
+                                </button>
+                              </td>
+                              <td className="py-2.5 px-3 tabular-nums whitespace-nowrap">
+                                {r.closedAt
+                                  ? new Date(r.closedAt).toLocaleString("id-ID", {
+                                      day: "2-digit",
+                                      month: "short",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "-"}
+                              </td>
+                              <td className="py-2.5 px-3">{r.branchName ?? "-"}</td>
+                              <td className="py-2.5 px-3 text-right tabular-nums">
+                                {formatRp(r.cashFloat)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right tabular-nums">
+                                {/* Mutasi Kas = sales (always in) + adjustments
+                                    (±). Expansion shows each movement. */}
+                                {r.cashSales + r.cashAdjustments > 0 ? "+" : ""}
+                                {formatRp(r.cashSales + r.cashAdjustments)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right tabular-nums">
+                                {formatRp(r.expectedCash)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right tabular-nums">
+                                {formatRp(r.actualCash)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right tabular-nums">
+                                <VarianceBadge variance={r.variance} />
+                              </td>
+                            </tr>
+                            {isOpen && (
+                              <CashDetailRow
+                                shiftId={r.shiftId}
+                                cashFloat={r.cashFloat}
+                                expectedCash={r.expectedCash}
+                                actualCash={r.actualCash}
+                              />
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -719,8 +1371,71 @@ function FinancePage() {
             <div className="text-2xl font-semibold tabular-nums">{formatRp(brokenStockTotal)}</div>
           </div>
 
-          {/* Table */}
-          <div className="rounded-lg border overflow-hidden">
+          {/* Mobile cards — own everything below lg, same as the other tabs */}
+          <div className="space-y-2.5 lg:hidden">
+            {brokenStockLoading ? (
+              [0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="animate-pulse rounded-xl border bg-card p-3.5"
+                  style={{ animationDelay: `${i * 120}ms` }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="h-3.5 w-32 rounded bg-muted" />
+                      <div className="mt-2 h-3 w-24 rounded bg-muted" />
+                    </div>
+                    <div className="h-3.5 w-20 rounded bg-muted" />
+                  </div>
+                  <div className="mt-3 h-3 w-2/3 rounded bg-muted" />
+                </div>
+              ))
+            ) : filteredBrokenStock.length > 0 ? (
+              filteredBrokenStock.map((entry) => (
+                <div key={entry.id} className="rounded-xl border bg-card p-3.5 shadow-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">{entry.ingredientName}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                        {new Date(entry.createdAt).toLocaleDateString("id-ID", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-xs text-muted-foreground">Nilai</div>
+                      <div className="text-sm font-semibold tabular-nums">
+                        {formatRp(entry.valuation ?? 0)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2.5 flex items-center gap-2 border-t pt-2.5 text-xs">
+                    <span className="inline-flex items-center rounded-md border px-2 py-0.5 font-medium tabular-nums">
+                      Qty {entry.quantity}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                      {entry.notes ?? "-"}
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center">
+                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                  <PackageX className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <p className="mt-3 text-sm font-medium">Tidak ada data barang rusak</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Catatan bahan rusak dari gudang akan muncul di sini.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden lg:block rounded-lg border overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -774,25 +1489,25 @@ function FinancePage() {
             <button
               type="button"
               onClick={() => setRevenueType("manual")}
-              className={`h-9 px-4 rounded-md text-sm ${revenueType === "manual" ? "bg-primary text-primary-foreground" : "border"}`}
+              className={`h-11 flex-1 rounded-md text-sm sm:h-9 sm:flex-none sm:px-4 ${revenueType === "manual" ? "bg-primary text-primary-foreground" : "border"}`}
             >
               Manual Revenue
             </button>
             <button
               type="button"
               onClick={() => setRevenueType("channel")}
-              className={`h-9 px-4 rounded-md text-sm ${revenueType === "channel" ? "bg-primary text-primary-foreground" : "border"}`}
+              className={`h-11 flex-1 rounded-md text-sm sm:h-9 sm:flex-none sm:px-4 ${revenueType === "channel" ? "bg-primary text-primary-foreground" : "border"}`}
             >
               Per Channel
             </button>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
             <div className="space-y-2">
               <label className="text-sm font-medium">Cabang</label>
               <select
                 name="branchId"
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:text-sm"
               >
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -807,7 +1522,7 @@ function FinancePage() {
                 name="date"
                 type="date"
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:text-sm"
               />
             </div>
           </div>
@@ -817,7 +1532,7 @@ function FinancePage() {
               <select
                 name="channel"
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:text-sm"
               >
                 <option value="Gofood">Gofood</option>
                 <option value="Grabfood">Grabfood</option>
@@ -833,27 +1548,27 @@ function FinancePage() {
             <MoneyInput
               name="amount"
               required
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              className="h-11 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:text-sm"
             />
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Catatan</label>
             <textarea
               name="notes"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-none"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-base min-h-[60px] resize-none sm:text-sm"
             />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:justify-end">
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="h-9 px-4 rounded-md border text-sm"
+              className="h-11 rounded-md border text-sm sm:h-9 sm:px-4"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
+              className="h-11 rounded-md bg-primary text-primary-foreground text-sm active:scale-[0.99] sm:h-9 sm:px-4"
             >
               Simpan
             </button>
@@ -884,13 +1599,13 @@ function FinancePage() {
           }}
           className="space-y-4"
         >
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium">Cabang</label>
               <select
                 name="branchId"
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:text-sm"
               >
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -905,7 +1620,7 @@ function FinancePage() {
                 name="date"
                 type="date"
                 required
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:text-sm"
               />
             </div>
           </div>
@@ -914,7 +1629,7 @@ function FinancePage() {
             <select
               name="category"
               required
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              className="h-11 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:text-sm"
             >
               <option value="Gaji">Gaji</option>
               <option value="ListrikAir">Listrik & Air</option>
@@ -928,28 +1643,28 @@ function FinancePage() {
             <MoneyInput
               name="amount"
               required
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              className="h-11 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:text-sm"
             />
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Catatan</label>
             <textarea
               name="notes"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-none"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-base min-h-[60px] resize-none sm:text-sm"
             />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:justify-end">
             <button
               type="button"
               onClick={() => setExpenseModalOpen(false)}
-              className="h-9 px-4 rounded-md border text-sm"
+              className="h-11 rounded-md border text-sm sm:h-9 sm:px-4"
             >
               Batal
             </button>
             <button
               type="submit"
               disabled={createExpenseMutation.isPending}
-              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+              className="h-11 rounded-md bg-primary text-primary-foreground text-sm active:scale-[0.99] disabled:opacity-50 sm:h-9 sm:px-4"
             >
               {createExpenseMutation.isPending ? "Menyimpan..." : "Simpan"}
             </button>

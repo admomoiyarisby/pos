@@ -23,9 +23,11 @@ import {
   stockTransfers,
   deliveryNotes,
   dailyOverrides,
+  shifts,
+  shiftEdits,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
+import { eq, and, gte, lte, sql, desc, isNotNull, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
@@ -197,6 +199,196 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
         hasOmzetOverride: dayOverrides.omzet !== undefined,
       };
     });
+  });
+
+export interface ShiftCashVarianceRow {
+  /** Shift close date (Asia/Jakarta). */
+  tanggal: string;
+  branchId: string;
+  branchName: string | null;
+  shiftId: string;
+  /** Opening cash float (initial "Uang Kas"). */
+  cashFloat: number;
+  /** Sum of non-void Cash-method order totals recorded during the shift. */
+  cashSales: number;
+  /** Net mid-shift float adjustments (adds positive, drops negative). */
+  cashAdjustments: number;
+  /** cashFloat + cashSales + cashAdjustments — matches shifts.expectedCash. */
+  expectedCash: number;
+  actualCash: number;
+  variance: number;
+  /** NULL until the shift is closed with expectedCash computed. */
+  closedAt: Date | null;
+}
+
+// Per-shift cash reconciliation: variance between the physical cash the
+// kasir counted at close and the expected drawer total (float + cash sales).
+// Only closed shifts with an expectedCash value appear — shifts closed before
+// the reconciliation feature shipped have expectedCash NULL and are excluded.
+export const getShiftCashVariance = createServerFn({ method: "GET" })
+  .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
+  .handler(async ({ data }): Promise<ShiftCashVarianceRow[]> => {
+    // Mirrors the finance page's RoleGuard (super_admin + admin_pusat) — a
+    // narrower guard here surfaces as a mysterious empty state in the UI.
+    await requireRole("super_admin", "admin_pusat");
+
+    const conditions = [
+      eq(shifts.status, "Closed"),
+      isNotNull(shifts.expectedCash),
+      isNotNull(shifts.actualCash),
+      isNotNull(shifts.endTime),
+    ];
+    if (data.branchId) conditions.push(eq(shifts.branchId, data.branchId));
+    if (data.dateFrom)
+      conditions.push(sql`DATE(${shifts.endTime} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`);
+    if (data.dateTo)
+      conditions.push(sql`DATE(${shifts.endTime} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`);
+
+    const rows = await db
+      .select({
+        tanggal: sql<string>`DATE(${shifts.endTime} AT TIME ZONE 'Asia/Jakarta')`,
+        branchId: shifts.branchId,
+        branchName: branches.name,
+        shiftId: shifts.id,
+        cashFloat: shifts.cashFloat,
+        expectedCash: shifts.expectedCash,
+        actualCash: shifts.actualCash,
+        closedAt: shifts.endTime,
+      })
+      .from(shifts)
+      .innerJoin(branches, eq(branches.id, shifts.branchId))
+      .where(and(...conditions))
+      .orderBy(desc(shifts.endTime));
+
+    // Per-shift cash order totals — one aggregate query for the whole set,
+    // mapped back by shiftId (avoids a correlated subquery per row).
+    const shiftIds = rows.map((r) => r.shiftId);
+    const salesRows =
+      shiftIds.length > 0
+        ? await db
+            .select({
+              shiftId: orders.shiftId,
+              total: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+            })
+            .from(orders)
+            .where(
+              and(
+                inArray(orders.shiftId, shiftIds),
+                eq(orders.paymentMethod, "Cash"),
+                ne(orders.status, "Void"),
+              ),
+            )
+            .groupBy(orders.shiftId)
+        : [];
+    const salesByShift = new Map(salesRows.map((s) => [s.shiftId, Number(s.total)]));
+
+    // Net mid-shift adjustments per shift from the shiftEdits audit rows
+    // (new − old, summed: adds positive, drops negative).
+    const editRows =
+      shiftIds.length > 0
+        ? await db
+            .select({
+              shiftId: shiftEdits.shiftId,
+              oldValue: shiftEdits.oldValue,
+              newValue: shiftEdits.newValue,
+            })
+            .from(shiftEdits)
+            .where(
+              and(inArray(shiftEdits.shiftId, shiftIds), eq(shiftEdits.fieldName, "cashFloat")),
+            )
+        : [];
+    const adjustmentsByShift = new Map<string, number>();
+    for (const e of editRows) {
+      const delta = Number(e.newValue) - Number(e.oldValue ?? "0");
+      adjustmentsByShift.set(e.shiftId, (adjustmentsByShift.get(e.shiftId) ?? 0) + delta);
+    }
+
+    return rows.map((r) => {
+      const cashSales = salesByShift.get(r.shiftId) ?? 0;
+      const cashAdjustments = adjustmentsByShift.get(r.shiftId) ?? 0;
+      return {
+        tanggal: r.tanggal,
+        branchId: r.branchId,
+        branchName: r.branchName,
+        shiftId: r.shiftId,
+        cashFloat: r.cashFloat,
+        cashSales,
+        cashAdjustments,
+        expectedCash: r.expectedCash!,
+        actualCash: r.actualCash!,
+        variance: r.actualCash! - r.expectedCash!,
+        closedAt: r.closedAt,
+      };
+    });
+  });
+
+export interface ShiftCashTransactionRow {
+  /** "order" = cash sale (in), "float_adjust" = mid-shift add/drop (±). */
+  type: "order" | "float_adjust";
+  amount: number;
+  /** Direction relative to the drawer: in (sale/setor masuk) or out. */
+  direction: "in" | "out";
+  /** Order code or adjustment reason. */
+  label: string | null;
+  occurredAt: Date;
+}
+
+// Detailed cash movements within one shift: each non-void Cash order and each
+// mid-shift float adjustment (from the shiftEdits audit rows). Used by the
+// finance reconciliation detail view.
+export const getShiftCashTransactions = createServerFn({ method: "GET" })
+  .validator((data: { shiftId: string }) => data)
+  .handler(async ({ data }): Promise<ShiftCashTransactionRow[]> => {
+    // Same guard as getShiftCashVariance — the detail feeds its table.
+    await requireRole("super_admin", "admin_pusat");
+
+    const orderRows = await db
+      .select({
+        orderCode: orders.orderCode,
+        totalAmount: orders.totalAmount,
+        createdAt: orders.createdAt,
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.shiftId, data.shiftId),
+          eq(orders.paymentMethod, "Cash"),
+          ne(orders.status, "Void"),
+        ),
+      )
+      .orderBy(orders.createdAt);
+
+    const editRows = await db
+      .select({
+        oldValue: shiftEdits.oldValue,
+        newValue: shiftEdits.newValue,
+        createdAt: shiftEdits.createdAt,
+      })
+      .from(shiftEdits)
+      .where(and(eq(shiftEdits.shiftId, data.shiftId), eq(shiftEdits.fieldName, "cashFloat")))
+      .orderBy(shiftEdits.createdAt);
+
+    const txs: ShiftCashTransactionRow[] = [
+      ...orderRows.map((o) => ({
+        type: "order" as const,
+        amount: o.totalAmount,
+        direction: "in" as const,
+        label: o.orderCode ?? null,
+        occurredAt: o.createdAt,
+      })),
+      ...editRows.map((e) => {
+        const delta = Number(e.newValue) - Number(e.oldValue ?? "0");
+        return {
+          type: "float_adjust" as const,
+          amount: Math.abs(delta),
+          direction: delta >= 0 ? ("in" as const) : ("out" as const),
+          label: delta >= 0 ? "Tambah kas" : "Ambil dari laci",
+          occurredAt: e.createdAt,
+        };
+      }),
+    ];
+
+    return txs.sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime());
   });
 
 export const getDailyHppBreakdown = createServerFn({ method: "GET" })

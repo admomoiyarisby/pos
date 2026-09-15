@@ -28,6 +28,8 @@ interface ShiftSessionRow {
   shiftCashFloat: number;
   shiftActualCash: number | null;
   shiftExpectedCash: number | null;
+  /** Net drawer movement: Cash sales (always in) + float adjustments (±). */
+  shiftCashSales: number;
 }
 
 const actionLabels = {
@@ -200,9 +202,31 @@ function ShiftSessionsPage() {
       cell: ({ row }) => formatRupiah(row.original.shiftCashFloat),
     },
     {
-      // Selisih = physical cash counted − expected (float + cash sales).
+      // Net drawer movement: cash sales (always in) + mid-shift adjustments (±).
+      accessorKey: "shiftCashSales",
+      header: "Mutasi Kas",
+      width: "w-32",
+      cell: ({ row }) =>
+        row.original.shiftCashSales > 0
+          ? `+${formatRupiah(row.original.shiftCashSales)}`
+          : formatRupiah(row.original.shiftCashSales),
+    },
+    {
+      // Kas akhir = the nominal the kasir physically counted at close.
+      accessorKey: "shiftActualCashRaw",
+      header: "Kas Akhir",
+      width: "w-32",
+      cell: ({ row }) =>
+        row.original.shiftStatus === "Closed" && row.original.shiftActualCash !== null ? (
+          formatRupiah(row.original.shiftActualCash)
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        ),
+    },
+    {
+      // Selisih = physical cash counted − expected (float + mutasi kas).
       // Only meaningful once the shift is closed and expectedCash exists.
-      accessorKey: "shiftActualCash",
+      accessorKey: "shiftVariance",
       header: "Selisih Kas",
       width: "w-32",
       cell: ({ row }) => {
@@ -379,7 +403,9 @@ function ShiftSessionsPage() {
                             {isOpen ? "Terbuka" : "Ditutup"}
                           </Badge>
                           <span className="text-xs text-muted-foreground tabular-nums truncate">
-                            Kas {formatRupiah(r.shiftCashFloat)}
+                            Kas {formatRupiah(r.shiftCashFloat)} · Mutasi +
+                            {formatRupiah(r.shiftCashSales)} · Akhir{" "}
+                            {r.shiftActualCash !== null ? formatRupiah(r.shiftActualCash) : "-"}
                           </span>
                         </div>
                         <ShiftVarianceBadge r={r} />
