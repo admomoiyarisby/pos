@@ -6,10 +6,14 @@ import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
-import { getShiftSessions } from "#/lib/server/pos";
+import { getShiftSessions, softDeleteShiftSession } from "#/lib/server/pos";
 import { getBranches } from "#/lib/server/branches";
 import { Badge } from "#/components/ui/badge";
-import { Clock } from "lucide-react";
+import { Clock, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import Modal from "#/components/ui/Modal";
+import { toast } from "sonner";
 
 interface ShiftSessionRow {
   id: string;
@@ -103,6 +107,22 @@ function ShiftSessionsPage() {
   const user = useAuth().user;
   const isBranchAdmin = user?.role === "branch_admin";
   const isAreaManager = user?.role === "area_manager";
+  const queryClient = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<ShiftSessionRow | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: softDeleteShiftSession,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["shift-sessions"] });
+      setDeleteTarget(null);
+      toast.success("Sesi shift dihapus dari riwayat");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus sesi shift", { description: error.message });
+    },
+  });
+  // Only the super_admin sees the delete action; admin keepers of the history
+  // (branch admins, AMs) get no destructive control here.
+  const canDelete = user?.role === "super_admin";
   const [search, setSearch] = useTableSearch();
   const { branches: allBranches, sessions: initial } = Route.useLoaderData();
   const { page, setPage, filters, setFilter } = useTableUrlState<{
@@ -246,6 +266,25 @@ function ShiftSessionsPage() {
         );
       },
     },
+    ...(canDelete
+      ? [
+          {
+            id: "actions",
+            header: "",
+            width: "w-12",
+            cell: ({ row }: { row: { original: ShiftSessionRow } }) => (
+              <button
+                onClick={() => setDeleteTarget(row.original)}
+                title="Hapus dari riwayat"
+                aria-label="Hapus sesi shift"
+                className="h-7 w-7 inline-flex items-center justify-center rounded border text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ),
+          } satisfies Column<ShiftSessionRow>,
+        ]
+      : []),
   ];
 
   const ownBranch = allBranches.find((b) => b.id === user?.branchId);
@@ -410,6 +449,17 @@ function ShiftSessionsPage() {
                         </div>
                         <ShiftVarianceBadge r={r} />
                       </div>
+                      {canDelete && (
+                        <div className="mt-2 flex justify-end">
+                          <button
+                            onClick={() => setDeleteTarget(r)}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Hapus
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })
@@ -450,6 +500,40 @@ function ShiftSessionsPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Soft Delete Confirm Modal ── */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Hapus dari Riwayat"
+        size="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Sesi shift {deleteTarget.userName} ({deleteTarget.branchCode}) akan disembunyikan dari
+              riwayat (soft delete). Rekap kas shift tetap utuh.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate({ data: { sessionId: deleteTarget.id } })}
+                disabled={deleteMutation.isPending}
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? "Memproses..." : "Hapus"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </RoleGuard>
   );
 }

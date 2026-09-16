@@ -614,6 +614,10 @@ export const orders = pgTable(
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     notes: text("notes"),
     completedAt: timestamp("completed_at", { mode: "date" }),
+    // Soft-delete tombstone (same pattern as modifier_groups.deleted_at): a
+    // deleted order disappears from history lists but the row stays so finance
+    // aggregates, shift cash math, and FK references remain intact.
+    deletedAt: timestamp("deleted_at", { mode: "date" }),
   },
   (t) => [
     index("order_branch_idx").on(t.branchId),
@@ -697,6 +701,9 @@ export const cancelRequests = pgTable(
     status: cancelRequestStatusEnum("status").notNull().default("Pending"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     approvedAt: timestamp("approved_at", { mode: "date" }),
+    // Soft-delete tombstone: removed from the cancel-requests list without
+    // breaking the order it references.
+    deletedAt: timestamp("deleted_at", { mode: "date" }),
   },
   (t) => [index("cr_order_idx").on(t.orderId), index("cr_status_idx").on(t.status)],
 );
@@ -786,6 +793,9 @@ export const shiftSessions = pgTable(
     loggedInAt: timestamp("logged_in_at", { mode: "date" }).notNull().defaultNow(),
     loggedOutAt: timestamp("logged_out_at", { mode: "date" }),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    // Soft-delete tombstone: hidden from the shift-sessions history list, row
+    // preserved so shift attribution/cash math stays auditable.
+    deletedAt: timestamp("deleted_at", { mode: "date" }),
   },
   (t) => [
     index("ss_shift_idx").on(t.shiftId),
@@ -919,6 +929,9 @@ export const yieldConversions = pgTable(
     cancelledAt: timestamp("cancelled_at", { mode: "date" }),
     cancelledBy: uuid("cancelled_by").references(() => users.id),
     cancelReason: text("cancel_reason"),
+    // Soft-delete tombstone: hidden from yield-tracking lists, stock effects
+    // and items preserved.
+    deletedAt: timestamp("deleted_at", { mode: "date" }),
   },
   (t) => [index("yc_branch_idx").on(t.branchId), index("yc_status_idx").on(t.status)],
 );
@@ -1248,6 +1261,9 @@ export const scmProcurements = pgTable(
     cancellationReason: text("cancellation_reason"),
     notes: text("notes"),
     requestSource: text("request_source"), // ID5: Where request originated (WhatsApp, Phone, System)
+    // Soft-delete tombstones: hidden from list pages; items, audit logs and
+    // in-transit/pending-review rows keep their FK references intact.
+    deletedAt: timestamp("deleted_at", { mode: "date" }),
   },
   (t) => [
     index("sp_branch_idx").on(t.branchId),
@@ -1414,6 +1430,8 @@ export const scmTransfers = pgTable(
     cancellationReason: text("cancellation_reason"),
     notes: text("notes"),
     requestSource: text("request_source"), // ID5: Where request originated (WhatsApp, Phone, System)
+    // Soft-delete tombstone (mirrors scm_procurements.deleted_at).
+    deletedAt: timestamp("deleted_at", { mode: "date" }),
   },
   (t) => [
     index("stx_from_branch_idx").on(t.fromBranchId),
@@ -1546,6 +1564,10 @@ export const wasteEntries = pgTable(
     cancelledAt: timestamp("cancelled_at", { mode: "date" }),
     cancelledBy: uuid("cancelled_by").references(() => users.id),
     cancelReason: text("cancel_reason"),
+    // Soft-delete tombstone (distinct from the Cancelled status tombstone,
+    // which is a business-level reversal with stock restore). deletedAt hides
+    // the row from lists without touching inventory or the ledger.
+    deletedAt: timestamp("deleted_at", { mode: "date" }),
   },
   (t) => [
     index("waste_branch_idx").on(t.branchId),
@@ -1630,6 +1652,9 @@ export const stockOpnames = pgTable(
     realizedAt: timestamp("realized_at", { mode: "date" }), // ID4: When SO was realized
     realizedBy: uuid("realized_by").references(() => users.id), // ID4: Who realized the SO
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    // Soft-delete tombstone: hidden from the stock-opname list, item rows and
+    // variance history preserved.
+    deletedAt: timestamp("deleted_at", { mode: "date" }),
   },
   (t) => [
     index("so_branch_idx").on(t.branchId),

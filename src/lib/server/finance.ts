@@ -55,10 +55,12 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
     if (data.dateFrom)
       conditions.push(
-        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
       );
     if (data.dateTo)
-      conditions.push(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`);
+      conditions.push(
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
 
     const orderData = await db
       .select({
@@ -149,22 +151,24 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
     if (data.dateFrom)
       conditions.push(
-        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
       );
     if (data.dateTo)
-      conditions.push(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`);
+      conditions.push(
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
     if (data.channel) conditions.push(eq(orders.channel, data.channel));
 
     const result = await db
       .select({
-        tanggal: sql<string>`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta')`,
+        tanggal: sql<string>`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`,
         hpp: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
         omzet: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
       })
       .from(orders)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .groupBy(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta')`)
-      .orderBy(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta')`);
+      .groupBy(sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`)
+      .orderBy(sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`);
 
     // Fetch overrides for this branch/date range
     const overrideConditions = [];
@@ -240,13 +244,17 @@ export const getShiftCashVariance = createServerFn({ method: "GET" })
     ];
     if (data.branchId) conditions.push(eq(shifts.branchId, data.branchId));
     if (data.dateFrom)
-      conditions.push(sql`DATE(${shifts.endTime} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`);
+      conditions.push(
+        sql`DATE((${shifts.endTime} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
     if (data.dateTo)
-      conditions.push(sql`DATE(${shifts.endTime} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`);
+      conditions.push(
+        sql`DATE((${shifts.endTime} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
 
     const rows = await db
       .select({
-        tanggal: sql<string>`DATE(${shifts.endTime} AT TIME ZONE 'Asia/Jakarta')`,
+        tanggal: sql<string>`DATE((${shifts.endTime} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`,
         branchId: shifts.branchId,
         branchName: branches.name,
         shiftId: shifts.id,
@@ -402,7 +410,9 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
     const conditions = [];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
     if (data.channel) conditions.push(eq(orders.channel, data.channel));
-    conditions.push(sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') = ${data.date}`);
+    conditions.push(
+      sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') = ${data.date}`,
+    );
 
     const rows = await db
       .select({
@@ -756,8 +766,8 @@ export const getSalesAnalytics = createServerFn({ method: "GET" })
       .from(orders)
       .where(
         and(
-          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
-          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+          sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+          sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
           data.branchId ? eq(orders.branchId, data.branchId) : undefined,
         ),
       )
@@ -774,8 +784,8 @@ export const getSalesAnalytics = createServerFn({ method: "GET" })
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .where(
         and(
-          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
-          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+          sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+          sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
           data.branchId ? eq(orders.branchId, data.branchId) : undefined,
         ),
       )
@@ -1122,20 +1132,24 @@ export const getHourlyAnalytics = createServerFn({ method: "GET" })
 
     const result = await db
       .select({
-        hour: sql<number>`EXTRACT(HOUR FROM ${orders.createdAt})`,
+        hour: sql<number>`EXTRACT(HOUR FROM (${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`,
         count: sql<number>`COUNT(*)`,
         revenue: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
       })
       .from(orders)
       .where(
         and(
-          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
-          sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+          sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+          sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
           data.branchId ? eq(orders.branchId, data.branchId) : undefined,
         ),
       )
-      .groupBy(sql`EXTRACT(HOUR FROM ${orders.createdAt} AT TIME ZONE 'Asia/Jakarta')`)
-      .orderBy(sql`EXTRACT(HOUR FROM ${orders.createdAt} AT TIME ZONE 'Asia/Jakarta')`);
+      .groupBy(
+        sql`EXTRACT(HOUR FROM (${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`,
+      )
+      .orderBy(
+        sql`EXTRACT(HOUR FROM (${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`,
+      );
 
     return result.map((r) => ({
       hour: Number(r.hour),
@@ -1170,10 +1184,10 @@ export const printFinancePage = createServerFn({ method: "GET" })
     // Build conditions for channel breakdown
     const conds: ReturnType<typeof and> = and(
       data.dateFrom
-        ? sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
+        ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
         : undefined,
       data.dateTo
-        ? sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
+        ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
         : undefined,
       data.branchId ? eq(orders.branchId, data.branchId) : undefined,
       data.channel ? eq(orders.channel, data.channel) : undefined,
@@ -1341,11 +1355,11 @@ export const getEmployeeMealSummary = createServerFn({ method: "GET" })
     if (data.branchId) conditions.push(eq(wasteEntries.branchId, data.branchId));
     if (data.dateFrom)
       conditions.push(
-        sql`DATE(${wasteEntries.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+        sql`DATE((${wasteEntries.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
       );
     if (data.dateTo)
       conditions.push(
-        sql`DATE(${wasteEntries.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+        sql`DATE((${wasteEntries.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
       );
 
     const result = await db
@@ -1474,11 +1488,11 @@ export const getPencatatanManualSummary = createServerFn({ method: "GET" })
     if (data.branchId) wasteConditions.push(eq(wasteEntries.branchId, data.branchId));
     if (data.dateFrom)
       wasteConditions.push(
-        sql`DATE(${wasteEntries.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+        sql`DATE((${wasteEntries.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
       );
     if (data.dateTo)
       wasteConditions.push(
-        sql`DATE(${wasteEntries.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+        sql`DATE((${wasteEntries.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
       );
 
     const [wasteResult] = await db
@@ -1491,11 +1505,11 @@ export const getPencatatanManualSummary = createServerFn({ method: "GET" })
     if (data.branchId) orderConditions.push(eq(orders.branchId, data.branchId));
     if (data.dateFrom)
       orderConditions.push(
-        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
       );
     if (data.dateTo)
       orderConditions.push(
-        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
       );
 
     const [orderResult] = await db

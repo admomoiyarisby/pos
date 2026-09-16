@@ -11,7 +11,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
-import { requireAuth } from "./auth";
+import { requireAuth, requireRole } from "./auth";
+import { logSystemAction, logAudit } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import {
   branches,
@@ -669,3 +670,37 @@ export async function cancelMutasiTransferCore(
 export const cancelMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string; reason: string }) => data)
   .handler(async ({ data }) => cancelMutasiTransferCore(await requireAuth(), data));
+
+// ─── Soft Delete (admin housekeeping) ──────────────────────────────────
+// Tombstones the transfer (deleted_at = now). Its items, audit log and invoice
+// stay intact — a hard delete would cascade them away and orphan the stock
+// history the flow produced. Only the super_admin may tombstone.
+export const softDeleteMutasiTransfer = createServerFn({ method: "POST" })
+  .validator((data: { transferId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin");
+
+    const [existing] = await db
+      .select()
+      .from(scmTransfers)
+      .where(eq(scmTransfers.id, data.transferId))
+      .limit(1);
+    if (!existing) throw new Error("Transfer tidak ditemukan");
+    if (existing.deletedAt) throw new Error("Transfer sudah dihapus");
+
+    const [updated] = await db
+      .update(scmTransfers)
+      .set({ deletedAt: new Date() })
+      .where(eq(scmTransfers.id, data.transferId))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Mutasi Transfer",
+      `Mutasi ${existing.code} dihapus dari riwayat oleh ${user.name}`,
+      "Warning",
+    );
+    await logAudit(user, "scmTransfers", data.transferId, "DELETE", existing, updated);
+
+    return { success: true };
+  });

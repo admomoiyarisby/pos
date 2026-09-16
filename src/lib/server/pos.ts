@@ -680,6 +680,8 @@ export const getShiftSessions = createServerFn({ method: "GET" })
     const user = await requireRole("super_admin", "branch_admin", "area_manager");
 
     const conditions = [];
+    // Soft-deleted sessions never appear in the history list (tombstone).
+    conditions.push(isNull(shiftSessions.deletedAt));
     if (user.role === "branch_admin") {
       // Branch admins only ever see their own branch.
       if (!user.branchId) return [];
@@ -772,6 +774,7 @@ const orderItemInput = z.object({
 export interface CreateOrderInput {
   branchId: string;
   channel: (typeof ORDER_CHANNEL_VALUES)[number];
+  /** Mandatory for Dine-in; ignored (stored as null) for other channels. */
   customerName?: string;
   orderCode?: string;
   items: z.infer<typeof orderItemInput>[];
@@ -787,6 +790,12 @@ export interface CreateOrderInput {
 // order, deducts inventory with FOR UPDATE row locks, writes Kartu Stok, and
 // (outside the transaction) raises Stok Minus notifications for any shortfall.
 export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
+  // Dine-in requires the customer name (client also enforces this — the server
+  // check is the authoritative gate against direct API calls).
+  if (data.channel === "Dine-in" && !(data.customerName ?? "").trim()) {
+    throw new Error("Nama pelanggan wajib diisi untuk pesanan Dine-in");
+  }
+
   const [branchInfo] = await db
     .select({ name: branches.name })
     .from(branches)
@@ -1035,6 +1044,8 @@ export const getOrders = createServerFn({ method: "GET" })
     // and branch admins only their own session branch, even if the client
     // sends a different branch id.
     const whereClauses: SQL[] = [];
+    // Soft-deleted orders never appear in history lists (tombstone pattern).
+    whereClauses.push(isNull(orders.deletedAt));
     if (user.role === "branch_admin" && user.branchId) {
       whereClauses.push(eq(orders.branchId, user.branchId));
     } else if (user.role === "area_manager") {
@@ -1053,12 +1064,12 @@ export const getOrders = createServerFn({ method: "GET" })
     // as finance.ts) so the boundary matches what the store sees.
     if (data.dateFrom) {
       whereClauses.push(
-        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
       );
     }
     if (data.dateTo) {
       whereClauses.push(
-        sql`DATE(${orders.createdAt} AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
       );
     }
 
@@ -1624,6 +1635,8 @@ export const getCancelRequests = createServerFn({ method: "GET" })
     await requireAuth();
 
     const conditions = [];
+    // Soft-deleted requests never appear in the review list (tombstone).
+    conditions.push(isNull(cancelRequests.deletedAt));
     if (data.status) {
       conditions.push(eq(cancelRequests.status, data.status));
     }
@@ -1883,4 +1896,106 @@ export const getActiveRequestsForOrders = createServerFn({ method: "GET" })
     }
 
     return result;
+  });
+
+// ─── Soft Delete (admin housekeeping) ──────────────────────────────────
+// Tombstones a row (deleted_at = now) instead of hard-deleting it. Orders,
+// sessions and cancel requests are all referenced by other tables (order
+// items, shift cash math, order status), so a hard delete would either fail
+// on FKs or corrupt the audit trail. A tombstone hides the row from history
+// lists while every reference and aggregate stays intact.
+
+/** Shared guard: only central admins may tombstone history rows. */
+async function requireHistoryDeleteRole() {
+  return requireRole("super_admin", "admin_pusat");
+}
+
+export const softDeleteOrder = createServerFn({ method: "POST" })
+  .validator((data: { orderId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireHistoryDeleteRole();
+
+    const [existing] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
+    if (!existing) throw new Error("Order tidak ditemukan");
+    if (existing.deletedAt) throw new Error("Order sudah dihapus");
+
+    const [updated] = await db
+      .update(orders)
+      .set({ deletedAt: new Date() })
+      .where(eq(orders.id, data.orderId))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Order",
+      `Order #${existing.orderCode ?? existing.id.slice(0, 8)} dihapus dari riwayat oleh ${user.name}`,
+      "Warning",
+    );
+    await logAudit(user, "orders", data.orderId, "DELETE", existing, updated);
+
+    return { success: true };
+  });
+
+export const softDeleteShiftSession = createServerFn({ method: "POST" })
+  .validator((data: { sessionId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin");
+
+    const [existing] = await db
+      .select()
+      .from(shiftSessions)
+      .where(eq(shiftSessions.id, data.sessionId))
+      .limit(1);
+    if (!existing) throw new Error("Sesi shift tidak ditemukan");
+    if (existing.deletedAt) throw new Error("Sesi shift sudah dihapus");
+
+    const [updated] = await db
+      .update(shiftSessions)
+      .set({ deletedAt: new Date() })
+      .where(eq(shiftSessions.id, data.sessionId))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Shift Session",
+      `Sesi shift ${existing.id.slice(0, 8)} dihapus dari riwayat oleh ${user.name}`,
+      "Warning",
+    );
+    await logAudit(user, "shiftSessions", data.sessionId, "DELETE", existing, updated);
+
+    return { success: true };
+  });
+
+export const softDeleteCancelRequest = createServerFn({ method: "POST" })
+  .validator((data: { requestId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [existing] = await db
+      .select()
+      .from(cancelRequests)
+      .where(eq(cancelRequests.id, data.requestId))
+      .limit(1);
+    if (!existing) throw new Error("Permintaan tidak ditemukan");
+    if (existing.deletedAt) throw new Error("Permintaan sudah dihapus");
+    // A pending request still needs review — reject it first, then tombstone.
+    if (existing.status === "Pending") {
+      throw new Error("Tolak permintaan terlebih dahulu sebelum menghapus");
+    }
+
+    const [updated] = await db
+      .update(cancelRequests)
+      .set({ deletedAt: new Date() })
+      .where(eq(cancelRequests.id, data.requestId))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Cancel Request",
+      `Permintaan pembatalan ${existing.id.slice(0, 8)} dihapus dari riwayat oleh ${user.name}`,
+      "Warning",
+    );
+    await logAudit(user, "cancelRequests", data.requestId, "DELETE", existing, updated);
+
+    return { success: true };
   });

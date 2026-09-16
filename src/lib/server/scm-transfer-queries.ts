@@ -5,7 +5,7 @@
 // too — they are used by both the server functions and the UI routes.
 // =============================================================================
 
-import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth } from "./auth";
 import {
@@ -132,22 +132,26 @@ export async function listTransfersForUser(user: {
   branchId?: string | null;
   assignedBranches?: string[] | null;
 }): Promise<TransferListRow[]> {
-  let whereClause;
+  // Soft-deleted transfers never appear in the list (tombstone pattern).
+  let whereClause: ReturnType<typeof or> = isNull(scmTransfers.deletedAt);
   if (user.role === "super_admin") {
-    whereClause = undefined;
+    // tombstone filter only
   } else if (user.role === "admin_pusat") {
     return [];
   } else if (user.role === "branch_admin") {
     if (!user.branchId) return [];
-    whereClause = or(
-      eq(scmTransfers.fromBranchId, user.branchId),
-      eq(scmTransfers.toBranchId, user.branchId),
+    whereClause = and(
+      whereClause,
+      or(eq(scmTransfers.fromBranchId, user.branchId), eq(scmTransfers.toBranchId, user.branchId)),
     );
   } else if (user.role === "area_manager") {
     if (!user.assignedBranches || user.assignedBranches.length === 0) return [];
-    whereClause = or(
-      inArray(scmTransfers.fromBranchId, user.assignedBranches),
-      inArray(scmTransfers.toBranchId, user.assignedBranches),
+    whereClause = and(
+      whereClause,
+      or(
+        inArray(scmTransfers.fromBranchId, user.assignedBranches),
+        inArray(scmTransfers.toBranchId, user.assignedBranches),
+      ),
     );
   } else {
     return [];

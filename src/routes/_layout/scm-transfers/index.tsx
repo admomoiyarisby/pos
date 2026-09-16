@@ -4,13 +4,14 @@ import { z } from "zod";
 import { lookupLabel } from "#/lib/label-lookup";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
 import DataTable, { type Column } from "#/components/ui/DataTable";
 import { Badge } from "#/components/ui/badge";
+import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
 import {
   Plus,
@@ -21,8 +22,10 @@ import {
   ArrowUpRight,
   Building2,
   CalendarDays,
+  Trash2,
 } from "lucide-react";
-import { getMutasiTransfers } from "#/lib/server/scm-transfers";
+import { toast } from "sonner";
+import { getMutasiTransfers, softDeleteMutasiTransfer } from "#/lib/server/scm-transfers";
 import { canAmAct } from "#/lib/server/scm-transfer-queries";
 import { SCM_TRANSFER_STATUS_VALUES, type ScmTransferStatus } from "#/lib/server/scm-transfer-fsm";
 import type { UnknownRecord } from "#/lib/unknown-record";
@@ -227,6 +230,22 @@ function TransfersListPage() {
 
   const canCreate = user?.role === "branch_admin" || user?.role === "super_admin";
 
+  // Soft-delete (history housekeeping) — super_admin only.
+  const queryClient = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<TransferRow | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: softDeleteMutasiTransfer,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
+      setDeleteTarget(null);
+      toast.success("Surat jalan dihapus dari riwayat");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus surat jalan", { description: error.message });
+    },
+  });
+  const canDelete = user?.role === "super_admin";
+
   usePageTitle("Mutasi Stok", "Surat Jalan antar cabang");
 
   const columns: Column<TransferRow>[] = [
@@ -292,6 +311,16 @@ function TransfersListPage() {
             >
               <ArrowRight className="h-4 w-4" />
             </Link>
+            {canDelete && (
+              <button
+                onClick={() => setDeleteTarget(row.original)}
+                title="Hapus dari riwayat"
+                aria-label="Hapus surat jalan"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
           </div>
         );
       },
@@ -568,6 +597,40 @@ function TransfersListPage() {
           </>
         )}
       </div>
+
+      {/* ── Soft Delete Confirm Modal ── */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Hapus dari Riwayat"
+        size="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Surat jalan {deleteTarget.code} akan disembunyikan dari riwayat (soft delete). Item,
+              mutasi stok, dan audit log tetap utuh.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate({ data: { transferId: deleteTarget.id } })}
+                disabled={deleteMutation.isPending}
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? "Memproses..." : "Hapus"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </RoleGuard>
   );
 }

@@ -2,16 +2,28 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { z } from "zod";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
-import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
 import DataTable, { type Column } from "#/components/ui/DataTable";
+import Modal from "#/components/ui/Modal";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import { Plus, Eye, FileText, Search, X, Building2, User, CalendarDays } from "lucide-react";
-import { listProcurements } from "#/lib/server/scm-queries";
+import {
+  Plus,
+  Eye,
+  FileText,
+  Search,
+  X,
+  Building2,
+  User,
+  CalendarDays,
+  Trash2,
+} from "lucide-react";
+import { listProcurements, softDeleteProcurement } from "#/lib/server/scm-queries";
+import { toast } from "sonner";
 import { SCM_PROCUREMENT_STATUS_VALUES, type ScmProcurementStatus } from "#/lib/server/scm-fsm";
 import type { UnknownRecord } from "#/lib/unknown-record";
 
@@ -152,6 +164,22 @@ function ProcurementsListPage() {
     });
   };
 
+  // Soft-delete (history housekeeping) — super_admin only.
+  const queryClient = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<ProcurementRow | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: softDeleteProcurement,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
+      setDeleteTarget(null);
+      toast.success("Pengadaan dihapus dari riwayat");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus pengadaan", { description: error.message });
+    },
+  });
+  const canDelete = user?.role === "super_admin";
+
   const columns: Column<ProcurementRow>[] = [
     {
       accessorKey: "code",
@@ -197,12 +225,24 @@ function ProcurementsListPage() {
       accessorKey: "actions",
       header: "Aksi",
       render: (row) => (
-        <Link to="/scm-procurements/$procurementId" params={{ procurementId: row.id }}>
-          <Button variant="ghost" size="sm">
-            <Eye className="h-4 w-4" />
-            Detail
-          </Button>
-        </Link>
+        <div className="flex items-center gap-1">
+          <Link to="/scm-procurements/$procurementId" params={{ procurementId: row.id }}>
+            <Button variant="ghost" size="sm">
+              <Eye className="h-4 w-4" />
+              Detail
+            </Button>
+          </Link>
+          {canDelete && (
+            <button
+              onClick={() => setDeleteTarget(row)}
+              title="Hapus dari riwayat"
+              aria-label="Hapus pengadaan"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       ),
     },
   ];
@@ -513,6 +553,40 @@ function ProcurementsListPage() {
           </>
         )}
       </div>
+
+      {/* ── Soft Delete Confirm Modal ── */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Hapus dari Riwayat"
+        size="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Pengadaan {deleteTarget.code} akan disembunyikan dari riwayat (soft delete). Item,
+              audit log, dan invoice tetap utuh.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate({ data: { procurementId: deleteTarget.id } })}
+                disabled={deleteMutation.isPending}
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? "Memproses..." : "Hapus"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </RoleGuard>
   );
 }

@@ -351,6 +351,13 @@
       "when": 1788652800000,
       "tag": "0049_modifier_group_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789600000000,
+      "tag": "0050_history_soft_delete",
+      "breakpoints": true
     }
   ]
 }

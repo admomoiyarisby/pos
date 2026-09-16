@@ -7,10 +7,16 @@ import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { lookupLabel } from "#/lib/label-lookup";
 import { Badge } from "#/components/ui/badge";
 import Modal from "#/components/ui/Modal";
-import { getCancelRequests, approveCancelRequest, rejectCancelRequest } from "#/lib/server/pos";
+import {
+  getCancelRequests,
+  approveCancelRequest,
+  rejectCancelRequest,
+  softDeleteCancelRequest,
+} from "#/lib/server/pos";
 import { toast } from "sonner";
+import { useAuth } from "#/lib/auth-context";
 
-import { XCircle, CheckCircle2, Ban } from "lucide-react";
+import { XCircle, CheckCircle2, Ban, Trash2 } from "lucide-react";
 
 interface CancelRequest {
   id: string;
@@ -121,6 +127,22 @@ function CancelRequestsPage() {
     },
     onError: (error: Error) => {
       toast.error("Gagal menolak permintaan", { description: error.message });
+    },
+  });
+
+  // Soft-delete (history housekeeping) — super_admin only, non-Pending rows.
+  const user = useAuth().user;
+  const canDelete = user?.role === "super_admin";
+  const [deleteTarget, setDeleteTarget] = useState<CancelRequest | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: softDeleteCancelRequest,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["cancel-requests"] });
+      setDeleteTarget(null);
+      toast.success("Permintaan dihapus dari riwayat");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus permintaan", { description: error.message });
     },
   });
 
@@ -277,6 +299,17 @@ function CancelRequestsPage() {
                       </button>
                     </div>
                   )}
+                  {canDelete && r.status !== "Pending" && (
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={() => setDeleteTarget(r)}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Hapus
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -345,6 +378,16 @@ function CancelRequestsPage() {
                             </button>
                           </div>
                         )}
+                        {canDelete && r.status !== "Pending" && (
+                          <button
+                            onClick={() => setDeleteTarget(r)}
+                            title="Hapus dari riwayat"
+                            aria-label="Hapus permintaan"
+                            className="h-8 w-8 inline-flex items-center justify-center rounded-md border text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -354,6 +397,40 @@ function CancelRequestsPage() {
           </>
         )}
       </div>
+
+      {/* ── Soft Delete Confirm Modal ── */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Hapus dari Riwayat"
+        size="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Permintaan pembatalan untuk order #{deleteTarget.orderId.slice(0, 8).toUpperCase()} (
+              {deleteTarget.status}) akan disembunyikan dari riwayat (soft delete).
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate({ data: { requestId: deleteTarget.id } })}
+                disabled={deleteMutation.isPending}
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? "Memproses..." : "Hapus"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Confirm modal — approve/reject */}
       {confirmAction && (

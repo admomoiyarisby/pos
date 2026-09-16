@@ -18,11 +18,13 @@ import {
   approveYieldCancelRequest,
   rejectYieldCancelRequest,
   directCancelYieldConversion,
+  softDeleteYieldConversion,
 } from "#/lib/server/yield";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { getInventory } from "#/lib/server/inventory";
 import { useAuth } from "#/lib/auth-context";
+import { toast } from "sonner";
 import {
   AlertCircle,
   ArrowRightLeft,
@@ -449,6 +451,20 @@ function YieldTrackingPage() {
     },
   });
 
+  // ── Soft delete (history housekeeping, super_admin only) ──
+  const [deleteTarget, setDeleteTarget] = useState<ProductionRow | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: softDeleteYieldConversion,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["yield-conversions"] });
+      setDeleteTarget(null);
+      toast.success("Produksi dihapus dari riwayat");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus produksi", { description: error.message });
+    },
+  });
+
   // ── Barang Keluar (Out) — checkbox selection
   const outIds = useMemo(() => new Set(outItems.map((i) => i.ingredientId)), [outItems]);
   const producedIds = useMemo(
@@ -709,14 +725,31 @@ function YieldTrackingPage() {
           user?.role === "branch_admin" ||
           user?.role === "central_kitchen" ||
           user?.role === "super_admin";
-        if (!canRequest) return <span className="text-xs text-muted-foreground">—</span>;
+        const canDeleteRow = user?.role === "super_admin";
         return (
-          <button
-            onClick={() => setCancelTarget(row.original)}
-            className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted"
-          >
-            <Trash2 className="h-3 w-3" /> Batal
-          </button>
+          <div className="flex gap-1">
+            {canRequest && (
+              <button
+                onClick={() => setCancelTarget(row.original)}
+                className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-muted"
+              >
+                <Trash2 className="h-3 w-3" /> Batal
+              </button>
+            )}
+            {canDeleteRow && (
+              <button
+                onClick={() => setDeleteTarget(row.original)}
+                title="Hapus dari riwayat (soft delete)"
+                aria-label="Hapus produksi"
+                className="inline-flex h-7 w-7 items-center justify-center rounded border text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {!canRequest && !canDeleteRow && (
+              <span className="text-xs text-muted-foreground">—</span>
+            )}
+          </div>
         );
       },
     },
@@ -1098,6 +1131,42 @@ function YieldTrackingPage() {
               </p>
             )}
           </div>
+        </Modal>
+
+        {/* ── Soft Delete Confirm Modal ── */}
+        <Modal
+          open={!!deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          title="Hapus dari Riwayat"
+          size="sm"
+        >
+          {deleteTarget && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Produksi {deleteTarget.id.slice(0, 8)} akan disembunyikan dari riwayat (soft
+                delete). Stok dan Kartu Stok yang sudah tercatat tetap utuh.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(null)}
+                  className="h-9 px-4 rounded-md border text-sm"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    deleteMutation.mutate({ data: { yieldConversionId: deleteTarget.id } })
+                  }
+                  disabled={deleteMutation.isPending}
+                  className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium disabled:opacity-50"
+                >
+                  {deleteMutation.isPending ? "Memproses..." : "Hapus"}
+                </button>
+              </div>
+            </div>
+          )}
         </Modal>
       </div>
     </RoleGuard>

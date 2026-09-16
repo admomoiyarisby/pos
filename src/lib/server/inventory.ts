@@ -11,7 +11,7 @@ import {
   systemNotifications,
   areaManagerBranches,
 } from "#/db/schema";
-import { eq, and, or, desc, asc, count, inArray, sql, ilike, ne } from "drizzle-orm";
+import { eq, and, or, desc, asc, count, inArray, sql, ilike, ne, isNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
@@ -471,7 +471,13 @@ export const getStockOpnames = createServerFn({ method: "GET" })
         })
         .from(stockOpnames)
         .leftJoin(branches, eq(stockOpnames.branchId, branches.id))
-        .where(inArray(stockOpnames.branchId, assignedIds))
+        .where(
+          and(
+            // Soft-deleted opnames never appear in the list (tombstone pattern).
+            isNull(stockOpnames.deletedAt),
+            inArray(stockOpnames.branchId, assignedIds),
+          ),
+        )
         .orderBy(desc(stockOpnames.createdAt));
 
       return result;
@@ -491,7 +497,13 @@ export const getStockOpnames = createServerFn({ method: "GET" })
       })
       .from(stockOpnames)
       .leftJoin(branches, eq(stockOpnames.branchId, branches.id))
-      .where(branchFilter ? eq(stockOpnames.branchId, branchFilter) : undefined)
+      .where(
+        and(
+          // Soft-deleted opnames never appear in the list (tombstone pattern).
+          isNull(stockOpnames.deletedAt),
+          branchFilter ? eq(stockOpnames.branchId, branchFilter) : undefined,
+        ),
+      )
       .orderBy(desc(stockOpnames.createdAt));
 
     return result;
@@ -1423,4 +1435,38 @@ export const cleanSlateInventory = createServerFn({ method: "POST" })
     );
 
     return { success: true, deleted, alsoLedger, branchId: branchId ?? null };
+  });
+
+// ─── Soft Delete (admin housekeeping) ──────────────────────────────────
+// Tombstones the opname (deleted_at = now). Its item rows, variance history
+// and any realized stock adjustments stay intact — a hard delete would orphan
+// them. Only the super_admin may tombstone.
+export const softDeleteStockOpname = createServerFn({ method: "POST" })
+  .validator((data: { stockOpnameId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin");
+
+    const [existing] = await db
+      .select()
+      .from(stockOpnames)
+      .where(eq(stockOpnames.id, data.stockOpnameId))
+      .limit(1);
+    if (!existing) throw new Error("Stock opname tidak ditemukan");
+    if (existing.deletedAt) throw new Error("Stock opname sudah dihapus");
+
+    const [updated] = await db
+      .update(stockOpnames)
+      .set({ deletedAt: new Date() })
+      .where(eq(stockOpnames.id, data.stockOpnameId))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Stock Opname",
+      `Stock opname ${existing.id.slice(0, 8)} dihapus dari riwayat oleh ${user.name}`,
+      "Warning",
+    );
+    await logAudit(user, "stockOpnames", data.stockOpnameId, "DELETE", existing, updated);
+
+    return { success: true };
   });

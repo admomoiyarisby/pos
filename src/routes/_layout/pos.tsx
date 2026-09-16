@@ -837,14 +837,23 @@ function PosPage() {
     return getStockQuantity(item, branchInventory);
   }
 
-  async function handleCheckout() {
+  function handleCheckout() {
     if (cart.length === 0 || (!activeShift && !canBypassShift)) return;
     setCheckoutError(null);
+    // Customer name is mandatory for Dine-in — block the checkout modal early.
+    if (isDineIn && !customerName.trim()) {
+      setCheckoutError("Nama pelanggan wajib diisi untuk pesanan Dine-in");
+      return;
+    }
     setConfirmPaymentModal(true);
   }
 
   async function handleConfirmPayment() {
     if (cart.length === 0 || (!activeShift && !canBypassShift)) return;
+    if (isDineIn && !customerName.trim()) {
+      setCheckoutError("Nama pelanggan wajib diisi untuk pesanan Dine-in");
+      return;
+    }
     setConfirmPaymentModal(false);
 
     let items = cart.map(function (c) {
@@ -1097,10 +1106,13 @@ function PosPage() {
               <div className="relative flex-1 md:max-w-[360px]">
                 {channel === "Dine-in" ? (
                   <input
-                    placeholder="Nama Pelanggan (opsional)"
+                    required
+                    placeholder="Nama Pelanggan (wajib)"
+                    aria-label="Nama Pelanggan"
                     value={customerName}
                     onChange={function (e) {
                       setCustomerName(e.target.value);
+                      if (checkoutError) setCheckoutError(null);
                     }}
                     className="h-9 w-full rounded-full border border-input bg-background px-3.5 text-sm"
                   />

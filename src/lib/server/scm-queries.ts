@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, isNull } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
 import type { UnknownRecord } from "#/lib/unknown-record";
@@ -27,6 +27,7 @@ import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { FsmPayloadSchema, type FsmPayload } from "./scm-effects";
 import { z } from "zod";
 import { generateDocumentCode } from "./document-codes";
+import { logSystemAction, logAudit } from "./logging";
 
 // =============================================================================
 // Branch-level authorization guard (mirrors Mutasi's assertTransferAccess)
@@ -220,6 +221,8 @@ export const listProcurements = createServerFn({ method: "GET" })
     if (data.requestedById) {
       conditions.push(eq(scmProcurements.requestedById, data.requestedById));
     }
+    // Soft-deleted procurements never appear in the list (tombstone pattern).
+    conditions.push(isNull(scmProcurements.deletedAt));
 
     // Role-based filtering: branch_admin sees their branch only; others see all.
     if (user.role === "branch_admin" && user.branchId) {
@@ -608,4 +611,40 @@ export const getProcurementInvoice = createServerFn({ method: "GET" })
     }
 
     return inv;
+  });
+
+// =============================================================================
+// Soft Delete (admin housekeeping)
+// =============================================================================
+// Tombstones the procurement (deleted_at = now). Its items, audit log and any
+// invoice stay intact — a hard delete would cascade them away and orphan the
+// stock history the flow produced. Only the super_admin may tombstone.
+export const softDeleteProcurement = createServerFn({ method: "POST" })
+  .validator((data: { procurementId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin");
+
+    const [existing] = await db
+      .select()
+      .from(scmProcurements)
+      .where(eq(scmProcurements.id, data.procurementId))
+      .limit(1);
+    if (!existing) throw new Error("Procurement tidak ditemukan");
+    if (existing.deletedAt) throw new Error("Procurement sudah dihapus");
+
+    const [updated] = await db
+      .update(scmProcurements)
+      .set({ deletedAt: new Date() })
+      .where(eq(scmProcurements.id, data.procurementId))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Procurement",
+      `Pengadaan ${existing.code} dihapus dari riwayat oleh ${user.name}`,
+      "Warning",
+    );
+    await logAudit(user, "scmProcurements", data.procurementId, "DELETE", existing, updated);
+
+    return { success: true };
   });

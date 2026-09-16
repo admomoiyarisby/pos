@@ -12,7 +12,7 @@ import {
   systemNotifications,
   branches,
 } from "#/db/schema";
-import { and, eq, inArray, desc } from "drizzle-orm";
+import { and, eq, inArray, desc, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
@@ -127,6 +127,8 @@ export const getYieldConversions = createServerFn({ method: "GET" })
     );
 
     const conditions: import("drizzle-orm").SQL[] = [];
+    // Soft-deleted records never appear in the list (tombstone pattern).
+    conditions.push(isNull(yieldConversions.deletedAt));
     if (!data.includeCancelled) {
       conditions.push(eq(yieldConversions.status, "Active"));
     }
@@ -707,3 +709,37 @@ export async function directCancelYieldConversionCore(
 
   return updated;
 }
+
+// ─── Soft Delete (admin housekeeping) ──────────────────────────────────
+// Tombstones the record (deleted_at = now). The stock effect, ledger rows and
+// conversion items stay untouched — a hard delete would orphan them. Only the
+// super_admin (who can already direct-cancel) may tombstone.
+export const softDeleteYieldConversion = createServerFn({ method: "POST" })
+  .validator((data: { yieldConversionId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin");
+
+    const [existing] = await db
+      .select()
+      .from(yieldConversions)
+      .where(eq(yieldConversions.id, data.yieldConversionId))
+      .limit(1);
+    if (!existing) throw new Error("Produksi tidak ditemukan");
+    if (existing.deletedAt) throw new Error("Produksi sudah dihapus");
+
+    const [updated] = await db
+      .update(yieldConversions)
+      .set({ deletedAt: new Date() })
+      .where(eq(yieldConversions.id, data.yieldConversionId))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Yield Conversion",
+      `Produksi ${existing.id.slice(0, 8)} dihapus dari riwayat oleh ${user.name}`,
+      "Warning",
+    );
+    await logAudit(user, "yieldConversions", data.yieldConversionId, "DELETE", existing, updated);
+
+    return { success: true };
+  });

@@ -13,11 +13,11 @@ import {
   operationalExpenses,
   users,
 } from "#/db/schema";
-import { eq, and, desc, inArray, or, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, or, sql, isNull } from "drizzle-orm";
 import { fuzzySearch } from "./fuzzy";
 import { resolveNewItemIngredients } from "./ingredient-resolver";
 import type { UnknownRecord } from "#/lib/unknown-record";
-import { requireAuth } from "./auth";
+import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
@@ -92,6 +92,8 @@ export const getWasteEntries = createServerFn({ method: "GET" })
       )
       .where(
         and(
+          // Soft-deleted entries never appear in the list (tombstone pattern).
+          isNull(wasteEntries.deletedAt),
           branchFilter
             ? user.role === "area_manager"
               ? inArray(wasteEntries.branchId, user.assignedBranches ?? [])
@@ -1029,3 +1031,38 @@ export async function createBomWasteEntryCore(
 
   return entries;
 }
+
+// ─── Soft Delete (admin housekeeping) ──────────────────────────────────
+// Tombstones the row (deleted_at = now) without touching inventory, the
+// ledger, or the linked operational expense — deleting outright would break
+// the stock history those surfaces reference. Distinct from cancellation
+// (ADR 0012), which is a business-level reversal with a stock restore.
+export const softDeleteWasteEntry = createServerFn({ method: "POST" })
+  .validator((data: { wasteEntryId: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [existing] = await db
+      .select()
+      .from(wasteEntries)
+      .where(eq(wasteEntries.id, data.wasteEntryId))
+      .limit(1);
+    if (!existing) throw new Error("Waste entry tidak ditemukan");
+    if (existing.deletedAt) throw new Error("Waste entry sudah dihapus");
+
+    const [updated] = await db
+      .update(wasteEntries)
+      .set({ deletedAt: new Date() })
+      .where(eq(wasteEntries.id, data.wasteEntryId))
+      .returning();
+
+    await logSystemAction(
+      user,
+      "Delete Waste Entry",
+      `Waste entry ${existing.id.slice(0, 8)} dihapus dari riwayat oleh ${user.name}`,
+      "Warning",
+    );
+    await logAudit(user, "wasteEntries", data.wasteEntryId, "DELETE", existing, updated);
+
+    return { success: true };
+  });

@@ -8,10 +8,25 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getStockOpnames, triggerStockOpname, getAssignedBranchIds } from "#/lib/server/inventory";
+import {
+  getStockOpnames,
+  triggerStockOpname,
+  getAssignedBranchIds,
+  softDeleteStockOpname,
+} from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
 import { Badge } from "#/components/ui/badge";
-import { ArrowRight, Search, X, Plus, Building2, CalendarDays, FileText } from "lucide-react";
+import {
+  ArrowRight,
+  Search,
+  X,
+  Plus,
+  Building2,
+  CalendarDays,
+  FileText,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
 
 interface SORow {
   id: string;
@@ -27,47 +42,6 @@ const statusColors = {
   Approved: "success",
   "Under Investigation": "warning",
 } satisfies Record<string, "default" | "warning" | "success">;
-
-const columns: Column<SORow>[] = [
-  { accessorKey: "date", header: "Tanggal", enableSorting: true },
-  { accessorKey: "branchName", header: "Cabang", enableSorting: true },
-  {
-    accessorKey: "status",
-    header: "Status",
-    enableSorting: true,
-    cell: ({ row }) => (
-      <Badge variant={statusColors[row.original.status] ?? "default"}>
-        {row.original.status === "Under Investigation" ? "Investigasi" : row.original.status}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: "createdAt",
-    header: "Dibuat",
-    enableSorting: true,
-    cell: ({ row }) =>
-      new Date(row.original.createdAt).toLocaleString("id-ID", {
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-  },
-  {
-    accessorKey: "id",
-    header: "",
-    width: "w-12",
-    cell: ({ row }) => (
-      <Link
-        to="/stock-opname/$soId"
-        params={{ soId: row.original.id }}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
-      >
-        <ArrowRight className="h-4 w-4" />
-      </Link>
-    ),
-  },
-];
 
 export const Route = createFileRoute("/_layout/stock-opname/")({
   component: StockOpnamePage,
@@ -90,6 +64,82 @@ function StockOpnamePage() {
   const [triggerModal, setTriggerModal] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState("");
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
+
+  // Soft-delete (history housekeeping) — super_admin only.
+  const [deleteTarget, setDeleteTarget] = useState<SORow | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: softDeleteStockOpname,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
+      setDeleteTarget(null);
+      toast.success("Stock opname dihapus dari riwayat");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus stock opname", { description: error.message });
+    },
+  });
+  const canDelete = user?.role === "super_admin";
+
+  // Component-level so the delete column can read role state.
+  const columns: Column<SORow>[] = [
+    { accessorKey: "date", header: "Tanggal", enableSorting: true },
+    { accessorKey: "branchName", header: "Cabang", enableSorting: true },
+    {
+      accessorKey: "status",
+      header: "Status",
+      enableSorting: true,
+      cell: ({ row }) => (
+        <Badge variant={statusColors[row.original.status] ?? "default"}>
+          {row.original.status === "Under Investigation" ? "Investigasi" : row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "createdAt",
+      header: "Dibuat",
+      enableSorting: true,
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleString("id-ID", {
+          day: "2-digit",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+    },
+    {
+      accessorKey: "id",
+      header: "",
+      width: "w-12",
+      cell: ({ row }) => (
+        <Link
+          to="/stock-opname/$soId"
+          params={{ soId: row.original.id }}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent"
+        >
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+      ),
+    },
+    ...(canDelete
+      ? [
+          {
+            id: "actions",
+            header: "",
+            width: "w-12",
+            cell: ({ row }: { row: { original: SORow } }) => (
+              <button
+                onClick={() => setDeleteTarget(row.original)}
+                title="Hapus dari riwayat"
+                aria-label="Hapus stock opname"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            ),
+          } satisfies Column<SORow>,
+        ]
+      : []),
+  ];
 
   const { data: assignedBranchIds } = useQuery({
     queryKey: ["assigned-branch-ids"],
@@ -409,6 +459,40 @@ function StockOpnamePage() {
             {triggerMutation.isPending ? "Memproses..." : "Trigger SO"}
           </button>
         </div>
+      </Modal>
+
+      {/* ── Soft Delete Confirm Modal ── */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Hapus dari Riwayat"
+        size="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Stock opname {deleteTarget.branchName ?? "-"} ({deleteTarget.date}) akan disembunyikan
+              dari riwayat (soft delete). Item dan riwayat selisih tetap utuh.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate({ data: { stockOpnameId: deleteTarget.id } })}
+                disabled={deleteMutation.isPending}
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? "Memproses..." : "Hapus"}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </RoleGuard>
   );

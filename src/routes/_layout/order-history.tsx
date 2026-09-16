@@ -9,11 +9,17 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { getOrders, getOrderWithItems, updateOrderStatus, voidOrder } from "#/lib/server/pos";
+import {
+  getOrders,
+  getOrderWithItems,
+  updateOrderStatus,
+  voidOrder,
+  softDeleteOrder,
+} from "#/lib/server/pos";
 import OrderItemsTray from "#/components/pos/OrderItemsTray";
 import HistoryDateFilter, { isoDateDaysAgo } from "#/components/pos/HistoryDateFilter";
 import { Badge } from "#/components/ui/badge";
-import { Printer, Pencil, Store, X } from "lucide-react";
+import { Printer, Pencil, Store, X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { printReceipt } from "#/lib/pos-print";
 import { ORDER_CHANNEL_OPTIONS, channelLabel } from "#/lib/order-channels";
@@ -185,6 +191,19 @@ function OrderHistoryPage() {
     },
   });
 
+  const [deleteTarget, setDeleteTarget] = useState<OrderRow | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: softDeleteOrder,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      setDeleteTarget(null);
+      toast.success("Pesanan dihapus dari riwayat");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus pesanan", { description: error.message });
+    },
+  });
+
   usePageTitle("Riwayat Pemesanan", "Daftar lengkap pesanan dari semua cabang");
 
   const handleCloseModal = () => {
@@ -320,6 +339,15 @@ function OrderHistoryPage() {
                 </button>
               )}
               <button
+                onClick={function () {
+                  setDeleteTarget(selectedOrder);
+                }}
+                className="w-full h-10 rounded-md border text-muted-foreground text-sm font-medium flex items-center justify-center gap-2 hover:bg-muted"
+              >
+                <Trash2 className="h-4 w-4" />
+                Hapus dari Riwayat
+              </button>
+              <button
                 onClick={async function () {
                   const orderData = await getOrderWithItems({ data: { id: selectedOrder.id } });
                   if (!orderData) return;
@@ -423,6 +451,47 @@ function OrderHistoryPage() {
                 className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
               >
                 {voidMutation.isPending ? "Memproses..." : "Batalkan Pesanan"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Soft Delete Confirm Modal ── */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={function () {
+          setDeleteTarget(null);
+        }}
+        title="Hapus dari Riwayat"
+        size="sm"
+      >
+        {deleteTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Pesanan #{deleteTarget.orderCode ?? deleteTarget.id.slice(0, 8).toUpperCase()} akan
+              disembunyikan dari riwayat (soft delete). Data keuangan dan referensi terkait tetap
+              utuh.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={function () {
+                  setDeleteTarget(null);
+                }}
+                className="h-9 px-4 rounded-md border text-sm"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={function () {
+                  deleteMutation.mutate({ data: { orderId: deleteTarget.id } });
+                }}
+                disabled={deleteMutation.isPending}
+                className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? "Memproses..." : "Hapus"}
               </button>
             </div>
           </div>

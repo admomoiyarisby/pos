@@ -10,7 +10,16 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
-import { AlertCircle, Search, X, Plus, CalendarDays, ArrowUp, ArrowDown } from "lucide-react";
+import {
+  AlertCircle,
+  Search,
+  X,
+  Plus,
+  CalendarDays,
+  ArrowUp,
+  ArrowDown,
+  Trash2,
+} from "lucide-react";
 import {
   Combobox,
   ComboboxInput,
@@ -24,6 +33,7 @@ import {
   createWasteEntry,
   addInvestigationNote,
   cancelWasteEntry,
+  softDeleteWasteEntry,
   getRecipeInventoryForWaste,
   getRecipeBomForWaste,
   createBomWasteEntry,
@@ -609,6 +619,21 @@ function WastePage() {
     },
   });
 
+  // Soft-delete (history housekeeping) — hides the entry without touching
+  // stock/ledger. super_admin / admin_pusat only.
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteEntryId, setDeleteEntryId] = useState<string | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: softDeleteWasteEntry,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["waste-entries"] });
+      setDeleteModalOpen(false);
+      setDeleteEntryId(null);
+    },
+    onError: (err) => setCancelError(err instanceof Error ? err.message : "Gagal menghapus waste"),
+  });
+  const canDelete = user?.role === "super_admin" || user?.role === "admin_pusat";
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -903,6 +928,29 @@ function WastePage() {
                   Batalkan
                 </button>
               ),
+          },
+        ]
+      : []),
+    // Soft-delete action — super_admin / admin_pusat housekeeping.
+    ...(canDelete
+      ? [
+          {
+            accessorKey: "delete",
+            header: "",
+            width: "w-12",
+            cell: ({ row }: { row: { original: WasteRow } }) => (
+              <button
+                onClick={() => {
+                  setDeleteEntryId(row.original.id);
+                  setDeleteModalOpen(true);
+                }}
+                title="Hapus dari riwayat"
+                aria-label="Hapus waste"
+                className="h-7 w-7 inline-flex items-center justify-center rounded border text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ),
           },
         ]
       : []),
@@ -1685,6 +1733,45 @@ function WastePage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setDeleteEntryId(null);
+        }}
+        title="Hapus dari Riwayat"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Entri waste akan disembunyikan dari riwayat (soft delete). Stok, Kartu Stok, dan biaya
+            operasional yang sudah tercatat tetap utuh.
+          </p>
+          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end sm:border-0 sm:pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteModalOpen(false);
+                setDeleteEntryId(null);
+              }}
+              className="h-11 w-full rounded-xl border px-4 text-sm sm:h-9 sm:w-auto sm:rounded-md"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (deleteEntryId) deleteMutation.mutate({ data: { wasteEntryId: deleteEntryId } });
+              }}
+              disabled={deleteMutation.isPending}
+              className="h-11 w-full rounded-xl bg-destructive px-4 text-sm text-destructive-foreground disabled:opacity-50 sm:h-9 sm:w-auto sm:rounded-md"
+            >
+              {deleteMutation.isPending ? "Memproses..." : "Hapus"}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       <Modal
