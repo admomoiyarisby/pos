@@ -65,28 +65,31 @@ const CHANNELS = [
   { label: "Perlengkapan", value: "Perlengkapan" },
 ];
 
+// `month` is 1-indexed (as it comes from the "YYYY-MM" selected month), so
+// `new Date(year, month, 0)` is the last day of that same month.
 function getWeeksInMonth(year: number, month: number) {
-  const lastDay = new Date(year, month + 1, 0).getDate();
+  const mm = String(month).padStart(2, "0");
+  const lastDay = new Date(year, month, 0).getDate();
   return [
     {
       label: "Minggu 1 (1-7)",
-      from: `${year}-${String(month + 1).padStart(2, "0")}-01`,
-      to: `${year}-${String(month + 1).padStart(2, "0")}-07`,
+      from: `${year}-${mm}-01`,
+      to: `${year}-${mm}-07`,
     },
     {
       label: "Minggu 2 (8-14)",
-      from: `${year}-${String(month + 1).padStart(2, "0")}-08`,
-      to: `${year}-${String(month + 1).padStart(2, "0")}-14`,
+      from: `${year}-${mm}-08`,
+      to: `${year}-${mm}-14`,
     },
     {
       label: "Minggu 3 (15-21)",
-      from: `${year}-${String(month + 1).padStart(2, "0")}-15`,
-      to: `${year}-${String(month + 1).padStart(2, "0")}-21`,
+      from: `${year}-${mm}-15`,
+      to: `${year}-${mm}-21`,
     },
     {
       label: `Minggu 4 (22-${lastDay})`,
-      from: `${year}-${String(month + 1).padStart(2, "0")}-22`,
-      to: `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
+      from: `${year}-${mm}-22`,
+      to: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
     },
   ];
 }
@@ -1252,7 +1255,7 @@ function FinancePage() {
                         </div>
                         <div className="text-right">
                           <div className="text-xs leading-tight text-muted-foreground">
-                            Kas Akhir (Input Kasir)
+                            Kas Akhir
                           </div>
                           <div className="text-sm font-medium tabular-nums">
                             {formatRp(r.actualCash)}
@@ -1286,9 +1289,7 @@ function FinancePage() {
                         <th className="text-right py-2.5 px-3 font-medium w-32">Kas Awal</th>
                         <th className="text-right py-2.5 px-3 font-medium w-36">Mutasi Kas</th>
                         <th className="text-right py-2.5 px-3 font-medium w-36">Perkiraan</th>
-                        <th className="text-right py-2.5 px-3 font-medium w-36">
-                          Kas Akhir (Input Kasir)
-                        </th>
+                        <th className="text-right py-2.5 px-3 font-medium w-36">Kas Akhir</th>
                         <th className="text-right py-2.5 px-3 font-medium w-32">Selisih</th>
                       </tr>
                     </thead>
