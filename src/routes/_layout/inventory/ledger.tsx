@@ -334,14 +334,19 @@ function LedgerPage() {
 
       {/* Paging is server-side: data is already the current page's rows, so the
           client-side pagination feature must stay off or it would slice the
-          15 returned rows again (page 2+ would render empty). */}
+          15 returned rows again (page 2+ would render empty). Client-side
+          filtering must also stay off: search is server-side (fuzzySearch over
+          ingredient/recipe/reference/notes/order_code), and re-filtering the
+          15 returned rows on column accessor values would drop POS rows whose
+          Kode Order lives only in the joined orders row (not a column value).
+          That made searching a Kode Order render an empty table. */}
       <DataTable
         columns={columns}
         data={rows}
         keyExtractor={(r) => r.id}
         pageSize={PAGE_SIZE}
         pagination={false}
-        features={{ filtering: true, sorting: true, pagination: false }}
+        features={{ filtering: false, sorting: true, pagination: false }}
         search={search}
         onSearchChange={setSearch}
         page={page}

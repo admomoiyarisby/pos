@@ -315,6 +315,9 @@ export const getStockLedger = createServerFn({ method: "GET" })
     // POS movements use the order id as the ledger reference; joining orders
     // lets the Kartu Stok surface the cashier's Kode Order (ojol) and the
     // channel so the reference is auditable without leaving the page.
+    // reference is text while orders.id is uuid — Postgres has no text = uuid
+    // operator, so the join must cast the uuid side to text.
+    const orderRefJoin = eq(stockLedger.reference, sql`${orders.id}::text`);
     const result = await db
       .select({
         id: stockLedger.id,
@@ -338,7 +341,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
       .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
       .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
       .leftJoin(branches, eq(stockLedger.branchId, branches.id))
-      .leftJoin(orders, eq(stockLedger.reference, orders.id))
+      .leftJoin(orders, orderRefJoin)
       .where(ledgerFilters)
       .orderBy(desc(stockLedger.createdAt))
       .limit(data.limit ?? 50)
@@ -351,7 +354,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
       .from(stockLedger)
       .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
       .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
-      .leftJoin(orders, eq(stockLedger.reference, orders.id))
+      .leftJoin(orders, orderRefJoin)
       .where(ledgerFilters);
 
     return { data: result, total: totalRow?.count ?? 0 };
