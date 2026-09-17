@@ -42,9 +42,12 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
   const presetButtons: HistoryPresetKey[] = ["7d", "30d", "all"];
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 flex-wrap min-w-0">
+    // One column on narrow panels, two balanced columns from sm up. The
+    // Dari/Sampai pair always stays label+input on one row — a mid-pair wrap
+    // (label at the end of one line, its input on the next) reads as broken.
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
       {/* Preset chips — chips left, Reset right, spread across the row */}
-      <div className="flex items-center justify-between gap-1 flex-wrap">
+      <div className="flex items-center justify-between gap-1 sm:col-span-2 flex-wrap">
         <div className="flex items-center gap-1 flex-wrap">
           {presetButtons.map(function (key) {
             const active = isPresetActive(key);
@@ -55,7 +58,7 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
                   applyPreset(key);
                 }}
                 className={
-                  "h-6 px-2.5 rounded-full border text-[10px] font-medium transition-colors " +
+                  "                min-h-[28px] px-2.5 rounded-full border text-[11px] font-medium transition-colors " +
                   (active
                     ? "bg-primary text-primary-foreground border-primary"
                     : "text-muted-foreground hover:bg-accent")
@@ -73,15 +76,17 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
             }}
             aria-label="Hapus filter tanggal"
             title="Hapus filter tanggal"
-            className="h-6 px-2.5 rounded-full border text-[10px] font-medium transition-colors text-muted-foreground hover:bg-accent"
+            className="min-h-[28px] px-2.5 rounded-full border text-[11px] font-medium transition-colors text-muted-foreground hover:bg-accent"
           >
             Reset
           </button>
         )}
       </div>
-      {/* From / To date inputs */}
-      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground min-w-0 flex-wrap">
-        <label htmlFor="pos-history-from" className="shrink-0">
+      {/* From / To — each field is an unbreakable label+input unit that fills
+          its grid column, so the pair can never split across lines. 16px
+          input text prevents iOS Safari from focus-zooming the page. */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <label htmlFor="pos-history-from" className="shrink-0 text-[11px] text-muted-foreground">
           Dari
         </label>
         <input
@@ -92,9 +97,11 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
           onChange={function (e) {
             onChange(e.target.value, dateTo);
           }}
-          className="h-7 w-[124px] rounded-md border border-input bg-background px-1.5 text-[11px] text-foreground"
+          className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm text-foreground"
         />
-        <label htmlFor="pos-history-to" className="shrink-0">
+      </div>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <label htmlFor="pos-history-to" className="shrink-0 text-[11px] text-muted-foreground">
           Sampai
         </label>
         <input
@@ -105,7 +112,7 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
           onChange={function (e) {
             onChange(dateFrom, e.target.value);
           }}
-          className="h-7 w-[124px] rounded-md border border-input bg-background px-1.5 text-[11px] text-foreground"
+          className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm text-foreground"
         />
       </div>
     </div>

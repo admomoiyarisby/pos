@@ -360,7 +360,7 @@ export function FinishedView(props: TransferViewProps) {
       {props.invoice && (
         <>
           <SectionDivider />
-          <InvoiceCard invoice={props.invoice} />
+          <InvoiceCard invoice={props.invoice} showPrices={props.showPrices ?? true} />
         </>
       )}
 
@@ -422,7 +422,13 @@ export function CancelledView(props: TransferViewProps) {
 // Invoice card (used by WaitingForPayment and Finished)
 // ---------------------------------------------------------------------------
 
-function InvoiceCard({ invoice }: { invoice: TransferInvoiceRow }) {
+function InvoiceCard({
+  invoice,
+  showPrices,
+}: {
+  invoice: TransferInvoiceRow;
+  showPrices?: boolean;
+}) {
   return (
     <div className="rounded-md border">
       <div className="flex items-center justify-between border-b p-4">
@@ -433,7 +439,11 @@ function InvoiceCard({ invoice }: { invoice: TransferInvoiceRow }) {
       </div>
       <div className="p-4">
         <p className="text-sm">Kode: {String(invoice.code)}</p>
-        <p className="text-2xl font-bold">Rp {invoice.totalAmount.toLocaleString("id-ID")}</p>
+        {/* ID15: the invoice total is money — hidden from branch_admin along
+            with the per-unit HPP snapshot. */}
+        {showPrices && (
+          <p className="text-2xl font-bold">Rp {invoice.totalAmount.toLocaleString("id-ID")}</p>
+        )}
         {invoice.paidAt ? (
           <p className="text-xs text-muted-foreground">
             Dibayar: {new Date(invoice.paidAt).toLocaleDateString("id-ID")}

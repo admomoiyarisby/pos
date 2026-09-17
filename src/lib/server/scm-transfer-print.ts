@@ -196,6 +196,8 @@ interface MutasiInvoiceData {
   lineItems: MutasiInvoiceLineItem[];
   /** Per-unit prices are the HPP snapshot — hidden for branch_admin. */
   showUnitPrice: boolean;
+  /** Money amounts (subtotals, grand total) — hidden for branch_admin. */
+  showMoney: boolean;
 }
 
 function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
@@ -210,7 +212,7 @@ function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
           <td>${escapeHtml(li.ingredientName)}</td>
           <td style="text-align:right;">${li.receivedQuantity}</td>
           ${d.showUnitPrice ? `<td style="text-align:right;">Rp ${li.unitPrice.toLocaleString("id-ID")}</td>` : ""}
-          <td style="text-align:right;">Rp ${li.lineTotal.toLocaleString("id-ID")}</td>
+          ${d.showMoney ? `<td style="text-align:right;">Rp ${li.lineTotal.toLocaleString("id-ID")}</td>` : ""}
         </tr>`,
     )
     .join("");
@@ -294,16 +296,19 @@ function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
         <th>Bahan</th>
         <th style="width:50pt; text-align:right;">Qty</th>
         ${d.showUnitPrice ? `<th style="width:90pt; text-align:right;">Harga</th>` : ""}
-        <th style="width:100pt; text-align:right;">Subtotal</th>
+        ${d.showMoney ? `<th style="width:100pt; text-align:right;">Subtotal</th>` : ""}
       </tr>
     </thead>
     <tbody>
-      ${acceptedRows || `<tr><td colspan="${d.showUnitPrice ? 5 : 4}" class="empty">Tidak ada item diterima.</td></tr>`}
       ${
-        accepted.length > 0
+        acceptedRows ||
+        `<tr><td colspan="${2 + (d.showUnitPrice ? 1 : 0) + (d.showMoney ? 1 : 0)}" class="empty">Tidak ada item diterima.</td></tr>`
+      }
+      ${
+        accepted.length > 0 && d.showMoney
           ? `<tr class="total-row">
                <td colspan="2" style="text-align:right;">Subtotal diterima (${totalQtyAccepted}):</td>
-               <td colspan="${d.showUnitPrice ? 3 : 2}" style="text-align:right;">Rp ${d.totalAmount.toLocaleString("id-ID")}</td>
+               <td colspan="${(d.showUnitPrice ? 1 : 0) + (d.showMoney ? 1 : 0)}" style="text-align:right;">Rp ${d.totalAmount.toLocaleString("id-ID")}</td>
              </tr>`
           : ""
       }
@@ -313,7 +318,7 @@ function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
   ${
     rejected.length > 0
       ? `
-    <h2>Ditolak (Rp 0)</h2>
+    <h2>${d.showMoney ? "Ditolak (Rp 0)" : "Ditolak"}</h2>
     <table>
       <thead>
         <tr>
@@ -330,14 +335,18 @@ function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
       : ""
   }
 
-  <div class="grand">
+  ${
+    d.showMoney
+      ? `<div class="grand">
     <div class="grand-box">
       <div class="grand-row">
         <span>TOTAL:</span>
         <span>Rp ${d.totalAmount.toLocaleString("id-ID")}</span>
       </div>
     </div>
-  </div>
+  </div>`
+      : ""
+  }
 
   <div class="signatures">
     <div class="sig-block">
@@ -402,6 +411,7 @@ export const printMutasiInvoice = createServerFn({ method: "GET" })
       fromBranchName: from?.name ?? tr.fromBranchId,
       toBranchName: to?.name ?? tr.toBranchId,
       showUnitPrice: user.role !== "branch_admin",
+      showMoney: user.role !== "branch_admin",
       lineItems: lineItems.map((li) => ({
         ingredientName: li.ingredientName ?? "",
         receivedQuantity: li.receivedQuantity ?? 0,

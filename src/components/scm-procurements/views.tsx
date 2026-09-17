@@ -1031,9 +1031,13 @@ export function WaitingForPaymentBaInvoice({
             Invoice berikut sudah diterbitkan. Silakan transfer sesuai total di bawah.
           </p>
           <ScmItemTable mode="invoice-preview" items={previewItems} showPrices={showPrices} />
-          <p className="mt-4 text-right text-lg font-semibold">
-            Total: Rp {total.toLocaleString("id-ID")}
-          </p>
+          {/* ID15: the invoice total is money the branch pays — hidden from
+              branch_admin along with the per-unit HPP snapshot. */}
+          {showPrices && (
+            <p className="mt-4 text-right text-lg font-semibold">
+              Total: Rp {total.toLocaleString("id-ID")}
+            </p>
+          )}
         </CardContent>
       </Card>
       <div className="flex justify-end">
@@ -1064,9 +1068,13 @@ export function WaitingForPaymentCaInvoice({
         </CardHeader>
         <CardContent>
           <ScmItemTable mode="invoice-preview" items={previewItems} showPrices={showPrices} />
-          <p className="mt-4 text-right text-lg font-semibold">
-            Total: Rp {total.toLocaleString("id-ID")}
-          </p>
+          {/* ID15: the invoice total is money the branch pays — hidden from
+              branch_admin along with the per-unit HPP snapshot. */}
+          {showPrices && (
+            <p className="mt-4 text-right text-lg font-semibold">
+              Total: Rp {total.toLocaleString("id-ID")}
+            </p>
+          )}
         </CardContent>
       </Card>
       <div className="flex justify-end gap-2">
@@ -1086,7 +1094,7 @@ export function WaitingForPaymentCaInvoice({
 // =============================================================================
 // Finished — read-only "Lunas"
 // =============================================================================
-export function FinishedView({ procurement, items, invoice }: StateViewProps) {
+export function FinishedView({ procurement, items, invoice, showPrices }: StateViewProps) {
   const total = invoice?.totalAmount ?? 0;
   const invoiceLineItems = invoice?.lineItems ?? null;
   const previewItems = invoiceLineItems
@@ -1099,11 +1107,16 @@ export function FinishedView({ procurement, items, invoice }: StateViewProps) {
           <CardTitle>Lunas</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="mb-3 text-sm">
-            Pengadaan ini sudah dibayar lunas. Total dibayar:{" "}
-            <strong>Rp {total.toLocaleString("id-ID")}</strong>
-          </p>
-          <ScmItemTable mode="read-only" items={previewItems} />
+          {/* ID15: total paid is money — hidden from branch_admin. */}
+          {showPrices ? (
+            <p className="mb-3 text-sm">
+              Pengadaan ini sudah dibayar lunas. Total dibayar:{" "}
+              <strong>Rp {total.toLocaleString("id-ID")}</strong>
+            </p>
+          ) : (
+            <p className="mb-3 text-sm">Pengadaan ini sudah dibayar lunas.</p>
+          )}
+          <ScmItemTable mode="read-only" items={previewItems} showPrices={showPrices} />
         </CardContent>
       </Card>
       <div className="flex justify-end">

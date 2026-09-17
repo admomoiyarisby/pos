@@ -77,7 +77,7 @@ export default function OrderHistory({
               onChannelFilterChange(e.target.value);
             }}
             aria-label="Filter channel"
-            className="h-7 w-full rounded-md border border-input bg-background px-2 text-[11px] font-medium text-foreground"
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-medium text-foreground"
           >
             <option value="">Semua Channel</option>
             {ORDER_CHANNEL_OPTIONS.map(function (c) {
@@ -137,7 +137,7 @@ export default function OrderHistory({
                     setExpandedId(isExpanded ? null : o.id);
                   }}
                 >
-                  <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
                     <span className="font-mono text-[10px] bg-muted px-1 rounded shrink-0">
                       #{(o.id || "").slice(0, 6).toUpperCase()}
                     </span>
@@ -153,10 +153,26 @@ export default function OrderHistory({
                     >
                       {channelLabel(o.channel)}
                     </span>
+                    {/* Kode Order (ojol) or customer name — same fallback as the
+                        mobile history list, so cashiers can spot the Gofood /
+                        Grab / Shopee code without expanding the row. */}
+                    {(o.orderCode || o.customerName) && (
+                      <span
+                        title={o.orderCode ? `Kode Order: ${o.orderCode}` : o.customerName}
+                        className={
+                          "shrink-0 max-w-[88px] overflow-hidden text-ellipsis whitespace-nowrap text-[9px] px-1 py-0.5 rounded font-medium " +
+                          (o.orderCode
+                            ? "font-mono border border-primary/20 bg-primary/5 text-primary"
+                            : "bg-muted/70 text-muted-foreground")
+                        }
+                      >
+                        {o.orderCode || o.customerName}
+                      </span>
+                    )}
                     {spansMultipleBranches && o.branchName && (
                       <span
                         title={o.branchName}
-                        className="shrink-0 max-w-[96px] overflow-hidden text-ellipsis whitespace-nowrap text-[9px] px-1 py-0.5 rounded bg-muted/70 text-muted-foreground"
+                        className="shrink-0 max-w-[72px] min-[420px]:max-w-[96px] overflow-hidden text-ellipsis whitespace-nowrap text-[9px] px-1 py-0.5 rounded bg-muted/70 text-muted-foreground"
                       >
                         {o.branchName}
                       </span>

@@ -10,6 +10,7 @@ import {
   stockOpnameItems,
   systemNotifications,
   areaManagerBranches,
+  orders,
 } from "#/db/schema";
 import { eq, and, or, desc, asc, count, inArray, sql, ilike, ne, isNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
@@ -298,13 +299,22 @@ export const getStockLedger = createServerFn({ method: "GET" })
       data.reference ? eq(stockLedger.reference, data.reference) : undefined,
       data.search
         ? fuzzySearch(
-            [ingredients.name, recipes.name, stockLedger.reference, stockLedger.notes],
+            [
+              ingredients.name,
+              recipes.name,
+              stockLedger.reference,
+              stockLedger.notes,
+              orders.orderCode,
+            ],
             data.search,
           )
         : undefined,
       data.wasteBomOnly || data.wasteBomRecipeId ? wasteBomLedgerFilter(bomRecipeName) : undefined,
     );
 
+    // POS movements use the order id as the ledger reference; joining orders
+    // lets the Kartu Stok surface the cashier's Kode Order (ojol) and the
+    // channel so the reference is auditable without leaving the page.
     const result = await db
       .select({
         id: stockLedger.id,
@@ -321,11 +331,14 @@ export const getStockLedger = createServerFn({ method: "GET" })
         recipeName: recipes.name,
         stockUnit: ingredients.stockUnit,
         branchName: branches.name,
+        orderCode: orders.orderCode,
+        orderChannel: orders.channel,
       })
       .from(stockLedger)
       .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
       .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
       .leftJoin(branches, eq(stockLedger.branchId, branches.id))
+      .leftJoin(orders, eq(stockLedger.reference, orders.id))
       .where(ledgerFilters)
       .orderBy(desc(stockLedger.createdAt))
       .limit(data.limit ?? 50)
@@ -338,6 +351,7 @@ export const getStockLedger = createServerFn({ method: "GET" })
       .from(stockLedger)
       .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
       .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
+      .leftJoin(orders, eq(stockLedger.reference, orders.id))
       .where(ledgerFilters);
 
     return { data: result, total: totalRow?.count ?? 0 };

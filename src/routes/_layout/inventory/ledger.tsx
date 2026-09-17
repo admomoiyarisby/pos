@@ -12,7 +12,7 @@ import { getBranches } from "#/lib/server/branches";
 import { getRecipes } from "#/lib/server/recipes";
 import { useAuth } from "#/lib/auth-context";
 import { Badge } from "#/components/ui/badge";
-import { Factory, X } from "lucide-react";
+import { Factory, ShoppingBag, X } from "lucide-react";
 
 interface LedgerRow {
   id: string;
@@ -26,6 +26,10 @@ interface LedgerRow {
   notes: string | null;
   branchName: string | null;
   stockUnit: string | null;
+  /** Kode Order of the POS transaction behind this movement, if any. */
+  orderCode: string | null;
+  /** Channel of the POS transaction behind this movement, if any. */
+  orderChannel: string | null;
 }
 
 export const Route = createFileRoute("/_layout/inventory/ledger")({
@@ -208,6 +212,30 @@ function LedgerPage() {
       cell: ({ row }) => {
         const isYield = row.original.reference.startsWith("YIELD-");
         const display = reference ? row.original.reference : row.original.reference.slice(0, 8);
+        // POS movements carry the order's Kode Order (ojol) + channel — show
+        // both, with a channel badge to distinguish it from plain reference ids.
+        if (row.original.orderChannel) {
+          return (
+            <span className="flex flex-col gap-0.5 min-w-0">
+              <span className="font-mono text-xs">{display}</span>
+              {row.original.orderCode ? (
+                <span
+                  className="inline-flex items-center gap-1 w-fit max-w-full font-mono text-[10px] px-1 py-0.5 rounded border border-primary/20 bg-primary/5 text-primary font-medium"
+                  title={`Kode Order (${row.original.orderChannel})`}
+                >
+                  <ShoppingBag className="h-2.5 w-2.5 shrink-0" />
+                  <span className="truncate">{row.original.orderCode}</span>
+                </span>
+              ) : null}
+              <span
+                className="inline-flex items-center w-fit text-[9px] px-1 py-0.5 rounded bg-muted/70 text-muted-foreground font-medium"
+                title={`Channel: ${row.original.orderChannel}`}
+              >
+                {row.original.orderChannel}
+              </span>
+            </span>
+          );
+        }
         if (isYield) {
           const yieldId = row.original.reference.replace("YIELD-", "");
           return (

@@ -6,10 +6,11 @@ import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
+import { ShiftCashDetail } from "#/components/pos/ShiftCashDetail";
 import { getShiftSessions, softDeleteShiftSession } from "#/lib/server/pos";
 import { getBranches } from "#/lib/server/branches";
 import { Badge } from "#/components/ui/badge";
-import { Clock, Trash2 } from "lucide-react";
+import { Clock, Trash2, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Modal from "#/components/ui/Modal";
@@ -91,6 +92,14 @@ function ShiftVarianceBadge({ r }: { r: ShiftSessionRow }) {
   );
 }
 
+// A shift row can only expand into the cash detail once the shift is closed —
+// open shifts have no expected/actual cash to reconcile against.
+function shiftHasCashDetail(
+  r: ShiftSessionRow,
+): r is ShiftSessionRow & { shiftActualCash: number; shiftExpectedCash: number } {
+  return r.shiftStatus === "Closed" && r.shiftActualCash !== null && r.shiftExpectedCash !== null;
+}
+
 export const Route = createFileRoute("/_layout/admin/shift-sessions")({
   component: ShiftSessionsPage,
   loader: async () => {
@@ -109,6 +118,8 @@ function ShiftSessionsPage() {
   const isAreaManager = user?.role === "area_manager";
   const queryClient = useQueryClient();
   const [deleteTarget, setDeleteTarget] = useState<ShiftSessionRow | null>(null);
+  // Expandable per-shift cash detail (Rincian Kas), like /finance's Selisih Kas.
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const deleteMutation = useMutation({
     mutationFn: softDeleteShiftSession,
     onSuccess: () => {
@@ -388,6 +399,11 @@ function ShiftSessionsPage() {
                 sessions.map((r) => {
                   const a = actionLabels[r.action];
                   const isOpen = r.shiftStatus === "Open";
+                  const cashOpen = expandedIds.includes(r.id) && shiftHasCashDetail(r);
+                  const toggleCash = () =>
+                    setExpandedIds((ids) =>
+                      ids.includes(r.id) ? ids.filter((id) => id !== r.id) : [...ids, r.id],
+                    );
                   return (
                     <div
                       key={r.id}
@@ -433,22 +449,63 @@ function ShiftSessionsPage() {
                           </div>
                         </div>
                       </div>
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <Badge
-                            variant={isOpen ? "success" : "secondary"}
-                            className="shrink-0 rounded-full text-[11px] h-5"
-                          >
-                            {isOpen ? "Terbuka" : "Ditutup"}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground tabular-nums truncate">
-                            Kas {formatRupiah(r.shiftCashFloat)} · Mutasi +
-                            {formatRupiah(r.shiftCashSales)} · Akhir{" "}
-                            {r.shiftActualCash !== null ? formatRupiah(r.shiftActualCash) : "-"}
+                      {shiftHasCashDetail(r) ? (
+                        <button
+                          type="button"
+                          onClick={toggleCash}
+                          aria-expanded={cashOpen}
+                          className="mt-2 flex w-full items-center justify-between gap-2 text-left"
+                        >
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            <Badge
+                              variant={isOpen ? "success" : "secondary"}
+                              className="shrink-0 rounded-full text-[11px] h-5"
+                            >
+                              {isOpen ? "Terbuka" : "Ditutup"}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground tabular-nums truncate">
+                              Kas {formatRupiah(r.shiftCashFloat)} · Mutasi +
+                              {formatRupiah(r.shiftCashSales)} · Akhir{" "}
+                              {r.shiftActualCash !== null ? formatRupiah(r.shiftActualCash) : "-"}
+                            </span>
                           </span>
+                          <span className="flex shrink-0 items-center gap-1">
+                            <ShiftVarianceBadge r={r} />
+                            <ChevronDown
+                              className={`h-4 w-4 text-muted-foreground transition-transform ${
+                                cashOpen ? "rotate-180" : ""
+                              }`}
+                            />
+                          </span>
+                        </button>
+                      ) : (
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Badge
+                              variant={isOpen ? "success" : "secondary"}
+                              className="shrink-0 rounded-full text-[11px] h-5"
+                            >
+                              {isOpen ? "Terbuka" : "Ditutup"}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground tabular-nums truncate">
+                              Kas {formatRupiah(r.shiftCashFloat)} · Mutasi +
+                              {formatRupiah(r.shiftCashSales)} · Akhir{" "}
+                              {r.shiftActualCash !== null ? formatRupiah(r.shiftActualCash) : "-"}
+                            </span>
+                          </div>
+                          <ShiftVarianceBadge r={r} />
                         </div>
-                        <ShiftVarianceBadge r={r} />
-                      </div>
+                      )}
+                      {cashOpen && (
+                        <div className="mt-2 border-t pt-2.5 bg-muted/30 -mx-3.5 -mb-3.5 px-3.5 pb-3.5 rounded-b-xl">
+                          <ShiftCashDetail
+                            shiftId={r.shiftId}
+                            cashFloat={r.shiftCashFloat}
+                            expectedCash={r.shiftExpectedCash}
+                            actualCash={r.shiftActualCash}
+                          />
+                        </div>
+                      )}
                       {canDelete && (
                         <div className="mt-2 flex justify-end">
                           <button
@@ -472,6 +529,19 @@ function ShiftSessionsPage() {
                 columns={columns}
                 data={sessions}
                 keyExtractor={(r) => r.id}
+                renderExpanded={(r) =>
+                  shiftHasCashDetail(r) ? (
+                    <ShiftCashDetail
+                      shiftId={r.shiftId}
+                      cashFloat={r.shiftCashFloat}
+                      expectedCash={r.shiftExpectedCash}
+                      actualCash={r.shiftActualCash}
+                    />
+                  ) : null
+                }
+                getRowExpandable={shiftHasCashDetail}
+                expandedIds={expandedIds}
+                onExpandedChange={setExpandedIds}
                 pageSize={20}
                 pagination={false}
                 search={search}

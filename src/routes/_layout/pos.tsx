@@ -1494,7 +1494,7 @@ function PosPage() {
                           setHistoryPage(0);
                         }}
                         aria-label="Filter channel"
-                        className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs font-medium text-foreground"
+                        className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm font-medium text-foreground"
                       >
                         <option value="">Semua Channel</option>
                         {ORDER_CHANNEL_OPTIONS.map(function (c) {
@@ -1551,7 +1551,7 @@ function PosPage() {
                               }}
                             >
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                                   <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded font-medium">
                                     #{(o.id || "").slice(0, 6).toUpperCase()}
                                   </span>
@@ -1572,7 +1572,7 @@ function PosPage() {
                                     </span>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-1.5 mt-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1 min-w-0">
                                   <span
                                     title={o.channel}
                                     className="shrink-0 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-primary/20 bg-primary/5 text-primary font-medium"
@@ -1582,18 +1582,18 @@ function PosPage() {
                                   {historySpansMultipleBranches && o.branchName && (
                                     <span
                                       title={o.branchName}
-                                      className="shrink-0 inline-flex items-center gap-1 max-w-[150px] text-[10px] px-1.5 py-0.5 rounded-full border text-muted-foreground"
+                                      className="shrink-0 inline-flex items-center gap-1 max-w-[110px] min-[420px]:max-w-[150px] text-[10px] px-1.5 py-0.5 rounded-full border text-muted-foreground"
                                     >
                                       <Store className="h-2.5 w-2.5 shrink-0" />
                                       <span className="min-w-0 truncate">{o.branchName}</span>
                                     </span>
                                   )}
-                                  <p className="text-xs text-muted-foreground truncate">
+                                  <p className="flex-1 min-w-[96px] text-xs text-muted-foreground truncate">
                                     {o.orderCode || o.customerName || "-"}
                                   </p>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                              <div className="flex items-center gap-1 shrink-0 ml-2">
                                 <span className="text-sm font-semibold">
                                   Rp {o.totalAmount.toLocaleString("id-ID")}
                                 </span>
@@ -1617,7 +1617,7 @@ function PosPage() {
                                     }}
                                     disabled={printState === "pending"}
                                     className={
-                                      "h-8 w-8 inline-flex items-center justify-center rounded-full border " +
+                                      "h-7 w-7 inline-flex items-center justify-center rounded-full border " +
                                       (printState === "direct" || printState === "active"
                                         ? "bg-primary text-primary-foreground border-primary"
                                         : printState === "pending"
@@ -1649,7 +1649,7 @@ function PosPage() {
                                     }}
                                     disabled={cancelState === "pending"}
                                     className={
-                                      "h-8 px-2 inline-flex items-center justify-center rounded-full border text-xs font-medium " +
+                                      "h-7 px-1.5 inline-flex items-center justify-center rounded-full border text-[11px] font-medium " +
                                       (cancelState === "active"
                                         ? "bg-primary text-primary-foreground border-primary"
                                         : cancelState === "pending"
@@ -1670,7 +1670,7 @@ function PosPage() {
                                       e.stopPropagation();
                                       setVoidModal({ orderId: o.id, reason: "" });
                                     }}
-                                    className="h-8 w-8 inline-flex items-center justify-center rounded-full border text-destructive"
+                                    className="h-7 w-7 inline-flex items-center justify-center rounded-full border text-destructive"
                                   >
                                     <X className="h-3.5 w-3.5" />
                                   </button>
@@ -1683,7 +1683,7 @@ function PosPage() {
                                   }}
                                   aria-expanded={isExpanded}
                                   aria-label={isExpanded ? "Tutup detail" : "Lihat detail"}
-                                  className="h-8 w-8 inline-flex items-center justify-center rounded-full border bg-card text-muted-foreground"
+                                  className="h-7 w-7 inline-flex items-center justify-center rounded-full border bg-card text-muted-foreground"
                                 >
                                   {isExpanded ? (
                                     <ChevronDown className="h-3.5 w-3.5" />
