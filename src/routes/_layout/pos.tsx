@@ -2326,7 +2326,7 @@ function PosPage() {
 
       {/* Mobile sticky cart bar — thumb-reach when browsing menu */}
       {cartCount > 0 && mobileTab === "menu" && (
-        <div className="fixed bottom-[68px] left-3 right-3 z-30 flex items-center justify-between rounded-full bg-primary text-primary-foreground shadow-lg pl-3 pr-1.5 py-1.5 lg:hidden safe-inset">
+        <div className="fixed bottom-[calc(68px+env(safe-area-inset-bottom,0px))] left-3 right-3 md:left-[calc(var(--sidebar-width)+0.75rem)] z-30 flex items-center justify-between rounded-full bg-primary text-primary-foreground shadow-lg pl-3 pr-1.5 py-1.5 lg:hidden">
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
               <ShoppingCart className="h-4 w-4" />
