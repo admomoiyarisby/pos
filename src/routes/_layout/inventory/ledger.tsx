@@ -165,11 +165,14 @@ function LedgerPage() {
       return (
         <span className="flex items-center gap-1 min-w-0">
           <Factory className="h-3 w-3 shrink-0 text-muted-foreground" />
-          <span className="font-medium truncate">{row.recipeName}</span>
+          <span className="font-medium truncate min-w-0">{row.recipeName}</span>
         </span>
       );
     }
-    return <span className="truncate">{row.ingredientName ?? "-"}</span>;
+    // `block` so `truncate` (overflow-hidden + ellipsis) actually applies —
+    // on an inline span long names overflow the mobile card header and run
+    // under the IN/OUT badge instead of ellipsizing.
+    return <span className="block truncate">{row.ingredientName ?? "-"}</span>;
   };
 
   const renderQty = (row: LedgerRow) => (
@@ -240,6 +243,10 @@ function LedgerPage() {
           month: "short",
           hour: "2-digit",
           minute: "2-digit",
+          // Fixed app timezone (mirrors formatJakartaDateTime) so SSR and the
+          // client render the identical wall-clock time — without it the server
+          // (UTC) and browser (WIB) disagree and hydration fails.
+          timeZone: "Asia/Jakarta",
         }),
     },
     {
@@ -309,9 +316,12 @@ function LedgerPage() {
       ]}
     >
       {/* Filter bar adapts per device class (matches the Waste page language):
-          mobile stacks controls in full-width 44px-tap-target rows; sm+ is one
-          compact inline row. `sm:contents` dissolves the mobile row wrappers so
-          every control joins the desktop flex flow. */}
+          mobile stacks controls in full-width 44px-tap-target rows — the date
+          range stacks as two full-width label+input rows so native date inputs
+          never squeeze side-by-side; sm+ is one compact inline row
+          (Dari [date] — Sampai [date]). The select row uses `sm:contents` so
+          each control joins the desktop flex flow; the date range stays a
+          grouped unit (`sm:flex`) so the pair can never split across lines. */}
       <div className="mb-4 space-y-2.5 sm:space-y-0 sm:flex sm:items-center sm:flex-wrap sm:gap-3">
         {/* Row 1 (mobile) — branch + mutation type, side by side */}
         <div className="grid grid-cols-2 gap-2 sm:contents">
@@ -401,29 +411,44 @@ function LedgerPage() {
             );
           })}
         </div>
-        <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center sm:contents">
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateRange(e.target.value, dateTo)}
-            aria-label="Tanggal awal"
-            max={dateTo || undefined}
-            className="h-11 sm:h-8 w-full rounded-xl sm:rounded-md border border-input bg-background px-3 text-[15px] sm:text-sm font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:font-normal sm:shadow-none"
-          />
-          <span
-            className="flex items-center justify-center text-muted-foreground text-sm font-medium px-1 sm:font-normal"
-            aria-hidden="true"
-          >
+        <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-1.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <label
+              htmlFor="ledger-date-from"
+              className="w-14 shrink-0 text-sm text-muted-foreground sm:w-auto sm:text-xs"
+            >
+              Dari
+            </label>
+            <input
+              id="ledger-date-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateRange(e.target.value, dateTo)}
+              aria-label="Tanggal awal"
+              max={dateTo || undefined}
+              className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-[16px] font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8 sm:w-auto sm:min-w-[150px] sm:flex-none sm:rounded-md sm:px-2 sm:text-sm sm:font-normal sm:shadow-none"
+            />
+          </div>
+          <span className="hidden sm:inline text-muted-foreground text-xs" aria-hidden="true">
             —
           </span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateRange(dateFrom, e.target.value)}
-            aria-label="Tanggal akhir"
-            min={dateFrom || undefined}
-            className="h-11 sm:h-8 w-full rounded-xl sm:rounded-md border border-input bg-background px-3 text-[15px] sm:text-sm font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:font-normal sm:shadow-none"
-          />
+          <div className="flex items-center gap-2 min-w-0">
+            <label
+              htmlFor="ledger-date-to"
+              className="w-14 shrink-0 text-sm text-muted-foreground sm:w-auto sm:text-xs"
+            >
+              Sampai
+            </label>
+            <input
+              id="ledger-date-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateRange(dateFrom, e.target.value)}
+              aria-label="Tanggal akhir"
+              min={dateFrom || undefined}
+              className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-[16px] font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8 sm:w-auto sm:min-w-[150px] sm:flex-none sm:rounded-md sm:px-2 sm:text-sm sm:font-normal sm:shadow-none"
+            />
+          </div>
         </div>
 
         {reference && (
@@ -567,6 +592,9 @@ function LedgerPage() {
                         month: "short",
                         hour: "2-digit",
                         minute: "2-digit",
+                        // Fixed app timezone — same SSR/client hydration reason
+                        // as the desktop Waktu column above.
+                        timeZone: "Asia/Jakarta",
                       })}
                     </span>
                     {showBranchColumn && (
