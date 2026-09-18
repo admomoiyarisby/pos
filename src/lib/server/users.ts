@@ -332,7 +332,18 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
 
   // Skip the base-row update when nothing was provided (e.g. a call that only
   // rewrites assignedBranches) — drizzle rejects an empty `set`.
-  const setData = { ...baseUpdates };
+  const setData: Partial<typeof usersTable.$inferInsert> = { ...baseUpdates };
+
+  // When the role moves away from the branch-scoped roles, clear the stale
+  // branch assignment (mirrors the area_manager assignedBranches cleanup).
+  if (
+    (oldUser.role === "branch_admin" || oldUser.role === "central_kitchen") &&
+    nextRole !== "branch_admin" &&
+    nextRole !== "central_kitchen"
+  ) {
+    setData.branchId = null;
+  }
+
   if (Object.keys(setData).length > 0) {
     await db.update(usersTable).set(setData).where(eq(usersTable.id, id));
   }
