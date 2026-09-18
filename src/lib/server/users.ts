@@ -237,6 +237,7 @@ const updateUserInput = z.object({
   role: userRoleEnum.optional(),
   branchId: z.string().uuid().optional(),
   pin: z.string().length(4).optional(),
+  password: z.string().min(8).optional(),
   status: z.enum(["Active", "Inactive"]).optional(),
   assignedBranches: z.array(z.string().uuid()).optional(),
 });
@@ -326,13 +327,12 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
       }
     }
   }
-  const setData = { ...updates };
-  if (updates.branchId === undefined && "branchId" in data) {
-    // If branchId was explicitly passed as undefined, keep it
-  }
+  // Password lives in the credential account table, not the users row.
+  const { password: _newPassword, ...baseUpdates } = updates;
 
   // Skip the base-row update when nothing was provided (e.g. a call that only
   // rewrites assignedBranches) — drizzle rejects an empty `set`.
+  const setData = { ...baseUpdates };
   if (Object.keys(setData).length > 0) {
     await db.update(usersTable).set(setData).where(eq(usersTable.id, id));
   }
@@ -340,6 +340,31 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
   // Build new user data for audit
   const newUserData = { ...oldUser, ...setData };
   const nameHint = newUserData.name || oldUser.name;
+
+  // Reset the credential account password when requested (admin password
+  // reset from the /admin/users edit form).
+  if (_newPassword !== undefined) {
+    const { account: accountTable } = await import("#/db/schema");
+    const [account] = await db
+      .select({ id: accountTable.id })
+      .from(accountTable)
+      .where(and(eq(accountTable.userId, id), eq(accountTable.providerId, "credential")))
+      .limit(1);
+    if (!account) {
+      throw new Error("Akun credential tidak ditemukan untuk user ini");
+    }
+    const hashedPassword = await hashPassword(_newPassword);
+    await db
+      .update(accountTable)
+      .set({ password: hashedPassword })
+      .where(eq(accountTable.id, account.id));
+    await logSystemAction(
+      user,
+      "Update User Password",
+      `Password user "${nameHint}" direset oleh ${user.name}`,
+      "Warning",
+    );
+  }
 
   // Log user update
   await logSystemAction(user, "Update User", `User "${nameHint}" diperbarui oleh ${user.name}`);
