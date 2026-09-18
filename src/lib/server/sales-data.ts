@@ -18,10 +18,93 @@ import {
   systemNotifications,
   users,
   areaManagerBranches,
+  inventory,
+  stockLedger,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { requireAuth, requireRole } from "#/lib/server/auth";
+import type { AppUser } from "./auth";
+import { resolveNewItemIngredients, resolvePersistedItemIngredients } from "./ingredient-resolver";
 import { eq, ne, and, sql, desc, count, inArray } from "drizzle-orm";
+import type { DbTx } from "./ingredient-resolver";
+
+// ─── Stock effects (Kartu Stok) ────────────────────────────────────────────
+// Data Penjualan orders live in the same `orders` table as POS orders, so
+// they must obey the same invariant: every inventory movement gets a
+// stock_ledger row whose `balance` equals the post-write inventory quantity.
+// These helpers apply a signed ingredient delta (BOM-resolved, modifiers and
+// exclusions included) to a branch's inventory inside the caller's transaction.
+
+type IngredientDelta = { ingredientId: string; quantity: number };
+
+/** Apply a signed ingredient delta to inventory, writing one ledger row per
+ *  ingredient. Positive quantity = consumption (OUT); negative = restore (IN). */
+async function applyIngredientDelta(
+  tx: DbTx,
+  branchId: string,
+  deltas: IngredientDelta[],
+  reference: string,
+  notes: string,
+): Promise<void> {
+  for (const delta of deltas) {
+    if (delta.quantity === 0) continue;
+
+    const [inv] = await tx
+      .select()
+      .from(inventory)
+      .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, delta.ingredientId)))
+      .for("update")
+      .limit(1);
+    if (!inv) continue;
+
+    const newQty = inv.quantity - delta.quantity;
+    await tx
+      .update(inventory)
+      .set({ quantity: newQty, lastUpdated: new Date() })
+      .where(eq(inventory.id, inv.id));
+
+    await tx.insert(stockLedger).values({
+      branchId,
+      ingredientId: delta.ingredientId,
+      type: delta.quantity > 0 ? "OUT" : "IN",
+      quantity: Math.abs(delta.quantity),
+      balance: newQty,
+      reference,
+      notes,
+    });
+  }
+}
+
+/** Net ingredient consumption across an item list (adds matching entries). */
+function sumDeltas(...groups: IngredientDelta[][]): IngredientDelta[] {
+  const map = new Map<string, number>();
+  for (const group of groups) {
+    for (const d of group) {
+      map.set(d.ingredientId, (map.get(d.ingredientId) ?? 0) + d.quantity);
+    }
+  }
+  return [...map].map(([ingredientId, quantity]) => ({ ingredientId, quantity }));
+}
+
+/** Resolve BOM consumption for the given item list (client input shape). */
+async function resolveItemsDelta(
+  items: { recipeId: string; quantity: number }[],
+): Promise<IngredientDelta[]> {
+  const groups = await Promise.all(
+    items.map((item) => resolveNewItemIngredients(item.recipeId, item.quantity)),
+  );
+  return sumDeltas(...groups.map((r) => r.ingredients));
+}
+
+/** Resolve BOM consumption for the order's persisted items. */
+async function resolveOrderDelta(orderId: string, tx?: DbTx): Promise<IngredientDelta[]> {
+  const conn = tx ?? db;
+  const items = await conn.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const groups = await Promise.all(
+    items.map((oi) => resolvePersistedItemIngredients(oi.id, { tx })),
+  );
+  return sumDeltas(...groups.map((r) => r.ingredients));
+}
 
 /**
  * Get aggregated sales data for the sales data page.
@@ -191,222 +274,278 @@ export const getSalesOrderDetail = createServerFn({ method: "GET" })
  * Create a new sales order with items.
  * Used by Admin Pusat to enter external channel orders.
  */
+const createSalesOrderInput = z.object({
+  branchId: z.string(),
+  channel: z.enum(ORDER_CHANNEL_VALUES),
+  orderCode: z.string().optional(),
+  customerName: z.string().optional(),
+  notes: z.string().optional(),
+  date: z.string().optional(), // Override createdAt date (YYYY-MM-DD)
+  items: z.array(
+    z.object({
+      recipeId: z.string(),
+      quantity: z.number(),
+      price: z.number(),
+      notes: z.string().optional(),
+    }),
+  ),
+});
+
 export const createSalesOrder = createServerFn({ method: "POST" })
-  .validator(
-    (data: {
-      branchId: string;
-      channel: (typeof ORDER_CHANNEL_VALUES)[number];
-      orderCode?: string;
-      customerName?: string;
-      notes?: string;
-      date?: string; // Override createdAt date (YYYY-MM-DD)
-      items: {
-        recipeId: string;
-        quantity: number;
-        price: number;
-        notes?: string;
-      }[];
-    }) => data,
-  )
+  .validator((data: z.input<typeof createSalesOrderInput>) => createSalesOrderInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
+    return createSalesOrderCore(user, data);
+  });
 
-    // Calculate totals from items
-    let subtotal = 0;
-    let totalCogs = 0;
+/** The business logic behind `createSalesOrder`, parameterized by an explicit
+ *  user so it can be driven directly (e.g. from integration tests). Mirrors the
+ *  wrapper's `requireRole(...)` guard. */
+export async function createSalesOrderCore(
+  user: AppUser,
+  data: z.output<typeof createSalesOrderInput>,
+) {
+  // Calculate totals from items
+  let subtotal = 0;
+  let totalCogs = 0;
 
-    const itemDetails = await Promise.all(
-      data.items.map(async (item) => {
-        const [recipe] = await db
-          .select({ totalCogs: recipes.totalCogs })
-          .from(recipes)
-          .where(eq(recipes.id, item.recipeId))
-          .limit(1);
+  const itemDetails = await Promise.all(
+    data.items.map(async (item) => {
+      const [recipe] = await db
+        .select({ totalCogs: recipes.totalCogs })
+        .from(recipes)
+        .where(eq(recipes.id, item.recipeId))
+        .limit(1);
 
-        const itemTotal = item.price * item.quantity;
-        const itemCogs = (recipe?.totalCogs ?? 0) * item.quantity;
-        subtotal += itemTotal;
-        totalCogs += itemCogs;
+      const itemTotal = item.price * item.quantity;
+      const itemCogs = (recipe?.totalCogs ?? 0) * item.quantity;
+      subtotal += itemTotal;
+      totalCogs += itemCogs;
 
-        return {
+      return {
+        recipeId: item.recipeId,
+        quantity: item.quantity,
+        price: item.price,
+        notes: item.notes,
+        cogsAtTransaction: recipe?.totalCogs ?? 0,
+      };
+    }),
+  );
+
+  const totalAmount = subtotal;
+  const netSales = totalAmount;
+
+  // Create order in transaction
+  const order = await db.transaction(async (tx) => {
+    // Determine createdAt date
+    let createdAt = new Date();
+    if (data.date) {
+      createdAt = new Date(data.date + "T12:00:00");
+    }
+
+    const [newOrder] = await tx
+      .insert(orders)
+      .values({
+        branchId: data.branchId,
+        channel: data.channel,
+        orderCode: data.orderCode,
+        customerName: data.customerName,
+        subtotal,
+        totalAmount,
+        totalCogs,
+        netSales,
+        status: "Completed",
+        notes: data.notes,
+        createdAt,
+        completedAt: createdAt,
+      })
+      .returning();
+
+    // Insert items
+    if (itemDetails.length > 0) {
+      await tx.insert(orderItems).values(
+        itemDetails.map((item) => ({
+          orderId: newOrder.id,
           recipeId: item.recipeId,
           quantity: item.quantity,
           price: item.price,
+          cogsAtTransaction: item.cogsAtTransaction,
           notes: item.notes,
-          cogsAtTransaction: recipe?.totalCogs ?? 0,
-        };
-      }),
+        })),
+      );
+    }
+
+    // Deduct inventory + write Kartu Stok rows (same as POS createOrder)
+    const delta = await resolveItemsDelta(data.items);
+    await applyIngredientDelta(
+      tx,
+      data.branchId,
+      delta,
+      newOrder.id,
+      `Data Penjualan ${newOrder.id.slice(0, 8)}`,
     );
 
-    const totalAmount = subtotal;
-    const netSales = totalAmount;
-
-    // Create order in transaction
-    const order = await db.transaction(async (tx) => {
-      // Determine createdAt date
-      let createdAt = new Date();
-      if (data.date) {
-        createdAt = new Date(data.date + "T12:00:00");
-      }
-
-      const [newOrder] = await tx
-        .insert(orders)
-        .values({
-          branchId: data.branchId,
-          channel: data.channel,
-          orderCode: data.orderCode,
-          customerName: data.customerName,
-          subtotal,
-          totalAmount,
-          totalCogs,
-          netSales,
-          status: "Completed",
-          notes: data.notes,
-          createdAt,
-          completedAt: createdAt,
-        })
-        .returning();
-
-      // Insert items
-      if (itemDetails.length > 0) {
-        await tx.insert(orderItems).values(
-          itemDetails.map((item) => ({
-            orderId: newOrder.id,
-            recipeId: item.recipeId,
-            quantity: item.quantity,
-            price: item.price,
-            cogsAtTransaction: item.cogsAtTransaction,
-            notes: item.notes,
-          })),
-        );
-      }
-
-      return newOrder;
-    });
-
-    // Create notification for affected branch
-    await createSalesNotification({
-      action: "create",
-      orderId: order.id,
-      branchId: data.branchId,
-      channel: data.channel,
-      orderCode: data.orderCode,
-      userId: user.id,
-      items: data.items,
-    });
-
-    return order;
+    return newOrder;
   });
+
+  // Create notification for affected branch
+  await createSalesNotification({
+    action: "create",
+    orderId: order.id,
+    branchId: data.branchId,
+    channel: data.channel,
+    orderCode: data.orderCode,
+    userId: user.id,
+    items: data.items,
+  });
+
+  return order;
+}
+
+const updateSalesOrderInput = z.object({
+  id: z.string(),
+  branchId: z.string(),
+  channel: z.enum(ORDER_CHANNEL_VALUES),
+  orderCode: z.string().optional(),
+  customerName: z.string().optional(),
+  notes: z.string().optional(),
+  date: z.string().optional(),
+  items: z.array(
+    z.object({
+      id: z.string().optional(), // Existing item ID (for updates)
+      recipeId: z.string(),
+      quantity: z.number(),
+      price: z.number(),
+      notes: z.string().optional(),
+    }),
+  ),
+});
 
 /**
  * Update an existing sales order and its items.
  */
 export const updateSalesOrder = createServerFn({ method: "POST" })
-  .validator(
-    (data: {
-      id: string;
-      branchId: string;
-      channel: (typeof ORDER_CHANNEL_VALUES)[number];
-      orderCode?: string;
-      customerName?: string;
-      notes?: string;
-      date?: string;
-      items: {
-        id?: string; // Existing item ID (for updates)
-        recipeId: string;
-        quantity: number;
-        price: number;
-        notes?: string;
-      }[];
-    }) => data,
-  )
+  .validator((data: z.input<typeof updateSalesOrderInput>) => updateSalesOrderInput.parse(data))
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
+    return updateSalesOrderCore(user, data);
+  });
 
-    // Calculate totals
-    let subtotal = 0;
-    let totalCogs = 0;
+/** The business logic behind `updateSalesOrder`, parameterized by an explicit
+ *  user so it can be driven directly (e.g. from integration tests). Mirrors the
+ *  wrapper's `requireRole(...)` guard. */
+export async function updateSalesOrderCore(
+  user: AppUser,
+  data: z.output<typeof updateSalesOrderInput>,
+) {
+  // Calculate totals
+  let subtotal = 0;
+  let totalCogs = 0;
 
-    const itemDetails = await Promise.all(
-      data.items.map(async (item) => {
-        const [recipe] = await db
-          .select({ totalCogs: recipes.totalCogs })
-          .from(recipes)
-          .where(eq(recipes.id, item.recipeId))
-          .limit(1);
+  const itemDetails = await Promise.all(
+    data.items.map(async (item) => {
+      const [recipe] = await db
+        .select({ totalCogs: recipes.totalCogs })
+        .from(recipes)
+        .where(eq(recipes.id, item.recipeId))
+        .limit(1);
 
-        const itemTotal = item.price * item.quantity;
-        const itemCogs = (recipe?.totalCogs ?? 0) * item.quantity;
-        subtotal += itemTotal;
-        totalCogs += itemCogs;
+      const itemTotal = item.price * item.quantity;
+      const itemCogs = (recipe?.totalCogs ?? 0) * item.quantity;
+      subtotal += itemTotal;
+      totalCogs += itemCogs;
 
-        return {
+      return {
+        recipeId: item.recipeId,
+        quantity: item.quantity,
+        price: item.price,
+        notes: item.notes,
+        cogsAtTransaction: recipe?.totalCogs ?? 0,
+      };
+    }),
+  );
+
+  const totalAmount = subtotal;
+  const netSales = totalAmount;
+
+  await db.transaction(async (tx) => {
+    // Capture the order's pre-edit state for the stock reversal
+    const [oldOrder] = await tx.select().from(orders).where(eq(orders.id, data.id)).limit(1);
+    if (!oldOrder) throw new Error("Order not found");
+    const oldDelta = await resolveOrderDelta(data.id, tx);
+
+    // Update order
+    let createdAt: Date | undefined;
+    if (data.date) {
+      createdAt = new Date(data.date + "T12:00:00");
+    }
+
+    await tx
+      .update(orders)
+      .set({
+        branchId: data.branchId,
+        channel: data.channel,
+        orderCode: data.orderCode,
+        customerName: data.customerName,
+        subtotal,
+        totalAmount,
+        totalCogs,
+        netSales,
+        notes: data.notes,
+        createdAt,
+        completedAt: createdAt,
+      })
+      .where(eq(orders.id, data.id));
+
+    // Delete existing items and re-insert
+    await tx.delete(orderItems).where(eq(orderItems.orderId, data.id));
+
+    if (itemDetails.length > 0) {
+      await tx.insert(orderItems).values(
+        itemDetails.map((item) => ({
+          orderId: data.id,
           recipeId: item.recipeId,
           quantity: item.quantity,
           price: item.price,
+          cogsAtTransaction: item.cogsAtTransaction,
           notes: item.notes,
-          cogsAtTransaction: recipe?.totalCogs ?? 0,
-        };
-      }),
+        })),
+      );
+    }
+
+    // Reconcile stock: restore what the old items consumed (from the old
+    // branch), deduct what the new items consume. Each side writes its own
+    // Kartu Stok rows so the edit is fully traceable.
+    const newDelta = await resolveItemsDelta(data.items);
+    await applyIngredientDelta(
+      tx,
+      oldOrder.branchId,
+      oldDelta.map((d) => ({ ingredientId: d.ingredientId, quantity: -d.quantity })),
+      data.id,
+      `Edit Order (restore) ${data.id.slice(0, 8)}`,
     );
-
-    const totalAmount = subtotal;
-    const netSales = totalAmount;
-
-    await db.transaction(async (tx) => {
-      // Update order
-      let createdAt: Date | undefined;
-      if (data.date) {
-        createdAt = new Date(data.date + "T12:00:00");
-      }
-
-      await tx
-        .update(orders)
-        .set({
-          branchId: data.branchId,
-          channel: data.channel,
-          orderCode: data.orderCode,
-          customerName: data.customerName,
-          subtotal,
-          totalAmount,
-          totalCogs,
-          netSales,
-          notes: data.notes,
-          createdAt,
-          completedAt: createdAt,
-        })
-        .where(eq(orders.id, data.id));
-
-      // Delete existing items and re-insert
-      await tx.delete(orderItems).where(eq(orderItems.orderId, data.id));
-
-      if (itemDetails.length > 0) {
-        await tx.insert(orderItems).values(
-          itemDetails.map((item) => ({
-            orderId: data.id,
-            recipeId: item.recipeId,
-            quantity: item.quantity,
-            price: item.price,
-            cogsAtTransaction: item.cogsAtTransaction,
-            notes: item.notes,
-          })),
-        );
-      }
-    });
-
-    // Create notification
-    await createSalesNotification({
-      action: "update",
-      orderId: data.id,
-      branchId: data.branchId,
-      channel: data.channel,
-      orderCode: data.orderCode,
-      userId: user.id,
-      items: data.items,
-    });
-
-    return { success: true };
+    await applyIngredientDelta(
+      tx,
+      data.branchId,
+      newDelta,
+      data.id,
+      `Edit Order (deduct) ${data.id.slice(0, 8)}`,
+    );
   });
+
+  // Create notification
+  await createSalesNotification({
+    action: "update",
+    orderId: data.id,
+    branchId: data.branchId,
+    channel: data.channel,
+    orderCode: data.orderCode,
+    userId: user.id,
+    items: data.items,
+  });
+
+  return { success: true };
+}
 
 /**
  * Delete a sales order.
@@ -415,35 +554,52 @@ export const deleteSalesOrder = createServerFn({ method: "POST" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    // Get order details before deletion (for notification)
-    const [order] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1);
-
-    if (!order) throw new Error("Order not found");
-
-    // Get items for notification
-    const items = await db.select().from(orderItems).where(eq(orderItems.orderId, data.id));
-
-    // Delete (cascade will remove items)
-    await db.delete(orders).where(eq(orders.id, data.id));
-
-    // Create notification
-    await createSalesNotification({
-      action: "delete",
-      orderId: data.id,
-      branchId: order.branchId,
-      channel: order.channel,
-      orderCode: order.orderCode,
-      userId: user.id,
-      items: items.map((i) => ({
-        recipeId: i.recipeId,
-        quantity: i.quantity,
-        price: i.price,
-      })),
-    });
-
-    return { success: true };
+    return deleteSalesOrderCore(user, data);
   });
+
+/** The business logic behind `deleteSalesOrder`, parameterized by an explicit
+ *  user so it can be driven directly (e.g. from integration tests). Mirrors the
+ *  wrapper's `requireRole(...)` guard. */
+export async function deleteSalesOrderCore(user: AppUser, data: { id: string }) {
+  // Get order details before deletion (for notification)
+  const [order] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1);
+
+  if (!order) throw new Error("Order not found");
+
+  // Get items for notification
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, data.id));
+
+  // Restore the stock the order consumed + write Kartu Stok reversal rows,
+  // before the cascade removes the order items the resolver reads.
+  await db.transaction(async (tx) => {
+    const oldDelta = await resolveOrderDelta(data.id, tx);
+    await applyIngredientDelta(
+      tx,
+      order.branchId,
+      oldDelta.map((d) => ({ ingredientId: d.ingredientId, quantity: -d.quantity })),
+      data.id,
+      `Delete Order (restore) ${data.id.slice(0, 8)}`,
+    );
+    await tx.delete(orders).where(eq(orders.id, data.id));
+  });
+
+  // Create notification
+  await createSalesNotification({
+    action: "delete",
+    orderId: data.id,
+    branchId: order.branchId,
+    channel: order.channel,
+    orderCode: order.orderCode,
+    userId: user.id,
+    items: items.map((i) => ({
+      recipeId: i.recipeId,
+      quantity: i.quantity,
+      price: i.price,
+    })),
+  });
+
+  return { success: true };
+}
 
 /**
  * Get sales summary (aggregated by channel for a date range).
