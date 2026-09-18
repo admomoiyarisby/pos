@@ -34,6 +34,50 @@ import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, formatRupiah } from "./html-utils";
 
+/**
+ * Validate a `dateFrom`/`dateTo` pair of Jakarta-local ("YYYY-MM-DD") dates and
+ * cap the inclusive range length.
+ *
+ * Both bounds must be strict `YYYY-MM-DD` calendar dates (no time component) —
+ * anything else is a client bug or tampering. The day count is done with
+ * Date.UTC on the parsed calendar components, so it is timezone-independent:
+ * `new Date("YYYY-MM-DD")` would instead parse as UTC midnight and make the
+ * diff depend on nothing but luck (and DST-free UTC still miscounts nothing
+ * here, but a locale-shifted parse would). Rejected as errors:
+ * malformed dates, dateTo < dateFrom, and ranges over `maxDays` inclusive days.
+ *
+ * Returns the validated bounds so handlers use exactly what was checked.
+ */
+interface ValidatedDateRange {
+  dateFrom: string;
+  dateTo: string;
+}
+function validateDateRange(dateFrom: string, dateTo: string, maxDays: number): ValidatedDateRange {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateOnly.test(dateFrom) || !dateOnly.test(dateTo)) {
+    throw new Error("Format tanggal tidak valid (harus YYYY-MM-DD)");
+  }
+  const [fy, fm, fd] = dateFrom.split("-").map(Number);
+  const [ty, tm, td] = dateTo.split("-").map(Number);
+  // Calendar validity (rejects e.g. 2026-02-30) — roundtrip through Date.UTC.
+  const fromUtc = Date.UTC(fy, fm - 1, fd);
+  const toUtc = Date.UTC(ty, tm - 1, td);
+  if (new Date(fromUtc).toISOString().slice(0, 10) !== dateFrom) {
+    throw new Error("Tanggal awal tidak valid");
+  }
+  if (new Date(toUtc).toISOString().slice(0, 10) !== dateTo) {
+    throw new Error("Tanggal akhir tidak valid");
+  }
+  if (toUtc < fromUtc) {
+    throw new Error("Tanggal akhir tidak boleh sebelum tanggal awal");
+  }
+  const daysDiff = (toUtc - fromUtc) / (1000 * 60 * 60 * 24);
+  if (daysDiff > maxDays) {
+    throw new Error(`Maksimal rentang waktu ${maxDays} hari`);
+  }
+  return { dateFrom, dateTo };
+}
+
 export interface FinanceSummary {
   totalSales: number;
   totalMerchantDiscount: number;
@@ -749,12 +793,7 @@ export const getSalesAnalytics = createServerFn({ method: "GET" })
   )
   .handler(async ({ data }): Promise<SalesAnalytics> => {
     await requireRole("super_admin");
-
-    // Validate max 31 days
-    const fromDate = new Date(data.dateFrom);
-    const toDate = new Date(data.dateTo);
-    const daysDiff = (toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysDiff > 31) throw new Error("Maksimal rentang waktu 31 hari");
+    validateDateRange(data.dateFrom, data.dateTo, 31);
 
     // Channel distribution
     const channelData = await db
@@ -1124,11 +1163,7 @@ export const getHourlyAnalytics = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom: string; dateTo: string }) => data)
   .handler(async ({ data }): Promise<HourlyDataPoint[]> => {
     await requireRole("super_admin");
-
-    const fromDate = new Date(data.dateFrom);
-    const toDate = new Date(data.dateTo);
-    const daysDiff = (toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysDiff > 31) throw new Error("Maksimal rentang waktu 31 hari");
+    validateDateRange(data.dateFrom, data.dateTo, 31);
 
     const result = await db
       .select({

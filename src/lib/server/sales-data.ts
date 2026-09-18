@@ -21,7 +21,7 @@ import {
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { requireAuth, requireRole } from "#/lib/server/auth";
-import { eq, ne, and, gte, lte, sql, desc, count, inArray } from "drizzle-orm";
+import { eq, ne, and, sql, desc, count, inArray } from "drizzle-orm";
 
 /**
  * Get aggregated sales data for the sales data page.
@@ -57,13 +57,19 @@ export const getSalesData = createServerFn({ method: "GET" })
       conditions.push(eq(orders.channel, data.channel));
     }
     if (data.dateFrom) {
-      conditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
+      // Jakarta local dates (matching finance.ts): the UI sends YYYY-MM-DD
+      // strings and orders.createdAt is a NAIVE timestamp storing UTC
+      // wall-clock time (see schema.ts), so convert UTC -> WIB before
+      // comparing to the local date — JS Date boundaries align to UTC days
+      // and shift the window by 7 hours.
+      conditions.push(
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
     }
     if (data.dateTo) {
-      // Add 1 day to include the full day
-      const toDate = new Date(data.dateTo);
-      toDate.setDate(toDate.getDate() + 1);
-      conditions.push(lte(orders.createdAt, toDate));
+      conditions.push(
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -453,12 +459,15 @@ export const getSalesSummary = createServerFn({ method: "GET" })
       conditions.push(eq(orders.branchId, data.branchId));
     }
     if (data.dateFrom) {
-      conditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
+      // Jakarta local dates (matching finance.ts) — see getSalesData above.
+      conditions.push(
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
     }
     if (data.dateTo) {
-      const toDate = new Date(data.dateTo);
-      toDate.setDate(toDate.getDate() + 1);
-      conditions.push(lte(orders.createdAt, toDate));
+      conditions.push(
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;

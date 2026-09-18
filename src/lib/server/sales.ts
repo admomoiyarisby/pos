@@ -17,7 +17,7 @@ import {
   systemNotifications,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, gte, lte, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { requireRole } from "#/lib/server/auth";
 import { z } from "zod";
 
@@ -63,9 +63,18 @@ export const getSalesRecords = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireRole("super_admin", "admin_pusat");
 
+    // Date range (Jakarta local dates, matching finance.ts): the UI sends
+    // YYYY-MM-DD strings and orders.createdAt is a NAIVE timestamp storing UTC
+    // wall-clock time (see schema.ts), so convert UTC -> WIB before comparing
+    // to the local date — JS Date boundaries align to UTC days and shift the
+    // window by 7 hours (orders from 00:00–07:00 WIB land on the wrong day).
     const where = and(
-      data.dateFrom ? gte(orders.createdAt, new Date(data.dateFrom)) : undefined,
-      data.dateTo ? lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")) : undefined,
+      data.dateFrom
+        ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
+        : undefined,
+      data.dateTo
+        ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
+        : undefined,
       data.branchId ? eq(orders.branchId, data.branchId) : undefined,
       data.channel ? eq(orders.channel, data.channel) : undefined,
     );

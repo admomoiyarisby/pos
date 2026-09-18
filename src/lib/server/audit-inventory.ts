@@ -9,7 +9,7 @@ import {
   recipeIngredients,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { requireRole } from "./auth";
 
 export interface AuditInventoryIngredient {
@@ -45,8 +45,19 @@ export const getAuditInventory = createServerFn({ method: "GET" })
     const conditions = [eq(orders.status, "Completed")];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
     if (data.channel) conditions.push(eq(orders.channel, data.channel));
-    if (data.dateFrom) conditions.push(gte(orders.createdAt, new Date(data.dateFrom)));
-    if (data.dateTo) conditions.push(lte(orders.createdAt, new Date(data.dateTo + "T23:59:59")));
+    // Date range (Jakarta local dates, matching finance.ts): the UI sends
+    // YYYY-MM-DD strings and orders.createdAt is a NAIVE timestamp storing UTC
+    // wall-clock time (see schema.ts), so convert UTC -> WIB before comparing
+    // to the local date — JS Date boundaries align to UTC days and shift the
+    // window by 7 hours (orders from 00:00–07:00 WIB land on the wrong day).
+    if (data.dateFrom)
+      conditions.push(
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
+    if (data.dateTo)
+      conditions.push(
+        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
 
     // Step 1: Count servings per recipe from order items
     const recipeServingCounts = await db

@@ -32,7 +32,7 @@ import {
   users,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, ne, desc, inArray, isNull, gte, lte, sql, type SQL } from "drizzle-orm";
+import { eq, and, ne, desc, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import type { AppUser } from "./auth";
 import { branchVisibleClause, getEffectiveBranchId } from "#/lib/server/branch-visibility";
@@ -704,8 +704,19 @@ export const getShiftSessions = createServerFn({ method: "GET" })
       // Super admin may filter to any branch.
       conditions.push(eq(shiftSessions.branchId, data.branchId));
     }
-    if (data.dateFrom) conditions.push(gte(shiftSessions.loggedInAt, new Date(data.dateFrom)));
-    if (data.dateTo) conditions.push(lte(shiftSessions.loggedInAt, new Date(data.dateTo)));
+    // Date range (Jakarta local dates): shiftSessions.loggedInAt is a NAIVE
+    // timestamp storing UTC wall-clock time (see schema.ts), so convert
+    // UTC -> WIB before comparing to the UI's YYYY-MM-DD strings — comparing
+    // against JS Date boundaries aligns to UTC days and shifts the window by
+    // 7 hours (and lte vs a midnight Date would drop the whole to-day).
+    if (data.dateFrom)
+      conditions.push(
+        sql`DATE((${shiftSessions.loggedInAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
+    if (data.dateTo)
+      conditions.push(
+        sql`DATE((${shiftSessions.loggedInAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
 
     const result = await db
       .select({

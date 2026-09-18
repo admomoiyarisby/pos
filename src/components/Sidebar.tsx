@@ -479,7 +479,7 @@ export default function Sidebar({
           </Badge>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-2">
+        <nav className="flex-1 min-h-0 overflow-y-auto py-2">
           {navGroups.map((group) => (
             <SidebarGroup key={group.label} group={group} userRole={userRole} />
           ))}
@@ -560,7 +560,7 @@ export default function Sidebar({
           )}
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-2">
+        <nav className="flex-1 min-h-0 overflow-y-auto py-2">
           {navGroups.map((group) => (
             <SidebarGroup
               key={group.label}

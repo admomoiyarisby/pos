@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
 import { auditLogs, systemLogs, systemNotifications, users } from "#/db/schema";
-import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { logSystemAction } from "./logging";
 
@@ -24,8 +24,19 @@ export const getAuditLogs = createServerFn({ method: "GET" })
     if (data.tableName) conditions.push(eq(auditLogs.tableName, data.tableName));
     if (data.action) conditions.push(eq(auditLogs.action, data.action));
     if (data.userId) conditions.push(eq(auditLogs.userId, data.userId));
-    if (data.dateFrom) conditions.push(gte(auditLogs.createdAt, new Date(data.dateFrom)));
-    if (data.dateTo) conditions.push(lte(auditLogs.createdAt, new Date(data.dateTo)));
+    // Date range (Jakarta local dates): auditLogs.createdAt is a NAIVE
+    // timestamp storing UTC wall-clock time (see schema.ts), so convert
+    // UTC -> WIB before comparing to the UI's YYYY-MM-DD strings — comparing
+    // against JS Date boundaries aligns to UTC days and shifts the window by
+    // 7 hours (and lte vs a midnight Date would drop the whole to-day).
+    if (data.dateFrom)
+      conditions.push(
+        sql`DATE((${auditLogs.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+      );
+    if (data.dateTo)
+      conditions.push(
+        sql`DATE((${auditLogs.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+      );
 
     const result = await db
       .select({

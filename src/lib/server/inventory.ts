@@ -302,12 +302,16 @@ export const getStockLedger = createServerFn({ method: "GET" })
       data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
       data.reference ? eq(stockLedger.reference, data.reference) : undefined,
       // Date range filter (Jakarta local dates, matching finance.ts): the UI
-      // sends YYYY-MM-DD strings and stockLedger.createdAt is timestamptz.
+      // sends YYYY-MM-DD strings. stockLedger.createdAt is a NAIVE timestamp
+      // storing UTC wall-clock time (see schema.ts), so it must be converted
+      // UTC -> Jakarta before comparing to the local date — comparing directly
+      // against a Jakarta-anchored boundary shifts the window by 7 hours and
+      // makes the "today" preset return nothing for movements before 14:00 WIB.
       data.dateFrom
-        ? sql`${stockLedger.createdAt} >= (${data.dateFrom}::date AT TIME ZONE 'Asia/Jakarta')`
+        ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
         : undefined,
       data.dateTo
-        ? sql`${stockLedger.createdAt} < ((${data.dateTo}::date + interval '1 day') AT TIME ZONE 'Asia/Jakarta')`
+        ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
         : undefined,
       data.search
         ? fuzzySearch(
