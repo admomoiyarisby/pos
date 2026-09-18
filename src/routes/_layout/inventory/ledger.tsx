@@ -8,11 +8,12 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
 import { Pagination } from "#/components/ui/Pagination";
 import { getStockLedger } from "#/lib/server/inventory";
+import { isoDateDaysAgo } from "#/components/pos/HistoryDateFilter";
 import { getBranches } from "#/lib/server/branches";
 import { getRecipes } from "#/lib/server/recipes";
 import { useAuth } from "#/lib/auth-context";
 import { Badge } from "#/components/ui/badge";
-import { Factory, ShoppingBag, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Factory, ShoppingBag, X } from "lucide-react";
 
 interface LedgerRow {
   id: string;
@@ -49,7 +50,9 @@ function LedgerPage() {
     reference?: string;
     bom?: string;
     bomRecipe?: string;
-  }>(["branchId", "reference", "bom", "bomRecipe"]);
+    dateFrom?: string;
+    dateTo?: string;
+  }>(["branchId", "reference", "bom", "bomRecipe", "dateFrom", "dateTo"]);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -77,6 +80,21 @@ function LedgerPage() {
   // Waste BOM filter (ADR 0013): review per-ingredient losses by recipe.
   const bomOnly = filters.bom === "true";
   const bomRecipe = filters.bomRecipe ?? "";
+  // Date range (YYYY-MM-DD): shows only movements within the range.
+  const dateFrom = filters.dateFrom ?? "";
+  const dateTo = filters.dateTo ?? "";
+  // Quick presets: chip is active only when the URL range matches it exactly
+  // (same semantics as HISTORY_PRESETS in HistoryDateFilter).
+  const DATE_PRESETS = [
+    { key: "today", label: "Hari ini", from: isoDateDaysAgo(0), to: "" },
+    { key: "7d", label: "7 hari", from: isoDateDaysAgo(6), to: "" },
+    { key: "30d", label: "30 hari", from: isoDateDaysAgo(29), to: "" },
+  ] as const;
+  const setDateRange = (from: string, to: string) => {
+    setFilter("dateFrom", from);
+    setFilter("dateTo", to);
+    setPage(0);
+  };
 
   const canFilterBranches =
     user?.role === "super_admin" || user?.role === "area_manager" || user?.role === "admin_pusat";
@@ -89,7 +107,18 @@ function LedgerPage() {
 
   const PAGE_SIZE = 15;
   const { data: ledger } = useQuery({
-    queryKey: ["stock-ledger", page, branchId, reference, committedSearch, bomOnly, bomRecipe],
+    queryKey: [
+      "stock-ledger",
+      page,
+      branchId,
+      reference,
+      committedSearch,
+      bomOnly,
+      bomRecipe,
+      dateFrom,
+      dateTo,
+      sort,
+    ],
     queryFn: () =>
       getStockLedger({
         data: {
@@ -100,6 +129,12 @@ function LedgerPage() {
           search: committedSearch || undefined,
           wasteBomOnly: bomOnly,
           wasteBomRecipeId: bomOnly && bomRecipe ? bomRecipe : undefined,
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+          // Server-side sort (mobile cards + desktop headers share the URL
+          // sortKey/sortDir pair). Unsorted = server default (newest first).
+          sortBy: sort?.key || undefined,
+          sortDir: sort?.dir || undefined,
         },
       }),
     initialData: initial,
@@ -120,6 +155,79 @@ function LedgerPage() {
   // Pusat, Super Admin, Central Kitchen) can see multiple branches at once.
   const showBranchColumn = user?.role !== "branch_admin";
 
+  // ── Shared cell renderers ──
+  // Used by both the desktop DataTable columns and the mobile card list so
+  // the two views can never drift (same reference deep-links, same badges).
+
+  const renderName = (row: LedgerRow) => {
+    // Show recipe name for recipe-linked entries, ingredient name otherwise
+    if (row.recipeName) {
+      return (
+        <span className="flex items-center gap-1 min-w-0">
+          <Factory className="h-3 w-3 shrink-0 text-muted-foreground" />
+          <span className="font-medium truncate">{row.recipeName}</span>
+        </span>
+      );
+    }
+    return <span className="truncate">{row.ingredientName ?? "-"}</span>;
+  };
+
+  const renderQty = (row: LedgerRow) => (
+    <span className="tabular-nums whitespace-nowrap">
+      {row.quantity.toLocaleString("id-ID")}
+      {row.stockUnit && <span className="text-muted-foreground ml-0.5">{row.stockUnit}</span>}
+    </span>
+  );
+
+  const renderBalance = (row: LedgerRow) => (
+    <span className="tabular-nums whitespace-nowrap">
+      {row.balance.toLocaleString("id-ID")}
+      {row.stockUnit && <span className="text-muted-foreground ml-0.5">{row.stockUnit}</span>}
+    </span>
+  );
+
+  const renderReference = (row: LedgerRow) => {
+    const isYield = row.reference.startsWith("YIELD-");
+    const display = reference ? row.reference : row.reference.slice(0, 8);
+    // POS movements carry the order's Kode Order (ojol) + channel — show
+    // both, with a channel badge to distinguish it from plain reference ids.
+    if (row.orderChannel) {
+      return (
+        <span className="flex flex-col gap-0.5 min-w-0">
+          <span className="font-mono text-xs">{display}</span>
+          {row.orderCode ? (
+            <span
+              className="inline-flex items-center gap-1 w-fit max-w-full font-mono text-[10px] px-1 py-0.5 rounded border border-primary/20 bg-primary/5 text-primary font-medium"
+              title={`Kode Order (${row.orderChannel})`}
+            >
+              <ShoppingBag className="h-2.5 w-2.5 shrink-0" />
+              <span className="truncate">{row.orderCode}</span>
+            </span>
+          ) : null}
+          <span
+            className="inline-flex items-center w-fit text-[9px] px-1 py-0.5 rounded bg-muted/70 text-muted-foreground font-medium"
+            title={`Channel: ${row.orderChannel}`}
+          >
+            {row.orderChannel}
+          </span>
+        </span>
+      );
+    }
+    if (isYield) {
+      const yieldId = row.reference.replace("YIELD-", "");
+      return (
+        <a
+          href={`/yield-tracking?highlight=${yieldId}`}
+          title="Lihat Produksi di Yield Tracking"
+          className="font-mono text-xs text-primary hover:underline underline-offset-2"
+        >
+          {display}
+        </a>
+      );
+    }
+    return <span className="font-mono text-xs">{display}</span>;
+  };
+
   const columns: Column<LedgerRow>[] = [
     {
       accessorKey: "createdAt",
@@ -138,18 +246,7 @@ function LedgerPage() {
       accessorKey: "ingredientName",
       header: "Bahan/Resep",
       enableSorting: true,
-      cell: ({ row }) => {
-        // Show recipe name for recipe-linked entries, ingredient name otherwise
-        if (row.original.recipeName) {
-          return (
-            <span className="flex items-center gap-1">
-              <Factory className="h-3 w-3 text-muted-foreground" />
-              <span className="font-medium">{row.original.recipeName}</span>
-            </span>
-          );
-        }
-        return row.original.ingredientName ?? "-";
-      },
+      cell: ({ row }) => renderName(row.original),
     },
     ...(showBranchColumn
       ? [
@@ -181,14 +278,7 @@ function LedgerPage() {
       align: "right",
       width: "w-20",
       enableSorting: true,
-      cell: ({ row }) => (
-        <span>
-          {row.original.quantity.toLocaleString("id-ID")}
-          {row.original.stockUnit && (
-            <span className="text-muted-foreground ml-0.5">{row.original.stockUnit}</span>
-          )}
-        </span>
-      ),
+      cell: ({ row }) => renderQty(row.original),
     },
     {
       accessorKey: "balance",
@@ -196,60 +286,13 @@ function LedgerPage() {
       align: "right",
       width: "w-20",
       enableSorting: true,
-      cell: ({ row }) => (
-        <span>
-          {row.original.balance.toLocaleString("id-ID")}
-          {row.original.stockUnit && (
-            <span className="text-muted-foreground ml-0.5">{row.original.stockUnit}</span>
-          )}
-        </span>
-      ),
+      cell: ({ row }) => renderBalance(row.original),
     },
     {
       accessorKey: "reference",
       header: "Referensi",
       width: "w-36",
-      cell: ({ row }) => {
-        const isYield = row.original.reference.startsWith("YIELD-");
-        const display = reference ? row.original.reference : row.original.reference.slice(0, 8);
-        // POS movements carry the order's Kode Order (ojol) + channel — show
-        // both, with a channel badge to distinguish it from plain reference ids.
-        if (row.original.orderChannel) {
-          return (
-            <span className="flex flex-col gap-0.5 min-w-0">
-              <span className="font-mono text-xs">{display}</span>
-              {row.original.orderCode ? (
-                <span
-                  className="inline-flex items-center gap-1 w-fit max-w-full font-mono text-[10px] px-1 py-0.5 rounded border border-primary/20 bg-primary/5 text-primary font-medium"
-                  title={`Kode Order (${row.original.orderChannel})`}
-                >
-                  <ShoppingBag className="h-2.5 w-2.5 shrink-0" />
-                  <span className="truncate">{row.original.orderCode}</span>
-                </span>
-              ) : null}
-              <span
-                className="inline-flex items-center w-fit text-[9px] px-1 py-0.5 rounded bg-muted/70 text-muted-foreground font-medium"
-                title={`Channel: ${row.original.orderChannel}`}
-              >
-                {row.original.orderChannel}
-              </span>
-            </span>
-          );
-        }
-        if (isYield) {
-          const yieldId = row.original.reference.replace("YIELD-", "");
-          return (
-            <a
-              href={`/yield-tracking?highlight=${yieldId}`}
-              title="Lihat Produksi di Yield Tracking"
-              className="font-mono text-xs text-primary hover:underline underline-offset-2"
-            >
-              {display}
-            </a>
-          );
-        }
-        return <span className="font-mono text-xs">{display}</span>;
-      },
+      cell: ({ row }) => renderReference(row.original),
     },
     { accessorKey: "notes", header: "Keterangan", cell: ({ row }) => row.original.notes ?? "-" },
   ];
@@ -265,95 +308,283 @@ function LedgerPage() {
         "central_kitchen",
       ]}
     >
-      <div className="flex items-center gap-3 mb-4">
-        {canFilterBranches && branches && (
+      {/* Filter bar adapts per device class (matches the Waste page language):
+          mobile stacks controls in full-width 44px-tap-target rows; sm+ is one
+          compact inline row. `sm:contents` dissolves the mobile row wrappers so
+          every control joins the desktop flex flow. */}
+      <div className="mb-4 space-y-2.5 sm:space-y-0 sm:flex sm:items-center sm:flex-wrap sm:gap-3">
+        {/* Row 1 (mobile) — branch + mutation type, side by side */}
+        <div className="grid grid-cols-2 gap-2 sm:contents">
+          {canFilterBranches && branches && (
+            <select
+              value={branchId}
+              onChange={(e) => {
+                setFilter("branchId", e.target.value);
+                setPage(0);
+              }}
+              aria-label="Cabang"
+              className="h-11 w-full rounded-xl border border-input bg-background px-3 text-[16px] font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8 sm:w-auto sm:rounded-md sm:text-sm sm:font-normal sm:shadow-none"
+            >
+              <option value="">Semua Cabang</option>
+              {visibleBranches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {/* Waste BOM filter (ADR 0013): review per-ingredient losses by recipe */}
           <select
-            value={branchId}
+            value={bomOnly ? "bom" : ""}
             onChange={(e) => {
-              setFilter("branchId", e.target.value);
+              setFilter("bom", e.target.value === "bom" ? "true" : "");
+              setFilter("bomRecipe", "");
               setPage(0);
             }}
-            className="h-8 rounded-md border border-input bg-background px-3 text-sm"
+            aria-label="Jenis mutasi"
+            className="h-11 w-full rounded-xl border border-input bg-background px-3 text-[16px] font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8 sm:w-auto sm:rounded-md sm:text-sm sm:font-normal sm:shadow-none"
           >
-            <option value="">Semua Cabang</option>
-            {visibleBranches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
+            <option value="">Semua Mutasi</option>
+            <option value="bom">Waste BOM</option>
           </select>
-        )}
-        {/* Waste BOM filter (ADR 0013): review per-ingredient losses by recipe */}
-        <select
-          value={bomOnly ? "bom" : ""}
-          onChange={(e) => {
-            setFilter("bom", e.target.value === "bom" ? "true" : "");
-            setFilter("bomRecipe", "");
-            setPage(0);
-          }}
-          aria-label="Jenis mutasi"
-          className="h-8 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option value="">Semua Mutasi</option>
-          <option value="bom">Waste BOM</option>
-        </select>
-        {bomOnly && (
-          <select
-            value={bomRecipe}
-            onChange={(e) => {
-              setFilter("bomRecipe", e.target.value);
-              setPage(0);
-            }}
-            aria-label="Resep (Waste BOM)"
-            className="h-8 max-w-[220px] rounded-md border border-input bg-background px-3 text-sm"
+          {bomOnly && (
+            <select
+              value={bomRecipe}
+              onChange={(e) => {
+                setFilter("bomRecipe", e.target.value);
+                setPage(0);
+              }}
+              aria-label="Resep (Waste BOM)"
+              className="col-span-2 h-11 w-full rounded-xl border border-input bg-background px-3 text-[16px] font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:col-span-1 sm:h-8 sm:w-auto sm:max-w-[220px] sm:rounded-md sm:text-sm sm:font-normal sm:shadow-none"
+            >
+              <option value="">Semua Resep</option>
+              {(recipes ?? []).map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        {/* Row 2 (mobile) — date range: filter movements to the given
+            (inclusive) dates. */}
+        {/* Quick presets ("Semua" = no date filter) — one row edge-to-edge
+            scrollable on mobile, inline with the inputs on sm+. Active only on
+            an exact range match so hand-picked dates show no active chip. */}
+        <div className="flex items-center gap-1.5 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button
+            onClick={() => setDateRange("", "")}
+            aria-pressed={!dateFrom && !dateTo}
+            className={`shrink-0 inline-flex items-center h-11 sm:h-7 px-3.5 sm:px-2.5 rounded-full border text-sm sm:text-xs font-medium whitespace-nowrap transition-colors ${
+              !dateFrom && !dateTo
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground border-input hover:bg-muted hover:text-foreground"
+            }`}
           >
-            <option value="">Semua Resep</option>
-            {(recipes ?? []).map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        )}
+            Semua
+          </button>
+          {DATE_PRESETS.map((p) => {
+            const active = dateFrom === p.from && (!p.to || dateTo === p.to);
+            return (
+              <button
+                key={p.key}
+                onClick={() => setDateRange(p.from, p.to)}
+                aria-pressed={active}
+                className={`shrink-0 inline-flex items-center h-11 sm:h-7 px-3.5 sm:px-2.5 rounded-full border text-sm sm:text-xs font-medium whitespace-nowrap transition-colors ${
+                  active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border-input hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center sm:contents">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateRange(e.target.value, dateTo)}
+            aria-label="Tanggal awal"
+            max={dateTo || undefined}
+            className="h-11 sm:h-8 w-full rounded-xl sm:rounded-md border border-input bg-background px-3 text-[15px] sm:text-sm font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:font-normal sm:shadow-none"
+          />
+          <span
+            className="flex items-center justify-center text-muted-foreground text-sm font-medium px-1 sm:font-normal"
+            aria-hidden="true"
+          >
+            —
+          </span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateRange(dateFrom, e.target.value)}
+            aria-label="Tanggal akhir"
+            min={dateFrom || undefined}
+            className="h-11 sm:h-8 w-full rounded-xl sm:rounded-md border border-input bg-background px-3 text-[15px] sm:text-sm font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:font-normal sm:shadow-none"
+          />
+        </div>
+
         {reference && (
-          <span className="inline-flex items-center gap-1 rounded-md border bg-muted px-2 py-1 text-xs font-mono">
-            {reference}
+          <span className="inline-flex items-center gap-1 h-11 sm:h-auto rounded-xl sm:rounded-md border bg-muted px-3 sm:px-2 text-sm sm:text-xs font-mono w-full sm:w-auto justify-center sm:justify-start">
+            <span className="truncate">{reference}</span>
             <button
               onClick={() => {
                 setFilter("reference", "");
                 setPage(0);
               }}
-              className="text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground shrink-0"
               title="Hapus filter referensi"
             >
-              <X className="h-3 w-3" />
+              <X className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
             </button>
           </span>
         )}
       </div>
 
-      {/* Paging is server-side: data is already the current page's rows, so the
-          client-side pagination feature must stay off or it would slice the
-          15 returned rows again (page 2+ would render empty). Client-side
-          filtering must also stay off: search is server-side (fuzzySearch over
-          ingredient/recipe/reference/notes/order_code), and re-filtering the
-          15 returned rows on column accessor values would drop POS rows whose
-          Kode Order lives only in the joined orders row (not a column value).
-          That made searching a Kode Order render an empty table. */}
-      <DataTable
-        columns={columns}
-        data={rows}
-        keyExtractor={(r) => r.id}
-        pageSize={PAGE_SIZE}
-        pagination={false}
-        features={{ filtering: false, sorting: true, pagination: false }}
-        search={search}
-        onSearchChange={setSearch}
-        page={page}
-        onPageChange={setPage}
-        sort={sort}
-        onSortChange={setSort}
-      />
+      {/* Desktop/tablet: full ledger table. */}
+      <div className="hidden md:block">
+        {/* Paging is server-side: data is already the current page's rows, so
+            the client-side pagination feature must stay off or it would slice
+            the 15 returned rows again (page 2+ would render empty).
+            Client-side filtering must also stay off: search is server-side
+            (fuzzySearch over ingredient/recipe/reference/notes/order_code), and
+            re-filtering the 15 returned rows on column accessor values would
+            drop POS rows whose Kode Order lives only in the joined orders row
+            (not a column value). That made searching a Kode Order render an
+            empty table. */}
+        <DataTable
+          columns={columns}
+          data={rows}
+          keyExtractor={(r) => r.id}
+          pageSize={PAGE_SIZE}
+          pagination={false}
+          features={{ filtering: false, sorting: true, pagination: false }}
+          search={search}
+          onSearchChange={setSearch}
+          page={page}
+          onPageChange={setPage}
+          sort={sort}
+          onSortChange={setSort}
+        />
+      </div>
+
+      {/* Mobile sort row (md:hidden): server-side sort via the same URL
+          sortKey/sortDir pair the desktop table headers write. Tapping the
+          active chip toggles asc/desc; taps reset to page 1. */}
+      <div className="md:hidden flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-4 px-4 mb-2">
+        <span className="shrink-0 text-xs text-muted-foreground">Urutkan</span>
+        {(
+          [
+            { key: "createdAt", label: "Waktu" },
+            { key: "type", label: "IN/OUT" },
+          ] as const
+        ).map(({ key, label }) => {
+          const active = sort?.key === key;
+          const dir = active ? (sort?.dir ?? "desc") : "desc";
+          return (
+            <button
+              key={key}
+              onClick={() =>
+                setSort(active && dir === "desc" ? { key, dir: "asc" } : { key, dir: "desc" })
+              }
+              aria-pressed={active}
+              className={`shrink-0 inline-flex items-center gap-1 h-11 px-3.5 rounded-full border text-sm font-medium whitespace-nowrap transition-colors ${
+                active
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground border-input hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              {label}
+              {active &&
+                (dir === "desc" ? (
+                  <ArrowDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ArrowUp className="h-3.5 w-3.5" />
+                ))}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Mobile: stacked cards instead of a horizontally scrolling table.
+          Same rows, same renderers — only the composition changes. */}
+      <ul className="md:hidden space-y-2" aria-label="Riwayat mutasi stok">
+        {rows.length === 0 ? (
+          <li className="rounded-xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+            Tidak ada mutasi stok
+          </li>
+        ) : (
+          rows.map((row) => {
+            const isPos = !!row.orderChannel;
+            return (
+              <li key={row.id} className="rounded-xl border bg-card px-3.5 py-3 shadow-xs">
+                {/* Header: name + IN/OUT badge, quantity emphasized on the right */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 text-sm font-medium">{renderName(row)}</div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isPos && (
+                      <span
+                        className="inline-flex items-center gap-1 font-mono text-[10px] px-1 py-0.5 rounded border border-primary/20 bg-primary/5 text-primary font-medium"
+                        title={`Kode Order (${row.orderChannel})`}
+                      >
+                        <ShoppingBag className="h-2.5 w-2.5 shrink-0" />
+                        <span className="max-w-[80px] truncate">{row.orderCode}</span>
+                      </span>
+                    )}
+                    <Badge variant={row.type === "IN" ? "success" : "destructive"}>
+                      {row.type}
+                    </Badge>
+                  </div>
+                </div>
+                {/* Qty + Saldo: signed movement emphasized, running balance muted */}
+                <div className="mt-2 flex items-baseline justify-between gap-3">
+                  <div className="flex items-baseline gap-1 min-w-0">
+                    <span
+                      className={`text-lg font-semibold tabular-nums leading-none ${
+                        row.type === "IN" ? "text-emerald-600" : "text-destructive"
+                      }`}
+                    >
+                      {row.type === "IN" ? "+" : "−"}
+                      {row.quantity.toLocaleString("id-ID")}
+                    </span>
+                    {row.stockUnit && (
+                      <span className="text-xs text-muted-foreground">{row.stockUnit}</span>
+                    )}
+                  </div>
+                  <div className="text-right text-xs text-muted-foreground shrink-0 tabular-nums">
+                    Saldo {row.balance.toLocaleString("id-ID")}
+                    {row.stockUnit && ` ${row.stockUnit}`}
+                  </div>
+                </div>
+                {/* Meta: time, branch, reference — the audit context */}
+                <div className="mt-2 pt-2 border-t flex flex-col gap-1 text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between gap-3 min-w-0">
+                    <span className="tabular-nums shrink-0">
+                      {new Date(row.createdAt).toLocaleString("id-ID", {
+                        day: "2-digit",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    {showBranchColumn && (
+                      <span className="truncate" title={row.branchName ?? undefined}>
+                        {row.branchName ?? "-"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate">{renderReference(row)}</div>
+                  </div>
+                  {row.notes && <div className="truncate">{row.notes}</div>}
+                </div>
+              </li>
+            );
+          })
+        )}
+      </ul>
 
       <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
     </RoleGuard>

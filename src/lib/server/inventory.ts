@@ -239,6 +239,10 @@ export const getStockLedger = createServerFn({ method: "GET" })
       dateTo?: string;
       page?: number;
       limit?: number;
+      /** Sort key: createdAt (default) or type (IN/OUT grouping). */
+      sortBy?: string;
+      /** Sort direction: desc (default) or asc. */
+      sortDir?: string;
       /** ADR 0013: only ledger rows written by Waste BOM entries. */
       wasteBomOnly?: boolean;
       /** ADR 0013: Waste BOM rows scoped to one recipe (implies wasteBomOnly). */
@@ -297,6 +301,14 @@ export const getStockLedger = createServerFn({ method: "GET" })
       data.ingredientId ? eq(stockLedger.ingredientId, data.ingredientId) : undefined,
       data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
       data.reference ? eq(stockLedger.reference, data.reference) : undefined,
+      // Date range filter (Jakarta local dates, matching finance.ts): the UI
+      // sends YYYY-MM-DD strings and stockLedger.createdAt is timestamptz.
+      data.dateFrom
+        ? sql`${stockLedger.createdAt} >= (${data.dateFrom}::date AT TIME ZONE 'Asia/Jakarta')`
+        : undefined,
+      data.dateTo
+        ? sql`${stockLedger.createdAt} < ((${data.dateTo}::date + interval '1 day') AT TIME ZONE 'Asia/Jakarta')`
+        : undefined,
       data.search
         ? fuzzySearch(
             [
@@ -343,7 +355,16 @@ export const getStockLedger = createServerFn({ method: "GET" })
       .leftJoin(branches, eq(stockLedger.branchId, branches.id))
       .leftJoin(orders, orderRefJoin)
       .where(ledgerFilters)
-      .orderBy(desc(stockLedger.createdAt))
+      .orderBy(
+        // type sort groups IN/OUT together; time is the tiebreaker so each
+        // group stays chronological. Default remains newest-first by time.
+        ...(data.sortBy === "type"
+          ? [
+              data.sortDir === "asc" ? asc(stockLedger.type) : desc(stockLedger.type),
+              desc(stockLedger.createdAt),
+            ]
+          : [data.sortDir === "asc" ? asc(stockLedger.createdAt) : desc(stockLedger.createdAt)]),
+      )
       .limit(data.limit ?? 50)
       .offset((data.page ?? 0) * (data.limit ?? 50));
 
