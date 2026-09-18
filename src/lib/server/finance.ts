@@ -93,7 +93,7 @@ export interface FinanceSummary {
 export const getFinanceSummary = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
   .handler(async ({ data }): Promise<FinanceSummary> => {
-    await requireRole("super_admin");
+    await requireRole("super_admin", "admin_pusat");
 
     const conditions = [];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
@@ -189,7 +189,7 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
     }),
   )
   .handler(async ({ data }): Promise<DailyFinanceRow[]> => {
-    await requireRole("super_admin");
+    await requireRole("super_admin", "admin_pusat");
 
     const conditions = [];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
@@ -449,7 +449,7 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
     channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
   }))
   .handler(async ({ data }): Promise<HppBreakdownRow[]> => {
-    await requireRole("super_admin");
+    await requireRole("super_admin", "admin_pusat");
 
     const conditions = [];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
@@ -490,9 +490,9 @@ export async function upsertDailyOverrideCore(
   user: AppUser,
   data: { branchId: string; date: string; field: string; value: number },
 ) {
-  if (user.role !== "super_admin") {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
-      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin)`,
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
     );
   }
 
@@ -528,7 +528,7 @@ export async function upsertDailyOverrideCore(
 export const upsertDailyOverride = createServerFn({ method: "POST" })
   .validator((data: { branchId: string; date: string; field: string; value: number }) => data)
   .handler(async ({ data }) => {
-    const user = await requireRole("super_admin");
+    const user = await requireRole("super_admin", "admin_pusat");
     return upsertDailyOverrideCore(user, data);
   });
 
@@ -543,9 +543,9 @@ export async function createManualRevenueCore(
     notes?: string;
   },
 ) {
-  if (user.role !== "super_admin") {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
-      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin)`,
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
     );
   }
 
@@ -591,7 +591,7 @@ export const createManualRevenue = createServerFn({ method: "POST" })
     }) => data,
   )
   .handler(async ({ data }) => {
-    const user = await requireRole("super_admin");
+    const user = await requireRole("super_admin", "admin_pusat");
     return createManualRevenueCore(user, data);
   });
 
@@ -625,9 +625,9 @@ export async function createChannelRevenueCore(
     notes?: string;
   },
 ) {
-  if (user.role !== "super_admin") {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
-      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin)`,
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
     );
   }
 
@@ -664,7 +664,7 @@ export const createChannelRevenue = createServerFn({ method: "POST" })
     }) => data,
   )
   .handler(async ({ data }) => {
-    const user = await requireRole("super_admin");
+    const user = await requireRole("super_admin", "admin_pusat");
     return createChannelRevenueCore(user, data);
   });
 

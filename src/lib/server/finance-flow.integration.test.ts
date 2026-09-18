@@ -300,16 +300,20 @@ describe("Finance — manual entries via the real server-function cores", () => 
 
 describe("Finance — wrong-role negatives", () => {
   it.skipIf(!hasTestDatabaseUrl)(
-    "period + revenue mutations require super_admin; expenses allow admin_pusat",
+    "period mutations require super_admin; revenue/override mutations allow admin_pusat",
     async () => {
       const adminPusat = await seedUser("admin_pusat");
       const branchAdmin = await seedUser("branch_admin");
       const branchId = await seedBranch();
 
-      for (const wrong of [branchAdmin, adminPusat]) {
-        await expect(financeApi.openPeriodCore(wrong, { periodName: "P" })).rejects.toThrow(
-          "Forbidden: insufficient role",
-        );
+      await expect(financeApi.openPeriodCore(adminPusat, { periodName: "P" })).rejects.toThrow(
+        "Forbidden: insufficient role",
+      );
+      await expect(financeApi.openPeriodCore(branchAdmin, { periodName: "P" })).rejects.toThrow(
+        "Forbidden: insufficient role",
+      );
+
+      for (const wrong of [branchAdmin]) {
         await expect(
           financeApi.createManualRevenueCore(wrong, {
             branchId,
@@ -334,6 +338,28 @@ describe("Finance — wrong-role negatives", () => {
           }),
         ).rejects.toThrow("Forbidden: insufficient role");
       }
+
+      // Revenue/override mutations allow admin_pusat (same guard as expenses)
+      const revenue = await financeApi.createManualRevenueCore(adminPusat, {
+        branchId,
+        date: "2026-07-01",
+        amount: 1000,
+      });
+      expect(revenue.amount).toBe(1000);
+      const channelRevenue = await financeApi.createChannelRevenueCore(adminPusat, {
+        branchId,
+        date: "2026-07-01",
+        channel: "Dine-in",
+        amount: 1000,
+      });
+      expect(channelRevenue.amount).toBe(1000);
+      const override = await financeApi.upsertDailyOverrideCore(adminPusat, {
+        branchId,
+        date: "2026-07-01",
+        field: "omzet",
+        value: 1,
+      });
+      expect(override.success).toBe(true);
 
       // Manual expenses allow admin_pusat too
       const expense = await financeApi.createManualExpenseCore(adminPusat, {
