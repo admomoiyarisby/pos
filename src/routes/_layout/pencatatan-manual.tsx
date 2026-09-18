@@ -177,15 +177,17 @@ function PencatatanManualPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
-      {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3 mb-6 p-4 rounded-lg border">
+      {/* Filters — two labeled controls side by side on mobile (44px tap
+          targets, 16px text so iOS doesn't focus-zoom the month picker),
+          inline compact row on sm+. */}
+      <div className="grid grid-cols-2 gap-2 mb-6 p-3.5 sm:p-4 rounded-xl sm:rounded-lg border sm:flex sm:flex-wrap sm:items-end sm:gap-3">
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Bulan</label>
           <input
             type="month"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+            className="h-11 sm:h-9 w-full rounded-xl sm:rounded-md border border-input bg-background px-3 text-[16px] sm:text-sm font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring block"
           />
         </div>
         <div className="space-y-1">
@@ -193,7 +195,8 @@ function PencatatanManualPage() {
           <select
             value={selectedBranchId}
             onChange={(e) => setSelectedBranchId(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+            aria-label="Cabang"
+            className="h-11 sm:h-9 w-full rounded-xl sm:rounded-md border border-input bg-background px-3 text-[16px] sm:text-sm font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring block"
           >
             <option value="">Semua Cabang</option>
             {branches.map((b) => (
@@ -232,12 +235,14 @@ function PencatatanManualPage() {
           </div>
         </section>
 
-        {/* Employee Meals Table */}
+        {/* Employee Meals — table on md+, per-staff cards below (the dynamic
+            ingredient columns make the table unusable on a phone). */}
         <section className="xl:col-span-2">
           <h2 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
             Beban Makan Pegawai
           </h2>
-          <div className="rounded-lg border">
+          {/* md+: full matrix table */}
+          <div className="hidden md:block rounded-lg border">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -307,19 +312,59 @@ function PencatatanManualPage() {
               </table>
             </div>
           </div>
+          {/* <md: one card per staff — ingredient counts as wrapped chips,
+              so nothing scrolls horizontally. */}
+          <ul className="md:hidden space-y-2" aria-label="Beban makan per pegawai">
+            {mealsLoading ? (
+              <li className="rounded-xl border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+                Memuat…
+              </li>
+            ) : mealsByStaff.length === 0 ? (
+              <li className="rounded-xl border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+                Tidak ada data
+              </li>
+            ) : (
+              mealsByStaff.map((staff) => (
+                <li
+                  key={staff.staffName}
+                  className="rounded-xl border bg-card px-3.5 py-3 shadow-xs"
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-sm font-medium truncate">{staff.staffName}</span>
+                    <span className="text-sm font-semibold tabular-nums shrink-0">
+                      {formatRp(staff.total)}
+                    </span>
+                  </div>
+                  {staff.items.size > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {Array.from(staff.items.entries()).map(([name, qty]) => (
+                        <span
+                          key={name}
+                          className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                        >
+                          {name}
+                          <span className="font-medium text-foreground">×{qty}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              ))
+            )}
+          </ul>
         </section>
       </div>
 
-      {/* Operational Expenses */}
+      {/* Operational Expenses — table on md+, list cards below. */}
       <section className="mb-8">
         <h2 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
           Rincian Biaya Operasional
         </h2>
-        <div className="rounded-lg border">
+        <div className="hidden md:block rounded-lg border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
-                <th className="text-left py-2 px-3 font-medium w-10">No</th>
+                <th className="text-left py-2 px-3 font-medium w-12 whitespace-nowrap">No</th>
                 <th className="text-left py-2 px-3 font-medium">Items</th>
                 <th className="text-left py-2 px-3 font-medium w-28">Tanggal</th>
                 <th className="text-right py-2 px-3 font-medium w-28">Total</th>
@@ -357,6 +402,36 @@ function PencatatanManualPage() {
             </tbody>
           </table>
         </div>
+        {/* <md: expense list cards. */}
+        <ul className="md:hidden space-y-2" aria-label="Rincian biaya operasional">
+          {operasionalExpenses.length === 0 ? (
+            <li className="rounded-xl border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+              Tidak ada data
+            </li>
+          ) : (
+            <>
+              {operasionalExpenses.map((item) => (
+                <li key={item.id} className="rounded-xl border bg-card px-3.5 py-3 shadow-xs">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-sm font-medium min-w-0">{item.notes ?? "-"}</span>
+                    <span className="text-sm font-semibold tabular-nums shrink-0">
+                      {formatRp(item.amount)}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                    {item.date}
+                  </div>
+                </li>
+              ))}
+              <li className="rounded-xl border bg-muted/30 px-3.5 py-2.5 flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold">Total</span>
+                <span className="text-sm font-semibold tabular-nums">
+                  {formatRp(biayaOperasional)}
+                </span>
+              </li>
+            </>
+          )}
+        </ul>
       </section>
 
       {/* Rekap Keuangan — two-column: costs (left) + P&L (right) */}
