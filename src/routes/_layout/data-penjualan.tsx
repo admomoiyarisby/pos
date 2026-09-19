@@ -44,7 +44,7 @@ export const Route = createFileRoute("/_layout/data-penjualan")({
 
 const CHANNELS = [
   { value: "all", label: "Semua Channel" },
-  { value: "Dine-in", label: "Offline (Dine-in)" },
+  { value: "Dine-in", label: "Dine In" },
   { value: "Gofood", label: "Gojek (Gofood)" },
   { value: "Grabfood", label: "Grab (Grabfood)" },
   { value: "ShopeeFood", label: "Shopee (ShopeeFood)" },

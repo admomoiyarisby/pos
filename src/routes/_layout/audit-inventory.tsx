@@ -8,7 +8,7 @@ import { getAuditInventory } from "#/lib/server/audit-inventory";
 
 const CHANNELS = [
   { label: "Semua", value: "" },
-  { label: "Offline (Dine-in)", value: "Dine-in" },
+  { label: "Dine In", value: "Dine-in" },
   { label: "Gojek (Gofood)", value: "Gofood" },
   { label: "Grab (Grabfood)", value: "Grabfood" },
   { label: "Shopee (ShopeeFood)", value: "ShopeeFood" },

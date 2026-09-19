@@ -9,6 +9,8 @@ import MoneyInput from "#/components/MoneyInput";
 import {
   getDailyFinanceSummary,
   getDailyHppBreakdown,
+  getManualFinanceEntries,
+  type ManualFinanceEntry,
   getShiftCashVariance,
   upsertDailyOverride,
   createManualRevenue,
@@ -51,7 +53,7 @@ type PeriodType = "bulanan" | "mingguan" | "harian";
 
 const CHANNELS = [
   { label: "Semua", value: "" },
-  { label: "Offline", value: "Dine-in" },
+  { label: "Dine In", value: "Dine-in" },
   { label: "Gojek", value: "Gofood" },
   { label: "Grab", value: "Grabfood" },
   { label: "Shopee", value: "ShopeeFood" },
@@ -244,8 +246,79 @@ function HppBreakdownRow({
 }) {
   return (
     <tr className="bg-muted/30">
-      <td colSpan={6} className="px-4 py-3">
+      <td colSpan={7} className="px-4 py-3">
         <HppBreakdownContent branchId={branchId} date={date} channel={channel} />
+      </td>
+    </tr>
+  );
+}
+
+// Itemized manual entries for one day — each revenue/expense input through
+// the finance buttons, with its channel (or "no-channel" for manual revenue).
+// Shared by the desktop table row and the mobile day card.
+function ManualBreakdownContent({ entries }: { entries: ManualFinanceEntry[] }) {
+  const channelLabel = (channel: string) =>
+    CHANNELS.find((c) => c.value === channel)?.label ?? channel;
+
+  if (entries.length === 0) {
+    return <p className="text-sm text-muted-foreground">Tidak ada entri manual untuk hari ini.</p>;
+  }
+
+  const revenue = entries.filter((e) => e.kind === "revenue").reduce((s, e) => s + e.amount, 0);
+  const expense = entries.filter((e) => e.kind === "expense").reduce((s, e) => s + e.amount, 0);
+
+  return (
+    <>
+      <div className="text-xs font-medium text-muted-foreground mb-2">
+        Rincian Entri Manual — {entries.length} entri
+      </div>
+      <div className="grid grid-cols-1 gap-y-0">
+        {entries.map((e) => (
+          <div
+            key={e.id}
+            className="flex items-center justify-between gap-2 text-sm py-1 border-b border-border/40"
+          >
+            <span className="min-w-0 truncate pr-2">
+              <span
+                className={`mr-1.5 inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                  e.kind === "revenue"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {e.kind === "revenue" ? "Revenue" : "Expense"}
+              </span>
+              {e.kind === "revenue"
+                ? e.channel
+                  ? channelLabel(e.channel)
+                  : "No Channel"
+                : (e.category ?? "-")}
+              {e.notes ? (
+                <span className="ml-1.5 text-xs text-muted-foreground">— {e.notes}</span>
+              ) : null}
+            </span>
+            <span
+              className={`shrink-0 tabular-nums font-medium ${e.kind === "revenue" ? "text-emerald-600" : "text-amber-600"}`}
+            >
+              {e.kind === "revenue" ? "+" : "−"}
+              {formatRp(e.amount)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end gap-4 mt-2 pt-2 border-t text-sm font-semibold">
+        <span className="text-emerald-600">Revenue: {formatRp(revenue)}</span>
+        <span className="text-amber-600">Expense: {formatRp(expense)}</span>
+      </div>
+    </>
+  );
+}
+
+function ManualBreakdownRow({ entries }: { entries: ManualFinanceEntry[] }) {
+  return (
+    <tr className="bg-muted/30">
+      <td colSpan={7} className="px-4 py-3">
+        <ManualBreakdownContent entries={entries} />
       </td>
     </tr>
   );
@@ -380,6 +453,40 @@ function FinancePage() {
     queryFn: () => getBrokenStock({ data: {} }),
   });
 
+  // Manual ledger entries ("Manual" column): revenues input via "Input Revenue"
+  // (manual + per-channel) and expenses via "Input Pengeluaran", grouped by day.
+  const { data: manualEntries } = useQuery({
+    queryKey: ["manual-finance-entries", effectiveDateRange.from, effectiveDateRange.to, branchId],
+    queryFn: () =>
+      getManualFinanceEntries({
+        data: {
+          dateFrom: effectiveDateRange.from!,
+          dateTo: effectiveDateRange.to!,
+          branchId,
+        },
+      }),
+  });
+
+  const manualByDate = useMemo(() => {
+    const map = new Map<string, ManualFinanceEntry[]>();
+    for (const e of manualEntries ?? []) {
+      const list = map.get(e.date) ?? [];
+      list.push(e);
+      map.set(e.date, list);
+    }
+    return map;
+  }, [manualEntries]);
+
+  // Net manual total = manual revenue − expenses, per day. Same math on both
+  // the desktop column and the mobile card so they read identically.
+  const manualNetFor = useCallback(
+    (date: string) => {
+      const entries = manualByDate.get(date) ?? [];
+      return entries.reduce((s, e) => s + (e.kind === "revenue" ? e.amount : -e.amount), 0);
+    },
+    [manualByDate],
+  );
+
   // Per-shift cash reconciliation (Selisih Kas). Channel-agnostic — shifts
   // hold mixed-channel cash sales — so it's only shown without a channel
   // filter, where the ledger numbers are also channel-aggregated.
@@ -511,8 +618,9 @@ function FinancePage() {
     const hpp = rows.reduce((s, r) => s + r.hpp, 0);
     const omzet = rows.reduce((s, r) => s + r.omzet, 0);
     const gross = rows.reduce((s, r) => s + r.grossProfit, 0);
-    return { hpp, omzet, gross, margin: omzet > 0 ? gross / omzet : 0 };
-  }, [dailyRows]);
+    const manualNet = rows.reduce((s, r) => s + manualNetFor(r.tanggal), 0);
+    return { hpp, omzet, gross, manualNet, margin: omzet > 0 ? gross / omzet : 0 };
+  }, [dailyRows, manualNetFor]);
 
   usePageTitle("Keuangan", "Laporan P&L harian, mingguan, bulanan");
 
@@ -790,14 +898,33 @@ function FinancePage() {
                             onSave={(newValue) => saveOmzet(row.tanggal, newValue)}
                           />
                         </div>
+                        <div className="col-span-2">
+                          <div className="mb-1 text-xs text-muted-foreground">Manual</div>
+                          <div
+                            className={`text-sm font-semibold tabular-nums ${
+                              manualNetFor(row.tanggal) >= 0
+                                ? "text-emerald-600"
+                                : "text-destructive"
+                            }`}
+                          >
+                            {manualNetFor(row.tanggal) > 0 ? "+" : ""}
+                            {formatRp(manualNetFor(row.tanggal))}
+                          </div>
+                        </div>
                       </div>
                       {isOpen && (
-                        <div className="border-t bg-muted/30 px-3.5 py-3">
-                          <HppBreakdownContent
-                            branchId={selectedBranchId}
-                            date={row.tanggal}
-                            channel={selectedChannel}
-                          />
+                        <div className="border-t bg-muted/30 px-3.5 py-3 space-y-3">
+                          <ManualBreakdownContent entries={manualByDate.get(row.tanggal) ?? []} />
+                          <div>
+                            <div className="text-xs font-medium text-muted-foreground mb-2">
+                              Rincian HPP per Bahan
+                            </div>
+                            <HppBreakdownContent
+                              branchId={selectedBranchId}
+                              date={row.tanggal}
+                              channel={selectedChannel}
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -860,6 +987,7 @@ function FinancePage() {
                     <th className="text-left py-2.5 px-3 font-medium w-10"></th>
                     <th className="text-left py-2.5 px-3 font-medium">Tanggal</th>
                     <th className="text-right py-2.5 px-3 font-medium w-36">HPP</th>
+                    <th className="text-right py-2.5 px-3 font-medium w-36">Manual</th>
                     <th className="text-right py-2.5 px-3 font-medium w-44">Omzet</th>
                     <th className="text-right py-2.5 px-3 font-medium w-36">Gross Profit</th>
                     <th className="text-right py-2.5 px-3 font-medium w-20">Margin</th>
@@ -896,6 +1024,16 @@ function FinancePage() {
                             <td className="py-2 px-3 text-right tabular-nums">
                               {formatRp(row.hpp)}
                             </td>
+                            <td
+                              className={`py-2 px-3 text-right tabular-nums font-medium ${
+                                manualNetFor(row.tanggal) >= 0
+                                  ? "text-emerald-600"
+                                  : "text-destructive"
+                              }`}
+                            >
+                              {manualNetFor(row.tanggal) > 0 ? "+" : ""}
+                              {formatRp(manualNetFor(row.tanggal))}
+                            </td>
                             <td className="py-2 px-3 text-right">
                               <EditableOmzetCell
                                 value={row.omzet}
@@ -914,18 +1052,21 @@ function FinancePage() {
                             </td>
                           </tr>
                           {isOpen && (
-                            <HppBreakdownRow
-                              branchId={selectedBranchId}
-                              date={row.tanggal}
-                              channel={selectedChannel}
-                            />
+                            <>
+                              <ManualBreakdownRow entries={manualByDate.get(row.tanggal) ?? []} />
+                              <HppBreakdownRow
+                                branchId={selectedBranchId}
+                                date={row.tanggal}
+                                channel={selectedChannel}
+                              />
+                            </>
                           )}
                         </Fragment>
                       );
                     })
                   ) : (
                     <tr>
-                      <td colSpan={6} className="py-10 text-center text-muted-foreground">
+                      <td colSpan={7} className="py-10 text-center text-muted-foreground">
                         Tidak ada data untuk periode ini
                       </td>
                     </tr>
@@ -938,6 +1079,14 @@ function FinancePage() {
                       <td className="py-2.5 px-3">TOTAL</td>
                       <td className="py-2.5 px-3 text-right tabular-nums">
                         {formatRp(totals.hpp)}
+                      </td>
+                      <td
+                        className={`py-2.5 px-3 text-right tabular-nums ${
+                          totals.manualNet >= 0 ? "text-emerald-600" : "text-destructive"
+                        }`}
+                      >
+                        {totals.manualNet > 0 ? "+" : ""}
+                        {formatRp(totals.manualNet)}
                       </td>
                       <td className="py-2.5 px-3 text-right tabular-nums">
                         {formatRp(totals.omzet)}

@@ -9,7 +9,6 @@ import {
   orderItems,
   recipes,
   ingredients,
-  recipeIngredients,
   periodLogs,
   periodBalances,
   stockOpnames,
@@ -27,10 +26,11 @@ import {
   shiftEdits,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, gte, lte, sql, desc, isNotNull, inArray, ne } from "drizzle-orm";
+import { eq, and, gte, lte, sql, desc, isNotNull, isNull, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
+import { resolvePersistedItemIngredients } from "./ingredient-resolver";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, formatRupiah } from "./html-utils";
 
@@ -180,6 +180,18 @@ export interface HppBreakdownRow {
   quantity: number;
   cost: number;
 }
+
+// Per-day HPP breakdown, reconciled with the ledger's HPP column.
+//
+// The ledger's HPP column reads orders.totalCogs — the COGS recorded at sale
+// time (BOGO doubling, add-on modifiers, exclusions, and ingredient costs as
+// of the transaction). Recomputing from the current BOM (the previous
+// implementation) ignores all of that, so the parts never summed to the
+// column. Instead, each order item's persisted composition is re-resolved the
+// same way the POS resolved it at sale time, and the resulting ingredient
+// costs are scaled so they sum exactly to the item's recorded COGS
+// (cogsAtTransaction × quantity). The breakdown therefore always adds up to
+// the HPP column, up to rounding (spread over the largest-cost ingredient).
 
 export const getDailyFinanceSummary = createServerFn({ method: "GET" })
   .validator(
@@ -443,6 +455,100 @@ export const getShiftCashTransactions = createServerFn({ method: "GET" })
     return txs.sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime());
   });
 
+// ─── Manual ledger entries (finance page "Manual" column) ───
+
+export interface ManualFinanceEntry {
+  id: string;
+  date: string;
+  kind: "revenue" | "expense";
+  /** Channel for channel revenues; null for manual (no-channel) revenues. */
+  channel: string | null;
+  /** Expense category (expenses only). */
+  category: string | null;
+  amount: number;
+  notes: string | null;
+}
+
+// Flat feed of manually-input finance entries for the finance page's Manual
+// column: manual + channel revenues (via "Input Revenue") and operational
+// expenses (via "Input Pengeluaran"). Waste-derived expenses are excluded —
+// they are system-generated, not input through the buttons.
+export const getManualFinanceEntries = createServerFn({ method: "GET" })
+  .validator((data: { branchId?: string; dateFrom: string; dateTo: string }) => data)
+  .handler(async ({ data }): Promise<ManualFinanceEntry[]> => {
+    await requireRole("super_admin", "admin_pusat");
+    validateDateRange(data.dateFrom, data.dateTo, 366);
+
+    const revenueConditions = [
+      gte(manualRevenues.date, data.dateFrom),
+      lte(manualRevenues.date, data.dateTo),
+      data.branchId ? eq(manualRevenues.branchId, data.branchId) : undefined,
+    ];
+    const manualRevenueRows = await db
+      .select({
+        id: manualRevenues.id,
+        date: manualRevenues.date,
+        amount: manualRevenues.amount,
+        notes: manualRevenues.notes,
+      })
+      .from(manualRevenues)
+      .where(and(...revenueConditions));
+
+    const channelConditions = [
+      gte(channelRevenues.date, data.dateFrom),
+      lte(channelRevenues.date, data.dateTo),
+      data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
+    ];
+    const channelRevenueRows = await db
+      .select({
+        id: channelRevenues.id,
+        date: channelRevenues.date,
+        amount: channelRevenues.amount,
+        notes: channelRevenues.notes,
+        channel: channelRevenues.channel,
+      })
+      .from(channelRevenues)
+      .where(and(...channelConditions));
+
+    const expenseConditions = [
+      isNull(operationalExpenses.wasteEntryId),
+      gte(operationalExpenses.date, data.dateFrom),
+      lte(operationalExpenses.date, data.dateTo),
+      data.branchId ? eq(operationalExpenses.branchId, data.branchId) : undefined,
+    ];
+    const expenseRows = await db
+      .select({
+        id: operationalExpenses.id,
+        date: operationalExpenses.date,
+        amount: operationalExpenses.amount,
+        notes: operationalExpenses.notes,
+        category: operationalExpenses.category,
+      })
+      .from(operationalExpenses)
+      .where(and(...expenseConditions));
+
+    return [
+      ...manualRevenueRows.map((r) => ({
+        ...r,
+        kind: "revenue" as const,
+        channel: null,
+        category: null,
+      })),
+      ...channelRevenueRows.map((r) => ({
+        ...r,
+        kind: "revenue" as const,
+        channel: r.channel,
+        category: null,
+      })),
+      ...expenseRows.map((r) => ({
+        ...r,
+        kind: "expense" as const,
+        channel: null,
+        category: r.category,
+      })),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+  });
+
 export const getDailyHppBreakdown = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; date: string; channel?: string }) => ({
     ...data,
@@ -451,38 +557,113 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<HppBreakdownRow[]> => {
     await requireRole("super_admin", "admin_pusat");
 
-    const conditions = [];
-    if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
-    if (data.channel) conditions.push(eq(orders.channel, data.channel));
-    conditions.push(
+    const orderConditions = [];
+    if (data.branchId) orderConditions.push(eq(orders.branchId, data.branchId));
+    if (data.channel) orderConditions.push(eq(orders.channel, data.channel));
+    orderConditions.push(
       sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') = ${data.date}`,
     );
 
-    const rows = await db
+    // All order items for the day — deliberately including Void orders, to
+    // match the ledger's HPP column: voiding flips status and restores
+    // inventory but does not reset orders.totalCogs, which the column sums.
+    const itemRows = await db
       .select({
-        ingredientId: ingredients.id,
-        name: ingredients.name,
-        category: ingredients.category,
-        quantity: sql<number>`COALESCE(SUM(${orderItems.quantity} * ${recipeIngredients.quantity} / NULLIF(${ingredients.conversionFactor}, 0)), 0)`,
-        cost: sql<number>`COALESCE(SUM(${orderItems.quantity} * ${recipeIngredients.quantity} * ${ingredients.averageCost} / NULLIF(${ingredients.conversionFactor}, 0)), 0)`,
+        orderItemId: orderItems.id,
+        recipeId: orderItems.recipeId,
+        quantity: orderItems.quantity,
+        cogsAtTransaction: orderItems.cogsAtTransaction,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(orderConditions.length > 0 ? and(...orderConditions) : undefined);
+
+    // The number the breakdown must reconcile against: the exact aggregate the
+    // ledger's HPP column shows for the same filters.
+    const [dayCogsRow] = await db
+      .select({
+        totalCogs: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
       })
       .from(orders)
-      .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
-      .innerJoin(recipeIngredients, eq(recipeIngredients.recipeId, orderItems.recipeId))
-      .innerJoin(ingredients, eq(ingredients.id, recipeIngredients.ingredientId))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .groupBy(ingredients.id, ingredients.name, ingredients.category)
-      .orderBy(
-        sql`SUM(${orderItems.quantity} * ${recipeIngredients.quantity} * ${ingredients.averageCost} / NULLIF(${ingredients.conversionFactor}, 0)) DESC`,
-      );
+      .where(orderConditions.length > 0 ? and(...orderConditions) : undefined);
+    const dayTotalCogs = Number(dayCogsRow?.totalCogs ?? 0);
 
-    return rows.map((r) => ({
-      ingredientId: r.ingredientId,
-      name: r.name,
-      category: r.category,
-      quantity: Number(r.quantity),
-      cost: Number(r.cost),
-    }));
+    if (itemRows.length === 0 || dayTotalCogs === 0) return [];
+
+    // Re-resolve each item's persisted composition (BOM + modifiers −
+    // exclusions, BOGO-aware) exactly like the POS did at sale time, with
+    // current ingredient costs as the proportional split basis.
+    //
+    // Per-item COGS cannot be used as the scaling target: orders created via
+    // "Data Penjualan" (createSalesRecord) carry a hand-entered totalCogs with
+    // no items at all, and updateSalesRecord can edit totalCogs without
+    // touching items. So the item-level costs only provide the *proportions*;
+    // the whole day's pool is then scaled once to the day's actual
+    // SUM(orders.totalCogs), guaranteeing the parts always sum to the HPP
+    // column regardless of how the orders were created or edited.
+    const ingredientTotals = new Map<string, { name: string; cost: number }>();
+    let resolvedPool = 0;
+    for (const item of itemRows) {
+      const resolved = await resolvePersistedItemIngredients(item.orderItemId, {
+        includeCost: true,
+      });
+      for (const ing of resolved.ingredients) {
+        const cost = Math.max(0, ing.cost ?? 0);
+        if (cost === 0) continue;
+        resolvedPool += cost;
+        const existing = ingredientTotals.get(ing.ingredientId);
+        if (existing) {
+          existing.cost += cost;
+        } else {
+          ingredientTotals.set(ing.ingredientId, { name: ing.ingredientName, cost });
+        }
+      }
+    }
+
+    if (ingredientTotals.size === 0) return [];
+
+    // Day-level scale: resolved proportions -> the ledger's actual HPP total.
+    const scale = resolvedPool > 0 ? dayTotalCogs / resolvedPool : 0;
+    const scaled = [...ingredientTotals.entries()]
+      .map(([ingredientId, agg]) => ({
+        ingredientId,
+        name: agg.name,
+        scaled: agg.cost * scale,
+      }))
+      .sort((a, b) => b.scaled - a.scaled);
+
+    // Round every share proportionally, then push the rounding remainder into
+    // the largest-cost ingredient, so the parts sum exactly to the day's HPP
+    // column value. (Computing the largest as "total minus the rest" instead
+    // would discard its own share and double-count the total.)
+    let allocated = 0;
+    const result: HppBreakdownRow[] = scaled.map((entry) => {
+      const cost = Math.round(entry.scaled);
+      allocated += cost;
+      return {
+        ingredientId: entry.ingredientId,
+        name: entry.name,
+        category: "", // filled in below, batched
+        quantity: 0,
+        cost,
+      };
+    });
+    result[0].cost += dayTotalCogs - allocated;
+
+    // Batch category lookup for the distinct ingredients.
+    const ids = result.map((r) => r.ingredientId);
+    const categoryMap = new Map<string, string>();
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      const rows = await db
+        .select({ id: ingredients.id, category: ingredients.category })
+        .from(ingredients)
+        .where(inArray(ingredients.id, chunk));
+      for (const r of rows) categoryMap.set(r.id, r.category);
+    }
+    for (const r of result) r.category = categoryMap.get(r.ingredientId) ?? "";
+
+    return result;
   });
 
 // User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
