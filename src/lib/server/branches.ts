@@ -88,6 +88,20 @@ export const getBranches = createServerFn({ method: "GET" })
     return result;
   });
 
+// Public (pre-auth) branch list for the login page's PIN branch picker.
+// Returns only the minimal display fields for ACTIVE branches — no ids, PINs,
+// or contact data — so an unauthenticated caller learns nothing sensitive.
+// Must stay in sync with the branch-pin-verify endpoint, which also accepts
+// only active branches.
+export const getLoginBranches = createServerFn({ method: "GET" }).handler(async () => {
+  const result = await db
+    .select({ code: branches.code, name: branches.name })
+    .from(branches)
+    .where(eq(branches.active, true))
+    .orderBy(branches.code);
+  return result;
+});
+
 export const getBranch = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {

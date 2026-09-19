@@ -2,11 +2,13 @@ import { createFileRoute, useRouter, Navigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { authClient } from "#/lib/auth-client";
 import { useAuth } from "#/lib/auth-context";
+import { getLoginBranches } from "#/lib/server/branches";
 import PinPad from "#/components/PinPad";
 import { Loader2, Smartphone, Mail, ChevronLeft, Building2, UserCircle } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
+  loader: () => getLoginBranches(),
 });
 
 type BranchPinStep = "branch-select" | "pin-entry" | "name-picker";
@@ -14,6 +16,10 @@ type BranchPinStep = "branch-select" | "pin-entry" | "name-picker";
 function LoginPage() {
   const router = useRouter();
   const { user } = useAuth();
+  // Active branches from the DB — the PIN verify endpoint authenticates
+  // against the same table, so this picker always lists every loginable
+  // branch (a hardcoded list silently omitted branches added later).
+  const branches = Route.useLoaderData();
   const [mode, setMode] = useState<"email" | "pin">("pin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -57,17 +63,6 @@ function LoginPage() {
   const [nonBranchPinError, setNonBranchPinError] = useState("");
   const [nonBranchPinLoading, setNonBranchPinLoading] = useState(false);
   const [showNonBranchPin, setShowNonBranchPin] = useState(false);
-
-  // Demo branches for quick access
-  const demoBranches = [
-    { code: "WYG", name: "Wiyung" },
-    { code: "DRM", name: "Darmo Permai" },
-    { code: "TGL", name: "Tenggilis" },
-    { code: "MLY", name: "Mulyorejo" },
-    { code: "JMB", name: "Jambangan" },
-    { code: "PCG", name: "Pucang" },
-    { code: "SWL", name: "Siwalankerto" },
-  ];
 
   // Redirect if already authenticated
   if (user) {
@@ -266,7 +261,7 @@ function LoginPage() {
                   Pilih cabang atau staf non-cabang
                 </p>
                 <div className="grid grid-cols-2 gap-2">
-                  {demoBranches.map((branch) => (
+                  {branches.map((branch) => (
                     <button
                       key={branch.code}
                       type="button"
