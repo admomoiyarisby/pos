@@ -1742,6 +1742,9 @@ export const manualRevenues = pgTable(
       .references(() => branches.id),
     date: text("date").notNull(),
     amount: integer("amount").notNull(),
+    // ADR 0017: incremental-sale entries count toward omzet; memo-only entries
+    // (payout reconciliation duplicating POS orders) are excluded from the P&L.
+    includeInPnl: boolean("include_in_pnl").notNull().default(true),
     notes: text("notes"),
     submittedBy: uuid("submitted_by")
       .notNull()
@@ -1776,6 +1779,8 @@ export const channelRevenues = pgTable(
     date: text("date").notNull(),
     channel: orderChannelEnum("channel").notNull(),
     amount: integer("amount").notNull(),
+    // ADR 0017: same intent flag as manual_revenues (incremental vs memo).
+    includeInPnl: boolean("include_in_pnl").notNull().default(true),
     notes: text("notes"),
     submittedBy: uuid("submitted_by")
       .notNull()

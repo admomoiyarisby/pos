@@ -78,16 +78,34 @@ function validateDateRange(dateFrom: string, dateTo: string, maxDays: number): V
   return { dateFrom, dateTo };
 }
 
+/**
+ * Period-level P&L summary (ADR 0017 canonical definitions).
+ *
+ * All order aggregates exclude Void (and soft-deleted) orders. Omzet is NET:
+ * Σ orders.netSales (after merchant discount + MDR) + manual revenue flagged
+ * includeInPnl. Gross Profit = omzet − HPP; Operating Profit = Gross − opex
+ * (all operationalExpenses, waste-derived included).
+ */
 export interface FinanceSummary {
+  /** Σ orders.totalAmount, non-void — the gross figure before discounts. */
   totalSales: number;
   totalMerchantDiscount: number;
   totalCogs: number;
   totalMdr: number;
+  /** Σ orders.netSales, non-void — order component of omzet. */
   netSales: number;
-  orderCount: number;
+  /** Σ manual/channel revenue where includeInPnl (ADR 0017). */
   manualRevenue: number;
+  /** Σ manual/channel revenue flagged memo-only (excluded from omzet). */
+  manualRevenueMemo: number;
+  orderCount: number;
+  voidCount: number;
+  voidAmount: number;
   manualExpenses: number;
+  /** Omzet − HPP. Opex never touches this (ADR 0017 #4). */
   grossProfit: number;
+  /** Gross Profit − opex. */
+  operatingProfit: number;
 }
 
 export const getFinanceSummary = createServerFn({ method: "GET" })
@@ -106,6 +124,9 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
         sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
       );
 
+    // ADR 0017: Void orders are excluded from every aggregate; voids are
+    // reported separately so the gap vs the POS journal stays explainable.
+    const orderConditions = [...conditions, ne(orders.status, "Void"), isNull(orders.deletedAt)];
     const orderData = await db
       .select({
         totalSales: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
@@ -116,11 +137,22 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
         count: sql<number>`COUNT(*)`,
       })
       .from(orders)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
+      .where(and(...orderConditions));
 
+    const voidData = await db
+      .select({
+        count: sql<number>`COUNT(*)`,
+        amount: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+      })
+      .from(orders)
+      .where(and(...conditions, eq(orders.status, "Void"), isNull(orders.deletedAt)));
+
+    // Manual revenue split by intent (ADR 0017): includeInPnl rows are
+    // incremental sales (enter omzet); the rest are memo-only.
     const manualRev = await db
       .select({
-        total: sql<number>`COALESCE(SUM(${manualRevenues.amount}), 0)`,
+        pnl: sql<number>`COALESCE(SUM(CASE WHEN ${manualRevenues.includeInPnl} THEN ${manualRevenues.amount} ELSE 0 END), 0)`,
+        memo: sql<number>`COALESCE(SUM(CASE WHEN ${manualRevenues.includeInPnl} THEN 0 ELSE ${manualRevenues.amount} END), 0)`,
       })
       .from(manualRevenues)
       .where(
@@ -128,6 +160,20 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
           data.branchId ? eq(manualRevenues.branchId, data.branchId) : undefined,
           data.dateFrom ? gte(manualRevenues.date, data.dateFrom) : undefined,
           data.dateTo ? lte(manualRevenues.date, data.dateTo) : undefined,
+        ),
+      );
+
+    const channelRev = await db
+      .select({
+        pnl: sql<number>`COALESCE(SUM(CASE WHEN ${channelRevenues.includeInPnl} THEN ${channelRevenues.amount} ELSE 0 END), 0)`,
+        memo: sql<number>`COALESCE(SUM(CASE WHEN ${channelRevenues.includeInPnl} THEN 0 ELSE ${channelRevenues.amount} END), 0)`,
+      })
+      .from(channelRevenues)
+      .where(
+        and(
+          data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
+          data.dateFrom ? gte(channelRevenues.date, data.dateFrom) : undefined,
+          data.dateTo ? lte(channelRevenues.date, data.dateTo) : undefined,
         ),
       );
 
@@ -150,24 +196,36 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
     const totalCogs = toNum(orderData[0]?.totalCogs);
     const totalMdr = toNum(orderData[0]?.totalMdr);
     const netSales = toNum(orderData[0]?.netSales);
+    const manualRevenuePnl = toNum(manualRev[0]?.pnl) + toNum(channelRev[0]?.pnl);
+    const manualRevenueMemo = toNum(manualRev[0]?.memo) + toNum(channelRev[0]?.memo);
     const manualExpensesTotal = toNum(manualExp[0]?.total);
+    // ADR 0017: omzet = net order sales + includeInPnl manual revenue.
+    const omzet = netSales + manualRevenuePnl;
+    const grossProfit = omzet - totalCogs;
     return {
       totalSales,
       totalMerchantDiscount,
       totalCogs,
       totalMdr,
       netSales,
+      manualRevenue: manualRevenuePnl,
+      manualRevenueMemo,
       orderCount: toNum(orderData[0]?.count),
-      manualRevenue: toNum(manualRev[0]?.total),
+      voidCount: toNum(voidData[0]?.count),
+      voidAmount: toNum(voidData[0]?.amount),
       manualExpenses: manualExpensesTotal,
-      grossProfit: netSales - totalCogs - manualExpensesTotal,
+      grossProfit,
+      operatingProfit: grossProfit - manualExpensesTotal,
     };
   });
 
 export interface DailyFinanceRow {
   tanggal: string;
   hpp: number;
+  /** Net omzet (ADR 0017): orders.netSales + includeInPnl manual revenue, or override. */
   omzet: number;
+  /** Order-derived net component before any override (for the breakdown). */
+  computedOmzet: number;
   grossProfit: number;
   margin: number;
   hasOmzetOverride: boolean;
@@ -215,16 +273,59 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
       );
     if (data.channel) conditions.push(eq(orders.channel, data.channel));
 
+    // ADR 0017: Void and soft-deleted orders never enter the ledger.
+    const orderConditions = [...conditions, ne(orders.status, "Void"), isNull(orders.deletedAt)];
+
     const result = await db
       .select({
         tanggal: sql<string>`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`,
         hpp: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
-        omzet: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        omzet: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
       })
       .from(orders)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(and(...orderConditions))
       .groupBy(sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`)
       .orderBy(sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`);
+
+    // Manual revenue per day, split by intent (ADR 0017). Channel filter
+    // applies to channel revenues only; no-channel manual revenue is
+    // excluded when a specific channel is selected.
+    const manualRevConditions = [
+      data.dateFrom ? gte(manualRevenues.date, data.dateFrom) : undefined,
+      data.dateTo ? lte(manualRevenues.date, data.dateTo) : undefined,
+      data.branchId ? eq(manualRevenues.branchId, data.branchId) : undefined,
+    ];
+    const manualRevRows = await db
+      .select({
+        date: manualRevenues.date,
+        pnl: sql<number>`COALESCE(SUM(CASE WHEN ${manualRevenues.includeInPnl} THEN ${manualRevenues.amount} ELSE 0 END), 0)`,
+      })
+      .from(manualRevenues)
+      .where(and(...manualRevConditions))
+      .groupBy(manualRevenues.date);
+
+    const channelRevConditions = [
+      data.dateFrom ? gte(channelRevenues.date, data.dateFrom) : undefined,
+      data.dateTo ? lte(channelRevenues.date, data.dateTo) : undefined,
+      data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
+      data.channel ? eq(channelRevenues.channel, data.channel) : undefined,
+    ];
+    const channelRevRows = await db
+      .select({
+        date: channelRevenues.date,
+        pnl: sql<number>`COALESCE(SUM(CASE WHEN ${channelRevenues.includeInPnl} THEN ${channelRevenues.amount} ELSE 0 END), 0)`,
+      })
+      .from(channelRevenues)
+      .where(and(...channelRevConditions))
+      .groupBy(channelRevenues.date);
+
+    const manualPnlByDate = new Map<string, number>();
+    for (const r of manualRevRows) {
+      manualPnlByDate.set(r.date, (manualPnlByDate.get(r.date) ?? 0) + Number(r.pnl));
+    }
+    for (const r of channelRevRows) {
+      manualPnlByDate.set(r.date, (manualPnlByDate.get(r.date) ?? 0) + Number(r.pnl));
+    }
 
     // Fetch overrides for this branch/date range
     const overrideConditions = [];
@@ -244,16 +345,26 @@ export const getDailyFinanceSummary = createServerFn({ method: "GET" })
       overrideMap.get(o.date)![o.field] = o.value;
     }
 
-    return result.map((row) => {
-      const hpp = Number(row.hpp);
-      const dayOverrides = overrideMap.get(row.tanggal) ?? {};
-      const omzet = dayOverrides.omzet ?? Number(row.omzet);
+    // Days with manual revenue but no orders must still appear in the ledger.
+    const ordersByDate = new Map<string, { hpp: number; omzet: number }>();
+    for (const r of result) {
+      ordersByDate.set(r.tanggal, { hpp: Number(r.hpp), omzet: Number(r.omzet) });
+    }
+    const dates = new Set<string>([...ordersByDate.keys(), ...manualPnlByDate.keys()]);
+
+    return [...dates].sort().map((tanggal) => {
+      const dayOverrides = overrideMap.get(tanggal) ?? {};
+      const orderRow = ordersByDate.get(tanggal);
+      const computedOmzet = (orderRow?.omzet ?? 0) + (manualPnlByDate.get(tanggal) ?? 0);
+      const omzet = dayOverrides.omzet ?? computedOmzet;
+      const hpp = orderRow?.hpp ?? 0;
       const grossProfit = omzet - hpp;
       const margin = omzet > 0 ? grossProfit / omzet : 0;
       return {
-        tanggal: row.tanggal,
+        tanggal,
         hpp,
         omzet,
+        computedOmzet,
         grossProfit,
         margin,
         hasOmzetOverride: dayOverrides.omzet !== undefined,
@@ -466,6 +577,8 @@ export interface ManualFinanceEntry {
   /** Expense category (expenses only). */
   category: string | null;
   amount: number;
+  /** ADR 0017: incremental sales (in omzet) vs memo-only. Expenses: false. */
+  includeInPnl: boolean;
   notes: string | null;
 }
 
@@ -489,6 +602,7 @@ export const getManualFinanceEntries = createServerFn({ method: "GET" })
         id: manualRevenues.id,
         date: manualRevenues.date,
         amount: manualRevenues.amount,
+        includeInPnl: manualRevenues.includeInPnl,
         notes: manualRevenues.notes,
       })
       .from(manualRevenues)
@@ -504,6 +618,7 @@ export const getManualFinanceEntries = createServerFn({ method: "GET" })
         id: channelRevenues.id,
         date: channelRevenues.date,
         amount: channelRevenues.amount,
+        includeInPnl: channelRevenues.includeInPnl,
         notes: channelRevenues.notes,
         channel: channelRevenues.channel,
       })
@@ -545,6 +660,7 @@ export const getManualFinanceEntries = createServerFn({ method: "GET" })
         kind: "expense" as const,
         channel: null,
         category: r.category,
+        includeInPnl: false,
       })),
     ].sort((a, b) => a.date.localeCompare(b.date));
   });
@@ -673,20 +789,34 @@ export interface OmzetChannelRow {
 }
 
 export interface OmzetBreakdown {
-  /** Omzet from actual orders (SUM(orders.totalAmount)) for the day. */
+  /** Gross order sales (Σ totalAmount), non-void — before discount/MDR. */
+  grossSales: number;
+  /** Σ merchantDiscount, non-void. */
+  merchantDiscount: number;
+  /** Σ mdrFee, non-void. */
+  mdrFee: number;
+  /** Net order sales (Σ netSales), non-void — the order component of omzet. */
+  orderNetSales: number;
+  /** Manual revenue counted into omzet (includeInPnl, ADR 0017). */
+  manualRevenue: number;
+  /** computedOmzet = orderNetSales + manualRevenue. */
   computedOmzet: number;
   /** Day-level manual override, if any — this is what the Omzet column shows. */
   override: number | null;
   /** The value the Omzet column displays. */
   effectiveOmzet: number;
   orderCount: number;
+  /** Void orders excluded from omzet (ADR 0017 #3) — shown for auditability. */
+  voidCount: number;
+  voidAmount: number;
   perChannel: OmzetChannelRow[];
 }
 
-// Per-day Omzet detail so the user can verify the ledger: the order-derived
-// total, the manual override (if any), and the per-channel order totals that
-// make up the sum. Deliberately includes Void orders to match the ledger's
-// Omzet column, which sums orders.totalAmount without a status filter.
+// Per-day Omzet detail so the user can verify the ledger: the gross → net
+// derivation (discount, MDR), the includeInPnl manual revenue, the manual
+// override (if any), and the per-channel order totals behind the sum. Void
+// orders are excluded (ADR 0017) but reported so the gap vs the POS journal
+// stays explainable.
 export const getOmzetBreakdown = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; date: string; channel?: string }) => ({
     ...data,
@@ -701,26 +831,67 @@ export const getOmzetBreakdown = createServerFn({ method: "GET" })
     conditions.push(
       sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') = ${data.date}`,
     );
-    const where = and(...conditions);
+    const nonVoid = [...conditions, ne(orders.status, "Void"), isNull(orders.deletedAt)];
+    const voidOnly = [...conditions, eq(orders.status, "Void"), isNull(orders.deletedAt)];
 
     const [totalsRow] = await db
       .select({
-        omzet: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        grossSales: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        merchantDiscount: sql<number>`COALESCE(SUM(${orders.merchantDiscount}), 0)`,
+        mdrFee: sql<number>`COALESCE(SUM(${orders.mdrFee}), 0)`,
+        netSales: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
         orderCount: sql<number>`COUNT(*)`,
       })
       .from(orders)
-      .where(where);
+      .where(and(...nonVoid));
+
+    const [voidRow] = await db
+      .select({
+        count: sql<number>`COUNT(*)`,
+        amount: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+      })
+      .from(orders)
+      .where(and(...voidOnly));
 
     const perChannelRows = await db
       .select({
         channel: orders.channel,
         orderCount: sql<number>`COUNT(*)`,
-        totalAmount: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        totalAmount: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
       })
       .from(orders)
-      .where(where)
+      .where(and(...nonVoid))
       .groupBy(orders.channel)
-      .orderBy(sql`COALESCE(SUM(${orders.totalAmount}), 0) DESC`);
+      .orderBy(sql`COALESCE(SUM(${orders.netSales}), 0) DESC`);
+
+    // Manual revenue split by intent (ADR 0017). No-channel manual revenue is
+    // omitted when a specific channel is selected, mirroring the ledger.
+    const manualRevConditions = [
+      eq(manualRevenues.date, data.date),
+      data.branchId ? eq(manualRevenues.branchId, data.branchId) : undefined,
+    ];
+    const [manualRevRow] = data.channel
+      ? [undefined]
+      : await db
+          .select({
+            pnl: sql<number>`COALESCE(SUM(CASE WHEN ${manualRevenues.includeInPnl} THEN ${manualRevenues.amount} ELSE 0 END), 0)`,
+          })
+          .from(manualRevenues)
+          .where(and(...manualRevConditions));
+
+    const channelRevConditions = [
+      eq(channelRevenues.date, data.date),
+      data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
+      data.channel ? eq(channelRevenues.channel, data.channel) : undefined,
+    ];
+    const [channelRevRow] = await db
+      .select({
+        pnl: sql<number>`COALESCE(SUM(CASE WHEN ${channelRevenues.includeInPnl} THEN ${channelRevenues.amount} ELSE 0 END), 0)`,
+      })
+      .from(channelRevenues)
+      .where(and(...channelRevConditions));
+
+    const manualRevenue = Number(manualRevRow?.pnl ?? 0) + Number(channelRevRow?.pnl ?? 0);
 
     const overrideConditions = [
       eq(dailyOverrides.date, data.date),
@@ -733,13 +904,20 @@ export const getOmzetBreakdown = createServerFn({ method: "GET" })
       .where(and(...overrideConditions))
       .limit(1);
 
-    const computedOmzet = Number(totalsRow?.omzet ?? 0);
+    const computedOmzet = Number(totalsRow?.netSales ?? 0) + manualRevenue;
     const override = overrideRow ? Number(overrideRow.value) : null;
     return {
+      grossSales: Number(totalsRow?.grossSales ?? 0),
+      merchantDiscount: Number(totalsRow?.merchantDiscount ?? 0),
+      mdrFee: Number(totalsRow?.mdrFee ?? 0),
+      orderNetSales: Number(totalsRow?.netSales ?? 0),
+      manualRevenue,
       computedOmzet,
       override,
       effectiveOmzet: override ?? computedOmzet,
       orderCount: Number(totalsRow?.orderCount ?? 0),
+      voidCount: Number(voidRow?.count ?? 0),
+      voidAmount: Number(voidRow?.amount ?? 0),
       perChannel: perChannelRows.map((r) => ({
         channel: r.channel,
         orderCount: Number(r.orderCount),
@@ -929,6 +1107,34 @@ export const createChannelRevenue = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
     return createChannelRevenueCore(user, data);
+  });
+
+// ADR 0017: flip a revenue entry between incremental-sale (includeInPnl) and
+// memo-only. Same guard as the create paths.
+export const setRevenueIncludeInPnl = createServerFn({ method: "POST" })
+  .validator((data: { kind: "manual" | "channel"; id: string; includeInPnl: boolean }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+    if (data.kind === "manual") {
+      await db
+        .update(manualRevenues)
+        .set({ includeInPnl: data.includeInPnl })
+        .where(eq(manualRevenues.id, data.id));
+    } else {
+      await db
+        .update(channelRevenues)
+        .set({ includeInPnl: data.includeInPnl })
+        .where(eq(channelRevenues.id, data.id));
+    }
+    await logAudit(
+      user,
+      "revenues",
+      data.id,
+      "UPDATE",
+      { includeInPnl: !data.includeInPnl },
+      { includeInPnl: data.includeInPnl },
+    );
+    return { success: true };
   });
 
 // ─── Manual Expenses ───
@@ -1494,11 +1700,11 @@ export const printFinancePage = createServerFn({ method: "GET" })
     const channelBreakdown = await db
       .select({
         channel: orders.channel,
-        totalAmount: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        totalAmount: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
         count: sql<number>`COUNT(*)`,
       })
       .from(orders)
-      .where(conds)
+      .where(and(conds, ne(orders.status, "Void"), isNull(orders.deletedAt)))
       .groupBy(orders.channel)
       .orderBy(orders.channel);
 
@@ -1523,6 +1729,8 @@ export const printFinancePage = createServerFn({ method: "GET" })
 
     const gpClass = summary.grossProfit >= 0 ? "green" : "red";
     const gpSign = summary.grossProfit >= 0 ? "" : "-";
+    const opClass = summary.operatingProfit >= 0 ? "green" : "red";
+    const opSign = summary.operatingProfit >= 0 ? "" : "-";
 
     const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Laporan Keuangan</title>
@@ -1560,7 +1768,7 @@ export const printFinancePage = createServerFn({ method: "GET" })
 
 <div class="cards">
   <div class="card">
-    <div class="card-label">Total Penjualan</div>
+    <div class="card-label">Total Penjualan (Gross)</div>
     <div class="card-value green">${formatRupiah(summary.totalSales)}</div>
   </div>
   <div class="card">
@@ -1568,16 +1776,20 @@ export const printFinancePage = createServerFn({ method: "GET" })
     <div class="card-value red">${formatRupiah(summary.totalCogs)}</div>
   </div>
   <div class="card">
-    <div class="card-label">Net Sales</div>
-    <div class="card-value green">${formatRupiah(summary.netSales)}</div>
+    <div class="card-label">Omzet (Net + Manual)</div>
+    <div class="card-value green">${formatRupiah(summary.netSales + summary.manualRevenue)}</div>
   </div>
   <div class="card">
     <div class="card-label">Gross Profit</div>
     <div class="card-value ${gpClass}">${gpSign}${formatRupiah(Math.abs(summary.grossProfit))}</div>
   </div>
+  <div class="card">
+    <div class="card-label">Operating Profit</div>
+    <div class="card-value ${opClass}">${opSign}${formatRupiah(Math.abs(summary.operatingProfit))}</div>
+  </div>
 </div>
 
-<div class="section-title">Total Pesanan: ${summary.orderCount}</div>
+<div class="section-title">Total Pesanan: ${summary.orderCount}${summary.voidCount > 0 ? ` (void: ${summary.voidCount})` : ""}</div>
 
 <div class="section-title">Rincian per Channel</div>
 <table>
@@ -1591,12 +1803,16 @@ export const printFinancePage = createServerFn({ method: "GET" })
 </table>
 
 <table class="summary-table">
-  <tr><td class="label">Total Penjualan</td><td class="value">${formatRupiah(summary.totalSales)}</td></tr>
-  <tr><td class="label">Diskon Merchant</td><td class="value">${formatRupiah(summary.totalMerchantDiscount)}</td></tr>
-  <tr><td class="label">HPP</td><td class="value">${formatRupiah(summary.totalCogs)}</td></tr>
-  <tr><td class="label">MDR</td><td class="value">${formatRupiah(summary.totalMdr)}</td></tr>
-  <tr><td class="label">Pendapatan Manual</td><td class="value">${formatRupiah(summary.manualRevenue)}</td></tr>
+  <tr><td class="label">Total Penjualan (Gross)</td><td class="value">${formatRupiah(summary.totalSales)}</td></tr>
+  <tr><td class="label">Diskon Merchant</td><td class="value">-${formatRupiah(summary.totalMerchantDiscount)}</td></tr>
+  <tr><td class="label">MDR</td><td class="value">-${formatRupiah(summary.totalMdr)}</td></tr>
+  <tr><td class="label">Net Sales (Order)</td><td class="value">${formatRupiah(summary.netSales)}</td></tr>
+  <tr><td class="label">Pendapatan Manual (masuk omzet)</td><td class="value">+${formatRupiah(summary.manualRevenue)}</td></tr>
+  ${summary.manualRevenueMemo > 0 ? `<tr><td class="label">Pendapatan Manual (memo)</td><td class="value">${formatRupiah(summary.manualRevenueMemo)}</td></tr>` : ""}
+  <tr><td class="label">HPP</td><td class="value">-${formatRupiah(summary.totalCogs)}</td></tr>
   <tr><td class="label" style="color: ${gpClass};">Gross Profit</td><td class="value" style="color: ${gpClass};">${gpSign}${formatRupiah(Math.abs(summary.grossProfit))}</td></tr>
+  <tr><td class="label">Beban Operasional</td><td class="value">-${formatRupiah(summary.manualExpenses)}</td></tr>
+  <tr><td class="label" style="color: ${opClass};">Operating Profit</td><td class="value" style="color: ${opClass};">${opSign}${formatRupiah(Math.abs(summary.operatingProfit))}</td></tr>
 </table>
 
 <div class="footer">Dicetak dari Omoiyari POS — ${new Date().toLocaleDateString("id-ID")}</div>

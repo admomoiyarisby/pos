@@ -293,6 +293,34 @@ function OmzetBreakdownContent({
     <>
       <div className="text-xs font-medium text-muted-foreground mb-2">
         Rincian Omzet — {dateStr} ({data.orderCount} pesanan)
+        {data.voidCount > 0 && (
+          <span className="ml-2 text-amber-600">
+            Void: {data.voidCount} ({formatRp(data.voidAmount)}) — tidak dihitung
+          </span>
+        )}
+      </div>
+      {/* Gross → net derivation (ADR 0017 #1) */}
+      <div className="mb-2 space-y-0.5 text-sm">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Total Penjualan (Gross)</span>
+          <span className="tabular-nums">{formatRp(data.grossSales)}</span>
+        </div>
+        {data.merchantDiscount > 0 && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Diskon Merchant</span>
+            <span className="tabular-nums">−{formatRp(data.merchantDiscount)}</span>
+          </div>
+        )}
+        {data.mdrFee > 0 && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">MDR</span>
+            <span className="tabular-nums">−{formatRp(data.mdrFee)}</span>
+          </div>
+        )}
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Net Sales (Order)</span>
+          <span className="tabular-nums">{formatRp(data.orderNetSales)}</span>
+        </div>
       </div>
       <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
         {data.perChannel.map((ch) => (
@@ -309,10 +337,12 @@ function OmzetBreakdownContent({
         ))}
       </div>
       <div className="flex flex-wrap justify-end gap-x-4 gap-y-1 mt-2 pt-2 border-t text-sm">
-        <span className="text-muted-foreground">
-          Dari pesanan:{" "}
-          <span className="tabular-nums font-medium">{formatRp(data.computedOmzet)}</span>
-        </span>
+        {data.manualRevenue > 0 && (
+          <span className="text-emerald-600">
+            Pendapatan manual (masuk omzet):{" "}
+            <span className="tabular-nums font-medium">+{formatRp(data.manualRevenue)}</span>
+          </span>
+        )}
         {data.override !== null && (
           <span className="text-blue-600">
             Override manual:{" "}
@@ -346,8 +376,9 @@ function OmzetBreakdownRow({
 }
 
 // Itemized manual entries for one day — each revenue/expense input through
-// the finance buttons, with its channel (or "no-channel" for manual revenue).
-// Shared by the desktop table row and the mobile day card.
+// the finance buttons, with its channel (or "no-channel" for manual revenue)
+// and its P&L intent (ADR 0017: incremental sales vs memo-only). Shared by
+// the desktop table row and the mobile day card.
 function ManualBreakdownContent({ entries }: { entries: ManualFinanceEntry[] }) {
   const channelLabel = (channel: string) =>
     CHANNELS.find((c) => c.value === channel)?.label ?? channel;
@@ -380,6 +411,20 @@ function ManualBreakdownContent({ entries }: { entries: ManualFinanceEntry[] }) 
               >
                 {e.kind === "revenue" ? "Revenue" : "Expense"}
               </span>
+              {e.kind === "revenue" && (
+                <span
+                  className={`mr-1.5 inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                    e.includeInPnl ? "bg-blue-100 text-blue-700" : "bg-muted text-muted-foreground"
+                  }`}
+                  title={
+                    e.includeInPnl
+                      ? "Dihitung ke omzet (penjualan tambahan)"
+                      : "Memo saja — tidak dihitung ke omzet"
+                  }
+                >
+                  {e.includeInPnl ? "P&L" : "Memo"}
+                </span>
+              )}
               {e.kind === "revenue"
                 ? e.channel
                   ? channelLabel(e.channel)
@@ -569,12 +614,18 @@ function FinancePage() {
     return map;
   }, [manualEntries]);
 
-  // Net manual total = manual revenue − expenses, per day. Same math on both
-  // the desktop column and the mobile card so they read identically.
+  // Net manual total per day — the part of the ledger NOT in the Omzet
+  // headline (ADR 0017): expenses minus memo-only revenue. Revenue entries
+  // flagged includeInPnl are already counted inside Omzet, so they are
+  // excluded here to keep the columns additive. Same math on both the desktop
+  // column and the mobile card so they read identically.
   const manualNetFor = useCallback(
     (date: string) => {
       const entries = manualByDate.get(date) ?? [];
-      return entries.reduce((s, e) => s + (e.kind === "revenue" ? e.amount : -e.amount), 0);
+      return entries.reduce((s, e) => {
+        if (e.kind === "expense") return s - e.amount;
+        return e.includeInPnl ? s : s + e.amount;
+      }, 0);
     },
     [manualByDate],
   );
