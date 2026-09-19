@@ -11,6 +11,7 @@ import {
   getDailyHppBreakdown,
   getManualFinanceEntries,
   type ManualFinanceEntry,
+  getOmzetBreakdown,
   getShiftCashVariance,
   upsertDailyOverride,
   createManualRevenue,
@@ -248,6 +249,97 @@ function HppBreakdownRow({
     <tr className="bg-muted/30">
       <td colSpan={7} className="px-4 py-3">
         <HppBreakdownContent branchId={branchId} date={date} channel={channel} />
+      </td>
+    </tr>
+  );
+}
+
+// Omzet detail for one day: order-derived total vs any manual override, plus
+// the per-channel order totals behind the sum — lets the user verify Gross
+// Profit = Omzet − HPP against the actual orders. Shared by the desktop table
+// row and the mobile day card.
+function OmzetBreakdownContent({
+  branchId,
+  date,
+  channel,
+}: {
+  branchId: string;
+  date: string;
+  channel: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["omzet-breakdown", date, branchId, channel],
+    queryFn: () =>
+      getOmzetBreakdown({
+        data: { branchId: branchId || undefined, date, channel: channel || undefined },
+      }),
+  });
+
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground">Memuat rincian omzet…</p>;
+  }
+
+  if (!data) {
+    return <p className="text-sm text-muted-foreground">Tidak ada rincian omzet.</p>;
+  }
+
+  const channelLabel = (ch: string) => CHANNELS.find((c) => c.value === ch)?.label ?? ch;
+  const dateStr = new Date(date + "T00:00:00").toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+  });
+
+  return (
+    <>
+      <div className="text-xs font-medium text-muted-foreground mb-2">
+        Rincian Omzet — {dateStr} ({data.orderCount} pesanan)
+      </div>
+      <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
+        {data.perChannel.map((ch) => (
+          <div
+            key={ch.channel}
+            className="flex items-center justify-between text-sm py-1 border-b border-border/40"
+          >
+            <span className="truncate pr-2">
+              {channelLabel(ch.channel)}
+              <span className="ml-1.5 text-xs text-muted-foreground">({ch.orderCount})</span>
+            </span>
+            <span className="tabular-nums font-medium shrink-0">{formatRp(ch.totalAmount)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap justify-end gap-x-4 gap-y-1 mt-2 pt-2 border-t text-sm">
+        <span className="text-muted-foreground">
+          Dari pesanan:{" "}
+          <span className="tabular-nums font-medium">{formatRp(data.computedOmzet)}</span>
+        </span>
+        {data.override !== null && (
+          <span className="text-blue-600">
+            Override manual:{" "}
+            <span className="tabular-nums font-medium">{formatRp(data.override)}</span>
+          </span>
+        )}
+        <span className="font-semibold">
+          Total Omzet: <span className="tabular-nums">{formatRp(data.effectiveOmzet)}</span>
+        </span>
+      </div>
+    </>
+  );
+}
+
+function OmzetBreakdownRow({
+  branchId,
+  date,
+  channel,
+}: {
+  branchId: string;
+  date: string;
+  channel: string;
+}) {
+  return (
+    <tr className="bg-muted/30">
+      <td colSpan={7} className="px-4 py-3">
+        <OmzetBreakdownContent branchId={branchId} date={date} channel={channel} />
       </td>
     </tr>
   );
@@ -914,6 +1006,11 @@ function FinancePage() {
                       </div>
                       {isOpen && (
                         <div className="border-t bg-muted/30 px-3.5 py-3 space-y-3">
+                          <OmzetBreakdownContent
+                            branchId={selectedBranchId}
+                            date={row.tanggal}
+                            channel={selectedChannel}
+                          />
                           <ManualBreakdownContent entries={manualByDate.get(row.tanggal) ?? []} />
                           <div>
                             <div className="text-xs font-medium text-muted-foreground mb-2">
@@ -1053,6 +1150,11 @@ function FinancePage() {
                           </tr>
                           {isOpen && (
                             <>
+                              <OmzetBreakdownRow
+                                branchId={selectedBranchId}
+                                date={row.tanggal}
+                                channel={selectedChannel}
+                              />
                               <ManualBreakdownRow entries={manualByDate.get(row.tanggal) ?? []} />
                               <HppBreakdownRow
                                 branchId={selectedBranchId}

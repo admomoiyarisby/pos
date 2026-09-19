@@ -666,6 +666,88 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
     return result;
   });
 
+export interface OmzetChannelRow {
+  channel: string;
+  orderCount: number;
+  totalAmount: number;
+}
+
+export interface OmzetBreakdown {
+  /** Omzet from actual orders (SUM(orders.totalAmount)) for the day. */
+  computedOmzet: number;
+  /** Day-level manual override, if any — this is what the Omzet column shows. */
+  override: number | null;
+  /** The value the Omzet column displays. */
+  effectiveOmzet: number;
+  orderCount: number;
+  perChannel: OmzetChannelRow[];
+}
+
+// Per-day Omzet detail so the user can verify the ledger: the order-derived
+// total, the manual override (if any), and the per-channel order totals that
+// make up the sum. Deliberately includes Void orders to match the ledger's
+// Omzet column, which sums orders.totalAmount without a status filter.
+export const getOmzetBreakdown = createServerFn({ method: "GET" })
+  .validator((data: { branchId?: string; date: string; channel?: string }) => ({
+    ...data,
+    channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+  }))
+  .handler(async ({ data }): Promise<OmzetBreakdown> => {
+    await requireRole("super_admin", "admin_pusat");
+
+    const conditions = [];
+    if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
+    if (data.channel) conditions.push(eq(orders.channel, data.channel));
+    conditions.push(
+      sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') = ${data.date}`,
+    );
+    const where = and(...conditions);
+
+    const [totalsRow] = await db
+      .select({
+        omzet: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        orderCount: sql<number>`COUNT(*)`,
+      })
+      .from(orders)
+      .where(where);
+
+    const perChannelRows = await db
+      .select({
+        channel: orders.channel,
+        orderCount: sql<number>`COUNT(*)`,
+        totalAmount: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+      })
+      .from(orders)
+      .where(where)
+      .groupBy(orders.channel)
+      .orderBy(sql`COALESCE(SUM(${orders.totalAmount}), 0) DESC`);
+
+    const overrideConditions = [
+      eq(dailyOverrides.date, data.date),
+      eq(dailyOverrides.field, "omzet"),
+      data.branchId ? eq(dailyOverrides.branchId, data.branchId) : undefined,
+    ];
+    const [overrideRow] = await db
+      .select({ value: dailyOverrides.value })
+      .from(dailyOverrides)
+      .where(and(...overrideConditions))
+      .limit(1);
+
+    const computedOmzet = Number(totalsRow?.omzet ?? 0);
+    const override = overrideRow ? Number(overrideRow.value) : null;
+    return {
+      computedOmzet,
+      override,
+      effectiveOmzet: override ?? computedOmzet,
+      orderCount: Number(totalsRow?.orderCount ?? 0),
+      perChannel: perChannelRows.map((r) => ({
+        channel: r.channel,
+        orderCount: Number(r.orderCount),
+        totalAmount: Number(r.totalAmount),
+      })),
+    };
+  });
+
 // User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
 export async function upsertDailyOverrideCore(
   user: AppUser,
