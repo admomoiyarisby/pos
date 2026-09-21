@@ -13,6 +13,10 @@ import {
   type ManualFinanceEntry,
   getOmzetBreakdown,
   getShiftCashVariance,
+  getChannelPnl,
+  type ChannelPnlRow,
+  getDailyIngredientUsage,
+  type DailyUsageRow,
   upsertDailyOverride,
   createManualRevenue,
   createChannelRevenue,
@@ -217,6 +221,7 @@ function HppBreakdownContent({
     <>
       <div className="text-xs font-medium text-muted-foreground mb-2">
         Rincian HPP per Bahan — {dateStr}
+        <span className="ml-2 normal-case">(nilai biaya, bukan jumlah fisik)</span>
       </div>
       <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
         {data.map((d) => (
@@ -254,10 +259,318 @@ function HppBreakdownRow({
   );
 }
 
-// Omzet detail for one day: order-derived total vs any manual override, plus
-// the per-channel order totals behind the sum — lets the user verify Gross
-// Profit = Omzet − HPP against the actual orders. Shared by the desktop table
-// row and the mobile day card.
+// Label channel konsisten dengan CHANNELS di atas (value internal → label UI).
+const CHANNEL_LABELS = {
+  Gofood: "Gojek",
+  Grabfood: "Grab",
+  ShopeeFood: "Shopee",
+  TikTok: "TikTok",
+  "Dine-in": "Dine In",
+  Perlengkapan: "Perlengkapan",
+} as const; // SAFETY: `in` guard narrows the key to the literal union before lookup;
+// unknown channels fall back to the raw value.
+const channelLabelOf = (channel: string) =>
+  channel in CHANNEL_LABELS ? CHANNEL_LABELS[channel as keyof typeof CHANNEL_LABELS] : channel;
+
+// ── Breakdown per Channel: Channel × HPP × Omzet POS × Omzet Real × Margin %
+// Margin dihitung dari Omzet Real (= netSales, ADR 0017 #1), bukan Omzet POS.
+// Dilayar sebagai satu tabel per tanggal (grup per hari) + baris total per
+// hari. Dipakai bersama desktop (tabel) dan mobile (kartu per hari).
+function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
+  const byDate = useMemo(() => {
+    const map = new Map<string, ChannelPnlRow[]>();
+    for (const r of rows) {
+      const list = map.get(r.tanggal) ?? [];
+      list.push(r);
+      map.set(r.tanggal, list);
+    }
+    return map;
+  }, [rows]);
+
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center">
+        <p className="text-sm font-medium">Belum ada penjualan per channel</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Order POS yang masuk akan ter breakdown di sini per channel.
+        </p>
+      </div>
+    );
+  }
+
+  // Total seluruh periode (semua tanggal & channel).
+  const totals = rows.reduce(
+    (acc, r) => ({
+      orderCount: acc.orderCount + r.orderCount,
+      grossSales: acc.grossSales + r.grossSales,
+      hpp: acc.hpp + r.hpp,
+      discountAndMdr: acc.discountAndMdr + r.discountAndMdr,
+      netSales: acc.netSales + r.netSales,
+    }),
+    { orderCount: 0, grossSales: 0, hpp: 0, discountAndMdr: 0, netSales: 0 },
+  );
+  const totalMargin = totals.netSales > 0 ? (totals.netSales - totals.hpp) / totals.netSales : 0;
+
+  return (
+    <div className="space-y-3">
+      {/* Desktop: satu tabel dengan grup baris per tanggal */}
+      <div className="hidden md:block rounded-lg border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="text-left py-2.5 px-3 font-medium">Tanggal</th>
+                <th className="text-left py-2.5 px-3 font-medium">Channel</th>
+                <th className="text-right py-2.5 px-3 font-medium w-20">Order</th>
+                <th className="text-right py-2.5 px-3 font-medium w-32">HPP</th>
+                <th className="text-right py-2.5 px-3 font-medium w-32">Omzet POS</th>
+                <th className="text-right py-2.5 px-3 font-medium w-32">Omzet Real</th>
+                <th className="text-right py-2.5 px-3 font-medium w-24">Margin %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...byDate.entries()].map(([tanggal, dayRows]) => {
+                const dayTotals = dayRows.reduce(
+                  (acc, r) => ({
+                    orderCount: acc.orderCount + r.orderCount,
+                    grossSales: acc.grossSales + r.grossSales,
+                    hpp: acc.hpp + r.hpp,
+                    discountAndMdr: acc.discountAndMdr + r.discountAndMdr,
+                    netSales: acc.netSales + r.netSales,
+                  }),
+                  { orderCount: 0, grossSales: 0, hpp: 0, discountAndMdr: 0, netSales: 0 },
+                );
+                const dayMargin =
+                  dayTotals.netSales > 0
+                    ? (dayTotals.netSales - dayTotals.hpp) / dayTotals.netSales
+                    : 0;
+                return (
+                  <Fragment key={tanggal}>
+                    {dayRows.map((r, i) => (
+                      <tr key={`${r.tanggal}-${r.channel}`} className="border-b hover:bg-muted/40">
+                        <td className="py-2 px-3 whitespace-nowrap">
+                          {i === 0
+                            ? new Date(tanggal + "T00:00:00").toLocaleDateString("id-ID", {
+                                weekday: "short",
+                                day: "numeric",
+                                month: "short",
+                              })
+                            : ""}
+                        </td>
+                        <td className="py-2 px-3 font-medium">{channelLabelOf(r.channel)}</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
+                          {r.orderCount}
+                        </td>
+                        <td className="py-2 px-3 text-right tabular-nums">{formatRp(r.hpp)}</td>
+                        <td className="py-2 px-3 text-right tabular-nums">
+                          {formatRp(r.grossSales)}
+                        </td>
+                        <td className="py-2 px-3 text-right tabular-nums font-medium">
+                          {formatRp(r.netSales)}
+                        </td>
+                        <td
+                          className={`py-2 px-3 text-right tabular-nums ${
+                            r.margin >= 0 ? "text-emerald-600" : "text-destructive"
+                          }`}
+                        >
+                          {(r.margin * 100).toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Subtotal per tanggal */}
+                    <tr className="border-b bg-muted/40 font-semibold">
+                      <td className="py-2 px-3" colSpan={2}></td>
+                      <td className="py-2 px-3 text-right tabular-nums">{dayTotals.orderCount}</td>
+                      <td className="py-2 px-3 text-right tabular-nums">
+                        {formatRp(dayTotals.hpp)}
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums">
+                        {formatRp(dayTotals.grossSales)}
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums">
+                        {formatRp(dayTotals.netSales)}
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums">
+                        {(dayMargin * 100).toFixed(1)}%
+                      </td>
+                    </tr>
+                  </Fragment>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 font-semibold bg-muted/40">
+                <td className="py-2.5 px-3" colSpan={2}>
+                  TOTAL PERIODE
+                </td>
+                <td className="py-2.5 px-3 text-right tabular-nums">{totals.orderCount}</td>
+                <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.hpp)}</td>
+                <td className="py-2.5 px-3 text-right tabular-nums">
+                  {formatRp(totals.grossSales)}
+                </td>
+                <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.netSales)}</td>
+                <td className="py-2.5 px-3 text-right tabular-nums">
+                  {(totalMargin * 100).toFixed(1)}%
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      {/* Mobile: kartu per tanggal */}
+      <div className="md:hidden space-y-2.5">
+        {[...byDate.entries()].map(([tanggal, dayRows]) => {
+          const dayTotals = dayRows.reduce(
+            (acc, r) => ({
+              orderCount: acc.orderCount + r.orderCount,
+              grossSales: acc.grossSales + r.grossSales,
+              hpp: acc.hpp + r.hpp,
+              netSales: acc.netSales + r.netSales,
+            }),
+            { orderCount: 0, grossSales: 0, hpp: 0, netSales: 0 },
+          );
+          const dayMargin =
+            dayTotals.netSales > 0 ? (dayTotals.netSales - dayTotals.hpp) / dayTotals.netSales : 0;
+          return (
+            <div key={tanggal} className="rounded-xl border bg-card shadow-xs overflow-hidden">
+              <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-3.5 py-2.5">
+                <span className="text-sm font-semibold">
+                  {new Date(tanggal + "T00:00:00").toLocaleDateString("id-ID", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "short",
+                  })}
+                </span>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  Margin {(dayMargin * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className="divide-y">
+                {dayRows.map((r) => (
+                  <div key={`${r.tanggal}-${r.channel}`} className="px-3.5 py-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">{channelLabelOf(r.channel)}</span>
+                      <span
+                        className={`text-sm font-semibold tabular-nums ${
+                          r.margin >= 0 ? "text-emerald-600" : "text-destructive"
+                        }`}
+                      >
+                        {(r.margin * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <div className="text-muted-foreground">HPP</div>
+                        <div className="tabular-nums">{formatRp(r.hpp)}</div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">Omzet POS</div>
+                        <div className="tabular-nums">{formatRp(r.grossSales)}</div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">Omzet Real</div>
+                        <div className="tabular-nums font-medium">{formatRp(r.netSales)}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        Omzet Real = Omzet POS − Diskon Merchant − MDR. Margin dihitung dari Omzet Real.
+      </p>
+    </div>
+  );
+}
+
+// ── Rincian Stok Keluar: total pemakaian per bahan dalam periode (semua
+// sumber OUT di Kartu Stok: POS, Waste, produksi, penyesuaian). Format sesuai
+// permintaan: "Susu: 200 ml". Berbeda dari Rincian HPP (nilai Rp per hari):
+// ini jumlah fisik (qty + satuan) untuk seluruh periode.
+function IngredientUsageSection({
+  rows,
+  isLoading,
+  expanded,
+  onToggle,
+}: {
+  rows: DailyUsageRow[] | undefined;
+  isLoading: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const list = rows ?? [];
+  return (
+    <div className="rounded-lg border bg-card">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+      >
+        <span>
+          <span className="block text-sm font-semibold">Rincian Stok Keluar</span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            Jumlah fisik bahan keluar per periode (ml/pack) — semua sumber OUT: POS, waste,
+            produksi. Bukan nilai HPP; lihat Ledger Harian untuk HPP per bahan.
+          </span>
+        </span>
+        <ChevronRight
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+            expanded ? "rotate-90" : ""
+          }`}
+        />
+      </button>
+      {expanded &&
+        (isLoading ? (
+          <div className="space-y-2 border-t px-4 py-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-4 animate-pulse rounded bg-muted" />
+            ))}
+          </div>
+        ) : list.length === 0 ? (
+          <div className="border-t px-4 py-6 text-center text-sm text-muted-foreground">
+            Tidak ada stok keluar untuk periode ini.
+          </div>
+        ) : (
+          <div className="border-t px-4 py-3">
+            <ul className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+              {list.map((r) => (
+                <li
+                  key={r.ingredientId}
+                  className="flex items-baseline justify-between gap-2 border-b border-border/40 py-1 text-sm last:border-0"
+                >
+                  <span className="truncate">
+                    {r.name}
+                    <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">
+                      ≈{formatRp(r.estimatedValue)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 font-medium tabular-nums">
+                    {r.quantity.toLocaleString("id-ID")} {r.unit}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Nilai ≈ estimasi dari harga rata-rata bahan saat ini, bukan HPP resmi. Detail per
+              gerakan ada di Kartu Stok.
+            </p>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+// Omzet detail for one day: the Gross → Net derivation, void visibility and
+// any manual override. Per-channel numbers are available behind the
+// "Rincian per channel" toggle — collapsed by default so the day expansion
+// doesn't duplicate the Per Channel sub-tab.
+// Shared by the desktop table row and the mobile day card.
 function OmzetBreakdownContent({
   branchId,
   date,
@@ -283,7 +596,6 @@ function OmzetBreakdownContent({
     return <p className="text-sm text-muted-foreground">Tidak ada rincian omzet.</p>;
   }
 
-  const channelLabel = (ch: string) => CHANNELS.find((c) => c.value === ch)?.label ?? ch;
   const dateStr = new Date(date + "T00:00:00").toLocaleDateString("id-ID", {
     day: "numeric",
     month: "long",
@@ -321,28 +633,9 @@ function OmzetBreakdownContent({
           <span className="text-muted-foreground">Net Sales (Order)</span>
           <span className="tabular-nums">{formatRp(data.orderNetSales)}</span>
         </div>
-      </div>
-      <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
-        {data.perChannel.map((ch) => (
-          <div
-            key={ch.channel}
-            className="flex items-center justify-between text-sm py-1 border-b border-border/40"
-          >
-            <span className="truncate pr-2">
-              {channelLabel(ch.channel)}
-              <span className="ml-1.5 text-xs text-muted-foreground">({ch.orderCount})</span>
-            </span>
-            <span className="tabular-nums font-medium shrink-0">{formatRp(ch.totalAmount)}</span>
-          </div>
-        ))}
+        <OmzetPerChannelList perChannel={data.perChannel} />
       </div>
       <div className="flex flex-wrap justify-end gap-x-4 gap-y-1 mt-2 pt-2 border-t text-sm">
-        {data.manualRevenue > 0 && (
-          <span className="text-emerald-600">
-            Pendapatan manual (masuk omzet):{" "}
-            <span className="tabular-nums font-medium">+{formatRp(data.manualRevenue)}</span>
-          </span>
-        )}
         {data.override !== null && (
           <span className="text-blue-600">
             Override manual:{" "}
@@ -354,6 +647,49 @@ function OmzetBreakdownContent({
         </span>
       </div>
     </>
+  );
+}
+
+// Per-channel list for one day's omzet — opt-in via toggle so the day
+// expansion doesn't duplicate the Per Channel sub-tab by default.
+function OmzetPerChannelList({
+  perChannel,
+}: {
+  perChannel: { channel: string; orderCount: number; totalAmount: number }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const channelLabel = (ch: string) => CHANNELS.find((c) => c.value === ch)?.label ?? ch;
+
+  if (perChannel.length === 0) return null;
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ChevronRight className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
+        Rincian per channel ({perChannel.length})
+      </button>
+      {open && (
+        <div className="mt-1.5 grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
+          {perChannel.map((ch) => (
+            <div
+              key={ch.channel}
+              className="flex items-center justify-between text-sm py-1 border-b border-border/40"
+            >
+              <span className="truncate pr-2">
+                {channelLabel(ch.channel)}
+                <span className="ml-1.5 text-xs text-muted-foreground">({ch.orderCount})</span>
+              </span>
+              <span className="tabular-nums font-medium shrink-0">{formatRp(ch.totalAmount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -376,9 +712,9 @@ function OmzetBreakdownRow({
 }
 
 // Itemized manual entries for one day — each revenue/expense input through
-// the finance buttons, with its channel (or "no-channel" for manual revenue)
-// and its P&L intent (ADR 0017: incremental sales vs memo-only). Shared by
-// the desktop table row and the mobile day card.
+// the finance buttons, with its channel (or "no-channel" for manual revenue).
+// All entries are memo-only notes (ADR 0017) — they never enter omzet or the
+// P&L. Shared by the desktop table row and the mobile day card.
 function ManualBreakdownContent({ entries }: { entries: ManualFinanceEntry[] }) {
   const channelLabel = (channel: string) =>
     CHANNELS.find((c) => c.value === channel)?.label ?? channel;
@@ -411,20 +747,6 @@ function ManualBreakdownContent({ entries }: { entries: ManualFinanceEntry[] }) 
               >
                 {e.kind === "revenue" ? "Revenue" : "Expense"}
               </span>
-              {e.kind === "revenue" && (
-                <span
-                  className={`mr-1.5 inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                    e.includeInPnl ? "bg-blue-100 text-blue-700" : "bg-muted text-muted-foreground"
-                  }`}
-                  title={
-                    e.includeInPnl
-                      ? "Dihitung ke omzet (penjualan tambahan)"
-                      : "Memo saja — tidak dihitung ke omzet"
-                  }
-                >
-                  {e.includeInPnl ? "P&L" : "Memo"}
-                </span>
-              )}
               {e.kind === "revenue"
                 ? e.channel
                   ? channelLabel(e.channel)
@@ -509,6 +831,10 @@ function FinancePage() {
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [revenueType, setRevenueType] = useState<"manual" | "channel">("manual");
   const [activeTab, setActiveTab] = useState<"keuangan" | "barang-rusak">("keuangan");
+  // Sub-tabs inside the Keuangan tab: ledger (daily rows), per-channel P&L,
+  // stock usage recap, cash reconciliation. One focus per view instead of one
+  // long scrolling page where everything competes for attention.
+  const [subTab, setSubTab] = useState<"ledger" | "channel" | "stok" | "kas">("ledger");
 
   // Period + filter state
   const [periodType, setPeriodType] = useState<PeriodType>("bulanan");
@@ -542,6 +868,8 @@ function FinancePage() {
 
   // Expandable HPP row
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  // Collapsible Stok Keluar detail — defaults open since it now owns a tab.
+  const [usageExpanded, setUsageExpanded] = useState(true);
   // Expandable Selisih Kas detail row (per shift)
   const [expandedCashShift, setExpandedCashShift] = useState<string | null>(null);
 
@@ -569,6 +897,34 @@ function FinancePage() {
 
   const branchId = selectedBranchId || undefined;
   const channel = selectedChannel || undefined;
+
+  // Breakdown per channel (Channel, HPP, Omzet POS, Omzet Real, Margin %) —
+  // selalu agregat semua channel; filter channel di atas hanya menyaring
+  // ledger harian, bukan tabel ini.
+  const { data: channelPnl } = useQuery({
+    queryKey: ["channel-pnl", effectiveDateRange.from, effectiveDateRange.to, branchId],
+    queryFn: () =>
+      getChannelPnl({
+        data: {
+          dateFrom: effectiveDateRange.from || undefined,
+          dateTo: effectiveDateRange.to || undefined,
+          branchId,
+        },
+      }),
+  });
+
+  // Rincian stok keluar per bahan untuk periode terpilih.
+  const { data: ingredientUsage, isLoading: usageLoading } = useQuery({
+    queryKey: ["ingredient-usage", effectiveDateRange.from, effectiveDateRange.to, branchId],
+    queryFn: () =>
+      getDailyIngredientUsage({
+        data: {
+          dateFrom: effectiveDateRange.from || undefined,
+          dateTo: effectiveDateRange.to || undefined,
+          branchId,
+        },
+      }),
+  });
 
   const { data: dailyRows } = useQuery({
     queryKey: ["daily-finance", effectiveDateRange.from, effectiveDateRange.to, branchId, channel],
@@ -614,17 +970,14 @@ function FinancePage() {
     return map;
   }, [manualEntries]);
 
-  // Net manual total per day — the part of the ledger NOT in the Omzet
-  // headline (ADR 0017): expenses minus memo-only revenue. Revenue entries
-  // flagged includeInPnl are already counted inside Omzet, so they are
-  // excluded here to keep the columns additive. Same math on both the desktop
-  // column and the mobile card so they read identically.
+  // Net manual total per day — memo-only notes, never part of the Omzet
+  // headline (ADR 0017): revenue minus expenses. Same math on both the
+  // desktop column and the mobile card so they read identically.
   const manualNetFor = useCallback(
     (date: string) => {
       const entries = manualByDate.get(date) ?? [];
       return entries.reduce((s, e) => {
-        if (e.kind === "expense") return s - e.amount;
-        return e.includeInPnl ? s : s + e.amount;
+        return e.kind === "expense" ? s - e.amount : s + e.amount;
       }, 0);
     },
     [manualByDate],
@@ -841,6 +1194,34 @@ function FinancePage() {
         </button>
       </div>
 
+      {/* Sub-tabs — Keuangan is four distinct analyses; showing all stacked
+          made every number repeat somewhere else and nothing stand out. */}
+      {activeTab === "keuangan" && (
+        <div className="mb-4 flex w-full gap-1 overflow-x-auto rounded-lg border bg-muted/20 p-1 sm:w-fit">
+          {(
+            [
+              ["ledger", "Ledger Harian"],
+              ["channel", "Per Channel"],
+              ["stok", "Stok Keluar"],
+              ["kas", "Selisih Kas"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setSubTab(value)}
+              className={`h-10 flex-1 whitespace-nowrap rounded-md px-3 text-sm font-medium transition-colors sm:h-8 sm:flex-none ${
+                subTab === value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Single filter row — stacked full-width controls on phones, inline from sm */}
       <div className="mb-4 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:flex-wrap sm:items-end sm:p-4">
         {/* Period segmented control */}
@@ -969,10 +1350,11 @@ function FinancePage() {
         </div>
       </div>
 
-      {/* Ledger - Keuangan tab. Cards own everything below lg: from md (768px)
-          the fixed 16rem sidebar leaves only ~460px of content width, less than
-          the table's natural width, so the table would scroll horizontally. */}
-      {activeTab === "keuangan" && (
+      {/* Ledger - Keuangan tab, sub-tab Ledger Harian. Cards own everything
+          below lg: from md (768px) the fixed 16rem sidebar leaves only ~460px
+          of content width, less than the table's natural width, so the table
+          would scroll horizontally. */}
+      {activeTab === "keuangan" && subTab === "ledger" && (
         <>
           <div className="space-y-2.5 lg:hidden">
             {dailyRows && dailyRows.length > 0 ? (
@@ -1261,8 +1643,23 @@ function FinancePage() {
         </>
       )}
 
-      {/* Selisih Kas — per-shift cash reconciliation (Keuangan tab only) */}
-      {activeTab === "keuangan" && showCashRecon && (
+      {/* Breakdown per Channel — sub-tab Per Channel */}
+      {activeTab === "keuangan" && subTab === "channel" && (
+        <ChannelPnlSection rows={channelPnl ?? []} />
+      )}
+
+      {/* Rincian Stok Keluar — sub-tab Stok Keluar */}
+      {activeTab === "keuangan" && subTab === "stok" && (
+        <IngredientUsageSection
+          rows={ingredientUsage}
+          isLoading={usageLoading}
+          expanded={usageExpanded}
+          onToggle={() => setUsageExpanded((v) => !v)}
+        />
+      )}
+
+      {/* Selisih Kas — sub-tab Selisih Kas (channel-agnostic, see showCashRecon) */}
+      {activeTab === "keuangan" && subTab === "kas" && showCashRecon && (
         <div className="mt-6 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold tracking-tight">Selisih Kas</h2>
