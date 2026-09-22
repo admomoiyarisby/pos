@@ -2,7 +2,7 @@ import { createAuthEndpoint, APIError } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { db } from "#/lib/server/db";
 import { users as usersTable, systemLogs, branches, branchStaffNames } from "#/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 /**
@@ -41,6 +41,7 @@ export const pinAuth = () => ({
               eq(usersTable.pin, pin),
               eq(usersTable.role, "branch_admin"),
               eq(usersTable.status, "Active"),
+              isNull(usersTable.deletedAt),
             ),
           )
           .limit(1);
@@ -167,6 +168,7 @@ export const pinAuth = () => ({
               eq(usersTable.branchId, branch.id),
               eq(usersTable.role, "branch_admin"),
               eq(usersTable.status, "Active"),
+              isNull(usersTable.deletedAt),
             ),
           )
           .orderBy(usersTable.name);
@@ -225,7 +227,13 @@ export const pinAuth = () => ({
         const [user] = await db
           .select()
           .from(usersTable)
-          .where(and(eq(usersTable.pin, pin), eq(usersTable.status, "Active")))
+          .where(
+            and(
+              eq(usersTable.pin, pin),
+              eq(usersTable.status, "Active"),
+              isNull(usersTable.deletedAt),
+            ),
+          )
           .limit(1);
 
         // 2. Validate user exists and is a non-branch role
@@ -332,6 +340,7 @@ export const pinAuth = () => ({
               eq(usersTable.branchId, branchId),
               eq(usersTable.name, staffName),
               eq(usersTable.status, "Active"),
+              isNull(usersTable.deletedAt),
             ),
           )
           .limit(1);

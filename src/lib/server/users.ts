@@ -1,7 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
-import { users as usersTable, areaManagerBranches, branches } from "#/db/schema";
-import { eq, and, ne, inArray } from "drizzle-orm";
+import {
+  users as usersTable,
+  areaManagerBranches,
+  branches,
+  account as accountTable,
+  session as sessionTable,
+} from "#/db/schema";
+import { eq, and, ne, inArray, isNull } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
@@ -25,7 +31,7 @@ export const getUsers = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     await requireAuth();
 
-    const conditions = [];
+    const conditions = [isNull(usersTable.deletedAt)];
     if (data.search) {
       conditions.push(fuzzySearch([usersTable.name, usersTable.email], data.search));
     }
@@ -46,7 +52,7 @@ export const getUsers = createServerFn({ method: "GET" })
       })
       .from(usersTable)
       .leftJoin(branches, eq(usersTable.branchId, branches.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(and(...conditions))
       .orderBy(
         data.search ? fuzzyRank([usersTable.name, usersTable.email], data.search) : usersTable.name,
       );
@@ -93,7 +99,7 @@ export const getBranchUsers = createServerFn({ method: "GET" })
         status: usersTable.status,
       })
       .from(usersTable)
-      .where(eq(usersTable.branchId, data.branchId))
+      .where(and(eq(usersTable.branchId, data.branchId), isNull(usersTable.deletedAt)))
       .orderBy(usersTable.name);
 
     return result;
@@ -262,6 +268,8 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
   const [oldUser] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
 
   if (!oldUser) throw new Error("User not found");
+  // Tombstoned (soft-deleted) users are invisible — refuse to edit them.
+  if (oldUser.deletedAt) throw new Error("User not found");
 
   const nextRole = data.role ?? oldUser.role;
 
@@ -425,6 +433,76 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
       }
     });
   }
+
+  return { success: true };
+}
+
+const deleteUserInput = z.object({ id: z.string().uuid() });
+
+export const deleteUser = createServerFn({ method: "POST" })
+  .validator((data: z.input<typeof deleteUserInput>) => deleteUserInput.parse(data))
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin");
+    return deleteUserCore(user, data);
+  });
+
+/**
+ * Soft-delete a user account ("Hapus permanen" in the UI). A deleted_at
+ * tombstone hides the user from every list and login path while the row stays
+ * put, so operational history keeps its NOT NULL FK references (shifts,
+ * orders, procurements, transfers, stock opnames, audit rows, …) intact —
+ * a user with history is no longer blocked from deletion. The email is
+ * renamed (freeing the address for reuse) and auth artifacts (sessions,
+ * credential account, area-manager assignments) are removed. Restore is
+ * DB-only, mirroring the ADR-0009 tombstone pattern.
+ */
+export async function deleteUserCore(user: AppUser, data: z.infer<typeof deleteUserInput>) {
+  if (user.role !== "super_admin") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin)`,
+    );
+  }
+  if (data.id === user.id) {
+    throw new Error("Tidak dapat menghapus akun sendiri");
+  }
+
+  const [oldUser] = await db.select().from(usersTable).where(eq(usersTable.id, data.id)).limit(1);
+  if (!oldUser) throw new Error("User not found");
+  if (oldUser.deletedAt) {
+    throw new Error("User sudah dihapus");
+  }
+
+  await db.transaction(async (tx) => {
+    // Kill live sessions immediately — a tombstoned user must not keep an
+    // authenticated session.
+    await tx.delete(sessionTable).where(eq(sessionTable.userId, data.id));
+    // Remove the credential account so the old email/password pair can't log
+    // in even if the tombstone were ever lifted manually.
+    await tx.delete(accountTable).where(eq(accountTable.userId, data.id));
+    // Area-manager branch assignments are pure config, not history — drop them.
+    await tx.delete(areaManagerBranches).where(eq(areaManagerBranches.userId, data.id));
+    await tx
+      .update(usersTable)
+      .set({
+        deletedAt: new Date(),
+        // Free the unique email (and per-branch PIN slot) for reuse while the
+        // original values stay recoverable in the audit log.
+        email: `deleted+${oldUser.id}@deleted.omoiyari.net`,
+        pin: null,
+        status: "Inactive",
+      })
+      .where(eq(usersTable.id, data.id));
+  });
+
+  // Log AFTER the update: the user row still exists (no FK break), and the
+  // audit trail records who tombstoned whom.
+  await logSystemAction(
+    user,
+    "Delete User",
+    `User "${oldUser.name}" (${oldUser.role}) dihapus permanen oleh ${user.name}`,
+    "Warning",
+  );
+  await logAudit(user, "users", data.id, "DELETE", oldUser, undefined);
 
   return { success: true };
 }

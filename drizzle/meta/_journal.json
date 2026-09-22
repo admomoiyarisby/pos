@@ -124,239 +124,267 @@
     {
       "idx": 17,
       "version": "7",
+      "when": 1782055490325,
+      "tag": "0016_fix_inventory_quantity_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
       "when": 1782447969085,
       "tag": "0017_nostalgic_plazm",
       "breakpoints": true
     },
     {
-      "idx": 18,
+      "idx": 19,
       "version": "7",
       "when": 1782786431702,
       "tag": "0018_curvy_mauler",
       "breakpoints": true
     },
     {
-      "idx": 19,
+      "idx": 20,
       "version": "7",
       "when": 1783692881235,
       "tag": "0019_wide_oracle",
       "breakpoints": true
     },
     {
-      "idx": 20,
+      "idx": 21,
       "version": "7",
       "when": 1783711134314,
       "tag": "0020_overjoyed_white_tiger",
       "breakpoints": true
     },
     {
-      "idx": 21,
+      "idx": 22,
       "version": "7",
       "when": 1786000000000,
       "tag": "0021_recipe_inventory",
       "breakpoints": true
     },
     {
-      "idx": 22,
+      "idx": 23,
       "version": "7",
       "when": 1784430844750,
       "tag": "0022_add_modifier_sort_order",
       "breakpoints": true
     },
     {
-      "idx": 23,
+      "idx": 24,
       "version": "7",
       "when": 1784631629888,
       "tag": "0023_cheerful_mach_iv",
       "breakpoints": true
     },
     {
-      "idx": 24,
+      "idx": 25,
       "version": "7",
       "when": 1784632000000,
       "tag": "0024_seed_categories",
       "breakpoints": true
     },
     {
-      "idx": 25,
+      "idx": 26,
       "version": "7",
       "when": 1784633000000,
       "tag": "0025_enable_pg_trgm_trgm_indexes",
       "breakpoints": true
     },
     {
-      "idx": 26,
+      "idx": 27,
       "version": "7",
       "when": 1784634000000,
       "tag": "0026_recipe_status_deleted",
       "breakpoints": true
     },
     {
-      "idx": 27,
+      "idx": 28,
       "version": "7",
       "when": 1784700000000,
       "tag": "0027_yield_conversion_items",
       "breakpoints": true
     },
     {
-      "idx": 28,
+      "idx": 29,
       "version": "7",
       "when": 1784700100000,
       "tag": "0028_drop_recipe_category_enum",
       "breakpoints": true
     },
     {
-      "idx": 29,
+      "idx": 30,
+      "version": "7",
+      "when": 1784700100001,
+      "tag": "0028_ingredient_branches",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
       "version": "7",
       "when": 1784700200000,
       "tag": "0029_add_modifier_group_sort_order",
       "breakpoints": true
     },
     {
-      "idx": 30,
-      "version": "7",
-      "when": 1787803016268,
-      "tag": "0030_ingredient_status_deleted",
-      "breakpoints": true
-    },
-    {
-      "idx": 31,
-      "version": "7",
-      "when": 1787803016268,
-      "tag": "0031_add_ingredient_branch_visibility",
-      "breakpoints": true
-    },
-    {
       "idx": 32,
       "version": "7",
-      "when": 1787803016268,
-      "tag": "0032_add_account_issuer",
+      "when": 1784700200001,
+      "tag": "0029_add_procurement_invoice_cancelled_at",
       "breakpoints": true
     },
     {
       "idx": 33,
       "version": "7",
       "when": 1787803016268,
-      "tag": "0033_activate_omoiyari_pdf_recipes",
+      "tag": "0030_ingredient_status_deleted",
       "breakpoints": true
     },
     {
       "idx": 34,
       "version": "7",
       "when": 1787803016268,
-      "tag": "0034_add_pdf_missing_recipes",
+      "tag": "0031_add_ingredient_branch_visibility",
       "breakpoints": true
     },
     {
       "idx": 35,
       "version": "7",
       "when": 1787803016268,
-      "tag": "0035_recipe_activation_and_karaage_names",
+      "tag": "0032_add_account_issuer",
       "breakpoints": true
     },
     {
       "idx": 36,
       "version": "7",
       "when": 1787803016268,
-      "tag": "0036_normalize_curry_karaage_name",
+      "tag": "0033_activate_omoiyari_pdf_recipes",
       "breakpoints": true
     },
     {
       "idx": 37,
       "version": "7",
       "when": 1787803016268,
-      "tag": "0037_update_bom_from_omoiyari_sheet",
+      "tag": "0034_add_pdf_missing_recipes",
       "breakpoints": true
     },
     {
       "idx": 38,
       "version": "7",
       "when": 1787803016268,
-      "tag": "0038_add_order_channel_perlengkapan",
+      "tag": "0035_recipe_activation_and_karaage_names",
       "breakpoints": true
     },
     {
       "idx": 39,
       "version": "7",
       "when": 1787803016268,
-      "tag": "0039_yield_cancel_requests",
+      "tag": "0036_normalize_curry_karaage_name",
       "breakpoints": true
     },
     {
       "idx": 40,
       "version": "7",
       "when": 1787803016268,
-      "tag": "0040_voucher_status_deleted",
+      "tag": "0037_update_bom_from_omoiyari_sheet",
       "breakpoints": true
     },
     {
       "idx": 41,
       "version": "7",
       "when": 1787803016268,
-      "tag": "0041_remove_dummy_live_data",
+      "tag": "0038_add_order_channel_perlengkapan",
       "breakpoints": true
     },
     {
       "idx": 42,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0039_yield_cancel_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0040_voucher_status_deleted",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1787803016268,
+      "tag": "0041_remove_dummy_live_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
       "version": "7",
       "when": 1787804000000,
       "tag": "0042_waste_entry_cancellation",
       "breakpoints": true
     },
     {
-      "idx": 43,
+      "idx": 46,
       "version": "7",
       "when": 1787882529773,
       "tag": "0043_waste_recipe_support",
       "breakpoints": true
     },
     {
-      "idx": 44,
+      "idx": 47,
       "version": "7",
       "when": 1787984000000,
       "tag": "0044_stock_ledger_real_quantity",
       "breakpoints": true
     },
     {
-      "idx": 45,
+      "idx": 48,
       "version": "7",
       "when": 1788081000000,
       "tag": "0045_modifier_recipe_addons",
       "breakpoints": true
     },
     {
-      "idx": 46,
+      "idx": 49,
       "version": "7",
       "when": 1788082000000,
       "tag": "0046_modifier_kind",
       "breakpoints": true
     },
     {
-      "idx": 47,
+      "idx": 50,
       "version": "7",
       "when": 1788182000000,
       "tag": "0047_shift_sessions",
       "breakpoints": true
     },
     {
-      "idx": 48,
+      "idx": 51,
       "version": "7",
       "when": 1788183000000,
       "tag": "0048_alias",
       "breakpoints": true
     },
     {
-      "idx": 49,
+      "idx": 52,
       "version": "7",
       "when": 1788652800000,
       "tag": "0049_modifier_group_soft_delete",
       "breakpoints": true
     },
     {
-      "idx": 50,
+      "idx": 53,
       "version": "7",
       "when": 1789600000000,
       "tag": "0050_history_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1789600100000,
+      "tag": "0051_user_soft_delete",
       "breakpoints": true
     }
   ]

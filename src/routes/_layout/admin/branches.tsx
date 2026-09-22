@@ -19,7 +19,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "#/components/ui/tabs";
 import { getBranches, createBranch, updateBranch, deleteBranch } from "#/lib/server/branches";
 import { branchInfoPayload, branchContactPayload } from "#/lib/branch-form";
-import { getBranchUsers, createUser, updateUser } from "#/lib/server/users";
+import { getBranchUsers, createUser, updateUser, deleteUser } from "#/lib/server/users";
 import {
   Store,
   MapPin,
@@ -188,6 +188,21 @@ function BranchSheet({
       void queryClient.invalidateQueries({ queryKey: ["branches"] });
       void queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success("Staf dinonaktifkan");
+      setDeleteStaffTarget(null);
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const deleteStaffMutation = useMutation({
+    mutationFn: deleteUser,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["branch-users", branch?.id] });
+      void queryClient.invalidateQueries({ queryKey: ["branches"] });
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({ queryKey: ["branch-users-all"] });
+      toast.success("Staf dihapus permanen");
       setDeleteStaffTarget(null);
     },
     onError: (err) => {
@@ -512,15 +527,27 @@ function BranchSheet({
                                       <p className="text-xs text-muted-foreground">{user.email}</p>
                                     </div>
                                   </div>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setReactivateStaffTarget(user)}
-                                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                                  >
-                                    Aktifkan
-                                  </Button>
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setReactivateStaffTarget(user)}
+                                      className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                    >
+                                      Aktifkan
+                                    </Button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteStaffTarget(user)}
+                                      disabled={deleteStaffMutation.isPending}
+                                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                      title="Hapus permanen staf"
+                                      aria-label={`Hapus permanen ${user.name}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                           </>
@@ -634,14 +661,14 @@ function BranchSheet({
         </form>
       </Modal>
 
-      {/* Deactivate Staff Confirmation Modal */}
+      {/* Deactivate Staff Confirmation Modal (active staff) */}
       <Modal
-        open={!!deleteStaffTarget}
+        open={!!deleteStaffTarget && deleteStaffTarget.status === "Active"}
         onClose={() => setDeleteStaffTarget(null)}
         title="Nonaktifkan Staf"
         size="sm"
       >
-        {deleteStaffTarget && (
+        {deleteStaffTarget && deleteStaffTarget.status === "Active" && (
           <div className="space-y-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
@@ -649,7 +676,7 @@ function BranchSheet({
                 <p className="font-medium">Nonaktifkan staf "{deleteStaffTarget.name}"?</p>
                 <p className="text-sm text-muted-foreground mt-1">
                   Staf yang dinonaktifkan tidak akan bisa login. Anda dapat mengaktifkannya kembali
-                  nanti.
+                  nanti, atau menghapusnya permanen dari daftar staf nonaktif.
                 </p>
               </div>
             </div>
@@ -667,6 +694,44 @@ function BranchSheet({
                 disabled={deactivateStaffMutation.isPending}
               >
                 {deactivateStaffMutation.isPending ? "Menonaktifkan..." : "Nonaktifkan"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Delete Staff Permanently Confirmation Modal (inactive staff) */}
+      <Modal
+        open={!!deleteStaffTarget && deleteStaffTarget.status === "Inactive"}
+        onClose={() => setDeleteStaffTarget(null)}
+        title="Hapus Permanen Staf"
+        size="sm"
+      >
+        {deleteStaffTarget && deleteStaffTarget.status === "Inactive" && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Hapus permanen staf "{deleteStaffTarget.name}"?</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Staf akan dihapus dan tidak bisa login lagi. Email staf akan dikosongkan dan dapat
+                  digunakan lagi. Riwayat operasional (shift, pesanan, pengadaan) tetap tersimpan —
+                  penghapusan tidak dapat dibatalkan dari UI.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setDeleteStaffTarget(null)}>
+                Batal
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() =>
+                  void deleteStaffMutation.mutateAsync({ data: { id: deleteStaffTarget.id } })
+                }
+                disabled={deleteStaffMutation.isPending}
+              >
+                {deleteStaffMutation.isPending ? "Menghapus..." : "Hapus Permanen"}
               </Button>
             </div>
           </div>

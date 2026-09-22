@@ -85,7 +85,12 @@ export const getCurrentUserRaw = createServerOnlyFn(async (): Promise<AppUser | 
     branchId?: string;
     pin?: string;
     status: string;
+    deletedAt?: Date | string | null;
   };
+
+  // A soft-deleted (tombstoned) user must never resolve to an AppUser, even
+  // from a session cookie that outlived the delete.
+  if (baUser.deletedAt) return null;
 
   const appUser = parseUser({
     id: baUser.id,

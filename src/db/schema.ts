@@ -232,6 +232,12 @@ export const users = pgTable(
     role: userRoleEnum("role").notNull(),
     pin: text("pin"),
     status: userStatusEnum("status").notNull().default("Active"),
+    // Soft-delete tombstone (ADR-0009 deleted_at pattern): "Hapus permanen"
+    // sets this instead of removing the row, so operational history that keeps
+    // NOT NULL FK references (shifts, orders, procurement/transfers, audit)
+    // stays intact. Tombstoned users are excluded from every list and login
+    // path; their email is renamed so the address is freed for reuse.
+    deletedAt: timestamp("deleted_at", { mode: "date" }),
     branchId: uuid("branch_id").references(() => branches.id),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" })

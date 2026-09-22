@@ -263,3 +263,84 @@ describe("Users — role-scoping and validation negatives", () => {
     },
   );
 });
+
+describe("Users — soft delete lifecycle", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "delete tombstones the user (row + history kept, auth artifacts removed, email freed)",
+    async () => {
+      const branchA = await seedBranch(uniq("US-D"));
+      const superAdmin = await seedUser("super_admin");
+
+      const staffEmail = `del-${uniq("")}@pos.test`;
+      const staff = await usersApi.createUserCore(superAdmin, {
+        email: staffEmail,
+        password: "password123",
+        name: "Staf Riwayat",
+        role: "branch_admin",
+        branchId: branchA,
+        pin: "4444",
+      });
+
+      // Operational history exists (NOT NULL FK to users) — must survive the
+      // delete instead of blocking it.
+      await db.insert(schema.shifts).values({
+        branchId: branchA,
+        userId: staff.userId,
+        startTime: new Date(),
+        cashFloat: 0,
+      });
+
+      const deleted = await usersApi.deleteUserCore(superAdmin, { id: staff.userId });
+      expect(deleted.success).toBe(true);
+
+      // Row is tombstoned, not removed: deletedAt set, Inactive, no PIN, and
+      // the email renamed so the original address is freed for reuse.
+      const [row] = await db.select().from(schema.users).where(eq(schema.users.id, staff.userId));
+      expect(row).toBeDefined();
+      expect(row!.deletedAt).toBeTruthy();
+      expect(row!.status).toBe("Inactive");
+      expect(row!.pin).toBeNull();
+      expect(row!.email).not.toBe(staffEmail);
+      expect(row!.email).toContain("deleted");
+
+      // The original email is immediately reusable.
+      const reused = await usersApi.createUserCore(superAdmin, {
+        email: staffEmail,
+        password: "password123",
+        name: "Staf Baru",
+        role: "branch_admin",
+        branchId: branchA,
+      });
+      expect(reused.success).toBe(true);
+
+      // Auth artifacts are gone; the shift history row survives.
+      const [accountGone] = await db
+        .select()
+        .from(schema.account)
+        .where(eq(schema.account.userId, staff.userId));
+      expect(accountGone).toBeUndefined();
+      const history = await db
+        .select({ id: schema.shifts.id })
+        .from(schema.shifts)
+        .where(eq(schema.shifts.userId, staff.userId));
+      expect(history).toHaveLength(1);
+
+      // Re-update of a tombstoned user is refused; deleting twice errors.
+      await expect(
+        usersApi.updateUserCore(superAdmin, { id: staff.userId, name: "zombie" }),
+      ).rejects.toThrow("User not found");
+      await expect(usersApi.deleteUserCore(superAdmin, { id: staff.userId })).rejects.toThrow(
+        "sudah dihapus",
+      );
+
+      // Non-super-admin cannot delete, and self-deletion is blocked.
+      const outsider = await seedUser("admin_pusat");
+      await expect(usersApi.deleteUserCore(outsider, { id: staff.userId })).rejects.toThrow(
+        "Forbidden: insufficient role",
+      );
+      await expect(usersApi.deleteUserCore(superAdmin, { id: superAdmin.id })).rejects.toThrow(
+        "Tidak dapat menghapus akun sendiri",
+      );
+    },
+  );
+});
