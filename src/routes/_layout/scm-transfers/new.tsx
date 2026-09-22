@@ -469,6 +469,12 @@ function NewMutasiPage() {
                           }`}
                         >
                           stok: {available}
+                          {selected?.stockUnit ? ` ${selected.stockUnit}` : ""}
+                        </span>
+                      )}
+                      {available == null && it.ingredientId && selected?.stockUnit && (
+                        <span className="absolute -bottom-4 left-0 text-[10px] text-muted-foreground">
+                          satuan: {selected.stockUnit}
                         </span>
                       )}
                     </div>
@@ -504,6 +510,16 @@ function NewMutasiPage() {
               Total item: <strong>{items.length}</strong>
               {" · "}
               Total diminta: <strong>{items.reduce((s, it) => s + it.quantity, 0)}</strong>
+            </p>
+            <p>
+              Per bahan:{" "}
+              {items
+                .filter((it) => it.ingredientId)
+                .map((it) => {
+                  const o = ingredientOptions.find((op) => op.id === it.ingredientId);
+                  return `${o?.name ?? it.ingredientId}: ${it.quantity}${o?.stockUnit ? ` ${o.stockUnit}` : ""}`;
+                })
+                .join(" · ")}
             </p>
             {itemsOverStock.length > 0 && (
               <p className="text-destructive">

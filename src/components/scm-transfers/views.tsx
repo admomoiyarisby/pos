@@ -215,6 +215,9 @@ function ReadOnlyItems({
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
                   {ing?.name ?? it.ingredientId.slice(0, 8) + "..."}
+                  {ing?.stockUnit ? (
+                    <span className="text-xs text-muted-foreground"> ({ing.stockUnit})</span>
+                  ) : null}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Qty janji: {it.quantity} {ing?.stockUnit ?? ""}
@@ -223,9 +226,11 @@ function ReadOnlyItems({
               <div className="text-right shrink-0">
                 <p className="text-sm">
                   Diterima: <strong>{it.receivedQuantity ?? "—"}</strong>
+                  {ing?.stockUnit ? ` ${ing.stockUnit}` : ""}
                 </p>
                 <p className="text-sm">
                   Ditolak: <strong>{it.rejectedQuantity ?? "—"}</strong>
+                  {ing?.stockUnit ? ` ${ing.stockUnit}` : ""}
                 </p>
                 {showPrices && (
                   <p className="text-xs text-muted-foreground">
@@ -950,7 +955,9 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1">
-                    <label className="text-xs text-muted-foreground">Diterima</label>
+                    <label className="text-xs text-muted-foreground">
+                      Diterima{ing?.stockUnit ? ` (${ing.stockUnit})` : ""}
+                    </label>
                     <input
                       type="number"
                       min={0}
@@ -1035,6 +1042,17 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                     return s + (edit?.rejected ?? it.rejectedQuantity ?? 0);
                   }, 0)}
                 </strong>
+              </span>
+              <span className="text-muted-foreground">
+                (
+                {[
+                  ...new Set(
+                    items
+                      .map((it) => ingredientById.get(it.ingredientId)?.stockUnit)
+                      .filter(Boolean),
+                  ),
+                ].join(", ")}
+                )
               </span>
             </div>
           </div>

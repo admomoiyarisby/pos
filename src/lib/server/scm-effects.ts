@@ -432,6 +432,7 @@ export async function generateInvoiceSnapshot(
       baDecision: scmProcurementItems.baDecision,
       caDecision: scmProcurementItems.caDecision,
       ingredientName: ingredients.name,
+      stockUnit: ingredients.stockUnit,
     })
     .from(scmProcurementItems)
     .innerJoin(ingredients, eq(ingredients.id, scmProcurementItems.ingredientId))
@@ -446,6 +447,7 @@ export async function generateInvoiceSnapshot(
       itemId: item.id,
       ingredientId: item.ingredientId,
       ingredientName: item.ingredientName,
+      stockUnit: item.stockUnit,
       receivedQuantity: accepted,
       rejectedQuantity: rejected,
       unitPrice,

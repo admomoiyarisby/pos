@@ -115,6 +115,7 @@ function invoiceLineItemsToRows(lineItems: Array<ScmProcurementInvoiceLineItem>)
     id: li.itemId,
     ingredientId: li.ingredientId,
     ingredientName: li.ingredientName,
+    stockUnit: li.stockUnit ?? null,
     quantity: 0,
     readyQuantity: null,
     pickedQuantity: null,

@@ -14,6 +14,8 @@ export interface ScmItemRow {
   id: string;
   ingredientId: string;
   ingredientName: string;
+  /** Satuan (unit) for display next to quantities — optional so legacy callers keep compiling. */
+  stockUnit?: string | null;
   quantity: number;
   readyQuantity: number | null;
   pickedQuantity: number | null;
@@ -83,7 +85,10 @@ export function ScmItemTable({
                     <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
                       Diminta
                     </div>
-                    <div className="font-mono font-medium mt-0.5">{it.quantity}</div>
+                    <div className="font-mono font-medium mt-0.5">
+                      {it.quantity}
+                      {it.stockUnit ? <span className="ml-0.5">{it.stockUnit}</span> : null}
+                    </div>
                   </div>
                   <div className="rounded-lg bg-muted/40 px-2.5 py-2">
                     <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
@@ -157,7 +162,12 @@ export function ScmItemTable({
               <tr>
                 <th className="px-3 py-2 text-left">Bahan</th>
                 <th className="px-3 py-2 text-right">Diminta</th>
-                <th className="px-3 py-2 text-right">{isDraft ? "Jumlah" : "Disetujui"}</th>
+                <th className="px-3 py-2 text-right">
+                  {isDraft ? "Jumlah" : "Disetujui"}
+                  {items.some((it) => it.stockUnit) ? (
+                    <span className="ml-1 font-normal text-muted-foreground">(satuan)</span>
+                  ) : null}
+                </th>
                 {showPrices && <th className="px-3 py-2 text-right">Harga</th>}
                 {showPrices && <th className="px-3 py-2 text-right">Subtotal</th>}
                 {!isDraft ? <th className="px-3 py-2 text-center">Keputusan CA</th> : null}
@@ -169,7 +179,12 @@ export function ScmItemTable({
                 const lineTotal = ready * (it.unitPrice ?? 0);
                 return (
                   <tr key={it.id} className="border-b">
-                    <td className="px-3 py-2">{it.ingredientName}</td>
+                    <td className="px-3 py-2">
+                      {it.ingredientName}
+                      {it.stockUnit ? (
+                        <span className="text-xs text-muted-foreground"> ({it.stockUnit})</span>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
                     <td className="px-3 py-2 text-right">
                       <Input
@@ -182,6 +197,9 @@ export function ScmItemTable({
                         }
                         className="h-8 w-24 text-right"
                       />
+                      {it.stockUnit ? (
+                        <span className="ml-1 text-xs text-muted-foreground">{it.stockUnit}</span>
+                      ) : null}
                     </td>
                     {showPrices && (
                       <td className="px-3 py-2 text-right font-mono text-muted-foreground">
@@ -256,6 +274,7 @@ export function ScmItemTable({
                   <div className="font-medium text-sm truncate">{it.ingredientName}</div>
                   <div className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-mono">
                     Kirim {picked || "-"}
+                    {it.stockUnit ? ` ${it.stockUnit}` : ""}
                   </div>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2">
@@ -317,6 +336,7 @@ export function ScmItemTable({
                 <th className="px-3 py-2 text-right">Diterima</th>
                 <th className="px-3 py-2 text-right">Ditolak (auto)</th>
                 <th className="px-3 py-2 text-left">Alasan</th>
+                <th className="px-3 py-2 text-left">Satuan</th>
               </tr>
             </thead>
             <tbody>
@@ -326,7 +346,12 @@ export function ScmItemTable({
                 const rejected = picked - received;
                 return (
                   <tr key={it.id} className="border-b">
-                    <td className="px-3 py-2">{it.ingredientName}</td>
+                    <td className="px-3 py-2">
+                      {it.ingredientName}
+                      {it.stockUnit ? (
+                        <span className="text-xs text-muted-foreground"> ({it.stockUnit})</span>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-2 text-right font-mono">{picked || "-"}</td>
                     <td className="px-3 py-2 text-right">
                       <Input
@@ -348,6 +373,9 @@ export function ScmItemTable({
                         }}
                         className="h-8 w-24 text-right"
                       />
+                      {it.stockUnit ? (
+                        <span className="ml-1 text-xs text-muted-foreground">{it.stockUnit}</span>
+                      ) : null}
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">
                       {rejected}
@@ -385,9 +413,15 @@ export function ScmItemTable({
                 className="rounded-xl border bg-card p-3.5 flex items-center justify-between gap-3 shadow-xs"
               >
                 <div className="min-w-0">
-                  <div className="font-medium text-sm truncate">{it.ingredientName}</div>
+                  <div className="font-medium text-sm truncate">
+                    {it.ingredientName}
+                    {it.stockUnit ? (
+                      <span className="text-xs text-muted-foreground"> ({it.stockUnit})</span>
+                    ) : null}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     Diterima {it.receivedQuantity ?? 0}
+                    {it.stockUnit ? ` ${it.stockUnit}` : ""}
                   </div>
                 </div>
                 {showPrices ? (
@@ -434,8 +468,16 @@ export function ScmItemTable({
                 const lineTotal = (it.receivedQuantity ?? 0) * (it.unitPrice ?? 0);
                 return (
                   <tr key={it.id} className="border-b">
-                    <td className="px-3 py-2">{it.ingredientName}</td>
-                    <td className="px-3 py-2 text-right font-mono">{it.receivedQuantity}</td>
+                    <td className="px-3 py-2">
+                      {it.ingredientName}
+                      {it.stockUnit ? (
+                        <span className="text-xs text-muted-foreground"> ({it.stockUnit})</span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {it.receivedQuantity}
+                      {it.stockUnit ? ` ${it.stockUnit}` : ""}
+                    </td>
                     {showPrices && (
                       <td className="px-3 py-2 text-right font-mono">
                         Rp {(it.unitPrice ?? 0).toLocaleString("id-ID")}
@@ -481,7 +523,12 @@ export function ScmItemTable({
       <div className="md:hidden space-y-2.5">
         {items.map((it) => (
           <div key={it.id} className="rounded-xl border bg-card p-3.5 shadow-xs">
-            <div className="font-medium text-sm truncate">{it.ingredientName}</div>
+            <div className="font-medium text-sm truncate">
+              {it.ingredientName}
+              {it.stockUnit ? (
+                <span className="text-xs text-muted-foreground"> ({it.stockUnit})</span>
+              ) : null}
+            </div>
             <div className="mt-2 grid grid-cols-4 gap-1.5 text-xs">
               <div className="rounded-lg bg-muted/40 px-2 py-2 text-center">
                 <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium">
@@ -549,7 +596,12 @@ export function ScmItemTable({
           <tbody>
             {items.map((it) => (
               <tr key={it.id} className="border-b">
-                <td className="px-3 py-2">{it.ingredientName}</td>
+                <td className="px-3 py-2">
+                  {it.ingredientName}
+                  {it.stockUnit ? (
+                    <span className="text-xs text-muted-foreground"> ({it.stockUnit})</span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
                 <td className="px-3 py-2 text-right font-mono">{it.readyQuantity ?? "-"}</td>
                 <td className="px-3 py-2 text-right font-mono">{it.pickedQuantity ?? "-"}</td>

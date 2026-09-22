@@ -324,6 +324,7 @@ export const getProcurementItems = createServerFn({ method: "GET" })
         id: scmProcurementItems.id,
         ingredientId: scmProcurementItems.ingredientId,
         ingredientName: ingredients.name,
+        stockUnit: ingredients.stockUnit,
         sortOrder: scmProcurementItems.sortOrder,
         quantity: scmProcurementItems.quantity,
         readyQuantity: scmProcurementItems.readyQuantity,
@@ -384,6 +385,8 @@ export interface ScmProcurementInvoiceLineItem {
   itemId: string;
   ingredientId: string;
   ingredientName: string;
+  /** Satuan snapshot for display — optional because older invoices lack it. */
+  stockUnit?: string | null;
   receivedQuantity: number;
   rejectedQuantity: number;
   unitPrice: number;

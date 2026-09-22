@@ -264,6 +264,7 @@ function NewProcurementPage() {
                     <tr>
                       <th className="px-3 py-2 text-left">Bahan</th>
                       <th className="px-3 py-2 text-right">Jumlah</th>
+                      <th className="px-3 py-2 text-left">Satuan</th>
                       {showPrices && <th className="px-3 py-2 text-right">Harga</th>}
                       {showPrices && <th className="px-3 py-2 text-right">Subtotal</th>}
                       <th className="w-12"></th>
@@ -274,6 +275,7 @@ function NewProcurementPage() {
                       <tr key={it.ingredientId} className="border-b">
                         <td className="px-3 py-2">{it.ingredientName}</td>
                         <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{it.unitPriceUnit}</td>
                         {showPrices && (
                           <td className="px-3 py-2 text-right font-mono text-muted-foreground">
                             Rp {it.unitPrice.toLocaleString("id-ID")}/{it.unitPriceUnit}
@@ -300,7 +302,7 @@ function NewProcurementPage() {
                   <tfoot>
                     {showPrices && (
                       <tr className="border-t-2 bg-muted/30 font-semibold">
-                        <td colSpan={3} className="px-3 py-2 text-right">
+                        <td colSpan={4} className="px-3 py-2 text-right">
                           Total:
                         </td>
                         <td className="px-3 py-2 text-right font-mono">
