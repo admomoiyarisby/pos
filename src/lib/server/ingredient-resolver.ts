@@ -77,6 +77,10 @@ async function resolveRecipeBOM(
   entries: BOMEntry[],
   addonModifierIds: string[],
   includeCost: boolean,
+  /** Ordered quantity of the parent item. Recipe add-on modifiers scale with
+   *  it (order 2 → 2 × the add-on recipe's BOM); ingredient-based
+   *  modifierIngredients stay flat per order. */
+  itemQuantity: number,
   tx?: DbOrTx,
 ): Promise<Map<string, { qty: number; cost: number }>> {
   const ingredientMap = new Map<string, { qty: number; cost: number }>();
@@ -153,19 +157,30 @@ async function resolveRecipeBOM(
       .where(inArray(modifierRecipes.modifierId, addonModifierIds));
 
     // A recipe add-on consumes the add-on recipe's BOM, including its child recipes.
+    // Scaled by the parent item's *ordered* quantity (not the BOGO-effective
+    // one): ordering 2 of a dish carries 2 of the add-on recipe's BOM.
     for (const mr of modRecipes) {
       const childLinks = await conn
         .select()
         .from(recipeChildRecipes)
         .where(eq(recipeChildRecipes.parentRecipeId, mr.recipeId));
+      const addonQuantity = mr.quantity * itemQuantity;
       const recipeEntries: BOMEntry[] = [
-        { recipeId: mr.recipeId, quantity: mr.quantity },
+        { recipeId: mr.recipeId, quantity: addonQuantity },
         ...childLinks.map((link) => ({
           recipeId: link.childRecipeId,
-          quantity: link.quantity * mr.quantity,
+          quantity: link.quantity * addonQuantity,
         })),
       ];
-      const addOnIngredients = await resolveRecipeBOM(recipeEntries, [], includeCost, tx);
+      // recipeEntries are already scaled above and `[]` requests no add-on
+      // modifiers, so itemQuantity is inert on this recursive resolve.
+      const addOnIngredients = await resolveRecipeBOM(
+        recipeEntries,
+        [],
+        includeCost,
+        itemQuantity,
+        tx,
+      );
       for (const [ingredientId, data] of addOnIngredients) {
         const existing = ingredientMap.get(ingredientId) ?? { qty: 0, cost: 0 };
         existing.qty += data.qty;
@@ -222,7 +237,13 @@ export async function resolveNewItemIngredients(
   const exclusionModIds = modifiers.filter((m) => m.isExclusion).map((m) => m.modifierId);
 
   // 4. Resolve BOM (recipe ingredients + modifier add-ons)
-  const ingredientMap = await resolveRecipeBOM(bomEntries, addonModifierIds, includeCost, tx);
+  const ingredientMap = await resolveRecipeBOM(
+    bomEntries,
+    addonModifierIds,
+    includeCost,
+    quantity,
+    tx,
+  );
 
   // 5. Fetch exclusion records
   const exclusionRecords: Array<{ ingredientId: string; quantity: number }> = [];
@@ -343,7 +364,13 @@ export async function resolvePersistedItemIngredients(
   const addonModifierIds = persistedMods.map((m) => m.modifierId);
 
   // 5. Resolve BOM
-  const ingredientMap = await resolveRecipeBOM(bomEntries, addonModifierIds, includeCost, tx);
+  const ingredientMap = await resolveRecipeBOM(
+    bomEntries,
+    addonModifierIds,
+    includeCost,
+    quantity,
+    tx,
+  );
 
   // 6. Apply exclusions (re-deduct what was excluded during void restore)
   // In voidOrder, we need to NOT restore excluded ingredients — they weren't consumed.
