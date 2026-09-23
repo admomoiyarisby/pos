@@ -227,163 +227,192 @@ export function wasteBomLedgerFilter(bomRecipeName: string | null): SQL {
   return sql`EXISTS (SELECT 1 FROM waste_entries we WHERE ${sql.join(conditions, sql` AND `)})`;
 }
 
+/** Query data accepted by `getStockLedger` — shared by the server-fn validator
+ *  and its user-parameterized core so the two entry points stay in lockstep
+ *  (ADR 0015). */
+export interface GetStockLedgerData {
+  branchId?: string;
+  ingredientId?: string;
+  recipeId?: string;
+  reference?: string;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+  /** Sort key: createdAt (default) or type (IN/OUT grouping). */
+  sortBy?: string;
+  /** Sort direction: desc (default) or asc. */
+  sortDir?: string;
+  /** ADR 0013: only ledger rows written by Waste BOM entries. */
+  wasteBomOnly?: boolean;
+  /** ADR 0013: Waste BOM rows scoped to one recipe (implies wasteBomOnly). */
+  wasteBomRecipeId?: string;
+}
+
 export const getStockLedger = createServerFn({ method: "GET" })
-  .validator(
-    (data: {
-      branchId?: string;
-      ingredientId?: string;
-      recipeId?: string;
-      reference?: string;
-      search?: string;
-      dateFrom?: string;
-      dateTo?: string;
-      page?: number;
-      limit?: number;
-      /** Sort key: createdAt (default) or type (IN/OUT grouping). */
-      sortBy?: string;
-      /** Sort direction: desc (default) or asc. */
-      sortDir?: string;
-      /** ADR 0013: only ledger rows written by Waste BOM entries. */
-      wasteBomOnly?: boolean;
-      /** ADR 0013: Waste BOM rows scoped to one recipe (implies wasteBomOnly). */
-      wasteBomRecipeId?: string;
-    }) => data,
-  )
+  .validator((data: GetStockLedgerData) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-    // Kartu Stok is branch-scoped for Branch Admin. Never trust a client-supplied
-    // branchId, and do not allow an omitted filter to become a global read.
-    let effectiveBranchId = user.role === "branch_admin" ? user.branchId : data.branchId;
-    if (user.role === "branch_admin" && !effectiveBranchId) {
-      throw new Error("Branch Admin tidak memiliki cabang");
-    }
-
-    // Area managers only read their assigned branches (mirrors getStockOpnames).
-    // A client-supplied branchId outside that set is ignored rather than honored,
-    // so the inArray scope below always applies.
-    let assignedBranchIds: string[] | undefined;
-    if (user.role === "area_manager") {
-      const assigned = await db
-        .select({ branchId: areaManagerBranches.branchId })
-        .from(areaManagerBranches)
-        .where(eq(areaManagerBranches.userId, user.id));
-      assignedBranchIds = assigned.map((a) => a.branchId);
-      if (assignedBranchIds.length === 0) {
-        return { data: [], total: 0 };
-      }
-      if (effectiveBranchId && !assignedBranchIds.includes(effectiveBranchId)) {
-        effectiveBranchId = undefined;
-      }
-    }
-
-    // Waste BOM ledger rows carry ingredientId (recipeId null); the recipe
-    // context lives in the linked waste entry's notes tag — "Waste BOM <recipe>"
-    // exactly, or "Waste BOM <recipe> - <user notes>". Resolve the recipe name
-    // once so the tag match is exact rather than a fuzzy prefix ("Iced Tea"
-    // must not catch "Iced Tea Latte").
-    let bomRecipeName: string | null = null;
-    if (data.wasteBomRecipeId) {
-      const [bomRecipe] = await db
-        .select({ name: recipes.name })
-        .from(recipes)
-        .where(eq(recipes.id, data.wasteBomRecipeId))
-        .limit(1);
-      if (!bomRecipe) return { data: [], total: 0 };
-      bomRecipeName = bomRecipe.name;
-    }
-
-    // Build the filter list once so the page query and the pagination count
-    // stay consistent. fuzzySearch references ingredients/recipes columns, so
-    // any query using it must carry the same left joins as the page query.
-    const ledgerFilters = and(
-      effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
-      assignedBranchIds ? inArray(stockLedger.branchId, assignedBranchIds) : undefined,
-      data.ingredientId ? eq(stockLedger.ingredientId, data.ingredientId) : undefined,
-      data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
-      data.reference ? eq(stockLedger.reference, data.reference) : undefined,
-      // Date range filter (Jakarta local dates, matching finance.ts): the UI
-      // sends YYYY-MM-DD strings. stockLedger.createdAt is a NAIVE timestamp
-      // storing UTC wall-clock time (see schema.ts), so it must be converted
-      // UTC -> Jakarta before comparing to the local date — comparing directly
-      // against a Jakarta-anchored boundary shifts the window by 7 hours and
-      // makes the "today" preset return nothing for movements before 14:00 WIB.
-      data.dateFrom
-        ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
-        : undefined,
-      data.dateTo
-        ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
-        : undefined,
-      data.search
-        ? fuzzySearch(
-            [
-              ingredients.name,
-              recipes.name,
-              stockLedger.reference,
-              stockLedger.notes,
-              orders.orderCode,
-            ],
-            data.search,
-          )
-        : undefined,
-      data.wasteBomOnly || data.wasteBomRecipeId ? wasteBomLedgerFilter(bomRecipeName) : undefined,
-    );
-
-    // POS movements use the order id as the ledger reference; joining orders
-    // lets the Kartu Stok surface the cashier's Kode Order (ojol) and the
-    // channel so the reference is auditable without leaving the page.
-    // reference is text while orders.id is uuid — Postgres has no text = uuid
-    // operator, so the join must cast the uuid side to text.
-    const orderRefJoin = eq(stockLedger.reference, sql`${orders.id}::text`);
-    const result = await db
-      .select({
-        id: stockLedger.id,
-        branchId: stockLedger.branchId,
-        ingredientId: stockLedger.ingredientId,
-        recipeId: stockLedger.recipeId,
-        type: stockLedger.type,
-        quantity: stockLedger.quantity,
-        balance: stockLedger.balance,
-        reference: stockLedger.reference,
-        notes: stockLedger.notes,
-        createdAt: stockLedger.createdAt,
-        ingredientName: ingredients.name,
-        recipeName: recipes.name,
-        stockUnit: ingredients.stockUnit,
-        branchName: branches.name,
-        orderCode: orders.orderCode,
-        orderChannel: orders.channel,
-      })
-      .from(stockLedger)
-      .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
-      .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
-      .leftJoin(branches, eq(stockLedger.branchId, branches.id))
-      .leftJoin(orders, orderRefJoin)
-      .where(ledgerFilters)
-      .orderBy(
-        // type sort groups IN/OUT together; time is the tiebreaker so each
-        // group stays chronological. Default remains newest-first by time.
-        ...(data.sortBy === "type"
-          ? [
-              data.sortDir === "asc" ? asc(stockLedger.type) : desc(stockLedger.type),
-              desc(stockLedger.createdAt),
-            ]
-          : [data.sortDir === "asc" ? asc(stockLedger.createdAt) : desc(stockLedger.createdAt)]),
-      )
-      .limit(data.limit ?? 50)
-      .offset((data.page ?? 0) * (data.limit ?? 50));
-
-    // Total row count under the same filters, so the client can compute the
-    // real page count for pagination (sales-data.ts pattern).
-    const [totalRow] = await db
-      .select({ count: count() })
-      .from(stockLedger)
-      .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
-      .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
-      .leftJoin(orders, orderRefJoin)
-      .where(ledgerFilters);
-
-    return { data: result, total: totalRow?.count ?? 0 };
+    return getStockLedgerCore(user, data);
   });
+
+/**
+ * `getStockLedger` minus the session lookup — the ADR 0015 core seam.
+ *
+ * ADR 0015 rule 4 kept read-only GET endpoints core-less because no test drove
+ * them; the Kartu Stok pagination-determinism test now does (a vitest process
+ * has no Start request context, so `requireAuth()` can't run there). Same
+ * contract as every other core: the former handler body verbatim — inline
+ * guards and error messages unchanged — taking an explicit `AppUser`.
+ */
+export async function getStockLedgerCore(user: AppUser, data: GetStockLedgerData) {
+  // Kartu Stok is branch-scoped for Branch Admin. Never trust a client-supplied
+  // branchId, and do not allow an omitted filter to become a global read.
+  let effectiveBranchId = user.role === "branch_admin" ? user.branchId : data.branchId;
+  if (user.role === "branch_admin" && !effectiveBranchId) {
+    throw new Error("Branch Admin tidak memiliki cabang");
+  }
+
+  // Area managers only read their assigned branches (mirrors getStockOpnames).
+  // A client-supplied branchId outside that set is ignored rather than honored,
+  // so the inArray scope below always applies.
+  let assignedBranchIds: string[] | undefined;
+  if (user.role === "area_manager") {
+    const assigned = await db
+      .select({ branchId: areaManagerBranches.branchId })
+      .from(areaManagerBranches)
+      .where(eq(areaManagerBranches.userId, user.id));
+    assignedBranchIds = assigned.map((a) => a.branchId);
+    if (assignedBranchIds.length === 0) {
+      return { data: [], total: 0 };
+    }
+    if (effectiveBranchId && !assignedBranchIds.includes(effectiveBranchId)) {
+      effectiveBranchId = undefined;
+    }
+  }
+
+  // Waste BOM ledger rows carry ingredientId (recipeId null); the recipe
+  // context lives in the linked waste entry's notes tag — "Waste BOM <recipe>"
+  // exactly, or "Waste BOM <recipe> - <user notes>". Resolve the recipe name
+  // once so the tag match is exact rather than a fuzzy prefix ("Iced Tea"
+  // must not catch "Iced Tea Latte").
+  let bomRecipeName: string | null = null;
+  if (data.wasteBomRecipeId) {
+    const [bomRecipe] = await db
+      .select({ name: recipes.name })
+      .from(recipes)
+      .where(eq(recipes.id, data.wasteBomRecipeId))
+      .limit(1);
+    if (!bomRecipe) return { data: [], total: 0 };
+    bomRecipeName = bomRecipe.name;
+  }
+
+  // Build the filter list once so the page query and the pagination count
+  // stay consistent. fuzzySearch references ingredients/recipes columns, so
+  // any query using it must carry the same left joins as the page query.
+  const ledgerFilters = and(
+    effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
+    assignedBranchIds ? inArray(stockLedger.branchId, assignedBranchIds) : undefined,
+    data.ingredientId ? eq(stockLedger.ingredientId, data.ingredientId) : undefined,
+    data.recipeId ? eq(stockLedger.recipeId, data.recipeId) : undefined,
+    data.reference ? eq(stockLedger.reference, data.reference) : undefined,
+    // Date range filter (Jakarta local dates, matching finance.ts): the UI
+    // sends YYYY-MM-DD strings. stockLedger.createdAt is a NAIVE timestamp
+    // storing UTC wall-clock time (see schema.ts), so it must be converted
+    // UTC -> Jakarta before comparing to the local date — comparing directly
+    // against a Jakarta-anchored boundary shifts the window by 7 hours and
+    // makes the "today" preset return nothing for movements before 14:00 WIB.
+    data.dateFrom
+      ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
+      : undefined,
+    data.dateTo
+      ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
+      : undefined,
+    data.search
+      ? fuzzySearch(
+          [
+            ingredients.name,
+            recipes.name,
+            stockLedger.reference,
+            stockLedger.notes,
+            orders.orderCode,
+          ],
+          data.search,
+        )
+      : undefined,
+    data.wasteBomOnly || data.wasteBomRecipeId ? wasteBomLedgerFilter(bomRecipeName) : undefined,
+  );
+
+  // POS movements use the order id as the ledger reference; joining orders
+  // lets the Kartu Stok surface the cashier's Kode Order (ojol) and the
+  // channel so the reference is auditable without leaving the page.
+  // reference is text while orders.id is uuid — Postgres has no text = uuid
+  // operator, so the join must cast the uuid side to text.
+  const orderRefJoin = eq(stockLedger.reference, sql`${orders.id}::text`);
+  const result = await db
+    .select({
+      id: stockLedger.id,
+      branchId: stockLedger.branchId,
+      ingredientId: stockLedger.ingredientId,
+      recipeId: stockLedger.recipeId,
+      type: stockLedger.type,
+      quantity: stockLedger.quantity,
+      balance: stockLedger.balance,
+      reference: stockLedger.reference,
+      notes: stockLedger.notes,
+      createdAt: stockLedger.createdAt,
+      ingredientName: ingredients.name,
+      recipeName: recipes.name,
+      stockUnit: ingredients.stockUnit,
+      branchName: branches.name,
+      orderCode: orders.orderCode,
+      orderChannel: orders.channel,
+    })
+    .from(stockLedger)
+    .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
+    .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
+    .leftJoin(branches, eq(stockLedger.branchId, branches.id))
+    .leftJoin(orders, orderRefJoin)
+    .where(ledgerFilters)
+    .orderBy(
+      // type sort groups IN/OUT together; time is the tiebreaker so each
+      // group stays chronological. Default remains newest-first by time.
+      //
+      // `id` is the final, unique tiebreaker: createdAt is `defaultNow()`,
+      // i.e. a *transaction* timestamp, so every row written in one
+      // transaction (POS order lines, stock-opname adjustments, yield, waste
+      // BOM) shares an identical createdAt — and Postgres orders ties
+      // arbitrarily. Under LIMIT/OFFSET that let the same row land on two
+      // pages (or be skipped entirely): the "item on page 5 also on page 1"
+      // bug. id is unique, so page boundaries are deterministic and stay put
+      // while new rows are inserted.
+      ...(data.sortBy === "type"
+        ? [
+            data.sortDir === "asc" ? asc(stockLedger.type) : desc(stockLedger.type),
+            desc(stockLedger.createdAt),
+            desc(stockLedger.id),
+          ]
+        : [
+            data.sortDir === "asc" ? asc(stockLedger.createdAt) : desc(stockLedger.createdAt),
+            data.sortDir === "asc" ? asc(stockLedger.id) : desc(stockLedger.id),
+          ]),
+    )
+    .limit(data.limit ?? 50)
+    .offset((data.page ?? 0) * (data.limit ?? 50));
+
+  // Total row count under the same filters, so the client can compute the
+  // real page count for pagination (sales-data.ts pattern).
+  const [totalRow] = await db
+    .select({ count: count() })
+    .from(stockLedger)
+    .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
+    .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
+    .leftJoin(orders, orderRefJoin)
+    .where(ledgerFilters);
+
+  return { data: result, total: totalRow?.count ?? 0 };
+}
 
 export const triggerStockOpname = createServerFn({ method: "POST" })
   .validator((data: { branchId: string; date: string }) => data)

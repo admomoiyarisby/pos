@@ -7,7 +7,13 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
 import { Pagination } from "#/components/ui/Pagination";
-import { getStockLedger } from "#/lib/server/inventory";
+import {
+  STOCK_LEDGER_PAGE_SIZE,
+  stockLedgerInputFromSearch,
+  stockLedgerQuery,
+  stockLedgerSearchSchema,
+} from "#/lib/stock-ledger-query";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import { isoDateDaysAgo } from "#/components/pos/HistoryDateFilter";
 import { getBranches } from "#/lib/server/branches";
 import { getRecipes } from "#/lib/server/recipes";
@@ -35,15 +41,28 @@ interface LedgerRow {
 
 export const Route = createFileRoute("/_layout/inventory/ledger")({
   component: LedgerPage,
-  loader: async () => {
-    const ledger = await getStockLedger({ data: {} });
-    return { ledger };
+  // Every search param the query key reads is validated here, so the loader's
+  // `loaderDeps` and the component's hooks parse the URL exactly once and can
+  // never disagree about which slice was requested.
+  validateSearch: (search: UnknownRecord) => stockLedgerSearchSchema.parse(search),
+  // The deps are the query key's inputs, and a route match's id includes the
+  // deps hash — so any page/filter/sort/search change is a *new* match whose
+  // loader re-runs (blocking the navigation) before the page renders.
+  loaderDeps: ({ search }) => search,
+  loader: async ({ context, deps }) => {
+    const { queryKey, queryFn } = stockLedgerQuery(stockLedgerInputFromSearch(deps));
+    // Keyed hydration: only the slice THIS url asks for enters the query
+    // cache, so no page can ever render another page's rows.
+    // (The old loader fetched page 0 with limit 50 and handed that payload to
+    // the page query as `initialData` — which React Query applies to any
+    // not-yet-cached key — so "Halaman 5" first painted page 1's rows: the
+    // same item appearing on page 5 and page 1.)
+    await context.queryClient.ensureQueryData({ queryKey, queryFn });
   },
 });
 
 function LedgerPage() {
   const [search, setSearch, committedSearch] = useTableSearch({ debounceMs: 250 });
-  const { ledger: initial } = Route.useLoaderData();
   const user = useAuth().user;
   const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState<{
     branchId?: string;
@@ -105,44 +124,31 @@ function LedgerPage() {
     enabled: bomOnly,
   });
 
-  const PAGE_SIZE = 15;
-  const { data: ledger } = useQuery({
-    queryKey: [
-      "stock-ledger",
+  const { data: ledger, isPending } = useQuery(
+    // Shared with the route loader (`stockLedgerQuery`): identical normalized
+    // args → identical cache key, so the loader's pre-fetched slice is a
+    // guaranteed hit, and a cache miss can only ever mean "fetch the right
+    // rows" — never "show another page's rows".
+    // The raw URL branchId is deliberate: the server never trusts it
+    // (branch_admin is forced to their branch, area_manager's value is
+    // validated against the assigned set), so it behaves exactly like the
+    // role-derived `branchId` above while keeping loader and query keys equal.
+    stockLedgerQuery({
       page,
-      branchId,
+      search: committedSearch,
+      branchId: filters.branchId ?? "",
       reference,
-      committedSearch,
       bomOnly,
-      bomRecipe,
+      bomRecipeId: bomRecipe,
       dateFrom,
       dateTo,
       sort,
-    ],
-    queryFn: () =>
-      getStockLedger({
-        data: {
-          page,
-          limit: PAGE_SIZE,
-          branchId: branchId || undefined,
-          reference: reference || undefined,
-          search: committedSearch || undefined,
-          wasteBomOnly: bomOnly,
-          wasteBomRecipeId: bomOnly && bomRecipe ? bomRecipe : undefined,
-          dateFrom: dateFrom || undefined,
-          dateTo: dateTo || undefined,
-          // Server-side sort (mobile cards + desktop headers share the URL
-          // sortKey/sortDir pair). Unsorted = server default (newest first).
-          sortBy: sort?.key || undefined,
-          sortDir: sort?.dir || undefined,
-        },
-      }),
-    initialData: initial,
-  });
+    }),
+  );
   // Server returns { data, total }: total drives the real page count.
   const total = ledger?.total ?? 0;
   const rows = ledger?.data ?? [];
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / STOCK_LEDGER_PAGE_SIZE));
   // Keep the URL page within range (e.g. after a filter shrinks the result set).
   useEffect(() => {
     if (page >= totalPages && page > 0) {
@@ -483,7 +489,7 @@ function LedgerPage() {
           columns={columns}
           data={rows}
           keyExtractor={(r) => r.id}
-          pageSize={PAGE_SIZE}
+          pageSize={STOCK_LEDGER_PAGE_SIZE}
           pagination={false}
           features={{ filtering: false, sorting: true, pagination: false }}
           search={search}
@@ -492,6 +498,7 @@ function LedgerPage() {
           onPageChange={setPage}
           sort={sort}
           onSortChange={setSort}
+          loading={isPending}
         />
       </div>
 
@@ -538,7 +545,7 @@ function LedgerPage() {
       <ul className="md:hidden space-y-2" aria-label="Riwayat mutasi stok">
         {rows.length === 0 ? (
           <li className="rounded-xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-            Tidak ada mutasi stok
+            {isPending ? "Memuat mutasi stok…" : "Tidak ada mutasi stok"}
           </li>
         ) : (
           rows.map((row) => {
