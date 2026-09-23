@@ -8,9 +8,9 @@ interface PrintBillParams {
   cartItems: CartItem[];
   branchName: string;
   /** Outlet address (branches.location) — printed under the brand name. */
-  branchAddress?: string;
+  branchAddress?: string | null;
   /** Outlet phone (branches.phone) — printed under the address. */
-  branchPhone?: string;
+  branchPhone?: string | null;
   subtotal: number;
   voucherDiscount: number;
   taxAmount: number;
@@ -26,9 +26,9 @@ interface PrintReceiptParams {
   cartItems: CartItem[];
   branchName: string;
   /** Outlet address (branches.location) — printed under the brand name. */
-  branchAddress?: string;
+  branchAddress?: string | null;
   /** Outlet phone (branches.phone) — printed under the address. */
-  branchPhone?: string;
+  branchPhone?: string | null;
 }
 
 // Thermal receipt paper is 57mm wide; keep ~2mm padding each side so the
