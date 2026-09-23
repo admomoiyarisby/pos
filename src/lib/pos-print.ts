@@ -7,6 +7,10 @@ import type { CartItem, OrderResult } from "./pos-types";
 interface PrintBillParams {
   cartItems: CartItem[];
   branchName: string;
+  /** Outlet address (branches.location) — printed under the brand name. */
+  branchAddress?: string;
+  /** Outlet phone (branches.phone) — printed under the address. */
+  branchPhone?: string;
   subtotal: number;
   voucherDiscount: number;
   taxAmount: number;
@@ -21,77 +25,106 @@ interface PrintReceiptParams {
   order: OrderResult;
   cartItems: CartItem[];
   branchName: string;
+  /** Outlet address (branches.location) — printed under the brand name. */
+  branchAddress?: string;
+  /** Outlet phone (branches.phone) — printed under the address. */
+  branchPhone?: string;
 }
 
-function buildItemsHtml(cartItems: CartItem[]): string {
+// Thermal receipt paper is 57mm wide; keep ~2mm padding each side so the
+// printable content is ~53mm.
+const RECEIPT_WIDTH_MM = 57;
+
+/**
+ * Receipt item layout: Jumlah | Nama menu | Harga, with add-ons (modifiers)
+ * indented under the item name. Shared by the customer receipt only — the
+ * dine-in bill keeps its own Nama | Qty | Harga layout.
+ */
+function buildReceiptItemsHtml(cartItems: CartItem[]): string {
   let itemsHtml = "";
   for (let i = 0; i < cartItems.length; i++) {
     let item = cartItems[i];
-    let modLines = "";
+    let addonLines = "";
     if (item.modifiers.length > 0) {
       let parts: string[] = [];
       for (let j = 0; j < item.modifiers.length; j++) {
         let m = item.modifiers[j];
         parts.push((m.isExclusion ? "X " : "+ ") + m.name);
       }
-      modLines =
-        '<div style="font-size: 10px; color: #444; padding-left: 2mm;">' +
+      addonLines =
+        '<div style="font-size: 10px; color: #444; padding-left: 8mm;">' +
         parts.join("<br>") +
         "</div>";
     }
     let noteLine = item.notes
-      ? '<div style="font-size: 10px; font-style: italic; color: #666; padding-left: 2mm;">Note: ' +
+      ? '<div style="font-size: 10px; font-style: italic; color: #666; padding-left: 8mm;">Note: ' +
         item.notes +
         "</div>"
       : "";
     itemsHtml +=
-      '<div style="margin-bottom: 3mm;">' +
-      '<div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: bold;">' +
+      '<div style="margin-bottom: 2mm;">' +
+      '<div style="display: flex; font-size: 11px; font-weight: bold;">' +
+      '<div style="width: 8mm; text-align: left;">' +
+      item.quantity +
+      "</div>" +
       '<div style="flex: 1;">' +
       item.name +
       "</div>" +
-      '<div style="width: 10mm; text-align: center;">' +
-      item.quantity +
-      "</div>" +
-      '<div style="width: 25mm; text-align: right;">' +
+      '<div style="text-align: right; white-space: nowrap;">' +
       (item.price * item.quantity).toLocaleString("id-ID") +
       "</div>" +
       "</div>" +
-      modLines +
+      addonLines +
       noteLine +
       "</div>";
   }
   return itemsHtml;
 }
 
-export function printReceipt({ order, cartItems, branchName }: PrintReceiptParams) {
+export function printReceipt({
+  order,
+  cartItems,
+  branchName,
+  branchAddress,
+  branchPhone,
+}: PrintReceiptParams) {
   let printWindow = window.open("", "_blank");
   if (!printWindow) return;
 
-  let itemsHtml = buildItemsHtml(cartItems);
+  let itemsHtml = buildReceiptItemsHtml(cartItems);
   let idStr = order.id.slice(0, 8).toUpperCase();
 
   const lines: string[] = [
     "<html><head>",
     "<title>Struk - " + idStr + "</title>",
     "<style>",
-    "@page { margin: 0; }",
-    "body { font-family: 'Courier New', monospace; max-width: 80mm; margin: 5mm auto; padding: 5mm; font-size: 12px; position: relative; }",
+    "@page { margin: 0; size: " + RECEIPT_WIDTH_MM + "mm auto; }",
+    "body { font-family: 'Courier New', monospace; width: " +
+      RECEIPT_WIDTH_MM +
+      "mm; margin: 0; padding: 2mm; font-size: 11px; position: relative; }",
     ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
-    ".wm-wrap img { max-width: 60mm; opacity: 0.06; }",
+    ".wm-wrap img { max-width: 45mm; opacity: 0.06; }",
     ".content { position: relative; z-index: 1; }",
     ".center { text-align: center; }",
-    ".header { font-size: 16px; font-weight: bold; margin-bottom: 2mm; }",
-    ".subheader { font-size: 11px; color: #444; margin-bottom: 4mm; }",
-    ".divider { border-top: 1px dashed #000; margin: 3mm 0; }",
+    ".logo { max-width: 25mm; max-height: 15mm; margin-bottom: 1mm; }",
+    ".header { font-size: 14px; font-weight: bold; margin-bottom: 1mm; }",
+    ".subheader { font-size: 10px; color: #444; margin-bottom: 1mm; }",
+    ".divider { border-top: 1px dashed #000; margin: 2mm 0; }",
+    ".colhead { display: flex; font-size: 10px; color: #444; margin-bottom: 1mm; }",
+    ".colhead .qty { width: 8mm; }",
     ".row { display: flex; justify-content: space-between; }",
-    ".total { font-size: 14px; font-weight: bold; margin-top: 2mm; }",
-    ".footer { margin-top: 5mm; font-size: 10px; color: #444; text-align: center; }",
+    ".total { font-size: 13px; font-weight: bold; margin-top: 2mm; }",
+    ".footer { margin-top: 4mm; font-size: 10px; color: #444; text-align: center; }",
+    ".tagline { margin-top: 1mm; font-size: 12px; font-weight: bold; text-align: center; }",
     "</style></head><body>",
     '<div class="wm-wrap"><img src="/logo-for-light-mode.png" alt="" /></div>',
     '<div class="content">',
-    '<div class="center header">Omoiyari POS</div>',
-    '<div class="center subheader">' + branchName + "</div>",
+    // Header: Logo + brand, then outlet address & phone from branch info.
+    '<div class="center"><img class="logo" src="/logo-for-light-mode.png" alt="Omoiyari" /></div>',
+    '<div class="center header">Omoiyari</div>',
+    '<div class="center subheader">' + (branchAddress || branchName) + "</div>",
+    branchAddress ? '<div class="center subheader">' + branchName + "</div>" : "",
+    '<div class="center subheader">Telp: ' + (branchPhone || "-") + "</div>",
     '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
     '<div class="divider"></div>',
     '<div class="row"><span>Kode Order:</span><span>' +
@@ -105,6 +138,8 @@ export function printReceipt({ order, cartItems, branchName }: PrintReceiptParam
       (order.paymentMethod || "-") +
       "</span></div>",
     '<div class="divider"></div>',
+    // Column header: Jumlah | Nama menu | Harga
+    '<div class="colhead"><span class="qty">Jml</span><span>Nama Menu</span><span>Harga</span></div>',
     itemsHtml,
     '<div class="divider"></div>',
     '<div class="row"><span>Subtotal</span><span>Rp ' +
@@ -131,7 +166,8 @@ export function printReceipt({ order, cartItems, branchName }: PrintReceiptParam
       order.totalAmount.toLocaleString("id-ID") +
       "</span></div>",
     '<div class="divider"></div>',
-    '<div class="footer">Terima kasih telah berbelanja</div>',
+    '<div class="footer">Terima kasih sudah makan di Omoiyari! Selamat menikmati 🙏</div>',
+    '<div class="tagline">INI BARU KARAAGE!!</div>',
     "</div>",
     "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",
     "</body></html>",
@@ -144,6 +180,8 @@ export function printReceipt({ order, cartItems, branchName }: PrintReceiptParam
 export function printBill({
   cartItems,
   branchName,
+  branchAddress,
+  branchPhone,
   subtotal,
   voucherDiscount,
   taxAmount,
@@ -154,33 +192,48 @@ export function printBill({
   let printWindow = window.open("", "_blank");
   if (!printWindow) return;
 
-  let itemsHtml = buildItemsHtml(cartItems);
+  let itemsHtml = buildReceiptItemsHtml(cartItems);
 
   const lines: string[] = [
     "<html><head>",
     "<title>Bill</title>",
     "<style>",
-    "@page { margin: 0; }",
-    "body { font-family: 'Courier New', monospace; max-width: 80mm; margin: 5mm auto; padding: 5mm; font-size: 12px; position: relative; }",
+    "@page { margin: 0; size: " + RECEIPT_WIDTH_MM + "mm auto; }",
+    "body { font-family: 'Courier New', monospace; width: " +
+      RECEIPT_WIDTH_MM +
+      "mm; margin: 0; padding: 2mm; font-size: 11px; position: relative; }",
     ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
-    ".wm-wrap img { max-width: 60mm; opacity: 0.06; }",
+    ".wm-wrap img { max-width: 45mm; opacity: 0.06; }",
     ".content { position: relative; z-index: 1; }",
     ".center { text-align: center; }",
-    ".watermark { text-align: center; border: 2px dashed #999; padding: 2mm; margin: 3mm 0; color: #999; font-weight: bold; font-size: 14px; }",
-    ".header { font-size: 16px; font-weight: bold; margin-bottom: 2mm; }",
-    ".subheader { font-size: 11px; color: #444; margin-bottom: 4mm; }",
-    ".divider { border-top: 1px dashed #000; margin: 3mm 0; }",
+    ".logo { max-width: 25mm; max-height: 15mm; margin-bottom: 1mm; }",
+    ".header { font-size: 14px; font-weight: bold; margin-bottom: 1mm; }",
+    ".subheader { font-size: 10px; color: #444; margin-bottom: 1mm; }",
+    ".divider { border-top: 1px dashed #000; margin: 2mm 0; }",
+    ".colhead { display: flex; font-size: 10px; color: #444; margin-bottom: 1mm; }",
+    ".colhead .qty { width: 8mm; }",
     ".row { display: flex; justify-content: space-between; }",
-    ".total { font-size: 14px; font-weight: bold; margin-top: 2mm; }",
+    ".total { font-size: 13px; font-weight: bold; margin-top: 2mm; }",
+    ".footer { margin-top: 4mm; font-size: 10px; color: #444; text-align: center; }",
+    ".tagline { margin-top: 1mm; font-size: 12px; font-weight: bold; text-align: center; }",
+    ".watermark { text-align: center; border: 2px dashed #999; padding: 2mm; margin: 3mm 0; color: #999; font-weight: bold; font-size: 13px; }",
     "</style></head><body>",
     '<div class="wm-wrap"><img src="/logo-for-light-mode.png" alt="" /></div>',
     '<div class="content">',
     '<div class="watermark">BELUM DIBAYAR / UNPAID</div>',
-    '<div class="center header">' + branchName + "</div>",
+    // Header: Logo + brand, then outlet address & phone from branch info.
+    '<div class="center"><img class="logo" src="/logo-for-light-mode.png" alt="Omoiyari" /></div>',
+    '<div class="center header">Omoiyari</div>',
+    '<div class="center subheader">' + (branchAddress || branchName) + "</div>",
+    branchAddress ? '<div class="center subheader">' + branchName + "</div>" : "",
+    '<div class="center subheader">Telp: ' + (branchPhone || "-") + "</div>",
     '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
     '<div class="divider"></div>',
     '<div class="row"><span>Kode Order:</span><span>' + (orderCode || "-") + "</span></div>",
     '<div class="row"><span>Pelanggan:</span><span>' + (customerName || "-") + "</span></div>",
+    '<div class="divider"></div>',
+    // Column header: Jumlah | Nama menu | Harga
+    '<div class="colhead"><span class="qty">Jml</span><span>Nama Menu</span><span>Harga</span></div>',
     itemsHtml,
     '<div class="divider"></div>',
     '<div class="row"><span>Subtotal</span><span>Rp ' +
@@ -206,6 +259,9 @@ export function printBill({
     '<div class="row total"><span>TOTAL</span><span>Rp ' +
       finalTotal.toLocaleString("id-ID") +
       "</span></div>",
+    '<div class="divider"></div>',
+    '<div class="footer">Terima kasih sudah makan di Omoiyari! Selamat menikmati 🙏</div>',
+    '<div class="tagline">INI BARU KARAAGE!!</div>',
     '<div class="watermark">BELUM DIBAYAR</div>',
     "</div>",
     "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",

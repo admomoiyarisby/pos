@@ -1127,7 +1127,12 @@ export const getOrderWithItems = createServerFn({ method: "GET" })
     const user = await requireAuth();
 
     const [row] = await db
-      .select({ order: orders, branchName: branches.name })
+      .select({
+        order: orders,
+        branchName: branches.name,
+        branchLocation: branches.location,
+        branchPhone: branches.phone,
+      })
       .from(orders)
       .leftJoin(branches, eq(branches.id, orders.branchId))
       .where(eq(orders.id, data.id))
@@ -1194,6 +1199,8 @@ export const getOrderWithItems = createServerFn({ method: "GET" })
     return {
       ...order,
       branchName: row.branchName,
+      branchLocation: row.branchLocation,
+      branchPhone: row.branchPhone,
       items: items.map((i) => ({
         ...i,
         modifiers: mods

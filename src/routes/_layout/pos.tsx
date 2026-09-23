@@ -386,7 +386,13 @@ function PosPage() {
       completedAt: orderData.completedAt,
     };
 
-    printReceipt({ order: printOrder, cartItems: cartItems, branchName: branchName });
+    printReceipt({
+      order: printOrder,
+      cartItems: cartItems,
+      branchName: branchName,
+      branchAddress: branch?.location,
+      branchPhone: branch?.phone,
+    });
   }
 
   let menuResult = useQuery({
@@ -1395,6 +1401,8 @@ function PosPage() {
                             printBill({
                               cartItems: cart,
                               branchName: userBranch?.name ?? "Cabang",
+                              branchAddress: userBranch?.location,
+                              branchPhone: userBranch?.phone,
                               subtotal: cartTotal,
                               voucherDiscount: voucherDiscount,
                               taxAmount: taxAmount,
@@ -1813,6 +1821,8 @@ function PosPage() {
             printBill({
               cartItems: cart,
               branchName: userBranch?.name ?? "Cabang",
+              branchAddress: userBranch?.location,
+              branchPhone: userBranch?.phone,
               subtotal: cartTotal,
               voucherDiscount: voucherDiscount,
               taxAmount: taxAmount,
@@ -1977,7 +1987,11 @@ function PosPage() {
       <SuccessModal
         order={successOrder}
         cartItems={cart}
-        branchName={userBranch?.name ?? "Cabang"}
+        branch={
+          userBranch
+            ? { name: userBranch.name, location: userBranch.location, phone: userBranch.phone }
+            : { name: "Cabang", location: "", phone: null }
+        }
         onClose={function () {
           setSuccessOrder(null);
         }}
@@ -1985,8 +1999,14 @@ function PosPage() {
           setSuccessOrder(null);
           resetForm();
         }}
-        onPrintReceipt={function (order, cartItems, branchName) {
-          printReceipt({ order: order, cartItems: cartItems, branchName: branchName });
+        onPrintReceipt={function (order, cartItems, branch) {
+          printReceipt({
+            order: order,
+            cartItems: cartItems,
+            branchName: branch.name,
+            branchAddress: branch.location,
+            branchPhone: branch.phone,
+          });
         }}
       />
 

@@ -6,19 +6,26 @@ import { useEffect } from "react";
 import { CheckCircle2, Printer } from "lucide-react";
 import type { OrderResult, CartItem } from "#/lib/pos-types";
 
+/** Outlet info passed through to the receipt printer (logo/address/phone header). */
+interface ReceiptBranchInfo {
+  name: string;
+  location: string;
+  phone: string | null;
+}
+
 interface SuccessModalProps {
   order: OrderResult | null;
   cartItems: CartItem[];
-  branchName: string;
+  branch: ReceiptBranchInfo;
   onClose: () => void;
   onNewTransaction: () => void;
-  onPrintReceipt: (order: OrderResult, cartItems: CartItem[], branchName: string) => void;
+  onPrintReceipt: (order: OrderResult, cartItems: CartItem[], branch: ReceiptBranchInfo) => void;
 }
 
 export default function SuccessModal({
   order,
   cartItems,
-  branchName,
+  branch,
   onClose: _onClose,
   onNewTransaction,
   onPrintReceipt,
@@ -68,7 +75,7 @@ export default function SuccessModal({
         <div className="flex flex-col gap-2">
           <button
             onClick={function () {
-              onPrintReceipt(o, cartItems, branchName);
+              onPrintReceipt(o, cartItems, branch);
             }}
             className="w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2"
           >
