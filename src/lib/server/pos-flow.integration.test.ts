@@ -267,6 +267,7 @@ describe("POS — order lifecycle: create → complete, and void restores stock"
       const order = await posApi.createOrderCore(cashier, {
         branchId,
         channel: "Dine-in",
+        customerName: "Budi Santoso",
         items: [{ recipeId, quantity: 3, price: 10000 }],
         paymentMethod: "cash",
       });
@@ -362,6 +363,7 @@ describe("POS — reprint approval flow via the real cores", () => {
       const order = await posApi.createOrderCore(cashier, {
         branchId,
         channel: "Dine-in",
+        customerName: "Budi Santoso",
         items: [{ recipeId, quantity: 1, price: 10000 }],
       });
 
@@ -432,6 +434,7 @@ describe("POS — negatives: not-found and wrong-state guards with no side effec
       const order = await posApi.createOrderCore(cashier, {
         branchId,
         channel: "Dine-in",
+        customerName: "Budi Santoso",
         items: [{ recipeId, quantity: 1, price: 10000 }],
       });
       const req = await posApi.createCancelRequestCore(cashier, {
