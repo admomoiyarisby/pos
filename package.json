@@ -11,7 +11,7 @@
     "preview": "vp preview",
     "test": "vp test run --pool=forks",
     "test:db": "bash scripts/test-db.sh test",
-    "test:integration": "TEST_DATABASE_URL=postgresql://omoiyari_test:omoiyari_test@localhost:5433/omoiyari_pos_test DATABASE_URL= vp test run src/lib/server --include '**/*.integration.test.ts' --include '**/crud.coverage.test.ts'",
+    "test:integration": "TEST_DATABASE_URL=postgresql://omoiyari_test:omoiyari_test@localhost:5433/omoiyari_pos_test DATABASE_URL= vp test run integration.test crud.coverage",
     "check": "vp check",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
