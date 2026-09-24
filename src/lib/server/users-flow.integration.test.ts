@@ -344,3 +344,148 @@ describe("Users — soft delete lifecycle", () => {
     },
   );
 });
+
+describe("Users — admin password reset repairs credential rows", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "reset updates the exact sign-in row and repairs legacy/duplicate rows",
+    async () => {
+      const branchA = await seedBranch(uniq("US-PW"));
+      const superAdmin = await seedUser("super_admin");
+      const staff = await usersApi.createUserCore(superAdmin, {
+        email: `pw-${uniq("")}@pos.test`,
+        password: "password123",
+        name: "Staf Password",
+        role: "branch_admin",
+        branchId: branchA,
+        pin: "5551",
+      });
+
+      // Simulate drift: legacy NULL issuer + a duplicate stale row, both
+      // with the old hash. signInEmail matches on providerId + issuer +
+      // accountId, so only one of these is the "live" row.
+      await db
+        .update(schema.account)
+        .set({ issuer: null })
+        .where(eq(schema.account.userId, staff.userId));
+      const { hashPassword } = await import("better-auth/crypto");
+      await db.insert(schema.account).values({
+        id: crypto.randomUUID(),
+        accountId: staff.userId,
+        providerId: "credential",
+        issuer: "local:credential",
+        userId: staff.userId,
+        password: await hashPassword("password123"),
+      });
+
+      await usersApi.updateUserCore(superAdmin, {
+        id: staff.userId,
+        password: "newpassword456",
+      });
+
+      const { verifyPassword } = await import("better-auth/crypto");
+      const rows = await db
+        .select()
+        .from(schema.account)
+        .where(eq(schema.account.userId, staff.userId));
+      expect(rows.length).toBe(2);
+      for (const row of rows) {
+        // Every row repaired to the sign-in shape with the new hash.
+        expect(row.issuer).toBe("local:credential");
+        expect(row.accountId).toBe(staff.userId);
+        expect(await verifyPassword({ password: "newpassword456", hash: row.password! })).toBe(
+          true,
+        );
+        expect(await verifyPassword({ password: "password123", hash: row.password! })).toBe(false);
+      }
+    },
+  );
+});
+
+describe("Users — emails are stored lowercase", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "createUserCore lowercases mixed-case emails so sign-in can match them",
+    async () => {
+      const branchA = await seedBranch(uniq("US-EM"));
+      const superAdmin = await seedUser("super_admin");
+
+      const created = await usersApi.createUserCore(superAdmin, {
+        email: `Mixed.Case-${uniq("")}@pos.test`.toUpperCase(),
+        password: "password123",
+        name: "Mixed Case",
+        role: "branch_admin",
+        branchId: branchA,
+      });
+
+      const [row] = await db
+        .select({ email: schema.users.email })
+        .from(schema.users)
+        .where(eq(schema.users.id, created.userId));
+      expect(row.email).toBe(row.email.toLowerCase());
+    },
+  );
+});
+
+describe("Users — user PINs are globally unique", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "create/update refuse a PIN taken by any user or branch",
+    async () => {
+      const branchA = await seedBranch(uniq("US-PA"));
+      const branchB = await seedBranch(uniq("US-PB"));
+      const superAdmin = await seedUser("super_admin");
+
+      const first = await usersApi.createUserCore(superAdmin, {
+        email: `p1-${uniq("")}@pos.test`,
+        password: "password123",
+        name: "P1",
+        role: "branch_admin",
+        branchId: branchA,
+        pin: "5552",
+      });
+
+      // Same PIN in a *different* branch is refused (non-branch PIN login
+      // has no branch scope, so per-branch uniqueness is not enough).
+      await expect(
+        usersApi.createUserCore(superAdmin, {
+          email: `p2-${uniq("")}@pos.test`,
+          password: "password123",
+          name: "P2",
+          role: "branch_admin",
+          branchId: branchB,
+          pin: "5552",
+        }),
+      ).rejects.toThrow("PIN sudah digunakan oleh cabang/staf lain");
+
+      // Non-branch users get the same rule on create.
+      await expect(
+        usersApi.createUserCore(superAdmin, {
+          email: `am-${uniq("")}@pos.test`,
+          password: "password123",
+          name: "AM",
+          role: "area_manager",
+          assignedBranches: [branchA],
+          pin: "5552",
+        }),
+      ).rejects.toThrow("PIN sudah digunakan oleh cabang/staf lain");
+
+      // ... and on update (excluding self, so keeping your own PIN works).
+      const am = await usersApi.createUserCore(superAdmin, {
+        email: `am-${uniq("")}@pos.test`,
+        password: "password123",
+        name: "AM",
+        role: "area_manager",
+        assignedBranches: [branchA],
+        pin: "5553",
+      });
+      await expect(
+        usersApi.updateUserCore(superAdmin, { id: am.userId, pin: "5552" }),
+      ).rejects.toThrow("PIN sudah digunakan oleh cabang/staf lain");
+      await usersApi.updateUserCore(superAdmin, { id: am.userId, pin: "5553" });
+
+      // A branch's shared PIN also blocks user PINs.
+      await db.update(schema.branches).set({ pin: "5554" }).where(eq(schema.branches.id, branchB));
+      await expect(
+        usersApi.updateUserCore(superAdmin, { id: first.userId, pin: "5554" }),
+      ).rejects.toThrow("PIN sudah digunakan oleh cabang/staf lain");
+    },
+  );
+});

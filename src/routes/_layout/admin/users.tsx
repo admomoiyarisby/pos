@@ -5,6 +5,8 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import RoleGuard from "#/components/RoleGuard";
+import { useAuth } from "#/lib/auth-context";
+import { canManageUser } from "#/lib/user-roles";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
@@ -208,10 +210,12 @@ function StaffGroup({
   group,
   defaultOpen = true,
   onEditUser,
+  canEditUser,
 }: {
   group: StaffGroupData;
   defaultOpen?: boolean;
   onEditUser: (user: UserRow) => void;
+  canEditUser: (user: UserRow) => boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const Icon = group.icon;
@@ -246,6 +250,7 @@ function StaffGroup({
                   key={item.user.id}
                   user={item.user}
                   onEdit={() => onEditUser(item.user)}
+                  canEdit={canEditUser(item.user)}
                 />
               );
             }
@@ -258,6 +263,7 @@ function StaffGroup({
                 branch={branchItem.branch}
                 staff={branchItem.staff}
                 onEditUser={onEditUser}
+                canEditUser={canEditUser}
                 defaultOpen={true}
               />
             );
@@ -272,11 +278,13 @@ function BranchSubGroup({
   branch,
   staff,
   onEditUser,
+  canEditUser,
   defaultOpen = true,
 }: {
   branch: BranchRow;
   staff: UserRow[];
   onEditUser: (user: UserRow) => void;
+  canEditUser: (user: UserRow) => boolean;
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -308,7 +316,13 @@ function BranchSubGroup({
             <div className="px-4 py-2 pl-16 text-sm text-muted-foreground">Belum ada staf</div>
           ) : (
             staff.map((user) => (
-              <StaffRow key={user.id} user={user} onEdit={() => onEditUser(user)} indent />
+              <StaffRow
+                key={user.id}
+                user={user}
+                onEdit={() => onEditUser(user)}
+                canEdit={canEditUser(user)}
+                indent
+              />
             ))
           )}
         </div>
@@ -320,10 +334,12 @@ function BranchSubGroup({
 function StaffRow({
   user,
   onEdit,
+  canEdit,
   indent = false,
 }: {
   user: UserRow;
   onEdit: () => void;
+  canEdit: boolean;
   indent?: boolean;
 }) {
   return (
@@ -358,7 +374,13 @@ function StaffRow({
             Nonaktif
           </Badge>
         )}
-        <Button variant="ghost" size="sm" onClick={onEdit}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onEdit}
+          disabled={!canEdit}
+          title={canEdit ? "Edit staf" : "Staf ini berada di atas hierarki Anda"}
+        >
           Edit
         </Button>
       </div>
@@ -419,6 +441,12 @@ function StaffModal({
       const password = formText(fd, "password");
       if (password) data.password = password;
     }
+
+    // PIN is optional in both modes: only an exact 4-digit value is sent
+    // (empty = keep unchanged). The server backstops with a 4-digit format
+    // check plus global-uniqueness validation.
+    const pin = formText(fd, "pin");
+    if (/^\d{4}$/.test(pin)) data.pin = pin;
 
     // Branch fields based on role
     if (selectedRole === "branch_admin" || selectedRole === "central_kitchen") {
@@ -502,6 +530,24 @@ function StaffModal({
               Klik "Generate" untuk membuat password acak, atau masukkan password manual.
             </p>
           )}
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">PIN</label>
+          <input
+            name="pin"
+            type="text"
+            defaultValue={user?.pin ?? ""}
+            maxLength={4}
+            pattern="\d{4}"
+            inputMode="numeric"
+            placeholder={isEdit ? "Kosongkan jika tidak diubah" : "Opsional — 4 digit"}
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-mono tracking-widest"
+          />
+          <p className="text-xs text-muted-foreground">
+            PIN 4 digit untuk login cepat. Harus unik secara global (tidak boleh sama dengan PIN
+            cabang atau PIN staf lain).
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -599,6 +645,7 @@ function StaffModal({
 function StaffPage() {
   const { users: initialUsers, branches } = Route.useLoaderData();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [mutationError, setMutationError] = useState("");
@@ -664,6 +711,12 @@ function StaffPage() {
   };
 
   const handleEditUser = (user: UserRow) => {
+    // Upper-hierarchy rule (mirrors the server cores): never even open the
+    // edit modal of an account above the current user's rank.
+    if (currentUser && !canManageUser(currentUser.role, user.role)) {
+      toast.error("Staf ini berada di atas hierarki Anda");
+      return;
+    }
     setEditing(user);
     setMutationError("");
     setModalNonce((n) => n + 1);
@@ -692,7 +745,12 @@ function StaffPage() {
 
       <div className="space-y-4">
         {groupedStaff.map((group) => (
-          <StaffGroup key={group.id} group={group} onEditUser={handleEditUser} />
+          <StaffGroup
+            key={group.id}
+            group={group}
+            onEditUser={handleEditUser}
+            canEditUser={(u) => !currentUser || canManageUser(currentUser.role, u.role)}
+          />
         ))}
       </div>
 

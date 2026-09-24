@@ -14,6 +14,12 @@ import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
 import { hashPassword } from "better-auth/crypto";
+import { canManageUser } from "#/lib/user-roles";
+
+// better-auth >=1.7 matches credential accounts on providerId + issuer +
+// accountId during signInEmail. Every write to the credential account must
+// keep all three in this shape, or email login silently stops matching.
+const CREDENTIAL_ISSUER = "local:credential";
 
 const userRoleEnum = z.enum([
   "super_admin",
@@ -111,7 +117,13 @@ const createUserInput = z.object({
   name: z.string().min(1),
   role: userRoleEnum,
   branchId: z.string().uuid().optional(),
-  pin: z.string().length(4).optional(),
+  // Non-branch PIN login resolves a PIN globally (no branch scope), so user
+  // PINs must be globally unique — same rule updateMyPin enforces.
+  pin: z
+    .string()
+    .length(4)
+    .regex(/^\d{4}$/, "PIN harus 4 digit")
+    .optional(),
   status: z.enum(["Active", "Inactive"]).optional(),
   assignedBranches: z.array(z.string().uuid()).optional(),
 });
@@ -123,6 +135,64 @@ export const createUser = createServerFn({ method: "POST" })
     return createUserCore(user, data);
   });
 
+/**
+ * Reject a user PIN that is already taken — anywhere. Checks users.pin
+ * (excluding the user being edited, if any) and the shared branches.pin,
+ * because both login PIN flows resolve a bare 4-digit PIN without extra
+ * scope. Same error message as the branch-scoped check it replaces.
+ */
+async function assertUserPinAvailable(pin: string, excludeUserId?: string): Promise<void> {
+  const userClauses = [eq(usersTable.pin, pin)];
+  if (excludeUserId) userClauses.push(ne(usersTable.id, excludeUserId));
+  const [existingUser] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(and(...userClauses))
+    .limit(1);
+  if (existingUser) {
+    throw new Error("PIN sudah digunakan oleh cabang/staf lain");
+  }
+  const [existingBranch] = await db
+    .select({ id: branches.id })
+    .from(branches)
+    .where(eq(branches.pin, pin))
+    .limit(1);
+  if (existingBranch) {
+    throw new Error("PIN sudah digunakan oleh cabang/staf lain");
+  }
+}
+
+/**
+ * Set a user's email-login password on the exact credential row(s)
+ * better-auth signInEmail reads — and repair them when they drifted.
+ *
+ * signInEmail matches on providerId + issuer ("local:credential") +
+ * accountId (= userId). Updating only the hash (or only an arbitrary
+ * duplicate row) leaves login broken when the row's issuer/accountId
+ * drifted (pre-issuer legacy data) or when duplicates exist, with a success
+ * toast but the new password "not recorded". Writing the full triple to
+ * every credential row of the user closes both holes.
+ */
+async function setCredentialPassword(userId: string, newPassword: string): Promise<void> {
+  const { account: accountTable } = await import("#/db/schema");
+  const rows = await db
+    .select({ id: accountTable.id })
+    .from(accountTable)
+    .where(and(eq(accountTable.userId, userId), eq(accountTable.providerId, "credential")));
+  if (rows.length === 0) {
+    throw new Error("Akun credential tidak ditemukan untuk user ini");
+  }
+  const hashedPassword = await hashPassword(newPassword);
+  await db.transaction(async (tx) => {
+    for (const row of rows) {
+      await tx
+        .update(accountTable)
+        .set({ password: hashedPassword, issuer: CREDENTIAL_ISSUER, accountId: userId })
+        .where(eq(accountTable.id, row.id));
+    }
+  });
+}
+
 /** The business logic behind `createUser`, parameterized by an explicit user
  *  so it can be driven directly (e.g. from integration tests). Mirrors the
  *  wrapper's `requireRole(...)` guard. */
@@ -131,6 +201,9 @@ export async function createUserCore(user: AppUser, data: z.infer<typeof createU
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin)`,
     );
+  }
+  if (!canManageUser(user.role, data.role)) {
+    throw new Error(`Forbidden: role "${user.role}" cannot create a "${data.role}" user`);
   }
 
   // Area managers must be assigned at least one branch
@@ -165,17 +238,16 @@ export async function createUserCore(user: AppUser, data: z.infer<typeof createU
     }
   }
 
-  // Validate PIN uniqueness per branch
-  if (data.pin && data.branchId) {
-    const [existing] = await db
-      .select({ id: usersTable.id })
-      .from(usersTable)
-      .where(and(eq(usersTable.pin, data.pin), eq(usersTable.branchId, data.branchId)))
-      .limit(1);
-    if (existing) {
-      throw new Error("PIN sudah digunakan oleh cabang/staf lain");
-    }
+  // PINs resolve globally at login — reject any PIN taken by another user
+  // or branch, not just same-branch collisions.
+  if (data.pin) {
+    await assertUserPinAvailable(data.pin);
   }
+
+  // better-auth lowercases emails on sign-up AND on sign-in lookup, so a
+  // mixed-case email stored as typed (e.g. "Supervisor.sby@...") can never
+  // match at login ("User not found"). Normalize once, at the boundary.
+  const email = data.email.toLowerCase();
 
   // Create user + credential account directly (bypass auth.api.signUpEmail
   // which auto-signs-in the new user, overwriting the admin's session).
@@ -184,7 +256,7 @@ export async function createUserCore(user: AppUser, data: z.infer<typeof createU
 
   await db.insert(usersTable).values({
     id: userId,
-    email: data.email,
+    email,
     name: data.name,
     role: data.role,
     branchId: data.branchId,
@@ -228,7 +300,7 @@ export async function createUserCore(user: AppUser, data: z.infer<typeof createU
   await logAudit(user, "users", userId, "CREATE", undefined, {
     id: userId,
     name: data.name,
-    email: data.email,
+    email,
     role: data.role,
     branchId: data.branchId,
     status: data.status ?? "Active",
@@ -242,7 +314,11 @@ const updateUserInput = z.object({
   name: z.string().min(1).optional(),
   role: userRoleEnum.optional(),
   branchId: z.string().uuid().optional(),
-  pin: z.string().length(4).optional(),
+  pin: z
+    .string()
+    .length(4)
+    .regex(/^\d{4}$/, "PIN harus 4 digit")
+    .optional(),
   password: z.string().min(8).optional(),
   status: z.enum(["Active", "Inactive"]).optional(),
   assignedBranches: z.array(z.string().uuid()).optional(),
@@ -272,6 +348,13 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
   if (oldUser.deletedAt) throw new Error("User not found");
 
   const nextRole = data.role ?? oldUser.role;
+
+  // Upper-hierarchy rule: the actor must outrank (or equal) both the
+  // target's current role and the requested new role, so a lower account
+  // can never edit — or promote anyone into — a higher tier.
+  if (!canManageUser(user.role, oldUser.role, data.role)) {
+    throw new Error(`Forbidden: role "${user.role}" cannot manage a "${oldUser.role}" user`);
+  }
 
   // Area managers must keep at least one assigned branch
   if (
@@ -306,34 +389,10 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
     }
   }
 
-  // Validate PIN uniqueness per branch
+  // Validate PIN uniqueness globally (non-branch PIN login has no branch
+  // scope, so a per-branch check lets two staff share one PIN).
   if (data.pin) {
-    // Determine the branchId to check: use new branchId if provided, otherwise current
-    let branchIdToCheck = data.branchId;
-    if (!branchIdToCheck) {
-      const [currentUser] = await db
-        .select({ branchId: usersTable.branchId })
-        .from(usersTable)
-        .where(eq(usersTable.id, id))
-        .limit(1);
-      branchIdToCheck = currentUser?.branchId ?? undefined;
-    }
-    if (branchIdToCheck) {
-      const [existing] = await db
-        .select({ id: usersTable.id })
-        .from(usersTable)
-        .where(
-          and(
-            eq(usersTable.pin, data.pin),
-            eq(usersTable.branchId, branchIdToCheck),
-            ne(usersTable.id, id),
-          ),
-        )
-        .limit(1);
-      if (existing) {
-        throw new Error("PIN sudah digunakan oleh cabang/staf lain");
-      }
-    }
+    await assertUserPinAvailable(data.pin, id);
   }
   // Password lives in the credential account table, not the users row.
   const { password: _newPassword, ...baseUpdates } = updates;
@@ -361,22 +420,11 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
   const nameHint = newUserData.name || oldUser.name;
 
   // Reset the credential account password when requested (admin password
-  // reset from the /admin/users edit form).
+  // reset from the /admin/users edit form). setCredentialPassword writes
+  // the exact row signInEmail reads and repairs drifted rows, so the new
+  // password is always the one login verifies against.
   if (_newPassword !== undefined) {
-    const { account: accountTable } = await import("#/db/schema");
-    const [account] = await db
-      .select({ id: accountTable.id })
-      .from(accountTable)
-      .where(and(eq(accountTable.userId, id), eq(accountTable.providerId, "credential")))
-      .limit(1);
-    if (!account) {
-      throw new Error("Akun credential tidak ditemukan untuk user ini");
-    }
-    const hashedPassword = await hashPassword(_newPassword);
-    await db
-      .update(accountTable)
-      .set({ password: hashedPassword })
-      .where(eq(accountTable.id, account.id));
+    await setCredentialPassword(id, _newPassword);
     await logSystemAction(
       user,
       "Update User Password",
@@ -471,6 +519,9 @@ export async function deleteUserCore(user: AppUser, data: z.infer<typeof deleteU
   if (oldUser.deletedAt) {
     throw new Error("User sudah dihapus");
   }
+  if (!canManageUser(user.role, oldUser.role)) {
+    throw new Error(`Forbidden: role "${user.role}" cannot manage a "${oldUser.role}" user`);
+  }
 
   await db.transaction(async (tx) => {
     // Kill live sessions immediately — a tombstoned user must not keep an
@@ -524,12 +575,16 @@ export const updateMyProfile = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
+    // Match better-auth's normalization (sign-up/sign-in both lowercase):
+    // a mixed-case email stored as typed can never match at login.
+    const email = data.email.toLowerCase();
+
     // Check if email is already taken by another user
-    if (data.email !== user.email) {
+    if (email !== user.email.toLowerCase()) {
       const [existing] = await db
         .select({ id: usersTable.id })
         .from(usersTable)
-        .where(and(eq(usersTable.email, data.email), ne(usersTable.id, user.id)))
+        .where(and(eq(usersTable.email, email), ne(usersTable.id, user.id)))
         .limit(1);
       if (existing) {
         throw new Error("Email sudah digunakan oleh user lain");
@@ -538,7 +593,7 @@ export const updateMyProfile = createServerFn({ method: "POST" })
 
     await db
       .update(usersTable)
-      .set({ name: data.name, email: data.email, updatedAt: new Date() })
+      .set({ name: data.name, email, updatedAt: new Date() })
       .where(eq(usersTable.id, user.id));
 
     await logSystemAction(user, "Update Profile", `User "${user.name}" memperbarui profil`);
@@ -608,13 +663,18 @@ export const updateMyPassword = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
-    // Get current password hash from account table
+    // Get current password hash from the credential row signInEmail reads
+    // (exact issuer + accountId match first, legacy row as fallback).
     const { account: accountTable } = await import("#/db/schema");
-    const [account] = await db
+    const accounts = await db
       .select()
       .from(accountTable)
-      .where(and(eq(accountTable.userId, user.id), eq(accountTable.providerId, "credential")))
-      .limit(1);
+      .where(and(eq(accountTable.userId, user.id), eq(accountTable.providerId, "credential")));
+
+    const account =
+      accounts.find(
+        (a) => a.issuer === CREDENTIAL_ISSUER && a.accountId === user.id && a.password,
+      ) ?? accounts.find((a) => a.password);
 
     if (!account || !account.password) {
       throw new Error("Akun tidak ditemukan");
@@ -630,12 +690,9 @@ export const updateMyPassword = createServerFn({ method: "POST" })
       throw new Error("Password saat ini salah");
     }
 
-    // Hash and update new password
-    const hashedPassword = await hashPassword(data.newPassword);
-    await db
-      .update(accountTable)
-      .set({ password: hashedPassword })
-      .where(eq(accountTable.id, account.id));
+    // Write the new hash to every credential row (repairing drifted rows),
+    // so login verifies against exactly what was set here.
+    await setCredentialPassword(user.id, data.newPassword);
 
     await logSystemAction(user, "Update Password", `User "${user.name}" memperbarui password`);
 
