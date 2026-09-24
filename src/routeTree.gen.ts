@@ -22,6 +22,7 @@ import { Route as LayoutPencatatanManualRouteImport } from './routes/_layout/pen
 import { Route as LayoutPosRouteImport } from './routes/_layout/pos'
 import { Route as LayoutPrintRequestsRouteImport } from './routes/_layout/print-requests'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
+import { Route as LayoutStokKeluarRouteImport } from './routes/_layout/stok-keluar'
 import { Route as LayoutYieldTrackingRouteImport } from './routes/_layout/yield-tracking'
 import { Route as ApiKeepaliveRouteImport } from './routes/api/keepalive'
 import { Route as ApiSeedRouteImport } from './routes/api/seed'
@@ -151,6 +152,11 @@ const LayoutPrintRequestsRoute = LayoutPrintRequestsRouteImport.update({
 const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutStokKeluarRoute = LayoutStokKeluarRouteImport.update({
+  id: '/stok-keluar',
+  path: '/stok-keluar',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutYieldTrackingRoute = LayoutYieldTrackingRouteImport.update({
@@ -519,6 +525,7 @@ export interface FileRoutesByFullPath {
   '/pos': typeof LayoutPosRoute
   '/print-requests': typeof LayoutPrintRequestsRoute
   '/settings': typeof LayoutSettingsRoute
+  '/stok-keluar': typeof LayoutStokKeluarRoute
   '/yield-tracking': typeof LayoutYieldTrackingRoute
   '/api/keepalive': typeof ApiKeepaliveRoute
   '/api/seed': typeof ApiSeedRoute
@@ -598,6 +605,7 @@ export interface FileRoutesByTo {
   '/pos': typeof LayoutPosRoute
   '/print-requests': typeof LayoutPrintRequestsRoute
   '/settings': typeof LayoutSettingsRoute
+  '/stok-keluar': typeof LayoutStokKeluarRoute
   '/yield-tracking': typeof LayoutYieldTrackingRoute
   '/api/keepalive': typeof ApiKeepaliveRoute
   '/api/seed': typeof ApiSeedRoute
@@ -680,6 +688,7 @@ export interface FileRoutesById {
   '/_layout/pos': typeof LayoutPosRoute
   '/_layout/print-requests': typeof LayoutPrintRequestsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
+  '/_layout/stok-keluar': typeof LayoutStokKeluarRoute
   '/_layout/yield-tracking': typeof LayoutYieldTrackingRoute
   '/api/keepalive': typeof ApiKeepaliveRoute
   '/api/seed': typeof ApiSeedRoute
@@ -763,6 +772,7 @@ export interface FileRouteTypes {
     | '/pos'
     | '/print-requests'
     | '/settings'
+    | '/stok-keluar'
     | '/yield-tracking'
     | '/api/keepalive'
     | '/api/seed'
@@ -842,6 +852,7 @@ export interface FileRouteTypes {
     | '/pos'
     | '/print-requests'
     | '/settings'
+    | '/stok-keluar'
     | '/yield-tracking'
     | '/api/keepalive'
     | '/api/seed'
@@ -923,6 +934,7 @@ export interface FileRouteTypes {
     | '/_layout/pos'
     | '/_layout/print-requests'
     | '/_layout/settings'
+    | '/_layout/stok-keluar'
     | '/_layout/yield-tracking'
     | '/api/keepalive'
     | '/api/seed'
@@ -1098,6 +1110,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof LayoutSettingsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/stok-keluar': {
+      id: '/_layout/stok-keluar'
+      path: '/stok-keluar'
+      fullPath: '/stok-keluar'
+      preLoaderRoute: typeof LayoutStokKeluarRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/yield-tracking': {
@@ -1575,6 +1594,7 @@ interface LayoutRouteChildren {
   LayoutPosRoute: typeof LayoutPosRoute
   LayoutPrintRequestsRoute: typeof LayoutPrintRequestsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
+  LayoutStokKeluarRoute: typeof LayoutStokKeluarRoute
   LayoutYieldTrackingRoute: typeof LayoutYieldTrackingRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
   LayoutAdminAuditLogsRoute: typeof LayoutAdminAuditLogsRoute
@@ -1645,6 +1665,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutPosRoute: LayoutPosRoute,
   LayoutPrintRequestsRoute: LayoutPrintRequestsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
+  LayoutStokKeluarRoute: LayoutStokKeluarRoute,
   LayoutYieldTrackingRoute: LayoutYieldTrackingRoute,
   LayoutIndexRoute: LayoutIndexRoute,
   LayoutAdminAuditLogsRoute: LayoutAdminAuditLogsRoute,

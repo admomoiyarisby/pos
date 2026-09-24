@@ -25,6 +25,7 @@ import {
   shifts,
   shiftEdits,
   stockLedger,
+  areaManagerBranches,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { eq, and, gte, lte, sql, desc, isNotNull, isNull, inArray, ne } from "drizzle-orm";
@@ -1016,56 +1017,90 @@ export interface DailyUsageRow {
 export const getDailyIngredientUsage = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
   .handler(async ({ data }): Promise<DailyUsageRow[]> => {
-    await requireRole("super_admin", "admin_pusat");
-
-    const conditions = [
-      eq(stockLedger.type, "OUT"),
-      isNull(stockLedger.recipeId),
-      data.branchId ? eq(stockLedger.branchId, data.branchId) : undefined,
-      data.dateFrom
-        ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
-        : undefined,
-      data.dateTo
-        ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
-        : undefined,
-    ];
-
-    const rows = await db
-      .select({
-        ingredientId: stockLedger.ingredientId,
-        name: ingredients.name,
-        unit: ingredients.stockUnit,
-        quantity: sql<number>`COALESCE(SUM(${stockLedger.quantity}), 0)`,
-        avgCost: ingredients.averageCost,
-      })
-      .from(stockLedger)
-      .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
-      .where(and(...conditions))
-      .groupBy(
-        stockLedger.ingredientId,
-        ingredients.name,
-        ingredients.stockUnit,
-        ingredients.averageCost,
-      )
-      .orderBy(sql`COALESCE(SUM(${stockLedger.quantity}), 0) DESC`);
-
-    // Estimasi nilai pakai averageCost saat ini — bukan snapshot harga saat
-    // gerakan terjadi. Cukup untuk perbandingan antar bahan, bukan untuk
-    // akuntansi (HPP resmi tetap dari orders.totalCogs).
-    return rows.flatMap((r) =>
-      r.ingredientId === null
-        ? []
-        : [
-            {
-              ingredientId: r.ingredientId,
-              name: r.name ?? "-",
-              unit: r.unit ?? "",
-              quantity: Number(r.quantity),
-              estimatedValue: Number(r.quantity) * Number(r.avgCost ?? 0),
-            },
-          ],
-    );
+    const user = await requireAuth();
+    return getDailyIngredientUsageCore(user, data);
   });
+
+/** `getDailyIngredientUsage` minus the session lookup — the ADR 0015 core seam.
+ *  Role scoping: super_admin/admin_pusat read any branch (or all); area_manager
+ *  is locked to assigned branches; branch_admin/central_kitchen to their own
+ *  branch. A client-supplied branchId outside that scope is ignored rather than
+ *  honored, so the scope filter below always applies. */
+export async function getDailyIngredientUsageCore(
+  user: AppUser,
+  data: { branchId?: string; dateFrom?: string; dateTo?: string },
+): Promise<DailyUsageRow[]> {
+  let effectiveBranchId = data.branchId;
+  const supervisorRoles = ["super_admin", "admin_pusat"];
+  if (!supervisorRoles.includes(user.role)) {
+    if (user.role === "area_manager") {
+      const assigned = await db
+        .select({ branchId: areaManagerBranches.branchId })
+        .from(areaManagerBranches)
+        .where(eq(areaManagerBranches.userId, user.id));
+      const assignedIds = assigned.map((a) => a.branchId);
+      if (assignedIds.length === 0) return [];
+      // Honor the client branchId only if it is one of the assigned branches.
+      if (effectiveBranchId && !assignedIds.includes(effectiveBranchId)) {
+        effectiveBranchId = undefined;
+      }
+    } else if (user.branchId) {
+      // branch_admin / central_kitchen: always their own branch, whatever the
+      // client sends.
+      effectiveBranchId = user.branchId;
+    } else {
+      return [];
+    }
+  }
+
+  const conditions = [
+    eq(stockLedger.type, "OUT"),
+    isNull(stockLedger.recipeId),
+    effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
+    data.dateFrom
+      ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
+      : undefined,
+    data.dateTo
+      ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
+      : undefined,
+  ];
+
+  const rows = await db
+    .select({
+      ingredientId: stockLedger.ingredientId,
+      name: ingredients.name,
+      unit: ingredients.stockUnit,
+      quantity: sql<number>`COALESCE(SUM(${stockLedger.quantity}), 0)`,
+      avgCost: ingredients.averageCost,
+    })
+    .from(stockLedger)
+    .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
+    .where(and(...conditions))
+    .groupBy(
+      stockLedger.ingredientId,
+      ingredients.name,
+      ingredients.stockUnit,
+      ingredients.averageCost,
+    )
+    .orderBy(sql`COALESCE(SUM(${stockLedger.quantity}), 0) DESC`);
+
+  // Estimasi nilai pakai averageCost saat ini — bukan snapshot harga saat
+  // gerakan terjadi. Cukup untuk perbandingan antar bahan, bukan untuk
+  // akuntansi (HPP resmi tetap dari orders.totalCogs).
+  return rows.flatMap((r) =>
+    r.ingredientId === null
+      ? []
+      : [
+          {
+            ingredientId: r.ingredientId,
+            name: r.name ?? "-",
+            unit: r.unit ?? "",
+            quantity: Number(r.quantity),
+            estimatedValue: Number(r.quantity) * Number(r.avgCost ?? 0),
+          },
+        ],
+  );
+}
 
 // User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
 export async function createManualRevenueCore(

@@ -28,6 +28,7 @@ import {
   Percent,
   ScrollText,
   Printer,
+  TrendingDown,
   X,
   XCircle,
   BookOpen,
@@ -226,6 +227,12 @@ const navGroups: NavGroup[] = [
         to: "/finance",
         icon: DollarSign,
         roles: ["super_admin", "admin_pusat"],
+      },
+      {
+        label: "Stok Keluar",
+        to: "/stok-keluar",
+        icon: TrendingDown,
+        roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
       },
       { label: "Dashboard Analitik", to: "/analytics", icon: BarChart3, roles: ["super_admin"] },
 
