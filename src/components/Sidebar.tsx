@@ -139,6 +139,12 @@ const navGroups: NavGroup[] = [
         icon: Trash2,
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
       },
+      {
+        label: "Stok Keluar",
+        to: "/stok-keluar",
+        icon: TrendingDown,
+        roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
+      },
     ],
   },
   {
@@ -219,22 +225,14 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    // Group is visible to branch roles only so they can reach /stok-keluar;
-    // every other item inside stays supervisor-only via its own roles list.
     label: "Keuangan & Analitik",
-    roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
+    roles: ["super_admin", "admin_pusat"],
     items: [
       {
         label: "Keuangan & Rekonsiliasi",
         to: "/finance",
         icon: DollarSign,
         roles: ["super_admin", "admin_pusat"],
-      },
-      {
-        label: "Stok Keluar",
-        to: "/stok-keluar",
-        icon: TrendingDown,
-        roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
       },
       { label: "Dashboard Analitik", to: "/analytics", icon: BarChart3, roles: ["super_admin"] },
 
