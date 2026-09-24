@@ -12,6 +12,7 @@ export function isoDateDaysAgo(days: number): string {
 }
 
 export const HISTORY_PRESETS = {
+  today: { label: "Hari ini", daysAgo: 0 },
   "7d": { label: "7 hari", daysAgo: 6 },
   "30d": { label: "30 hari", daysAgo: 29 },
 } as const;
@@ -30,24 +31,35 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
     if (preset === "all") {
       onChange("", "");
     } else {
-      onChange(isoDateDaysAgo(HISTORY_PRESETS[preset].daysAgo), "");
+      // Fill both ends explicitly (Sampai = today) so the user can see the
+      // end date is taken into account — an empty Sampai reads as unbounded
+      // and confuses people.
+      onChange(isoDateDaysAgo(HISTORY_PRESETS[preset].daysAgo), isoDateDaysAgo(0));
     }
   }
 
   function isPresetActive(preset: HistoryPresetKey): boolean {
     if (preset === "all") return !dateFrom && !dateTo;
-    return dateTo === "" && dateFrom === isoDateDaysAgo(HISTORY_PRESETS[preset].daysAgo);
+    // Accept the legacy empty-Sampai state as active too, so ranges set
+    // before the end date was filled still highlight the right chip.
+    const today = isoDateDaysAgo(0);
+    return (
+      dateFrom === isoDateDaysAgo(HISTORY_PRESETS[preset].daysAgo) &&
+      (dateTo === today || dateTo === "")
+    );
   }
 
-  const presetButtons: HistoryPresetKey[] = ["7d", "30d", "all"];
+  const presetButtons: HistoryPresetKey[] = ["today", "7d", "30d", "all"];
 
   return (
-    // One column on narrow panels, two balanced columns from sm up. The
-    // Dari/Sampai pair always stays label+input on one row — a mid-pair wrap
-    // (label at the end of one line, its input on the next) reads as broken.
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
+    // Single column everywhere: this filter lives in narrow panels (the
+    // 320–380px POS cart sidebar, mobile history tab). Two side-by-side date
+    // inputs squeeze each field to ~140px, cropping the date text and pushing
+    // the native calendar popup outside the panel where overflow-hidden
+    // ancestors clip it. Stacked full-width fields never overflow.
+    <div className="flex flex-col gap-2 min-w-0">
       {/* Preset chips — chips left, Reset right, spread across the row */}
-      <div className="flex items-center justify-between gap-1 sm:col-span-2 flex-wrap">
+      <div className="flex items-center justify-between gap-1 flex-wrap">
         <div className="flex items-center gap-1 flex-wrap">
           {presetButtons.map(function (key) {
             const active = isPresetActive(key);
@@ -83,8 +95,8 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
         )}
       </div>
       {/* From / To — each field is an unbreakable label+input unit that fills
-          its grid column, so the pair can never split across lines. 16px
-          input text prevents iOS Safari from focus-zooming the page. */}
+          the full row width. 16px input text prevents iOS Safari focus-zoom;
+          stacked rows keep the native calendar popup inside the panel. */}
       <div className="flex items-center gap-1.5 min-w-0">
         <label htmlFor="pos-history-from" className="shrink-0 text-[11px] text-muted-foreground">
           Dari
@@ -97,7 +109,7 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
           onChange={function (e) {
             onChange(e.target.value, dateTo);
           }}
-          className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+          className="h-9 min-w-0 w-full flex-1 rounded-md border border-input bg-background px-2 text-sm text-foreground"
         />
       </div>
       <div className="flex items-center gap-1.5 min-w-0">
@@ -112,7 +124,7 @@ export default function HistoryDateFilter({ dateFrom, dateTo, onChange }: Histor
           onChange={function (e) {
             onChange(dateFrom, e.target.value);
           }}
-          className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+          className="h-9 min-w-0 w-full flex-1 rounded-md border border-input bg-background px-2 text-sm text-foreground"
         />
       </div>
     </div>

@@ -240,12 +240,13 @@ function PosPage() {
   let _x = useState<string | null>(null);
   let expandedOrderId = _x[0];
   let setExpandedOrderId = _x[1];
-  // History date range — defaults to the trailing week so the list stays
-  // uncluttered; both the desktop sidebar and the mobile history tab share it.
-  let _y = useState(isoDateDaysAgo(6));
+  // History date range — defaults to today so the list stays uncluttered;
+  // both ends are filled explicitly so Sampai never looks unbounded.
+  // Both the desktop sidebar and the mobile history tab share it.
+  let _y = useState(isoDateDaysAgo(0));
   let orderDateFrom = _y[0];
   let setOrderDateFrom = _y[1];
-  let _z = useState("");
+  let _z = useState(isoDateDaysAgo(0));
   let orderDateTo = _z[0];
   let setOrderDateTo = _z[1];
   // History channel filter — "" means all channels; filters server-side so
