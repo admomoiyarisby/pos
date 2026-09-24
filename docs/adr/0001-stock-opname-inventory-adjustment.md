@@ -32,9 +32,12 @@ The `systemStock` in SO items is frozen when the SO is triggered. However, inven
 
 7. **Branch filtering is server-side enforced.** Admin Pusat can only see/trigger SO for Central Warehouse. Area Manager can only see/trigger SO for assigned branches.
 
+8. **Partial counting (counted_at).** The counter does not need to fill every field. `stockOpnameItems.countedAt` is NULL until a value is explicitly entered, which distinguishes a legitimate "counted as 0" from "never filled". Upon approval/realize, uncounted items keep their current inventory untouched — only counted items are adjusted. An SO where no field was ever counted is refused by the blank-submit guard. The SO detail page shows a persistent "Ringkasan Perubahan" summarizing what changed (pre-approval: preview of counted variances; post-approval: the actual ledger rows). Blind roles see neither — old/new quantities would leak system stock.
+
 ## Considered Options
 
 - **Frozen system stock for adjustment:** Rejected because it would lose intermediate inventory movements.
+- **Blank-submit guard on `physicalStock === 0` alone:** Rejected (superseded) because an explicit zero count is a valid audit result. The guard now keys on `counted_at`, added in migration 0052.
 - **Auto "Under Investigation" on any variance:** Rejected because 0.1% variance shouldn't block approval. Supervisor should decide.
 - **Per-item investigation notes:** Rejected in favor of per-SO notes for simplicity. Can be revisited if needed.
 
@@ -43,3 +46,4 @@ The `systemStock` in SO items is frozen when the SO is triggered. However, inven
 - Inventory adjustments may differ from what the system stock at trigger time would suggest. This is intentional — the physical count reflects reality.
 - Supervisors must actively review all SO submissions rather than relying on automatic investigation flags.
 - Audit logs are critical for tracking the investigation loop between Branch Admin and supervisor.
+- Partial counting means an SO with few counted items is valid by design; the change summary on the detail page (and the `changes` return value of `approveStockOpnameCore`) is the audit surface for what was actually adjusted.

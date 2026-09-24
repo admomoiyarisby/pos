@@ -386,6 +386,13 @@
       "when": 1789600100000,
       "tag": "0051_user_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1789600200000,
+      "tag": "0052_stock_opname_counted_at",
+      "breakpoints": true
     }
   ]
 }

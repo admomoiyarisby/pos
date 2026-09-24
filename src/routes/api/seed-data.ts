@@ -1252,6 +1252,9 @@ export async function seedDatabase() {
         physicalStock: item.physicalStock,
         variance: item.variance,
         investigationNote: item.investigationNote,
+        // Seed data represents fully counted SOs — mark as counted so
+        // approve/realize treats them like real submissions.
+        countedAt: so.createdAt,
       });
     }
   }

@@ -75,12 +75,14 @@ function StockOpnameDetailPage() {
 
   const submitMutation = useMutation({
     mutationFn: submitStockOpname,
-    onSuccess: () => {
+    onSuccess: (result) => {
       clearDraft();
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setSubmitError("");
-      toast.success("Stock opname berhasil disubmit");
+      toast.success("Stock opname berhasil disubmit", {
+        description: `${result.counted} item dihitung — item yang tidak diisi tidak mengubah stok.`,
+      });
     },
     onError: (error) => {
       toast.error("Gagal submit stock opname", { description: error.message });
@@ -89,12 +91,18 @@ function StockOpnameDetailPage() {
 
   const approveMutation = useMutation({
     mutationFn: approveStockOpname,
-    onSuccess: () => {
+    onSuccess: (result) => {
       clearDraft();
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setApproveModal(false);
-      toast.success("Stock opname berhasil diapprove");
+      const changed = result.changes.filter((c) => c.delta !== 0).length;
+      toast.success("Stock opname berhasil diapprove", {
+        description:
+          changed > 0
+            ? `${changed} item berubah stoknya — lihat Ringkasan Perubahan di bawah.`
+            : "Tidak ada stok yang berubah.",
+      });
     },
     onError: (error) => {
       toast.error("Gagal approve stock opname", { description: error.message });
@@ -179,21 +187,30 @@ function StockOpnameDetailPage() {
     }));
   };
 
+  // Partial opname: only the fields the counter actually filled are sent.
+  // Unfilled items keep their stock unchanged on approve/realize — but at
+  // least one field must be filled, otherwise submitting is pointless.
   const buildItems = () => {
-    const missingItems = detail.items.filter((item: any) => physicalInputs[item.id] === undefined);
-    if (missingItems.length > 0) {
+    const items = detail.items
+      .filter((item: any) => {
+        const raw = physicalInputs[item.id];
+        return raw !== undefined && raw !== "";
+      })
+      .map((item: any) => ({
+        itemId: item.id,
+        physicalStock: Number(physicalInputs[item.id]),
+      }));
+    if (items.length === 0) {
       setSubmitError(
-        `Masih ada ${missingItems.length} item yang belum diisi. Semua item wajib diisi sebelum submit.`,
+        "Belum ada stok fisik yang diisi. Isi minimal satu item — item yang dikosongkan tidak akan mengubah stok.",
       );
       return null;
     }
-    const items = detail.items.map((item: any) => ({
-      itemId: item.id,
-      physicalStock: Number(physicalInputs[item.id]),
-    }));
-    const hasInvalid = items.some((i) => isNaN(i.physicalStock) || i.physicalStock < 0);
+    const hasInvalid = items.some((i) => !Number.isInteger(i.physicalStock) || i.physicalStock < 0);
     if (hasInvalid) {
-      setSubmitError("Stok fisik tidak valid. Pastikan semua nilai adalah angka non-negatif.");
+      setSubmitError(
+        "Stok fisik tidak valid. Pastikan semua nilai adalah angka bulat non-negatif.",
+      );
       return null;
     }
     return items;
@@ -243,9 +260,13 @@ function StockOpnameDetailPage() {
     });
   };
 
-  const filledCount = Object.keys(physicalInputs).filter(
-    (k) => physicalInputs[k] !== "" && physicalInputs[k] !== undefined,
-  ).length;
+  // Counted = sent in this draft session, or already counted server-side
+  // (countedAt set from a previous submit — restores progress after reload).
+  const filledCount = detail.items.filter((item: any) => {
+    const raw = physicalInputs[item.id];
+    if (raw !== undefined) return raw !== "";
+    return item.countedAt != null;
+  }).length;
   const totalCount = detail.items.length;
   const progressPct = totalCount ? Math.round((filledCount / totalCount) * 100) : 0;
 
@@ -336,8 +357,10 @@ function StockOpnameDetailPage() {
         {/* Mobile cards */}
         <div className="md:hidden space-y-2.5 -mx-4 px-4">
           {detail.items.map((item: any, idx: number) => {
+            // Only prefill from stored state when the item was actually counted —
+            // physicalStock 0 on an uncounted row is the trigger default, not a count.
             const inputValue =
-              physicalInputs[item.id] ?? (item.physicalStock > 0 ? String(item.physicalStock) : "");
+              physicalInputs[item.id] ?? (item.countedAt != null ? String(item.physicalStock) : "");
             const variance = !isBlind ? Number(inputValue || 0) - item.systemStock : 0;
             const hasVariance = !isBlind && inputValue !== "" && variance !== 0;
             const isEmpty = inputValue === "";
@@ -408,7 +431,7 @@ function StockOpnameDetailPage() {
                     }}
                     disabled={detail.status === "Approved"}
                     aria-label={`${item.ingredientName} stok fisik`}
-                    placeholder="0"
+                    placeholder="kosong = tetap"
                     className={cn(
                       "mt-1 h-12 w-full rounded-xl border bg-background px-3 text-base font-medium tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
                       !isTouched && detail.status !== "Approved"
@@ -442,9 +465,10 @@ function StockOpnameDetailPage() {
             </thead>
             <tbody>
               {detail.items.map((item: any, idx: number) => {
+                // Prefill only counted rows (see mobile cards above).
                 const inputValue =
                   physicalInputs[item.id] ??
-                  (item.physicalStock > 0 ? String(item.physicalStock) : "");
+                  (item.countedAt != null ? String(item.physicalStock) : "");
                 const variance = !isBlind ? Number(inputValue || 0) - item.systemStock : 0;
                 const hasVariance = !isBlind && inputValue !== "" && variance !== 0;
                 return (
@@ -481,6 +505,7 @@ function StockOpnameDetailPage() {
                         }}
                         disabled={detail.status === "Approved"}
                         aria-label={`${item.ingredientName} stok fisik`}
+                        placeholder="kosong = tetap"
                         className={cn(
                           "h-8 w-24 rounded-md border bg-background px-2 text-sm text-right disabled:opacity-50",
                           !touchedItems.includes(item.id) && detail.status !== "Approved"
@@ -511,6 +536,58 @@ function StockOpnameDetailPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Persistent change summary — pending (pre-approval) or applied (post-approval).
+            Server strips it for blind roles, so an empty list hides the block. */}
+        {!isBlind && detail.summary.length > 0 && (
+          <div className="rounded-xl border bg-card p-3.5 sm:p-4 shadow-xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
+                Ringkasan Perubahan
+              </div>
+              <Badge
+                variant={detail.summary[0]?.applied ? "success" : "outline"}
+                className="rounded-full px-2.5 py-0.5 text-[11px]"
+              >
+                {detail.status === "Approved" ? "Sudah diterapkan" : "Akan diterapkan saat approve"}
+              </Badge>
+            </div>
+            <div className="mt-3 space-y-1.5">
+              {detail.summary.map((row: any, idx: number) => (
+                <div
+                  key={`${row.ingredientName}-${idx}`}
+                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg bg-muted/40 px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0 flex-1 truncate">{row.ingredientName}</span>
+                  <span className="flex items-center gap-2 tabular-nums">
+                    <span className="text-muted-foreground line-through">
+                      {row.oldQuantity.toLocaleString("id-ID")}
+                    </span>
+                    <span aria-hidden="true">→</span>
+                    <span className="font-medium">{row.newQuantity.toLocaleString("id-ID")}</span>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        row.delta > 0
+                          ? "bg-success/15 text-success-foreground"
+                          : row.delta < 0
+                            ? "bg-destructive/10 text-destructive"
+                            : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {row.delta > 0 ? "+" : ""}
+                      {row.delta.toLocaleString("id-ID")}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {detail.status === "Approved"
+                ? "Perubahan di atas sudah masuk ke stok dan Kartu Stok."
+                : "Item yang tidak dihitung tidak muncul di sini — stoknya tetap saat approve."}
+            </p>
+          </div>
+        )}
 
         {detail.investigationNote && (
           <div className="rounded-xl bg-warning/10 border border-warning/20 p-4">
@@ -622,7 +699,10 @@ function StockOpnameDetailPage() {
         <div className="space-y-4">
           <div className="rounded-md bg-warning/10 p-3 text-sm text-warning-foreground">
             <p className="font-medium">Perhatian</p>
-            <p>Approval akan menyesuaikan stok sistem ke stok fisik dan membuat jurnal ledger.</p>
+            <p>
+              Approval akan menyesuaikan stok sistem ke stok fisik item yang dihitung dan membuat
+              jurnal ledger. Item yang tidak dihitung tidak akan diubah.
+            </p>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Catatan Investigasi (opsional)</label>

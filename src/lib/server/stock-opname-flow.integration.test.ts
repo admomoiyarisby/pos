@@ -199,6 +199,9 @@ describe("Stock opname — full lifecycle via the real server-function cores", (
       let item = await firstItem(so.id);
       expect(item.systemStock).toBe(10);
       expect(item.physicalStock).toBe(0);
+      // Fresh rows are uncounted: physicalStock 0 is the trigger default,
+      // not a count (partial-opname contract).
+      expect(item.countedAt).toBeNull();
 
       // 2. Submit counts — physical 7 of 10 → variance -3
       await inv.submitStockOpnameCore(ba, {
@@ -208,6 +211,7 @@ describe("Stock opname — full lifecycle via the real server-function cores", (
       item = await firstItem(so.id);
       expect(item.physicalStock).toBe(7);
       expect(item.variance).toBe(-3);
+      expect(item.countedAt).not.toBeNull();
       expect((await soStatus(so.id)).status).toBe("Submitted");
 
       // 3. Investigate — AM marks Under Investigation, BA notified
@@ -228,10 +232,23 @@ describe("Stock opname — full lifecycle via the real server-function cores", (
       expect(item.variance).toBe(-2);
 
       // 5. Approve — inventory adjusted to physical (10 → 8), ledger row written
-      await inv.approveStockOpnameCore(am, { soId: so.id });
+      const approved = await inv.approveStockOpnameCore(am, { soId: so.id });
       st = await soStatus(so.id);
       expect(st.status).toBe("Approved");
       expect(await getStock(branch, ingredient)).toBe(8);
+
+      // Approve returns the change summary (counted items only)
+      expect(approved.counted).toBe(1);
+      expect(approved.skipped).toBe(0);
+      expect(approved.changes).toHaveLength(1);
+      expect(approved.changes[0]).toEqual(
+        expect.objectContaining({
+          ingredientId: ingredient,
+          oldQuantity: 10,
+          newQuantity: 8,
+          delta: -2,
+        }),
+      );
 
       const ledger = await db
         .select()
@@ -371,6 +388,153 @@ describe("Stock opname — state guards", () => {
       vi.useRealTimers();
     }
   });
+});
+
+describe("Stock opname — partial counting (fields not filled keep their stock)", () => {
+  async function seededPairSo() {
+    const branch = await seedBranch(uniq("SO-P"));
+    const ingA = await seedIngredient(uniq("SO-PINGA"));
+    const ingB = await seedIngredient(uniq("SO-PINGB"));
+    await seedInventory(branch, ingA, 10);
+    await seedInventory(branch, ingB, 20);
+    const ba = await seedUser("branch_admin", branch);
+    const am = await seedUser("area_manager", undefined, [branch]);
+    const superAdmin = await seedUser("super_admin");
+    const so = await inv.triggerStockOpnameCore(ba, { branchId: branch, date: "2026-08-25" });
+    const items = await db
+      .select()
+      .from(schema.stockOpnameItems)
+      .where(eq(schema.stockOpnameItems.stockOpnameId, so.id));
+    return { so, items, ba, am, superAdmin, branch, ingA, ingB };
+  }
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "submit fills only the sent items; approve leaves uncounted stock untouched and summarizes changes",
+    async () => {
+      const { so, items, ba, am, branch, ingA, ingB } = await seededPairSo();
+      expect(items).toHaveLength(2);
+
+      // Count only item A (10 → 7); item B is left blank
+      const itemA = items.find((i) => i.ingredientId === ingA)!;
+      const itemB = items.find((i) => i.ingredientId === ingB)!;
+      await inv.submitStockOpnameCore(ba, {
+        soId: so.id,
+        items: [{ itemId: itemA.id, physicalStock: 7 }],
+      });
+
+      const afterSubmit = await db
+        .select()
+        .from(schema.stockOpnameItems)
+        .where(eq(schema.stockOpnameItems.stockOpnameId, so.id));
+      expect(afterSubmit.find((i) => i.id === itemA.id)?.countedAt).not.toBeNull();
+      expect(afterSubmit.find((i) => i.id === itemB.id)?.countedAt).toBeNull();
+
+      // Approve: A adjusted 10 → 7 (ledger OUT 3), B untouched at 20
+      const result = await inv.approveStockOpnameCore(am, { soId: so.id });
+      expect(await getStock(branch, ingA)).toBe(7);
+      expect(await getStock(branch, ingB)).toBe(20);
+
+      // Summary covers only counted items
+      expect(result.counted).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0]).toEqual(
+        expect.objectContaining({
+          ingredientId: ingA,
+          ingredientName: expect.stringContaining("SO-PINGA"),
+          oldQuantity: 10,
+          newQuantity: 7,
+          delta: -3,
+        }),
+      );
+
+      const ledger = await db
+        .select()
+        .from(schema.stockLedger)
+        .where(eq(schema.stockLedger.reference, so.id));
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0].ingredientId).toBe(ingA);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "an explicit 0 count is a real count (approve zeroes stock); an SO with no counts is refused",
+    async () => {
+      const { so, items, ba, am, branch, ingA } = await seededPairSo();
+      const itemA = items.find((i) => i.ingredientId === ingA)!;
+
+      // Explicit zero is a valid count: countedAt must be set
+      await inv.submitStockOpnameCore(ba, {
+        soId: so.id,
+        items: [{ itemId: itemA.id, physicalStock: 0 }],
+      });
+      const counted = await db
+        .select()
+        .from(schema.stockOpnameItems)
+        .where(eq(schema.stockOpnameItems.id, itemA.id));
+      expect(counted[0]?.countedAt).not.toBeNull();
+
+      await inv.approveStockOpnameCore(am, { soId: so.id });
+      expect(await getStock(branch, ingA)).toBe(0);
+
+      // Fresh SO with zero filled fields → approve refused (blank-submit guard)
+      const fresh = await seededPairSo();
+      await expect(inv.approveStockOpnameCore(am, { soId: fresh.so.id })).rejects.toThrow(
+        "Belum ada stok fisik yang diisi",
+      );
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "submit rejects non-integer or negative counts before touching the DB",
+    async () => {
+      const { so, items, ba } = await seededPairSo();
+      const itemA = items[0];
+      await expect(
+        inv.submitStockOpnameCore(ba, {
+          soId: so.id,
+          items: [{ itemId: itemA.id, physicalStock: -1 }],
+        }),
+      ).rejects.toThrow("Stok fisik tidak valid");
+      await expect(
+        inv.submitStockOpnameCore(ba, {
+          soId: so.id,
+          items: [{ itemId: itemA.id, physicalStock: 1.5 }],
+        }),
+      ).rejects.toThrow("Stok fisik tidak valid");
+
+      const row = await db
+        .select()
+        .from(schema.stockOpnameItems)
+        .where(eq(schema.stockOpnameItems.id, itemA.id));
+      expect(row[0]?.countedAt).toBeNull();
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "realize skips uncounted items — only counted stock is realized",
+    async () => {
+      const { so, items, ba, am, superAdmin, branch, ingA, ingB } = await seededPairSo();
+      const itemA = items.find((i) => i.ingredientId === ingA)!;
+      await inv.submitStockOpnameCore(ba, {
+        soId: so.id,
+        items: [{ itemId: itemA.id, physicalStock: 5 }],
+      });
+      await inv.approveStockOpnameCore(am, { soId: so.id });
+
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 7, 25, 10, 0, 0));
+      try {
+        const realized = await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
+        expect(realized.itemsAdjusted).toBe(1);
+        expect(realized.itemsSkipped).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(await getStock(branch, ingA)).toBe(5);
+      expect(await getStock(branch, ingB)).toBe(20);
+    },
+  );
 });
 
 describe("Stock opname — wrong-role and wrong-branch actors are rejected", () => {

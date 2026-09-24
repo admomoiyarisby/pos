@@ -68,7 +68,7 @@ A physical location where orders are taken and inventory is stored. Branches can
 _Avoid_: Store, location, outlet (when referring to the general concept)
 
 **Stock Opname (SO)**:
-A physical inventory verification process where actual stock is counted and compared against system records. The SO is "triggered" by a supervisor (Area Manager or Admin Pusat), then "submitted" by the counter with physical counts. If approved, the system inventory is adjusted to match the physical count. SO can be "Blind" (counter cannot see system stock) or "See-Through" (counter can see system stock and variance).
+A physical inventory verification process where actual stock is counted and compared against system records. The SO is "triggered" by a supervisor (Area Manager or Admin Pusat), then "submitted" by the counter with physical counts. Counting is **partial**: only fields the counter actually fills are counted (`stockOpnameItems.countedAt` distinguishes an explicit 0 from never-filled); on approval, uncounted items keep their stock exactly as-is, and the detail page shows a persistent "Ringkasan Perubahan" summarizing what changed. SO can be "Blind" (counter cannot see system stock) or "See-Through" (counter can see system stock and variance).
 _Avoid_: Stock audit, physical count, inventory check
 
 **Variance**:

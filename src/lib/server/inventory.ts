@@ -615,6 +615,7 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
         variance: stockOpnameItems.variance,
         variancePercentage: stockOpnameItems.variancePercentage,
         investigationNote: stockOpnameItems.investigationNote,
+        countedAt: stockOpnameItems.countedAt,
         ingredientName: ingredients.name,
         ingredientCode: ingredients.code,
         ingredientCategory: ingredients.category,
@@ -645,6 +646,61 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
     // For blind roles, strip system stock
     const isBlind = user.role === "branch_admin" || user.role === "admin_pusat";
 
+    // Change summary ("Ringkasan Perubahan"). Before approval it previews what
+    // approval *will* change: counted items whose count differs from system
+    // stock. After approval it reports what actually changed: the ledger rows
+    // this SO wrote (approve uses reference = soId, realize uses SO:<soId>).
+    // Blind roles get neither — old/new quantities would leak system stock.
+    type SummaryRow = {
+      ingredientName: string;
+      oldQuantity: number;
+      newQuantity: number;
+      delta: number;
+      applied: boolean;
+    };
+    let summary: SummaryRow[] = [];
+    if (!isBlind) {
+      if (so.status === "Approved") {
+        const ledgerRows = await db
+          .select({
+            ingredientId: stockLedger.ingredientId,
+            type: stockLedger.type,
+            quantity: stockLedger.quantity,
+            balance: stockLedger.balance,
+            ingredientName: ingredients.name,
+          })
+          .from(stockLedger)
+          .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
+          .where(
+            and(
+              eq(stockLedger.branchId, so.branchId),
+              or(eq(stockLedger.reference, data.id), eq(stockLedger.reference, `SO:${data.id}`)),
+            ),
+          )
+          .orderBy(asc(stockLedger.createdAt), asc(stockLedger.id));
+        summary = ledgerRows.map((r) => {
+          const delta = r.type === "IN" ? r.quantity : -r.quantity;
+          return {
+            ingredientName: r.ingredientName ?? r.ingredientId ?? "",
+            oldQuantity: r.balance - delta,
+            newQuantity: r.balance,
+            delta,
+            applied: true,
+          };
+        });
+      } else {
+        summary = items
+          .filter((i) => i.countedAt !== null && i.variance !== 0)
+          .map((i) => ({
+            ingredientName: i.ingredientName ?? i.ingredientId,
+            oldQuantity: i.systemStock,
+            newQuantity: i.physicalStock,
+            delta: i.variance,
+            applied: false,
+          }));
+      }
+    }
+
     return {
       ...so,
       branchName: branch?.name ?? so.branchId,
@@ -656,6 +712,9 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
           }))
         : items,
       isBlind,
+      summary,
+      countedCount: items.filter((i) => i.countedAt !== null).length,
+      totalCount: items.length,
     };
   });
 
@@ -683,6 +742,15 @@ export async function submitStockOpnameCore(
     throw new Error("Unauthorized: you can only submit Stock Opnames for your branch");
   }
 
+  // Partial opname: only the items the counter actually filled are sent.
+  // Unfilled items keep countedAt NULL and their stock is left unchanged on
+  // approve — but a filled field must be a valid non-negative integer.
+  for (const item of data.items) {
+    if (!Number.isInteger(item.physicalStock) || item.physicalStock < 0) {
+      throw new Error("Stok fisik tidak valid: harus bilangan bulat non-negatif");
+    }
+  }
+
   for (const item of data.items) {
     // Get current system stock
     const [soItem] = await db
@@ -705,6 +773,9 @@ export async function submitStockOpnameCore(
         physicalStock: item.physicalStock,
         variance,
         variancePercentage: String(variancePercentage),
+        // Explicitly entering a value marks the item counted — even 0 — so a
+        // legitimate all-zero count is distinguishable from never-filled rows.
+        countedAt: new Date(),
       })
       .where(eq(stockOpnameItems.id, item.itemId));
   }
@@ -730,7 +801,7 @@ export async function submitStockOpnameCore(
     status: newStatus,
   });
 
-  return { success: true, status: newStatus };
+  return { success: true, status: newStatus, counted: data.items.length };
 }
 
 export const markStockOpnameInvestigation = createServerFn({ method: "POST" })
@@ -832,15 +903,29 @@ export async function approveStockOpnameCore(
     .from(stockOpnameItems)
     .where(eq(stockOpnameItems.stockOpnameId, data.soId));
 
-  // Blank-submit guard (FRD §4.3 pattern 1): never approve an SO whose
-  // counts were never entered — approving one would zero out inventory.
-  if (items.length > 0 && items.every((i) => i.physicalStock === 0)) {
+  // Blank-submit guard (FRD §4.3 pattern 1): never approve an SO where no
+  // field was ever filled — approving one would be a no-op at best. countedAt
+  // (not physicalStock === 0) is the source of truth for "was filled", so an
+  // explicit all-zero count still approves.
+  const countedItems = items.filter((i) => i.countedAt !== null);
+  if (items.length > 0 && countedItems.length === 0) {
     throw new Error(
       "Belum ada stok fisik yang diisi. Simpan opname (submit) terlebih dahulu sebelum approve.",
     );
   }
 
-  for (const item of items) {
+  // Summary of what this approval changes: only counted items are adjusted;
+  // uncounted items keep their stock exactly as-is (partial opname).
+  const changes: {
+    ingredientId: string;
+    ingredientName: string;
+    systemStock: number;
+    oldQuantity: number;
+    newQuantity: number;
+    delta: number;
+  }[] = [];
+
+  for (const item of countedItems) {
     // Find inventory record
     const [inv] = await db
       .select()
@@ -851,6 +936,8 @@ export async function approveStockOpnameCore(
       .limit(1);
 
     if (inv) {
+      const oldQuantity = inv.quantity;
+
       await db
         .update(inventory)
         .set({
@@ -861,6 +948,14 @@ export async function approveStockOpnameCore(
 
       // Create ledger adjustment entry using current inventory as reference
       const currentVariance = item.physicalStock - inv.quantity;
+      changes.push({
+        ingredientId: item.ingredientId,
+        ingredientName: "",
+        systemStock: item.systemStock,
+        oldQuantity,
+        newQuantity: item.physicalStock,
+        delta: currentVariance,
+      });
       if (currentVariance !== 0) {
         await db.insert(stockLedger).values({
           branchId: so.branchId,
@@ -893,6 +988,19 @@ export async function approveStockOpnameCore(
       investigationNote: data.investigationNote || null,
     })
     .where(eq(stockOpnames.id, data.soId));
+
+  // Resolve ingredient names for the change summary returned to the caller.
+  const changedIngredientIds = changes.map((c) => c.ingredientId);
+  if (changedIngredientIds.length > 0) {
+    const named = await db
+      .select({ id: ingredients.id, name: ingredients.name })
+      .from(ingredients)
+      .where(inArray(ingredients.id, changedIngredientIds));
+    const nameById = new Map(named.map((n) => [n.id, n.name]));
+    for (const c of changes) {
+      c.ingredientName = nameById.get(c.ingredientId) ?? c.ingredientId;
+    }
+  }
 
   // Notify the branch admin who submitted the SO
   await db.insert(systemNotifications).values({
@@ -937,7 +1045,14 @@ export async function approveStockOpnameCore(
     approvedBy: user.id,
   });
 
-  return { success: true };
+  return {
+    success: true as const,
+    /** What this approval changed, one entry per counted item. Uncounted
+     *  items are omitted — their stock was left untouched. */
+    changes,
+    counted: countedItems.length,
+    skipped: items.length - countedItems.length,
+  };
 }
 
 export const updateStockOpnameCounts = createServerFn({ method: "POST" })
@@ -969,6 +1084,13 @@ export async function updateStockOpnameCountsCore(
 
   const oldSo = { ...so };
 
+  // Same rule as submit: only sent items are (re)counted; validate first.
+  for (const item of data.items) {
+    if (!Number.isInteger(item.physicalStock) || item.physicalStock < 0) {
+      throw new Error("Stok fisik tidak valid: harus bilangan bulat non-negatif");
+    }
+  }
+
   for (const item of data.items) {
     const [soItem] = await db
       .select()
@@ -990,6 +1112,7 @@ export async function updateStockOpnameCountsCore(
         physicalStock: item.physicalStock,
         variance,
         variancePercentage: String(variancePercentage),
+        countedAt: new Date(),
       })
       .where(eq(stockOpnameItems.id, item.itemId));
   }
@@ -1059,17 +1182,23 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
   }
 
   // 3. Get SO items with ingredient info
-  const items = await db
+  const allItems = await db
     .select({
       id: stockOpnameItems.id,
       ingredientId: stockOpnameItems.ingredientId,
+      systemStock: stockOpnameItems.systemStock,
       physicalStock: stockOpnameItems.physicalStock,
+      countedAt: stockOpnameItems.countedAt,
       isNasi: ingredients.isNasi,
       ingredientName: ingredients.name,
     })
     .from(stockOpnameItems)
     .innerJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
     .where(eq(stockOpnameItems.stockOpnameId, data.soId));
+
+  // Partial opname: only counted items are realized — uncounted items keep
+  // their current stock untouched.
+  const items = allItems.filter((i) => i.countedAt !== null);
 
   // Import Nasi conversion
   const { calculateNasiConversion } = await import("./nasi-conversion");
@@ -1179,10 +1308,14 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
   await logSystemAction(
     user,
     "Realize SO",
-    `Stock Opname ${data.soId} realized by ${user.name}. Inventory adjusted for ${items.length} items.`,
+    `Stock Opname ${data.soId} realized by ${user.name}. Inventory adjusted for ${items.length} of ${allItems.length} items (partial opname: uncounted items unchanged).`,
   );
 
-  return { success: true, itemsAdjusted: items.length };
+  return {
+    success: true,
+    itemsAdjusted: items.length,
+    itemsSkipped: allItems.length - items.length,
+  };
 }
 
 // ID13: Print Stock Opname to PDF (HTML + browser print)
@@ -1227,6 +1360,7 @@ export const printStockOpname = createServerFn({ method: "GET" })
         systemStock: stockOpnameItems.systemStock,
         physicalStock: stockOpnameItems.physicalStock,
         variance: stockOpnameItems.variance,
+        countedAt: stockOpnameItems.countedAt,
       })
       .from(stockOpnameItems)
       .innerJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
@@ -1243,6 +1377,8 @@ export const printStockOpname = createServerFn({ method: "GET" })
     // not see system stock or variance — same rule as getStockOpnameDetail.
     const isBlind = user.role === "branch_admin" || user.role === "admin_pusat";
 
+    // Uncounted items are printed as "—": partial opname means an unfilled
+    // field was never counted, not that stock was counted as 0.
     const rows = items
       .map(
         (it, idx) => `
@@ -1252,10 +1388,10 @@ export const printStockOpname = createServerFn({ method: "GET" })
           <td>${escapeHtml(it.ingredientName ?? "")}</td>
           ${
             isBlind
-              ? `<td style="text-align:right;">${it.physicalStock.toLocaleString("id-ID")}</td>`
+              ? `<td style="text-align:right;">${it.countedAt ? it.physicalStock.toLocaleString("id-ID") : "—"}</td>`
               : `<td style="text-align:right;">${it.systemStock.toLocaleString("id-ID")}</td>
-          <td style="text-align:right;">${it.physicalStock.toLocaleString("id-ID")}</td>
-          <td style="text-align:right;">${it.variance > 0 ? "+" : ""}${it.variance.toLocaleString("id-ID")}</td>`
+          <td style="text-align:right;">${it.countedAt ? it.physicalStock.toLocaleString("id-ID") : "—"}</td>
+          <td style="text-align:right;">${it.countedAt ? `${it.variance > 0 ? "+" : ""}${it.variance.toLocaleString("id-ID")}` : "—"}</td>`
           }
         </tr>`,
       )

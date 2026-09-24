@@ -721,16 +721,24 @@
               Blind stripping is in <code>getStockOpnameDetail</code> by setting
               <code>isBlind</code> and zeroing <code>systemStock</code> and
               <code>variance</code> for branch_admin and admin_pusat.
-              <strong>Blank-submit block is not server-enforced</strong> in
-              <code>submitStockOpname</code>; the current handler only updates items that are passed
-              in. Items not in the SO rows remain with <code>physicalStock: 0</code>.
-              <em>Source: <code>src/lib/server/inventory.ts:200–280</code>.</em>
+              <strong>Blank-submit block is intentionally replaced by partial counting</strong>:
+              <code>submitStockOpname</code> updates only the items passed in, and
+              <code>stockOpnameItems.counted_at</code> (migration 0052) marks which rows were
+              actually counted — distinguishing an explicit 0 from never-filled. On approve, only
+              counted items adjust inventory; uncounted items keep their stock. The blank-submit
+              guard refuses approval only when <em>no</em> field was ever counted.
+              <em
+                >Source: <code>src/lib/server/inventory.ts</code> (submitStockOpnameCore,
+                approveStockOpnameCore).</em
+              >
             </td>
             <td>
               Two industry patterns exist: (1) reject submission when <em>any</em> countable item is
               missing a physical count, (2) accept partial submissions and treat missing as 0. The
-              FRD wants pattern 1. ERPNext enforces blank-submit lock at the form layer; Odoo
-              enforces at the ORM layer by requiring a value before the state transition.
+              FRD wanted pattern 1, but the implementation now deliberately takes a third path:
+              partial submissions where missing items are left untouched (not treated as 0), with a
+              "Ringkasan Perubahan" summary on the detail page showing exactly what approval will
+              change. An explicit zero is a real count and does zero the stock.
             </td>
           </tr>
           <tr>
@@ -2016,8 +2024,10 @@
           Two small additions that close the SCM state machine.
         </li>
         <li>
-          <strong>SO auto-promote to Investigasi on variance &gt; 3%</strong> +
-          <strong>blank-submit guard</strong>. Two small changes in <code>submitStockOpname</code>.
+          <strong>SO auto-promote to Investigasi on variance &gt; 3%</strong>. The
+          <strong>blank-submit guard</strong> part is done and superseded by partial counting
+          (<code>counted_at</code>): approval is refused only when no field was ever counted, and
+          uncounted items keep their stock on approve/realize.
         </li>
         <li>
           <strong>UoM conversion table</strong> for multi-level (Sak → Kg → Gram). Required by FRD

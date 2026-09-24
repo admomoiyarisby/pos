@@ -1684,6 +1684,10 @@ export const stockOpnameItems = pgTable(
     variance: integer("variance").notNull(),
     variancePercentage: numeric("variance_percentage"),
     investigationNote: text("investigation_note"),
+    // Null until the counter explicitly enters a value for this item. Distinguishes
+    // "counted as genuinely 0" (countedAt set, physicalStock 0) from "never filled"
+    // (countedAt null, stock stays unchanged on approve/realize).
+    countedAt: timestamp("counted_at"),
   },
   (t) => [index("soi_opname_idx").on(t.stockOpnameId)],
 );
