@@ -75,12 +75,12 @@ function StokKeluarPage() {
   }, []);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(lockedBranchId);
 
-  // Multi-branch viewers (supervisors) get the branch picker; their assigned
-  // branch list arrives via the loader below.
+  // Multi-branch viewers (supervisors) get the branch picker; single-branch
+  // users get a read-only field showing their branch's name (fetched here too,
+  // not just for supervisors).
   const { data: branches } = useQuery({
     queryKey: ["branches"],
     queryFn: () => getBranches({ data: {} }),
-    enabled: !isBranchLocked,
   });
 
   const months = useMemo(() => getMonthsList(), []);

@@ -219,8 +219,10 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    // Group is visible to branch roles only so they can reach /stok-keluar;
+    // every other item inside stays supervisor-only via its own roles list.
     label: "Keuangan & Analitik",
-    roles: ["super_admin", "admin_pusat"],
+    roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
     items: [
       {
         label: "Keuangan & Rekonsiliasi",
