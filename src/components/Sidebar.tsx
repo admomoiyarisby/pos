@@ -452,10 +452,13 @@ export default function Sidebar({
       {/* Mobile backdrop */}
       {mobileOpen && <div className="fixed inset-0 z-50 bg-black/50 md:hidden" onClick={onClose} />}
 
-      {/* Mobile slide-in drawer */}
+      {/* Mobile slide-in drawer. h-dvh (not h-screen): 100vh ignores the
+          mobile browser's dynamic URL bar, so the fixed logout footer at the
+          drawer's bottom regularly landed below the visible viewport and the
+          logout button was unreachable. */}
       <aside
         className={
-          "fixed left-0 top-0 z-50 flex h-screen w-64 flex-col border-r border-sidebar-border bg-sidebar transition-transform md:hidden " +
+          "fixed left-0 top-0 z-50 flex h-dvh w-64 flex-col border-r border-sidebar-border bg-sidebar transition-transform md:hidden " +
           (mobileOpen ? "translate-x-0" : "-translate-x-full")
         }
       >
@@ -492,7 +495,9 @@ export default function Sidebar({
           ))}
         </nav>
 
-        <div className="border-t border-sidebar-border p-3">
+        {/* Safe-area padding keeps the logout button above the iOS home
+            indicator / Android gesture bar instead of under it. */}
+        <div className="shrink-0 border-t border-sidebar-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <button
             onClick={() => {
               void handleSignOut();
