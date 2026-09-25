@@ -76,9 +76,18 @@ function DashboardPage() {
   }
 
   if (error || !data) {
+    // SAFETY: React Query surfaces server-function rejections here; the only
+    // shape with a string `message` field is an Error-like, so reading it via
+    // a structured check (no typeof narrowing beyond Error itself) is sound.
+    const message = error instanceof Error ? error.message : null;
     return (
-      <div className="flex h-64 items-center justify-center">
+      <div className="flex h-64 flex-col items-center justify-center gap-2 px-4 text-center">
         <p className="text-muted-foreground">Gagal memuat data dashboard</p>
+        {message && (
+          <p className="max-w-2xl font-mono text-xs text-destructive" role="alert">
+            {message}
+          </p>
+        )}
       </div>
     );
   }
