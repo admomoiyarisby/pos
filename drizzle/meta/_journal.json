@@ -393,6 +393,13 @@
       "when": 1789600200000,
       "tag": "0052_stock_opname_counted_at",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789686600000,
+      "tag": "0053_drop_ingredients_alias_unique",
+      "breakpoints": true
     }
   ]
 }
