@@ -646,6 +646,46 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
     // For blind roles, strip system stock
     const isBlind = user.role === "branch_admin" || user.role === "admin_pusat";
 
+    // Snapshot drift: counted items whose current inventory no longer matches
+    // the systemStock snapshot taken at trigger time. Stock can move during the
+    // opname window (sales, waste, transfers), and approve adjusts from the
+    // *current* quantity, not the stale snapshot — surface the difference so
+    // the approver is not surprised by a delta measured against 88 when the
+    // table showed 97. Approvers only: for blind roles this would leak system
+    // stock, and they cannot approve anyway.
+    type DriftRow = {
+      ingredientName: string;
+      systemStock: number;
+      currentQuantity: number;
+    };
+    let drift: DriftRow[] = [];
+    if (!isBlind && so.status !== "Approved") {
+      const countedIds = items.filter((i) => i.countedAt !== null).map((i) => i.ingredientId);
+      if (countedIds.length > 0) {
+        const currentInv = await db
+          .select({
+            ingredientId: inventory.ingredientId,
+            quantity: inventory.quantity,
+          })
+          .from(inventory)
+          .where(
+            and(eq(inventory.branchId, so.branchId), inArray(inventory.ingredientId, countedIds)),
+          );
+        const qtyByIngredient = new Map(currentInv.map((r) => [r.ingredientId, r.quantity]));
+        drift = items
+          .filter((i) => {
+            if (i.countedAt === null) return false;
+            const current = qtyByIngredient.get(i.ingredientId);
+            return current !== undefined && current !== i.systemStock;
+          })
+          .map((i) => ({
+            ingredientName: i.ingredientName ?? i.ingredientId,
+            systemStock: i.systemStock,
+            currentQuantity: qtyByIngredient.get(i.ingredientId) ?? 0,
+          }));
+      }
+    }
+
     // Change summary ("Ringkasan Perubahan"). Before approval it previews what
     // approval *will* change: counted items whose count differs from system
     // stock. After approval it reports what actually changed: the ledger rows
@@ -713,6 +753,7 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
         : items,
       isBlind,
       summary,
+      drift,
       countedCount: items.filter((i) => i.countedAt !== null).length,
       totalCount: items.length,
     };
@@ -925,6 +966,44 @@ export async function approveStockOpnameCore(
     delta: number;
   }[] = [];
 
+  // Current inventory for all counted items, fetched once — used both for the
+  // drift report below and as the adjustment baseline in the loop that follows.
+  const countedIngredientIds = countedItems.map((i) => i.ingredientId);
+  const currentInventory =
+    countedIngredientIds.length > 0
+      ? await db
+          .select({
+            ingredientId: inventory.ingredientId,
+            quantity: inventory.quantity,
+          })
+          .from(inventory)
+          .where(
+            and(
+              eq(inventory.branchId, so.branchId),
+              inArray(inventory.ingredientId, countedIngredientIds),
+            ),
+          )
+      : [];
+  const inventoryByIngredient = new Map(currentInventory.map((r) => [r.ingredientId, r]));
+
+  // Snapshot drift at approve time: counted items whose current inventory no
+  // longer matches the trigger-time snapshot. The adjustment below is measured
+  // against current inventory, so report the real "from" value in the summary
+  // the approver sees — the SO table's Stok Sistem column may be stale.
+  const drift = countedItems
+    .map((item) => {
+      const invRow = inventoryByIngredient.get(item.ingredientId);
+      return invRow && invRow.quantity !== item.systemStock
+        ? {
+            ingredientId: item.ingredientId,
+            ingredientName: "",
+            systemStock: item.systemStock,
+            currentQuantity: invRow.quantity,
+          }
+        : null;
+    })
+    .filter((d): d is NonNullable<typeof d> => d !== null);
+
   for (const item of countedItems) {
     // Find inventory record
     const [inv] = await db
@@ -990,15 +1069,20 @@ export async function approveStockOpnameCore(
     .where(eq(stockOpnames.id, data.soId));
 
   // Resolve ingredient names for the change summary returned to the caller.
-  const changedIngredientIds = changes.map((c) => c.ingredientId);
-  if (changedIngredientIds.length > 0) {
+  const namedIds = [
+    ...new Set([...changes.map((c) => c.ingredientId), ...drift.map((d) => d.ingredientId)]),
+  ];
+  if (namedIds.length > 0) {
     const named = await db
       .select({ id: ingredients.id, name: ingredients.name })
       .from(ingredients)
-      .where(inArray(ingredients.id, changedIngredientIds));
+      .where(inArray(ingredients.id, namedIds));
     const nameById = new Map(named.map((n) => [n.id, n.name]));
     for (const c of changes) {
       c.ingredientName = nameById.get(c.ingredientId) ?? c.ingredientId;
+    }
+    for (const d of drift) {
+      d.ingredientName = nameById.get(d.ingredientId) ?? d.ingredientId;
     }
   }
 
@@ -1050,6 +1134,9 @@ export async function approveStockOpnameCore(
     /** What this approval changed, one entry per counted item. Uncounted
      *  items are omitted — their stock was left untouched. */
     changes,
+    /** Counted items whose inventory had moved since the trigger snapshot —
+     *  their delta was measured against currentQuantity, not systemStock. */
+    drift,
     counted: countedItems.length,
     skipped: items.length - countedItems.length,
   };

@@ -103,6 +103,11 @@ function StockOpnameDetailPage() {
             ? `${changed} item berubah stoknya — lihat Ringkasan Perubahan di bawah.`
             : "Tidak ada stok yang berubah.",
       });
+      if (result.drift.length > 0) {
+        toast.warning("Stok bergerak sejak SO dibuat", {
+          description: `${result.drift.length} item memiliki stok berbeda dari snapshot SO — penyesuaian dihitung dari stok aktual, bukan snapshot.`,
+        });
+      }
     },
     onError: (error) => {
       toast.error("Gagal approve stock opname", { description: error.message });
@@ -704,6 +709,31 @@ function StockOpnameDetailPage() {
               jurnal ledger. Item yang tidak dihitung tidak akan diubah.
             </p>
           </div>
+          {detail.drift.length > 0 && (
+            <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+              <p className="font-medium">
+                Stok bergerak sejak SO dibuat ({detail.drift.length} item)
+              </p>
+              <p className="mt-1 text-xs">
+                Stok sistem di bawah adalah snapshot saat SO dibuat. Penyesuaian dihitung dari stok
+                aktual saat ini, bukan snapshot tersebut.
+              </p>
+              <ul className="mt-2 space-y-1">
+                {detail.drift.map((row, idx: number) => (
+                  <li
+                    key={`${row.ingredientName}-${idx}`}
+                    className="flex items-center justify-between gap-2 tabular-nums"
+                  >
+                    <span className="min-w-0 truncate">{row.ingredientName}</span>
+                    <span className="shrink-0 font-mono text-xs">
+                      snapshot {row.systemStock.toLocaleString("id-ID")} → sekarang{" "}
+                      {row.currentQuantity.toLocaleString("id-ID")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Catatan Investigasi (opsional)</label>
             <textarea

@@ -535,6 +535,58 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
       expect(await getStock(branch, ingB)).toBe(20);
     },
   );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "approve reports snapshot drift when inventory moved since trigger",
+    async () => {
+      const { so, items, ba, am, branch, ingA, ingB } = await seededPairSo();
+      const itemA = items.find((i) => i.ingredientId === ingA)!;
+      const itemB = items.find((i) => i.ingredientId === ingB)!;
+      await inv.submitStockOpnameCore(ba, {
+        soId: so.id,
+        items: [{ itemId: itemA.id, physicalStock: 7 }],
+      });
+
+      // Stock moves after trigger: A loses 3 to sales (10 → 7), B untouched.
+      // Approve still targets physical 7 — but now the delta is 0, and the
+      // drift report must explain that 7 is measured from current stock.
+      await db
+        .update(schema.inventory)
+        .set({ quantity: 7 })
+        .where(and(eq(schema.inventory.branchId, branch), eq(schema.inventory.ingredientId, ingA)));
+
+      const result = await inv.approveStockOpnameCore(am, { soId: so.id });
+
+      // Drift covers only the moved counted item, with both values
+      expect(result.drift).toHaveLength(1);
+      expect(result.drift[0]).toEqual(
+        expect.objectContaining({
+          ingredientId: ingA,
+          systemStock: 10,
+          currentQuantity: 7,
+        }),
+      );
+      // The change is measured against current stock: 7 → 7, no ledger row
+      expect(result.changes[0]).toEqual(
+        expect.objectContaining({ oldQuantity: 7, newQuantity: 7, delta: 0 }),
+      );
+
+      // Count matches current stock exactly (no movement since trigger) → no
+      // drift; the change is a plain snapshot variance.
+      const pair2 = await seededPairSo();
+      const itemA2 = pair2.items.find((i) => i.ingredientId === pair2.ingA)!;
+      await inv.submitStockOpnameCore(pair2.ba, {
+        soId: pair2.so.id,
+        items: [{ itemId: itemA2.id, physicalStock: 7 }],
+      });
+      const result2 = await inv.approveStockOpnameCore(pair2.am, { soId: pair2.so.id });
+      expect(result2.drift).toHaveLength(0);
+      expect(result2.changes[0]).toEqual(
+        expect.objectContaining({ oldQuantity: 10, newQuantity: 7, delta: -3 }),
+      );
+      void itemB;
+    },
+  );
 });
 
 describe("Stock opname — wrong-role and wrong-branch actors are rejected", () => {
