@@ -2,7 +2,7 @@
 // POS Utility Functions
 // ============================================================
 
-import type { MenuItem, CartItem } from "./pos-types";
+import type { MenuItem, CartItem, Voucher } from "./pos-types";
 
 interface BranchInventoryItem {
   ingredientId: string;
@@ -36,6 +36,42 @@ export function calculateCartCount(cart: CartItem[]): number {
   return cart.reduce(function (sum, item) {
     return sum + item.quantity;
   }, 0);
+}
+
+// ── Voucher application ──
+
+/**
+ * Which voucher is actually applied to the current cart, and for how much.
+ *
+ * Eligibility depends on the cart total, so a voucher that qualified when the
+ * cashier picked it can stop qualifying the moment an item is removed or a
+ * quantity is lowered. Resolving that on every render — rather than trusting
+ * the stored selection — is what keeps the voucher pill, the "Diskon" line, and
+ * the payload's `voucherCode` from disagreeing. Previously a selection that
+ * fell below `minOrder` kept its highlighted pill and still submitted its code,
+ * while the discount silently vanished: the promo looked applied and the price
+ * did not move.
+ *
+ * A `null` return means "no voucher" in every respect: no discount, and no
+ * voucher code on the order.
+ *
+ * A fixed discount is capped at the cart total. The order total is computed as
+ * `subtotal - discount + tax` server-side with no clamp, so an uncapped fixed
+ * voucher larger than the cart would submit a negative total.
+ */
+export function resolveAppliedVoucher(
+  selected: Voucher | null | undefined,
+  cartTotal: number,
+): { voucher: Voucher; discount: number } | null {
+  if (!selected) return null;
+  if (cartTotal < selected.minOrder) return null;
+
+  const raw =
+    selected.discountType === "percentage"
+      ? Math.round((cartTotal * selected.discountValue) / 100)
+      : selected.discountValue;
+
+  return { voucher: selected, discount: Math.min(raw, cartTotal) };
 }
 
 // ── Applied modifier formatting (order history / data-penjualan detail) ──

@@ -18,6 +18,10 @@ interface CartSidebarProps {
   channel: string;
   isDineIn: boolean;
   paymentMethod: string;
+  /** The voucher currently *applied* to the cart, already re-checked against
+   *  `minOrder` by the caller — not the raw cashier selection. A selection that
+   *  no longer qualifies arrives as null so the pill drops its highlighted
+   *  state instead of showing a promo that is not being honoured. */
   selectedVoucher: Voucher | null;
   allVouchers: Voucher[];
   checkoutError: string | null;

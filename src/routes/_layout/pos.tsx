@@ -49,7 +49,7 @@ import { toast } from "sonner";
 
 import type { CartModifier, CartItem, MenuItem, Voucher, OrderResult } from "#/lib/pos-types";
 import { printReceipt, printBill } from "#/lib/pos-print";
-import { getStockQuantity } from "#/lib/pos-utils";
+import { getStockQuantity, resolveAppliedVoucher } from "#/lib/pos-utils";
 
 import MenuGrid from "#/components/pos/MenuGrid";
 import CartSidebar from "#/components/pos/CartSidebar";
@@ -655,17 +655,18 @@ function PosPage() {
     return sum + item.quantity;
   }, 0);
 
-  let voucherDiscount = useMemo(
+  // Re-resolved every render because eligibility depends on the cart total —
+  // see resolveAppliedVoucher. Reading `appliedVoucher` (never the raw
+  // `selectedVoucher`) is what guarantees the pill, the Diskon line, and the
+  // submitted voucherCode all reflect the same decision.
+  let appliedVoucher = useMemo(
     function () {
-      if (!selectedVoucher) return 0;
-      if (cartTotal < selectedVoucher.minOrder) return 0;
-      if (selectedVoucher.discountType === "percentage") {
-        return Math.round((cartTotal * selectedVoucher.discountValue) / 100);
-      }
-      return selectedVoucher.discountValue;
+      return resolveAppliedVoucher(selectedVoucher, cartTotal);
     },
     [selectedVoucher, cartTotal],
   );
+
+  let voucherDiscount = appliedVoucher?.discount ?? 0;
 
   let subtotalAfterDiscount = Math.max(0, cartTotal - voucherDiscount);
 
@@ -889,7 +890,7 @@ function PosPage() {
           customerName: channel === "Dine-in" ? customerName : undefined,
           orderCode: channel !== "Dine-in" ? orderCode : undefined,
           items: items,
-          voucherCode: selectedVoucher?.code,
+          voucherCode: appliedVoucher?.voucher.code,
           voucherDiscount: voucherDiscount > 0 ? voucherDiscount : undefined,
           taxAmount: taxAmount > 0 ? taxAmount : undefined,
           paymentMethod: paymentMethod,
@@ -1306,7 +1307,7 @@ function PosPage() {
                         <div className="flex flex-wrap gap-1.5">
                           {allVouchers.map(function (v) {
                             let meetsMinOrder = cartTotal >= v.minOrder;
-                            let isSelected = selectedVoucher?.id === v.id;
+                            let isSelected = appliedVoucher?.voucher.id === v.id;
                             return (
                               <button
                                 key={v.id}
@@ -1806,7 +1807,7 @@ function PosPage() {
           channel={channel}
           isDineIn={isDineIn}
           paymentMethod={paymentMethod}
-          selectedVoucher={selectedVoucher}
+          selectedVoucher={appliedVoucher?.voucher ?? null}
           allVouchers={allVouchers}
           checkoutError={checkoutError}
           stockError={stockError}

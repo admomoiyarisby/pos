@@ -5,9 +5,10 @@ import {
   calculateCartCount,
   calculateCartTotal,
   getStockQuantity,
+  resolveAppliedVoucher,
 } from "#/lib/pos-utils";
 import type { AppliedModifier } from "#/lib/pos-utils";
-import type { CartItem, MenuItem } from "#/lib/pos-types";
+import type { CartItem, MenuItem, Voucher } from "#/lib/pos-types";
 
 const baseItem: MenuItem = {
   id: "recipe-1",
@@ -86,6 +87,68 @@ describe("cart calculations", () => {
   it("returns zero for an empty cart", () => {
     expect(calculateCartTotal([])).toBe(0);
     expect(calculateCartCount([])).toBe(0);
+  });
+});
+
+describe("resolveAppliedVoucher", () => {
+  const voucher = (over: Partial<Voucher> = {}): Voucher => ({
+    id: "v1",
+    code: "PROMO10",
+    description: "Diskon 10%",
+    discountType: "percentage",
+    discountValue: 10,
+    minOrder: 50000,
+    validUntil: new Date("2030-01-01"),
+    status: "Active",
+    ...over,
+  });
+
+  it("returns null when no voucher is selected", () => {
+    expect(resolveAppliedVoucher(null, 100000)).toBeNull();
+  });
+
+  it("discounts a percentage voucher against the cart total", () => {
+    const applied = resolveAppliedVoucher(voucher(), 100000);
+    expect(applied?.voucher.code).toBe("PROMO10");
+    expect(applied?.discount).toBe(10000);
+  });
+
+  it("discounts a fixed voucher by its value", () => {
+    const applied = resolveAppliedVoucher(
+      voucher({ discountType: "fixed", discountValue: 15000 }),
+      100000,
+    );
+    expect(applied?.discount).toBe(15000);
+  });
+
+  it("treats minOrder as inclusive", () => {
+    expect(resolveAppliedVoucher(voucher({ minOrder: 50000 }), 50000)?.discount).toBe(5000);
+  });
+
+  // The reported bug: a voucher picked while the cart was large enough kept its
+  // highlighted pill and still submitted its code after the cart shrank below
+  // minOrder, while the discount silently dropped to zero — "I applied the
+  // promo and the price stayed the same".
+  it("drops the voucher once the cart falls below minOrder", () => {
+    expect(resolveAppliedVoucher(voucher({ minOrder: 50000 }), 100000)).not.toBeNull();
+    expect(resolveAppliedVoucher(voucher({ minOrder: 50000 }), 49999)).toBeNull();
+  });
+
+  it("caps a fixed discount at the cart total so the order total cannot go negative", () => {
+    // Server computes totalAmount = subtotal - voucherDiscount + tax with no clamp.
+    const applied = resolveAppliedVoucher(
+      voucher({ discountType: "fixed", discountValue: 50000, minOrder: 0 }),
+      20000,
+    );
+    expect(applied?.discount).toBe(20000);
+  });
+
+  it("never discounts below zero", () => {
+    const applied = resolveAppliedVoucher(
+      voucher({ discountType: "fixed", discountValue: 0, minOrder: 0 }),
+      0,
+    );
+    expect(applied?.discount).toBe(0);
   });
 });
 
