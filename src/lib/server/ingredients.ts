@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { DrizzleQueryError } from "drizzle-orm";
 import { db } from "#/lib/server/db";
 import { ingredients, recipeIngredients, ingredientBranches } from "#/db/schema";
 import { eq, and, ne } from "drizzle-orm";
@@ -8,6 +9,7 @@ import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
+import { describeDbError, isUniqueViolation } from "#/lib/server/db-errors";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 
@@ -163,7 +165,35 @@ export async function createIngredientCore(user: AppUser, data: z.input<typeof i
   }
 
   const { branchIds, ...ingredientValues } = data;
-  const [result] = await db.insert(ingredients).values(ingredientValues).returning();
+
+  // `ingredients.code` is UNIQUE but nothing checked it before the insert, so a
+  // duplicate surfaced as a raw "Failed query: insert into ..." to the user.
+  // Pre-check matches the pattern vouchers/branches/users already use for their
+  // unique columns.
+  const normalizedCode = ingredientValues.code.trim();
+  const [clash] = await db
+    .select({ id: ingredients.id, name: ingredients.name })
+    .from(ingredients)
+    .where(eq(ingredients.code, normalizedCode))
+    .limit(1);
+  if (clash) {
+    throw new Error(`Kode bahan "${normalizedCode}" sudah dipakai oleh "${clash.name}"`);
+  }
+
+  let result: typeof ingredients.$inferSelect;
+  try {
+    [result] = await db
+      .insert(ingredients)
+      .values({ ...ingredientValues, code: normalizedCode })
+      .returning();
+  } catch (err) {
+    // The pre-check cannot see a concurrent insert, so keep a net for the race.
+    if (!(err instanceof DrizzleQueryError)) throw err;
+    if (isUniqueViolation(err)) {
+      throw new Error(`Kode bahan "${normalizedCode}" sudah dipakai oleh bahan lain`);
+    }
+    throw new Error(`Gagal menambah bahan baku: ${describeDbError(err)}`);
+  }
 
   if (branchIds?.length) {
     await db
@@ -220,27 +250,50 @@ export async function updateIngredientCore(
   const [old] = await db.select().from(ingredients).where(eq(ingredients.id, id)).limit(1);
   if (!old) throw new Error("Ingredient not found");
 
+  // Same duplicate-code guard as create (see createIngredientCore).
+  if (updates.code !== undefined) {
+    const normalizedCode = updates.code.trim();
+    const [clash] = await db
+      .select({ id: ingredients.id, name: ingredients.name })
+      .from(ingredients)
+      .where(eq(ingredients.code, normalizedCode))
+      .limit(1);
+    if (clash && clash.id !== id) {
+      throw new Error(`Kode bahan "${normalizedCode}" sudah dipakai oleh "${clash.name}"`);
+    }
+    updates.code = normalizedCode;
+  }
+
   // Branch visibility delete+insert must be atomic — a bad branchId must not leave
   // 0 rows (visible everywhere). Wrap base update + branch links in one txn.
-  const [result] = await db.transaction(async (tx) => {
-    const [r] = await tx
-      .update(ingredients)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(ingredients.id, id))
-      .returning();
+  let result: typeof ingredients.$inferSelect;
+  try {
+    [result] = await db.transaction(async (tx) => {
+      const [r] = await tx
+        .update(ingredients)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(ingredients.id, id))
+        .returning();
 
-    // Update branch visibility (mirrors updateRecipe): empty array = all branches.
-    if (branchIds !== undefined && branchIds !== null) {
-      await tx.delete(ingredientBranches).where(eq(ingredientBranches.ingredientId, id));
-      if (branchIds.length > 0) {
-        await tx
-          .insert(ingredientBranches)
-          .values(branchIds.map((branchId) => ({ ingredientId: id, branchId })));
+      // Update branch visibility (mirrors updateRecipe): empty array = all branches.
+      if (branchIds !== undefined && branchIds !== null) {
+        await tx.delete(ingredientBranches).where(eq(ingredientBranches.ingredientId, id));
+        if (branchIds.length > 0) {
+          await tx
+            .insert(ingredientBranches)
+            .values(branchIds.map((branchId) => ({ ingredientId: id, branchId })));
+        }
       }
-    }
 
-    return [r];
-  });
+      return [r];
+    });
+  } catch (err) {
+    if (!(err instanceof DrizzleQueryError)) throw err;
+    if (isUniqueViolation(err)) {
+      throw new Error(`Kode bahan "${updates.code ?? old.code}" sudah dipakai oleh bahan lain`);
+    }
+    throw new Error(`Gagal mengubah bahan baku: ${describeDbError(err)}`);
+  }
 
   // Trigger BOM cost roll-up if averageCost changed
   if ("averageCost" in updates) {

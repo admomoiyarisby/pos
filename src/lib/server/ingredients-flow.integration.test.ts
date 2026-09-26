@@ -214,6 +214,100 @@ describe("Ingredients — full lifecycle via the real server-function cores", ()
   );
 });
 
+describe("Ingredients — duplicate codes are refused readably", () => {
+  // `ingredients.code` is UNIQUE. With no pre-check, a duplicate surfaced as
+  // Drizzle's "Failed query: insert into "ingredients" (...) values (...)" —
+  // the user saw the SQL and no explanation. Both paths now name the clash.
+  it.skipIf(!hasTestDatabaseUrl)(
+    "create refuses a duplicate code by name instead of leaking the failing query",
+    async () => {
+      const superAdmin = await seedUser("super_admin");
+      const code = uniq("IG-DUP");
+
+      await ingredientsApi.createIngredientCore(superAdmin, {
+        code,
+        name: "Plastik 18",
+        category: "Packaging",
+        skuType: "RM",
+        purchaseUnit: "Pack",
+        stockUnit: "Pack",
+        conversionFactor: 1,
+        averageCost: 2600,
+      });
+
+      await expect(
+        ingredientsApi.createIngredientCore(superAdmin, {
+          code,
+          name: "Plastik 18 (duplikat)",
+          category: "Packaging",
+          skuType: "RM",
+          purchaseUnit: "Pack",
+          stockUnit: "Pack",
+          conversionFactor: 1,
+          averageCost: 2600,
+        }),
+      ).rejects.toThrow(`Kode bahan "${code}" sudah dipakai oleh "Plastik 18"`);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "update refuses moving an ingredient onto another ingredient's code",
+    async () => {
+      const superAdmin = await seedUser("super_admin");
+      const [first, second] = await Promise.all([
+        ingredientsApi.createIngredientCore(superAdmin, {
+          code: uniq("IG-A"),
+          name: "Bahan A",
+          category: "Dry",
+          skuType: "RM",
+          purchaseUnit: "pcs",
+          stockUnit: "pcs",
+          conversionFactor: 1,
+          averageCost: 1000,
+        }),
+        ingredientsApi.createIngredientCore(superAdmin, {
+          code: uniq("IG-B"),
+          name: "Bahan B",
+          category: "Dry",
+          skuType: "RM",
+          purchaseUnit: "pcs",
+          stockUnit: "pcs",
+          conversionFactor: 1,
+          averageCost: 1000,
+        }),
+      ]);
+
+      await expect(
+        ingredientsApi.updateIngredientCore(superAdmin, { id: second.id, code: first.code }),
+      ).rejects.toThrow(`Kode bahan "${first.code}" sudah dipakai oleh "Bahan A"`);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "update may re-save an ingredient under its own unchanged code",
+    async () => {
+      const superAdmin = await seedUser("super_admin");
+      const created = await ingredientsApi.createIngredientCore(superAdmin, {
+        code: uniq("IG-SAME"),
+        name: "Bahan S",
+        category: "Dry",
+        skuType: "RM",
+        purchaseUnit: "pcs",
+        stockUnit: "pcs",
+        conversionFactor: 1,
+        averageCost: 1000,
+      });
+
+      const updated = await ingredientsApi.updateIngredientCore(superAdmin, {
+        id: created.id,
+        code: created.code,
+        name: "Bahan S (revisi)",
+      });
+      expect(updated.name).toBe("Bahan S (revisi)");
+    },
+  );
+});
+
 describe("Ingredients — wrong-role and not-found negatives", () => {
   it.skipIf(!hasTestDatabaseUrl)(
     "create/update/delete reject non-master roles; missing ingredients are refused",
