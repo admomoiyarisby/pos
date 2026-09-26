@@ -9,6 +9,11 @@ import type { InferSelectModel } from "drizzle-orm";
 
 type Notification = InferSelectModel<typeof systemNotifications>;
 
+/** Width (px) at which the dropdown/sheet switch happens. Must stay equal to
+ *  Tailwind's `md` breakpoint (48rem = 768px) — see the className comments at
+ *  the panel for why. */
+const MD_BREAKPOINT_PX = 768;
+
 export default function NotificationBell() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -18,8 +23,10 @@ export default function NotificationBell() {
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (ref.current && e.target instanceof Node && !ref.current.contains(e.target)) {
-        // On mobile the sheet lives in a portal (fixed), so don't close via click-outside — backdrop handles it
-        if (window.matchMedia("(max-width: 639px)").matches) return;
+        // On narrow screens the sheet is a viewport-fixed overlay, so don't
+        // close via click-outside — the backdrop handles it. Threshold must
+        // match the CSS switch below (see the MD_BREAKPOINT_PX note).
+        if (window.matchMedia(`(max-width: ${MD_BREAKPOINT_PX - 1}px)`).matches) return;
         setOpen(false);
       }
     };
@@ -36,7 +43,8 @@ export default function NotificationBell() {
       document.addEventListener("keydown", onKey);
       const prev = document.body.style.overflow;
       // Only lock scroll on mobile sheet — desktop dropdown shouldn't
-      if (window.matchMedia("(max-width: 639px)").matches) document.body.style.overflow = "hidden";
+      if (window.matchMedia(`(max-width: ${MD_BREAKPOINT_PX - 1}px)`).matches)
+        document.body.style.overflow = "hidden";
       return () => {
         document.removeEventListener("keydown", onKey);
         document.body.style.overflow = prev;
@@ -103,11 +111,16 @@ export default function NotificationBell() {
             type="button"
             aria-label="Tutup notifikasi"
             onClick={() => setOpen(false)}
-            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] sm:bg-transparent sm:backdrop-blur-none sm:pointer-events-none"
+            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] md:bg-transparent md:backdrop-blur-none md:pointer-events-none"
           />
 
-          {/* Desktop: anchored dropdown */}
-          <div className="hidden sm:block absolute right-0 top-11 z-50 w-96 rounded-xl border bg-card shadow-[0_8px_32px_rgba(0,0,0,0.12)] overflow-hidden">
+          {/* Desktop: dropdown anchored to the bell's top-right.
+              The `md:` switch is load-bearing, not cosmetic: AppShell keeps the
+              header stacked (bell at the far LEFT) until `md`, so at sm..md this
+              w-96 panel anchored `right-0` to the 36px button wrapper hung ~330px
+              off the left edge. Switching at `md` means the bell only ever sits
+              at the right when the dropdown is the one rendering. */}
+          <div className="hidden md:block absolute right-0 top-11 z-50 w-96 rounded-xl border bg-card shadow-[0_8px_32px_rgba(0,0,0,0.12)] overflow-hidden">
             <div className="flex items-center justify-between gap-2 border-b bg-card px-4 py-3">
               <div className="min-w-0">
                 <h3 className="text-sm font-semibold tracking-tight">Notifikasi</h3>
@@ -204,7 +217,7 @@ export default function NotificationBell() {
             role="dialog"
             aria-modal="true"
             aria-label="Notifikasi"
-            className="sm:hidden fixed inset-x-0 bottom-0 z-50 flex max-h-[78vh] flex-col rounded-t-2xl border-t bg-card shadow-[0_-8px_32px_rgba(0,0,0,0.16)] safe-bottom"
+            className="md:hidden fixed inset-x-0 bottom-0 z-50 flex max-h-[78vh] flex-col rounded-t-2xl border-t bg-card shadow-[0_-8px_32px_rgba(0,0,0,0.16)] safe-bottom"
           >
             <div className="shrink-0 flex flex-col gap-3 border-b px-4 pb-3 pt-3">
               <div className="mx-auto h-1.5 w-10 rounded-full bg-muted" aria-hidden />
