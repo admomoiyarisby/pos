@@ -14,9 +14,17 @@ function readSearch(search: { search?: unknown }): string {
 
 export interface UseTableSearchOptions {
   /**
-   * Debounce (ms) before committing the term to the URL. Use ~250 for
-   * server-backed searches so we don't navigate (and refetch) per keystroke.
-   * Client-filtered DataTable pages should leave this at 0 (instant local filter).
+   * Debounce (ms) before committing the term to the URL. Defaults to 250.
+   *
+   * This only ever gated the *URL write*, never the visible filter: `value` is
+   * set synchronously in `setSearch`, so a client-filtered page still filters on
+   * every keystroke. What the debounce avoids is a `navigate()` per character,
+   * which re-rendered the whole route subtree and — reported from the field on
+   * low-end phones — collapsed the on-screen keyboard mid-type. Server-backed
+   * pages additionally avoid a refetch per keystroke.
+   *
+   * Pass 0 only for a page that deliberately wants the URL rewritten on every
+   * keystroke.
    */
   debounceMs?: number;
 }
@@ -31,7 +39,7 @@ export interface UseTableSearchOptions {
  * when the URL changes externally (back/forward, shared link).
  */
 export function useTableSearch(options: UseTableSearchOptions = {}) {
-  const debounceMs = options.debounceMs ?? 0;
+  const debounceMs = options.debounceMs ?? 250;
   const navigate = useNavigate();
   const urlSearch = useSearch({ strict: false });
   const urlValue = readSearch(urlSearch);

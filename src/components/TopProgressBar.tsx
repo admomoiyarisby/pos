@@ -41,7 +41,11 @@ export default function TopProgressBar() {
   if (state === "idle") return null;
 
   return (
-    <div className="fixed top-0 left-0 z-[9999] h-1 w-full bg-transparent">
+    // pointer-events-none: this is a full-width strip pinned to the top of the
+    // viewport while a navigation is in flight. Without it the 4px band (and
+    // the z-[9999] stacking) swallows taps meant for whatever sits at the top of
+    // the page.
+    <div className="pointer-events-none fixed top-0 left-0 z-[9999] h-1 w-full bg-transparent">
       <div
         className="h-full bg-primary transition-all duration-300 ease-out"
         style={{ width: `${width}%` }}
