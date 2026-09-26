@@ -268,6 +268,75 @@ describe("Recipes — full lifecycle via the real server-function cores", () => 
   );
 });
 
+describe("Recipes — duplicate codes are refused readably", () => {
+  // `recipes.code` is UNIQUE. With no pre-check a duplicate surfaced as
+  // Drizzle's "Failed query: insert into "recipes" (...) values (...)".
+  it.skipIf(!hasTestDatabaseUrl)(
+    "create refuses a duplicate code by name instead of leaking the failing query",
+    async () => {
+      const superAdmin = await seedUser("super_admin");
+      const catId = await insertCategory();
+      const code = uniq("REC-DUP");
+
+      const base = {
+        code,
+        name: "Es Jeruk",
+        categoryId: catId,
+        isSubRecipe: false,
+        basePrice: 12000,
+        brandIds: [],
+        ingredients: [],
+      };
+
+      await recipesApi.createRecipeCore(superAdmin, base);
+
+      await expect(
+        recipesApi.createRecipeCore(superAdmin, { ...base, name: "Es Jeruk (duplikat)" }),
+      ).rejects.toThrow(`Kode menu "${code}" sudah dipakai oleh "Es Jeruk"`);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "update refuses moving a recipe onto another recipe's code, and allows its own",
+    async () => {
+      const superAdmin = await seedUser("super_admin");
+      const catId = await insertCategory();
+      const [first, second] = await Promise.all([
+        recipesApi.createRecipeCore(superAdmin, {
+          code: uniq("REC-A"),
+          name: "Menu A",
+          categoryId: catId,
+          isSubRecipe: false,
+          basePrice: 10000,
+          brandIds: [],
+          ingredients: [],
+        }),
+        recipesApi.createRecipeCore(superAdmin, {
+          code: uniq("REC-B"),
+          name: "Menu B",
+          categoryId: catId,
+          isSubRecipe: false,
+          basePrice: 10000,
+          brandIds: [],
+          ingredients: [],
+        }),
+      ]);
+
+      await expect(
+        recipesApi.updateRecipeCore(superAdmin, { id: second.id, code: first.code }),
+      ).rejects.toThrow(`Kode menu "${first.code}" sudah dipakai oleh "Menu A"`);
+
+      // Re-saving under its own code must stay allowed (the wizard re-sends it).
+      const ok = await recipesApi.updateRecipeCore(superAdmin, {
+        id: second.id,
+        code: second.code,
+        name: "Menu B revisi",
+      });
+      expect(ok.success).toBe(true);
+    },
+  );
+});
+
 describe("Recipes — wrong-role, guards, and not-found negatives", () => {
   it.skipIf(!hasTestDatabaseUrl)(
     "reject non-central roles, block delete-when-active-bundle, refuse missing",

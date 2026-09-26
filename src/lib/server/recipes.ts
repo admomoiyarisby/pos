@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { DrizzleQueryError } from "drizzle-orm";
 import { db } from "#/lib/server/db";
 import {
   recipes,
@@ -25,6 +26,7 @@ import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateAllRecipeCosts as recalcAllCosts, recalculateRecipeCosts } from "./cost-rollup";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
+import { describeDbError, isUniqueViolation } from "#/lib/server/db-errors";
 import { z } from "zod";
 
 const recipeIngredientInput = z.object({
@@ -349,20 +351,43 @@ export async function createRecipeCore(user: AppUser, data: z.input<typeof recip
     );
   }
 
+  // `recipes.code` is UNIQUE but nothing checked it before the insert, so a
+  // duplicate surfaced as a raw "Failed query: insert into ..." to the user.
+  // Mirrors the guard on createIngredientCore.
+  const normalizedCode = data.code.trim();
+  const [clash] = await db
+    .select({ id: recipes.id, name: recipes.name })
+    .from(recipes)
+    .where(eq(recipes.code, normalizedCode))
+    .limit(1);
+  if (clash) {
+    throw new Error(`Kode menu "${normalizedCode}" sudah dipakai oleh "${clash.name}"`);
+  }
+
   // Insert recipe
-  const [recipe] = await db
-    .insert(recipes)
-    .values({
-      code: data.code,
-      name: data.name,
-      description: data.description,
-      imageUrl: data.imageUrl,
-      categoryId: data.categoryId,
-      isSubRecipe: data.isSubRecipe,
-      basePrice: data.basePrice,
-      isBOGO: data.isBOGO,
-    })
-    .returning();
+  let recipe: typeof recipes.$inferSelect;
+  try {
+    [recipe] = await db
+      .insert(recipes)
+      .values({
+        code: normalizedCode,
+        name: data.name,
+        description: data.description,
+        imageUrl: data.imageUrl,
+        categoryId: data.categoryId,
+        isSubRecipe: data.isSubRecipe,
+        basePrice: data.basePrice,
+        isBOGO: data.isBOGO,
+      })
+      .returning();
+  } catch (err) {
+    // The pre-check cannot see a concurrent insert, so keep a net for the race.
+    if (!(err instanceof DrizzleQueryError)) throw err;
+    if (isUniqueViolation(err)) {
+      throw new Error(`Kode menu "${normalizedCode}" sudah dipakai oleh menu lain`);
+    }
+    throw new Error(`Gagal menambah menu: ${describeDbError(err)}`);
+  }
 
   // Insert brand links
   if (data.brandIds.length > 0) {
@@ -463,79 +488,101 @@ export async function updateRecipeCore(user: AppUser, data: z.input<typeof updat
   const [old] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
   if (!old) throw new Error("Recipe not found");
 
+  // Same duplicate-code guard as create (see createRecipeCore).
+  if (recipeUpdates.code !== undefined) {
+    const normalizedCode = recipeUpdates.code.trim();
+    const [clash] = await db
+      .select({ id: recipes.id, name: recipes.name })
+      .from(recipes)
+      .where(eq(recipes.code, normalizedCode))
+      .limit(1);
+    if (clash && clash.id !== id) {
+      throw new Error(`Kode menu "${normalizedCode}" sudah dipakai oleh "${clash.name}"`);
+    }
+    recipeUpdates.code = normalizedCode;
+  }
+
   // All link-table writes are atomic — a failure in any block (e.g. dup
   // recipe_child_unique) rolls back the whole recipe update, avoiding a
   // half-deleted BOM that the non-transactional version left behind
   // (see db-risky-calls.integration.test.ts).
-  await db.transaction(async (tx) => {
-    // Update recipe base fields. `recipeUpdates` can legitimately be empty for
-    // link-only partial saves (BOM-only or branch-only), so skip the UPDATE
-    // instead of sending drizzle an empty `set({})` (which throws
-    // "No values to set").
-    if (Object.keys(recipeUpdates).length > 0) {
-      await tx.update(recipes).set(recipeUpdates).where(eq(recipes.id, id));
-    }
-
-    // Update brand links
-    if (brandIds !== undefined) {
-      await tx.delete(recipeBrands).where(eq(recipeBrands.recipeId, id));
-      if (brandIds.length > 0) {
-        await tx
-          .insert(recipeBrands)
-          .values(brandIds.map((brandId) => ({ recipeId: id, brandId })));
+  try {
+    await db.transaction(async (tx) => {
+      // Update recipe base fields. `recipeUpdates` can legitimately be empty for
+      // link-only partial saves (BOM-only or branch-only), so skip the UPDATE
+      // instead of sending drizzle an empty `set({})` (which throws
+      // "No values to set").
+      if (Object.keys(recipeUpdates).length > 0) {
+        await tx.update(recipes).set(recipeUpdates).where(eq(recipes.id, id));
       }
-    }
 
-    // Update ingredients
-    if (recipeIngs !== undefined) {
-      await tx.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, id));
-      if (recipeIngs.length > 0) {
-        await tx
-          .insert(recipeIngredients)
-          .values(recipeIngs.map((ing) => ({ recipeId: id, ...ing })));
-      }
-    }
-
-    // Update child recipes
-    if (childRecipes !== undefined) {
-      await tx.delete(recipeChildRecipes).where(eq(recipeChildRecipes.parentRecipeId, id));
-      if (childRecipes.length > 0) {
-        await tx.insert(recipeChildRecipes).values(
-          childRecipes.map((cr) => ({
-            parentRecipeId: id,
-            childRecipeId: cr.recipeId,
-            quantity: cr.quantity,
-          })),
-        );
-      }
-    }
-
-    // Update modifier groups
-    if (modifierGroupIds !== undefined) {
-      await tx.delete(recipeModifierGroups).where(eq(recipeModifierGroups.recipeId, id));
-      if (modifierGroupIds.length > 0) {
-        await tx
-          .insert(recipeModifierGroups)
-          .values(modifierGroupIds.map((mgId) => ({ recipeId: id, modifierGroupId: mgId })));
-      }
-    }
-
-    // Update branch visibility
-    if (branchIds !== undefined && branchIds !== null) {
-      if (branchIds.length === 0) {
-        // Explicitly set to "all branches" by deleting all explicit records
-        await tx.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
-      } else {
-        // Delete existing and insert new branch assignments
-        await tx.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
-        if (branchIds.length > 0) {
+      // Update brand links
+      if (brandIds !== undefined) {
+        await tx.delete(recipeBrands).where(eq(recipeBrands.recipeId, id));
+        if (brandIds.length > 0) {
           await tx
-            .insert(recipeBranches)
-            .values(branchIds.map((branchId) => ({ recipeId: id, branchId })));
+            .insert(recipeBrands)
+            .values(brandIds.map((brandId) => ({ recipeId: id, brandId })));
         }
       }
+
+      // Update ingredients
+      if (recipeIngs !== undefined) {
+        await tx.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, id));
+        if (recipeIngs.length > 0) {
+          await tx
+            .insert(recipeIngredients)
+            .values(recipeIngs.map((ing) => ({ recipeId: id, ...ing })));
+        }
+      }
+
+      // Update child recipes
+      if (childRecipes !== undefined) {
+        await tx.delete(recipeChildRecipes).where(eq(recipeChildRecipes.parentRecipeId, id));
+        if (childRecipes.length > 0) {
+          await tx.insert(recipeChildRecipes).values(
+            childRecipes.map((cr) => ({
+              parentRecipeId: id,
+              childRecipeId: cr.recipeId,
+              quantity: cr.quantity,
+            })),
+          );
+        }
+      }
+
+      // Update modifier groups
+      if (modifierGroupIds !== undefined) {
+        await tx.delete(recipeModifierGroups).where(eq(recipeModifierGroups.recipeId, id));
+        if (modifierGroupIds.length > 0) {
+          await tx
+            .insert(recipeModifierGroups)
+            .values(modifierGroupIds.map((mgId) => ({ recipeId: id, modifierGroupId: mgId })));
+        }
+      }
+
+      // Update branch visibility
+      if (branchIds !== undefined && branchIds !== null) {
+        if (branchIds.length === 0) {
+          // Explicitly set to "all branches" by deleting all explicit records
+          await tx.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
+        } else {
+          // Delete existing and insert new branch assignments
+          await tx.delete(recipeBranches).where(eq(recipeBranches.recipeId, id));
+          if (branchIds.length > 0) {
+            await tx
+              .insert(recipeBranches)
+              .values(branchIds.map((branchId) => ({ recipeId: id, branchId })));
+          }
+        }
+      }
+    });
+  } catch (err) {
+    if (!(err instanceof DrizzleQueryError)) throw err;
+    if (isUniqueViolation(err)) {
+      throw new Error(`Kode menu "${recipeUpdates.code ?? old.code}" sudah dipakai oleh menu lain`);
     }
-  });
+    throw new Error(`Gagal mengubah menu: ${describeDbError(err)}`);
+  }
 
   const [updated] = await db.select().from(recipes).where(eq(recipes.id, id)).limit(1);
 
