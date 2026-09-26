@@ -29,7 +29,12 @@ export const Route = createFileRoute("/api/keepalive")({
         } catch (err) {
           // Returning 500 lets Vercel surface the failure in cron logs; the
           // connection attempt itself still wakes a paused Supabase instance.
-          return new Response(JSON.stringify({ ok: false, error: String(err) }), {
+          //
+          // The detail is logged, never returned: this endpoint is open to
+          // anyone when CRON_SECRET is unset, and `String(err)` on a failed
+          // statement renders the SQL and its bound parameters into the body.
+          console.error("[keepalive] database probe failed", err);
+          return new Response(JSON.stringify({ ok: false }), {
             status: 500,
             headers: { "Content-Type": "application/json" },
           });
