@@ -91,16 +91,25 @@ function RootDocument() {
         <AuthProvider user={user ?? null} isLoading={false}>
           <AuthSessionWatcher />
           <Outlet />
-          <TanStackDevtools
-            config={{ position: "bottom-right" }}
-            plugins={[
-              {
-                name: "Tanstack Router",
-                render: <TanStackRouterDevtoolsPanel />,
-              },
-              TanStackQueryDevtools,
-            ]}
-          />
+          {/* Dev-only. TanStack Devtools has no production guard of its own and
+              mounts fixed-position overlay elements (a floating launcher plus a
+              full-screen panel). Left ungated it shipped to client devices,
+              where an accidental tap near the bottom-right corner opened a
+              panel that covered the page and swallowed taps on form fields —
+              reported as "the search box won't focus, no keyboard" on the
+              procurement page. Keep this behind import.meta.env.DEV. */}
+          {import.meta.env.DEV && (
+            <TanStackDevtools
+              config={{ position: "bottom-right" }}
+              plugins={[
+                {
+                  name: "Tanstack Router",
+                  render: <TanStackRouterDevtoolsPanel />,
+                },
+                TanStackQueryDevtools,
+              ]}
+            />
+          )}
         </AuthProvider>
         <Scripts />
       </body>
