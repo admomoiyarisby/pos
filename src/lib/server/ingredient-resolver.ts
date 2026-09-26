@@ -77,9 +77,11 @@ async function resolveRecipeBOM(
   entries: BOMEntry[],
   addonModifierIds: string[],
   includeCost: boolean,
-  /** Ordered quantity of the parent item. Recipe add-on modifiers scale with
-   *  it (order 2 → 2 × the add-on recipe's BOM); ingredient-based
-   *  modifierIngredients stay flat per order. */
+  /** Ordered quantity of the parent item. Both add-on kinds scale with it
+   *  (order 2 → 2 × the modifier's ingredient / the add-on recipe's BOM), so
+   *  stock, COGS, and the void restore all move together. Note this is the
+   *  *ordered* quantity, not the BOGO-effective one: ordering 2 of a BOGO dish
+   *  still carries 2 of the add-on. */
   itemQuantity: number,
   tx?: DbOrTx,
 ): Promise<Map<string, { qty: number; cost: number }>> {
@@ -137,12 +139,14 @@ async function resolveRecipeBOM(
       .leftJoin(ingredients, eq(modifierIngredients.ingredientId, ingredients.id))
       .where(inArray(modifierIngredients.modifierId, addonModifierIds));
 
-    // Group modifiers by their modifierId and multiply by quantity
+    // Scale by the parent item's ordered quantity — the add-on is chosen once
+    // for the line but is consumed once per ordered unit (order 3 → 3 × qty).
     for (const mi of modIngs) {
+      const totalQty = mi.qty * itemQuantity;
       const existing = ingredientMap.get(mi.ingredientId) ?? { qty: 0, cost: 0 };
-      existing.qty += mi.qty;
+      existing.qty += totalQty;
       if (mi.cost != null) {
-        existing.cost = existing.cost + mi.cost * mi.qty;
+        existing.cost = existing.cost + mi.cost * totalQty;
       }
       ingredientMap.set(mi.ingredientId, existing);
     }

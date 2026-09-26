@@ -224,11 +224,15 @@ describe("ingredient resolver database integration", () => {
           { includeCost: true, tx: db },
         );
 
+        // Ordered qty 2, parent recipe is BOGO → effective 4 for its own BOM
+        // (ingredient 1×4, child 2×3×4). Add-ons scale by the *ordered* qty 2,
+        // not the BOGO-effective 4: modifier ingredient 4×2 = 8, and the recipe
+        // add-on's BOM 3×(2×2) = 12.
         expect(result.ingredients).toEqual(
           expect.arrayContaining([
             expect.objectContaining({ ingredientId: fixture.ingredientId, quantity: 4 }),
             expect.objectContaining({ ingredientId: fixture.childIngredientId, quantity: 24 }),
-            expect.objectContaining({ ingredientId: fixture.addOnIngredientId, quantity: 4 }),
+            expect.objectContaining({ ingredientId: fixture.addOnIngredientId, quantity: 8 }),
             expect.objectContaining({
               ingredientId: fixture.recipeAddOnIngredientId,
               quantity: 12,
