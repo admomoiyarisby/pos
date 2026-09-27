@@ -318,6 +318,13 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["scm-procurement-items", procurement.id] });
     },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menambah item Pengadaan", { description: error.message });
+    },
   });
 
   const removeM = useMutation({
@@ -327,6 +334,13 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["scm-procurement-items", procurement.id] });
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus item Pengadaan", { description: error.message });
     },
   });
 

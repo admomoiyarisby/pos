@@ -8,6 +8,7 @@ import { Badge } from "#/components/ui/badge";
 import Modal from "#/components/ui/Modal";
 import { getPendingPrintRequests, approveReprint, rejectReprint } from "#/lib/server/pos";
 import { Printer } from "lucide-react";
+import { toast } from "sonner";
 
 interface PrintRequest {
   id: string;
@@ -66,6 +67,12 @@ function PrintRequestsPage() {
       setConfirmAction(null);
       setSelectedRequest(null);
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menyetujui", { description: error.message });
+    },
   });
 
   const rejectMutation = useMutation({
@@ -74,6 +81,13 @@ function PrintRequestsPage() {
       void queryClient.invalidateQueries({ queryKey: ["print-requests"] });
       setConfirmAction(null);
       setSelectedRequest(null);
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menolak permintaan cetak", { description: error.message });
     },
   });
 

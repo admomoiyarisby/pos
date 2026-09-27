@@ -936,6 +936,13 @@ function PosPage() {
     onSuccess: function () {
       void queryClient.invalidateQueries({ queryKey: ["active-requests"] });
     },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal meminta reprint", { description: error.message });
+    },
   });
 
   function handleReprint(orderId: string) {

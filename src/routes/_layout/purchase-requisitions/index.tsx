@@ -33,6 +33,7 @@ import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { ArrowRight, Plus, Package, RefreshCw, Truck } from "lucide-react";
+import { toast } from "sonner";
 
 interface PRRow {
   id: string;
@@ -154,6 +155,13 @@ function PRPage() {
         setPrItems(mapped);
         setModalOpen(true);
       }
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membuat rekomendasi pemesanan", { description: error.message });
     },
   });
 

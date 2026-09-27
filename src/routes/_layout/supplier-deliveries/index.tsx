@@ -23,6 +23,7 @@ import {
 import { getIngredients } from "#/lib/server/ingredients";
 import { Badge } from "#/components/ui/badge";
 import { Printer, Pencil, Trash2, CheckCircle } from "lucide-react";
+import { toast } from "sonner";
 
 interface DeliveryRow {
   id: string;
@@ -85,6 +86,12 @@ function SupplierDeliveriesPage() {
       setModalOpen(false);
       setEditId(null);
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menyimpan", { description: error.message });
+    },
   });
 
   const updateMutation = useMutation({
@@ -94,6 +101,12 @@ function SupplierDeliveriesPage() {
       setModalOpen(false);
       setEditId(null);
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menyimpan perubahan", { description: error.message });
+    },
   });
 
   const deleteMutation = useMutation({
@@ -102,12 +115,25 @@ function SupplierDeliveriesPage() {
       void queryClient.invalidateQueries({ queryKey: ["supplier-deliveries"] });
       setDeleteConfirm(null);
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menghapus", { description: error.message });
+    },
   });
 
   const completeMutation = useMutation({
     mutationFn: completeSupplierDelivery,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["supplier-deliveries"] });
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menyelesaikan barang masuk", { description: error.message });
     },
   });
 

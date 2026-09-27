@@ -12,6 +12,7 @@ import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { ArrowRight, Lock, Unlock, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 
 interface PeriodRow {
   id: string;
@@ -59,6 +60,12 @@ function PeriodControlPage() {
       setOpenModal(false);
       setPeriodName("");
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membuka periode", { description: error.message });
+    },
   });
 
   const closeMutation = useMutation({
@@ -67,6 +74,13 @@ function PeriodControlPage() {
       void queryClient.invalidateQueries({ queryKey: ["periods"] });
       setCloseResult(data);
       if (data.success) setCloseModal(false);
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menutup periode", { description: error.message });
     },
   });
 

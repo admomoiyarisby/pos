@@ -102,6 +102,12 @@ function DNDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["delivery-note", dnId] });
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menerima", { description: error.message });
+    },
   });
 
   const reviewMutation = useMutation({
@@ -109,6 +115,13 @@ function DNDetailPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["delivery-note", dnId] });
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menyimpan review", { description: error.message });
     },
   });
 
@@ -119,6 +132,13 @@ function DNDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
       void queryClient.invalidateQueries({ queryKey: ["scm-invoices"] });
     },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membuat invoice", { description: error.message });
+    },
   });
 
   const cancelMutation = useMutation({
@@ -127,6 +147,13 @@ function DNDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["delivery-note", dnId] });
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
       setShowCancelModal(false);
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membatalkan surat jalan", { description: error.message });
     },
   });
 

@@ -21,6 +21,7 @@ import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { ArrowRight, Printer } from "lucide-react";
 import { printSCMInvoice } from "#/lib/pos-print";
+import { toast } from "sonner";
 
 interface InvRow {
   id: string;
@@ -74,16 +75,37 @@ function SCMInvoicePage() {
       setGenerateModal(false);
       setSelectedDn("");
     },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membuat invoice", { description: error.message });
+    },
   });
 
   const payMutation = useMutation({
     mutationFn: paySCMInvoice,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scm-invoices"] }),
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menandai invoice lunas", { description: error.message });
+    },
   });
 
   const cancelMutation = useMutation({
     mutationFn: cancelSCMInvoice,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scm-invoices"] }),
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membatalkan invoice", { description: error.message });
+    },
   });
 
   const receivedDns = dns.filter((d) => d.status === "Received");

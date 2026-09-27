@@ -120,6 +120,12 @@ function NewProcurementPage() {
         params: { procurementId: result.id },
       });
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membuat draft Pengadaan", { description: error.message });
+    },
   });
 
   const submitM = useMutation({
@@ -132,6 +138,13 @@ function NewProcurementPage() {
       clearDraft();
       void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
       void navigate({ to: "/scm-procurements/$procurementId", params: { procurementId: id } });
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal mengirim Pengadaan", { description: error.message });
     },
   });
 

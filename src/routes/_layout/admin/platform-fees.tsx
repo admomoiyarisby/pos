@@ -12,6 +12,7 @@ import { Button } from "#/components/ui/button";
 import MoneyInput from "#/components/MoneyInput";
 import { getPlatformFees, updatePlatformFee } from "#/lib/server/platform-fees";
 import { Trash2, Info } from "lucide-react";
+import { toast } from "sonner";
 
 interface FeeRow {
   id: string;
@@ -79,6 +80,13 @@ function PlatformFeesPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["platform-fees"] });
       setEditing(null);
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menyimpan biaya platform", { description: error.message });
     },
   });
 

@@ -5,6 +5,7 @@ import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import { getSCMInvoice, paySCMInvoice, cancelSCMInvoice } from "#/lib/server/scm";
 import { Badge } from "#/components/ui/badge";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_layout/scm-invoices/$invId")({
   component: SCMInvoiceDetailPage,
@@ -32,6 +33,13 @@ function SCMInvoiceDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["scm-invoice", invId] });
       void queryClient.invalidateQueries({ queryKey: ["scm-invoices"] });
     },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menandai invoice lunas", { description: error.message });
+    },
   });
 
   const cancelMutation = useMutation({
@@ -39,6 +47,13 @@ function SCMInvoiceDetailPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["scm-invoice", invId] });
       void queryClient.invalidateQueries({ queryKey: ["scm-invoices"] });
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membatalkan invoice", { description: error.message });
     },
   });
 

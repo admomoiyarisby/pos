@@ -17,6 +17,7 @@ import { getBranches } from "#/lib/server/branches";
 import { getIngredients } from "#/lib/server/ingredients";
 import { Badge } from "#/components/ui/badge";
 import { Check, PackageCheck, Ban } from "lucide-react";
+import { toast } from "sonner";
 
 const statusColors = {
   Draft: "secondary",
@@ -59,6 +60,12 @@ function PODetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       setIsEditing(false);
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menyimpan perubahan", { description: error.message });
+    },
   });
 
   const sendMutation = useMutation({
@@ -66,6 +73,12 @@ function PODetailPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["purchase-order", poId] });
       void queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+    },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal mengirim", { description: error.message });
     },
   });
 
@@ -75,6 +88,12 @@ function PODetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["purchase-order", poId] });
       void queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menerima", { description: error.message });
+    },
   });
 
   const cancelMutation = useMutation({
@@ -82,6 +101,13 @@ function PODetailPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["purchase-order", poId] });
       void queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membatalkan PO", { description: error.message });
     },
   });
 

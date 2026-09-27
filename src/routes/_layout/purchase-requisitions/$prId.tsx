@@ -15,6 +15,7 @@ import {
 } from "#/lib/server/scm";
 import { Badge } from "#/components/ui/badge";
 import { Truck, ArrowRight } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_layout/purchase-requisitions/$prId")({
   component: PRDetailPage,
@@ -86,6 +87,12 @@ function PRDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
       setShowProcessModal(false);
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal memproses PR", { description: error.message });
+    },
   });
 
   const rejectMutation = useMutation({
@@ -94,6 +101,13 @@ function PRDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["purchase-requisition", prId] });
       void queryClient.invalidateQueries({ queryKey: ["purchase-requisitions"] });
       setShowRejectModal(false);
+    },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menolak PR", { description: error.message });
     },
   });
 

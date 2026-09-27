@@ -126,6 +126,13 @@ function RecipesPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["recipes"] });
     },
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menghitung ulang HPP", { description: error.message });
+    },
   });
 
   const displayRows = useMemo(() => {

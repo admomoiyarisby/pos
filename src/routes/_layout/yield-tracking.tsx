@@ -403,6 +403,12 @@ function YieldTrackingPage() {
       setProducedItems([{ ingredientId: "", quantity: 0 }]);
       setTimeout(() => setResult(null), 5000);
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menyimpan", { description: error.message });
+    },
   });
 
   // ── Cancel Produksi (branch_admin → super_admin/area_manager)
@@ -426,6 +432,12 @@ function YieldTrackingPage() {
       setCancelTarget(null);
       setCancelReason("");
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal mengajukan pembatalan", { description: error.message });
+    },
   });
   const approveMutation = useMutation({
     mutationFn: approveYieldCancelRequest,
@@ -434,11 +446,23 @@ function YieldTrackingPage() {
       void queryClient.invalidateQueries({ queryKey: ["branch-inventory"] });
       void queryClient.invalidateQueries({ queryKey: ["yield-cancel-requests"] });
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menyetujui", { description: error.message });
+    },
   });
   const rejectMutation = useMutation({
     mutationFn: rejectYieldCancelRequest,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["yield-cancel-requests"] });
+    },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menolak", { description: error.message });
     },
   });
   const directCancelMutation = useMutation({
@@ -448,6 +472,12 @@ function YieldTrackingPage() {
       void queryClient.invalidateQueries({ queryKey: ["branch-inventory"] });
       setCancelTarget(null);
       setCancelReason("");
+    },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membatalkan", { description: error.message });
     },
   });
 

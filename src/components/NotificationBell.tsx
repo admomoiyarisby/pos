@@ -6,6 +6,7 @@ import { lookupLabel } from "#/lib/label-lookup";
 import { useAuth } from "#/lib/auth-context";
 import type { systemNotifications } from "#/db/schema";
 import type { InferSelectModel } from "drizzle-orm";
+import { toast } from "sonner";
 
 type Notification = InferSelectModel<typeof systemNotifications>;
 
@@ -64,6 +65,13 @@ export default function NotificationBell() {
   const readMutation = useMutation({
     mutationFn: markNotificationRead,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal menandai notifikasi", { description: error.message });
+    },
   });
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;

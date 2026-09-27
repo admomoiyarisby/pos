@@ -177,6 +177,12 @@ function OrderHistoryPage() {
       setStatusModalOrder(null);
       setTargetStatus("");
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal mengubah status", { description: error.message });
+    },
   });
 
   const voidMutation = useMutation({

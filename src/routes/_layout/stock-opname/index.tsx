@@ -179,10 +179,20 @@ function StockOpnamePage() {
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       void navigate({ to: "/stock-opname/$soId", params: { soId: result.id } });
     },
+    // Without this the failure is invisible: handleTrigger discards the
+    // rejected promise and the mutation had no error handler, so a refused
+    // trigger looked exactly like an unpressable button. Reported from the
+    // field as "trigger SO cannot be pressed".
+    onError: (error: Error) => {
+      toast.error("Gagal trigger SO", { description: error.message });
+    },
   });
 
   const handleTrigger = () => {
-    if (!selectedBranch || !selectedDate) return;
+    if (!selectedBranch || !selectedDate) {
+      toast.error("Pilih cabang dan tanggal terlebih dahulu");
+      return;
+    }
     void triggerMutation.mutateAsync({
       data: { branchId: selectedBranch, date: selectedDate },
     });

@@ -988,6 +988,12 @@ function FinancePage() {
       setModalOpen(false);
       toast.success("Revenue berhasil dicatat");
     },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membuat catatan", { description: error.message });
+    },
   });
 
   const createChannelMutation = useMutation({
@@ -995,6 +1001,12 @@ function FinancePage() {
     onSuccess: () => {
       setModalOpen(false);
       toast.success("Revenue berhasil dicatat");
+    },
+    // Without this the failure is silent: call sites discard the rejected
+    // promise with `void ...mutateAsync()`, so a refused action looked
+    // exactly like an unresponsive control.
+    onError: (error: Error) => {
+      toast.error("Gagal membuat channel", { description: error.message });
     },
   });
 
