@@ -27,21 +27,34 @@ export type FsmTx = Parameters<Parameters<typeof DbType.transaction>[0]>[0];
 export type FsmActor = { id: string; role: string };
 
 /**
+ * Float32 (real column) round-off tolerance. `inventory.quantity` is a
+ * `real` (float32) column while item quantities are integers, so POS / BOM /
+ * yield deductions leave fractional residue (e.g. 49.999999 instead of 50).
+ * An exact `available < requested` comparison then rejects a shipment the UI
+ * shows as fully stocked. Treat anything within 0.5 of the requested amount
+ * as sufficient (client report: "Surat jalan tidak bisa dibuat — insufficient
+ * ingredient, tapi stok pusat ada").
+ */
+export const STOCK_CHECK_EPSILON = 0.5;
+
+/**
  * Thrown by `writeInTransitInventory` (the `accept-and-ship` effect) when
  * Central's current inventory for an ingredient is below the item's
- * `pickedQuantity`. Mirrors Mutasi's `InsufficientStockError` (ADR 0006): the
- * system tracks Central's stock as a concrete quantity, so shipping more than
- * Central has would fabricate stock and desync the ledger — the transition is
- * refused instead. The caller (server fn) maps this to a user-facing error.
+ * `pickedQuantity` (beyond float32 round-off tolerance). Mirrors Mutasi's
+ * `InsufficientStockError` (ADR 0006): the system tracks Central's stock as a
+ * concrete quantity, so shipping more than Central has would fabricate stock
+ * and desync the ledger — the transition is refused instead. The caller (server
+ * fn) maps this to a user-facing error.
  */
 export class ProcurementInsufficientStockError extends Error {
   constructor(
     public readonly ingredientId: string,
+    public readonly ingredientName: string,
     public readonly requested: number,
     public readonly available: number,
   ) {
     super(
-      `Insufficient stock at Central for ingredient ${ingredientId}: requested ${requested}, available ${available}`,
+      `Stok tidak cukup di Central Warehouse untuk bahan "${ingredientName}": dibutuhkan ${requested}, tersedia ${available}`,
     );
     this.name = "ProcurementInsufficientStockError";
   }
@@ -162,15 +175,19 @@ export async function writeInTransitInventory(
     // Math.max clamp wrote an OUT ledger larger than the balance delta
     // and put phantom stock in transit. Refuse the transition instead.
     const [inv] = await tx
-      .select()
+      .select({ id: inventory.id, quantity: inventory.quantity, name: ingredients.name })
       .from(inventory)
+      .innerJoin(ingredients, eq(ingredients.id, inventory.ingredientId))
       .where(and(eq(inventory.branchId, central.id), eq(inventory.ingredientId, item.ingredientId)))
       .limit(1);
 
     const currentQty = inv?.quantity ?? 0;
-    if (currentQty < item.pickedQuantity) {
+    // Tolerate float32 round-off residue so a displayed "50" is not rejected
+    // because the stored value is 49.999999 (see STOCK_CHECK_EPSILON above).
+    if (currentQty < item.pickedQuantity - STOCK_CHECK_EPSILON) {
       throw new ProcurementInsufficientStockError(
         item.ingredientId,
+        inv?.name ?? item.ingredientId,
         item.pickedQuantity,
         currentQty,
       );

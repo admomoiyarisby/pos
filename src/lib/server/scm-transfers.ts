@@ -30,6 +30,7 @@ import {
   loadTransferWithItems,
 } from "./scm-transfer-queries";
 import { nextTransferCode, nextTransferInvoiceCode } from "./scm-transfer-codes";
+import { STOCK_CHECK_EPSILON } from "./scm-effects";
 import { buildNotificationsForEvent, insertNotifications } from "./scm-transfer-notifications";
 
 /**
@@ -87,16 +88,20 @@ async function hardStockCheck(
 ): Promise<void> {
   for (const item of items) {
     const [inv] = await db
-      .select({ qty: inventory.quantity })
+      .select({ qty: inventory.quantity, name: ingredients.name })
       .from(inventory)
+      .innerJoin(ingredients, eq(ingredients.id, inventory.ingredientId))
       .where(
         and(eq(inventory.branchId, fromBranchId), eq(inventory.ingredientId, item.ingredientId)),
       )
       .limit(1);
     const available = inv?.qty ?? 0;
-    if (item.quantity > available) {
+    // Tolerate float32 round-off residue in inventory.quantity (same guard as
+    // the ship-time check in scm-transfer-effects.ts) so a displayed "50" is
+    // not rejected because the stored value is 49.999999.
+    if (item.quantity > available + STOCK_CHECK_EPSILON) {
       throw new Error(
-        `Stok tidak mencukupi untuk bahan yang dipilih: tersedia ${available}, diminta ${item.quantity}`,
+        `Stok tidak mencukupi untuk bahan "${inv?.name ?? item.ingredientId}": tersedia ${available}, diminta ${item.quantity}`,
       );
     }
   }

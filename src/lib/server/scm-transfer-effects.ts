@@ -12,6 +12,7 @@ import {
   wasteEntries,
 } from "#/db/schema";
 import { InsufficientStockError } from "./scm-transfer-errors";
+import { STOCK_CHECK_EPSILON } from "./scm-effects";
 
 // =============================================================================
 // Effect handlers for the Mutasi Stok FSM (ADR 0006).
@@ -84,16 +85,24 @@ export async function writeTransferInTransitInventory(
 
     // Read current inventory at the Sender's branch
     const [inv] = await tx
-      .select()
+      .select({ id: inventory.id, quantity: inventory.quantity, name: ingredients.name })
       .from(inventory)
+      .innerJoin(ingredients, eq(ingredients.id, inventory.ingredientId))
       .where(
         and(eq(inventory.branchId, tr.fromBranchId), eq(inventory.ingredientId, item.ingredientId)),
       )
       .limit(1);
 
     const currentQty = inv?.quantity ?? 0;
-    if (currentQty < item.quantity) {
-      throw new InsufficientStockError(item.ingredientId, item.quantity, currentQty);
+    // Tolerate float32 round-off residue (see STOCK_CHECK_EPSILON in
+    // scm-effects.ts) — same guard as Pengadaan's accept-and-ship.
+    if (currentQty < item.quantity - STOCK_CHECK_EPSILON) {
+      throw new InsufficientStockError(
+        item.ingredientId,
+        inv?.name ?? item.ingredientId,
+        item.quantity,
+        currentQty,
+      );
     }
 
     // Decrement Sender's inventory

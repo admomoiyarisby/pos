@@ -17,6 +17,7 @@ import {
 import {
   InvalidTransferStateForEditError,
   InvalidTransferTransitionError,
+  InsufficientStockError,
   TransferNotFoundError,
   TransferUnauthorizedError,
 } from "./scm-transfer-errors";
@@ -334,7 +335,11 @@ export async function transitionTransfer(
     if (
       err instanceof InvalidTransferTransitionError ||
       err instanceof TransferUnauthorizedError ||
-      err instanceof TransferNotFoundError
+      err instanceof TransferNotFoundError ||
+      // Domain failure of the ship effect: Sender lacks stock for an item.
+      // Surface as { success: false } so the UI shows a clean toast instead
+      // of an unhandled error (mirrors Pengadaan's handling).
+      err instanceof InsufficientStockError
     ) {
       return { success: false, error: { name: err.name, message: err.message } };
     }

@@ -52,11 +52,12 @@ export class InvalidTransferStateForEditError extends Error {
 export class InsufficientStockError extends Error {
   constructor(
     public readonly ingredientId: string,
+    public readonly ingredientName: string,
     public readonly requested: number,
     public readonly available: number,
   ) {
     super(
-      `Insufficient stock for ingredient ${ingredientId}: requested ${requested}, available ${available}`,
+      `Stok tidak cukup untuk bahan "${ingredientName}": dibutuhkan ${requested}, tersedia ${available}`,
     );
     this.name = "InsufficientStockError";
   }

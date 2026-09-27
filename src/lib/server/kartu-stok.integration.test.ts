@@ -879,6 +879,38 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
           ),
         ).rejects.toBeInstanceOf(ProcurementInsufficientStockError);
 
+        // Float32 round-off tolerance: Central shows 50 in the UI but stores
+        // 49.999999 after fractional deductions. Shipping 50 must succeed.
+        await db
+          .update(schema.inventory)
+          .set({ quantity: 49.999999 })
+          .where(
+            and(eq(schema.inventory.branchId, centralId), eq(schema.inventory.ingredientId, ingId)),
+          );
+        await db
+          .update(schema.scmProcurementItems)
+          .set({ readyQuantity: 50, pickedQuantity: 50 })
+          .where(eq(schema.scmProcurementItems.id, itemId));
+        await expect(
+          writeInTransitInventory(
+            procId,
+            {},
+            { id: "actor", role: "admin_pusat" },
+            db as unknown as Parameters<typeof writeInTransitInventory>[3],
+          ),
+        ).resolves.toBeUndefined();
+        // Roll the residue back so the remaining assertions see the original stock
+        await db
+          .update(schema.inventory)
+          .set({ quantity: 50 })
+          .where(
+            and(eq(schema.inventory.branchId, centralId), eq(schema.inventory.ingredientId, ingId)),
+          );
+        await db
+          .delete(schema.inTransitInventory)
+          .where(eq(schema.inTransitInventory.scmProcurementId, procId));
+        await db.delete(schema.stockLedger).where(eq(schema.stockLedger.reference, procId));
+
         // No ledger written on failure
         const ledgers = await ledgerRows(db, procId);
         expect(ledgers).toHaveLength(0);

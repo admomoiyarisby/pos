@@ -20,6 +20,7 @@ import {
   type FsmTx,
 } from "./scm-effects";
 import { buildNotificationsForEvent, insertNotifications } from "./scm-procurement-notifications";
+import { ProcurementInsufficientStockError } from "./scm-effects";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -358,7 +359,11 @@ export async function transition(
     if (
       err instanceof InvalidTransitionError ||
       err instanceof UnauthorizedError ||
-      err instanceof ProcurementNotFoundError
+      err instanceof ProcurementNotFoundError ||
+      // Domain failure of the accept-and-ship effect: Central lacks stock for
+      // a picked item. Surface as { success: false } so the UI shows a clean
+      // toast instead of an unhandled error (issue #92 / client report).
+      err instanceof ProcurementInsufficientStockError
     ) {
       return { success: false, error: { name: err.name, message: err.message } };
     }
