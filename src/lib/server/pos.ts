@@ -1682,8 +1682,33 @@ export const getCancelRequests = createServerFn({ method: "GET" })
     return result;
   });
 
-// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+// User-parameterized core (ADR-0015), so integration tests can drive it with an
+// impersonated actor. It also re-checks the role the wrapper delegates to —
+// see the guard below.
+//
+// Approving a cancel request now *executes* it: the order is voided and its
+// inventory restored in the same transaction, so the approver does not have to
+// hand the request back for a second person to action. Previously approval only
+// flipped the status to "Approved" and a separate Execute step did the work.
+//
+// The `Approved` state is kept in the enum for requests that were approved
+// before this change; executeApprovedCancelCore still finishes those.
+//
+// Because approval is now the step that mutates stock, the transition is
+// claimed with a conditional UPDATE. Two concurrent approvals cannot both move
+// the request out of "Pending", which is what would otherwise restore the same
+// inventory twice.
 export async function approveCancelRequestCore(user: AppUser, data: { requestId: string }) {
+  // Server-side mirror of the /cancel-requests RoleGuard. The page only offers
+  // Approve/Reject to these roles; the endpoint previously accepted any signed-in
+  // user, so a branch_admin could approve their own request and void their own
+  // order. Harmless-ish while approval was inert, not harmless now.
+  if (user.role !== "super_admin" && user.role !== "area_manager") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | area_manager)`,
+    );
+  }
+
   const [old] = await db
     .select()
     .from(cancelRequests)
@@ -1691,30 +1716,59 @@ export async function approveCancelRequestCore(user: AppUser, data: { requestId:
     .limit(1);
 
   if (!old) throw new Error("Cancel request not found");
-  if (old.status !== "Pending") throw new Error("Request sudah diproses");
 
-  const [req] = await db
-    .update(cancelRequests)
-    .set({ status: "Approved", approvedBy: user.id, approvedAt: new Date() })
-    .where(eq(cancelRequests.id, data.requestId))
-    .returning();
+  const [order] = await db.select().from(orders).where(eq(orders.id, old.orderId)).limit(1);
+  if (!order) throw new Error("Order not found");
 
-  // Notify the requesting cashier
+  const voidedOrder = await db.transaction(async (tx) => {
+    // Claim the request: only the caller whose conditional UPDATE matches a row
+    // proceeds to the void. A second concurrent approval matches nothing and
+    // bails out below, so the stock restore cannot run twice. This is the
+    // authoritative guard — an order that is already Void because of an
+    // earlier approval is reported as "already processed", which is what
+    // actually happened.
+    const [claimed] = await tx
+      .update(cancelRequests)
+      .set({ status: "Executed", approvedBy: user.id, approvedAt: new Date() })
+      .where(and(eq(cancelRequests.id, data.requestId), eq(cancelRequests.status, "Pending")))
+      .returning();
+
+    if (!claimed) throw new Error("Request sudah diproses");
+
+    // Void the order, guarded on it not already being Void for the same reason.
+    const [updatedOrder] = await tx
+      .update(orders)
+      .set({ status: "Void", voidReason: `Cancel: ${old.reason}` })
+      .where(and(eq(orders.id, old.orderId), ne(orders.status, "Void")))
+      .returning();
+
+    if (!updatedOrder) throw new Error("Order sudah dibatalkan");
+
+    await restoreInventoryForVoid(old.orderId, order.branchId, old.reason, tx);
+
+    return updatedOrder;
+  });
+
+  // Notify the requesting cashier that it is already done.
   await db.insert(systemNotifications).values({
     userId: old.requestedBy,
     title: "Cancel Request Approved",
-    message: `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} telah disetujui. Klik tombol Batal untuk menjalankan pembatalan.`,
+    message: `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} telah disetujui dan langsung dibatalkan. Stok telah dikembalikan.`,
     type: "info",
   });
 
   await logSystemAction(
     user,
     "Approve Cancel Request",
-    `Cancel request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}`,
+    `Cancel request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}; order #${order.orderCode ?? order.id.slice(0, 8)} langsung dibatalkan. Alasan: ${old.reason}`,
   );
-  await logAudit(user, "cancelRequests", data.requestId, "STATUS_CHANGE", old, req);
+  await logAudit(user, "cancelRequests", data.requestId, "STATUS_CHANGE", old, {
+    ...old,
+    status: "Executed" as const,
+  });
+  await logAudit(user, "orders", old.orderId, "STATUS_CHANGE", order, voidedOrder);
 
-  return req;
+  return voidedOrder;
 }
 
 export const approveCancelRequest = createServerFn({ method: "POST" })
@@ -1724,8 +1778,16 @@ export const approveCancelRequest = createServerFn({ method: "POST" })
     return approveCancelRequestCore(user, data);
   });
 
-// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+// User-parameterized core (ADR-0015). Re-checks the role the wrapper delegates
+// to, as approveCancelRequestCore does.
 export async function rejectCancelRequestCore(user: AppUser, data: { requestId: string }) {
+  // Same guard as approve (see approveCancelRequestCore).
+  if (user.role !== "super_admin" && user.role !== "area_manager") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | area_manager)`,
+    );
+  }
+
   const [old] = await db
     .select()
     .from(cancelRequests)
@@ -1734,11 +1796,14 @@ export async function rejectCancelRequestCore(user: AppUser, data: { requestId: 
 
   if (!old) throw new Error("Cancel request not found");
 
+  // Conditional UPDATE so a concurrent approve cannot also claim the request.
   const [req] = await db
     .update(cancelRequests)
     .set({ status: "Rejected", approvedBy: user.id, approvedAt: new Date() })
-    .where(eq(cancelRequests.id, data.requestId))
+    .where(and(eq(cancelRequests.id, data.requestId), eq(cancelRequests.status, "Pending")))
     .returning();
+
+  if (!req) throw new Error("Request sudah diproses");
 
   // Notify the requesting cashier
   await db.insert(systemNotifications).values({
@@ -1764,11 +1829,16 @@ export const rejectCancelRequest = createServerFn({ method: "POST" })
     return rejectCancelRequestCore(user, data);
   });
 
-// ─── Execute Approved Cancel (cashier-side) ───
+// ─── Execute Approved Cancel (legacy: requests approved before auto-execute) ───
 
-// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. Executes an
-// approved cancel by voiding the order and restoring inventory, and marks the
-// request Executed.
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. Finishes a
+// request still sitting in the "Approved" state — i.e. one approved before
+// approving started executing immediately — by voiding the order and restoring
+// inventory.
+//
+// New approvals never land in "Approved"; see approveCancelRequestCore. This
+// path stays so those older requests remain completable, and is guarded and
+// claimed the same way so it cannot double-restore.
 export async function executeApprovedCancelCore(user: AppUser, data: { requestId: string }) {
   const [old] = await db
     .select()
@@ -1782,21 +1852,27 @@ export async function executeApprovedCancelCore(user: AppUser, data: { requestId
   const [order] = await db.select().from(orders).where(eq(orders.id, old.orderId)).limit(1);
 
   if (!order) throw new Error("Order not found");
-  if (order.status === "Void") throw new Error("Order sudah dibatalkan");
 
   const voidedOrder = await db.transaction(async (tx) => {
-    // Mark the request as Executed
-    await tx
+    // Claim the request: only the caller that moves it out of "Approved"
+    // restores stock, so a double tap cannot restore twice. Authoritative over
+    // the order's Void flag, for the same reason as approve.
+    const [claimed] = await tx
       .update(cancelRequests)
       .set({ status: "Executed" })
-      .where(eq(cancelRequests.id, data.requestId));
+      .where(and(eq(cancelRequests.id, data.requestId), eq(cancelRequests.status, "Approved")))
+      .returning();
 
-    // Void the order
+    if (!claimed) throw new Error("Request belum disetujui atau sudah dieksekusi");
+
+    // Void the order, guarded on it not already being Void.
     const [updatedOrder] = await tx
       .update(orders)
       .set({ status: "Void", voidReason: `Cancel: ${old.reason}` })
-      .where(eq(orders.id, old.orderId))
+      .where(and(eq(orders.id, old.orderId), ne(orders.status, "Void")))
       .returning();
+
+    if (!updatedOrder) throw new Error("Order sudah dibatalkan");
 
     await restoreInventoryForVoid(old.orderId, order.branchId, old.reason, tx);
 

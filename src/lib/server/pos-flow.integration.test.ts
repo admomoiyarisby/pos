@@ -12,13 +12,17 @@
  * Lifecycles covered:
  *  - Shift: open → take-over → close (with session rows logged in/out).
  *  - Order: create (inventory OUT + Kartu Stok) → complete; void restores stock.
- *  - Cancel approval flow: create → approve → execute (voids the order and
- *    restores inventory).
+ *  - Cancel approval flow: create → approve, where approving is the step that
+ *    voids the order and restores inventory (no separate push). Also covers the
+ *    role guard on approve/reject, a concurrent double-approval, and the legacy
+ *    `Approved` → execute path for requests raised before auto-execute.
  *  - Reprint approval flow: request → approve → consume.
  *
- * These cores carry no role guard (any authenticated staff may operate POS), so
- * the negatives here exercise the lifecycle's state guards and not-found paths
- * and confirm rejected steps have no side effects.
+ * Most of these cores carry no role guard (any authenticated staff may operate
+ * POS), so the negatives there exercise the lifecycle's state guards and
+ * not-found paths. The cancel request path is the exception: approve/reject are
+ * restricted to super_admin / area_manager, mirroring the /cancel-requests
+ * RoleGuard, because approving is what now mutates stock.
  *
  * Isolation: cores hit `#/lib/server/db` (mocked), tables TRUNCATE-d between
  * tests (orders/shifts cascade off branches/users).
@@ -297,9 +301,9 @@ describe("POS — order lifecycle: create → complete, and void restores stock"
   );
 });
 
-describe("POS — cancel request approval flow via the real cores", () => {
+describe("POS — cancel request: approval executes immediately", () => {
   it.skipIf(!hasTestDatabaseUrl)(
-    "create → approve → execute voids the order and restores stock",
+    "create → approve voids the order and restores stock in one step",
     async () => {
       const branchId = await seedBranch();
       const cashier = await seedUser("branch_admin", branchId);
@@ -328,19 +332,252 @@ describe("POS — cancel request approval flow via the real cores", () => {
       });
       expect(req.status).toBe("Pending");
 
-      // Approve by an admin
-      const approved = await posApi.approveCancelRequestCore(admin, { requestId: req.id });
-      expect(approved.status).toBe("Approved");
-
-      // Execute voids the order + restores stock (back to 100)
-      const executed = await posApi.executeApprovedCancelCore(cashier, { requestId: req.id });
-      expect(executed.status).toBe("Void");
+      // Approving now does the work: the order comes back Void, not "Approved".
+      const voided = await posApi.approveCancelRequestCore(admin, { requestId: req.id });
+      expect(voided.status).toBe("Void");
+      // Stock is restored as part of the same approval.
       expect(await inventoryQty(branchId, ingId)).toBe(100);
 
-      // Executing again refused (request not Approved anymore)
+      const [persisted] = await db
+        .select()
+        .from(schema.cancelRequests)
+        .where(eq(schema.cancelRequests.id, req.id));
+      expect(persisted.status).toBe("Executed");
+      expect(persisted.approvedBy).toBe(admin.id);
+
+      // No second push needed — and the legacy Execute step refuses, because
+      // the request is no longer "Approved".
       await expect(
         posApi.executeApprovedCancelCore(cashier, { requestId: req.id }),
       ).rejects.toThrow("Request belum disetujui atau sudah dieksekusi");
+
+      // Re-approving is refused (nothing left in "Pending"), and crucially the
+      // inventory is not restored a second time.
+      await expect(posApi.approveCancelRequestCore(admin, { requestId: req.id })).rejects.toThrow(
+        "Request sudah diproses",
+      );
+      expect(await inventoryQty(branchId, ingId)).toBe(100);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a request that is no longer Pending is refused even while its order is still active",
+    async () => {
+      // Isolates the conditional-UPDATE claim from the "order already Void"
+      // pre-check: here the order is untouched, so the only thing that can
+      // refuse the approval is the status guard on the claim itself. Without
+      // that guard the order would be voided and the stock restored.
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const admin = await seedUser("super_admin");
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+
+      const order = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Gofood",
+        paymentMethod: "gofood",
+        items: [{ recipeId, quantity: 2, price: 15000 }],
+      });
+      const req = await posApi.createCancelRequestCore(cashier, {
+        orderId: order.id,
+        reason: "Salah Input",
+      });
+
+      // Simulate the request being settled by another path (e.g. a concurrent
+      // reject winning the race) while the order is still active.
+      await db
+        .update(schema.cancelRequests)
+        .set({ status: "Executed" })
+        .where(eq(schema.cancelRequests.id, req.id));
+
+      await expect(posApi.approveCancelRequestCore(admin, { requestId: req.id })).rejects.toThrow(
+        "Request sudah diproses",
+      );
+
+      // The order was left alone and the stock was not restored.
+      const [stillActive] = await db
+        .select()
+        .from(schema.orders)
+        .where(eq(schema.orders.id, order.id));
+      expect(stillActive.status).not.toBe("Void");
+      expect(await inventoryQty(branchId, ingId)).toBe(96);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a second concurrent approval cannot restore stock twice",
+    async () => {
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const admin = await seedUser("super_admin");
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+
+      const order = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Gofood",
+        paymentMethod: "gofood",
+        items: [{ recipeId, quantity: 2, price: 15000 }],
+      });
+      const req = await posApi.createCancelRequestCore(cashier, {
+        orderId: order.id,
+        reason: "Salah Input",
+      });
+
+      // Both approvals race for the same request.
+      const results = await Promise.allSettled([
+        posApi.approveCancelRequestCore(admin, { requestId: req.id }),
+        posApi.approveCancelRequestCore(admin, { requestId: req.id }),
+      ]);
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+      // Exactly one restore: 100 - 2 consumed, then +2 back = 100, not 102.
+      expect(await inventoryQty(branchId, ingId)).toBe(100);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "only super_admin / area_manager may approve or reject; the cashier may not self-approve",
+    async () => {
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+
+      const order = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Gofood",
+        paymentMethod: "gofood",
+        items: [{ recipeId, quantity: 2, price: 15000 }],
+      });
+      const req = await posApi.createCancelRequestCore(cashier, {
+        orderId: order.id,
+        reason: "Salah Input",
+      });
+
+      // The requesting cashier cannot approve their own request — this is the
+      // whole point of the approval step, and approving now also voids.
+      await expect(posApi.approveCancelRequestCore(cashier, { requestId: req.id })).rejects.toThrow(
+        "Forbidden: insufficient role",
+      );
+      await expect(posApi.rejectCancelRequestCore(cashier, { requestId: req.id })).rejects.toThrow(
+        "Forbidden: insufficient role",
+      );
+
+      // Still pending and the order untouched.
+      const [stillPending] = await db
+        .select()
+        .from(schema.cancelRequests)
+        .where(eq(schema.cancelRequests.id, req.id));
+      expect(stillPending.status).toBe("Pending");
+      const [untouched] = await db
+        .select()
+        .from(schema.orders)
+        .where(eq(schema.orders.id, order.id));
+      expect(untouched.status).not.toBe("Void");
+      // qty 2 x 2 per unit = 4 consumed; the refused approve/reject restored nothing.
+      expect(await inventoryQty(branchId, ingId)).toBe(96);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "area_manager may approve, and a rejection leaves the order alone",
+    async () => {
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const am = await seedUser("area_manager");
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+
+      const order = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Gofood",
+        paymentMethod: "gofood",
+        items: [{ recipeId, quantity: 1, price: 15000 }],
+      });
+
+      // Rejected: order stays, stock stays consumed.
+      const rejectedReq = await posApi.createCancelRequestCore(cashier, {
+        orderId: order.id,
+        reason: "Salah Input",
+      });
+      const rejected = await posApi.rejectCancelRequestCore(am, { requestId: rejectedReq.id });
+      expect(rejected.status).toBe("Rejected");
+      // qty 1 x 2 per unit = 2 consumed; rejecting must not restore it.
+      expect(await inventoryQty(branchId, ingId)).toBe(98);
+
+      // A second request on the same order can still be approved by an AM.
+      const secondReq = await posApi.createCancelRequestCore(cashier, {
+        orderId: order.id,
+        reason: "Customer Cancel",
+      });
+      const voided = await posApi.approveCancelRequestCore(am, { requestId: secondReq.id });
+      expect(voided.status).toBe("Void");
+      expect(await inventoryQty(branchId, ingId)).toBe(100);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "legacy 'Approved' requests can still be finished by the execute step",
+    async () => {
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+
+      const order = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Gofood",
+        paymentMethod: "gofood",
+        items: [{ recipeId, quantity: 2, price: 15000 }],
+      });
+      const req = await posApi.createCancelRequestCore(cashier, {
+        orderId: order.id,
+        reason: "Stok Habis",
+      });
+
+      // Simulate a request approved before approving started auto-executing.
+      await db
+        .update(schema.cancelRequests)
+        .set({ status: "Approved" })
+        .where(eq(schema.cancelRequests.id, req.id));
+
+      const voided = await posApi.executeApprovedCancelCore(cashier, { requestId: req.id });
+      expect(voided.status).toBe("Void");
+      expect(await inventoryQty(branchId, ingId)).toBe(100);
+
+      // Second execution refused, and no second restore.
+      await expect(
+        posApi.executeApprovedCancelCore(cashier, { requestId: req.id }),
+      ).rejects.toThrow("Request belum disetujui atau sudah dieksekusi");
+      expect(await inventoryQty(branchId, ingId)).toBe(100);
     },
   );
 });
@@ -396,6 +633,7 @@ describe("POS — negatives: not-found and wrong-state guards with no side effec
     async () => {
       const branchId = await seedBranch();
       const cashier = await seedUser("branch_admin", branchId);
+      const approver = await seedUser("super_admin");
       const missing = crypto.randomUUID();
 
       // Order not-found guards
@@ -409,10 +647,17 @@ describe("POS — negatives: not-found and wrong-state guards with no side effec
         posApi.updateOrderStatusCore(cashier, { orderId: missing, newStatus: "Completed" }),
       ).rejects.toThrow("Order not found");
 
-      // Cancel / reprint request not-found and wrong-state guards
+      // Cancel / reprint request not-found and wrong-state guards.
+      // approveCancelRequestCore is called as an approver: it carries a role
+      // guard, so the not-found path is only reachable by someone allowed to
+      // approve in the first place.
+      await expect(
+        posApi.approveCancelRequestCore(approver, { requestId: missing }),
+      ).rejects.toThrow("Cancel request not found");
+      // A non-approver is refused on role before the row is even looked up.
       await expect(
         posApi.approveCancelRequestCore(cashier, { requestId: missing }),
-      ).rejects.toThrow("Cancel request not found");
+      ).rejects.toThrow("Forbidden: insufficient role");
       await expect(
         posApi.executeApprovedCancelCore(cashier, { requestId: missing }),
       ).rejects.toThrow("Cancel request not found");
