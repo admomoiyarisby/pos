@@ -23,6 +23,7 @@ import { Printer, Pencil, Store, X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { printReceipt } from "#/lib/pos-print";
 import { ORDER_CHANNEL_OPTIONS, channelLabel } from "#/lib/order-channels";
+import { orderBranchOptions } from "#/lib/order-branches";
 
 interface OrderRow {
   id: string;
@@ -125,7 +126,10 @@ export const Route = createFileRoute("/_layout/order-history")({
 
 function OrderHistoryPage() {
   const [search, setSearch] = useTableSearch();
-  const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState(["channel"]);
+  const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState([
+    "channel",
+    "branch",
+  ]);
   const { orders: initial } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
@@ -164,9 +168,18 @@ function OrderHistoryPage() {
 
   const statusFilter = searchStringParam(Route.useSearch(), "status");
   const channelFilter = searchStringParam(filters, "channel");
+  const branchFilter = searchStringParam(filters, "branch");
+
+  // Branch options come from the orders already in the date range rather than
+  // from the full branch list: it only offers branches that actually have
+  // orders here, and needs no extra query. `orders` is the date-filtered set,
+  // so this stays in step with the range picker.
+  const branchOptions = useMemo(() => orderBranchOptions(orders), [orders]);
+
   const filteredOrders = orders.filter((o) => {
     if (statusFilter && o.status !== statusFilter) return false;
     if (channelFilter && o.channel !== channelFilter) return false;
+    if (branchFilter && o.branchId !== branchFilter) return false;
     return true;
   });
 
@@ -244,6 +257,24 @@ function OrderHistoryPage() {
                   return (
                     <option key={c.key} value={c.key}>
                       {c.label}
+                    </option>
+                  );
+                })}
+              </select>
+              <select
+                value={branchFilter ?? ""}
+                onChange={function (e) {
+                  setFilter("branch", e.target.value || undefined);
+                  setPage(0);
+                }}
+                aria-label="Filter cabang"
+                className="h-8 max-w-[180px] rounded-md border border-input bg-background px-2.5 text-xs font-medium"
+              >
+                <option value="">Semua Cabang</option>
+                {branchOptions.map(function (b) {
+                  return (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
                     </option>
                   );
                 })}
