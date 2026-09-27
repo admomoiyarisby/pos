@@ -31,6 +31,8 @@ import {
 import { eq, and, gte, lte, sql, desc, isNotNull, isNull, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole } from "./auth";
+import { USAGE_SOURCE_ORDER, usageSourceSql } from "./usage-source";
+import type { UsageSource } from "./usage-source";
 import type { AppUser } from "./auth";
 import { resolvePersistedItemIngredients } from "./ingredient-resolver";
 import { logSystemAction, logAudit } from "./logging";
@@ -1006,6 +1008,12 @@ export interface DailyUsageRow {
   quantity: number;
   /** Nilai persediaan keluar (quantity × averageCost saat ini) — estimasi. */
   estimatedValue: number;
+  /**
+   * The same OUT movements split by what caused them, so a total larger than
+   * sales can be explained rather than argued about. Always sums to
+   * `quantity`; ordered by {@link USAGE_SOURCE_ORDER}.
+   */
+  sources: { source: UsageSource; quantity: number }[];
 }
 
 // Rekap pemakaian bahan (stok keluar) dari stock_ledger. Mengagregasi SEMUA
@@ -1084,22 +1092,52 @@ export async function getDailyIngredientUsageCore(
     )
     .orderBy(sql`COALESCE(SUM(${stockLedger.quantity}), 0) DESC`);
 
+  // Same movements, split by cause. Grouped separately rather than as a
+  // window/aggregate on the rows above so the classification stays one plain
+  // GROUP BY on the same predicate.
+  const sourceRows = await db
+    .select({
+      ingredientId: stockLedger.ingredientId,
+      source: usageSourceSql(stockLedger.notes),
+      quantity: sql<number>`COALESCE(SUM(${stockLedger.quantity}), 0)`,
+    })
+    .from(stockLedger)
+    .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
+    .where(and(...conditions))
+    .groupBy(stockLedger.ingredientId, usageSourceSql(stockLedger.notes));
+
+  const byIngredient = new Map<string, Map<UsageSource, number>>();
+  for (const r of sourceRows) {
+    if (r.ingredientId === null) continue;
+    let bucket = byIngredient.get(r.ingredientId);
+    if (!bucket) {
+      bucket = new Map();
+      byIngredient.set(r.ingredientId, bucket);
+    }
+    bucket.set(r.source, Number(r.quantity));
+  }
+
   // Estimasi nilai pakai averageCost saat ini — bukan snapshot harga saat
   // gerakan terjadi. Cukup untuk perbandingan antar bahan, bukan untuk
   // akuntansi (HPP resmi tetap dari orders.totalCogs).
-  return rows.flatMap((r) =>
-    r.ingredientId === null
-      ? []
-      : [
-          {
-            ingredientId: r.ingredientId,
-            name: r.name ?? "-",
-            unit: r.unit ?? "",
-            quantity: Number(r.quantity),
-            estimatedValue: Number(r.quantity) * Number(r.avgCost ?? 0),
-          },
-        ],
-  );
+  return rows.flatMap((r) => {
+    if (r.ingredientId === null) return [];
+    const bucket = byIngredient.get(r.ingredientId);
+    const sources = USAGE_SOURCE_ORDER.flatMap((source) => {
+      const qty = bucket?.get(source);
+      return qty === undefined ? [] : [{ source, quantity: qty }];
+    });
+    return [
+      {
+        ingredientId: r.ingredientId,
+        name: r.name ?? "-",
+        unit: r.unit ?? "",
+        quantity: Number(r.quantity),
+        estimatedValue: Number(r.quantity) * Number(r.avgCost ?? 0),
+        sources,
+      },
+    ];
+  });
 }
 
 // User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.

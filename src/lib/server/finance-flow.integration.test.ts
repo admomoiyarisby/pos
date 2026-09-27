@@ -397,3 +397,90 @@ describe("Finance — wrong-role negatives", () => {
     },
   );
 });
+
+describe("Finance — Rincian Stok Keluar splits usage by source", () => {
+  // The panel's total is every ledger OUT in the period, so it is legitimately
+  // larger than sales (production, waste, SO adjustments all draw ingredients
+  // with no sale behind them). This pins the per-source split so that claim is
+  // checkable, and pins the notes→source classification that produces it.
+  it.skipIf(!hasTestDatabaseUrl)(
+    "classifies each ledger OUT source and the parts always sum to the total",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      const ingredientId = await seedIngredient(branchId);
+
+      // One OUT row per notes tag the writers actually use.
+      // notes is nullable on the table, so a NULL tag is a real case, not a cast.
+      const movements: { notes: string | null; quantity: number }[] = [
+        { notes: "POS Order abcd1234", quantity: 10 },
+        { notes: "Data Penjualan ef567890", quantity: 20 },
+        { notes: "Waste: Beban Makan -kurang bahan", quantity: 5 },
+        { notes: "Waste BOM Matcha Base", quantity: 3 },
+        { notes: "Waste dibatalkan deadbeef", quantity: 2 },
+        { notes: "Produksi 11223344", quantity: 8 },
+        { notes: "SO Adjustment: kurang", quantity: 1 },
+        { notes: "SO Realization: Nasi 3 porsi", quantity: 1 },
+        { notes: "something-unrecognised", quantity: 4 },
+        { notes: null, quantity: 6 },
+      ];
+
+      for (const m of movements) {
+        await db.insert(schema.stockLedger).values({
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: m.quantity,
+          balance: 0,
+          reference: uniq("REF"),
+          notes: m.notes,
+        });
+      }
+
+      const rows = await financeApi.getDailyIngredientUsageCore(admin, { branchId });
+      const row = rows.find((r) => r.ingredientId === ingredientId);
+      expect(row).toBeDefined();
+
+      const asMap = new Map(row!.sources.map((s) => [s.source, s.quantity]));
+      expect(asMap.get("POS")).toBe(10);
+      expect(asMap.get("Data Penjualan")).toBe(20);
+      // All three waste tags are waste, whatever the mode or cancellation.
+      expect(asMap.get("Waste")).toBe(5 + 3 + 2);
+      expect(asMap.get("Produksi")).toBe(8);
+      // Both SO tags are Stock Opname.
+      expect(asMap.get("Stock Opname")).toBe(1 + 1);
+      // Unrecognised and NULL notes are reported honestly as Lainnya, not
+      // silently folded into a real source.
+      expect(asMap.get("Lainnya")).toBe(4 + 6);
+
+      // The invariant that makes the breakdown trustworthy: the parts always
+      // add up to the headline figure.
+      const sum = row!.sources.reduce((acc, s) => acc + s.quantity, 0);
+      expect(sum).toBe(row!.quantity);
+      expect(row!.quantity).toBe(60);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a single-source ingredient reports one source, so the UI can stay quiet",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      const ingredientId = await seedIngredient(branchId);
+
+      await db.insert(schema.stockLedger).values({
+        branchId,
+        ingredientId,
+        type: "OUT",
+        quantity: 7,
+        balance: 0,
+        reference: uniq("REF"),
+        notes: "POS Order only0000",
+      });
+
+      const rows = await financeApi.getDailyIngredientUsageCore(admin, { branchId });
+      const row = rows.find((r) => r.ingredientId === ingredientId);
+      expect(row?.sources).toEqual([{ source: "POS", quantity: 7 }]);
+    },
+  );
+});
