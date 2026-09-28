@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { ChevronRight } from "lucide-react";
 import { formatRp } from "#/lib/utils";
 import { USAGE_SOURCE_LABELS } from "#/lib/server/usage-source";
@@ -26,6 +27,13 @@ export function IngredientUsageSection({
   onToggle: () => void;
 }) {
   const list = rows ?? [];
+  // Nominal uang total (estimasi qty × averageCost) — client report: rekap
+  // keluar barang hanya menampilkan ≈Rp per bahan, nominal totalnya tidak
+  // muncul. Estimasi yang sama dengan baris per bahan, bukan HPP resmi.
+  const totalEstimatedValue = useMemo(
+    () => list.reduce((sum, r) => sum + (r.estimatedValue ?? 0), 0),
+    [list],
+  );
   return (
     <div className="rounded-lg border bg-card">
       <button
@@ -39,6 +47,14 @@ export function IngredientUsageSection({
           <span className="mt-0.5 block text-xs text-muted-foreground">
             Jumlah fisik bahan keluar per periode (ml/pack) — semua sumber OUT: POS, Data Penjualan,
             waste, produksi, Stock Opname. Bukan nilai HPP; lihat Ledger Harian untuk HPP per bahan.
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="block text-[11px] tracking-widest uppercase text-muted-foreground">
+            Total Estimasi
+          </span>
+          <span className="block text-base font-semibold tabular-nums">
+            {formatRp(totalEstimatedValue)}
           </span>
         </span>
         <ChevronRight
@@ -87,6 +103,10 @@ export function IngredientUsageSection({
                 </li>
               ))}
             </ul>
+            <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2 text-sm">
+              <span className="font-medium">Total Nilai (estimasi)</span>
+              <span className="font-semibold tabular-nums">{formatRp(totalEstimatedValue)}</span>
+            </div>
             <p className="mt-2 text-xs text-muted-foreground">
               Total mencakup semua sumber, bukan hanya penjualan — bahan bisa habis karena produksi,
               waste, atau Stock Opname. Baris dengan lebih dari satu sumber dipecah per sumber.
