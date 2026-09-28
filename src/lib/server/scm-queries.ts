@@ -6,6 +6,7 @@ import type { UnknownRecord } from "#/lib/unknown-record";
 import {
   ingredients,
   ingredientBranches,
+  inventory,
   scmProcurementAuditLog,
   scmProcurementInvoices,
   scmProcurementItems,
@@ -349,6 +350,75 @@ export const getProcurementItems = createServerFn({ method: "GET" })
     }
 
     return rows;
+  });
+
+// =============================================================================
+// getCentralStockForProcurement
+// =============================================================================
+
+/** One row per requested ingredient: Central's current on-hand quantity. */
+export interface CentralStockRow {
+  ingredientId: string;
+  /** 0 when Central has no inventory row for the ingredient yet. */
+  available: number;
+}
+
+/**
+ * Current Central Warehouse stock for every ingredient on a procurement.
+ *
+ * Shown on the CA review screen next to each requested item so admin pusat
+ * sees availability *before* clicking "Setujui & Buat SJ" — the ship-time
+ * guard (`writeInTransitInventory`'s strict stock check) refuses the
+ * transition when Central can't cover the picked quantities, which previously
+ * surfaced only as a post-hoc error toast (client report: "stok gudang ada
+ * 52, pas buat surat jalan tulisannya 0 / habis").
+ *
+ * Branch resolution mirrors `writeInTransitInventory` exactly (first branch
+ * of type 'Central', ADR 0002), so these numbers are precisely what the
+ * ship-time check validates against — no display/validation drift.
+ */
+export const getCentralStockForProcurement = createServerFn({ method: "GET" })
+  .validator((data: { procurementId: string }) => data)
+  .handler(async ({ data }): Promise<CentralStockRow[]> => {
+    const user = await requireAuth();
+    await assertProcurementAccess(user, data.procurementId);
+
+    const [central] = await db
+      .select({ id: branches.id })
+      .from(branches)
+      .where(eq(branches.type, "Central"))
+      .limit(1);
+    if (!central) return [];
+
+    const items = await db
+      .selectDistinct({ ingredientId: scmProcurementItems.ingredientId })
+      .from(scmProcurementItems)
+      .where(eq(scmProcurementItems.scmProcurementId, data.procurementId));
+    if (items.length === 0) return [];
+
+    const rows = await db
+      .select({
+        ingredientId: inventory.ingredientId,
+        available: inventory.quantity,
+      })
+      .from(inventory)
+      .where(
+        and(
+          eq(inventory.branchId, central.id),
+          inArray(
+            inventory.ingredientId,
+            items.map((i) => i.ingredientId),
+          ),
+        ),
+      );
+
+    // Every requested ingredient gets an entry; a missing inventory row means
+    // Central has none on hand, which is exactly what the ship check sees.
+    const byIngredient = new Map(rows.map((r) => [r.ingredientId, r.available]));
+    return items.map((i) => ({
+      ingredientId: i.ingredientId,
+      available: byIngredient.get(i.ingredientId) ?? 0,
+    }));
   });
 
 // =============================================================================

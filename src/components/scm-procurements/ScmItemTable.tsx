@@ -41,6 +41,13 @@ export interface ScmItemTableProps {
   onItemChange?: (itemId: string, patch: Partial<ScmItemRow>) => void;
   disabled?: boolean;
   showPrices?: boolean; // ID15: Hide prices for branch_admin
+  /**
+   * Central Warehouse on-hand stock per ingredientId — shown only in
+   * ca-review mode so admin pusat sees availability before shipping.
+   * Absent entries mean "no Central inventory row" (0 available), matching
+   * what the ship-time stock check will see.
+   */
+  centralStock?: Map<string, number>;
 }
 
 const decisionLabels = {
@@ -57,15 +64,32 @@ const decisionColors = {
   rejected: "destructive",
 } satisfies Record<string, "default" | "warning" | "success" | "destructive" | "secondary">;
 
+/**
+ * Visual state for the "Stok pusat" hint on a ca-review row. Uses the same
+ * epsilon-free comparison the CA decision implies: a row ships
+ * `readyQuantity ?? quantity`, so anything below that will be refused by the
+ * ship-time stock check (`writeInTransitInventory`).
+ */
+function caStockStatus(it: ScmItemRow, centralStock: Map<string, number>) {
+  const available = centralStock.get(it.ingredientId) ?? 0;
+  const requested = it.readyQuantity ?? it.quantity;
+  if (available <= 0) return { label: "habis", className: "text-destructive" } as const;
+  if (available < requested)
+    return { label: `kurang (butuh ${requested})`, className: "text-warning-foreground" } as const;
+  return { label: "", className: "text-muted-foreground" } as const;
+}
+
 export function ScmItemTable({
   mode,
   items,
   onItemChange,
   disabled,
   showPrices = true,
+  centralStock,
 }: ScmItemTableProps) {
   if (mode === "ca-review" || mode === "draft-edit") {
     const isDraft = mode === "draft-edit";
+    const isCaReview = !isDraft;
     const subtotal = items.reduce(
       (sum, it) => sum + (it.readyQuantity ?? it.quantity) * (it.unitPrice ?? 0),
       0,
@@ -89,6 +113,17 @@ export function ScmItemTable({
                       {it.quantity}
                       {it.stockUnit ? <span className="ml-0.5">{it.stockUnit}</span> : null}
                     </div>
+                    {isCaReview && centralStock && (
+                      <div
+                        className={`mt-1 text-[11px] font-medium ${caStockStatus(it, centralStock).className}`}
+                      >
+                        Stok pusat: {centralStock.get(it.ingredientId) ?? 0}
+                        {it.stockUnit ? ` ${it.stockUnit}` : ""}
+                        {caStockStatus(it, centralStock).label
+                          ? ` — ${caStockStatus(it, centralStock).label}`
+                          : ""}
+                      </div>
+                    )}
                   </div>
                   <div className="rounded-lg bg-muted/40 px-2.5 py-2">
                     <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
@@ -162,6 +197,7 @@ export function ScmItemTable({
               <tr>
                 <th className="px-3 py-2 text-left">Bahan</th>
                 <th className="px-3 py-2 text-right">Diminta</th>
+                {isCaReview && centralStock && <th className="px-3 py-2 text-right">Stok Pusat</th>}
                 <th className="px-3 py-2 text-right">
                   {isDraft ? "Jumlah" : "Disetujui"}
                   {items.some((it) => it.stockUnit) ? (
@@ -186,6 +222,19 @@ export function ScmItemTable({
                       ) : null}
                     </td>
                     <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
+                    {isCaReview && centralStock && (
+                      <td
+                        className={`px-3 py-2 text-right font-mono text-xs ${caStockStatus(it, centralStock).className}`}
+                      >
+                        {centralStock.get(it.ingredientId) ?? 0}
+                        {it.stockUnit ? ` ${it.stockUnit}` : ""}
+                        {caStockStatus(it, centralStock).label ? (
+                          <span className="ml-1 font-sans font-medium">
+                            ({caStockStatus(it, centralStock).label})
+                          </span>
+                        ) : null}
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-right">
                       <Input
                         type="number"
@@ -244,7 +293,7 @@ export function ScmItemTable({
             {showPrices && (
               <tfoot>
                 <tr className="border-t-2 bg-muted/30 font-semibold">
-                  <td colSpan={4} className="px-3 py-2 text-right">
+                  <td colSpan={isCaReview && centralStock ? 5 : 4} className="px-3 py-2 text-right">
                     Subtotal:
                   </td>
                   <td className="px-3 py-2 text-right font-mono">

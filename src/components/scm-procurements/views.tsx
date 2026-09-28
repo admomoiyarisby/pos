@@ -17,6 +17,7 @@ import {
   updateProcurementItem,
   addProcurementItem,
   removeProcurementItem,
+  getCentralStockForProcurement,
   type ScmProcurementInvoiceLineItem,
 } from "#/lib/server/scm-queries";
 import { getIngredients } from "#/lib/server/ingredients";
@@ -574,6 +575,19 @@ export function UnderReviewCaReview({ procurement, items, showPrices }: StateVie
   const [rejectionReason, setRejectionReason] = useState("");
   const [editableItems, setEditableItems] = useState<ScmItemRow[]>(() => rowsToItems(items));
 
+  // Central Warehouse on-hand per requested ingredient, shown next to each
+  // row so admin pusat sees availability BEFORE "Setujui & Buat SJ" — the
+  // ship-time strict stock check refuses the transition when Central can't
+  // cover the picked quantities (issue #92 / client report: "stok gudang ada
+  // 52, pas buat surat jalan tulisannya 0").
+  const centralStockQ = useQuery({
+    queryKey: ["scm-procurement-central-stock", procurement.id],
+    queryFn: () => getCentralStockForProcurement({ data: { procurementId: procurement.id } }),
+  });
+  const centralStock = centralStockQ.data
+    ? new Map(centralStockQ.data.map((r) => [r.ingredientId, r.available]))
+    : undefined;
+
   useEffect(() => {
     setEditableItems(rowsToItems(items));
   }, [items]);
@@ -641,6 +655,7 @@ export function UnderReviewCaReview({ procurement, items, showPrices }: StateVie
           showPrices={showPrices}
           onItemChange={handleItemChange}
           disabled={updateM.isPending || transitionM.isPending}
+          centralStock={centralStock}
         />
       </div>
 
