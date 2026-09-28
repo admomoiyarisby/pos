@@ -68,6 +68,7 @@ setupFlowHarness(dbHolder);
 
 let db: TestDb;
 let posApi: typeof import("./pos");
+let OrderInsufficientStockError: typeof import("./pos").OrderInsufficientStockError;
 let seedCounter = 0;
 
 function uniq(prefix: string): string {
@@ -161,6 +162,7 @@ beforeAll(async () => {
   // SAFETY: guarded by hasTestDatabaseUrl; when the test DB is absent beforeAll returns early and every test is skipped, so db is never read unset.
   db = dbHolder.db as TestDb;
   posApi = await import("./pos");
+  OrderInsufficientStockError = posApi.OrderInsufficientStockError;
 });
 
 describe("POS — shift lifecycle via the real server-function cores", () => {
@@ -709,6 +711,153 @@ describe("POS — negatives: not-found and wrong-state guards with no side effec
         cashFloat: 50000,
       });
       expect(opened.status).toBe("Open");
+    },
+  );
+});
+
+describe("POS — hard stock block: order refused when main or addon ingredients would go minus", () => {
+  async function seedModifierAddons(
+    categoryId: string,
+    recipeId: string,
+    ingId: string,
+  ): Promise<{ groupId: string; modifierId: string }> {
+    const [grp] = await db
+      .insert(schema.modifierGroups)
+      .values({ code: uniq("MG"), name: "Addon" })
+      .returning({ id: schema.modifierGroups.id });
+    await db.insert(schema.recipeModifierGroups).values({ recipeId, modifierGroupId: grp.id });
+    const [mod] = await db
+      .insert(schema.modifiers)
+      .values({
+        code: uniq("MOD"),
+        modifierGroupId: grp.id,
+        name: "Telur Ceplok",
+        price: 3000,
+        kind: "ingredient",
+      })
+      .returning({ id: schema.modifiers.id });
+    await db
+      .insert(schema.modifierIngredients)
+      .values({ modifierId: mod.id, ingredientId: ingId, quantity: 1 });
+    return { groupId: grp.id, modifierId: mod.id };
+  }
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "insufficient main-item stock refuses the order, notifies AMs, and writes nothing",
+    async () => {
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const am = await seedUser("area_manager");
+      await db.insert(schema.areaManagerBranches).values({ userId: am.id, branchId });
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      // Stock 3, order of 2 items x 2 units = 4 needed → short by 1.
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 3 });
+
+      await expect(
+        posApi.createOrderCore(cashier, {
+          branchId,
+          channel: "Dine-in",
+          customerName: "Budi Santoso",
+          items: [{ recipeId, quantity: 2, price: 10000 }],
+        }),
+      ).rejects.toThrow(OrderInsufficientStockError);
+
+      // Nothing was written: no order, no ledger row, stock untouched.
+      const [orderRow] = await db.select().from(schema.orders).limit(1);
+      expect(orderRow).toBeUndefined();
+      expect(await inventoryQty(branchId, ingId)).toBe(3);
+      const ledgerRows = await db.select().from(schema.stockLedger);
+      expect(ledgerRows).toHaveLength(0);
+
+      // The Area Manager still got the alert so they know stock is short.
+      const notifs = await db
+        .select()
+        .from(schema.systemNotifications)
+        .where(eq(schema.systemNotifications.userId, am.id));
+      expect(notifs).toHaveLength(1);
+      expect(notifs[0].title).toBe("Stok Minus");
+      expect(notifs[0].message).toContain("Bahan");
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "insufficient ADDON ingredient stock refuses the order even when the main item is fine",
+    async () => {
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const am = await seedUser("area_manager");
+      await db.insert(schema.areaManagerBranches).values({ userId: am.id, branchId });
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      const addon = await seedModifierAddons(catRow.id, recipeId, ingId);
+      // Main needs 2/order; addon needs 1. Stock 5: 1 order (2) is fine alone,
+      // but 2 orders (4) + 2 addons (2) = 6 > 5 → the ADDON pushes it over.
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 5 });
+
+      await expect(
+        posApi.createOrderCore(cashier, {
+          branchId,
+          channel: "Dine-in",
+          customerName: "Budi Santoso",
+          items: [
+            { recipeId, quantity: 1, price: 10000, selectedModifiers: [addon] },
+            { recipeId, quantity: 1, price: 10000, selectedModifiers: [addon] },
+          ],
+        }),
+      ).rejects.toThrow(OrderInsufficientStockError);
+
+      expect(await inventoryQty(branchId, ingId)).toBe(5);
+      const [orderRow] = await db.select().from(schema.orders).limit(1);
+      expect(orderRow).toBeUndefined();
+
+      // AM notified about the addon-driven shortfall too.
+      const notifs = await db
+        .select()
+        .from(schema.systemNotifications)
+        .where(eq(schema.systemNotifications.userId, am.id));
+      expect(notifs).toHaveLength(1);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "sufficient stock (main + addon) proceeds normally with deduction",
+    async () => {
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      const addon = await seedModifierAddons(catRow.id, recipeId, ingId);
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 10 });
+
+      const order = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Dine-in",
+        customerName: "Budi Santoso",
+        items: [
+          {
+            recipeId,
+            quantity: 1,
+            price: 10000,
+            selectedModifiers: [addon],
+          },
+        ],
+      });
+      // 1 main (2 units) + 1 addon (1 unit) = 3 consumed → 10 - 3 = 7.
+      expect(order.status).toBe("New");
+      expect(await inventoryQty(branchId, ingId)).toBe(7);
     },
   );
 });

@@ -1450,7 +1450,15 @@ function PosPage() {
                           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                           <div className="flex-1">
                             <p className="font-medium">Gagal</p>
-                            <p className="text-xs opacity-80">{checkoutError}</p>
+                            {/* Multi-line: stock-block errors carry one reason per
+                                insufficient ingredient (server joins with \n). */}
+                            {checkoutError.split("\n").map(function (line, i) {
+                              return (
+                                <p key={i} className="text-xs opacity-80 whitespace-pre-line">
+                                  {line}
+                                </p>
+                              );
+                            })}
                           </div>
                           <button
                             onClick={function () {

@@ -797,9 +797,29 @@ export interface CreateOrderInput {
   notes?: string;
 }
 
-// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. Creates the
-// order, deducts inventory with FOR UPDATE row locks, writes Kartu Stok, and
-// (outside the transaction) raises Stok Minus notifications for any shortfall.
+/**
+ * Thrown by `createOrderCore` when the order would push any branch ingredient
+ * (main BOM, bundle children, or add-on modifiers) below zero. `lines` carries
+ * the per-ingredient reason, newline-joined for the UI error box.
+ */
+export class OrderInsufficientStockError extends Error {
+  readonly lines: string[];
+  constructor(lines: string[]) {
+    super(
+      `Stok tidak mencukupi, transaksi tidak dapat diproses:\n${lines.map((l) => `• ${l}`).join("\n")}`,
+    );
+    this.name = "OrderInsufficientStockError";
+    this.lines = lines;
+  }
+}
+
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. Validates
+// stock (HARD block — any ingredient going below zero refuses the order; this
+// covers the main BOM, bundle children, and add-on modifiers because the
+// resolver nets them into one per-ingredient list), then creates the order,
+// deducts inventory with FOR UPDATE row locks, and writes Kartu Stok. Blocked
+// attempts still raise Stok Minus notifications so the Area Manager knows
+// stock is short.
 export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
   // Dine-in requires the customer name (client also enforces this — the server
   // check is the authoritative gate against direct API calls).
@@ -823,7 +843,12 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
     ),
   );
 
-  // ─── Soft stock check + COGS calculation (read-only) ───
+  // ─── Stock check + COGS calculation (read-only) ───
+  // Net consumption is aggregated per ingredient ACROSS items before being
+  // compared to stock: an exclusion may offset a main-item deduction, so a
+  // per-item check would false-positive. Netted signed quantities (exclusions
+  // produce negatives) also feed the ledger/restore path below.
+  const netConsumption = new Map<string, { name: string; qty: number }>();
   const negativeStockAlerts: { ingredientName: string; shortfall: number; branchName: string }[] =
     [];
   let subtotal = 0;
@@ -843,23 +868,72 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
     totalCogs += itemCogs;
 
     for (const ing of resolved.ingredients) {
-      if (ing.quantity <= 0) continue;
-      const [inv] = await db
-        .select()
-        .from(inventory)
-        .where(
-          and(eq(inventory.branchId, data.branchId), eq(inventory.ingredientId, ing.ingredientId)),
-        )
-        .limit(1);
-      const currentQty = inv?.quantity ?? 0;
-      if (currentQty < ing.quantity) {
-        negativeStockAlerts.push({
-          ingredientName: ing.ingredientName,
-          shortfall: ing.quantity - currentQty,
-          branchName,
+      const agg = netConsumption.get(ing.ingredientId) ?? {
+        name: ing.ingredientName,
+        qty: 0,
+      };
+      agg.qty += ing.quantity;
+      netConsumption.set(ing.ingredientId, agg);
+    }
+  }
+
+  // Compare net consumption to branch stock (read-only, pre-lock read; the
+  // authoritative check re-runs under FOR UPDATE inside the transaction).
+  const involvedIngredientIds = [...netConsumption.keys()];
+  const branchStockRows =
+    involvedIngredientIds.length > 0
+      ? await db
+          .select({
+            ingredientId: inventory.ingredientId,
+            quantity: inventory.quantity,
+          })
+          .from(inventory)
+          .where(
+            and(
+              eq(inventory.branchId, data.branchId),
+              inArray(inventory.ingredientId, involvedIngredientIds),
+            ),
+          )
+      : [];
+  const stockByIngredient = new Map(branchStockRows.map((r) => [r.ingredientId, r.quantity]));
+
+  const insufficientLines: string[] = [];
+  for (const [ingredientId, agg] of netConsumption) {
+    if (agg.qty <= 0) continue; // net restore (exclusions dominate) — never blocks
+    const currentQty = stockByIngredient.get(ingredientId) ?? 0;
+    if (currentQty < agg.qty) {
+      const shortfall = agg.qty - currentQty;
+      insufficientLines.push(
+        `${agg.name}: butuh ${agg.qty}, tersedia ${currentQty} (kurang ${shortfall}) di ${branchName}`,
+      );
+      negativeStockAlerts.push({
+        ingredientName: agg.name,
+        shortfall,
+        branchName,
+      });
+    }
+  }
+
+  // HARD BLOCK (user-approved policy change): the order is refused before any
+  // write when the main items OR add-ons would push stock below zero.
+  if (insufficientLines.length > 0) {
+    const ams = await db
+      .select({ userId: areaManagerBranches.userId })
+      .from(areaManagerBranches)
+      .where(eq(areaManagerBranches.branchId, data.branchId));
+
+    for (const alert of negativeStockAlerts) {
+      for (const am of ams) {
+        await db.insert(systemNotifications).values({
+          userId: am.userId,
+          title: "Stok Minus",
+          message: `${alert.ingredientName}: butuh ${alert.shortfall} lebih dari stok di ${alert.branchName}. Transaksi ditolak (stok akan minus).`,
+          type: "alert",
         });
       }
     }
+
+    throw new OrderInsufficientStockError(insufficientLines);
   }
 
   const totalAmount = subtotal - voucherDiscount + taxAmount;
@@ -965,6 +1039,13 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
           }
 
           const newQty = inv.quantity - netDelta;
+          // Authoritative re-check under FOR UPDATE: a concurrent order may
+          // have spent the same stock between the read-only check and here.
+          if (netDelta > 0 && newQty < 0) {
+            throw new OrderInsufficientStockError([
+              `${netConsumption.get(ing.ingredientId)?.name ?? ing.ingredientName}: stok berubah saat memproses (sisa ${inv.quantity}), transaksi tidak dapat diproses`,
+            ]);
+          }
           await tx
             .update(inventory)
             .set({ quantity: newQty, lastUpdated: new Date() })
@@ -988,25 +1069,6 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
 
     return newOrder;
   });
-
-  // ─── Notifications (non-critical, outside transaction) ───
-  if (negativeStockAlerts.length > 0) {
-    const ams = await db
-      .select({ userId: areaManagerBranches.userId })
-      .from(areaManagerBranches)
-      .where(eq(areaManagerBranches.branchId, data.branchId));
-
-    for (const alert of negativeStockAlerts) {
-      for (const am of ams) {
-        await db.insert(systemNotifications).values({
-          userId: am.userId,
-          title: "Stok Minus",
-          message: `${alert.ingredientName}: minus ${alert.shortfall} di ${branchName}. Order #${order.id.slice(0, 8)}`,
-          type: "alert",
-        });
-      }
-    }
-  }
 
   await logSystemAction(
     user,

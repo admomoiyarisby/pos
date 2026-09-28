@@ -331,9 +331,19 @@ export default function CartSidebar({
             )}
 
             {checkoutError && (
-              <div className="rounded bg-destructive/10 px-2 py-1 text-[11px] text-destructive flex items-center gap-1">
-                <X className="h-3 w-3 shrink-0" />
-                <span className="flex-1 truncate">{checkoutError}</span>
+              <div className="rounded bg-destructive/10 px-2 py-1 text-[11px] text-destructive flex items-start gap-1">
+                <X className="h-3 w-3 shrink-0 mt-0.5" />
+                {/* Multi-line: stock-block errors carry one reason per
+                    insufficient ingredient (server joins with \n). */}
+                <span className="flex-1 whitespace-pre-line">
+                  {checkoutError.split("\n").map(function (line, i) {
+                    return (
+                      <span key={i} className="block truncate">
+                        {line}
+                      </span>
+                    );
+                  })}
+                </span>
                 <button
                   onClick={function () {
                     onClearError();
