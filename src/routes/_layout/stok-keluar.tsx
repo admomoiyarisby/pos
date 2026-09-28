@@ -51,6 +51,9 @@ function StokKeluarPage() {
   // branch — the server core enforces this too, the UI just mirrors it.
   const lockedBranchId = user?.branchId ?? "";
   const isBranchLocked = Boolean(lockedBranchId);
+  // Rp nominals (cost estimates) are for supervisors only — branch admins see
+  // physical quantities. central_kitchen still sees nominals.
+  const isBranchAdmin = user?.role === "branch_admin";
 
   const [periodType, setPeriodType] = useState<PeriodType>("bulanan");
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -262,11 +265,14 @@ function StokKeluarPage() {
           </div>
         </div>
 
+        {/* Rp nominals hidden for branch admins only: they see physical
+            quantities, not costs. central_kitchen still sees nominals. */}
         <IngredientUsageSection
           rows={usage}
           isLoading={isLoading}
           expanded={usageExpanded}
           onToggle={() => setUsageExpanded((v) => !v)}
+          hideCurrency={isBranchAdmin}
         />
       </div>
     </RoleGuard>

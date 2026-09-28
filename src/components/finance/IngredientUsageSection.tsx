@@ -20,11 +20,15 @@ export function IngredientUsageSection({
   isLoading,
   expanded,
   onToggle,
+  hideCurrency = false,
 }: {
   rows: DailyUsageRow[] | undefined;
   isLoading: boolean;
   expanded: boolean;
   onToggle: () => void;
+  /** Hide all Rp nominals (header total, per-item ≈Rp, footer total) — used on
+   *  /stok-keluar so branch admins only see physical quantities, not costs. */
+  hideCurrency?: boolean;
 }) {
   const list = rows ?? [];
   // Nominal uang total (estimasi qty × averageCost) — client report: rekap
@@ -50,12 +54,16 @@ export function IngredientUsageSection({
           </span>
         </span>
         <span className="shrink-0 text-right">
-          <span className="block text-[11px] tracking-widest uppercase text-muted-foreground">
-            Total Estimasi
-          </span>
-          <span className="block text-base font-semibold tabular-nums">
-            {formatRp(totalEstimatedValue)}
-          </span>
+          {!hideCurrency && (
+            <>
+              <span className="block text-[11px] tracking-widest uppercase text-muted-foreground">
+                Total Estimasi
+              </span>
+              <span className="block text-base font-semibold tabular-nums">
+                {formatRp(totalEstimatedValue)}
+              </span>
+            </>
+          )}
         </span>
         <ChevronRight
           className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
@@ -82,9 +90,11 @@ export function IngredientUsageSection({
                   <div className="flex items-baseline justify-between gap-2 text-sm">
                     <span className="truncate">
                       {r.name}
-                      <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">
-                        ≈{formatRp(r.estimatedValue)}
-                      </span>
+                      {!hideCurrency && (
+                        <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">
+                          ≈{formatRp(r.estimatedValue)}
+                        </span>
+                      )}
                     </span>
                     <span className="shrink-0 font-medium tabular-nums">
                       {r.quantity.toLocaleString("id-ID")} {r.unit}
@@ -103,15 +113,18 @@ export function IngredientUsageSection({
                 </li>
               ))}
             </ul>
-            <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2 text-sm">
-              <span className="font-medium">Total Nilai (estimasi)</span>
-              <span className="font-semibold tabular-nums">{formatRp(totalEstimatedValue)}</span>
-            </div>
+            {!hideCurrency && (
+              <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2 text-sm">
+                <span className="font-medium">Total Nilai (estimasi)</span>
+                <span className="font-semibold tabular-nums">{formatRp(totalEstimatedValue)}</span>
+              </div>
+            )}
             <p className="mt-2 text-xs text-muted-foreground">
               Total mencakup semua sumber, bukan hanya penjualan — bahan bisa habis karena produksi,
               waste, atau Stock Opname. Baris dengan lebih dari satu sumber dipecah per sumber.
-              Nilai ≈ estimasi dari harga rata-rata bahan saat ini, bukan HPP resmi. Detail per
-              gerakan ada di Kartu Stok.
+              {!hideCurrency &&
+                " Nilai ≈ estimasi dari harga rata-rata bahan saat ini, bukan HPP resmi."}{" "}
+              Detail per gerakan ada di Kartu Stok.
             </p>
           </div>
         ))}
