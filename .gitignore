@@ -18,3 +18,6 @@ todos.json
 
 # Local scratch — throwaway inspection scripts, env files, DB dumps
 .scratch
+
+# Playwright verify-script output (scripts/verify-*.mjs screenshots)
+screenshots/
