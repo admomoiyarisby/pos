@@ -24,7 +24,7 @@
  */
 
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as schema from "#/db/schema";
 import { getTestDatabaseUrl } from "./test-database";
 import type { TestDb } from "./integration-test-harness";
@@ -123,6 +123,21 @@ async function seedUser(
   };
 }
 
+async function seedInventory(branchId: string, ingredientId: string, quantity: number) {
+  await db.insert(schema.inventory).values({ branchId, ingredientId, quantity });
+}
+
+async function centralStock(branchId: string, ingredientId: string): Promise<number> {
+  const [row] = await db
+    .select({ quantity: schema.inventory.quantity })
+    .from(schema.inventory)
+    .where(
+      and(eq(schema.inventory.branchId, branchId), eq(schema.inventory.ingredientId, ingredientId)),
+    )
+    .limit(1);
+  return row?.quantity ?? 0;
+}
+
 async function prStatus(id: string): Promise<{ status: string; rejectionReason: string | null }> {
   const [row] = await db
     .select({
@@ -218,6 +233,58 @@ describe("Purchase requisitions — full lifecycle via the real server-function 
       await scm.reviewDeliveryNoteCore(adminPusat, { dnId: dn.id });
 
       expect((await prStatus(pr.id)).status).toBe("Fulfilled");
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "regression: auto-created SJ ships the full requested quantity without a manual pick step",
+    async () => {
+      // Reported via WhatsApp: stock existed at the warehouse but the printed
+      // Surat Jalan showed "0" because processPurchaseRequisitionCore created
+      // delivery-note items with pickedQuantity: 0, and shipDeliveryNoteCore
+      // ships pickedQuantity (0 is a real value, not a fallback) while the
+      // print view drops rows with pickedQuantity <= 0. The auto-created SJ
+      // must default pickedQuantity to the full PR quantity so shipping works
+      // out of the box.
+      const central = await seedBranch(uniq("PR-RC"), "Central");
+      const outlet = await seedBranch(uniq("PR-RO2"), "Outlet");
+      const ingredient = await seedIngredient(uniq("PR-RING2"));
+      await seedInventory(central, ingredient, 100);
+
+      const ba = await seedUser("branch_admin", outlet);
+      const am = await seedUser("area_manager", undefined, [outlet]);
+      const adminPusat = await seedUser("admin_pusat");
+
+      const pr = await createPr(ba, outlet, ingredient);
+      await scm.updatePurchaseRequisitionCore(am, { id: pr.id, status: "Approved" });
+
+      const processed = await scm.processPurchaseRequisitionCore(adminPusat, {
+        id: pr.id,
+        alsoCreateSJ: true,
+      });
+      expect(processed.success).toBe(true);
+
+      const [dnItem] = await db
+        .select()
+        .from(schema.deliveryNoteItems)
+        .where(eq(schema.deliveryNoteItems.deliveryNoteId, processed.dnId!));
+      expect(dnItem.quantity).toBe(5);
+      // THE regression: picked quantity defaults to the full amount…
+      expect(dnItem.pickedQuantity).toBe(5);
+
+      // …so shipDeliveryNoteCore ships 5 units straight from Picking, with no
+      // updateDeliveryNoteCore (manual pick) in between — Central stock drops 5.
+      const before = await centralStock(central, ingredient);
+      await scm.shipDeliveryNoteCore(adminPusat, { dnId: processed.dnId! });
+      const after = await centralStock(central, ingredient);
+      expect(before - after).toBe(5);
+
+      const [shipped] = await db
+        .select({ status: schema.deliveryNotes.status })
+        .from(schema.deliveryNotes)
+        .where(eq(schema.deliveryNotes.id, processed.dnId!))
+        .limit(1);
+      expect(shipped?.status).toBe("In Transit");
     },
   );
 

@@ -404,7 +404,11 @@ export async function processPurchaseRequisitionCore(
           ingredientId: item.ingredientId,
           quantity: item.quantity,
           readyQuantity: item.quantity,
-          pickedQuantity: 0,
+          // Default picking to the full requested quantity. pickedQuantity = 0
+          // means "ship nothing": shipDeliveryNoteCore treats 0 as a real pick
+          // (0 ?? quantity === 0), so the SJ shipped/received 0 while the
+          // warehouse still showed stock — the "stok ada tapi SJ-nya 0" report.
+          pickedQuantity: item.quantity,
           receivedQuantity: 0,
           rejectedQuantity: 0,
         })),

@@ -586,8 +586,15 @@ export function UnderReviewCaReview({ procurement, items, showPrices }: StateVie
     // Save all item-level changes via updateItem, then transition.
     // Gated by `allDecided` below — the button is disabled while any
     // row is still "pending", so this loop only runs explicit decisions.
+    //
+    // updateItem reports domain failures as { success: false } instead of
+    // throwing (e.g. "Cannot edit CA fields in state X" after the page went
+    // stale). Continuing past a failed save previously left the DB at the old
+    // caDecision/readyQuantity, so copyReadyToPicked shipped 0 for a row the
+    // CA had approved with a quantity (client report: "stok gudang ada 52,
+    // pas buat surat jalan 8 tulisannya 0"). Fail loudly instead.
     for (const it of editableItems) {
-      await updateM.mutateAsync({
+      const res = await updateM.mutateAsync({
         procurementId: procurement.id,
         itemId: it.id,
         patch: {
@@ -595,11 +602,22 @@ export function UnderReviewCaReview({ procurement, items, showPrices }: StateVie
           readyQuantity: it.readyQuantity,
         },
       });
+      if (!res.success) {
+        toast.error(
+          `Gagal menyimpan item ${it.ingredientName}: ${res.error.message}. Periksa data lalu coba lagi.`,
+        );
+        return;
+      }
     }
-    await transitionM.mutateAsync({
+    const shipRes = await transitionM.mutateAsync({
       procurementId: procurement.id,
       event: "accept-and-ship",
     });
+    if (!shipRes.success) {
+      // Already surfaced as a toast by useTransitionMutation; keep the handler
+      // aligned with the per-item saves so the caller never sees a partial pass.
+      return;
+    }
   };
 
   // Every row must be explicitly approved or rejected before the primary
