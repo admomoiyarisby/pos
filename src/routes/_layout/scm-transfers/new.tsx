@@ -101,9 +101,13 @@ function NewMutasiPage() {
   const queryClient = useQueryClient();
 
   // Fetch inventory for the sender branch so we can show available qty.
+  // limit: 1000 — getInventory defaults to a 50-row page ordered by name, so
+  // without an explicit limit any ingredient past the first 50 (alphabetically)
+  // had no row here and the picker showed "Stok: 0 ⛔ habis" even though the
+  // warehouse actually held stock (e.g. Ayam Karaage) — blocking submit.
   const { data: inventoryResult } = useQuery({
     queryKey: ["inventory-branch", fromBranchId],
-    queryFn: () => getInventory({ data: { branchId: fromBranchId } }),
+    queryFn: () => getInventory({ data: { branchId: fromBranchId, limit: 1000 } }),
     enabled: !!fromBranchId,
   });
 

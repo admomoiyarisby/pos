@@ -90,7 +90,10 @@ function PRPage() {
   const { data: branchInventoryResult } = useQuery({
     queryKey: ["inventory", selectedPrBranchId],
     queryFn: function () {
-      return getInventory({ data: { branchId: selectedPrBranchId } });
+      // limit: 1000 — getInventory defaults to a 50-row page, which silently
+      // hid ingredients past the first 50 and made the "Sisa Stok Aktual"
+      // column show 0 for items the branch actually holds.
+      return getInventory({ data: { branchId: selectedPrBranchId, limit: 1000 } });
     },
     enabled: !!selectedPrBranchId,
   });
