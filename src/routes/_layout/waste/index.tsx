@@ -48,6 +48,7 @@ import { getFinancialClassificationLabel } from "#/lib/waste-categories";
 interface WasteRow {
   id: string;
   createdAt: Date;
+  branchId: string;
   ingredientName: string | null;
   ingredientCode: string | null;
   recipeName: string | null;
@@ -293,7 +294,7 @@ function WastePage() {
   const {
     page,
     setPage,
-    filters: { category, dateFrom, dateTo, sortBy, sortDir, noInvestigation, status },
+    filters: { category, dateFrom, dateTo, sortBy, sortDir, noInvestigation, status, branchId },
     setFilter,
   } = useTableUrlState<{
     category?: string;
@@ -303,7 +304,17 @@ function WastePage() {
     sortDir?: string;
     noInvestigation?: string;
     status?: string;
-  }>(["category", "dateFrom", "dateTo", "sortBy", "sortDir", "noInvestigation", "status"]);
+    branchId?: string;
+  }>([
+    "category",
+    "dateFrom",
+    "dateTo",
+    "sortBy",
+    "sortDir",
+    "noInvestigation",
+    "status",
+    "branchId",
+  ]);
   const [investigationModalOpen, setInvestigationModalOpen] = useState(false);
   const [investigationEntryId, setInvestigationEntryId] = useState<string | null>(null);
   const [investigationNoteText, setInvestigationNoteText] = useState("");
@@ -346,6 +357,14 @@ function WastePage() {
     }
     return branches;
   }, [branches, user]);
+
+  // Roles that see more than one branch (admin pusat & co.) get the branch
+  // picker; branch admins are already scoped server-side so the filter is a
+  // no-op for them and the picker is hidden.
+  const isBranchScoped =
+    user?.role === "super_admin" ||
+    user?.role === "admin_pusat" ||
+    (user?.role === "area_manager" && (user?.assignedBranches?.length ?? 0) > 1);
 
   // Branch picked in the modal's Cabang dropdown. Drives the inventory query so
   // stock shown matches the branch selected (central users can preview any
@@ -513,6 +532,14 @@ function WastePage() {
   const filteredEntries = useMemo(() => {
     let result = entries;
 
+    // Filter by branch (rekap Total Kerugian ikut menyesuaikan karena dihitung
+    // dari filteredEntries). Branch admins are always scoped server-side, so
+    // the picker is only rendered for central roles — but we still guard here
+    // so a stale URL branchId can't leak other branches' rows into the total.
+    if (isBranchScoped && branchId) {
+      result = result.filter((e) => e.branchId === branchId);
+    }
+
     // Filter by noInvestigation
     if (noInvestigation === "true") {
       result = result.filter((e) => !e.investigationNote || e.investigationNote.trim() === "");
@@ -548,6 +575,8 @@ function WastePage() {
     return result;
   }, [
     entries,
+    isBranchScoped,
+    branchId,
     noInvestigation,
     status,
     effectiveDateFrom,
@@ -767,7 +796,15 @@ function WastePage() {
           minute: "2-digit",
         }),
     },
-    { accessorKey: "branchName", header: "Cabang", enableSorting: true },
+    // Hide the Cabang column while a specific branch is filtered — every row
+    // is then from the same branch and the card header already names it, so
+    // the column is wasted width (client request: "titip hide column khusus
+    // yg di cabang").
+    // SAFETY: the object literal matches the other WasteRow column defs; the
+    // annotation restores contextual typing lost to the conditional spread.
+    ...(isBranchScoped && branchId
+      ? []
+      : [{ accessorKey: "branchName", header: "Cabang", enableSorting: true } as Column<WasteRow>]),
     {
       accessorKey: "ingredientName",
       header: "Target",
@@ -971,7 +1008,8 @@ function WastePage() {
     search ||
     noInvestigation === "true" ||
     dateFrom ||
-    dateTo
+    dateTo ||
+    branchId
   );
 
   return (
@@ -996,9 +1034,16 @@ function WastePage() {
                 <div className="text-xl sm:text-2xl font-semibold tracking-tight tabular-nums truncate">
                   {formatRupiah(totalValuation)}
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
-                  <CalendarDays className="h-3 w-3" />
-                  {effectiveDateFrom} — {effectiveDateTo}
+                <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
+                  <span className="inline-flex items-center gap-1.5">
+                    <CalendarDays className="h-3 w-3" />
+                    {effectiveDateFrom} — {effectiveDateTo}
+                  </span>
+                  {branchId && (
+                    <span className="inline-flex items-center gap-1">
+                      • {filteredBranches.find((b) => b.id === branchId)?.name ?? "Cabang"}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="hidden sm:flex flex-col items-end gap-1 shrink-0">
@@ -1081,6 +1126,29 @@ function WastePage() {
             className="h-11 sm:h-9 w-full rounded-xl sm:rounded-md border border-input bg-background px-3 text-[15px] sm:text-sm font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
+
+        {/* Row 2b — Branch filter (central roles only). Rekap Total Kerugian
+            dihitung dari filteredEntries, jadi ikut menyusut mengikuti cabang. */}
+        {isBranchScoped && (
+          <div className="flex items-center gap-2">
+            <select
+              value={branchId ?? ""}
+              onChange={(e) => {
+                setFilter("branchId", e.target.value);
+                setPage(0);
+              }}
+              aria-label="Filter cabang"
+              className="h-11 sm:h-9 w-full sm:max-w-xs rounded-xl sm:rounded-md border border-input bg-background px-3 text-[15px] sm:text-sm font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="">Semua Cabang</option>
+              {filteredBranches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Row 3 — Category pills + sort, edge-to-edge scroll on mobile */}
         <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-4 px-4 sm:mx-0 sm:px-0 pb-0.5 snap-x snap-mandatory">
@@ -1178,6 +1246,7 @@ function WastePage() {
                 setFilter("sortDir", "");
                 setFilter("noInvestigation", "");
                 setFilter("status", "");
+                setFilter("branchId", "");
                 setSearch("");
                 setPage(0);
               }}
