@@ -468,27 +468,37 @@ export async function triggerStockOpnameCore(
       ),
     );
 
-  // Create stock opname
-  const [so] = await db
-    .insert(stockOpnames)
-    .values({
-      branchId: data.branchId,
-      date: data.date,
-      triggeredBy: user.id,
-      submittedBy: user.id,
-    })
-    .returning();
+  // Create the SO header and ALL items atomically in one transaction with a
+  // single multi-row INSERT. A per-item loop over 50+ sequential round-trips
+  // has died mid-way on the Supabase pooler, leaving truncated SOs (e.g. 35
+  // of 57 items) with no trigger log — the transaction + bulk insert makes a
+  // partial SO impossible.
+  const so = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(stockOpnames)
+      .values({
+        branchId: data.branchId,
+        date: data.date,
+        triggeredBy: user.id,
+        submittedBy: user.id,
+      })
+      .returning();
 
-  // Create SO items with system stock
-  for (const item of invItems) {
-    await db.insert(stockOpnameItems).values({
-      stockOpnameId: so.id,
-      ingredientId: item.ingredientId,
-      systemStock: item.quantity,
-      physicalStock: 0,
-      variance: 0,
-    });
-  }
+    // Create SO items with system stock
+    if (invItems.length > 0) {
+      await tx.insert(stockOpnameItems).values(
+        invItems.map((item) => ({
+          stockOpnameId: created.id,
+          ingredientId: item.ingredientId,
+          systemStock: item.quantity,
+          physicalStock: 0,
+          variance: 0,
+        })),
+      );
+    }
+
+    return created;
+  });
 
   await logSystemAction(
     user,

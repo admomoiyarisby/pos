@@ -26,6 +26,7 @@
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { Client } from "pg";
 import { and, eq } from "drizzle-orm";
 import * as schema from "#/db/schema";
 import { getTestDatabaseUrl } from "./test-database";
@@ -663,6 +664,212 @@ describe("Stock opname — wrong-role and wrong-branch actors are rejected", () 
         .where(eq(schema.stockOpnames.id, so.id));
       expect(row.status).toBe("Submitted");
       expect(row.approvedBy).toBeNull();
+    },
+  );
+});
+
+describe("Stock opname — trigger item list scope (why 'trigger SO cuma 35 item')", () => {
+  /** Count the SO item rows a trigger produced. */
+  async function soItemCount(soId: string): Promise<number> {
+    const rows = await db
+      .select({ id: schema.stockOpnameItems.id })
+      .from(schema.stockOpnameItems)
+      .where(eq(schema.stockOpnameItems.stockOpnameId, soId));
+    return rows.length;
+  }
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "only ingredients with an existing inventory row at the branch get SO items",
+    async () => {
+      const branch = await seedBranch(uniq("SO-C"));
+      // A: has inventory row → in the SO
+      const ingWithRow = await seedIngredient(uniq("SO-C-WITH"));
+      await seedInventory(branch, ingWithRow, 5);
+      // B: countable + visible but NO inventory row at this branch → NOT in the SO
+      await seedIngredient(uniq("SO-C-NOINV"));
+      // C: inventory row exists but ingredient is Deleted → NOT in the SO
+      const deletedIng = await seedIngredient(uniq("SO-C-DEL"));
+      await db
+        .update(schema.ingredients)
+        .set({ status: "Deleted" })
+        .where(eq(schema.ingredients.id, deletedIng));
+      await seedInventory(branch, deletedIng, 3);
+      // D: inventory row but countable = false (e.g. porsi shelf) → NOT in the SO
+      const nonCountable = await seedIngredient(uniq("SO-C-NONCT"));
+      await db
+        .update(schema.ingredients)
+        .set({ countable: false })
+        .where(eq(schema.ingredients.id, nonCountable));
+      await seedInventory(branch, nonCountable, 4);
+
+      const ba = await seedUser("branch_admin", branch);
+      const so = await inv.triggerStockOpnameCore(ba, {
+        branchId: branch,
+        date: "2026-08-25",
+      });
+
+      // Exactly one SO item: only the ingredient with a countable, non-deleted,
+      // inventory-backed row.
+      expect(await soItemCount(so.id)).toBe(1);
+      const [only] = await db
+        .select({ ingredientId: schema.stockOpnameItems.ingredientId })
+        .from(schema.stockOpnameItems)
+        .where(eq(schema.stockOpnameItems.stockOpnameId, so.id));
+      expect(only.ingredientId).toBe(ingWithRow);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "outlet branches only SO their catalog (isBranchVisible); central SOs everything",
+    async () => {
+      const central = await seedBranch(uniq("SO-CT"), "Central");
+      const outlet = await seedBranch(uniq("SO-OT"), "Outlet");
+
+      // Visible (catalog) ingredient — stocked at both branches. NB: the
+      // schema default is isBranchVisible=false, so catalog membership must be
+      // set explicitly — exactly the flag that decides an Outlet SO's scope.
+      const visible = await seedIngredient(uniq("SO-VIS"));
+      await db
+        .update(schema.ingredients)
+        .set({ isBranchVisible: true })
+        .where(eq(schema.ingredients.id, visible));
+      // Central-only (non-catalog) ingredient — stocked at both branches.
+      const centralOnly = await seedIngredient(uniq("SO-CENT"));
+      await db
+        .update(schema.ingredients)
+        .set({ isBranchVisible: false })
+        .where(eq(schema.ingredients.id, centralOnly));
+
+      await seedInventory(central, visible, 10);
+      await seedInventory(central, centralOnly, 20);
+      await seedInventory(outlet, visible, 1);
+      await seedInventory(outlet, centralOnly, 2);
+
+      const outletBa = await seedUser("branch_admin", outlet);
+      const superAdmin = await seedUser("super_admin");
+
+      // Central SO: both countable ingredients regardless of isBranchVisible.
+      const centralSo = await inv.triggerStockOpnameCore(superAdmin, {
+        branchId: central,
+        date: "2026-08-25",
+      });
+      expect(await soItemCount(centralSo.id)).toBe(2);
+
+      // Outlet SO: the central-only ingredient is dropped from the snapshot —
+      // even though the outlet physically holds an inventory row for it. A
+      // brand-new ingredient (default isBranchVisible=false) is also absent.
+      const neverCataloged = await seedIngredient(uniq("SO-NEW"));
+      await seedInventory(outlet, neverCataloged, 9);
+      const outletSo = await inv.triggerStockOpnameCore(outletBa, {
+        branchId: outlet,
+        date: "2026-08-25",
+      });
+      expect(await soItemCount(outletSo.id)).toBe(1);
+      const outletItems = await db
+        .select({ ingredientId: schema.stockOpnameItems.ingredientId })
+        .from(schema.stockOpnameItems)
+        .where(eq(schema.stockOpnameItems.stockOpnameId, outletSo.id));
+      expect(outletItems.map((i) => i.ingredientId)).toEqual([visible]);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "role does not change the item list — same branch, same items regardless of triggerer",
+    async () => {
+      const branch = await seedBranch(uniq("SO-R"));
+      const n = 40; // more than the reported 35 to show no cap exists
+      for (let i = 0; i < n; i++) {
+        const ing = await seedIngredient(uniq(`SO-R-${String(i).padStart(2, "0")}`));
+        await seedInventory(branch, ing, 10);
+      }
+
+      const ba = await seedUser("branch_admin", branch);
+      const am = await seedUser("area_manager", undefined, [branch]);
+      const superAdmin = await seedUser("super_admin");
+
+      const soByBa = await inv.triggerStockOpnameCore(ba, {
+        branchId: branch,
+        date: "2026-08-25",
+      });
+      const soByAm = await inv.triggerStockOpnameCore(am, {
+        branchId: branch,
+        date: "2026-08-25",
+      });
+      const soBySuper = await inv.triggerStockOpnameCore(superAdmin, {
+        branchId: branch,
+        date: "2026-08-25",
+      });
+
+      // No per-role cap: every role sees all 40 inventory-backed items.
+      expect(await soItemCount(soByBa.id)).toBe(n);
+      expect(await soItemCount(soByAm.id)).toBe(n);
+      expect(await soItemCount(soBySuper.id)).toBe(n);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "trigger is atomic — a failing item insert leaves NO orphan stockOpname header",
+    async () => {
+      // Production forensics showed truncated SOs (35 of 57 items) because the
+      // old per-item INSERT loop ran without a transaction: a mid-loop failure
+      // (e.g. pooler connection drop) left the header + partial items committed
+      // and no trigger log. The fix writes header + all items in ONE
+      // transaction with a single multi-row INSERT, so a failure anywhere must
+      // roll back everything.
+      const branch = await seedBranch(uniq("SO-ATOM"));
+      const ing1 = await seedIngredient(uniq("SO-ATOM-1"));
+      const ing2 = await seedIngredient(uniq("SO-ATOM-2"));
+      await seedInventory(branch, ing1, 10);
+      await seedInventory(branch, ing2, 20);
+
+      const ba = await seedUser("branch_admin", branch);
+
+      // Sabotage at the database level: a trigger that raises on ANY item row
+      // makes the bulk INSERT fail mid-statement — the Postgres-native way to
+      // simulate the production failure. It must be dropped in `finally` so
+      // other tests (which legitimately insert SO items) are not affected.
+      const poison = new Client({ connectionString: testDatabaseUrl });
+      await poison.connect();
+      await poison.query(
+        `CREATE FUNCTION its_so_poison() RETURNS trigger AS $fn$
+         BEGIN
+           RAISE EXCEPTION 'its-poison: simulated mid-insert failure';
+         END;
+         $fn$ LANGUAGE plpgsql`,
+      );
+      await poison.query(
+        `CREATE TRIGGER its_so_poison_trg BEFORE INSERT ON stock_opname_items
+         FOR EACH ROW EXECUTE FUNCTION its_so_poison()`,
+      );
+
+      try {
+        // Drizzle wraps the Postgres exception in "Failed query: insert into
+        // …"; the wrapped message carries the trigger's RAISE text.
+        await expect(
+          inv.triggerStockOpnameCore(ba, { branchId: branch, date: "2026-08-25" }),
+        ).rejects.toThrow(/its-poison|Failed query/);
+      } finally {
+        await poison.query("DROP TRIGGER IF EXISTS its_so_poison_trg ON stock_opname_items");
+        await poison.query("DROP FUNCTION IF EXISTS its_so_poison()");
+        await poison.end();
+      }
+
+      // The header must NOT survive: the failing insert rolls back the whole
+      // transaction instead of leaving a truncated SO behind.
+      const headers = await db
+        .select({ id: schema.stockOpnames.id })
+        .from(schema.stockOpnames)
+        .where(eq(schema.stockOpnames.branchId, branch));
+      expect(headers).toHaveLength(0);
+      const items = await db
+        .select({ id: schema.stockOpnameItems.id })
+        .from(schema.stockOpnameItems)
+        .innerJoin(
+          schema.stockOpnames,
+          eq(schema.stockOpnameItems.stockOpnameId, schema.stockOpnames.id),
+        )
+        .where(eq(schema.stockOpnames.branchId, branch));
+      expect(items).toHaveLength(0);
     },
   );
 });
