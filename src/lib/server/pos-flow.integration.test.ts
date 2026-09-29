@@ -717,10 +717,9 @@ describe("POS — negatives: not-found and wrong-state guards with no side effec
 
 describe("POS — hard stock block: order refused when main or addon ingredients would go minus", () => {
   async function seedModifierAddons(
-    categoryId: string,
     recipeId: string,
     ingId: string,
-  ): Promise<{ groupId: string; modifierId: string }> {
+  ): Promise<{ groupId: string; modifierId: string; price: number }> {
     const [grp] = await db
       .insert(schema.modifierGroups)
       .values({ code: uniq("MG"), name: "Addon" })
@@ -739,7 +738,7 @@ describe("POS — hard stock block: order refused when main or addon ingredients
     await db
       .insert(schema.modifierIngredients)
       .values({ modifierId: mod.id, ingredientId: ingId, quantity: 1 });
-    return { groupId: grp.id, modifierId: mod.id };
+    return { groupId: grp.id, modifierId: mod.id, price: 3000 };
   }
 
   it.skipIf(!hasTestDatabaseUrl)(
@@ -798,7 +797,7 @@ describe("POS — hard stock block: order refused when main or addon ingredients
         .returning({ id: schema.categories.id });
       const ingId = await seedIngredient();
       const recipeId = await seedRecipe(catRow.id, ingId);
-      const addon = await seedModifierAddons(catRow.id, recipeId, ingId);
+      const addon = await seedModifierAddons(recipeId, ingId);
       // Main needs 2/order; addon needs 1. Stock 5: 1 order (2) is fine alone,
       // but 2 orders (4) + 2 addons (2) = 6 > 5 → the ADDON pushes it over.
       await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 5 });
@@ -839,7 +838,7 @@ describe("POS — hard stock block: order refused when main or addon ingredients
         .returning({ id: schema.categories.id });
       const ingId = await seedIngredient();
       const recipeId = await seedRecipe(catRow.id, ingId);
-      const addon = await seedModifierAddons(catRow.id, recipeId, ingId);
+      const addon = await seedModifierAddons(recipeId, ingId);
       await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 10 });
 
       const order = await posApi.createOrderCore(cashier, {
