@@ -467,3 +467,54 @@ describe("Pengadaan — wrong-role and wrong-branch actors are rejected", () => 
     },
   );
 });
+
+describe("Pengadaan — multiple Central-type branches (production bug 2026-09-29)", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "central stock display and ship check resolve to the Central that OWNS inventory, not an arbitrary one",
+    async () => {
+      // Production setup: the real warehouse 'CENTRAL' holds all stock, but a
+      // second Central-type branch 'CK-FPW' (food-prep kitchen, no inventory)
+      // was added later. `WHERE type='Central' LIMIT 1` has no ORDER BY, so
+      // Postgres returned the kitchen and every Stok Pusat read 0 (habis)
+      // while accept-and-ship failed the strict stock check.
+      const warehouse = await seedBranch(uniq("PR-WHS"), "Central");
+      const kitchen = await seedBranch(uniq("PR-CKT"), "Central");
+      const outlet = await seedBranch(uniq("PR-MCO"), "Outlet");
+      const ingredient = await seedIngredient(uniq("PR-INC"));
+      await seedInventory(warehouse, ingredient, 52);
+      // The kitchen deliberately has NO inventory rows.
+
+      const requester = await seedUser("branch_admin", outlet);
+      const centralAdmin = await seedUser("admin_pusat");
+
+      const { id: procurementId } = await createDraft(requester, outlet, ingredient);
+      await t(requester, procurementId, "submit");
+      await t(centralAdmin, procurementId, "open-review");
+
+      // The CA review's Stok Pusat column must see the warehouse's 52, not
+      // the kitchen's 0 — drive the core exactly as the screen's query does.
+      const rows = await scm.getCentralStockForProcurementCore(centralAdmin, {
+        procurementId,
+      });
+      expect(rows).toEqual([{ ingredientId: ingredient, available: 52 }]);
+
+      // Ship-time check must also decrement the WAREHOUSE (not the kitchen).
+      // CA decisions are saved per-item first (like the review screen does),
+      // then the transition ships the picked quantities.
+      const [item] = await db
+        .select()
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.scmProcurementId, procurementId))
+        .limit(1);
+      const saveRes = await scm.updateProcurementItemCore(centralAdmin, {
+        procurementId,
+        itemId: item.id,
+        patch: { caDecision: "approved", readyQuantity: 5 },
+      });
+      expect(saveRes.success).toBe(true);
+      await t(centralAdmin, procurementId, "accept-and-ship");
+      expect(await getStock(warehouse, ingredient)).toBe(47);
+      expect(await getStock(kitchen, ingredient)).toBe(0);
+    },
+  );
+});

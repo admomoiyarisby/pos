@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
+import { getCentralWarehouse } from "./central-warehouse";
 import {
   inventory,
   stockLedger,
@@ -519,12 +520,8 @@ export const getStockOpnames = createServerFn({ method: "GET" })
     if (user.role === "branch_admin" && user.branchId) {
       branchFilter = user.branchId;
     } else if (user.role === "admin_pusat") {
-      // Admin pusat sees only Central Warehouse
-      const [centralBranch] = await db
-        .select({ id: branches.id })
-        .from(branches)
-        .where(eq(branches.type, "Central"))
-        .limit(1);
+      // Admin pusat sees only Central Warehouse (multi-Central safe).
+      const centralBranch = await getCentralWarehouse(db);
       branchFilter = centralBranch?.id;
     } else if (user.role === "area_manager") {
       // Area manager sees only assigned branches
@@ -643,11 +640,7 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
 
     // Access check for admin_pusat - can only view Central Warehouse SOs
     if (user.role === "admin_pusat") {
-      const [centralBranch] = await db
-        .select({ id: branches.id })
-        .from(branches)
-        .where(eq(branches.type, "Central"))
-        .limit(1);
+      const centralBranch = await getCentralWarehouse(db);
       if (centralBranch && so.branchId !== centralBranch.id) {
         throw new Error("Unauthorized: Admin Pusat can only view Central Warehouse Stock Opnames");
       }
@@ -1433,11 +1426,7 @@ export const printStockOpname = createServerFn({ method: "GET" })
       throw new Error("Unauthorized: you can only print Stock Opnames for your branch");
     }
     if (user.role === "admin_pusat") {
-      const [centralBranch] = await db
-        .select({ id: branches.id })
-        .from(branches)
-        .where(eq(branches.type, "Central"))
-        .limit(1);
+      const centralBranch = await getCentralWarehouse(db);
       if (centralBranch && so.branchId !== centralBranch.id) {
         throw new Error("Unauthorized: Admin Pusat can only print Central Warehouse Stock Opnames");
       }

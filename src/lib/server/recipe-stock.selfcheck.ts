@@ -21,6 +21,7 @@ async function main() {
   if (m) process.env.DATABASE_URL = m[1].trim();
 
   const { db } = await import("#/lib/server/db");
+  const { requireCentralWarehouse } = await import("./central-warehouse");
   const schema = await import("#/db/schema");
   const {
     recipes,
@@ -29,20 +30,14 @@ async function main() {
     stockLedger,
     inventory,
     ingredients,
-    branches,
     categories,
   } = schema;
   const { eq, and } = await import("drizzle-orm");
 
   console.log("=== Recipe production → Kartu Stok self-check ===\n");
 
-  // 1. Resolve Central Warehouse branch
-  const [central] = await db
-    .select({ id: branches.id, name: branches.name })
-    .from(branches)
-    .where(eq(branches.type, "Central"))
-    .limit(1);
-  if (!central) throw new Error("Central Warehouse branch not found");
+  // 1. Resolve Central Warehouse branch (multi-Central safe)
+  const central = await requireCentralWarehouse(db);
   const branchId = central.id;
   console.log(`  ✓ Central Warehouse: ${central.name} (${branchId})`);
 

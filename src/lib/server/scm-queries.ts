@@ -25,6 +25,7 @@ import {
 } from "./scm-fsm";
 import { availableEvents, transition, updateItem } from "./scm-fsm";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
+import { getCentralWarehouse } from "./central-warehouse";
 import { FsmPayloadSchema, type FsmPayload } from "./scm-effects";
 import { z } from "zod";
 import { generateDocumentCode } from "./document-codes";
@@ -373,53 +374,60 @@ export interface CentralStockRow {
  * surfaced only as a post-hoc error toast (client report: "stok gudang ada
  * 52, pas buat surat jalan tulisannya 0 / habis").
  *
- * Branch resolution mirrors `writeInTransitInventory` exactly (first branch
- * of type 'Central', ADR 0002), so these numbers are precisely what the
+ * Branch resolution mirrors `writeInTransitInventory` exactly (both use
+ * `getCentralWarehouse`, ADR 0002), so these numbers are precisely what the
  * ship-time check validates against — no display/validation drift.
  */
+/** The business logic behind `getCentralStockForProcurement`, parameterized
+ *  by an explicit user so it can be driven directly (e.g. from integration
+ *  tests). Mirrors the wrapper's `assertProcurementAccess` guard. */
+export async function getCentralStockForProcurementCore(
+  user: { id: string; role: string; branchId?: string },
+  data: { procurementId: string },
+): Promise<CentralStockRow[]> {
+  await assertProcurementAccess(user, data.procurementId);
+
+  // Multi-Central safe: picks the Central that actually owns inventory,
+  // not whichever Central row Postgres returns first.
+  const central = await getCentralWarehouse(db);
+  if (!central) return [];
+
+  const items = await db
+    .selectDistinct({ ingredientId: scmProcurementItems.ingredientId })
+    .from(scmProcurementItems)
+    .where(eq(scmProcurementItems.scmProcurementId, data.procurementId));
+  if (items.length === 0) return [];
+
+  const rows = await db
+    .select({
+      ingredientId: inventory.ingredientId,
+      available: inventory.quantity,
+    })
+    .from(inventory)
+    .where(
+      and(
+        eq(inventory.branchId, central.id),
+        inArray(
+          inventory.ingredientId,
+          items.map((i) => i.ingredientId),
+        ),
+      ),
+    );
+
+  // Every requested ingredient gets an entry; a missing inventory row means
+  // Central has none on hand, which is exactly what the ship check sees.
+  const byIngredient = new Map(rows.map((r) => [r.ingredientId, r.available]));
+  return items.map((i) => ({
+    ingredientId: i.ingredientId,
+    available: byIngredient.get(i.ingredientId) ?? 0,
+  }));
+}
+
 export const getCentralStockForProcurement = createServerFn({ method: "GET" })
   .validator((data: { procurementId: string }) => data)
-  .handler(async ({ data }): Promise<CentralStockRow[]> => {
-    const user = await requireAuth();
-    await assertProcurementAccess(user, data.procurementId);
-
-    const [central] = await db
-      .select({ id: branches.id })
-      .from(branches)
-      .where(eq(branches.type, "Central"))
-      .limit(1);
-    if (!central) return [];
-
-    const items = await db
-      .selectDistinct({ ingredientId: scmProcurementItems.ingredientId })
-      .from(scmProcurementItems)
-      .where(eq(scmProcurementItems.scmProcurementId, data.procurementId));
-    if (items.length === 0) return [];
-
-    const rows = await db
-      .select({
-        ingredientId: inventory.ingredientId,
-        available: inventory.quantity,
-      })
-      .from(inventory)
-      .where(
-        and(
-          eq(inventory.branchId, central.id),
-          inArray(
-            inventory.ingredientId,
-            items.map((i) => i.ingredientId),
-          ),
-        ),
-      );
-
-    // Every requested ingredient gets an entry; a missing inventory row means
-    // Central has none on hand, which is exactly what the ship check sees.
-    const byIngredient = new Map(rows.map((r) => [r.ingredientId, r.available]));
-    return items.map((i) => ({
-      ingredientId: i.ingredientId,
-      available: byIngredient.get(i.ingredientId) ?? 0,
-    }));
-  });
+  .handler(async ({ data }): Promise<CentralStockRow[]> =>
+    getCentralStockForProcurementCore(await requireAuth(), data),
+  );
 
 // =============================================================================
 // getProcurementAuditLog (paginated)

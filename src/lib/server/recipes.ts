@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { DrizzleQueryError } from "drizzle-orm";
 import { db } from "#/lib/server/db";
+import { requireCentralWarehouse } from "./central-warehouse";
 import {
   recipes,
   recipeBrands,
@@ -868,13 +869,8 @@ export async function assignRecipeStockCore(
   if (!recipe) throw new Error("Resep tidak ditemukan");
 
   // Resolve target branch: must be Central Warehouse.
-  // This feature is restricted to Central Warehouse only.
-  const [central] = await db
-    .select({ id: branches.id, name: branches.name })
-    .from(branches)
-    .where(eq(branches.type, "Central"))
-    .limit(1);
-  if (!central) throw new Error("Cabang Pusat (Central Warehouse) tidak ditemukan");
+  // This feature is restricted to Central Warehouse only (multi-Central safe).
+  const central = await requireCentralWarehouse(db);
 
   // If branchId is provided, validate it's the Central Warehouse
   if (data.branchId && data.branchId !== central.id) {

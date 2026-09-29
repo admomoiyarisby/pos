@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
+import { getCentralWarehouse } from "./central-warehouse";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import {
   purchaseRequisitions,
@@ -375,11 +376,8 @@ export async function processPurchaseRequisitionCore(
   let dn: { id: string; code: string } | null = null;
 
   if (data.alsoCreateSJ) {
-    const [centralBranch] = await db
-      .select()
-      .from(branches)
-      .where(eq(branches.type, "Central"))
-      .limit(1);
+    // Multi-Central safe: the SJ ships from the Central that owns inventory.
+    const centralBranch = await getCentralWarehouse(db);
 
     const fromBranchId = centralBranch?.id ?? pr.branchId;
     const sjCode = `SJ-${pr.code}`;

@@ -1,4 +1,5 @@
 import { and, eq, isNull, sum } from "drizzle-orm";
+import { getCentralWarehouse } from "./central-warehouse";
 import { z } from "zod";
 import type { db as DbType } from "./db";
 import {
@@ -11,7 +12,6 @@ import {
   scmProcurements,
   stockLedger,
   wasteEntries,
-  branches,
 } from "#/db/schema";
 
 /**
@@ -141,8 +141,8 @@ export async function copyReadyToPicked(
 /**
  * For each approved item, decrement Central's inventory, write OUT ledger,
  * and insert an in_transit_inventory row pointing at this procurement.
- * Central = the single branch of type 'Central'. If there are multiple,
- * this is a TODO (ADR 0002 §consequences).
+ * Central = the Central-type branch that owns inventory (`getCentralWarehouse`),
+ * stable even when several branches have type 'Central' (ADR 0002 §consequences).
  */
 export async function writeInTransitInventory(
   procurementId: string,
@@ -156,7 +156,8 @@ export async function writeInTransitInventory(
     .where(eq(scmProcurements.id, procurementId));
   if (!proc) throw new Error(`Procurement ${procurementId} not found`);
 
-  const [central] = await tx.select().from(branches).where(eq(branches.type, "Central")).limit(1);
+  // Multi-Central safe: ships from the Central that owns inventory.
+  const central = await getCentralWarehouse(tx);
   if (!central) throw new Error("No Central branch configured");
 
   const items = await tx
@@ -536,7 +537,8 @@ export async function reverseInTransitOnCancel(
   actor: FsmActor,
   tx: FsmTx,
 ): Promise<void> {
-  const [central] = await tx.select().from(branches).where(eq(branches.type, "Central")).limit(1);
+  // Multi-Central safe: restores to the Central the shipment left from.
+  const central = await getCentralWarehouse(tx);
   if (!central) return;
 
   const rows = await tx
@@ -598,7 +600,7 @@ export async function reversePendingReviewOnCancel(
   actor: FsmActor,
   tx: FsmTx,
 ): Promise<void> {
-  const [central] = await tx.select().from(branches).where(eq(branches.type, "Central")).limit(1);
+  const central = await getCentralWarehouse(tx);
   if (!central) return;
 
   const [proc] = await tx
