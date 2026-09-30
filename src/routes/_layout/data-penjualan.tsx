@@ -15,6 +15,7 @@ import {
   Search,
   CalendarDays,
   Store,
+  BadgeCheck,
 } from "lucide-react";
 import RoleGuard from "#/components/RoleGuard";
 import Modal from "#/components/ui/Modal";
@@ -30,6 +31,7 @@ import {
   createSalesOrder,
   updateSalesOrder,
   deleteSalesOrder,
+  toggleSalesOrderVerified,
 } from "#/lib/server/sales-data";
 import { formatRp } from "#/lib/utils";
 import { appliedModifierLines } from "#/lib/pos-utils";
@@ -154,6 +156,19 @@ function DataPenjualanPage() {
     },
     onError: (err: Error) => {
       toast.error("Gagal menghapus", { description: err.message });
+    },
+  });
+
+  // Verified-flag toggle ("sudah diperiksa") — informational only.
+  const verifyMutation = useMutation({
+    mutationFn: ({ id, verified }: { id: string; verified: boolean }) =>
+      toggleSalesOrderVerified({ data: { id, verified } }),
+    onSuccess: (res) => {
+      toast.success(res.verified ? "Ditandai sudah diperiksa" : "Tanda diperiksa dilepas");
+      void queryClient.invalidateQueries({ queryKey: ["sales-data"] });
+    },
+    onError: (err: Error) => {
+      toast.error("Gagal mengubah tanda", { description: err.message });
     },
   });
 
@@ -289,6 +304,7 @@ function DataPenjualanPage() {
                 setDeletingOrder(order);
                 setDeleteModalOpen(true);
               }}
+              onToggleVerified={(verified) => verifyMutation.mutate({ id: order.id, verified })}
               canEdit={canEdit}
             />
           ))
@@ -338,6 +354,9 @@ function DataPenjualanPage() {
                       setDeletingOrder(order);
                       setDeleteModalOpen(true);
                     }}
+                    onToggleVerified={(verified) =>
+                      verifyMutation.mutate({ id: order.id, verified })
+                    }
                     canEdit={canEdit}
                   />
                 ))
@@ -447,12 +466,14 @@ function OrderRow({
   branchName,
   onEdit,
   onDelete,
+  onToggleVerified,
   canEdit,
 }: {
   order: any;
   branchName: string;
   onEdit: () => void;
   onDelete: () => void;
+  onToggleVerified: (verified: boolean) => void;
   canEdit: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -510,6 +531,15 @@ function OrderRow({
                 Void
               </span>
             )}
+            {order.verified && (
+              <span
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                title="Sudah diperiksa"
+              >
+                <BadgeCheck className="h-3 w-3" />
+                Diperiksa
+              </span>
+            )}
           </span>
         </td>
         <td className="py-2 px-3 text-right tabular-nums">{order.itemCount}</td>
@@ -527,6 +557,21 @@ function OrderRow({
         <td className="py-2 px-3 text-right">
           {canEdit && (
             <div className="flex justify-end gap-1">
+              {order.channel !== "Dine-in" && (
+                <button
+                  type="button"
+                  onClick={() => onToggleVerified(!order.verified)}
+                  className={`p-1.5 rounded ${
+                    order.verified
+                      ? "text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                      : "hover:bg-muted text-muted-foreground"
+                  }`}
+                  title={order.verified ? "Lepas tanda diperiksa" : "Tandai sudah diperiksa"}
+                  aria-pressed={Boolean(order.verified)}
+                >
+                  <BadgeCheck className="h-4 w-4" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onEdit}
@@ -651,12 +696,14 @@ function MobileOrderCard({
   branchName,
   onEdit,
   onDelete,
+  onToggleVerified,
   canEdit,
 }: {
   order: any;
   branchName: string;
   onEdit: () => void;
   onDelete: () => void;
+  onToggleVerified: (verified: boolean) => void;
   canEdit: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -684,6 +731,15 @@ function MobileOrderCard({
                 title={order.voidReason ?? "Void"}
               >
                 Void
+              </span>
+            )}
+            {order.verified && (
+              <span
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                title="Sudah diperiksa"
+              >
+                <BadgeCheck className="h-3 w-3" />
+                Diperiksa
               </span>
             )}
             <CalendarDays className="h-3 w-3 shrink-0" />
@@ -747,6 +803,20 @@ function MobileOrderCard({
 
       {canEdit && (
         <div className="mt-2.5 flex items-center justify-end gap-2 border-t pt-2.5">
+          {order.channel !== "Dine-in" && (
+            <button
+              type="button"
+              onClick={() => onToggleVerified(!order.verified)}
+              className={`inline-flex h-9 items-center gap-1 rounded-full border px-3 text-xs font-medium ${
+                order.verified
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                  : "bg-background hover:bg-muted"
+              }`}
+            >
+              <BadgeCheck className="h-3.5 w-3.5" />
+              {order.verified ? "Diperiksa" : "Tandai Diperiksa"}
+            </button>
+          )}
           <button
             type="button"
             onClick={onEdit}

@@ -178,6 +178,7 @@ export const getSalesData = createServerFn({ method: "GET" })
         status: orders.status,
         voidReason: orders.voidReason,
         notes: orders.notes,
+        verified: orders.verified,
         createdAt: orders.createdAt,
         itemCount: count(orderItems.id),
       })
@@ -600,6 +601,41 @@ export async function deleteSalesOrderCore(user: AppUser, data: { id: string }) 
 
   return { success: true };
 }
+
+/**
+ * Toggle the manual "sudah diperiksa" (verified) flag on a sales order.
+ *
+ * Purely informational — a reviewer marks the transaction as checked after
+ * comparing it against the channel's report. No effect on aggregates, stock,
+ * or exports. Audit context (who/when) is stamped on the row itself; POS
+ * (Dine-in) orders are excluded because they are system-generated.
+ */
+export const toggleSalesOrderVerified = createServerFn({ method: "POST" })
+  .validator((data: { id: string; verified: boolean }) => data)
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+
+    const [order] = await db
+      .select({ id: orders.id, channel: orders.channel })
+      .from(orders)
+      .where(eq(orders.id, data.id))
+      .limit(1);
+    if (!order) throw new Error("Order not found");
+    if (order.channel === "Dine-in") {
+      throw new Error("Transaksi POS (Dine-in) tidak perlu ditandai");
+    }
+
+    await db
+      .update(orders)
+      .set({
+        verified: data.verified,
+        verifiedAt: data.verified ? new Date() : null,
+        verifiedById: data.verified ? user.id : null,
+      })
+      .where(eq(orders.id, data.id));
+
+    return { success: true, verified: data.verified };
+  });
 
 /**
  * Get sales summary (aggregated by channel for a date range).

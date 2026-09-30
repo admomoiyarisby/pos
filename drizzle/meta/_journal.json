@@ -414,6 +414,13 @@
       "when": 1789773100000,
       "tag": "0055_scm_quantity_real",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1789859500000,
+      "tag": "0056_sales_order_verified_flag",
+      "breakpoints": true
     }
   ]
 }

@@ -616,6 +616,12 @@ export const orders = pgTable(
     voucherDiscount: integer("voucher_discount"),
     status: orderStatusEnum("status").notNull().default("New"),
     voidReason: text("void_reason"),
+    // Manual review flag (Data Penjualan): a super_admin/admin_pusat marks the
+    // transaction as checked ("sudah benar") after verifying its numbers —
+    // purely informational, no effect on aggregates or stock.
+    verified: boolean("verified").notNull().default(false),
+    verifiedAt: timestamp("verified_at", { mode: "date" }),
+    verifiedById: uuid("verified_by_id").references(() => users.id),
     shiftId: uuid("shift_id").references(() => shifts.id),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     notes: text("notes"),
