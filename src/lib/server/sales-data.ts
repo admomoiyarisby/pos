@@ -115,6 +115,7 @@ export const getSalesData = createServerFn({ method: "GET" })
     (data: {
       branchId?: string;
       channel?: string;
+      verified?: string;
       dateFrom?: string;
       dateTo?: string;
       page?: number;
@@ -122,6 +123,9 @@ export const getSalesData = createServerFn({ method: "GET" })
     }) => ({
       ...data,
       channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+      // "verified" = sudah diperiksa, "unverified" = belum. Note: Dine-in
+      // orders can never be flagged, so "unverified" includes them.
+      verified: z.enum(["verified", "unverified"]).optional().catch(undefined).parse(data.verified),
     }),
   )
   .handler(async ({ data }) => {
@@ -138,6 +142,9 @@ export const getSalesData = createServerFn({ method: "GET" })
     }
     if (data.channel) {
       conditions.push(eq(orders.channel, data.channel));
+    }
+    if (data.verified) {
+      conditions.push(eq(orders.verified, data.verified === "verified"));
     }
     if (data.dateFrom) {
       // Jakarta local dates (matching finance.ts): the UI sends YYYY-MM-DD

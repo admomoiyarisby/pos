@@ -83,6 +83,7 @@ function DataPenjualanPage() {
       dateTo: dateToFilter,
       branchId: branchIdFilter,
       channel,
+      verified: verifiedFilter,
       q,
     },
     setFilter,
@@ -91,8 +92,9 @@ function DataPenjualanPage() {
     dateTo?: string;
     branchId?: string;
     channel?: string;
+    verified?: string;
     q?: string;
-  }>(["dateFrom", "dateTo", "branchId", "channel", "q"]);
+  }>(["dateFrom", "dateTo", "branchId", "channel", "verified", "q"]);
   // Default to the trailing week when the URL has no explicit range. The flag
   // disables the fallback after the user picks "Semua" (which clears both URL
   // keys), so unbounded stays unbounded instead of snapping back to 7 days.
@@ -101,6 +103,7 @@ function DataPenjualanPage() {
   const dateTo = dateToFilter ?? "";
   const selectedBranchId = branchIdFilter ?? "";
   const selectedChannel = channel ?? "all";
+  const selectedVerified = verifiedFilter ?? "all";
   const searchQuery = q ?? "";
   const limit = 50;
 
@@ -114,10 +117,18 @@ function DataPenjualanPage() {
 
   // Fetch data
   const { data: salesData, isLoading } = useQuery({
-    queryKey: ["sales-data", branchId, selectedChannel, dateFrom, dateTo, page],
+    queryKey: ["sales-data", branchId, selectedChannel, selectedVerified, dateFrom, dateTo, page],
     queryFn: () =>
       getSalesData({
-        data: { branchId, channel: selectedChannel, dateFrom, dateTo, page, limit },
+        data: {
+          branchId,
+          channel: selectedChannel,
+          verified: selectedVerified,
+          dateFrom,
+          dateTo,
+          page,
+          limit,
+        },
       }),
   });
 
@@ -230,6 +241,21 @@ function DataPenjualanPage() {
                 {c.label}
               </option>
             ))}
+          </select>
+        </div>
+        <div className="w-full sm:w-auto space-y-1">
+          <label className="text-xs text-muted-foreground">Status Periksa</label>
+          <select
+            value={selectedVerified}
+            onChange={(e) => {
+              setFilter("verified", e.target.value === "all" ? undefined : e.target.value);
+              setPage(0);
+            }}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm block"
+          >
+            <option value="all">Semua</option>
+            <option value="verified">Sudah Diperiksa</option>
+            <option value="unverified">Belum Diperiksa</option>
           </select>
         </div>
         <div className="w-full sm:flex-1 sm:min-w-[200px] space-y-1">
