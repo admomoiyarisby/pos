@@ -440,11 +440,12 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
           <div className="flex gap-2">
             <Input
               type="number"
-              min={1}
+              min={0}
+              step="any"
               value={newQuantity}
               onChange={(e) => setNewQuantity(Number(e.target.value))}
               className="h-11 sm:h-10 flex-1 sm:w-24 text-base sm:text-sm"
-              inputMode="numeric"
+              inputMode="decimal"
             />
             <Button
               onClick={handleAdd}

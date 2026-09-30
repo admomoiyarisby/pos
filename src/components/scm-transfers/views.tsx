@@ -991,6 +991,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                     <input
                       type="number"
                       min={0}
+                      step="any"
                       value={edit.received}
                       onChange={(e) => {
                         const val = Number(e.target.value);
@@ -1007,6 +1008,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                     <input
                       type="number"
                       min={0}
+                      step="any"
                       value={edit.rejected}
                       onChange={(e) => {
                         const val = Number(e.target.value);

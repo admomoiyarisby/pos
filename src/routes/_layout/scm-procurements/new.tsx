@@ -258,7 +258,8 @@ function NewProcurementPage() {
                 </Select>
                 <Input
                   type="number"
-                  min={1}
+                  min={0}
+                  step="any"
                   value={quantity}
                   onChange={(e) => setQuantity(Number(e.target.value))}
                   className="w-32"

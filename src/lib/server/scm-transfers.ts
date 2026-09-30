@@ -375,7 +375,14 @@ export const updateMutasiTransferItem = createServerFn({ method: "POST" })
       receivedQuantity?: number;
       rejectedQuantity?: number;
       reason?: string;
-    }) => data,
+    }) => {
+      for (const qty of [data.receivedQuantity, data.rejectedQuantity]) {
+        if (qty !== undefined && (!Number.isFinite(qty) || qty < 0)) {
+          throw new Error("Quantities must be finite and non-negative");
+        }
+      }
+      return data;
+    },
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();
@@ -639,6 +646,7 @@ export const finishReceiveMutasiTransfer = createServerFn({ method: "POST" })
   .validator(
     (data: {
       transferId: string;
+      // Quantities are real (fractional allowed) — guarded to finite non-negatives.
       items: Array<{
         id: string;
         receivedQuantity: number;
@@ -646,7 +654,16 @@ export const finishReceiveMutasiTransfer = createServerFn({ method: "POST" })
         reason?: string;
         rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
       }>;
-    }) => data,
+    }) => {
+      for (const it of data.items) {
+        for (const qty of [it.receivedQuantity, it.rejectedQuantity]) {
+          if (!Number.isFinite(qty) || qty < 0) {
+            throw new Error("Quantities must be finite and non-negative");
+          }
+        }
+      }
+      return data;
+    },
   )
   .handler(async ({ data }) => finishReceiveMutasiTransferCore(await requireAuth(), data));
 

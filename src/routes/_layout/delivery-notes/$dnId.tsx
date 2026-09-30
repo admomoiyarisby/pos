@@ -306,6 +306,7 @@ function DNDetailPage() {
                       <input
                         type="number"
                         min={0}
+                        step="any"
                         defaultValue={item.receivedQuantity ?? item.pickedQuantity ?? item.quantity}
                         onChange={(e) =>
                           setReceiveInputs((prev) => ({
@@ -324,6 +325,7 @@ function DNDetailPage() {
                       <input
                         type="number"
                         min={0}
+                        step="any"
                         defaultValue={item.rejectedQuantity ?? 0}
                         onChange={(e) =>
                           setReceiveInputs((prev) => ({

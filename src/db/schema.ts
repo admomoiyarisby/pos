@@ -863,7 +863,7 @@ export const inTransitInventory = pgTable(
     ingredientId: uuid("ingredient_id")
       .notNull()
       .references(() => ingredients.id),
-    quantity: integer("quantity").notNull(),
+    quantity: real("quantity").notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (t) => [
@@ -1124,11 +1124,11 @@ export const deliveryNoteItems = pgTable(
     ingredientId: uuid("ingredient_id")
       .notNull()
       .references(() => ingredients.id),
-    quantity: integer("quantity").notNull(),
-    readyQuantity: integer("ready_quantity"),
-    pickedQuantity: integer("picked_quantity"),
-    receivedQuantity: integer("received_quantity"),
-    rejectedQuantity: integer("rejected_quantity").default(0),
+    quantity: real("quantity").notNull(),
+    readyQuantity: real("ready_quantity"),
+    pickedQuantity: real("picked_quantity"),
+    receivedQuantity: real("received_quantity"),
+    rejectedQuantity: real("rejected_quantity").default(0),
     rejectionDisposition: rejectionDispositionEnum("rejection_disposition"),
     discrepancyNote: text("discrepancy_note"),
   },
@@ -1291,11 +1291,13 @@ export const scmProcurementItems = pgTable(
       .notNull()
       .references(() => ingredients.id),
     sortOrder: integer("sort_order").notNull().default(0),
-    quantity: integer("quantity").notNull(),
-    readyQuantity: integer("ready_quantity"),
-    pickedQuantity: integer("picked_quantity"),
-    receivedQuantity: integer("received_quantity"),
-    rejectedQuantity: integer("rejected_quantity"),
+    // real (not integer) so fractional quantities (e.g. 2.5 kg) flow through
+    // the pipeline without rounding; matches inventory.quantity.
+    quantity: real("quantity").notNull(),
+    readyQuantity: real("ready_quantity"),
+    pickedQuantity: real("picked_quantity"),
+    receivedQuantity: real("received_quantity"),
+    rejectedQuantity: real("rejected_quantity"),
     caDecision: caDecisionEnum("ca_decision").notNull().default("pending"),
     baDecision: baDecisionEnum("ba_decision").notNull().default("pending"),
     unitPrice: integer("unit_price"),
@@ -1374,7 +1376,7 @@ export const pendingReviewInventory = pgTable(
     ingredientId: uuid("ingredient_id")
       .notNull()
       .references(() => ingredients.id),
-    quantity: integer("quantity").notNull(),
+    quantity: real("quantity").notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 
     createdById: uuid("created_by_id")
@@ -1467,10 +1469,11 @@ export const scmTransferItems = pgTable(
       .references(() => ingredients.id),
     sortOrder: integer("sort_order").notNull().default(0),
     // Sender BA's promise at item-creation time. Editable only in SuratJalanDraft.
-    quantity: integer("quantity").notNull(),
+    // real (not integer) so fractional quantities work; matches inventory.quantity.
+    quantity: real("quantity").notNull(),
     // Receiver BA's actual count, set in finish-receive.
-    receivedQuantity: integer("received_quantity"),
-    rejectedQuantity: integer("rejected_quantity"),
+    receivedQuantity: real("received_quantity"),
+    rejectedQuantity: real("rejected_quantity"),
     // Snapshot of ingredients.averageCost at item-creation time (global, matching
     // Pengadaan's pricing model in ADR 0003). Per-branch cost tracking is a
     // future migration; for now the sender's quoted price equals the global avg.
@@ -1563,7 +1566,9 @@ export const wasteEntries = pgTable(
       .references(() => branches.id),
     ingredientId: uuid("ingredient_id").references(() => ingredients.id),
     recipeId: uuid("recipe_id").references(() => recipes.id),
-    quantity: integer("quantity").notNull(),
+    // real (fractional allowed): the SCM reject effects write waste rows for
+    // fractional rejected quantities (e.g. 0.25 kg).
+    quantity: real("quantity").notNull(),
     category: wasteCategoryEnum("category").notNull(),
     staffName: text("staff_name"), // For Denda category: who the penalty is assigned to
     notes: text("notes"),

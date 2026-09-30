@@ -122,7 +122,9 @@ const createWasteEntryInput = z
     branchId: z.string().uuid(),
     ingredientId: z.string().uuid().optional(),
     recipeId: z.string().uuid().optional(),
-    quantity: z.number().int().min(1),
+    // real (fractional allowed) to match the SCM reject effects that write
+    // waste rows for fractional rejected quantities (e.g. 0.25 kg).
+    quantity: z.number().finite().positive(),
     category: z.enum(["Beban Makan", "Biaya Operasional", "Spoiled", "Denda"]),
     staffName: z.string().optional(),
     notes: z.string().optional(),

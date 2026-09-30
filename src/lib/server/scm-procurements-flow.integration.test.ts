@@ -689,4 +689,87 @@ describe("Pengadaan — multiple Central-type branches (production bug 2026-09-2
       expect(pendingRows.every((r) => r.clearedAt !== null)).toBe(true);
     },
   );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "fractional quantities flow through the pipeline without rounding",
+    async () => {
+      const warehouse = await seedBranch(uniq("PR-DWHS"), "Central");
+      const outlet = await seedBranch(uniq("PR-DMCO"), "Outlet");
+      const ingredient = await seedIngredient(uniq("PR-DEC"));
+      await seedInventory(warehouse, ingredient, 50);
+
+      const requester = await seedUser("branch_admin", outlet);
+      const centralAdmin = await seedUser("admin_pusat");
+
+      // Draft with a fractional quantity (2.5 kg-style line).
+      const { id: procurementId } = await scm.createProcurementCore(requester, {
+        branchId: outlet,
+        items: [{ ingredientId: ingredient, quantity: 2.5 }],
+        notes: "decimal flow",
+      });
+
+      const [item] = await db
+        .select()
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.scmProcurementId, procurementId))
+        .limit(1);
+      expect(item.quantity).toBeCloseTo(2.5, 5);
+
+      await t(requester, procurementId, "submit");
+      await t(centralAdmin, procurementId, "open-review");
+
+      // CA approves a fractional ready quantity (fractional item edit).
+      const saveRes = await scm.updateProcurementItemCore(centralAdmin, {
+        procurementId,
+        itemId: item.id,
+        patch: { caDecision: "approved", readyQuantity: 2.5 },
+      });
+      expect(saveRes.success).toBe(true);
+      await t(centralAdmin, procurementId, "accept-and-ship");
+      expect(await getStock(warehouse, ingredient)).toBeCloseTo(47.5, 5);
+
+      await t(requester, procurementId, "mark-delivered");
+      await t(requester, procurementId, "open-receive");
+
+      // Receiver accepts 2.25, rejects 0.25 back to Central.
+      await t(requester, procurementId, "finish-receive", {
+        items: [
+          {
+            id: item.id,
+            receivedQuantity: 2.25,
+            rejectedQuantity: 0.25,
+            reason: "Tumpah 0.25 kg",
+            rejectionDisposition: "Return to Source",
+          },
+        ],
+      });
+
+      expect(await getStock(outlet, ingredient)).toBeCloseTo(2.25, 5);
+      expect(await getStock(warehouse, ingredient)).toBeCloseTo(47.75, 5); // 47.5 + 0.25 back
+
+      // Item row keeps the fractional received/rejected split.
+      const [itemAfter] = await db
+        .select()
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.id, item.id))
+        .limit(1);
+      expect(itemAfter.receivedQuantity).toBeCloseTo(2.25, 5);
+      expect(itemAfter.rejectedQuantity).toBeCloseTo(0.25, 5);
+
+      // Waste entry records the fractional rejected quantity.
+      const wastes = await db
+        .select()
+        .from(schema.wasteEntries)
+        .where(eq(schema.wasteEntries.branchId, outlet));
+      expect(wastes).toHaveLength(1);
+      expect(wastes[0].quantity).toBeCloseTo(0.25, 5);
+
+      // Invoice totals only the received fraction (2.25 × 1000 avg cost).
+      const [invoice] = await db
+        .select()
+        .from(schema.scmProcurementInvoices)
+        .where(eq(schema.scmProcurementInvoices.scmProcurementId, procurementId));
+      expect(invoice.totalAmount).toBe(2250);
+    },
+  );
 });

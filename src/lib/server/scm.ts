@@ -1063,7 +1063,17 @@ export const receiveDeliveryNote = createServerFn({ method: "POST" })
         rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
         discrepancyNote?: string;
       }[];
-    }) => data,
+    }) => {
+      // Quantities are real (fractional allowed) — guarded to finite non-negatives.
+      for (const it of data.items) {
+        for (const qty of [it.receivedQuantity, it.rejectedQuantity]) {
+          if (!Number.isFinite(qty) || qty < 0) {
+            throw new Error("Quantities must be finite and non-negative");
+          }
+        }
+      }
+      return data;
+    },
   )
   .handler(async ({ data }) => {
     const user = await requireAuth();

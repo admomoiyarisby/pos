@@ -456,7 +456,8 @@ function NewMutasiPage() {
                     <div className="relative pt-0">
                       <input
                         type="number"
-                        min={1}
+                        min={0}
+                        step="any"
                         value={it.quantity}
                         disabled={!it.ingredientId}
                         onChange={(e) => updateItem(it.id, { quantity: Number(e.target.value) })}

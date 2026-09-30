@@ -97,12 +97,14 @@ export const FsmPayloadSchema = z.object({
   reason: z.string().optional(),
   notes: z.string().optional(),
   invoiceCode: z.string().optional(),
+  // Quantities are real (fractional allowed) — guarded to finite non-negatives
+  // so a NaN/Infinity/negative from the client can never reach the stock math.
   items: z
     .array(
       z.object({
         id: z.string(),
-        receivedQuantity: z.number().optional(),
-        rejectedQuantity: z.number().optional(),
+        receivedQuantity: z.number().finite().min(0).optional(),
+        rejectedQuantity: z.number().finite().min(0).optional(),
         reason: z.string().optional(),
         rejectionDisposition: z.enum(["Return to Source", "Scrap", "Quarantine"]).optional(),
       }),
@@ -113,7 +115,7 @@ export const FsmPayloadSchema = z.object({
       z.object({
         id: z.string(),
         caDecision: z.enum(["approved", "rejected"]),
-        readyQuantity: z.number().optional(),
+        readyQuantity: z.number().finite().min(0).optional(),
         rejectionNote: z.string().optional(),
       }),
     )

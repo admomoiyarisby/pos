@@ -555,6 +555,81 @@ describe("Mutasi Stok — full 10-state flow via the real server-function cores"
       expect(pendingRows.every((r) => r.clearedAt !== null)).toBe(true);
     },
   );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "fractional quantities flow through the pipeline without rounding",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-DECA"));
+      const toBranch = await seedBranch(uniq("MT-DECB"));
+      const ingredient = await seedIngredient(uniq("MT-DECING"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+      const manager = await seedUser("area_manager", undefined, [fromBranch, toBranch]);
+
+      // Draft with a fractional quantity (2.5 kg-style line).
+      const { transfer, warnings } = await scm.createMutasiTransferCore(sender, {
+        fromBranchId: fromBranch,
+        toBranchId: toBranch,
+        items: [{ ingredientId: ingredient, quantity: 2.5 }],
+        notes: "decimal flow",
+      });
+      expect(warnings).toEqual([]);
+
+      const [item] = await db
+        .select()
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id))
+        .limit(1);
+      expect(item.quantity).toBeCloseTo(2.5, 5);
+
+      await scm.submitMutasiTransferCore(sender, { transferId: transfer.id });
+      await scm.approveMutasiTransferCore(manager, { transferId: transfer.id });
+      await scm.shipMutasiTransferCore(sender, { transferId: transfer.id });
+
+      // Sender shipped exactly 2.5 (10 − 2.5 = 7.5), no integer rounding.
+      expect(await getStock(fromBranch, ingredient)).toBeCloseTo(7.5, 5);
+
+      await scm.markDeliveredMutasiTransferCore(receiver, { transferId: transfer.id });
+      await scm.openReceiveMutasiTransferCore(receiver, { transferId: transfer.id });
+
+      // Receiver accepts 2.25, rejects 0.25 back to the sender.
+      await expect(
+        scm.finishReceiveMutasiTransferCore(receiver, {
+          transferId: transfer.id,
+          items: [
+            {
+              id: item.id,
+              receivedQuantity: 2.25,
+              rejectedQuantity: 0.25,
+              reason: "Tumpah 0.25 kg",
+              rejectionDisposition: "Return to Source",
+            },
+          ],
+        }),
+      ).resolves.toMatchObject({ status: "WaitingForPayment" });
+
+      expect(await getStock(toBranch, ingredient)).toBeCloseTo(2.25, 5);
+      expect(await getStock(fromBranch, ingredient)).toBeCloseTo(7.75, 5); // 7.5 + 0.25 back
+
+      // Item row keeps the fractional received/rejected split.
+      const [itemAfter] = await db
+        .select()
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.id, item.id))
+        .limit(1);
+      expect(itemAfter.receivedQuantity).toBeCloseTo(2.25, 5);
+      expect(itemAfter.rejectedQuantity).toBeCloseTo(0.25, 5);
+
+      // Invoice totals only the received fraction (2.25 × 1000).
+      const [invoice] = await db
+        .select()
+        .from(schema.scmTransferInvoices)
+        .where(eq(schema.scmTransferInvoices.scmTransferId, transfer.id));
+      expect(invoice.totalAmount).toBe(2250);
+    },
+  );
 });
 
 describe("Mutasi Stok — wrong-role and wrong-branch actors are rejected", () => {

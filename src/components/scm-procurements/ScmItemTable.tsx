@@ -147,6 +147,7 @@ export function ScmItemTable({
                     <Input
                       type="number"
                       min={0}
+                      step="any"
                       value={ready}
                       disabled={disabled}
                       onChange={(e) =>
@@ -254,6 +255,7 @@ export function ScmItemTable({
                       <Input
                         type="number"
                         min={0}
+                        step="any"
                         value={ready}
                         disabled={disabled}
                         onChange={(e) =>
@@ -349,6 +351,7 @@ export function ScmItemTable({
                     <Input
                       type="number"
                       min={0}
+                      step="any"
                       max={picked}
                       value={received}
                       disabled={disabled}
@@ -445,6 +448,7 @@ export function ScmItemTable({
                       <Input
                         type="number"
                         min={0}
+                        step="any"
                         max={picked}
                         value={received}
                         disabled={disabled}

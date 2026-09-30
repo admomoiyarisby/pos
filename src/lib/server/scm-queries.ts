@@ -190,7 +190,15 @@ export const createProcurement = createServerFn({ method: "POST" })
       }>;
       notes?: string;
       requestSource?: string;
-    }) => data,
+    }) => {
+      // Quantities are real (fractional allowed) — finite positive required.
+      for (const it of data.items) {
+        if (!Number.isFinite(it.quantity) || it.quantity <= 0) {
+          throw new Error("Quantity must be a positive number");
+        }
+      }
+      return data;
+    },
   )
   .handler(async ({ data }) =>
     createProcurementCore(await requireRole("branch_admin", "super_admin"), data),
@@ -523,7 +531,13 @@ export const updateProcurementItem = createServerFn({ method: "POST" })
 // Audit event: 'item-add'. (ADR 0004 §3)
 
 export const addProcurementItem = createServerFn({ method: "POST" })
-  .validator((data: { procurementId: string; ingredientId: string; quantity: number }) => data)
+  .validator((data: { procurementId: string; ingredientId: string; quantity: number }) => {
+    // Quantities are real (fractional allowed) — finite positive required.
+    if (!Number.isFinite(data.quantity) || data.quantity <= 0) {
+      throw new Error("Quantity must be a positive number");
+    }
+    return data;
+  })
   .handler(async ({ data }) => {
     const user = await requireRole("branch_admin", "super_admin");
     return await db.transaction(async (tx) => {

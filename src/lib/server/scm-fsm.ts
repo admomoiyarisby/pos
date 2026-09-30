@@ -391,13 +391,14 @@ export type UpdateItemPatch = {
 
 export const UpdateItemPatchSchema = z.object({
   caDecision: z.enum(["approved", "rejected"]).optional(),
-  readyQuantity: z.number().optional(),
-  receivedQuantity: z.number().optional(),
-  rejectedQuantity: z.number().optional(),
+  // Quantities are real (fractional allowed) — guarded to finite non-negatives.
+  readyQuantity: z.number().finite().min(0).optional(),
+  receivedQuantity: z.number().finite().min(0).optional(),
+  rejectedQuantity: z.number().finite().min(0).optional(),
   reason: z.string().optional(),
   rejectionNote: z.string().optional(),
   rejectionDisposition: z.enum(["Return to Source", "Scrap", "Quarantine"]).optional(),
-  quantity: z.number().optional(),
+  quantity: z.number().finite().positive().optional(),
 });
 
 export type UpdateItemResult =
