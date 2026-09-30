@@ -2,6 +2,7 @@ import { Input } from "#/components/ui/input";
 import { lookupLabel } from "#/lib/label-lookup";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
+import { formatQuantity } from "#/lib/utils";
 
 /** What happens to a rejected line's stock (issue #93 follow-up). */
 export type RejectionDisposition = "Return to Source" | "Scrap" | "Quarantine";
@@ -125,7 +126,7 @@ export function ScmItemTable({
                       Diminta
                     </div>
                     <div className="font-mono font-medium mt-0.5">
-                      {it.quantity}
+                      {formatQuantity(it.quantity)}
                       {it.stockUnit ? <span className="ml-0.5">{it.stockUnit}</span> : null}
                     </div>
                     {isCaReview && centralStock && (
@@ -237,7 +238,9 @@ export function ScmItemTable({
                         <span className="text-xs text-muted-foreground"> ({it.stockUnit})</span>
                       ) : null}
                     </td>
-                    <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {formatQuantity(it.quantity)}
+                    </td>
                     {isCaReview && centralStock && (
                       <td
                         className={`px-3 py-2 text-right font-mono text-xs ${caStockStatus(it, centralStock).className}`}
@@ -532,7 +535,7 @@ export function ScmItemTable({
                     ) : null}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Diterima {it.receivedQuantity ?? 0}
+                    Diterima {formatQuantity(it.receivedQuantity ?? 0)}
                     {it.stockUnit ? ` ${it.stockUnit}` : ""}
                   </div>
                 </div>
@@ -546,7 +549,9 @@ export function ScmItemTable({
                     </div>
                   </div>
                 ) : (
-                  <div className="font-mono text-sm">{it.receivedQuantity}</div>
+                  <div className="font-mono text-sm">
+                    {formatQuantity(it.receivedQuantity ?? 0)}
+                  </div>
                 )}
               </div>
             );
@@ -559,7 +564,7 @@ export function ScmItemTable({
               <div className="font-medium text-sm">
                 {it.ingredientName}{" "}
                 <span className="text-xs text-muted-foreground font-normal">
-                  — ditolak {it.rejectedQuantity} ({it.reason ?? "-"})
+                  — ditolak {formatQuantity(it.rejectedQuantity ?? 0)} ({it.reason ?? "-"})
                 </span>
               </div>
             </div>
@@ -587,7 +592,7 @@ export function ScmItemTable({
                       ) : null}
                     </td>
                     <td className="px-3 py-2 text-right font-mono">
-                      {it.receivedQuantity}
+                      {formatQuantity(it.receivedQuantity ?? 0)}
                       {it.stockUnit ? ` ${it.stockUnit}` : ""}
                     </td>
                     {showPrices && (
@@ -613,7 +618,7 @@ export function ScmItemTable({
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                    {it.rejectedQuantity ?? 0} ditolak
+                    {formatQuantity(it.rejectedQuantity ?? 0)} ditolak
                   </td>
                   {showPrices && (
                     <td className="px-3 py-2 text-right text-muted-foreground">Rp 0</td>
@@ -647,7 +652,7 @@ export function ScmItemTable({
                 <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium">
                   Diminta
                 </div>
-                <div className="font-mono font-semibold mt-0.5">{it.quantity}</div>
+                <div className="font-mono font-semibold mt-0.5">{formatQuantity(it.quantity)}</div>
               </div>
               <div className="rounded-lg bg-muted/40 px-2 py-2 text-center">
                 <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium">
@@ -659,13 +664,17 @@ export function ScmItemTable({
                 <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium">
                   Kirim
                 </div>
-                <div className="font-mono font-medium mt-0.5">{it.pickedQuantity ?? "—"}</div>
+                <div className="font-mono font-medium mt-0.5">
+                  {it.pickedQuantity != null ? formatQuantity(it.pickedQuantity) : "—"}
+                </div>
               </div>
               <div className="rounded-lg bg-muted/40 px-2 py-2 text-center">
                 <div className="text-[10px] tracking-widest uppercase text-muted-foreground font-medium">
                   Diterima
                 </div>
-                <div className="font-mono font-semibold mt-0.5">{it.receivedQuantity ?? "—"}</div>
+                <div className="font-mono font-semibold mt-0.5">
+                  {it.receivedQuantity != null ? formatQuantity(it.receivedQuantity) : "—"}
+                </div>
               </div>
             </div>
             <div className="mt-2 flex items-center justify-between gap-2">
@@ -685,7 +694,7 @@ export function ScmItemTable({
               </div>
               {(it.rejectedQuantity ?? 0) > 0 && (
                 <span className="text-xs text-destructive font-medium">
-                  Ditolak {it.rejectedQuantity}
+                  Ditolak {formatQuantity(it.rejectedQuantity ?? 0)}
                 </span>
               )}
             </div>
@@ -715,11 +724,19 @@ export function ScmItemTable({
                     <span className="text-xs text-muted-foreground"> ({it.stockUnit})</span>
                   ) : null}
                 </td>
-                <td className="px-3 py-2 text-right font-mono">{it.quantity}</td>
-                <td className="px-3 py-2 text-right font-mono">{it.readyQuantity ?? "-"}</td>
-                <td className="px-3 py-2 text-right font-mono">{it.pickedQuantity ?? "-"}</td>
-                <td className="px-3 py-2 text-right font-mono">{it.receivedQuantity ?? "-"}</td>
-                <td className="px-3 py-2 text-right font-mono">{it.rejectedQuantity ?? "-"}</td>
+                <td className="px-3 py-2 text-right font-mono">{formatQuantity(it.quantity)}</td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {it.readyQuantity != null ? formatQuantity(it.readyQuantity) : "-"}
+                </td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {it.pickedQuantity != null ? formatQuantity(it.pickedQuantity) : "-"}
+                </td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {it.receivedQuantity != null ? formatQuantity(it.receivedQuantity) : "-"}
+                </td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {it.rejectedQuantity != null ? formatQuantity(it.rejectedQuantity) : "-"}
+                </td>
                 <td className="px-3 py-2 text-center">
                   <Badge
                     variant={lookupLabel(decisionColors, it.caDecision) ?? "secondary"}

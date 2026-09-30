@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { badgeVariant } from "#/lib/utils";
+import { badgeVariant, formatQuantity } from "#/lib/utils";
 import { lookupLabel } from "#/lib/label-lookup";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -298,9 +298,13 @@ function DNDetailPage() {
               {dn.items.map((item: DNItem) => (
                 <tr key={item.id} className="border-b">
                   <td className="px-4 py-3">{item.ingredientName ?? item.ingredientCode}</td>
-                  <td className="px-4 py-3 text-right">{item.quantity}</td>
-                  <td className="px-4 py-3 text-right">{item.readyQuantity ?? "-"}</td>
-                  <td className="px-4 py-3 text-right">{item.pickedQuantity ?? item.quantity}</td>
+                  <td className="px-4 py-3 text-right">{formatQuantity(item.quantity)}</td>
+                  <td className="px-4 py-3 text-right">
+                    {item.readyQuantity != null ? formatQuantity(item.readyQuantity) : "-"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {formatQuantity(item.pickedQuantity ?? item.quantity)}
+                  </td>
                   <td className="px-4 py-3">
                     {canReceive ? (
                       <input
@@ -317,7 +321,11 @@ function DNDetailPage() {
                         className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-right"
                       />
                     ) : (
-                      <span className="text-right block">{item.receivedQuantity ?? "-"}</span>
+                      <span className="text-right block">
+                        {item.receivedQuantity != null
+                          ? formatQuantity(item.receivedQuantity)
+                          : "-"}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -336,7 +344,11 @@ function DNDetailPage() {
                         className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-right"
                       />
                     ) : (
-                      <span className="text-right block">{item.rejectedQuantity ?? "-"}</span>
+                      <span className="text-right block">
+                        {item.rejectedQuantity != null
+                          ? formatQuantity(item.rejectedQuantity)
+                          : "-"}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3">

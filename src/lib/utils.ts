@@ -16,6 +16,27 @@ export function formatRp(value: number | string | bigint | null | undefined): st
   return `Rp ${num.toLocaleString("id-ID")}`;
 }
 
+/** Max fraction digits shown for stock/quantity displays. */
+const QUANTITY_MAX_FRACTION_DIGITS = 3;
+
+/**
+ * Format a stock/quantity value for the Indonesian UI.
+ *
+ * Quantities live in float32 (`real`) columns, so arithmetic can produce
+ * round-off artifacts (e.g. 7.75 → 7.7500001). Rounding to 3 fraction digits
+ * (well below any real-world stock unit) cleans those up, then id-ID locale
+ * formatting renders integers compactly (6000 → "6.000") and decimals with a
+ * comma (2.25 → "2,25").
+ *
+ * e.g. 6000 → "6.000", 2.25 → "2,25", 0.1 + 0.2 → "0,3"
+ */
+export function formatQuantity(value: number | null | undefined): string {
+  const num = Number(value ?? 0);
+  return num.toLocaleString("id-ID", {
+    maximumFractionDigits: QUANTITY_MAX_FRACTION_DIGITS,
+  });
+}
+
 /**
  * Format a timestamp for the Indonesian UI using the application's fixed
  * timezone. An explicit timezone keeps SSR and browser output identical.

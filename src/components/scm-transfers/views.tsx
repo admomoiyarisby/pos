@@ -32,6 +32,7 @@ import {
 import { printMutasiSuratJalan, printMutasiInvoice } from "#/lib/server/scm-transfer-print";
 import { openPrintWindow } from "#/lib/print-window";
 import { lookupLabel } from "#/lib/label-lookup";
+import { formatQuantity } from "#/lib/utils";
 import { toast } from "sonner";
 
 /** What happens to a rejected line's stock (issue #93 follow-up). */
@@ -236,16 +237,22 @@ function ReadOnlyItems({
                   ) : null}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Qty janji: {it.quantity} {ing?.stockUnit ?? ""}
+                  Qty janji: {formatQuantity(it.quantity)} {ing?.stockUnit ?? ""}
                 </p>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-sm">
-                  Diterima: <strong>{it.receivedQuantity ?? "—"}</strong>
+                  Diterima:{" "}
+                  <strong>
+                    {it.receivedQuantity != null ? formatQuantity(it.receivedQuantity) : "—"}
+                  </strong>
                   {ing?.stockUnit ? ` ${ing.stockUnit}` : ""}
                 </p>
                 <p className="text-sm">
-                  Ditolak: <strong>{it.rejectedQuantity ?? "—"}</strong>
+                  Ditolak:{" "}
+                  <strong>
+                    {it.rejectedQuantity != null ? formatQuantity(it.rejectedQuantity) : "—"}
+                  </strong>
                   {ing?.stockUnit ? ` ${ing.stockUnit}` : ""}
                   {(it.rejectedQuantity ?? 0) > 0 && (
                     <span className="ml-1 text-xs text-muted-foreground">
@@ -980,7 +987,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                     {ing?.name ?? it.ingredientId.slice(0, 8) + "..."}
                   </p>
                   <span className="text-xs text-muted-foreground">
-                    Janji: {it.quantity} {ing?.stockUnit ?? ""}
+                    Janji: {formatQuantity(it.quantity)} {ing?.stockUnit ?? ""}
                   </span>
                 </div>
                 <div className="flex items-center gap-4">
@@ -1065,7 +1072,8 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                   )}
                   {!sumOk && (
                     <span className="text-xs text-destructive">
-                      {edit.received + edit.rejected} ≠ {it.quantity}
+                      {formatQuantity(edit.received + edit.rejected)} ≠{" "}
+                      {formatQuantity(it.quantity)}
                     </span>
                   )}
                 </div>
@@ -1079,24 +1087,29 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
             <span className="text-muted-foreground">Total: {items.length} item</span>
             <div className="flex items-center gap-4">
               <span>
-                Janji: <strong>{items.reduce((s, it) => s + it.quantity, 0)}</strong>
+                Janji:{" "}
+                <strong>{formatQuantity(items.reduce((s, it) => s + it.quantity, 0))}</strong>
               </span>
               <span>
                 Diterima:{" "}
                 <strong>
-                  {items.reduce((s, it) => {
-                    const edit = reviewEdits[it.id];
-                    return s + (edit?.received ?? it.receivedQuantity ?? it.quantity);
-                  }, 0)}
+                  {formatQuantity(
+                    items.reduce((s, it) => {
+                      const edit = reviewEdits[it.id];
+                      return s + (edit?.received ?? it.receivedQuantity ?? it.quantity);
+                    }, 0),
+                  )}
                 </strong>
               </span>
               <span>
                 Ditolak:{" "}
                 <strong>
-                  {items.reduce((s, it) => {
-                    const edit = reviewEdits[it.id];
-                    return s + (edit?.rejected ?? it.rejectedQuantity ?? 0);
-                  }, 0)}
+                  {formatQuantity(
+                    items.reduce((s, it) => {
+                      const edit = reviewEdits[it.id];
+                      return s + (edit?.rejected ?? it.rejectedQuantity ?? 0);
+                    }, 0),
+                  )}
                 </strong>
               </span>
               <span className="text-muted-foreground">

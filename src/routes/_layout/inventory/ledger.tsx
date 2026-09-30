@@ -14,6 +14,7 @@ import {
   stockLedgerSearchSchema,
 } from "#/lib/stock-ledger-query";
 import type { UnknownRecord } from "#/lib/unknown-record";
+import { formatQuantity } from "#/lib/utils";
 import { isoDateDaysAgo } from "#/components/pos/HistoryDateFilter";
 import { getBranches } from "#/lib/server/branches";
 import { getRecipes } from "#/lib/server/recipes";
@@ -183,14 +184,14 @@ function LedgerPage() {
 
   const renderQty = (row: LedgerRow) => (
     <span className="tabular-nums whitespace-nowrap">
-      {row.quantity.toLocaleString("id-ID")}
+      {formatQuantity(row.quantity)}
       {row.stockUnit && <span className="text-muted-foreground ml-0.5">{row.stockUnit}</span>}
     </span>
   );
 
   const renderBalance = (row: LedgerRow) => (
     <span className="tabular-nums whitespace-nowrap">
-      {row.balance.toLocaleString("id-ID")}
+      {formatQuantity(row.balance)}
       {row.stockUnit && <span className="text-muted-foreground ml-0.5">{row.stockUnit}</span>}
     </span>
   );
@@ -579,14 +580,14 @@ function LedgerPage() {
                       }`}
                     >
                       {row.type === "IN" ? "+" : "−"}
-                      {row.quantity.toLocaleString("id-ID")}
+                      {formatQuantity(row.quantity)}
                     </span>
                     {row.stockUnit && (
                       <span className="text-xs text-muted-foreground">{row.stockUnit}</span>
                     )}
                   </div>
                   <div className="text-right text-xs text-muted-foreground shrink-0 tabular-nums">
-                    Saldo {row.balance.toLocaleString("id-ID")}
+                    Saldo {formatQuantity(row.balance)}
                     {row.stockUnit && ` ${row.stockUnit}`}
                   </div>
                 </div>
