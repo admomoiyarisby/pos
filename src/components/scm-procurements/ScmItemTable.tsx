@@ -3,6 +3,19 @@ import { lookupLabel } from "#/lib/label-lookup";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 
+/** What happens to a rejected line's stock (issue #93 follow-up). */
+export type RejectionDisposition = "Return to Source" | "Scrap" | "Quarantine";
+
+const DISPOSITION_OPTIONS: Array<{ value: RejectionDisposition; label: string }> = [
+  { value: "Return to Source", label: "Return ke Pusat" },
+  { value: "Scrap", label: "Scrap / Buang" },
+  { value: "Quarantine", label: "Karantina" },
+];
+
+function toDisposition(value: string): RejectionDisposition {
+  return value === "Scrap" || value === "Quarantine" ? value : "Return to Source";
+}
+
 /**
  * ScmItemTable — the "giant interactive table" from lesson 0002 §5.
  * One component, many modes. The mode prop drives columns, editability,
@@ -25,6 +38,8 @@ export interface ScmItemRow {
   baDecision: "pending" | "accepted" | "rejected";
   unitPrice: number | null;
   reason: string | null;
+  /** BA's chosen disposition for the rejected qty (ba-receive editing). */
+  rejectionDisposition?: RejectionDisposition | null;
 }
 
 export type ScmItemTableMode =
@@ -372,6 +387,29 @@ export function ScmItemTable({
                     className="h-11 mt-1"
                   />
                 </div>
+                {rejected > 0 && (
+                  <div className="mt-2">
+                    <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
+                      Barang ditolak
+                    </div>
+                    <select
+                      value={it.rejectionDisposition ?? "Return to Source"}
+                      disabled={disabled}
+                      onChange={(e) =>
+                        onItemChange?.(it.id, {
+                          rejectionDisposition: toDisposition(e.target.value),
+                        })
+                      }
+                      className="h-11 mt-1 w-full rounded-md border border-input bg-background px-2 text-sm"
+                    >
+                      {DISPOSITION_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -385,6 +423,7 @@ export function ScmItemTable({
                 <th className="px-3 py-2 text-right">Diterima</th>
                 <th className="px-3 py-2 text-right">Ditolak (auto)</th>
                 <th className="px-3 py-2 text-left">Alasan</th>
+                <th className="px-3 py-2 text-left">Barang ditolak</th>
                 <th className="px-3 py-2 text-left">Satuan</th>
               </tr>
             </thead>
@@ -438,6 +477,26 @@ export function ScmItemTable({
                         onChange={(e) => onItemChange?.(it.id, { reason: e.target.value })}
                         className="h-8 w-full"
                       />
+                    </td>
+                    <td className="px-3 py-2">
+                      {rejected > 0 ? (
+                        <select
+                          value={it.rejectionDisposition ?? "Return to Source"}
+                          disabled={disabled}
+                          onChange={(e) =>
+                            onItemChange?.(it.id, {
+                              rejectionDisposition: toDisposition(e.target.value),
+                            })
+                          }
+                          className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                        >
+                          {DISPOSITION_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
                     </td>
                   </tr>
                 );
@@ -545,7 +604,8 @@ export function ScmItemTable({
                   <td className="px-3 py-2">
                     {it.ingredientName}{" "}
                     <span className="text-xs text-muted-foreground">
-                      (Ditolak: {it.reason ?? "-"})
+                      (Ditolak: {it.reason ?? "-"}
+                      {it.rejectionDisposition === "Scrap" ? " · Scrap" : " · Return ke Pusat"})
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-muted-foreground">

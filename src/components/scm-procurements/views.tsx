@@ -873,6 +873,7 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
           receivedQuantity: it.receivedQuantity ?? undefined,
           rejectedQuantity: it.rejectedQuantity ?? undefined,
           reason: it.reason ?? undefined,
+          rejectionDisposition: it.rejectionDisposition ?? undefined,
         },
       });
     }
@@ -966,6 +967,10 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
           receivedQuantity: it.receivedQuantity ?? 0,
           rejectedQuantity: it.rejectedQuantity ?? 0,
           reason: it.reason ?? undefined,
+          rejectionDisposition:
+            (it.rejectedQuantity ?? 0) > 0
+              ? (it.rejectionDisposition ?? "Return to Source")
+              : undefined,
         })),
       },
     });

@@ -34,6 +34,19 @@ import { openPrintWindow } from "#/lib/print-window";
 import { lookupLabel } from "#/lib/label-lookup";
 import { toast } from "sonner";
 
+/** What happens to a rejected line's stock (issue #93 follow-up). */
+type RejectionDisposition = "Return to Source" | "Scrap" | "Quarantine";
+
+const DISPOSITION_OPTIONS: Array<{ value: RejectionDisposition; label: string }> = [
+  { value: "Return to Source", label: "Return ke Pengirim" },
+  { value: "Scrap", label: "Scrap / Buang" },
+  { value: "Quarantine", label: "Karantina" },
+];
+
+function toDisposition(value: string): RejectionDisposition {
+  return value === "Scrap" || value === "Quarantine" ? value : "Return to Source";
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -54,6 +67,8 @@ export interface TransferItemRow {
   rejectedQuantity: number | null;
   unitPrice: number;
   reason: string | null;
+  /** Receiver BA's chosen disposition for the rejected qty. */
+  rejectionDisposition?: RejectionDisposition | null;
 }
 
 /** Transfer invoice header — fields these views render. */
@@ -147,6 +162,7 @@ function useTransferActions(transferId: string) {
           receivedQuantity: number;
           rejectedQuantity: number;
           reason?: string;
+          rejectionDisposition?: RejectionDisposition;
         }>,
       ) => run(() => finishReceiveMut({ data: { transferId, items } })),
       markPaid: () => run(() => markPaidMut({ data: { transferId } })),
@@ -231,6 +247,11 @@ function ReadOnlyItems({
                 <p className="text-sm">
                   Ditolak: <strong>{it.rejectedQuantity ?? "—"}</strong>
                   {ing?.stockUnit ? ` ${ing.stockUnit}` : ""}
+                  {(it.rejectedQuantity ?? 0) > 0 && (
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      ({it.rejectionDisposition === "Scrap" ? "Scrap" : "Return ke Pengirim"})
+                    </span>
+                  )}
                 </p>
                 {showPrices && (
                   <p className="text-xs text-muted-foreground">
@@ -912,7 +933,10 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
   const { transfer, items, ingredientById, auditLog } = props;
   const { error, setError, actions } = useTransferActions(transfer.id);
   const [reviewEdits, setReviewEdits] = useState<
-    Record<string, { received: number; rejected: number; reason: string }>
+    Record<
+      string,
+      { received: number; rejected: number; reason: string; disposition: RejectionDisposition }
+    >
   >({});
   const [reviewError, setReviewError] = useState<string | null>(null);
 
@@ -937,10 +961,16 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
         <div className="divide-y">
           {items.map((it) => {
             const ing = ingredientById.get(it.ingredientId);
-            const edit = reviewEdits[it.id] ?? {
+            const edit: {
+              received: number;
+              rejected: number;
+              reason: string;
+              disposition: RejectionDisposition;
+            } = reviewEdits[it.id] ?? {
               received: it.receivedQuantity ?? it.quantity,
               rejected: it.rejectedQuantity ?? 0,
               reason: it.reason ?? "",
+              disposition: toDisposition(it.rejectionDisposition ?? "Return to Source"),
             };
             const sumOk = edit.received + edit.rejected === it.quantity;
             return (
@@ -989,23 +1019,47 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                     />
                   </div>
                   {edit.rejected > 0 && (
-                    <div className="flex items-center gap-1">
-                      <label className="text-xs text-muted-foreground">Alasan</label>
-                      <input
-                        value={edit.reason}
-                        onChange={(e) =>
-                          setReviewEdits((prev) => ({
-                            ...prev,
-                            [it.id]: {
-                              ...(prev[it.id] ?? edit),
-                              reason: e.target.value,
-                            },
-                          }))
-                        }
-                        placeholder="Wajib"
-                        className="h-8 w-40 rounded-md border border-input bg-background px-2 text-sm"
-                      />
-                    </div>
+                    <>
+                      <div className="flex items-center gap-1">
+                        <label className="text-xs text-muted-foreground">Alasan</label>
+                        <input
+                          value={edit.reason}
+                          onChange={(e) =>
+                            setReviewEdits((prev) => ({
+                              ...prev,
+                              [it.id]: {
+                                ...(prev[it.id] ?? edit),
+                                reason: e.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Wajib"
+                          className="h-8 w-40 rounded-md border border-input bg-background px-2 text-sm"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <label className="text-xs text-muted-foreground">Barang ditolak</label>
+                        <select
+                          value={edit.disposition}
+                          onChange={(e) =>
+                            setReviewEdits((prev) => ({
+                              ...prev,
+                              [it.id]: {
+                                ...(prev[it.id] ?? edit),
+                                disposition: toDisposition(e.target.value),
+                              },
+                            }))
+                          }
+                          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                        >
+                          {DISPOSITION_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
                   )}
                   {!sumOk && (
                     <span className="text-xs text-destructive">
@@ -1069,12 +1123,19 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                 receivedQuantity: number;
                 rejectedQuantity: number;
                 reason?: string;
+                rejectionDisposition?: RejectionDisposition;
               }> = [];
               for (const it of items) {
-                const edit = reviewEdits[it.id] ?? {
+                const edit: {
+                  received: number;
+                  rejected: number;
+                  reason: string;
+                  disposition: RejectionDisposition;
+                } = reviewEdits[it.id] ?? {
                   received: it.receivedQuantity ?? it.quantity,
                   rejected: it.rejectedQuantity ?? 0,
                   reason: it.reason ?? "",
+                  disposition: toDisposition(it.rejectionDisposition ?? "Return to Source"),
                 };
                 if (edit.received + edit.rejected !== it.quantity) {
                   const ing = ingredientById.get(it.ingredientId);
@@ -1095,6 +1156,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                   receivedQuantity: edit.received,
                   rejectedQuantity: edit.rejected,
                   reason: edit.reason || undefined,
+                  rejectionDisposition: edit.rejected > 0 ? edit.disposition : undefined,
                 });
               }
               try {
