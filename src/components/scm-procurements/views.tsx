@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
+import Modal from "#/components/ui/Modal";
 import {
   Select,
   SelectContent,
@@ -884,6 +885,13 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
     });
   };
 
+  // Jambangan-incident guard: a rejected line without a reason is almost
+  // certainly an accident (cleared input), not a decision. Block the save
+  // here already so it never reaches finish-receive.
+  const missingReasonCount = editableItems.filter(
+    (it) => (it.rejectedQuantity ?? 0) > 0 && !(it.reason ?? "").trim(),
+  ).length;
+
   return (
     <div className="space-y-4">
       <Card>
@@ -901,11 +909,25 @@ export function DeliveredBaForm({ procurement, items }: StateViewProps) {
             onItemChange={handleItemChange}
             disabled={updateM.isPending || transitionM.isPending}
           />
+          {missingReasonCount > 0 && (
+            <p className="mt-2 text-sm text-destructive">
+              {missingReasonCount} barang ditolak belum diberi alasan — isi kolom Alasan sebelum
+              melanjutkan.
+            </p>
+          )}
         </CardContent>
       </Card>
       <div className="flex flex-col sm:flex-row sm:justify-end gap-2 [&>button]:w-full sm:[&>button]:w-auto [&>button]:h-11 sm:[&>button]:h-10 [&>a]:w-full sm:[&>a]:w-auto">
         <SuratJalanButton procurementId={procurement.id} />
-        <Button disabled={transitionM.isPending || updateM.isPending} onClick={handleOpenReceive}>
+        <Button
+          disabled={transitionM.isPending || updateM.isPending || missingReasonCount > 0}
+          title={
+            missingReasonCount > 0
+              ? `${missingReasonCount} barang ditolak belum diberi alasan`
+              : undefined
+          }
+          onClick={handleOpenReceive}
+        >
           {updateM.isPending
             ? "Menyimpan..."
             : transitionM.isPending
@@ -947,6 +969,7 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
   const transitionM = useTransitionMutation();
   const [editableItems, setEditableItems] = useState<ScmItemRow[]>(() => rowsToItems(items));
   const [cancellationReason, setCancellationReason] = useState("");
+  const [confirmFullReject, setConfirmFullReject] = useState(false);
 
   useEffect(() => {
     setEditableItems(rowsToItems(items));
@@ -975,6 +998,25 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
         })),
       },
     });
+  };
+
+  // Guard against the 2026-09-30 Jambangan incident: a BA cleared the
+  // Diterima inputs (Number("") === 0) and unknowingly submitted a 100%
+  // rejection. Rejected lines must state a reason, and rejecting EVERY
+  // line requires an explicit confirmation click.
+  const missingReasonCount = editableItems.filter(
+    (it) => (it.rejectedQuantity ?? 0) > 0 && !(it.reason ?? "").trim(),
+  ).length;
+  const allRejected =
+    editableItems.length > 0 &&
+    editableItems.every((it) => (it.rejectedQuantity ?? 0) >= (it.pickedQuantity ?? 0));
+
+  const tryFinishReceive = () => {
+    if (allRejected) {
+      setConfirmFullReject(true);
+      return;
+    }
+    void handleFinishReceive();
   };
 
   return (
@@ -1022,13 +1064,45 @@ export function ReviewingSjBaInteractive({ procurement, items }: StateViewProps)
           </Button>
           <Button
             className="w-full sm:w-auto h-11 sm:h-10"
-            disabled={transitionM.isPending}
-            onClick={handleFinishReceive}
+            disabled={transitionM.isPending || missingReasonCount > 0}
+            title={
+              missingReasonCount > 0
+                ? `${missingReasonCount} barang ditolak belum diberi alasan`
+                : undefined
+            }
+            onClick={tryFinishReceive}
           >
             Selesai Review
           </Button>
         </ActionBar>
       </div>
+      <Modal
+        open={confirmFullReject}
+        onClose={() => setConfirmFullReject(false)}
+        title="Tolak semua barang?"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Semua barang pada pengadaan ini akan ditandai <strong>ditolak</strong> dan dikembalikan
+            ke gudang pusat. Stok tidak akan masuk ke cabang. Yakin ingin melanjutkan?
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmFullReject(false)}>
+              Periksa lagi
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={transitionM.isPending}
+              onClick={() => {
+                setConfirmFullReject(false);
+                void handleFinishReceive();
+              }}
+            >
+              Ya, tolak semua
+            </Button>
+          </div>
+        </div>
+      </Modal>
       <AuditLogSection procurementId={procurement.id} />
     </Section>
   );

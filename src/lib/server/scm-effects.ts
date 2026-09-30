@@ -99,6 +99,8 @@ export const FsmPayloadSchema = z.object({
   invoiceCode: z.string().optional(),
   // Quantities are real (fractional allowed) — guarded to finite non-negatives
   // so a NaN/Infinity/negative from the client can never reach the stock math.
+  // A blank reason on a rejected line is rejected by validateReceivePayload
+  // (semantic check, not shape).
   items: z
     .array(
       z.object({
@@ -121,6 +123,65 @@ export const FsmPayloadSchema = z.object({
     )
     .optional(),
 });
+
+/**
+ * Thrown by `validateReceivePayload` when a finish-receive payload would
+ * reject stock without stating why. Surfaced as a domain failure ({ success:
+ * false }) by both FSMs so the UI shows a clean toast (Jambangan incident,
+ * 2026-09-30: a BA cleared the Diterima inputs on every row — clearing a
+ * numeric input yields Number("") === 0 — and submitted a 100% rejection
+ * with no reason on two procurements).
+ */
+export class ReceiveValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReceiveValidationError";
+  }
+}
+
+/**
+ * Guard for finish-receive payloads (both Pengadaan and Mutasi):
+ *
+ *  1. Every item id in the payload must exist on the document.
+ *  2. received + rejected must not exceed the shipped/ordered quantity.
+ *  3. A line with rejectedQuantity > 0 MUST carry a non-blank reason —
+ *     silent full rejections are the failure mode we are guarding against.
+ *
+ * Runs inside the transition transaction (before any effects) so an invalid
+ * payload aborts with zero side effects.
+ *
+ * @param docItems the document's persisted items (scm_procurement_items or
+ *                 scm_transfer_items rows).
+ * @param shippedOf the per-item shipped quantity (pickedQuantity for
+ *                  Pengadaan, quantity for Mutasi).
+ */
+export function validateReceivePayload<T extends { id: string; ingredientId: string }>(
+  payload: FsmPayload,
+  docItems: T[],
+  shippedOf: (item: T) => number,
+): void {
+  if (!payload.items) return;
+  const byId = new Map(docItems.map((i) => [i.id, i]));
+  for (const patch of payload.items) {
+    const item = byId.get(patch.id);
+    if (!item) {
+      throw new ReceiveValidationError(
+        `Item ${patch.id} tidak ada pada dokumen ini — muat ulang halaman lalu coba lagi.`,
+      );
+    }
+    const received = patch.receivedQuantity ?? 0;
+    const rejected = patch.rejectedQuantity ?? 0;
+    const shipped = shippedOf(item);
+    if (received + rejected > shipped + STOCK_CHECK_EPSILON) {
+      throw new ReceiveValidationError(
+        `Diterima (${received}) + Ditolak (${rejected}) tidak boleh melebihi jumlah dikirim (${shipped}).`,
+      );
+    }
+    if (rejected > 0 && !(patch.reason ?? "").trim()) {
+      throw new ReceiveValidationError("Alasan penolakan wajib diisi untuk barang yang ditolak.");
+    }
+  }
+}
 
 // -----------------------------------------------------------------------------
 // accept-and-ship

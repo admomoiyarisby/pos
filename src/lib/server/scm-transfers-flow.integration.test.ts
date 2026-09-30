@@ -841,4 +841,89 @@ describe("Mutasi Stok — wrong-role and wrong-branch actors are rejected", () =
       ]);
     },
   );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "finish-receive refuses a rejected line without a reason (Jambangan incident 2026-09-30)",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-RA"));
+      const toBranch = await seedBranch(uniq("MT-RB"));
+      const ingredient = await seedIngredient(uniq("MT-RING"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+      await scm.submitMutasiTransferCore(sender, { transferId: transfer.id });
+      const manager = await seedUser("area_manager", undefined, [fromBranch, toBranch]);
+      await scm.approveMutasiTransferCore(manager, { transferId: transfer.id });
+      await scm.shipMutasiTransferCore(sender, { transferId: transfer.id });
+      await scm.markDeliveredMutasiTransferCore(receiver, { transferId: transfer.id });
+      await scm.openReceiveMutasiTransferCore(receiver, { transferId: transfer.id });
+
+      const [item] = await db
+        .select()
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id))
+        .limit(1);
+
+      // Full rejection with NO reason → domain failure, nothing changes.
+      await expect(
+        scm.finishReceiveMutasiTransferCore(receiver, {
+          transferId: transfer.id,
+          items: [{ id: item.id, receivedQuantity: 0, rejectedQuantity: 5 }],
+        }),
+      ).rejects.toThrow("Alasan penolakan wajib diisi");
+      expect((await transferStatus(transfer.id)).status).toBe("ReviewingSJ");
+      // Sender's stock must be untouched (the transaction rolled back).
+      expect(await getStock(fromBranch, ingredient)).toBe(5);
+
+      // The same payload WITH a reason goes through; stock returns to sender.
+      await expect(
+        scm.finishReceiveMutasiTransferCore(receiver, {
+          transferId: transfer.id,
+          items: [
+            { id: item.id, receivedQuantity: 0, rejectedQuantity: 5, reason: "kemasan rusak" },
+          ],
+        }),
+      ).resolves.toMatchObject({ status: "WaitingForPayment" });
+      expect(await getStock(fromBranch, ingredient)).toBe(10);
+      expect(await getStock(toBranch, ingredient)).toBe(0);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "finish-receive refuses received + rejected above the shipped quantity",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-SA"));
+      const toBranch = await seedBranch(uniq("MT-SB"));
+      const ingredient = await seedIngredient(uniq("MT-SING"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+      await scm.submitMutasiTransferCore(sender, { transferId: transfer.id });
+      const manager = await seedUser("area_manager", undefined, [fromBranch, toBranch]);
+      await scm.approveMutasiTransferCore(manager, { transferId: transfer.id });
+      await scm.shipMutasiTransferCore(sender, { transferId: transfer.id });
+      await scm.markDeliveredMutasiTransferCore(receiver, { transferId: transfer.id });
+      await scm.openReceiveMutasiTransferCore(receiver, { transferId: transfer.id });
+
+      const [item] = await db
+        .select()
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id))
+        .limit(1);
+
+      await expect(
+        scm.finishReceiveMutasiTransferCore(receiver, {
+          transferId: transfer.id,
+          items: [{ id: item.id, receivedQuantity: 4, rejectedQuantity: 3, reason: "coba" }],
+        }),
+      ).rejects.toThrow("tidak boleh melebihi jumlah dikirim");
+      expect((await transferStatus(transfer.id)).status).toBe("ReviewingSJ");
+    },
+  );
 });

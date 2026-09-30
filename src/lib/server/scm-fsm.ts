@@ -12,9 +12,11 @@ import {
   reverseInTransitOnCancel,
   reversePendingReviewOnCancel,
   setReceivedQuantities,
+  validateReceivePayload,
   writeInTransitInventory,
   writeReceivedStock,
   writeRejectedWaste,
+  ReceiveValidationError,
   type FsmActor,
   type FsmPayload,
   type FsmTx,
@@ -157,6 +159,23 @@ export const transitions: FsmTransitionTable = {
       to: "WaitingForPayment",
       actors: ["branch_admin", "super_admin"],
       effects: [
+        // Guards first (payload-level, no side effects): unknown item ids,
+        // received+rejected > picked, and rejected-without-reason. The last
+        // one exists because a 2026-09-30 incident had a BA clear the
+        // Diterima inputs (Number("") === 0) and submit a 100% rejection
+        // with no reason on every line of two procurements.
+        (procurementId, payload, _actor, tx) =>
+          tx
+            .select({
+              id: scmProcurementItems.id,
+              ingredientId: scmProcurementItems.ingredientId,
+              pickedQuantity: scmProcurementItems.pickedQuantity,
+            })
+            .from(scmProcurementItems)
+            .where(eq(scmProcurementItems.scmProcurementId, procurementId))
+            .then((items) =>
+              validateReceivePayload(payload, items, (it) => it.pickedQuantity ?? 0),
+            ),
         setReceivedQuantities,
         writeReceivedStock,
         writeRejectedWaste,
@@ -363,7 +382,10 @@ export async function transition(
       // Domain failure of the accept-and-ship effect: Central lacks stock for
       // a picked item. Surface as { success: false } so the UI shows a clean
       // toast instead of an unhandled error (issue #92 / client report).
-      err instanceof ProcurementInsufficientStockError
+      err instanceof ProcurementInsufficientStockError ||
+      // Domain failure of the finish-receive payload guard (rejected lines
+      // must carry a reason, sums must not exceed shipped).
+      err instanceof ReceiveValidationError
     ) {
       return { success: false, error: { name: err.name, message: err.message } };
     }

@@ -14,6 +14,7 @@ import {
   writeTransferRejectedWaste,
   generateTransferInvoiceSnapshot,
 } from "./scm-transfer-effects";
+import { validateReceivePayload, ReceiveValidationError } from "./scm-effects";
 import {
   InvalidTransferStateForEditError,
   InvalidTransferTransitionError,
@@ -172,6 +173,19 @@ export const transferTransitions: TransferTransitionTable = {
       to: "WaitingForPayment",
       actors: ["branch_admin"],
       effects: [
+        // Payload guard first (no side effects): unknown item ids,
+        // received+rejected > quantity, rejected-without-reason (Mirrors the
+        // Pengadaan guard; see validateReceivePayload.)
+        (transferId, payload, _actor, tx) =>
+          tx
+            .select({
+              id: scmTransferItems.id,
+              ingredientId: scmTransferItems.ingredientId,
+              quantity: scmTransferItems.quantity,
+            })
+            .from(scmTransferItems)
+            .where(eq(scmTransferItems.scmTransferId, transferId))
+            .then((items) => validateReceivePayload(payload, items, (it) => it.quantity)),
         setTransferReceivedQuantities,
         writeTransferReceivedStock,
         writeTransferRejectedWaste,
@@ -339,7 +353,9 @@ export async function transitionTransfer(
       // Domain failure of the ship effect: Sender lacks stock for an item.
       // Surface as { success: false } so the UI shows a clean toast instead
       // of an unhandled error (mirrors Pengadaan's handling).
-      err instanceof InsufficientStockError
+      err instanceof InsufficientStockError ||
+      // Domain failure of the finish-receive payload guard.
+      err instanceof ReceiveValidationError
     ) {
       return { success: false, error: { name: err.name, message: err.message } };
     }

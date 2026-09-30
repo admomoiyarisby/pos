@@ -429,9 +429,17 @@ describe("Pengadaan — wrong-role and wrong-branch actors are rejected", () => 
         .where(eq(schema.scmProcurementItems.scmProcurementId, procurementId))
         .limit(1);
 
-      await t(centralAdmin, procurementId, "accept-and-ship", {
-        caDecisions: [{ id: item.id, caDecision: "approved", readyQuantity: 5 }],
+      // CA decision must be saved via updateItem (no effect consumes a
+      // "caDecisions" transition payload — passing it there used to leave
+      // caDecision "pending" and ship 0, which the finish-receive payload
+      // guard now correctly refuses).
+      const saveRes = await scm.updateProcurementItemCore(centralAdmin, {
+        procurementId,
+        itemId: item.id,
+        patch: { caDecision: "approved", readyQuantity: 5 },
       });
+      expect(saveRes.success).toBe(true);
+      await t(centralAdmin, procurementId, "accept-and-ship");
 
       // InTransit: mark-delivered is branch_admin-only
       expect(await failingTransition(centralAdmin, procurementId, "mark-delivered")).toMatch(
@@ -464,6 +472,95 @@ describe("Pengadaan — wrong-role and wrong-branch actors are rejected", () => 
       });
       expect(res.success).toBe(false);
       if (!res.success) expect(res.error.message).toMatch("Cannot edit CA fields");
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "finish-receive refuses a rejected line without a reason (Jambangan incident 2026-09-30)",
+    async () => {
+      // A BA cleared the Diterima inputs on every row — clearing a numeric
+      // input yields Number("") === 0 — and submitted a 100% rejection with
+      // no reason. The guard now blocks rejected-without-reason at the FSM.
+      const central = await seedBranch(uniq("PR-GC"), "Central");
+      const outlet = await seedBranch(uniq("PR-GO"), "Outlet");
+      const ingredient = await seedIngredient(uniq("PR-GING"));
+      await seedInventory(central, ingredient, 10);
+
+      const requester = await seedUser("branch_admin", outlet);
+      const centralAdmin = await seedUser("admin_pusat");
+
+      const { id: procurementId } = await createDraft(requester, outlet, ingredient);
+      await t(requester, procurementId, "submit");
+      await t(centralAdmin, procurementId, "open-review");
+      const [item] = await db
+        .select()
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.scmProcurementId, procurementId))
+        .limit(1);
+      await scm.updateProcurementItemCore(centralAdmin, {
+        procurementId,
+        itemId: item.id,
+        patch: { caDecision: "approved", readyQuantity: 5 },
+      });
+      await t(centralAdmin, procurementId, "accept-and-ship");
+      await t(requester, procurementId, "mark-delivered");
+      await t(requester, procurementId, "open-receive");
+
+      // Full rejection with NO reason → domain failure, nothing changes.
+      const msg = await failingTransition(requester, procurementId, "finish-receive", {
+        items: [{ id: item.id, receivedQuantity: 0, rejectedQuantity: 5 }],
+      });
+      expect(msg).toMatch("Alasan penolakan wajib diisi");
+      expect((await procurementStatus(procurementId)).status).toBe("ReviewingSJ");
+      // Central's stock must be untouched (the transaction rolled back).
+      expect(await getStock(central, ingredient)).toBe(5);
+
+      // The same payload WITH a reason goes through.
+      expect(
+        await t(requester, procurementId, "finish-receive", {
+          items: [
+            { id: item.id, receivedQuantity: 0, rejectedQuantity: 5, reason: "kemasan rusak" },
+          ],
+        }),
+      ).toBe("WaitingForPayment");
+      // And the rejected stock is back at Central (issue #93 behavior).
+      expect(await getStock(central, ingredient)).toBe(10);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "finish-receive refuses received + rejected above the picked quantity",
+    async () => {
+      const central = await seedBranch(uniq("PR-HC"), "Central");
+      const outlet = await seedBranch(uniq("PR-HO"), "Outlet");
+      const ingredient = await seedIngredient(uniq("PR-HING"));
+      await seedInventory(central, ingredient, 10);
+
+      const requester = await seedUser("branch_admin", outlet);
+      const centralAdmin = await seedUser("admin_pusat");
+
+      const { id: procurementId } = await createDraft(requester, outlet, ingredient);
+      await t(requester, procurementId, "submit");
+      await t(centralAdmin, procurementId, "open-review");
+      const [item] = await db
+        .select()
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.scmProcurementId, procurementId))
+        .limit(1);
+      await scm.updateProcurementItemCore(centralAdmin, {
+        procurementId,
+        itemId: item.id,
+        patch: { caDecision: "approved", readyQuantity: 5 },
+      });
+      await t(centralAdmin, procurementId, "accept-and-ship");
+      await t(requester, procurementId, "mark-delivered");
+      await t(requester, procurementId, "open-receive");
+
+      const msg = await failingTransition(requester, procurementId, "finish-receive", {
+        items: [{ id: item.id, receivedQuantity: 4, rejectedQuantity: 3, reason: "coba" }],
+      });
+      expect(msg).toMatch("tidak boleh melebihi jumlah dikirim");
+      expect((await procurementStatus(procurementId)).status).toBe("ReviewingSJ");
     },
   );
 });

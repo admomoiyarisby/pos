@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
+import Modal from "#/components/ui/Modal";
 
 import {
   Send,
@@ -946,6 +947,58 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
     >
   >({});
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [confirmFullReject, setConfirmFullReject] = useState(false);
+
+  const submitReview = async () => {
+    setReviewError(null);
+    const payload: Array<{
+      id: string;
+      receivedQuantity: number;
+      rejectedQuantity: number;
+      reason?: string;
+      rejectionDisposition?: RejectionDisposition;
+    }> = [];
+    for (const it of items) {
+      const edit: {
+        received: number;
+        rejected: number;
+        reason: string;
+        disposition: RejectionDisposition;
+      } = reviewEdits[it.id] ?? {
+        received: it.receivedQuantity ?? it.quantity,
+        rejected: it.rejectedQuantity ?? 0,
+        reason: it.reason ?? "",
+        disposition: toDisposition(it.rejectionDisposition ?? "Return to Source"),
+      };
+      if (edit.received + edit.rejected !== it.quantity) {
+        const ing = ingredientById.get(it.ingredientId);
+        setReviewError(
+          `${ing?.name ?? it.ingredientId.slice(0, 8)}: diterima + ditolak harus = ${it.quantity}`,
+        );
+        return;
+      }
+      if (edit.rejected > 0 && !edit.reason.trim()) {
+        const ing = ingredientById.get(it.ingredientId);
+        setReviewError(`${ing?.name ?? it.ingredientId.slice(0, 8)}: alasan penolakan wajib diisi`);
+        return;
+      }
+      payload.push({
+        id: it.id,
+        receivedQuantity: edit.received,
+        rejectedQuantity: edit.rejected,
+        reason: edit.reason || undefined,
+        rejectionDisposition: edit.rejected > 0 ? edit.disposition : undefined,
+      });
+    }
+    try {
+      await actions.finishReceive(payload);
+      toast.success("Penerimaan Mutasi Stok berhasil. Stok telah diperbarui.");
+    } catch (err) {
+      toast.error(`Gagal memperbarui stok: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setReviewEdits({});
+    setReviewError(null);
+  };
 
   return (
     <Section>
@@ -1131,59 +1184,25 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
             Batal
           </Button>
           <Button
-            onClick={async () => {
-              setReviewError(null);
-              const payload: Array<{
-                id: string;
-                receivedQuantity: number;
-                rejectedQuantity: number;
-                reason?: string;
-                rejectionDisposition?: RejectionDisposition;
-              }> = [];
-              for (const it of items) {
-                const edit: {
-                  received: number;
-                  rejected: number;
-                  reason: string;
-                  disposition: RejectionDisposition;
-                } = reviewEdits[it.id] ?? {
-                  received: it.receivedQuantity ?? it.quantity,
-                  rejected: it.rejectedQuantity ?? 0,
-                  reason: it.reason ?? "",
-                  disposition: toDisposition(it.rejectionDisposition ?? "Return to Source"),
-                };
-                if (edit.received + edit.rejected !== it.quantity) {
-                  const ing = ingredientById.get(it.ingredientId);
-                  setReviewError(
-                    `${ing?.name ?? it.ingredientId.slice(0, 8)}: diterima + ditolak harus = ${it.quantity}`,
-                  );
-                  return;
-                }
-                if (edit.rejected > 0 && !edit.reason.trim()) {
-                  const ing = ingredientById.get(it.ingredientId);
-                  setReviewError(
-                    `${ing?.name ?? it.ingredientId.slice(0, 8)}: alasan penolakan wajib diisi`,
-                  );
-                  return;
-                }
-                payload.push({
-                  id: it.id,
-                  receivedQuantity: edit.received,
-                  rejectedQuantity: edit.rejected,
-                  reason: edit.reason || undefined,
-                  rejectionDisposition: edit.rejected > 0 ? edit.disposition : undefined,
+            onClick={() => {
+              // Jambangan-incident guard: rejecting EVERY line requires an
+              // explicit confirmation click before anything is submitted.
+              const effectiveRejected =
+                items.some((it) => {
+                  const edit = reviewEdits[it.id];
+                  const rejected = edit?.rejected ?? it.rejectedQuantity ?? 0;
+                  return rejected > 0;
+                }) &&
+                items.every((it) => {
+                  const edit = reviewEdits[it.id];
+                  const rejected = edit?.rejected ?? it.rejectedQuantity ?? 0;
+                  return rejected >= it.quantity;
                 });
+              if (effectiveRejected) {
+                setConfirmFullReject(true);
+                return;
               }
-              try {
-                await actions.finishReceive(payload);
-                toast.success("Penerimaan Mutasi Stok berhasil. Stok telah diperbarui.");
-              } catch (err) {
-                toast.error(
-                  `Gagal memperbarui stok: ${err instanceof Error ? err.message : String(err)}`,
-                );
-              }
-              setReviewEdits({});
-              setReviewError(null);
+              void submitReview();
             }}
           >
             <Check className="mr-1 h-4 w-4" />
@@ -1191,6 +1210,32 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
           </Button>
         </div>
       </div>
+      <Modal
+        open={confirmFullReject}
+        onClose={() => setConfirmFullReject(false)}
+        title="Tolak semua barang?"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Semua barang pada mutasi ini akan ditandai <strong>ditolak</strong> dan dikembalikan ke
+            cabang pengirim. Stok tidak akan masuk ke cabang Anda. Yakin ingin melanjutkan?
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmFullReject(false)}>
+              Periksa lagi
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirmFullReject(false);
+                void submitReview();
+              }}
+            >
+              Ya, tolak semua
+            </Button>
+          </div>
+        </div>{" "}
+      </Modal>
 
       {auditLog.length > 0 && (
         <>
