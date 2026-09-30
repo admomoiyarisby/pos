@@ -338,6 +338,7 @@ export const getProcurementItems = createServerFn({ method: "GET" })
         unitPrice: scmProcurementItems.unitPrice,
         reason: scmProcurementItems.reason,
         rejectionNote: scmProcurementItems.rejectionNote,
+        rejectionDisposition: scmProcurementItems.rejectionDisposition,
       })
       .from(scmProcurementItems)
       .innerJoin(ingredients, eq(ingredients.id, scmProcurementItems.ingredientId))

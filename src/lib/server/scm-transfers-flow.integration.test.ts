@@ -398,7 +398,8 @@ describe("Mutasi Stok — full 10-state flow via the real server-function cores"
       await scm.markDeliveredMutasiTransferCore(receiver, { transferId: transfer.id });
       await scm.openReceiveMutasiTransferCore(receiver, { transferId: transfer.id });
 
-      // Receiver accepts 3, rejects 2 (with a per-line reason).
+      // Receiver accepts 3, rejects 2 (with a per-line reason, returned to
+      // the sender explicitly).
       const [item] = await db
         .select()
         .from(schema.scmTransferItems)
@@ -413,14 +414,24 @@ describe("Mutasi Stok — full 10-state flow via the real server-function cores"
               receivedQuantity: 3,
               rejectedQuantity: 2,
               reason: "Barang rusak 2 pcs",
+              rejectionDisposition: "Return to Source",
             },
           ],
         }),
       ).resolves.toMatchObject({ status: "WaitingForPayment" });
 
-      // Only the received units land in receiver inventory; rejected become waste.
+      // The chosen disposition is persisted on the item.
+      const [itemAfter] = await db
+        .select()
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.id, item.id))
+        .limit(1);
+      expect(itemAfter.rejectionDisposition).toBe("Return to Source");
+
+      // Only the received units land in receiver inventory; the rejected 2
+      // return to the sender (issue #93) instead of being stranded.
       expect(await getStock(toBranch, ingredient)).toBe(3);
-      expect(await getStock(fromBranch, ingredient)).toBe(5); // sender still shipped the full 5
+      expect(await getStock(fromBranch, ingredient)).toBe(7); // 5 shipped − 0 received + 2 rejected back
 
       // Invoice totals only the received quantity (3 × 1000 average cost).
       const [invoice] = await db
@@ -439,13 +450,109 @@ describe("Mutasi Stok — full 10-state flow via the real server-function cores"
       expect(wastes[0].quantity).toBe(2);
       expect(wastes[0].category).toBe("Spoiled");
       expect(wastes[0].valuation).toBe(2000);
-      expect(wastes[0].notes).toBe("Barang rusak 2 pcs");
+      expect(wastes[0].notes).toBe("Return to Sender — Barang rusak 2 pcs");
       expect(wastes[0].submittedBy).toBe(receiver.id);
+
+      // The pending_review_inventory row must be fully cleared, including the
+      // fully-rejected case (issue #93: no stranded rows).
+      const pendingRows = await db
+        .select()
+        .from(schema.pendingReviewInventory)
+        .where(eq(schema.pendingReviewInventory.scmTransferId, transfer.id));
+      expect(pendingRows.every((r) => r.clearedAt !== null)).toBe(true);
+
+      // The rejected 2 units return to the sender via an IN ledger entry.
+      const rejectLedger = await db
+        .select()
+        .from(schema.stockLedger)
+        .where(eq(schema.stockLedger.reference, transfer.id));
+      expect(
+        rejectLedger.find(
+          (l) => l.type === "IN" && l.quantity === 2 && l.notes?.includes("Mutasi Reject"),
+        ),
+      ).toBeTruthy();
 
       // The transfer can still be completed.
       await expect(
         scm.markPaidMutasiTransferCore(sender, { transferId: transfer.id }),
       ).resolves.toMatchObject({ status: "Finished" });
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "Scrap disposition writes the rejected stock off instead of returning it to the sender",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-SCRA"));
+      const toBranch = await seedBranch(uniq("MT-SCRB"));
+      const ingredient = await seedIngredient(uniq("MT-SCRING"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+      const manager = await seedUser("area_manager", undefined, [fromBranch, toBranch]);
+
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+      await scm.submitMutasiTransferCore(sender, { transferId: transfer.id });
+      await scm.approveMutasiTransferCore(manager, { transferId: transfer.id });
+      await scm.shipMutasiTransferCore(sender, { transferId: transfer.id });
+      await scm.markDeliveredMutasiTransferCore(receiver, { transferId: transfer.id });
+      await scm.openReceiveMutasiTransferCore(receiver, { transferId: transfer.id });
+
+      const [item] = await db
+        .select()
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id))
+        .limit(1);
+      await expect(
+        scm.finishReceiveMutasiTransferCore(receiver, {
+          transferId: transfer.id,
+          items: [
+            {
+              id: item.id,
+              receivedQuantity: 0,
+              rejectedQuantity: 5,
+              reason: "Pecah semua",
+              rejectionDisposition: "Scrap",
+            },
+          ],
+        }),
+      ).resolves.toMatchObject({ status: "WaitingForPayment" });
+
+      // Scrapped stock goes nowhere: sender keeps the post-ship balance.
+      expect(await getStock(fromBranch, ingredient)).toBe(5);
+      expect(await getStock(toBranch, ingredient)).toBe(0);
+
+      // The disposition is persisted and reported on the item row.
+      const [itemAfter] = await db
+        .select()
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.id, item.id))
+        .limit(1);
+      expect(itemAfter.rejectionDisposition).toBe("Scrap");
+
+      // No return ledger entry for a scrapped line.
+      const rejectLedger = await db
+        .select()
+        .from(schema.stockLedger)
+        .where(eq(schema.stockLedger.reference, transfer.id));
+      expect(
+        rejectLedger.filter((l) => l.type === "IN" && l.notes?.includes("Mutasi Reject")),
+      ).toHaveLength(0);
+
+      // Waste entry still records the disposition.
+      const wastes = await db
+        .select()
+        .from(schema.wasteEntries)
+        .where(eq(schema.wasteEntries.branchId, toBranch));
+      expect(wastes).toHaveLength(1);
+      expect(wastes[0].notes).toBe("Discard (Scrap) — Pecah semua");
+
+      // Pending rows still fully cleared (issue #93).
+      const pendingRows = await db
+        .select()
+        .from(schema.pendingReviewInventory)
+        .where(eq(schema.pendingReviewInventory.scmTransferId, transfer.id));
+      expect(pendingRows.every((r) => r.clearedAt !== null)).toBe(true);
     },
   );
 });

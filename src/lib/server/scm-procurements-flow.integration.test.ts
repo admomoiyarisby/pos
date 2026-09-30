@@ -517,4 +517,176 @@ describe("Pengadaan — multiple Central-type branches (production bug 2026-09-2
       expect(await getStock(kitchen, ingredient)).toBe(0);
     },
   );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "fully-rejected finish-receive returns stock to Central and clears pending review (issue #93)",
+    async () => {
+      // Mirrors the production report: the receiver rejects every line, the
+      // invoice shows “Diterima 0”, yet the goods were effectively gone —
+      // stranded in pending_review_inventory, never back in Central stock.
+      const warehouse = await seedBranch(uniq("PR-WHS"), "Central");
+      const outlet = await seedBranch(uniq("PR-MCO"), "Outlet");
+      const ingredient = await seedIngredient(uniq("PR-REJ"));
+      await seedInventory(warehouse, ingredient, 50);
+
+      const requester = await seedUser("branch_admin", outlet);
+      const centralAdmin = await seedUser("admin_pusat");
+
+      const { id: procurementId } = await createDraft(requester, outlet, ingredient);
+      await t(requester, procurementId, "submit");
+      await t(centralAdmin, procurementId, "open-review");
+
+      // CA approves and picks the full 5, then ships (like the review screen).
+      const [item] = await db
+        .select()
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.scmProcurementId, procurementId))
+        .limit(1);
+      const saveRes = await scm.updateProcurementItemCore(centralAdmin, {
+        procurementId,
+        itemId: item.id,
+        patch: { caDecision: "approved", readyQuantity: 5 },
+      });
+      expect(saveRes.success).toBe(true);
+      await t(centralAdmin, procurementId, "accept-and-ship");
+      expect(await getStock(warehouse, ingredient)).toBe(45);
+      await t(requester, procurementId, "mark-delivered");
+      await t(requester, procurementId, "open-receive");
+
+      // Receiver rejects the entire shipment, choosing Return to Source.
+      await t(requester, procurementId, "finish-receive", {
+        items: [
+          {
+            id: item.id,
+            receivedQuantity: 0,
+            rejectedQuantity: 5,
+            reason: "rusak semua",
+            rejectionDisposition: "Return to Source",
+          },
+        ],
+      });
+
+      // The disposition is persisted on the item row.
+      const [itemAfter] = await db
+        .select()
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.id, item.id))
+        .limit(1);
+      expect(itemAfter.rejectionDisposition).toBe("Return to Source");
+
+      // All 5 units are back in Central's stock (issue #93).
+      expect(await getStock(warehouse, ingredient)).toBe(50);
+      expect(await getStock(outlet, ingredient)).toBe(0);
+
+      // No pending_review_inventory row is stranded uncleared.
+      const pendingRows = await db
+        .select()
+        .from(schema.pendingReviewInventory)
+        .where(eq(schema.pendingReviewInventory.scmProcurementId, procurementId));
+      expect(pendingRows.length).toBeGreaterThan(0);
+      expect(pendingRows.every((r) => r.clearedAt !== null)).toBe(true);
+
+      // The return is visible on Central's Kartu Stok ledger.
+      const rejectLedger = await db
+        .select()
+        .from(schema.stockLedger)
+        .where(eq(schema.stockLedger.reference, procurementId));
+      expect(
+        rejectLedger.find(
+          (l) =>
+            l.branchId === warehouse &&
+            l.type === "IN" &&
+            l.quantity === 5 &&
+            l.notes?.includes("Pengadaan Reject"),
+        ),
+      ).toBeTruthy();
+
+      // The waste entry is still recorded as the disposition record.
+      const wastes = await db
+        .select()
+        .from(schema.wasteEntries)
+        .where(eq(schema.wasteEntries.branchId, outlet));
+      expect(wastes.find((w) => w.ingredientId === ingredient && w.quantity === 5)).toBeDefined();
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "Scrap disposition writes the rejected stock off instead of returning it to Central",
+    async () => {
+      const warehouse = await seedBranch(uniq("PR-WHS"), "Central");
+      const outlet = await seedBranch(uniq("PR-MCO"), "Outlet");
+      const ingredient = await seedIngredient(uniq("PR-SCR"));
+      await seedInventory(warehouse, ingredient, 50);
+
+      const requester = await seedUser("branch_admin", outlet);
+      const centralAdmin = await seedUser("admin_pusat");
+
+      const { id: procurementId } = await createDraft(requester, outlet, ingredient);
+      await t(requester, procurementId, "submit");
+      await t(centralAdmin, procurementId, "open-review");
+
+      const [item] = await db
+        .select()
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.scmProcurementId, procurementId))
+        .limit(1);
+      const saveRes = await scm.updateProcurementItemCore(centralAdmin, {
+        procurementId,
+        itemId: item.id,
+        patch: { caDecision: "approved", readyQuantity: 5 },
+      });
+      expect(saveRes.success).toBe(true);
+      await t(centralAdmin, procurementId, "accept-and-ship");
+      expect(await getStock(warehouse, ingredient)).toBe(45);
+      await t(requester, procurementId, "mark-delivered");
+      await t(requester, procurementId, "open-receive");
+
+      // Receiver scraps the entire shipment.
+      await t(requester, procurementId, "finish-receive", {
+        items: [
+          {
+            id: item.id,
+            receivedQuantity: 0,
+            rejectedQuantity: 5,
+            reason: "bolong semua",
+            rejectionDisposition: "Scrap",
+          },
+        ],
+      });
+
+      // Scrapped stock goes nowhere: Central keeps the post-ship balance.
+      expect(await getStock(warehouse, ingredient)).toBe(45);
+      expect(await getStock(outlet, ingredient)).toBe(0);
+
+      // No return ledger entry for a scrapped line.
+      const rejectLedger = await db
+        .select()
+        .from(schema.stockLedger)
+        .where(eq(schema.stockLedger.reference, procurementId));
+      expect(
+        rejectLedger.filter((l) => l.type === "IN" && l.notes?.includes("Pengadaan Reject")),
+      ).toHaveLength(0);
+
+      // The disposition is persisted and the waste entry records it.
+      const [itemAfter] = await db
+        .select()
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.id, item.id))
+        .limit(1);
+      expect(itemAfter.rejectionDisposition).toBe("Scrap");
+      const wastes = await db
+        .select()
+        .from(schema.wasteEntries)
+        .where(eq(schema.wasteEntries.branchId, outlet));
+      expect(wastes).toHaveLength(1);
+      expect(wastes[0].notes).toContain("Discard (Scrap)");
+
+      // Pending rows still fully cleared (issue #93).
+      const pendingRows = await db
+        .select()
+        .from(schema.pendingReviewInventory)
+        .where(eq(schema.pendingReviewInventory.scmProcurementId, procurementId));
+      expect(pendingRows.every((r) => r.clearedAt !== null)).toBe(true);
+    },
+  );
 });

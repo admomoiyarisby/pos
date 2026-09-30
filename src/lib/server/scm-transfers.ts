@@ -141,6 +141,7 @@ export const getMutasiTransfer = createServerFn({ method: "GET" })
         rejectedQuantity: scmTransferItems.rejectedQuantity,
         unitPrice: scmTransferItems.unitPrice,
         reason: scmTransferItems.reason,
+        rejectionDisposition: scmTransferItems.rejectionDisposition,
         createdAt: scmTransferItems.createdAt,
         updatedAt: scmTransferItems.updatedAt,
       })
@@ -158,6 +159,9 @@ export const getMutasiTransfer = createServerFn({ method: "GET" })
           unitPrice: z.number(),
           lineTotal: z.number(),
           reason: z.string().nullable(),
+          rejectionDisposition: z
+            .enum(["Return to Source", "Scrap", "Quarantine"])
+            .catch("Return to Source"),
         }),
       )
       .catch([])
@@ -411,6 +415,7 @@ async function runTransition(args: {
       receivedQuantity?: number;
       rejectedQuantity?: number;
       reason?: string;
+      rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
     }>;
     invoiceCode?: string;
   };
@@ -601,6 +606,7 @@ export async function finishReceiveMutasiTransferCore(
       receivedQuantity: number;
       rejectedQuantity: number;
       reason?: string;
+      rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
     }>;
   },
 ) {
@@ -638,6 +644,7 @@ export const finishReceiveMutasiTransfer = createServerFn({ method: "POST" })
         receivedQuantity: number;
         rejectedQuantity: number;
         reason?: string;
+        rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
       }>;
     }) => data,
   )

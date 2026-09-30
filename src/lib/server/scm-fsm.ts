@@ -382,6 +382,8 @@ export type UpdateItemPatch = {
   rejectedQuantity?: number;
   reason?: string;
   rejectionNote?: string;
+  // BA's disposition for rejected stock (Delivered/ReviewingSJ edit).
+  rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
   // Draft-only: BA can edit the requested quantity before submit.
   // (ADR 0004 §3)
   quantity?: number;
@@ -394,6 +396,7 @@ export const UpdateItemPatchSchema = z.object({
   rejectedQuantity: z.number().optional(),
   reason: z.string().optional(),
   rejectionNote: z.string().optional(),
+  rejectionDisposition: z.enum(["Return to Source", "Scrap", "Quarantine"]).optional(),
   quantity: z.number().optional(),
 });
 
@@ -429,7 +432,8 @@ export async function updateItem(
       const isBAEdit =
         patch.receivedQuantity !== undefined ||
         patch.rejectedQuantity !== undefined ||
-        patch.reason !== undefined;
+        patch.reason !== undefined ||
+        patch.rejectionDisposition !== undefined;
       const isDraftEdit = patch.quantity !== undefined;
 
       if (isCAEdit && proc.status !== "UnderReview") {
@@ -452,6 +456,8 @@ export async function updateItem(
         updateFields.rejectedQuantity = patch.rejectedQuantity;
       if (patch.reason !== undefined) updateFields.reason = patch.reason;
       if (patch.rejectionNote !== undefined) updateFields.rejectionNote = patch.rejectionNote;
+      if (patch.rejectionDisposition !== undefined)
+        updateFields.rejectionDisposition = patch.rejectionDisposition;
       if (patch.quantity !== undefined) updateFields.quantity = patch.quantity;
 
       const updated = await tx

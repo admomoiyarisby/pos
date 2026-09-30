@@ -45,6 +45,15 @@ export interface FsmPayload {
     receivedQuantity?: number;
     rejectedQuantity?: number;
     reason?: string;
+    /**
+     * Receiver BA's disposition for the rejected stock (issue #93 follow-up).
+     * Default (undefined / "Return to Source"): the quantity is credited back
+     * to the sender's inventory by `writeTransferRejectedWaste`. "Scrap": the
+     * stock is written off — only the waste entry records it. "Quarantine":
+     * stock is tracked like Return to Source (no quarantine location exists
+     * yet) but the choice is recorded on the item and invoice.
+     */
+    rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
   }>;
 }
 
@@ -202,6 +211,10 @@ export async function setTransferReceivedQuantities(
         receivedQuantity: received,
         rejectedQuantity: rejected,
         reason: itemPatch.reason,
+        // Persist the receiver BA's disposition (undefined → NULL → reported
+        // as Return to Source by readers).
+        rejectionDisposition:
+          rejected > 0 ? (itemPatch.rejectionDisposition ?? "Return to Source") : null,
       })
       .where(
         and(eq(scmTransferItems.id, itemPatch.id), eq(scmTransferItems.scmTransferId, transferId)),
@@ -313,15 +326,36 @@ export async function writeTransferReceivedStock(
         ),
       );
   }
+
+  // Rejected lines received 0 and are skipped above, which leaves their
+  // pending_review_inventory rows uncleared. Clear them here (never in a
+  // loop keyed on received > 0) so fully-rejected transfers don't strand
+  // stock in "pending review" forever (issue #93).
+  await tx
+    .update(pendingReviewInventory)
+    .set({ clearedAt: new Date() })
+    .where(
+      and(
+        eq(pendingReviewInventory.scmTransferId, transferId),
+        isNull(pendingReviewInventory.clearedAt),
+      ),
+    );
+
   console.log(`[writeTransferReceivedStock] Completed stock update for transfer ${transferId}`);
 }
 
 /**
- * For each line with `rejectedQuantity > 0`, write a `waste_entries` row at
- * the **Receiver's** branch (Q13, the Pengadaan pattern: the receiver decided
- * to reject, so they own the physical disposition). The waste entry is
- * valued at `rejectedQuantity * ingredient.averageCost` — the same global
- * average cost used for the invoice's `unitPrice` snapshot.
+ * Disposition for rejected stock (issue #93): the rejected quantity returns
+ * to the **Sender's** main `inventory` (IN ledger `Mutasi Reject …`) — a
+ * branch-to-branch transfer means the sender still owns the stock; the
+ * receiver rejected it, so it goes back. A `waste_entries` row is still
+ * written at the Receiver's branch as the *disposition record* (Q13), valued
+ * at `rejectedQuantity * ingredient.averageCost` — the same global average
+ * cost used for the invoice's `unitPrice` snapshot.
+ *
+ * Previously this effect only wrote the waste row and never returned the
+ * stock: fully-rejected transfers stranded the quantity in
+ * pending_review_inventory, invisible to the sender's stock position.
  */
 export async function writeTransferRejectedWaste(
   transferId: string,
@@ -351,15 +385,64 @@ export async function writeTransferRejectedWaste(
       .limit(1);
     const valuation = rejected * (ing?.averageCost ?? 0);
 
+    const disposition = itemPatch.rejectionDisposition ?? "Return to Source";
+
     await tx.insert(wasteEntries).values({
       branchId: tr.toBranchId,
       ingredientId: item.ingredientId,
       quantity: rejected,
       category: "Spoiled",
-      notes: itemPatch.reason ?? null,
+      notes:
+        (disposition === "Scrap" ? "Discard (Scrap)" : "Return to Sender") +
+        (itemPatch.reason ? ` — ${itemPatch.reason}` : ""),
       valuation,
       submittedBy: actor.id,
     });
+
+    // Disposition: "Scrap" writes the stock off (the waste entry above is the
+    // record). Anything else (default "Return to Source", plus "Quarantine"
+    // until a quarantine location exists) credits the quantity back to the
+    // Sender's main inventory.
+    if (disposition === "Scrap") continue;
+    const [sndInv] = await tx
+      .select()
+      .from(inventory)
+      .where(
+        and(eq(inventory.branchId, tr.fromBranchId), eq(inventory.ingredientId, item.ingredientId)),
+      )
+      .limit(1);
+
+    if (sndInv) {
+      const newQty = sndInv.quantity + rejected;
+      await tx
+        .update(inventory)
+        .set({ quantity: newQty, lastUpdated: new Date() })
+        .where(eq(inventory.id, sndInv.id));
+      await tx.insert(stockLedger).values({
+        branchId: tr.fromBranchId,
+        ingredientId: item.ingredientId,
+        type: "IN",
+        quantity: rejected,
+        balance: newQty,
+        reference: transferId,
+        notes: `Mutasi Reject ${tr.code}`,
+      });
+    } else {
+      await tx.insert(inventory).values({
+        branchId: tr.fromBranchId,
+        ingredientId: item.ingredientId,
+        quantity: rejected,
+      });
+      await tx.insert(stockLedger).values({
+        branchId: tr.fromBranchId,
+        ingredientId: item.ingredientId,
+        type: "IN",
+        quantity: rejected,
+        balance: rejected,
+        reference: transferId,
+        notes: `Mutasi Reject ${tr.code}`,
+      });
+    }
   }
 }
 
@@ -409,6 +492,7 @@ export async function generateTransferInvoiceSnapshot(
       rejectedQuantity: scmTransferItems.rejectedQuantity,
       unitPrice: scmTransferItems.unitPrice,
       reason: scmTransferItems.reason,
+      rejectionDisposition: scmTransferItems.rejectionDisposition,
     })
     .from(scmTransferItems)
     .where(eq(scmTransferItems.scmTransferId, transferId));
@@ -431,6 +515,7 @@ export async function generateTransferInvoiceSnapshot(
       unitPrice: row.unitPrice,
       lineTotal,
       reason: row.reason,
+      rejectionDisposition: row.rejectionDisposition ?? "Return to Source",
     };
   });
 

@@ -1301,6 +1301,9 @@ export const scmProcurementItems = pgTable(
     unitPrice: integer("unit_price"),
     reason: text("reason"),
     rejectionNote: text("rejection_note"),
+    // Disposition chosen by the receiving BA at finish-receive: Return to
+    // Source credits Central's inventory (default), Scraps writes it off.
+    rejectionDisposition: rejectionDispositionEnum("rejection_disposition"),
   },
   (t) => [
     index("spi_procurement_idx").on(t.scmProcurementId),
@@ -1373,6 +1376,7 @@ export const pendingReviewInventory = pgTable(
       .references(() => ingredients.id),
     quantity: integer("quantity").notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+
     createdById: uuid("created_by_id")
       .notNull()
       .references(() => users.id),
@@ -1474,6 +1478,9 @@ export const scmTransferItems = pgTable(
     // Per-line rejection reason. Required iff rejectedQuantity > 0 — enforced
     // in the finish-receive handler, not the schema (since it's conditional).
     reason: text("reason"),
+    // Disposition chosen by the Receiver BA at finish-receive: Return to Source
+    // credits the sender's inventory (default), Scraps writes the stock off.
+    rejectionDisposition: rejectionDispositionEnum("rejection_disposition"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" })
       .defaultNow()

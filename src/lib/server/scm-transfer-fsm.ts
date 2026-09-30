@@ -355,6 +355,7 @@ export type UpdateTransferItemPatch = {
   receivedQuantity?: number;
   rejectedQuantity?: number;
   reason?: string;
+  rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
 };
 
 export type UpdateTransferItemResult =
@@ -397,6 +398,8 @@ export async function updateTransferItem(
       if (patch.rejectedQuantity !== undefined)
         updateFields.rejectedQuantity = patch.rejectedQuantity;
       if (patch.reason !== undefined) updateFields.reason = patch.reason;
+      if (patch.rejectionDisposition !== undefined)
+        updateFields.rejectionDisposition = patch.rejectionDisposition;
 
       const updated = await tx
         .update(scmTransferItems)

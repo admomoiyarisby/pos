@@ -75,6 +75,15 @@ export interface FsmPayload {
     receivedQuantity?: number;
     rejectedQuantity?: number;
     reason?: string;
+    /**
+     * Receiving BA's disposition for the rejected stock (issue #93 follow-up).
+     * Default (undefined / "Return to Source"): the quantity is credited back
+     * to the source branch's inventory by the reject effects. "Scrap": the
+     * stock is written off — only the waste entry records it. "Quarantine":
+     * stock is tracked like Return to Source (no quarantine location exists
+     * yet) but the choice is recorded on the item and invoice.
+     */
+    rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
   }>;
   caDecisions?: Array<{
     id: string;
@@ -95,6 +104,7 @@ export const FsmPayloadSchema = z.object({
         receivedQuantity: z.number().optional(),
         rejectedQuantity: z.number().optional(),
         reason: z.string().optional(),
+        rejectionDisposition: z.enum(["Return to Source", "Scrap", "Quarantine"]).optional(),
       }),
     )
     .optional(),
@@ -285,6 +295,10 @@ export async function setReceivedQuantities(
         receivedQuantity: received,
         rejectedQuantity: rejected,
         reason: itemPatch.reason,
+        // Persist the BA's disposition so the invoice and audit trail record
+        // what was decided (undefined → NULL → reported as Return to Source).
+        rejectionDisposition:
+          rejected > 0 ? (itemPatch.rejectionDisposition ?? "Return to Source") : null,
         baDecision,
       })
       .where(
@@ -299,6 +313,12 @@ export async function setReceivedQuantities(
 /**
  * Increment the branch's main inventory by receivedQuantity, write IN ledger.
  * Called as part of finish-receive.
+ *
+ * Rejected stock disposition: lines with `rejectedQuantity > 0` are NOT
+ * received — their `pending_review_inventory` row is cleared here and the
+ * rejected quantity is returned to Central's main inventory by
+ * `writeRejectedWaste` (issue #93: the branch never owned the stock; Central
+ * still does).
  */
 export async function writeReceivedStock(
   procurementId: string,
@@ -379,12 +399,34 @@ export async function writeReceivedStock(
   }
 
   void actor;
+
+  // Rejected lines received 0 and are skipped above, which leaves their
+  // pending_review_inventory rows uncleared. Clear them here (never in a
+  // loop keyed on received > 0) so a fully-rejected procurement doesn't
+  // strand stock in "pending review" forever (issue #93).
+  await tx
+    .update(pendingReviewInventory)
+    .set({ clearedAt: new Date() })
+    .where(
+      and(
+        eq(pendingReviewInventory.scmProcurementId, procurementId),
+        isNull(pendingReviewInventory.clearedAt),
+      ),
+    );
 }
 
 /**
- * For each item with rejectedQuantity > 0, write a waste_entries row.
- * Currently we always treat rejection as Scrap (category: Spoiled). Future:
- * support Return to Source / Quarantine as alternate dispositions.
+ * Disposition for rejected stock (issue #93): the rejected quantity returns
+ * to Central's main `inventory` (IN ledger `Pengadaan Reject …`) — the branch
+ * never owned it, so writing it off as the branch's waste would hide it from
+ * Central's stock position. A `waste_entries` row is still written at the
+ * branch as the *disposition record* (zero-inventory-effect), matching how
+ * the SJ flow records rejections without double-counting stock.
+ *
+ * Previously this effect only wrote the waste row and never returned the
+ * stock: fully-rejected procurements showed “90 ditolak / Diterima 0” on the
+ * invoice while the quantity stayed stranded in pending_review_inventory,
+ * invisible to Central's stock.
  */
 export async function writeRejectedWaste(
   procurementId: string,
@@ -410,16 +452,68 @@ export async function writeRejectedWaste(
       .where(eq(scmProcurementItems.id, itemPatch.id));
     if (!item) continue;
 
+    const disposition = itemPatch.rejectionDisposition ?? "Return to Source";
+
     await tx.insert(wasteEntries).values({
       branchId: proc.branchId,
       ingredientId: item.ingredientId,
       quantity: rejected,
       category: "Spoiled",
-      notes: itemPatch.reason
-        ? `Ditolak saat penerimaan: ${itemPatch.reason}`
-        : `Ditolak saat penerimaan pengadaan ${proc.code}`,
+      notes:
+        (disposition === "Scrap" ? "Discard (Scrap)" : "Return to Source") +
+        (itemPatch.reason
+          ? ` — rejected at receiving: ${itemPatch.reason}`
+          : ` — procurement rejected at receiving ${proc.code}`),
       submittedBy: actor.id,
     });
+
+    // Disposition: "Scrap" writes the stock off (the waste entry above is the
+    // record). Anything else (default "Return to Source", plus "Quarantine"
+    // until a quarantine location exists) credits the quantity back to
+    // Central's main inventory.
+    if (disposition === "Scrap") continue;
+    const central = await getCentralWarehouse(tx);
+    if (central) {
+      const [centralInv] = await tx
+        .select()
+        .from(inventory)
+        .where(
+          and(eq(inventory.branchId, central.id), eq(inventory.ingredientId, item.ingredientId)),
+        )
+        .limit(1);
+
+      if (centralInv) {
+        const newQty = centralInv.quantity + rejected;
+        await tx
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, centralInv.id));
+        await tx.insert(stockLedger).values({
+          branchId: central.id,
+          ingredientId: item.ingredientId,
+          type: "IN",
+          quantity: rejected,
+          balance: newQty,
+          reference: procurementId,
+          notes: `Pengadaan Reject ${proc.code}`,
+        });
+      } else {
+        await tx.insert(inventory).values({
+          branchId: central.id,
+          ingredientId: item.ingredientId,
+          quantity: rejected,
+        });
+        await tx.insert(stockLedger).values({
+          branchId: central.id,
+          ingredientId: item.ingredientId,
+          type: "IN",
+          quantity: rejected,
+          balance: rejected,
+          reference: procurementId,
+          notes: `Pengadaan Reject ${proc.code}`,
+        });
+      }
+    }
   }
 }
 
@@ -447,6 +541,7 @@ export async function generateInvoiceSnapshot(
       rejectedQuantity: scmProcurementItems.rejectedQuantity,
       unitPrice: scmProcurementItems.unitPrice,
       reason: scmProcurementItems.reason,
+      rejectionDisposition: scmProcurementItems.rejectionDisposition,
       baDecision: scmProcurementItems.baDecision,
       caDecision: scmProcurementItems.caDecision,
       ingredientName: ingredients.name,
@@ -473,6 +568,7 @@ export async function generateInvoiceSnapshot(
       caDecision: item.caDecision,
       baDecision: item.baDecision,
       reason: item.reason,
+      rejectionDisposition: item.rejectionDisposition ?? "Return to Source",
     };
   });
 
