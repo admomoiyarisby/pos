@@ -583,21 +583,19 @@ function OrderRow({
         <td className="py-2 px-3 text-right">
           {canEdit && (
             <div className="flex justify-end gap-1">
-              {order.channel !== "Dine-in" && (
-                <button
-                  type="button"
-                  onClick={() => onToggleVerified(!order.verified)}
-                  className={`p-1.5 rounded ${
-                    order.verified
-                      ? "text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                      : "hover:bg-muted text-muted-foreground"
-                  }`}
-                  title={order.verified ? "Lepas tanda diperiksa" : "Tandai sudah diperiksa"}
-                  aria-pressed={Boolean(order.verified)}
-                >
-                  <BadgeCheck className="h-4 w-4" />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => onToggleVerified(!order.verified)}
+                className={`p-1.5 rounded ${
+                  order.verified
+                    ? "text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                    : "hover:bg-muted text-muted-foreground"
+                }`}
+                title={order.verified ? "Lepas tanda diperiksa" : "Tandai sudah diperiksa"}
+                aria-pressed={Boolean(order.verified)}
+              >
+                <BadgeCheck className="h-4 w-4" />
+              </button>
               <button
                 type="button"
                 onClick={onEdit}
@@ -829,20 +827,18 @@ function MobileOrderCard({
 
       {canEdit && (
         <div className="mt-2.5 flex items-center justify-end gap-2 border-t pt-2.5">
-          {order.channel !== "Dine-in" && (
-            <button
-              type="button"
-              onClick={() => onToggleVerified(!order.verified)}
-              className={`inline-flex h-9 items-center gap-1 rounded-full border px-3 text-xs font-medium ${
-                order.verified
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                  : "bg-background hover:bg-muted"
-              }`}
-            >
-              <BadgeCheck className="h-3.5 w-3.5" />
-              {order.verified ? "Diperiksa" : "Tandai Diperiksa"}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => onToggleVerified(!order.verified)}
+            className={`inline-flex h-9 items-center gap-1 rounded-full border px-3 text-xs font-medium ${
+              order.verified
+                ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                : "bg-background hover:bg-muted"
+            }`}
+          >
+            <BadgeCheck className="h-3.5 w-3.5" />
+            {order.verified ? "Diperiksa" : "Tandai Diperiksa"}
+          </button>
           <button
             type="button"
             onClick={onEdit}

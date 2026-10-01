@@ -239,3 +239,82 @@ describe.skipIf(!hasTestDatabaseUrl)("Data Penjualan — stock effects and Kartu
     expect(await inventoryQty(branchId, ingId)).toBeNull();
   });
 });
+
+describe.skipIf(!hasTestDatabaseUrl)("Data Penjualan — verified flag", () => {
+  async function seedOrder(channel: (typeof schema.ORDER_CHANNEL_VALUES)[number]) {
+    const branchId = await seedBranch();
+    const admin = await seedUser("admin_pusat");
+    const [catRow] = await db
+      .insert(schema.categories)
+      .values({ code: uniq("CAT"), name: "Menu" })
+      .returning({ id: schema.categories.id });
+    const ingId = await seedIngredient();
+    const recipeId = await seedRecipe(catRow.id, ingId);
+    await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+    // Dine-in orders are system-generated; customerName is mandatory for them.
+    const payload: Parameters<typeof salesDataApi.createSalesOrderCore>[1] = {
+      branchId,
+      channel,
+      items: [{ recipeId, quantity: 1, price: 10000 }],
+    };
+    if (channel === "Dine-in") payload.customerName = "Rina";
+    const order = await salesDataApi.createSalesOrderCore(admin, payload);
+    return { order, admin };
+  }
+
+  async function verifiedRow(id: string) {
+    const [row] = await db
+      .select({
+        verified: schema.orders.verified,
+        verifiedAt: schema.orders.verifiedAt,
+        verifiedById: schema.orders.verifiedById,
+      })
+      .from(schema.orders)
+      .where(eq(schema.orders.id, id))
+      .limit(1);
+    return row;
+  }
+
+  // Every channel is reviewable — Dine-in included. The flag was originally
+  // Dine-in-exempt on the theory that POS orders are system-generated, but an
+  // auditor still reconciles the cashier's shift/route sheet against the POS
+  // report, so the flag applies uniformly.
+  it.each(schema.ORDER_CHANNEL_VALUES)("can flag and unflag a %s order", async (channel) => {
+    const { order, admin } = await seedOrder(channel);
+
+    expect((await verifiedRow(order.id)).verified).toBe(false);
+
+    const on = await salesDataApi.toggleSalesOrderVerifiedCore(admin, {
+      id: order.id,
+      verified: true,
+    });
+    expect(on).toEqual({ success: true, verified: true });
+
+    const flagged = await verifiedRow(order.id);
+    expect(flagged.verified).toBe(true);
+    expect(flagged.verifiedById).toBe(admin.id);
+    expect(flagged.verifiedAt).toBeInstanceOf(Date);
+
+    // Unflagging must clear the audit trail again, not leave a stale stamp.
+    const off = await salesDataApi.toggleSalesOrderVerifiedCore(admin, {
+      id: order.id,
+      verified: false,
+    });
+    expect(off).toEqual({ success: true, verified: false });
+
+    const cleared = await verifiedRow(order.id);
+    expect(cleared.verified).toBe(false);
+    expect(cleared.verifiedById).toBeNull();
+    expect(cleared.verifiedAt).toBeNull();
+  });
+
+  it("throws for an unknown order id", async () => {
+    const admin = await seedUser("admin_pusat");
+    await expect(
+      salesDataApi.toggleSalesOrderVerifiedCore(admin, {
+        id: crypto.randomUUID(),
+        verified: true,
+      }),
+    ).rejects.toThrow("Order not found");
+  });
+});

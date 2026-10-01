@@ -123,8 +123,7 @@ export const getSalesData = createServerFn({ method: "GET" })
     }) => ({
       ...data,
       channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
-      // "verified" = sudah diperiksa, "unverified" = belum. Note: Dine-in
-      // orders can never be flagged, so "unverified" includes them.
+      // "verified" = sudah diperiksa, "unverified" = belum.
       verified: z.enum(["verified", "unverified"]).optional().catch(undefined).parse(data.verified),
     }),
   )
@@ -613,36 +612,42 @@ export async function deleteSalesOrderCore(user: AppUser, data: { id: string }) 
  * Toggle the manual "sudah diperiksa" (verified) flag on a sales order.
  *
  * Purely informational — a reviewer marks the transaction as checked after
- * comparing it against the channel's report. No effect on aggregates, stock,
- * or exports. Audit context (who/when) is stamped on the row itself; POS
- * (Dine-in) orders are excluded because they are system-generated.
+ * comparing it against the channel's report (marketplace payouts) or against
+ * the cashier's shift/route sheet (Dine-in). No effect on aggregates, stock,
+ * or exports. Audit context (who/when) is stamped on the row itself.
  */
 export const toggleSalesOrderVerified = createServerFn({ method: "POST" })
   .validator((data: { id: string; verified: boolean }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
-
-    const [order] = await db
-      .select({ id: orders.id, channel: orders.channel })
-      .from(orders)
-      .where(eq(orders.id, data.id))
-      .limit(1);
-    if (!order) throw new Error("Order not found");
-    if (order.channel === "Dine-in") {
-      throw new Error("Transaksi POS (Dine-in) tidak perlu ditandai");
-    }
-
-    await db
-      .update(orders)
-      .set({
-        verified: data.verified,
-        verifiedAt: data.verified ? new Date() : null,
-        verifiedById: data.verified ? user.id : null,
-      })
-      .where(eq(orders.id, data.id));
-
-    return { success: true, verified: data.verified };
+    return toggleSalesOrderVerifiedCore(user, data);
   });
+
+/** The business logic behind `toggleSalesOrderVerified`, parameterized by an
+ *  explicit user so it can be driven directly (e.g. from integration tests).
+ *  Mirrors the wrapper's `requireRole(...)` guard. */
+export async function toggleSalesOrderVerifiedCore(
+  user: AppUser,
+  data: { id: string; verified: boolean },
+) {
+  const [order] = await db
+    .select({ id: orders.id })
+    .from(orders)
+    .where(eq(orders.id, data.id))
+    .limit(1);
+  if (!order) throw new Error("Order not found");
+
+  await db
+    .update(orders)
+    .set({
+      verified: data.verified,
+      verifiedAt: data.verified ? new Date() : null,
+      verifiedById: data.verified ? user.id : null,
+    })
+    .where(eq(orders.id, data.id));
+
+  return { success: true, verified: data.verified };
+}
 
 /**
  * Get sales summary (aggregated by channel for a date range).
