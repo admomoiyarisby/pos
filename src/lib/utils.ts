@@ -20,6 +20,61 @@ export function formatRp(value: number | string | bigint | null | undefined): st
 const QUANTITY_MAX_FRACTION_DIGITS = 3;
 
 /**
+ * Clean a quantity for storage: rounds float32 residue away at the same
+ * precision `formatQuantity` displays.
+ *
+ * Quantities live in float32 (`real`) columns, so an SO snapshot taken straight
+ * from `inventory.quantity` can read 23.499999 and produce a variance of
+ * -0.000001 against a real count. Rounding at the write boundary keeps the
+ * count sheet honest; the underlying `inventory.quantity` is deliberately left
+ * unrounded (see `STOCK_CHECK_EPSILON` in scm-effects for why the float32
+ * residue is tolerated rather than chased).
+ */
+export function roundQuantity(value: number): number {
+  if (!Number.isFinite(value)) return value;
+  const factor = 10 ** QUANTITY_MAX_FRACTION_DIGITS;
+  return Math.round(value * factor) / factor;
+}
+
+/** id-ID grouped form: "1.234", "6.000", "1.234.567", "1.234,5". */
+const GROUPED_ID_ID = /^\d{1,3}(\.\d{3})*(,\d+)?$/;
+/** Ungrouped form: "23", "23.5", "0.5", "1234.5". */
+const UNGROUPED = /^\d+(\.\d+)?$/;
+
+/**
+ * Parse a quantity typed into a text field, in Indonesian number convention.
+ *
+ * `formatQuantity` renders id-ID, where "." groups thousands and "," is the
+ * decimal point — so the two are NOT interchangeable on input: `Number("6.000")`
+ * is 6, and reading a count of 6000 as 6 would silently miscount stock. A dot
+ * is therefore read as grouping only when it forms exact 3-digit groups, which
+ * is what id-ID writes; anything else is a decimal point, so a US-style "23.5"
+ * works too. A comma is always the decimal point, since id-ID never groups with
+ * one.
+ *
+ * The one residual ambiguity is "0.500": exact 3-digit grouping says 500, but a
+ * decimal reading would say 0.5. The locale-correct (grouping) reading wins,
+ * and a user who means a half writes "0,5" or "0.5" — both of which parse as
+ * intended.
+ *
+ * Returns null for anything not a plain number, including a half-typed "23,"
+ * which is a value still being typed rather than a bad one.
+ */
+export function parseQuantityInput(value: string): number | null {
+  const raw = value.trim();
+  if (raw === "") return null;
+
+  if (GROUPED_ID_ID.test(raw)) {
+    // Dots are thousands grouping; the optional comma is the decimal point.
+    return Number(raw.replace(/\./g, "").replace(",", "."));
+  }
+  if (UNGROUPED.test(raw)) {
+    return Number(raw);
+  }
+  return null;
+}
+
+/**
  * Format a stock/quantity value for the Indonesian UI.
  *
  * Quantities live in float32 (`real`) columns, so arithmetic can produce
