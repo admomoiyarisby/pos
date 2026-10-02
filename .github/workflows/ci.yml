@@ -56,3 +56,23 @@ jobs:
 
       - run: vp install
       - run: vp build
+
+  # Schema-drift tripwire (Data Penjualan outage, 2026-10-01): a migration
+  # committed but never applied to the target DB ships code that SELECTs a
+  # column the database doesn't have. The SQL-drift check runs in the `test`
+  # job (migrations.integration.test.ts against the local test DB); this job
+  # pins the journal itself: every _journal.json entry must have its SQL file
+  # present, and every SQL file must be referenced by the journal.
+  drift:
+    name: migration journal consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1.17.0
+        with:
+          node-version: "24"
+          cache: true
+
+      - run: vp install
+      - run: node scripts/check-migration-journal.mjs

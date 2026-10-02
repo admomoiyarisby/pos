@@ -1,4 +1,5 @@
 {
+  "buildCommand": "pnpm run deploy:migrate && pnpm run build",
   "crons": [
     {
       "path": "/api/keepalive",
