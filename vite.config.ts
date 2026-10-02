@@ -72,6 +72,24 @@ const config = defineConfig({
     tsconfigPaths: true,
     dedupe: ["react", "react-dom"],
   },
+  test: {
+    // Integration flow tests share ONE database. `setupFlowHarness`
+    // (src/lib/server/integration-test-harness.ts) TRUNCATEs the root tables
+    // (`users`, `branches`, `ingredients`, …) in `beforeEach` so each test
+    // starts clean — which is only safe while one test file runs at a time.
+    // Under Vitest's default file-level parallelism a second file's
+    // beforeEach wipes the first file's rows mid-test.
+    //
+    // That race is not theoretical: it surfaced as three stock-opname tests
+    // failing in the full suite while passing in isolation, purely because
+    // adding tests to that file widened its overlap window. Serialising is the
+    // fix; giving every file its own database is the alternative, and is worth
+    // doing if the suite's wall-clock ever becomes a problem.
+    //
+    // Set here rather than as a `--no-file-parallelism` flag on the package.json
+    // script, because CI runs `vp test run` directly and would miss the flag.
+    fileParallelism: false,
+  },
   plugins: [
     devtools(),
     nitro({ rollupConfig: { external: [/^@sentry\//] } }),
