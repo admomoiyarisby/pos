@@ -27,9 +27,16 @@ const UNIQUE_VIOLATION = "23505";
 const FOREIGN_KEY_VIOLATION = "23503";
 const NOT_NULL_VIOLATION = "23502";
 const CHECK_VIOLATION = "23514";
+const INVALID_TEXT_REPRESENTATION = "22P02";
 
-/** A 5-character SQLSTATE identifies a real driver error. */
-const sqlstateSchema = z.string().regex(/^\d{5}$/);
+/**
+ * The shape of a real SQLSTATE: 2 digits of class + 3 alphanumerics of subclass.
+ *
+ * The subclass is not always numeric — class 22 (data exception) uses letters,
+ * e.g. `22P02` invalid_text_representation. A digits-only pattern silently
+ * dropped every class-22 error into the driver-message fallback.
+ */
+const sqlstateSchema = z.string().regex(/^\d{2}[A-Z0-9]{3}$/);
 const driverMessageSchema = z.string().min(1);
 
 function sqlstateOf(err: DrizzleQueryError): string | null {
@@ -64,6 +71,12 @@ export function describeDbError(err: DrizzleQueryError): string {
       return "Ada kolom wajib yang belum diisi.";
     case CHECK_VIOLATION:
       return "Nilai tidak sesuai aturan yang berlaku.";
+    case INVALID_TEXT_REPRESENTATION:
+      // Almost always a number that does not fit its column: a fraction into an
+      // integer column, or a bad date. The driver's own text for this is a bare
+      // `invalid input syntax for type integer: "23.5"`, which tells a branch
+      // admin nothing actionable — so name the cause instead.
+      return "Format angka tidak sesuai kolomnya (kemungkinan angka desimal pada kolom bulat). Hubungi admin sistem.";
     default:
       break;
   }
