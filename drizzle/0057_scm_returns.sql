@@ -76,21 +76,48 @@ CREATE INDEX IF NOT EXISTS "scmret_created_idx" ON "scm_returns" USING btree ("c
 --> statement-breakpoint
 -- ─── Backfill: retire the mislabelled 'Spoiled' rows ───
 --
--- Only rows this migration can attribute with certainty are migrated: a
--- procurement rejection whose notes carry the document code
--- ('... — procurement rejected at receiving PR/BG/290926/01'). That is the
--- no-reason wording written by writeRejectedWaste; rows carrying a free-text
--- reason embed no code, and Mutasi rejections are not attributable at all
--- (their notes are just 'Return to Sender — <reason>'). Those are left alone
--- rather than guessed at — a wrong scm_procurement_id would be worse than a
--- stale row the user can cancel by hand.
+-- ⚠ THIS BACKFILL MATCHES ZERO ROWS IN PRODUCTION. Verified 2026-10-03 against
+-- the live database. Read this before assuming history was migrated.
+--
+-- Production's 39 rejected-stock waste rows use Indonesian wording and were
+-- written by an EARLIER deployed version:
+--
+--     "Ditolak saat penerimaan pengadaan PR/JBG/290926/01"
+--
+-- They are NOT migrated, and MUST NOT be. They all predate c623e93
+-- (2026-09-30, "return rejected stock to its source branch"), which is the
+-- commit that made a rejection credit the quantity back to Central. Before it,
+-- rejection did not return stock — the quantity was stranded in
+-- pending_review_inventory and then cleared, so those units were genuinely
+-- destroyed. Migrating them here would assert that Central's inventory holds
+-- units it never received, and would delete a real loss record. They stay as
+-- Spoiled waste entries, which is the truthful record.
+--
+-- Consequence, accepted deliberately: those 39 rows carry valuation = 0, so
+-- Total Kerugian understates the late-September rejections by Rp2,755,028
+-- (39 rows, priced from each procurement item's unitPrice snapshot — the cost
+-- actually paid). The business chose to leave the closed history alone rather
+-- than backdate the figure.
+--
+-- What this backfill DOES handle: rows written by the short-lived post-c623e93
+-- build, whose notes carry the disposition and the document code:
+--
+--     "Return to Source — procurement rejected at receiving PR/BG/290926/01"
+--
+-- For those the stock genuinely was credited back, so a return row is the
+-- truthful record. Only rows this migration can attribute with certainty are
+-- touched: rows carrying a free-text reason embed no code, and Mutasi
+-- rejections are not attributable at all (their notes are just
+-- 'Return to Sender — <reason>'). Those are left alone rather than guessed at
+-- — a wrong scm_procurement_id would be worse than a stale row the user can
+-- cancel by hand.
 --
 -- Status is set to 'PickedUp' (with picked_up_at = created_at) rather than
--- 'Pending': for these rows the source was already credited the quantity
--- (issue #93, 2026-09-29), so the numbers are home. We have no record of the
--- truck, and 'Pending' would open a false debt on every historical branch.
--- Anyone who knows a specific batch is still on the branch shelf can flip that
--- row back to 'Pending' by clearing picked_up_at/picked_up_by.
+-- 'Pending': for these rows the source was already credited the quantity, so
+-- the numbers are home. We have no record of the truck, and 'Pending' would
+-- open a false debt on every historical branch. Anyone who knows a specific
+-- batch is still on the branch shelf can flip that row back to 'Pending' by
+-- clearing picked_up_at/picked_up_by.
 --
 -- The source waste rows are then deleted so the quantity is not reported as
 -- Spoiled loss AND tracked as a return. Their valuation was 0, so Total
