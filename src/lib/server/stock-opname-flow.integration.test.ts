@@ -84,7 +84,10 @@ async function seedBranch(code: string, type: "Central" | "Outlet" = "Central"):
   return id;
 }
 
-async function seedIngredient(code: string): Promise<string> {
+async function seedIngredient(
+  code: string,
+  opts: { isBranchVisible?: boolean } = {},
+): Promise<string> {
   const id = crypto.randomUUID();
   await db.insert(schema.ingredients).values({
     id,
@@ -96,6 +99,9 @@ async function seedIngredient(code: string): Promise<string> {
     stockUnit: "pcs",
     conversionFactor: 1,
     averageCost: 1000,
+    // An Outlet SO catalog is filtered to branch-visible items, so an outlet
+    // test needs this true; a Central SO includes everything.
+    isBranchVisible: opts.isBranchVisible ?? false,
   });
   return id;
 }
@@ -487,7 +493,7 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
-    "submit rejects non-integer or negative counts before touching the DB",
+    "submit rejects negative and non-finite counts before touching the DB",
     async () => {
       const { so, items, ba } = await seededPairSo();
       const itemA = items[0];
@@ -497,10 +503,18 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
           items: [{ itemId: itemA.id, physicalStock: -1 }],
         }),
       ).rejects.toThrow("Stok fisik tidak valid");
+      // A half-typed count on the input arrives as NaN; it must be refused, not
+      // written as NaN into a real column.
       await expect(
         inv.submitStockOpnameCore(ba, {
           soId: so.id,
-          items: [{ itemId: itemA.id, physicalStock: 1.5 }],
+          items: [{ itemId: itemA.id, physicalStock: Number.NaN }],
+        }),
+      ).rejects.toThrow("Stok fisik tidak valid");
+      await expect(
+        inv.submitStockOpnameCore(ba, {
+          soId: so.id,
+          items: [{ itemId: itemA.id, physicalStock: Number.POSITIVE_INFINITY }],
         }),
       ).rejects.toThrow("Stok fisik tidak valid");
 
@@ -509,6 +523,79 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
         .from(schema.stockOpnameItems)
         .where(eq(schema.stockOpnameItems.id, itemA.id));
       expect(row[0]?.countedAt).toBeNull();
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a fractional count is accepted and produces a fractional variance",
+    async () => {
+      const { so, items, ba } = await seededPairSo();
+      const itemA = items[0];
+      const systemStock = items[0].systemStock;
+
+      await inv.submitStockOpnameCore(ba, {
+        soId: so.id,
+        items: [{ itemId: itemA.id, physicalStock: systemStock + 0.5 }],
+      });
+
+      const [row] = await db
+        .select()
+        .from(schema.stockOpnameItems)
+        .where(eq(schema.stockOpnameItems.id, itemA.id));
+      expect(row?.countedAt).not.toBeNull();
+      expect(row?.physicalStock).toBeCloseTo(systemStock + 0.5, 5);
+      expect(row?.variance).toBeCloseTo(0.5, 5);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "triggering an SO snapshots fractional system stock instead of failing (migration 0058)",
+    async () => {
+      // The reported bug: `stock_opname_items.system_stock` was `integer` while
+      // `inventory.quantity` had been `real` since 0016, so a branch holding
+      // 23.5 could not start an opname at all —
+      // `invalid input syntax for type integer: "23.5"`.
+      const branch = await seedBranch(uniq("SO-FRAC"), "Outlet");
+      const ingredient = await seedIngredient(uniq("ING-FRAC"), { isBranchVisible: true });
+      const ba = await seedUser("branch_admin", branch);
+      await db.insert(schema.inventory).values({
+        branchId: branch,
+        ingredientId: ingredient,
+        quantity: 23.5,
+      });
+
+      const so = await inv.triggerStockOpnameCore(ba, { branchId: branch, date: "2026-08-25" });
+
+      const rows = await db
+        .select()
+        .from(schema.stockOpnameItems)
+        .where(eq(schema.stockOpnameItems.stockOpnameId, so.id));
+      const counted = rows.find((r) => r.ingredientId === ingredient);
+      expect(counted).toBeDefined();
+      expect(counted?.systemStock).toBeCloseTo(23.5, 5);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "the system-stock snapshot is rounded off float32 residue, not left at 6 decimals",
+    async () => {
+      const branch = await seedBranch(uniq("SO-FUZZ"), "Outlet");
+      const ingredient = await seedIngredient(uniq("ING-FUZZ"), { isBranchVisible: true });
+      const ba = await seedUser("branch_admin", branch);
+      // What 20 + 3.5 looks like after a float32 round trip through the column.
+      await db.insert(schema.inventory).values({
+        branchId: branch,
+        ingredientId: ingredient,
+        quantity: 20 + 3.5,
+      });
+
+      const so = await inv.triggerStockOpnameCore(ba, { branchId: branch, date: "2026-08-25" });
+
+      const [counted] = await db
+        .select()
+        .from(schema.stockOpnameItems)
+        .where(eq(schema.stockOpnameItems.stockOpnameId, so.id));
+      expect(counted?.systemStock).toBe(23.5);
     },
   );
 

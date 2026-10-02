@@ -1796,9 +1796,13 @@ export const stockOpnameItems = pgTable(
     ingredientId: uuid("ingredient_id")
       .notNull()
       .references(() => ingredients.id),
-    systemStock: integer("system_stock").notNull(),
-    physicalStock: integer("physical_stock").notNull(),
-    variance: integer("variance").notNull(),
+    // real (fractional allowed): the SO count sheet is a snapshot of
+    // `inventory.quantity`, which is real — an integer column here made
+    // triggering an opname fail outright for any branch holding a fraction
+    // (migration 0058).
+    systemStock: real("system_stock").notNull(),
+    physicalStock: real("physical_stock").notNull(),
+    variance: real("variance").notNull(),
     variancePercentage: numeric("variance_percentage"),
     investigationNote: text("investigation_note"),
     // Null until the counter explicitly enters a value for this item. Distinguishes

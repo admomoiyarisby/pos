@@ -428,6 +428,13 @@
       "when": 1789945900000,
       "tag": "0057_scm_returns",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1790032300000,
+      "tag": "0058_stock_opname_items_real",
+      "breakpoints": true
     }
   ]
 }

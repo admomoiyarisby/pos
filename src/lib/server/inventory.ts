@@ -20,6 +20,25 @@ import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, buildPrintHtml } from "./html-utils";
+import { DrizzleQueryError } from "drizzle-orm";
+import { describeDbError } from "./db-errors";
+import { roundQuantity, formatQuantity } from "#/lib/utils";
+
+/**
+ * A physical count is a finite, non-negative number of stock units — a fraction
+ * included. Kg and ml ingredients cannot be counted in whole units, and the SO
+ * sheet is a snapshot of `inventory.quantity`, which has been `real` since
+ * 0016, so requiring an integer here only guaranteed a crash at trigger time.
+ *
+ * Rejects NaN/Infinity (a half-typed "23," on the count input) and negatives,
+ * and returns the value rounded to the precision the count sheet displays.
+ */
+function normalizePhysicalCount(value: number): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("Stok fisik tidak valid: harus angka non-negatif");
+  }
+  return roundQuantity(value);
+}
 
 export const getInventory = createServerFn({ method: "GET" })
   .validator(
@@ -474,32 +493,47 @@ export async function triggerStockOpnameCore(
   // has died mid-way on the Supabase pooler, leaving truncated SOs (e.g. 35
   // of 57 items) with no trigger log — the transaction + bulk insert makes a
   // partial SO impossible.
-  const so = await db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(stockOpnames)
-      .values({
-        branchId: data.branchId,
-        date: data.date,
-        triggeredBy: user.id,
-        submittedBy: user.id,
-      })
-      .returning();
+  //
+  // Wrapped so a failed statement reaches the UI as a sentence about the SO
+  // rather than as Drizzle's message, which is the whole SQL statement plus
+  // every bound parameter. That leak is what a branch admin saw as
+  // "Gagal trigger SO — invalid input syntax for type integer" when this table
+  // was still `integer` (migration 0058).
+  let so: typeof stockOpnames.$inferSelect;
+  try {
+    so = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(stockOpnames)
+        .values({
+          branchId: data.branchId,
+          date: data.date,
+          triggeredBy: user.id,
+          submittedBy: user.id,
+        })
+        .returning();
 
-    // Create SO items with system stock
-    if (invItems.length > 0) {
-      await tx.insert(stockOpnameItems).values(
-        invItems.map((item) => ({
-          stockOpnameId: created.id,
-          ingredientId: item.ingredientId,
-          systemStock: item.quantity,
-          physicalStock: 0,
-          variance: 0,
-        })),
-      );
-    }
+      // Create SO items with system stock
+      if (invItems.length > 0) {
+        await tx.insert(stockOpnameItems).values(
+          invItems.map((item) => ({
+            stockOpnameId: created.id,
+            ingredientId: item.ingredientId,
+            // Rounded off the float32 residue `inventory.quantity` can carry
+            // (23.499999), so the count sheet and the variance it computes are
+            // readable instead of showing 6-decimal noise.
+            systemStock: roundQuantity(item.quantity),
+            physicalStock: 0,
+            variance: 0,
+          })),
+        );
+      }
 
-    return created;
-  });
+      return created;
+    });
+  } catch (err) {
+    if (!(err instanceof DrizzleQueryError)) throw err;
+    throw new Error(`Gagal memulai stock opname: ${describeDbError(err)}`);
+  }
 
   await logSystemAction(
     user,
@@ -788,12 +822,11 @@ export async function submitStockOpnameCore(
 
   // Partial opname: only the items the counter actually filled are sent.
   // Unfilled items keep countedAt NULL and their stock is left unchanged on
-  // approve — but a filled field must be a valid non-negative integer.
-  for (const item of data.items) {
-    if (!Number.isInteger(item.physicalStock) || item.physicalStock < 0) {
-      throw new Error("Stok fisik tidak valid: harus bilangan bulat non-negatif");
-    }
-  }
+  // approve — but a filled field must be a valid non-negative count.
+  // Validated up front so a bad payload aborts with zero side effects.
+  const counts = new Map(
+    data.items.map((item) => [item.itemId, normalizePhysicalCount(item.physicalStock)]),
+  );
 
   for (const item of data.items) {
     // Get current system stock
@@ -805,7 +838,8 @@ export async function submitStockOpnameCore(
 
     if (!soItem) continue;
 
-    const variance = item.physicalStock - soItem.systemStock;
+    const physicalStock = counts.get(item.itemId) ?? 0;
+    const variance = physicalStock - soItem.systemStock;
     const variancePercentage =
       soItem.systemStock > 0
         ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
@@ -814,7 +848,7 @@ export async function submitStockOpnameCore(
     await db
       .update(stockOpnameItems)
       .set({
-        physicalStock: item.physicalStock,
+        physicalStock,
         variance,
         variancePercentage: String(variancePercentage),
         // Explicitly entering a value marks the item counted — even 0 — so a
@@ -1175,11 +1209,9 @@ export async function updateStockOpnameCountsCore(
   const oldSo = { ...so };
 
   // Same rule as submit: only sent items are (re)counted; validate first.
-  for (const item of data.items) {
-    if (!Number.isInteger(item.physicalStock) || item.physicalStock < 0) {
-      throw new Error("Stok fisik tidak valid: harus bilangan bulat non-negatif");
-    }
-  }
+  const counts = new Map(
+    data.items.map((item) => [item.itemId, normalizePhysicalCount(item.physicalStock)]),
+  );
 
   for (const item of data.items) {
     const [soItem] = await db
@@ -1190,7 +1222,8 @@ export async function updateStockOpnameCountsCore(
 
     if (!soItem) continue;
 
-    const variance = item.physicalStock - soItem.systemStock;
+    const physicalStock = counts.get(item.itemId) ?? 0;
+    const variance = physicalStock - soItem.systemStock;
     const variancePercentage =
       soItem.systemStock > 0
         ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
@@ -1199,7 +1232,7 @@ export async function updateStockOpnameCountsCore(
     await db
       .update(stockOpnameItems)
       .set({
-        physicalStock: item.physicalStock,
+        physicalStock,
         variance,
         variancePercentage: String(variancePercentage),
         countedAt: new Date(),
@@ -1474,10 +1507,10 @@ export const printStockOpname = createServerFn({ method: "GET" })
           <td>${escapeHtml(it.ingredientName ?? "")}</td>
           ${
             isBlind
-              ? `<td style="text-align:right;">${it.countedAt ? it.physicalStock.toLocaleString("id-ID") : "—"}</td>`
-              : `<td style="text-align:right;">${it.systemStock.toLocaleString("id-ID")}</td>
-          <td style="text-align:right;">${it.countedAt ? it.physicalStock.toLocaleString("id-ID") : "—"}</td>
-          <td style="text-align:right;">${it.countedAt ? `${it.variance > 0 ? "+" : ""}${it.variance.toLocaleString("id-ID")}` : "—"}</td>`
+              ? `<td style="text-align:right;">${it.countedAt ? formatQuantity(it.physicalStock) : "—"}</td>`
+              : `<td style="text-align:right;">${formatQuantity(it.systemStock)}</td>
+          <td style="text-align:right;">${it.countedAt ? formatQuantity(it.physicalStock) : "—"}</td>
+          <td style="text-align:right;">${it.countedAt ? `${it.variance > 0 ? "+" : ""}${formatQuantity(it.variance)}` : "—"}</td>`
           }
         </tr>`,
       )

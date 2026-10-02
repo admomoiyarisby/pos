@@ -15,7 +15,7 @@ import {
 } from "#/lib/server/inventory";
 import { Badge } from "#/components/ui/badge";
 import { openPrintWindow } from "#/lib/print-window";
-import { cn } from "#/lib/utils";
+import { cn, formatQuantity, parseQuantityInput, roundQuantity } from "#/lib/utils";
 import { toast } from "sonner";
 import { calculateNasiConversion } from "#/lib/server/nasi-conversion";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -196,29 +196,34 @@ function StockOpnameDetailPage() {
   // Unfilled items keep their stock unchanged on approve/realize — but at
   // least one field must be filled, otherwise submitting is pointless.
   const buildItems = () => {
-    const items = detail.items
+    const filled = detail.items
       .filter((item: any) => {
         const raw = physicalInputs[item.id];
         return raw !== undefined && raw !== "";
       })
       .map((item: any) => ({
         itemId: item.id,
-        physicalStock: Number(physicalInputs[item.id]),
+        // null for a half-typed value ("23,") as well as for junk — both mean
+        // "not a usable count yet", so the counter is told to finish typing
+        // rather than shown a generic invalid error.
+        counted: parseQuantityInput(physicalInputs[item.id] ?? ""),
       }));
-    if (items.length === 0) {
+    if (filled.length === 0) {
       setSubmitError(
         "Belum ada stok fisik yang diisi. Isi minimal satu item — item yang dikosongkan tidak akan mengubah stok.",
       );
       return null;
     }
-    const hasInvalid = items.some((i) => !Number.isInteger(i.physicalStock) || i.physicalStock < 0);
+    const hasInvalid = filled.some((f) => f.counted === null || f.counted < 0);
     if (hasInvalid) {
       setSubmitError(
-        "Stok fisik tidak valid. Pastikan semua nilai adalah angka bulat non-negatif.",
+        "Stok fisik tidak valid. Isi angka non-negatif; boleh pecahan, pakai koma untuk desimal (misal 23,5).",
       );
       return null;
     }
-    return items;
+    // `counted` is non-null for every row here (checked above); the ?? 0 keeps
+    // the type honest without an assertion.
+    return filled.map((f) => ({ itemId: f.itemId, physicalStock: f.counted ?? 0 }));
   };
 
   const handleSubmit = () => {
@@ -246,8 +251,11 @@ function StockOpnameDetailPage() {
     const newTouched: string[] = [];
     for (const item of detail.items) {
       const maxStock = Math.max(item.systemStock * 2, 100);
-      const physicalStock = Math.floor(Math.random() * maxStock);
-      newInputs[item.id] = String(physicalStock);
+      // Fractional, like a real count of a kg/ml ingredient — the point of the
+      // debug fill is to exercise the real path.
+      const physicalStock = roundQuantity(Math.random() * maxStock);
+      // Written in the id-ID decimal form the field actually accepts.
+      newInputs[item.id] = formatQuantity(physicalStock);
       newTouched.push(item.id);
     }
     setDraft({ physicalInputs: newInputs, touchedItems: newTouched });
@@ -416,16 +424,20 @@ function StockOpnameDetailPage() {
                     Stok Fisik
                   </label>
                   <input
+                    // A controlled text field, not type=number: the raw text is
+                    // what the draft persists, and parseQuantityInput reads it
+                    // with the id-ID convention the rest of the UI formats with
+                    // ("23,5" = 23.5, "6.000" = 6000 — never 6). inputMode
+                    // still asks mobile for a decimal keypad.
                     type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
+                    inputMode="decimal"
                     value={inputValue}
                     onChange={(e) => handleInputChange(item.id, e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
                         const inputs = Array.from(
-                          document.querySelectorAll<HTMLInputElement>("input[inputmode='numeric']"),
+                          document.querySelectorAll<HTMLInputElement>("input[inputmode='decimal']"),
                         );
                         const currentIdx = inputs.indexOf(e.currentTarget);
                         if (currentIdx < inputs.length - 1) {
@@ -474,23 +486,25 @@ function StockOpnameDetailPage() {
                 const inputValue =
                   physicalInputs[item.id] ??
                   (item.countedAt != null ? String(item.physicalStock) : "");
-                const variance = !isBlind ? Number(inputValue || 0) - item.systemStock : 0;
-                const hasVariance = !isBlind && inputValue !== "" && variance !== 0;
+                // Parsed with the same id-ID rule the submit path uses, so the
+                // live variance preview can never disagree with what gets saved.
+                const counted = parseQuantityInput(inputValue);
+                const variance = !isBlind && counted !== null ? counted - item.systemStock : 0;
+                const hasVariance = !isBlind && counted !== null && variance !== 0;
                 return (
                   <tr key={item.id} className={`border-b ${hasVariance ? "bg-warning/10" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground">{idx + 1}</td>
                     <td className="px-4 py-3 font-mono text-xs">{item.ingredientCode}</td>
                     <td className="px-4 py-3">{item.ingredientName}</td>
                     {!isBlind && (
-                      <td className="px-4 py-3 text-right">
-                        {item.systemStock.toLocaleString("id-ID")}
-                      </td>
+                      <td className="px-4 py-3 text-right">{formatQuantity(item.systemStock)}</td>
                     )}
                     <td className="px-4 py-3 text-right">
                       <input
+                        // See the mobile card input for why this stays a
+                        // controlled text field.
                         type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
+                        inputMode="decimal"
                         value={inputValue}
                         onChange={(e) => handleInputChange(item.id, e.target.value)}
                         onKeyDown={(e) => {
@@ -498,7 +512,7 @@ function StockOpnameDetailPage() {
                             e.preventDefault();
                             const inputs = Array.from(
                               document.querySelectorAll<HTMLInputElement>(
-                                "input[inputmode='numeric']",
+                                "input[inputmode='decimal']",
                               ),
                             );
                             const currentIdx = inputs.indexOf(e.currentTarget);
@@ -523,8 +537,8 @@ function StockOpnameDetailPage() {
                       <td
                         className={`px-4 py-3 text-right font-medium ${variance > 0 ? "text-success-foreground" : variance < 0 ? "text-destructive" : ""}`}
                       >
-                        {inputValue !== ""
-                          ? `${variance > 0 ? "+" : ""}${variance.toLocaleString("id-ID")}`
+                        {counted !== null
+                          ? `${variance > 0 ? "+" : ""}${formatQuantity(variance)}`
                           : "—"}
                       </td>
                     )}
@@ -611,11 +625,13 @@ function StockOpnameDetailPage() {
               .filter((item: any) => item.isNasi)
               .map((item: any) => {
                 const portions = physicalInputs[item.id] ?? String(item.physicalStock);
-                const numPortions = Number(portions) || 0;
+                const numPortions = parseQuantityInput(portions) ?? 0;
                 const conversions = calculateNasiConversion(numPortions);
                 return (
                   <div key={item.id} className="space-y-2">
-                    <div className="text-sm font-medium">{numPortions} porsi Nasi Putih</div>
+                    <div className="text-sm font-medium">
+                      {formatQuantity(numPortions)} porsi Nasi Putih
+                    </div>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                       {conversions.map((conv) => (
                         <div
