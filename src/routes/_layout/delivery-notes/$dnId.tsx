@@ -177,6 +177,15 @@ function DNDetailPage() {
   const fromBranch = branches.find((b) => b.id === dn.fromBranchId);
   const toBranch = branches.find((b) => b.id === dn.toBranchId);
 
+  // Drives the disposition explainer: only worth showing once at least one
+  // line is actually being rejected. Reads the same source the submit handler
+  // uses, so the hint can never disagree with what gets sent.
+  const anyRejected = dn.items.some((item: DNItem) => {
+    const picked = item.pickedQuantity ?? item.quantity;
+    const rejected = Number(receiveInputs[item.id]?.rejected ?? item.rejectedQuantity ?? 0);
+    return Number.isFinite(rejected) && rejected > 0 && rejected <= picked;
+  });
+
   const handleReceive = () => {
     const items = dn.items.map((item: DNItem) => {
       const picked = item.pickedQuantity ?? item.quantity;
@@ -382,9 +391,10 @@ function DNDetailPage() {
                             }
                             defaultValue={item.rejectionDisposition ?? "Return to Source"}
                             className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs"
+                            aria-label={`Disposisi barang ditolak: ${item.ingredientName ?? item.ingredientCode}`}
                           >
-                            <option value="Return to Source">Return ke Pusat</option>
-                            <option value="Scrap">Scrap / Buang</option>
+                            <option value="Return to Source">Kembalikan ke Pusat</option>
+                            <option value="Scrap">Buang / Rusak (jadi Waste)</option>
                             <option value="Quarantine">Karantina</option>
                           </select>
                         )}
@@ -405,6 +415,21 @@ function DNDetailPage() {
             </tbody>
           </table>
         </div>
+
+        {/* ADR 0018: the disposition now has two very different consequences, and
+            the receiver is the one choosing. Say which is which before they
+            submit — "Kembalikan ke Pusat" opens a pickup task for this branch,
+            "Buang" is the only choice that becomes a Waste loss. */}
+        {canReceive && anyRejected && (
+          <p className="text-xs text-muted-foreground">
+            <strong className="font-medium text-foreground">Kembalikan ke Pusat</strong> — stok
+            langsung kembali ke gudang pusat, tapi barangnya masih di cabang: muncul di{" "}
+            <strong className="font-medium">Retur Barang</strong> sebagai tugas kirim, dan baru
+            dianggap selesai setelah gudang pusat mengonfirmasi barangnya tiba.{" "}
+            <strong className="font-medium text-foreground">Buang / Rusak</strong> — barang
+            dimusnahkan, tercatat sebagai Waste dan jadi kerugian cabang.
+          </p>
+        )}
 
         {canReceive && (
           <button

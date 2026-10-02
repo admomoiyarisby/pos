@@ -8,6 +8,7 @@ import {
   scmTransferInvoices,
   scmTransferItems,
   scmTransfers,
+  scmReturns,
   stockLedger,
   wasteEntries,
 } from "#/db/schema";
@@ -46,12 +47,13 @@ export interface FsmPayload {
     rejectedQuantity?: number;
     reason?: string;
     /**
-     * Receiver BA's disposition for the rejected stock (issue #93 follow-up).
-     * Default (undefined / "Return to Source"): the quantity is credited back
-     * to the sender's inventory by `writeTransferRejectedWaste`. "Scrap": the
-     * stock is written off — only the waste entry records it. "Quarantine":
-     * stock is tracked like Return to Source (no quarantine location exists
-     * yet) but the choice is recorded on the item and invoice.
+     * Receiver BA's disposition for the rejected stock (issue #93 follow-up,
+     * ADR 0018). Default (undefined / "Return to Source"): the quantity is
+     * credited back to the sender's inventory and a `scm_returns` row is
+     * opened for the pickup. "Scrap": the stock is written off — only the
+     * waste entry records it. "Quarantine": tracked like Return to Source (no
+     * quarantine location exists yet) but the choice is recorded on the item
+     * and invoice.
      */
     rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
   }>;
@@ -345,19 +347,30 @@ export async function writeTransferReceivedStock(
 }
 
 /**
- * Disposition for rejected stock (issue #93): the rejected quantity returns
- * to the **Sender's** main `inventory` (IN ledger `Mutasi Reject …`) — a
- * branch-to-branch transfer means the sender still owns the stock; the
- * receiver rejected it, so it goes back. A `waste_entries` row is still
- * written at the Receiver's branch as the *disposition record* (Q13), valued
- * at `rejectedQuantity * ingredient.averageCost` — the same global average
- * cost used for the invoice's `unitPrice` snapshot.
+ * Disposition for rejected stock, by the receiver's choice (ADR 0018).
  *
- * Previously this effect only wrote the waste row and never returned the
- * stock: fully-rejected transfers stranded the quantity in
- * pending_review_inventory, invisible to the sender's stock position.
+ * Three outcomes, and the record each one leaves:
+ *
+ *  - **Scrap** — the goods are destroyed. A `waste_entries` row at the
+ *    receiver, valued at `rejected × ingredient.averageCost` (the same global
+ *    average cost the invoice's `unitPrice` snapshot uses), so it reaches Total
+ *    Kerugian as a real loss. No stock credit: the goods are gone.
+ *  - **Return to Source** (default) / **Quarantine** — the goods go home. The
+ *    quantity is credited back to the **Sender's** `inventory` (IN ledger
+ *    `Mutasi Reject …`) because a branch-to-branch transfer means the sender
+ *    still owns the stock, AND a `scm_returns` row is opened at `Pending` — the
+ *    receiver physically still has the box, and that pickup is a liability
+ *    someone has to close.
+ *
+ * Why not a waste row for a return (ADR 0006's original Q13 call, reverted
+ * here): the old effect wrote `category: 'Spoiled'` at the receiver
+ * unconditionally, before the disposition check, while *also* crediting the
+ * sender. The same units were then counted in the sender's stock and reported
+ * as a Spoiled loss at the receiver. Waste is a loss report; a return is a
+ * transfer in progress, and conflating them made the Waste page useless for
+ * both.
  */
-export async function writeTransferRejectedWaste(
+export async function writeTransferRejectedDisposition(
   transferId: string,
   payload: FsmPayload,
   actor: FsmActor,
@@ -383,27 +396,39 @@ export async function writeTransferRejectedWaste(
       .from(ingredients)
       .where(eq(ingredients.id, item.ingredientId))
       .limit(1);
-    const valuation = rejected * (ing?.averageCost ?? 0);
+    const valuation = Math.round(rejected * (ing?.averageCost ?? 0));
 
     const disposition = itemPatch.rejectionDisposition ?? "Return to Source";
 
-    await tx.insert(wasteEntries).values({
+    if (disposition === "Scrap") {
+      // Genuinely destroyed: this is the only branch that produces a loss record.
+      await tx.insert(wasteEntries).values({
+        branchId: tr.toBranchId,
+        ingredientId: item.ingredientId,
+        quantity: rejected,
+        category: "Spoiled",
+        valuation,
+        notes: `Discard (Scrap) — ${itemPatch.reason ?? "no reason given"}`,
+        submittedBy: actor.id,
+      });
+      continue;
+    }
+
+    // Returned, not destroyed: open the return BEFORE crediting the sender, so a
+    // failure anywhere below leaves the transaction aborted (the FSM runs every
+    // effect in one transaction) rather than stock with no liability record.
+    await tx.insert(scmReturns).values({
       branchId: tr.toBranchId,
+      scmTransferId: transferId,
       ingredientId: item.ingredientId,
       quantity: rejected,
-      category: "Spoiled",
-      notes:
-        (disposition === "Scrap" ? "Discard (Scrap)" : "Return to Sender") +
-        (itemPatch.reason ? ` — ${itemPatch.reason}` : ""),
       valuation,
-      submittedBy: actor.id,
+      disposition,
+      reason: itemPatch.reason ?? `transfer rejected at receiving ${tr.code}`,
+      status: "Pending",
+      createdById: actor.id,
     });
 
-    // Disposition: "Scrap" writes the stock off (the waste entry above is the
-    // record). Anything else (default "Return to Source", plus "Quarantine"
-    // until a quarantine location exists) credits the quantity back to the
-    // Sender's main inventory.
-    if (disposition === "Scrap") continue;
     const [sndInv] = await tx
       .select()
       .from(inventory)

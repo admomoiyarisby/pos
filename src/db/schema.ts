@@ -1559,6 +1559,105 @@ export const scmTransferAuditLog = pgTable(
   ],
 );
 
+// -----------------------------------------------------------------------------
+// Retur Barang (ADR 0018) — rejected-at-receiving stock on its way home
+// -----------------------------------------------------------------------------
+
+// A return is a liability, not a loss. The stock numbers went back to the
+// source the moment the receiver rejected the line, but the *goods* are still
+// physically on the receiver's shelf. `Pending` = the branch still owes the
+// source a pickup; `PickedUp` = the source confirmed the box is back on its
+// shelf, closing the branch's liability.
+export const scmReturnStatusEnum = pgEnum("scm_return_status", ["Pending", "PickedUp"]);
+
+/**
+ * Rejected-at-receiving stock being sent back to its source (ADR 0018).
+ *
+ * This table supersedes ADR 0006's "waste at receiver" sub-decision for every
+ * non-Scrap disposition. A `Return to Source` / `Quarantine` rejection is NOT
+ * a waste entry: writing one made the quantity show up in the receiver's Waste
+ * report as `Spoiled` (at Rp0, because the effect set no valuation) even though
+ * the same units had already been credited back to the source's `inventory`.
+ * Only `Scrap` — goods genuinely destroyed — writes a `waste_entries` row.
+ *
+ * The source FK follows the shared-ledger pattern of `pending_review_inventory`:
+ * exactly one of the two document FKs is set, so a return always traces back to
+ * the delivery that produced it.
+ */
+export const scmReturns = pgTable(
+  "scm_returns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    // The receiver: the branch physically holding the goods until pickup.
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    scmProcurementId: uuid("scm_procurement_id").references(() => scmProcurements.id, {
+      onDelete: "cascade",
+    }),
+    scmTransferId: uuid("scm_transfer_id").references(() => scmTransfers.id, {
+      onDelete: "cascade",
+    }),
+    ingredientId: uuid("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id),
+    // real (fractional allowed) — mirrors the rejected quantities on the
+    // scm_*_items rows (e.g. 0.25 kg of flour rejected).
+    quantity: real("quantity").notNull(),
+    // Valued at rejected qty × ingredient.averageCost so the pickup list shows
+    // what is riding on the truck. Deliberately NOT a loss figure: it never
+    // reaches Total Kerugian, and never touches `operational_expenses`.
+    valuation: integer("valuation").notNull().default(0),
+    // Mirrors the item's rejectionDisposition, so the record says why it is a
+    // return and not a scrap. 'Quarantine' is tracked here like Return to
+    // Source until a quarantine location exists.
+    disposition: rejectionDispositionEnum("disposition").notNull(),
+    reason: text("reason"),
+    status: scmReturnStatusEnum("status").notNull().default("Pending"),
+    // Who raised the return (the receiver BA at finish-receive).
+    createdById: uuid("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    // Who confirmed the goods are back at the source, and when. Set together,
+    // only on the Pending → PickedUp transition.
+    pickedUpBy: uuid("picked_up_by").references(() => users.id),
+    pickedUpAt: timestamp("picked_up_at", { mode: "date" }),
+  },
+  (t) => [
+    index("scmret_procurement_idx").on(t.scmProcurementId),
+    index("scmret_transfer_idx").on(t.scmTransferId),
+    index("scmret_branch_idx").on(t.branchId),
+    index("scmret_ingredient_idx").on(t.ingredientId),
+    index("scmret_status_idx").on(t.status),
+    index("scmret_created_idx").on(t.createdAt),
+    // Exactly one of scmProcurementId / scmTransferId must be set — a return
+    // must always trace back to the delivery that produced it.
+    check(
+      "scmret_exactly_one_flow_fk",
+      sql`(
+        (CASE WHEN ${t.scmProcurementId} IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN ${t.scmTransferId} IS NOT NULL THEN 1 ELSE 0 END)
+      ) = 1`,
+    ),
+    // The two pickup stamps are a pair: both or neither, and `PickedUp` exactly
+    // when they are there. Stated as two equalities rather than a sum compared
+    // to a divided total, because a half-stamped row would satisfy the looser
+    // forms and leave the row looking picked-up on one field and pending on
+    // the other.
+    check(
+      "scmret_pickup_stamps_paired",
+      sql`(
+        (CASE WHEN ${t.pickedUpAt} IS NOT NULL THEN 1 ELSE 0 END) =
+        (CASE WHEN ${t.pickedUpBy} IS NOT NULL THEN 1 ELSE 0 END)
+      ) AND (
+        (CASE WHEN ${t.status} = 'PickedUp' THEN 1 ELSE 0 END) =
+        (CASE WHEN ${t.pickedUpAt} IS NOT NULL THEN 1 ELSE 0 END)
+      )`,
+    ),
+  ],
+);
+
 // =============================================================================
 // MODULE 5 — WASTE & SHRINKAGE
 // =============================================================================
@@ -2611,6 +2710,7 @@ export const scmProcurementsRelations = relations(scmProcurements, ({ one, many 
     references: [scmProcurementInvoices.scmProcurementId],
   }),
   pendingReviewInventory: many(pendingReviewInventory),
+  returns: many(scmReturns),
 }));
 
 export const scmProcurementItemsRelations = relations(scmProcurementItems, ({ one }) => ({
@@ -2719,6 +2819,7 @@ export const scmTransfersRelations = relations(scmTransfers, ({ one, many }) => 
   }),
   inTransitInventory: many(inTransitInventory),
   pendingReviewInventory: many(pendingReviewInventory),
+  returns: many(scmReturns),
 }));
 
 export const scmTransferItemsRelations = relations(scmTransferItems, ({ one }) => ({
@@ -2759,6 +2860,34 @@ export const scmTransferAuditLogRelations = relations(scmTransferAuditLog, ({ on
     references: [scmTransferItems.id],
   }),
   actor: one(users, { fields: [scmTransferAuditLog.actorId], references: [users.id] }),
+}));
+
+// ─── Retur Barang (ADR 0018) ───
+
+export const scmReturnsRelations = relations(scmReturns, ({ one }) => ({
+  branch: one(branches, { fields: [scmReturns.branchId], references: [branches.id] }),
+  procurement: one(scmProcurements, {
+    fields: [scmReturns.scmProcurementId],
+    references: [scmProcurements.id],
+  }),
+  transfer: one(scmTransfers, {
+    fields: [scmReturns.scmTransferId],
+    references: [scmTransfers.id],
+  }),
+  ingredient: one(ingredients, {
+    fields: [scmReturns.ingredientId],
+    references: [ingredients.id],
+  }),
+  createdBy: one(users, {
+    fields: [scmReturns.createdById],
+    references: [users.id],
+    relationName: "scmReturnCreatedBy",
+  }),
+  pickedUpByUser: one(users, {
+    fields: [scmReturns.pickedUpBy],
+    references: [users.id],
+    relationName: "scmReturnPickedUpBy",
+  }),
 }));
 
 // ─── Waste ───

@@ -698,12 +698,26 @@ describe("Pengadaan — multiple Central-type branches (production bug 2026-09-2
         ),
       ).toBeTruthy();
 
-      // The waste entry is still recorded as the disposition record.
+      // ADR 0018: the returned quantity is a Retur Barang, not a waste entry.
+      // Nothing is reported as Spoiled at the outlet, and the pending pickup is
+      // tracked on scm_returns so the branch's liability is visible.
       const wastes = await db
         .select()
         .from(schema.wasteEntries)
         .where(eq(schema.wasteEntries.branchId, outlet));
-      expect(wastes.find((w) => w.ingredientId === ingredient && w.quantity === 5)).toBeDefined();
+      expect(wastes).toHaveLength(0);
+
+      const returns = await db
+        .select()
+        .from(schema.scmReturns)
+        .where(eq(schema.scmReturns.scmProcurementId, procurementId));
+      expect(returns).toHaveLength(1);
+      expect(returns[0].branchId).toBe(outlet);
+      expect(returns[0].ingredientId).toBe(ingredient);
+      expect(returns[0].quantity).toBe(5);
+      expect(returns[0].status).toBe("Pending");
+      // No stock moved on the receiver's side beyond the (zero) received qty.
+      expect(await getStock(outlet, ingredient)).toBe(0);
     },
   );
 
@@ -777,6 +791,17 @@ describe("Pengadaan — multiple Central-type branches (production bug 2026-09-2
         .where(eq(schema.wasteEntries.branchId, outlet));
       expect(wastes).toHaveLength(1);
       expect(wastes[0].notes).toContain("Discard (Scrap)");
+      // ADR 0018: a scrap is the one rejection that IS a loss, so it carries a
+      // real value (5 × 1000 seeded averageCost) instead of the Rp0 the old
+      // effect produced.
+      expect(wastes[0].valuation).toBe(5000);
+
+      // Scrapped goods are destroyed — nothing is coming home.
+      const returns = await db
+        .select()
+        .from(schema.scmReturns)
+        .where(eq(schema.scmReturns.scmProcurementId, procurementId));
+      expect(returns).toHaveLength(0);
 
       // Pending rows still fully cleared (issue #93).
       const pendingRows = await db
@@ -853,13 +878,25 @@ describe("Pengadaan — multiple Central-type branches (production bug 2026-09-2
       expect(itemAfter.receivedQuantity).toBeCloseTo(2.25, 5);
       expect(itemAfter.rejectedQuantity).toBeCloseTo(0.25, 5);
 
-      // Waste entry records the fractional rejected quantity.
+      // ADR 0018: a "Return to Source" rejection is a return, not a waste entry.
+      // The fractional quantity is tracked on scm_returns (status Pending —
+      // the goods are still on the outlet's shelf), so it never shows up as a
+      // Spoiled loss at the branch.
       const wastes = await db
         .select()
         .from(schema.wasteEntries)
         .where(eq(schema.wasteEntries.branchId, outlet));
-      expect(wastes).toHaveLength(1);
-      expect(wastes[0].quantity).toBeCloseTo(0.25, 5);
+      expect(wastes).toHaveLength(0);
+
+      const returns = await db
+        .select()
+        .from(schema.scmReturns)
+        .where(eq(schema.scmReturns.branchId, outlet));
+      expect(returns).toHaveLength(1);
+      expect(returns[0].quantity).toBeCloseTo(0.25, 5);
+      expect(returns[0].status).toBe("Pending");
+      expect(returns[0].disposition).toBe("Return to Source");
+      expect(returns[0].scmProcurementId).toBe(procurementId);
 
       // Invoice totals only the received fraction (2.25 × 1000 avg cost).
       const [invoice] = await db

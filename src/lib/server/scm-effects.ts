@@ -10,6 +10,7 @@ import {
   scmProcurementItems,
   scmProcurementInvoices,
   scmProcurements,
+  scmReturns,
   stockLedger,
   wasteEntries,
 } from "#/db/schema";
@@ -479,19 +480,30 @@ export async function writeReceivedStock(
 }
 
 /**
- * Disposition for rejected stock (issue #93): the rejected quantity returns
- * to Central's main `inventory` (IN ledger `Pengadaan Reject …`) — the branch
- * never owned it, so writing it off as the branch's waste would hide it from
- * Central's stock position. A `waste_entries` row is still written at the
- * branch as the *disposition record* (zero-inventory-effect), matching how
- * the SJ flow records rejections without double-counting stock.
+ * Disposition for rejected stock, by the receiver's choice (ADR 0018).
  *
- * Previously this effect only wrote the waste row and never returned the
- * stock: fully-rejected procurements showed “90 ditolak / Diterima 0” on the
- * invoice while the quantity stayed stranded in pending_review_inventory,
- * invisible to Central's stock.
+ * Three outcomes, and the record each one leaves:
+ *
+ *  - **Scrap** — the goods are destroyed. A `waste_entries` row at the
+ *    receiver, valued at `rejected × ingredient.averageCost` so it reaches
+ *    Total Kerugian as a real loss. No stock credit: the goods are gone.
+ *  - **Return to Source** (default) / **Quarantine** — the goods go home. The
+ *    quantity is credited straight back to Central's `inventory` (IN ledger
+ *    `Pengadaan Reject …`) because the branch never owned it, AND a
+ *    `scm_returns` row is opened at `Pending` — the branch physically still
+ *    has the box, and that pickup is a liability someone has to close.
+ *
+ * Why not a waste row for a return (ADR 0006's original call, reverted here):
+ * the old effect wrote `category: 'Spoiled'` at the receiver unconditionally,
+ * before the disposition check, while *also* crediting Central. The same units
+ * were then counted in Central's stock and reported as a Spoiled loss at the
+ * branch — at Rp0, because this effect never set `valuation`. Waste is a loss
+ * report; a return is a transfer in progress, and conflating them made the
+ * Waste page useless for both.
+ *
+ * `Quarantine` is tracked as a return until a quarantine location exists.
  */
-export async function writeRejectedWaste(
+export async function writeRejectedDisposition(
   procurementId: string,
   payload: FsmPayload,
   actor: FsmActor,
@@ -516,25 +528,47 @@ export async function writeRejectedWaste(
     if (!item) continue;
 
     const disposition = itemPatch.rejectionDisposition ?? "Return to Source";
+    const reason = itemPatch.reason ?? `procurement rejected at receiving ${proc.code}`;
 
-    await tx.insert(wasteEntries).values({
+    // Valued from the ingredient's global average cost — the same basis the
+    // transfer effect and the Waste form use, so a scrap line and a manual
+    // spoilage entry are comparable.
+    const [ing] = await tx
+      .select({ averageCost: ingredients.averageCost })
+      .from(ingredients)
+      .where(eq(ingredients.id, item.ingredientId))
+      .limit(1);
+    const valuation = Math.round(rejected * (ing?.averageCost ?? 0));
+
+    if (disposition === "Scrap") {
+      // Genuinely destroyed: this is the only branch that produces a loss record.
+      await tx.insert(wasteEntries).values({
+        branchId: proc.branchId,
+        ingredientId: item.ingredientId,
+        quantity: rejected,
+        category: "Spoiled",
+        valuation,
+        notes: `Discard (Scrap) — rejected at receiving: ${itemPatch.reason ?? "no reason given"}`,
+        submittedBy: actor.id,
+      });
+      continue;
+    }
+
+    // Returned, not destroyed: open the return BEFORE crediting Central, so a
+    // failure anywhere below leaves the transaction aborted (the FSM runs every
+    // effect in one transaction) rather than stock with no liability record.
+    await tx.insert(scmReturns).values({
       branchId: proc.branchId,
+      scmProcurementId: procurementId,
       ingredientId: item.ingredientId,
       quantity: rejected,
-      category: "Spoiled",
-      notes:
-        (disposition === "Scrap" ? "Discard (Scrap)" : "Return to Source") +
-        (itemPatch.reason
-          ? ` — rejected at receiving: ${itemPatch.reason}`
-          : ` — procurement rejected at receiving ${proc.code}`),
-      submittedBy: actor.id,
+      valuation,
+      disposition,
+      reason,
+      status: "Pending",
+      createdById: actor.id,
     });
 
-    // Disposition: "Scrap" writes the stock off (the waste entry above is the
-    // record). Anything else (default "Return to Source", plus "Quarantine"
-    // until a quarantine location exists) credits the quantity back to
-    // Central's main inventory.
-    if (disposition === "Scrap") continue;
     const central = await getCentralWarehouse(tx);
     if (central) {
       const [centralInv] = await tx

@@ -216,6 +216,14 @@ A new `src/lib/server/scm-transfer-print.ts` module, parallel to the existing `s
 
 ## Sub-decision: Rejected stock disposition (option a — waste at receiver)
 
+> **Superseded by ADR 0018.** The "waste at receiver" call below was only half
+> implemented, and the implemented half is wrong: the quantity was also credited
+> back to the source's inventory (issue #93), so the same units were counted in
+> the sender's stock _and_ reported as a `Spoiled` loss at the receiver — at Rp0,
+> because the effect set no `valuation`. Only `Scrap` is a waste entry now; every
+> other disposition is a **Retur Barang** (`scm_returns`, ADR 0018). The reasoning
+> below is kept for the record.
+
 When the Receiver rejects some quantity at `finish-receive`, the rejected qty is written to `waste_entries` at the **receiver's** branch. The receiver is responsible for physical disposition. The invoice does not include the rejected qty (it's `receivedQuantity × unitPrice`), so the receiver doesn't pay for stock they rejected.
 
 **Why waste at receiver (not return to sender, not AM-decides):**

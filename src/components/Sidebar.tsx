@@ -11,6 +11,7 @@ import {
   FileText,
   Truck,
   ArrowRightLeft,
+  Undo2,
   Trash2,
   RefreshCw,
   Database,
@@ -167,6 +168,14 @@ const navGroups: NavGroup[] = [
         label: "Mutasi Stok",
         to: "/scm-transfers",
         icon: ArrowRightLeft,
+        roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
+      },
+      {
+        // ADR 0018: rejected stock on its way back to the source. Branch admins
+        // see what they still owe; Central confirms the pickup.
+        label: "Retur Barang",
+        to: "/scm-returns",
+        icon: Undo2,
         roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
       },
     ],

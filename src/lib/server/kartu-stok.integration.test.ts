@@ -1051,12 +1051,13 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
-    "S3b: writeRejectedWaste writes wasteEntries(category=Spoiled) per rejected qty at dest",
+    "S3b: writeRejectedDisposition — a returned rejection opens an scm_returns row (no waste), a scrap writes a valued waste entry",
     async () => {
       await withTx(async (db) => {
         const destId = await createBranch(db, suid("BR-S3B"));
         const ingA = await createIngredient(db, suid("ING-S3B-A"), 2000);
         const ingB = await createIngredient(db, suid("ING-S3B-B"), 3000);
+        const ingC = await createIngredient(db, suid("ING-S3B-C"), 5000);
         const procId = crypto.randomUUID();
         const actorId = await createUser(db, null, "super_admin");
         await db.insert(schema.scmProcurements).values({
@@ -1066,8 +1067,10 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
           status: "ReviewingSJ",
           requestedById: actorId,
         });
+        // A: rejected, sent home. B: rejected, scrapped. C: not rejected.
         const itemA = crypto.randomUUID();
         const itemB = crypto.randomUUID();
+        const itemC = crypto.randomUUID();
         await db.insert(schema.scmProcurementItems).values([
           {
             id: itemA,
@@ -1080,7 +1083,8 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
             unitPrice: 2000,
             receivedQuantity: 8,
             rejectedQuantity: 2,
-            reason: "pecah",
+            reason: "kadaluarsa",
+            rejectionDisposition: "Return to Source",
             baDecision: "accepted",
           },
           {
@@ -1092,29 +1096,86 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
             pickedQuantity: 5,
             caDecision: "approved",
             unitPrice: 3000,
-            receivedQuantity: 5,
+            receivedQuantity: 4,
+            rejectedQuantity: 1,
+            reason: "pecah",
+            rejectionDisposition: "Scrap",
+            baDecision: "accepted",
+          },
+          {
+            id: itemC,
+            scmProcurementId: procId,
+            ingredientId: ingC,
+            quantity: 4,
+            readyQuantity: 4,
+            pickedQuantity: 4,
+            caDecision: "approved",
+            unitPrice: 5000,
+            receivedQuantity: 4,
             rejectedQuantity: 0,
             baDecision: "accepted",
           },
         ]);
-        const { writeRejectedWaste } = await import("./scm-effects");
-        await writeRejectedWaste(
+        const { writeRejectedDisposition } = await import("./scm-effects");
+        await writeRejectedDisposition(
           procId,
           {
             items: [
-              { id: itemA, receivedQuantity: 8, rejectedQuantity: 2, reason: "pecah" },
-              { id: itemB, receivedQuantity: 5, rejectedQuantity: 0 },
+              {
+                id: itemA,
+                receivedQuantity: 8,
+                rejectedQuantity: 2,
+                reason: "kadaluarsa",
+                rejectionDisposition: "Return to Source",
+              },
+              {
+                id: itemB,
+                receivedQuantity: 4,
+                rejectedQuantity: 1,
+                reason: "pecah",
+                rejectionDisposition: "Scrap",
+              },
+              { id: itemC, receivedQuantity: 4, rejectedQuantity: 0 },
             ],
           },
           { id: actorId, role: "branch_admin" },
-          db as unknown as Parameters<typeof writeRejectedWaste>[3],
+          db as unknown as Parameters<typeof writeRejectedDisposition>[3],
         );
+
         const waste = await db
           .select()
           .from(schema.wasteEntries)
           .where(eq(schema.wasteEntries.branchId, destId));
-        expect(waste.find((w) => w.ingredientId === ingA && w.quantity === 2)).toBeDefined();
-        expect(waste.find((w) => w.ingredientId === ingB)).toBeUndefined();
+
+        // ADR 0018: only Scrap is a loss. A returned rejection must NOT appear
+        // in the receiver's Waste report — that was the whole bug.
+        expect(waste.find((w) => w.ingredientId === ingA)).toBeUndefined();
+        const scrap = waste.find((w) => w.ingredientId === ingB);
+        expect(scrap).toBeDefined();
+        expect(scrap?.category).toBe("Spoiled");
+        expect(scrap?.quantity).toBe(1);
+        // Valued, so a real loss reaches Total Kerugian (it used to be Rp0).
+        expect(scrap?.valuation).toBe(3000);
+        // Untouched line produces neither record.
+        expect(waste.find((w) => w.ingredientId === ingC)).toBeUndefined();
+
+        const returns = await db
+          .select()
+          .from(schema.scmReturns)
+          .where(eq(schema.scmReturns.branchId, destId));
+        expect(returns).toHaveLength(1);
+        expect(returns[0]?.ingredientId).toBe(ingA);
+        expect(returns[0]?.quantity).toBe(2);
+        expect(returns[0]?.valuation).toBe(4000);
+        expect(returns[0]?.status).toBe("Pending");
+        expect(returns[0]?.disposition).toBe("Return to Source");
+        expect(returns[0]?.scmProcurementId).toBe(procId);
+        expect(returns[0]?.scmTransferId).toBeNull();
+        // Pickup stamps are Pending-only (scmret_pickup_stamps_paired).
+        expect(returns[0]?.pickedUpAt).toBeNull();
+        expect(returns[0]?.pickedUpBy).toBeNull();
+        // The scrapped line is destroyed, not coming home.
+        expect(returns.find((r) => r.ingredientId === ingB)).toBeUndefined();
       });
     },
   );
@@ -1650,12 +1711,13 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
-    "M3b: writeTransferRejectedWaste — waste at receiver with valuation=rejected*averageCost",
+    "M3b: writeTransferRejectedDisposition — returned rejection opens an scm_returns row (no waste at receiver); scrap is valued waste",
     async () => {
       await withTx(async (db) => {
         const senderId = await createBranch(db, suid("SND-M3B"));
         const receiverId = await createBranch(db, suid("RCV-M3B"));
         const ingId = await createIngredient(db, suid("ING-M3B"), 2500);
+        const ingScrap = await createIngredient(db, suid("ING-M3B-SCRAP"), 2500);
         await setInventory(db, receiverId, ingId, 0);
         const actorId = await createUser(db, null, "super_admin");
         const trId = crypto.randomUUID();
@@ -1668,16 +1730,30 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
           requestedById: actorId,
         });
         const itemId = crypto.randomUUID();
-        await db.insert(schema.scmTransferItems).values({
-          id: itemId,
-          scmTransferId: trId,
-          ingredientId: ingId,
-          quantity: 10,
-          unitPrice: 2500,
-          receivedQuantity: 8,
-          rejectedQuantity: 2,
-          reason: "bocor",
-        });
+        const itemScrapId = crypto.randomUUID();
+        await db.insert(schema.scmTransferItems).values([
+          {
+            id: itemId,
+            scmTransferId: trId,
+            ingredientId: ingId,
+            quantity: 10,
+            unitPrice: 2500,
+            receivedQuantity: 8,
+            rejectedQuantity: 2,
+            reason: "bocor",
+          },
+          {
+            id: itemScrapId,
+            scmTransferId: trId,
+            ingredientId: ingScrap,
+            quantity: 4,
+            unitPrice: 2500,
+            receivedQuantity: 3,
+            rejectedQuantity: 1,
+            reason: "bocor parah",
+            rejectionDisposition: "Scrap",
+          },
+        ]);
         await db.insert(schema.pendingReviewInventory).values({
           scmTransferId: trId,
           branchId: receiverId,
@@ -1685,21 +1761,51 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
           quantity: 10,
           createdById: actorId,
         });
-        const { writeTransferRejectedWaste } = await import("./scm-transfer-effects");
-        await writeTransferRejectedWaste(
+        const { writeTransferRejectedDisposition } = await import("./scm-transfer-effects");
+        await writeTransferRejectedDisposition(
           trId,
-          { items: [{ id: itemId, receivedQuantity: 8, rejectedQuantity: 2, reason: "bocor" }] },
+          {
+            items: [
+              { id: itemId, receivedQuantity: 8, rejectedQuantity: 2, reason: "bocor" },
+              {
+                id: itemScrapId,
+                receivedQuantity: 3,
+                rejectedQuantity: 1,
+                reason: "bocor parah",
+                rejectionDisposition: "Scrap",
+              },
+            ],
+          },
           { id: actorId, role: "branch_admin" },
-          db as unknown as Parameters<typeof writeTransferRejectedWaste>[3],
+          db as unknown as Parameters<typeof writeTransferRejectedDisposition>[3],
         );
+
         const waste = await db
           .select()
           .from(schema.wasteEntries)
           .where(eq(schema.wasteEntries.branchId, receiverId));
-        const w = waste.find((r) => r.ingredientId === ingId);
+        // ADR 0018: the default disposition sends goods home — that is not a
+        // loss, so it must not be reported as Spoiled waste at the receiver.
+        expect(waste.find((r) => r.ingredientId === ingId)).toBeUndefined();
+        // Scrap is a real loss, valued at rejected × averageCost.
+        const w = waste.find((r) => r.ingredientId === ingScrap);
         expect(w).toBeDefined();
-        expect(w!.quantity).toBe(2);
-        expect(w!.valuation).toBe(5000); // 2*2500
+        expect(w!.quantity).toBe(1);
+        expect(w!.valuation).toBe(2500); // 1*2500
+
+        const returns = await db
+          .select()
+          .from(schema.scmReturns)
+          .where(eq(schema.scmReturns.branchId, receiverId));
+        expect(returns).toHaveLength(1);
+        expect(returns[0]?.ingredientId).toBe(ingId);
+        expect(returns[0]?.quantity).toBe(2);
+        expect(returns[0]?.valuation).toBe(5000); // 2*2500
+        expect(returns[0]?.status).toBe("Pending");
+        // The return traces back to the transfer, and only the transfer.
+        expect(returns[0]?.scmTransferId).toBe(trId);
+        expect(returns[0]?.scmProcurementId).toBeNull();
+        expect(returns[0]?.reason).toBe("bocor");
       });
     },
   );

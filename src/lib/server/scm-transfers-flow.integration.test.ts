@@ -380,7 +380,7 @@ describe("Mutasi Stok — full 10-state flow via the real server-function cores"
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
-    "per-line rejection writes receiver waste and invoices only the received quantity",
+    "per-line rejection returns to the sender and invoices only the received quantity",
     async () => {
       const fromBranch = await seedBranch(uniq("MT-REJA"));
       const toBranch = await seedBranch(uniq("MT-REJB"));
@@ -440,18 +440,28 @@ describe("Mutasi Stok — full 10-state flow via the real server-function cores"
         .where(eq(schema.scmTransferInvoices.scmTransferId, transfer.id));
       expect(invoice.totalAmount).toBe(3000);
 
-      // Waste entry written at the receiver branch for the rejected 2 units.
+      // ADR 0018: "Return to Source" is a return, not a waste entry. Nothing is
+      // reported as Spoiled at the receiver; the rejected 2 units are tracked as
+      // a Retur Barang pending pickup.
       const wastes = await db
         .select()
         .from(schema.wasteEntries)
         .where(eq(schema.wasteEntries.ingredientId, ingredient));
-      expect(wastes).toHaveLength(1);
-      expect(wastes[0].branchId).toBe(toBranch);
-      expect(wastes[0].quantity).toBe(2);
-      expect(wastes[0].category).toBe("Spoiled");
-      expect(wastes[0].valuation).toBe(2000);
-      expect(wastes[0].notes).toBe("Return to Sender — Barang rusak 2 pcs");
-      expect(wastes[0].submittedBy).toBe(receiver.id);
+      expect(wastes).toHaveLength(0);
+
+      const returns = await db
+        .select()
+        .from(schema.scmReturns)
+        .where(eq(schema.scmReturns.scmTransferId, transfer.id));
+      expect(returns).toHaveLength(1);
+      expect(returns[0].branchId).toBe(toBranch);
+      expect(returns[0].ingredientId).toBe(ingredient);
+      expect(returns[0].quantity).toBe(2);
+      expect(returns[0].valuation).toBe(2000);
+      expect(returns[0].reason).toBe("Barang rusak 2 pcs");
+      expect(returns[0].disposition).toBe("Return to Source");
+      expect(returns[0].status).toBe("Pending");
+      expect(returns[0].createdById).toBe(receiver.id);
 
       // The pending_review_inventory row must be fully cleared, including the
       // fully-rejected case (issue #93: no stranded rows).

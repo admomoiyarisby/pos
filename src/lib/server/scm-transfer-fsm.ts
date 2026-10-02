@@ -11,7 +11,7 @@ import {
   setTransferReceivedQuantities,
   writeTransferInTransitInventory,
   writeTransferReceivedStock,
-  writeTransferRejectedWaste,
+  writeTransferRejectedDisposition,
   generateTransferInvoiceSnapshot,
 } from "./scm-transfer-effects";
 import { validateReceivePayload, ReceiveValidationError } from "./scm-effects";
@@ -188,7 +188,7 @@ export const transferTransitions: TransferTransitionTable = {
             .then((items) => validateReceivePayload(payload, items, (it) => it.quantity)),
         setTransferReceivedQuantities,
         writeTransferReceivedStock,
-        writeTransferRejectedWaste,
+        writeTransferRejectedDisposition,
         generateTransferInvoiceSnapshot,
       ],
     },
