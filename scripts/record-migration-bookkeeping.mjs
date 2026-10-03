@@ -8,8 +8,9 @@
 // uses — so they are exactly what the migrator would have written.
 //
 // Idempotent, and scoped to the tag given: it will not touch the pre-existing
-// bookkeeping drift earlier in the table. Delete once `drizzle-kit migrate`
-// works again.
+// bookkeeping drift earlier in the table. Writes to the local test database
+// unless `--prod --yes-i-mean-prod` is passed, because .env.local holds the live
+// DATABASE_URL. Delete once `drizzle-kit migrate` works again.
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { readFileSync } from "node:fs";
 import { Client } from "pg";
@@ -36,12 +37,36 @@ if (!migration) {
   process.exit(1);
 }
 
-const url =
-  process.env.TEST_DATABASE_URL ??
-  "postgresql://omoiyari_test:omoiyari_test@localhost:5433/omoiyari_pos_test";
+// Default is the local test database. `--prod` is required to write anywhere
+// else, so this can never touch production by accident or by inherited env:
+// .env.local holds the live DATABASE_URL, and an unqualified run would then
+// record bookkeeping against the live database.
+const targetProd = process.argv.includes("--prod");
+let url;
+let label;
+if (targetProd) {
+  url = process.env.DATABASE_URL;
+  label = "PRODUCTION";
+  if (!url) {
+    console.error(
+      "--prod needs DATABASE_URL set (it is in .env.local, which this script does not load)",
+    );
+    process.exit(1);
+  }
+  if (!process.argv.includes("--yes-i-mean-prod")) {
+    console.error("Refusing to write to production without --yes-i-mean-prod.");
+    process.exit(1);
+  }
+} else {
+  url =
+    process.env.TEST_DATABASE_URL ??
+    "postgresql://omoiyari_test:omoiyari_test@localhost:5433/omoiyari_pos_test";
+  label = "test";
+}
 
 const client = new Client({ connectionString: url });
 await client.connect();
+console.log(`target: ${label}`);
 
 const existing = await client.query(
   "select id from drizzle.__drizzle_migrations where created_at = $1 and hash = $2",
