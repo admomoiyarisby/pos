@@ -37,6 +37,9 @@ import type { UnknownRecord } from "#/lib/unknown-record";
 
 const RETURN_STATUS_VALUES = ["Pending", "PickedUp"] as const;
 
+/** Must match DataTable's `pageSize` so the mobile cards page identically. */
+const PAGE_SIZE = 15;
+
 export const Route = createFileRoute("/_layout/scm-returns/")({
   component: ReturnsListPage,
   validateSearch: (search: UnknownRecord) => ({
@@ -181,6 +184,17 @@ function ReturnsListPage() {
     );
   }, [rows, search, statusFilter, branchFilter]);
 
+  // DataTable slices internally from `page`, so the mobile cards replicate that
+  // slice exactly rather than drifting from the table's own pagination.
+  const totalPages = Math.ceil(displayRows.length / PAGE_SIZE) || 1;
+  const pagedRows = useMemo(
+    () => displayRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+    [displayRows, page],
+  );
+
+  const statusBadgeVariant = (status: ScmReturnStatus) =>
+    status === "Pending" ? ("warning" as const) : ("success" as const);
+
   usePageTitle("Retur Barang", "Barang ditolak yang sedang dikirim kembali ke gudang sumber");
 
   const columns: Column<ReturnRow>[] = [
@@ -252,7 +266,7 @@ function ReturnsListPage() {
       header: "Disposisi",
       width: "w-40",
       cell: ({ row }) => (
-        <Badge variant="outline" className="text-[10px]">
+        <Badge variant="outline" className="text-[11px]">
           {dispositionLabels[row.original.disposition]}
         </Badge>
       ),
@@ -287,7 +301,7 @@ function ReturnsListPage() {
             {statusLabels[row.original.status]}
           </Badge>
           {row.original.status === "PickedUp" && row.original.pickedUpAt ? (
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground">
               {new Date(row.original.pickedUpAt).toLocaleDateString("id-ID")}
               {row.original.pickedUpByName ? ` · ${row.original.pickedUpByName}` : ""}
             </span>
@@ -299,14 +313,14 @@ function ReturnsListPage() {
       ? [
           {
             accessorKey: "id",
-            header: "",
-            width: "w-36",
+            header: "Aksi",
+            width: "w-40",
             cell: ({ row }: { row: { original: ReturnRow } }) =>
               row.original.status === "Pending" ? (
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 text-xs"
+                  className="h-7 text-xs pointer-coarse:h-9 pointer-coarse:px-3"
                   disabled={confirmMutation.isPending}
                   onClick={() => confirmMutation.mutate({ data: { returnId: row.original.id } })}
                 >
@@ -316,7 +330,7 @@ function ReturnsListPage() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 text-xs"
+                  className="h-7 text-xs pointer-coarse:h-9 pointer-coarse:px-3 text-muted-foreground"
                   disabled={reopenMutation.isPending}
                   title="Barang ternyata belum sampai — buka kembali"
                   onClick={() =>
@@ -339,29 +353,35 @@ function ReturnsListPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
       <div className="space-y-4">
-        {/* ── What is still out there ── */}
-        <div className="rounded-xl sm:rounded-lg border bg-card p-3.5 sm:p-4 shadow-xs">
-          <div className="flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-xs font-medium tracking-widest uppercase text-muted-foreground">
-                Menunggu Pickup
-              </div>
-              <div className="text-xl sm:text-2xl font-semibold tracking-tight tabular-nums">
-                {summary.pendingCount}{" "}
-                <span className="text-base font-normal text-muted-foreground">baris</span>
-              </div>
-              {!isBranchAdmin && (
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {formatRupiah(summary.pendingValuation)} barang yang masih di cabang, belum di
-                  gudang sumber
-                </div>
-              )}
-            </div>
-            <div className="shrink-0 text-right text-xs text-muted-foreground max-w-[16rem]">
-              Stok sudah tercatat kembali di gudang sumber. Yang tersisa di sini adalah fisiknya —
-              kirimkan, lalu konfirmasi.
-            </div>
+        {/* ── What is still out there ──
+            Figures sit inline rather than stacked under a label: a big number
+            with a small caption above it is the hero-metric shape this product
+            explicitly rejects. This reads as a ledger line. */}
+        <div className="rounded-xl sm:rounded-lg border bg-card px-3.5 py-3 shadow-xs sm:px-4">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="text-sm text-muted-foreground">Menunggu pickup</span>
+            <span className="text-lg font-semibold tabular-nums leading-none">
+              {summary.pendingCount}
+            </span>
+            <span className="text-sm text-muted-foreground">
+              {summary.pendingCount === 1 ? "baris" : "baris"}
+            </span>
+            {!isBranchAdmin && summary.pendingCount > 0 && (
+              <>
+                <span aria-hidden className="text-muted-foreground/40">
+                  ·
+                </span>
+                <span className="text-sm tabular-nums">
+                  {formatRupiah(summary.pendingValuation)}
+                </span>
+                <span className="text-sm text-muted-foreground">masih di cabang</span>
+              </>
+            )}
           </div>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Stok sudah tercatat kembali di gudang sumber. Yang tersisa di sini adalah fisiknya —
+            kirimkan, lalu konfirmasi.
+          </p>
         </div>
 
         {/* ── Toolbar ── */}
@@ -419,7 +439,7 @@ function ReturnsListPage() {
                     replace: true,
                   })
                 }
-                className={`shrink-0 snap-start inline-flex items-center gap-1.5 h-8 px-3.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${isActive ? "bg-foreground text-background border-foreground shadow-sm" : "bg-background border-border hover:bg-muted text-foreground"}`}
+                className={`shrink-0 snap-start inline-flex items-center gap-1.5 h-11 sm:h-8 px-4 sm:px-3.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${isActive ? "bg-foreground text-background border-foreground shadow-sm" : "bg-background border-border hover:bg-muted active:bg-muted text-foreground"}`}
               >
                 {tab.label}
                 <span
@@ -449,7 +469,7 @@ function ReturnsListPage() {
                   replace: true,
                 })
               }
-              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+              className="h-11 sm:h-9 min-w-0 flex-1 sm:flex-none rounded-lg border border-input bg-background px-2 text-sm"
             >
               <option value="">Semua cabang</option>
               {branches.map((b) => (
@@ -461,15 +481,152 @@ function ReturnsListPage() {
           </div>
         )}
 
-        <DataTable
-          columns={columns}
-          data={displayRows}
-          keyExtractor={(row) => row.id}
-          page={page}
-          onPageChange={setPage}
-          pageSize={15}
-          emptyMessage="Tidak ada barang yang sedang dalam proses kembali ke gudang sumber."
-        />
+        {/* ── Mobile: cards. The table is 9 columns and scrolls sideways, which
+            hides the confirm action behind a horizontal swipe — so the phone
+            layout leads with the same information as cards and gives the page's
+            one real task a full-width target at the bottom of each card. ── */}
+        <div className="md:hidden space-y-2.5 -mx-4 px-4">
+          {pagedRows.length === 0 ? (
+            <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center">
+              <p className="text-sm font-medium">Tidak ada barang yang sedang dikembalikan</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Ubah filter status atau cabang untuk melihat riwayat lain
+              </p>
+            </div>
+          ) : (
+            pagedRows.map((row) => {
+              const isPending = row.status === "Pending";
+              const docLabel = row.procurementCode ?? row.transferCode;
+              return (
+                <div key={row.id} className="rounded-xl border bg-card p-3.5 shadow-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-sm truncate">
+                        {row.ingredientName ?? row.ingredientId.slice(0, 8)}
+                      </div>
+                      {row.reason ? (
+                        <div className="text-xs text-muted-foreground truncate mt-0.5">
+                          {row.reason}
+                        </div>
+                      ) : null}
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <Badge
+                          variant={statusBadgeVariant(row.status)}
+                          className="text-[11px] px-2 h-5"
+                        >
+                          {statusLabels[row.status]}
+                        </Badge>
+                        <Badge variant="outline" className="text-[11px] px-2 h-5">
+                          {dispositionLabels[row.disposition]}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-semibold tabular-nums">
+                        {row.quantity.toLocaleString("id-ID")}
+                      </div>
+                      {!isBranchAdmin && (
+                        <div className="text-xs tabular-nums text-muted-foreground">
+                          {formatRupiah(row.valuation)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                    <div className="min-w-0">
+                      <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
+                        Cabang
+                      </div>
+                      <div className="truncate">{row.branchName ?? "—"}</div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
+                        Ditolak
+                      </div>
+                      <div>{new Date(row.createdAt).toLocaleDateString("id-ID")}</div>
+                    </div>
+                    <div className="col-span-2 min-w-0">
+                      <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
+                        Asal
+                      </div>
+                      <div className="truncate">{docLabel ?? "—"}</div>
+                    </div>
+                  </div>
+
+                  {canConfirm && (
+                    <div className="mt-3">
+                      {isPending ? (
+                        <Button
+                          variant="outline"
+                          className="w-full h-12"
+                          disabled={confirmMutation.isPending}
+                          onClick={() => confirmMutation.mutate({ data: { returnId: row.id } })}
+                        >
+                          Sudah kembali
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          className="w-full h-12 text-muted-foreground"
+                          disabled={reopenMutation.isPending}
+                          onClick={() =>
+                            reopenMutation.mutate({
+                              data: {
+                                returnId: row.id,
+                                reason: "Barang belum sampai di gudang sumber",
+                              },
+                            })
+                          }
+                        >
+                          Buka lagi
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <button
+                onClick={() => setPage(Math.max(0, page - 1))}
+                disabled={page === 0}
+                className="inline-flex items-center justify-center h-11 px-3 rounded-lg border bg-background text-sm font-medium disabled:opacity-30 hover:bg-muted min-w-[96px]"
+              >
+                Sebelumnya
+              </button>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                Hal {page + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+                disabled={page >= totalPages - 1}
+                className="inline-flex items-center justify-center h-11 px-3 rounded-lg border bg-background text-sm font-medium disabled:opacity-30 hover:bg-muted min-w-[96px]"
+              >
+                Selanjutnya
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── Desktop: the table ── */}
+        <div className="hidden md:block -mx-4 md:mx-0">
+          <DataTable
+            // The page owns its own search field above; without this the table
+            // renders a second, redundant "Cari..." box.
+            searchable={false}
+            columns={columns}
+            data={displayRows}
+            keyExtractor={(row) => row.id}
+            page={page}
+            onPageChange={setPage}
+            pageSize={PAGE_SIZE}
+            emptyMessage="Tidak ada barang yang sedang dalam proses kembali ke gudang sumber."
+          />
+        </div>
 
         <p className="text-xs text-muted-foreground flex items-start gap-1.5">
           <ArrowUpRight className="h-3 w-3 mt-0.5 shrink-0" />
