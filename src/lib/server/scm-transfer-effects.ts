@@ -94,7 +94,13 @@ export async function writeTransferInTransitInventory(
   for (const item of items) {
     if (item.quantity <= 0) continue;
 
-    // Read current inventory at the Sender's branch
+    // Read current inventory at the Sender's branch. `FOR UPDATE` serialises
+    // concurrent movements of the same item, so the quantity written below is
+    // the post-lock quantity rather than a stale read — without it two
+    // concurrent shipments both read the same balance, both write
+    // `current - qty`, and one decrement is lost. Scoped to `inventory` with
+    // `of` so the join to `ingredients` does not lock the master row and
+    // serialise unrelated branches shipping the same item.
     const [inv] = await tx
       .select({ id: inventory.id, quantity: inventory.quantity, name: ingredients.name })
       .from(inventory)
@@ -102,6 +108,7 @@ export async function writeTransferInTransitInventory(
       .where(
         and(eq(inventory.branchId, tr.fromBranchId), eq(inventory.ingredientId, item.ingredientId)),
       )
+      .for("update", { of: inventory })
       .limit(1);
 
     const currentQty = inv?.quantity ?? 0;
@@ -279,6 +286,7 @@ export async function writeTransferReceivedStock(
       .where(
         and(eq(inventory.branchId, tr.toBranchId), eq(inventory.ingredientId, item.ingredientId)),
       )
+      .for("update")
       .limit(1);
 
     if (inv) {
@@ -435,6 +443,7 @@ export async function writeTransferRejectedDisposition(
       .where(
         and(eq(inventory.branchId, tr.fromBranchId), eq(inventory.ingredientId, item.ingredientId)),
       )
+      .for("update")
       .limit(1);
 
     if (sndInv) {
@@ -629,6 +638,7 @@ export async function reverseTransferInTransitOnCancel(
       .where(
         and(eq(inventory.branchId, row.branchId), eq(inventory.ingredientId, row.ingredientId)),
       )
+      .for("update")
       .limit(1);
 
     if (inv) {
@@ -736,6 +746,7 @@ export async function reverseTransferPendingReviewOnCancel(
         .where(
           and(eq(inventory.branchId, tr.toBranchId), eq(inventory.ingredientId, item.ingredientId)),
         )
+        .for("update")
         .limit(1);
 
       if (recvInv) {
@@ -790,6 +801,7 @@ async function creditBranchInventory(
     .select()
     .from(inventory)
     .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, ingredientId)))
+    .for("update")
     .limit(1);
 
   if (inv) {
