@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
@@ -18,6 +18,7 @@ import { formatQuantity } from "#/lib/utils";
 import { isoDateDaysAgo } from "#/components/pos/HistoryDateFilter";
 import { getBranches } from "#/lib/server/branches";
 import { getRecipes } from "#/lib/server/recipes";
+import { getIngredients } from "#/lib/server/ingredients";
 import { useAuth } from "#/lib/auth-context";
 import { Badge } from "#/components/ui/badge";
 import { ArrowDown, ArrowUp, Factory, ShoppingBag, X } from "lucide-react";
@@ -67,12 +68,13 @@ function LedgerPage() {
   const user = useAuth().user;
   const { page, setPage, sort, setSort, filters, setFilter } = useTableUrlState<{
     branchId?: string;
+    ingredientId?: string;
     reference?: string;
     bom?: string;
     bomRecipe?: string;
     dateFrom?: string;
     dateTo?: string;
-  }>(["branchId", "reference", "bom", "bomRecipe", "dateFrom", "dateTo"]);
+  }>(["branchId", "ingredientId", "reference", "bom", "bomRecipe", "dateFrom", "dateTo"]);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -97,6 +99,7 @@ function LedgerPage() {
         ? ""
         : (filters.branchId ?? "");
   const reference = filters.reference ?? "";
+  const ingredientId = filters.ingredientId ?? "";
   // Waste BOM filter (ADR 0013): review per-ingredient losses by recipe.
   const bomOnly = filters.bom === "true";
   const bomRecipe = filters.bomRecipe ?? "";
@@ -125,6 +128,17 @@ function LedgerPage() {
     enabled: bomOnly,
   });
 
+  // The item picker only needs to enumerate what the ledger can actually show,
+  // and only once someone asks for it — an unfiltered ingredient list is a
+  // second full master list on a page that already loads the recipe list for the
+  // Waste BOM filter.
+  const [itemPickerOpen, setItemPickerOpen] = useState(false);
+  const { data: ingredientOptions } = useQuery({
+    queryKey: ["ingredients", "ledger-filter"],
+    queryFn: () => getIngredients({ data: {} }),
+    enabled: itemPickerOpen,
+  });
+
   const { data: ledger, isPending } = useQuery(
     // Shared with the route loader (`stockLedgerQuery`): identical normalized
     // args → identical cache key, so the loader's pre-fetched slice is a
@@ -138,6 +152,7 @@ function LedgerPage() {
       page,
       search: committedSearch,
       branchId: filters.branchId ?? "",
+      ingredientId,
       reference,
       bomOnly,
       bomRecipeId: bomRecipe,
@@ -350,6 +365,27 @@ function LedgerPage() {
               ))}
             </select>
           )}
+          {/* Per-item filter. The Saldo column only reads as a series once the
+              page shows one item: mixed rows carry unrelated balances, so an
+              OUT sitting under another item's larger stock reads as an
+              increase. */}
+          <select
+            value={ingredientId}
+            onChange={(e) => {
+              setFilter("ingredientId", e.target.value);
+              setPage(0);
+            }}
+            onFocus={() => setItemPickerOpen(true)}
+            aria-label="Bahan"
+            className="h-11 w-full rounded-xl border border-input bg-background px-3 text-[16px] font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8 sm:w-auto sm:max-w-[220px] sm:rounded-md sm:text-sm sm:font-normal sm:shadow-none"
+          >
+            <option value="">Semua Bahan</option>
+            {(ingredientOptions ?? []).map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
+          </select>
           {/* Waste BOM filter (ADR 0013): review per-ingredient losses by recipe */}
           <select
             value={bomOnly ? "bom" : ""}
