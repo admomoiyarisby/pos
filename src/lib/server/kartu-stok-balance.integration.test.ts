@@ -362,6 +362,233 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok saldo — running movement tota
     expect(saldo.get("RECIPE-1")).toBe(40);
   });
 
+  it("keeps each series' running total separate when series interleave", async () => {
+    const branchId = await seedBranch("Omoiyari Mulyorejo", "MLY");
+    const a = await seedIngredient("Ayam Karaage", "gram");
+    const b = await seedIngredient("Beras", "gr");
+    const c = await seedIngredient("Cuka Nasi", "gr");
+
+    // One transaction writes all nine rows, so every row shares a created_at and
+    // the series interleave in any ordering the query chooses.
+    const tied = new Date("2026-10-03T00:14:42.343Z");
+    await seedLedger([
+      {
+        branchId,
+        ingredientId: a,
+        type: "IN",
+        quantity: 10,
+        balance: 10,
+        reference: "A1",
+        createdAt: tied,
+      },
+      {
+        branchId,
+        ingredientId: b,
+        type: "IN",
+        quantity: 30,
+        balance: 30,
+        reference: "B1",
+        createdAt: tied,
+      },
+      {
+        branchId,
+        ingredientId: c,
+        type: "IN",
+        quantity: 40,
+        balance: 40,
+        reference: "C1",
+        createdAt: tied,
+      },
+      {
+        branchId,
+        ingredientId: a,
+        type: "OUT",
+        quantity: 3,
+        balance: 7,
+        reference: "A2",
+        createdAt: tied,
+      },
+      {
+        branchId,
+        ingredientId: b,
+        type: "OUT",
+        quantity: 10,
+        balance: 20,
+        reference: "B2",
+        createdAt: tied,
+      },
+      {
+        branchId,
+        ingredientId: c,
+        type: "OUT",
+        quantity: 15,
+        balance: 25,
+        reference: "C2",
+        createdAt: tied,
+      },
+      {
+        branchId,
+        ingredientId: a,
+        type: "OUT",
+        quantity: 4,
+        balance: 3,
+        reference: "A3",
+        createdAt: tied,
+      },
+      {
+        branchId,
+        ingredientId: b,
+        type: "IN",
+        quantity: 5,
+        balance: 25,
+        reference: "B3",
+        createdAt: tied,
+      },
+      {
+        branchId,
+        ingredientId: c,
+        type: "IN",
+        quantity: 2,
+        balance: 27,
+        reference: "C3",
+        createdAt: tied,
+      },
+    ]);
+    await testDb()
+      .insert(schema.inventory)
+      .values([
+        { branchId, ingredientId: a, quantity: 3 },
+        { branchId, ingredientId: b, quantity: 25 },
+        { branchId, ingredientId: c, quantity: 27 },
+      ]);
+
+    const { saldo } = await readLedger(branchId);
+
+    expect(chronological(saldo, ["A1", "A2", "A3"])).toEqual([10, 7, 3]);
+    expect(chronological(saldo, ["B1", "B2", "B3"])).toEqual([30, 20, 25]);
+    expect(chronological(saldo, ["C1", "C2", "C3"])).toEqual([40, 25, 27]);
+  });
+
+  it("keeps each series' running total separate when series interleave across batches", async () => {
+    const branchId = await seedBranch("Omoiyari Rungkut", "RKT");
+    const x = await seedIngredient("Item X", "pcs");
+    const y = await seedIngredient("Item Y", "pcs");
+
+    // Alternating timestamps, so the global order never groups a series together.
+    const at = (n: number) => new Date(`2026-10-0${n}T10:00:00.000Z`);
+    await seedLedger([
+      {
+        branchId,
+        ingredientId: x,
+        type: "IN",
+        quantity: 100,
+        balance: 100,
+        reference: "X1",
+        createdAt: at(1),
+      },
+      {
+        branchId,
+        ingredientId: y,
+        type: "IN",
+        quantity: 500,
+        balance: 500,
+        reference: "Y1",
+        createdAt: at(1),
+      },
+      {
+        branchId,
+        ingredientId: x,
+        type: "OUT",
+        quantity: 30,
+        balance: 70,
+        reference: "X2",
+        createdAt: at(2),
+      },
+      {
+        branchId,
+        ingredientId: y,
+        type: "OUT",
+        quantity: 100,
+        balance: 400,
+        reference: "Y2",
+        createdAt: at(2),
+      },
+      {
+        branchId,
+        ingredientId: x,
+        type: "OUT",
+        quantity: 20,
+        balance: 50,
+        reference: "X3",
+        createdAt: at(3),
+      },
+      {
+        branchId,
+        ingredientId: y,
+        type: "IN",
+        quantity: 50,
+        balance: 450,
+        reference: "Y3",
+        createdAt: at(3),
+      },
+    ]);
+    await testDb()
+      .insert(schema.inventory)
+      .values([
+        { branchId, ingredientId: x, quantity: 50 },
+        { branchId, ingredientId: y, quantity: 450 },
+      ]);
+
+    const { saldo } = await readLedger(branchId);
+
+    expect(chronological(saldo, ["X1", "X2", "X3"])).toEqual([100, 70, 50]);
+    expect(chronological(saldo, ["Y1", "Y2", "Y3"])).toEqual([500, 400, 450]);
+  });
+
+  it("reports a whole page consistently when a page mixes many series", async () => {
+    const branchId = await seedBranch("Omoiyari Darmo Permai", "DP");
+    const ids = await Promise.all(
+      ["Alat A", "Alat B", "Alat C", "Alat D", "Alat E"].map((n) => seedIngredient(n, "pcs")),
+    );
+
+    // References carry the series index, not the ingredient id, so the assertion
+    // never has to parse a uuid.
+    const tied = new Date("2026-10-04T01:38:20.264Z");
+    await seedLedger(
+      ids.flatMap((id, s) => [
+        {
+          branchId,
+          ingredientId: id,
+          type: "IN" as const,
+          quantity: 100 + s,
+          balance: 100 + s,
+          reference: `S${s}-open`,
+          createdAt: tied,
+        },
+        {
+          branchId,
+          ingredientId: id,
+          type: "OUT" as const,
+          quantity: s + 1,
+          balance: 99,
+          reference: `S${s}-out`,
+          createdAt: tied,
+        },
+      ]),
+    );
+    await testDb()
+      .insert(schema.inventory)
+      .values(ids.map((id) => ({ branchId, ingredientId: id, quantity: 99 })));
+
+    const { rows } = await readLedger(branchId);
+
+    expect(rows).toHaveLength(10);
+    for (const row of rows) {
+      const s = Number(/^S(\d)-/.exec(row.reference)![1]);
+      expect(Number(row.balance)).toBe(row.reference.endsWith("-open") ? 100 + s : 99);
+    }
+  });
+
   it("leaves a page empty rather than inventing rows", async () => {
     const branchId = await seedBranch("Omoiyari Wiyung", "WYG");
     const { data, total } = await getStockLedgerCore(auditor, { branchId, page: 0, limit: 50 });

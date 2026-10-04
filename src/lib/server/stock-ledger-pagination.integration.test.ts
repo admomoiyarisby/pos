@@ -1,18 +1,21 @@
 /**
  * Kartu Stok pagination determinism — the ORDER BY / LIMIT-OFFSET contract.
  *
- * `getStockLedgerCore` pages with OFFSET over `ORDER BY created_at DESC, id`.
+ * `getStockLedgerCore` pages with OFFSET over `ORDER BY created_at DESC, seq`.
  * `created_at` is `defaultNow()` — a *transaction* timestamp — so every row
  * written in one transaction (POS order lines, stock-opname adjustments,
  * yield, waste BOM) shares it, and Postgres orders such ties arbitrarily.
- * The `id` tiebreaker is what keeps those pages deterministic; without it a
- * row could land on two pages or be skipped entirely — the client report:
- * "the item I saw on page 5 also appears on page 1".
+ * `seq` is the tiebreaker (migration 0060): unique and monotonic, so it keeps
+ * those pages deterministic — without any unique tiebreaker a row could land on
+ * two pages or be skipped entirely, the client report "the item I saw on page 5
+ * also appears on page 1" — and it is also the order the reported Saldo is
+ * summed in, so a batch's rows read as a series rather than in random order.
  *
  * Pinned contracts:
  *  - pages over a fully tied created_at are disjoint and complete,
  *  - repeated reads of a page are byte-identical,
- *  - a new row joining the tied block never reshuffles the rows already seen.
+ *  - a new row joining the tied block never reshuffles the rows already seen,
+ *  - a batch's rows come back in insertion order, not uuid order.
  *
  * Drives the ADR 0015 core seam (`getStockLedgerCore`) — a vitest process has
  * no Start request context, so `requireAuth()` can't run here — against the
@@ -144,6 +147,16 @@ async function insertTiedRow(tiedAt: Date, reference: string): Promise<string> {
 describe.skipIf(!hasTestDatabaseUrl)(
   "Kartu Stok pagination — ORDER BY determinism under tied created_at",
   () => {
+    it("returns a tied batch in insertion order, not uuid order", async () => {
+      const tiedAt = new Date("2026-03-10T10:00:00.000Z");
+      await seedTiedLedger(6, tiedAt);
+
+      const { data } = await getStockLedgerCore(auditor, { page: 0, limit: 50 });
+      const pageOrder = data.map((r) => Number(r.reference.replace("TIE-", "")));
+
+      expect(pageOrder).toEqual([5, 4, 3, 2, 1, 0]);
+    });
+
     it("pages are disjoint and complete when every row shares one created_at", async () => {
       const tiedAt = new Date("2026-03-10T10:00:00.000Z");
       await seedTiedLedger(40, tiedAt);

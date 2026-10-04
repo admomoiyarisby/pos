@@ -8,6 +8,7 @@ import {
   pgEnum,
   numeric,
   real,
+  bigserial,
   index,
   jsonb,
   unique,
@@ -898,6 +899,11 @@ export const stockLedger = pgTable(
   "stock_ledger",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    // Monotonic insertion order. `createdAt` below is a transaction timestamp, so
+    // every row of one write shares it, and `id` is a random uuid — without `seq`
+    // the order a batch's rows appear in, and the order their balances must be
+    // summed in, is arbitrary. Migration 0060.
+    seq: bigserial("seq", { mode: "number" }),
     branchId: uuid("branch_id")
       .notNull()
       .references(() => branches.id),
@@ -918,6 +924,7 @@ export const stockLedger = pgTable(
   (t) => [
     index("ledger_branch_idx").on(t.branchId),
     index("ledger_ingredient_idx").on(t.ingredientId),
+    index("ledger_branch_ingredient_seq_idx").on(t.branchId, t.ingredientId, t.seq),
     index("ledger_recipe_idx").on(t.recipeId),
     index("ledger_ref_idx").on(t.reference),
     index("ledger_created_idx").on(t.createdAt),

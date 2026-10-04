@@ -400,23 +400,25 @@ export async function getStockLedgerCore(user: AppUser, data: GetStockLedgerData
       // type sort groups IN/OUT together; time is the tiebreaker so each
       // group stays chronological. Default remains newest-first by time.
       //
-      // `id` is the final, unique tiebreaker: createdAt is `defaultNow()`,
+      // `seq` is the final, unique tiebreaker: createdAt is `defaultNow()`,
       // i.e. a *transaction* timestamp, so every row written in one
       // transaction (POS order lines, stock-opname adjustments, yield, waste
       // BOM) shares an identical createdAt — and Postgres orders ties
       // arbitrarily. Under LIMIT/OFFSET that let the same row land on two
       // pages (or be skipped entirely): the "item on page 5 also on page 1"
-      // bug. id is unique, so page boundaries are deterministic and stay put
-      // while new rows are inserted.
+      // bug. `seq` is unique and monotonic, so page boundaries are
+      // deterministic, stay put while new rows are inserted, and a batch's rows
+      // come back in the order the writer applied them — which is the order the
+      // reported Saldo is summed in, so the column reads as a series.
       ...(data.sortBy === "type"
         ? [
             data.sortDir === "asc" ? asc(stockLedger.type) : desc(stockLedger.type),
             desc(stockLedger.createdAt),
-            desc(stockLedger.id),
+            desc(stockLedger.seq),
           ]
         : [
             data.sortDir === "asc" ? asc(stockLedger.createdAt) : desc(stockLedger.createdAt),
-            data.sortDir === "asc" ? asc(stockLedger.id) : desc(stockLedger.id),
+            data.sortDir === "asc" ? asc(stockLedger.seq) : desc(stockLedger.seq),
           ]),
     )
     .limit(data.limit ?? 50)
@@ -456,28 +458,40 @@ function seriesKeyOf(row: {
  * movement total.
  *
  * `balance` is a denormalized snapshot of `inventory.quantity` taken when the row
- * was written, and nothing enforces that it stayed that way. The 0059 backfill
- * re-stamped repaired rows with the *original* movement time while deriving
- * `balance` from the balance at *repair* time, so every row written in between
- * carries an off-by-N snapshot and the Saldo column reads backwards. Recomputing
- * from `type` + `quantity` is correct by construction, needs no data repair, and
- * repairs history retroactively.
+ * was written. Roughly 20 write paths maintain it and no constraint ties it to the
+ * series, so it drifts: on production, 723 of 45 736 comparable row pairs report a
+ * Saldo that does not follow the movement, across 45 items and the whole of
+ * September. Backfill repairs make it worse, since they re-stamp rows with the
+ * original movement time while deriving `balance` from the balance at repair time,
+ * but they are not the origin. Recomputing from `type` + `quantity` is correct by
+ * construction, needs no data repair, and repairs history retroactively.
  *
- * The total is then anchored to the item's current stock so the newest row
- * reports the same number `/inventory` and the POS show. Two items in production
- * have a movement sum that no longer matches their stock — a supplier-delivery
- * delete drove Central's Tepung Terigu to −13 032 gr — and without the anchor
- * the newest row would disagree with every other screen.
+ * The total is then anchored to the item's current stock so the newest row reports
+ * the same number `/inventory` and the POS show. Four series in production have a
+ * movement sum that no longer matches their stock — two material (Central's Tepung
+ * Terigu by 13 032 gr, its Paha Ayam by 12 338 gr, both from an unclamped
+ * supplier-delivery delete) and two float noise — and without the anchor the newest
+ * row would disagree with every other screen. Those series keep a constant offset
+ * across their whole history, which moves their reported Saldo off the number any
+ * individual write recorded.
  *
- * Only the series on this page are walked: at most one history per row on the
- * page, so a 15-row page reads 15 item histories, not the whole table.
+ * Only the series on this page are walked. A page of 15 rows touches at most 15
+ * series, and `ledger_branch_ingredient_created_idx` serves the history read.
+ *
+ * Ordering note: `history` is ordered globally, so series interleave freely —
+ * `created_at` is a *transaction* timestamp, so every row of one batch shares it.
+ * The running total is therefore accumulated per series key, never per adjacency
+ * in the iteration.
  */
 async function withRunningSaldo<T extends LedgerSeriesKey & { id: string; balance: number }>(
   rows: T[],
 ): Promise<(Omit<T, "balance"> & { balance: number })[]> {
   if (rows.length === 0) return [];
 
-  const keys = [...new Map(rows.map((r) => [seriesKeyOf(r), seriesKeyOf(r)])).values()];
+  const stockKeyOf = (k: LedgerSeriesKey) =>
+    k.ingredientId !== null ? `${k.branchId}|i|${k.ingredientId}` : `${k.branchId}|r|${k.recipeId}`;
+
+  const keys = [...new Map(rows.map((r) => [stockKeyOf(seriesKeyOf(r)), seriesKeyOf(r)])).values()];
   const ingredientKeys = keys.filter((k) => k.ingredientId !== null);
   const recipeKeys = keys.filter((k) => k.recipeId !== null);
 
@@ -489,6 +503,7 @@ async function withRunningSaldo<T extends LedgerSeriesKey & { id: string; balanc
       recipeId: stockLedger.recipeId,
       type: stockLedger.type,
       quantity: stockLedger.quantity,
+      seq: stockLedger.seq,
     })
     .from(stockLedger)
     .where(
@@ -506,7 +521,7 @@ async function withRunningSaldo<T extends LedgerSeriesKey & { id: string; balanc
         ),
       ),
     )
-    .orderBy(asc(stockLedger.createdAt), asc(stockLedger.id));
+    .orderBy(asc(stockLedger.seq));
 
   const currentStock = new Map<string, number>();
   if (ingredientKeys.length > 0) {
@@ -551,36 +566,24 @@ async function withRunningSaldo<T extends LedgerSeriesKey & { id: string; balanc
     }
   }
 
-  const stockKeyOf = (k: LedgerSeriesKey) =>
-    k.ingredientId !== null ? `${k.branchId}|i|${k.ingredientId}` : `${k.branchId}|r|${k.recipeId}`;
-
   const runningById = new Map<string, number>();
-  const totalBySeries = new Map<string, number>();
-  let run = 0;
-  let currentSeries: LedgerSeriesKey | null = null;
+  const runningBySeries = new Map<string, number>();
   for (const row of history) {
-    if (
-      !currentSeries ||
-      currentSeries.branchId !== row.branchId ||
-      currentSeries.ingredientId !== row.ingredientId ||
-      currentSeries.recipeId !== row.recipeId
-    ) {
-      if (currentSeries) totalBySeries.set(stockKeyOf(currentSeries), run);
-      currentSeries = seriesKeyOf(row);
-      run = 0;
-    }
-    run += row.type === "IN" ? Number(row.quantity) : -Number(row.quantity);
-    runningById.set(row.id, run);
+    const seriesKey = stockKeyOf(seriesKeyOf(row));
+    const next =
+      (runningBySeries.get(seriesKey) ?? 0) +
+      (row.type === "IN" ? Number(row.quantity) : -Number(row.quantity));
+    runningBySeries.set(seriesKey, next);
+    runningById.set(row.id, next);
   }
-  if (currentSeries) totalBySeries.set(stockKeyOf(currentSeries), run);
 
   return rows.map(({ balance: stored, ...row }) => {
-    const total = runningById.get(row.id);
-    if (total === undefined) return { ...row, balance: stored };
+    const running = runningById.get(row.id);
+    if (running === undefined) return { ...row, balance: stored };
     const seriesKey = stockKeyOf(seriesKeyOf(row));
-    const seriesTotal = totalBySeries.get(seriesKey) ?? total;
+    const seriesTotal = runningBySeries.get(seriesKey) ?? running;
     const anchor = currentStock.get(seriesKey) ?? seriesTotal;
-    return { ...row, balance: total + (anchor - seriesTotal) };
+    return { ...row, balance: running + (anchor - seriesTotal) };
   });
 }
 
@@ -890,6 +893,9 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
       if (so.status === "Approved") {
         const ledgerRows = await db
           .select({
+            id: stockLedger.id,
+            branchId: stockLedger.branchId,
+            recipeId: stockLedger.recipeId,
             ingredientId: stockLedger.ingredientId,
             type: stockLedger.type,
             quantity: stockLedger.quantity,
@@ -904,8 +910,10 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
               or(eq(stockLedger.reference, data.id), eq(stockLedger.reference, `SO:${data.id}`)),
             ),
           )
-          .orderBy(asc(stockLedger.createdAt), asc(stockLedger.id));
-        summary = ledgerRows.map((r) => {
+          .orderBy(asc(stockLedger.seq));
+        // Same reported Saldo the Kartu Stok page shows, so the opname summary and
+        // the ledger cannot disagree about the same movement.
+        summary = (await withRunningSaldo(ledgerRows)).map((r) => {
           const delta = r.type === "IN" ? r.quantity : -r.quantity;
           return {
             ingredientName: r.ingredientName ?? r.ingredientId ?? "",
