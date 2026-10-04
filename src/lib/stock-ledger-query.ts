@@ -37,6 +37,13 @@ export interface StockLedgerQueryInput {
    * page's role-derived value while keeping loader and query keys identical.
    */
   branchId?: string;
+  /**
+   * Exact `stock_ledger.ingredient_id`. The page otherwise mixes every item, so
+   * the Saldo column is not readable as a series until one item is picked.
+   * Free-text `search` cannot stand in for this: it also matches `reference`,
+   * `notes` and `orders.order_code`, so unrelated rows survive the filter.
+   */
+  ingredientId?: string;
   /** Exact `stock_ledger.reference` match (deep links, e.g. `?reference=YIELD-*`). */
   reference?: string;
   /** ADR 0013: only ledger rows written by Waste BOM entries. */
@@ -65,6 +72,7 @@ export function stockLedgerQuery(input: StockLedgerQueryInput) {
     page: input.page,
     limit: STOCK_LEDGER_PAGE_SIZE,
     branchId: input.branchId || undefined,
+    ingredientId: input.ingredientId || undefined,
     reference: input.reference || undefined,
     search: input.search || undefined,
     wasteBomOnly: input.bomOnly || undefined,
@@ -96,6 +104,7 @@ export const stockLedgerSearchSchema = z.object({
   sortKey: z.string().optional().catch(undefined),
   sortDir: z.enum(["asc", "desc"]).optional().catch(undefined),
   branchId: z.string().optional().catch(undefined),
+  ingredientId: z.string().optional().catch(undefined),
   reference: z.string().optional().catch(undefined),
   bom: z.string().optional().catch(undefined),
   bomRecipe: z.string().optional().catch(undefined),
@@ -111,6 +120,7 @@ export function stockLedgerInputFromSearch(search: StockLedgerSearch): StockLedg
     page: (search.page ?? 1) - 1,
     search: search.search,
     branchId: search.branchId,
+    ingredientId: search.ingredientId,
     reference: search.reference,
     bomOnly: search.bom === "true",
     bomRecipeId: search.bomRecipe,
