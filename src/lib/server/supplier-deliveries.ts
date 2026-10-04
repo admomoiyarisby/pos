@@ -14,6 +14,7 @@ import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
+import type { DbTx } from "./ingredient-resolver";
 
 // ─── Helpers ───
 
@@ -27,44 +28,55 @@ async function getCentralBranchId(): Promise<string> {
   return central.id;
 }
 
+/** A goods receipt is a positive quantity. A non-positive one is nonsense at the
+ *  boundary: the only sign check lives in the form, so without this the cores
+ *  treat a negative `quantity` as a reversal and leave partial state. */
+function assertReceivableQuantity(quantity: number): void {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    throw new Error(`Jumlah barang masuk harus lebih dari 0 (diberi ${quantity})`);
+  }
+}
+
+/**
+ * Apply a signed delta to a branch's inventory and record it on the Kartu Stok,
+ * inside the caller's transaction.
+ *
+ * Reversing a booking is refused when the stock on hand cannot cover it. The
+ * previous `Math.max(0, …)` clamp silently applied less than the caller asked
+ * for while the ledger row still recorded the full requested quantity, so
+ * `stock_ledger.quantity` stopped matching the movement actually applied to
+ * `inventory` and the two drifted apart by exactly the clamped amount. On
+ * 2026-09-27 that is how `Delete Supplier Delivery: PT Kreasi Delapan Delapan`
+ * put Central's Tepung Terigu 13 032 gr out of step with its own ledger.
+ *
+ * `FOR UPDATE` serialises concurrent writes to the same item, and the inventory
+ * write and its ledger row share the caller's transaction, so a movement can
+ * never land without its ledger entry.
+ */
 async function upsertInventory(
+  tx: DbTx,
   branchId: string,
   ingredientId: string,
   delta: number,
   reference: string,
   notes: string,
 ) {
-  const [existing] = await db
+  const [existing] = await tx
     .select()
     .from(inventory)
     .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, ingredientId)))
+    .for("update")
     .limit(1);
 
-  if (existing) {
-    const newQty = Math.max(0, existing.quantity + delta);
-    await db
-      .update(inventory)
-      .set({ quantity: newQty, lastUpdated: new Date() })
-      .where(eq(inventory.id, existing.id));
-
-    await db.insert(stockLedger).values({
-      branchId,
-      ingredientId,
-      type: delta >= 0 ? "IN" : "OUT",
-      quantity: Math.abs(delta),
-      balance: newQty,
-      reference,
-      notes,
-    });
-  } else {
+  if (!existing) {
     if (delta < 0) throw new Error("Cannot deduct from non-existent inventory");
-    await db.insert(inventory).values({
+    await tx.insert(inventory).values({
       branchId,
       ingredientId,
       quantity: delta,
     });
 
-    await db.insert(stockLedger).values({
+    await tx.insert(stockLedger).values({
       branchId,
       ingredientId,
       type: "IN",
@@ -73,7 +85,30 @@ async function upsertInventory(
       reference,
       notes,
     });
+    return;
   }
+
+  if (existing.quantity + delta < 0) {
+    throw new Error(
+      `Stok tidak cukup untuk membatalkan: ${notes} — requires ${Math.abs(delta)}, tersedia ${existing.quantity}`,
+    );
+  }
+
+  const newQty = existing.quantity + delta;
+  await tx
+    .update(inventory)
+    .set({ quantity: newQty, lastUpdated: new Date() })
+    .where(eq(inventory.id, existing.id));
+
+  await tx.insert(stockLedger).values({
+    branchId,
+    ingredientId,
+    type: delta >= 0 ? "IN" : "OUT",
+    quantity: Math.abs(delta),
+    balance: newQty,
+    reference,
+    notes,
+  });
 }
 
 // ─── Get All Suppliers ───
@@ -180,29 +215,36 @@ export async function createSupplierDeliveryCore(
   const centralBranchId = await getCentralBranchId();
   const deliveryDate = new Date();
 
-  // Insert delivery record
-  const [delivery] = await db
-    .insert(supplierDeliveries)
-    .values({
-      supplierId: supplier?.id ?? null,
-      supplierName: data.supplierName,
-      ingredientId: data.ingredientId,
-      quantity: data.quantity,
-      price: data.price,
-      deliveryDate,
-      receivedBy: user.id,
-      status: "Pending Invoice",
-    })
-    .returning();
+  assertReceivableQuantity(data.quantity);
 
-  // Update inventory for central branch
-  await upsertInventory(
-    centralBranchId,
-    data.ingredientId,
-    data.quantity,
-    delivery.id,
-    `Supplier Delivery: ${data.supplierName}`,
-  );
+  // The delivery row and its stock effect share one transaction: a delivery that
+  // cannot be booked must not leave an orphan row behind.
+  const delivery = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(supplierDeliveries)
+      .values({
+        supplierId: supplier?.id ?? null,
+        supplierName: data.supplierName,
+        ingredientId: data.ingredientId,
+        quantity: data.quantity,
+        price: data.price,
+        deliveryDate,
+        receivedBy: user.id,
+        status: "Pending Invoice",
+      })
+      .returning();
+
+    await upsertInventory(
+      tx,
+      centralBranchId,
+      created.ingredientId,
+      created.quantity,
+      created.id,
+      `Supplier Delivery: ${data.supplierName}`,
+    );
+
+    return created;
+  });
 
   await logSystemAction(
     user,
@@ -259,44 +301,13 @@ export async function updateSupplierDeliveryCore(
 
   if (!existing) throw new Error("Supplier delivery not found");
 
-  const centralBranchId = await getCentralBranchId();
-
   const oldIngredientId = existing.ingredientId;
   const oldQuantity = existing.quantity;
   const newIngredientId = data.ingredientId ?? oldIngredientId;
   const newQuantity = data.quantity ?? oldQuantity;
+  assertReceivableQuantity(newQuantity);
 
-  // Revert old inventory
-  await upsertInventory(
-    centralBranchId,
-    oldIngredientId,
-    -oldQuantity,
-    data.id,
-    `Revert Supplier Delivery: ${existing.supplierName}`,
-  );
-
-  // If ingredient changed, also need to handle the new ingredient separately
-  // (the revert above already deducted old ingredient)
-  // Apply new inventory
-  if (newIngredientId !== oldIngredientId) {
-    // New ingredient gets the new quantity added
-    await upsertInventory(
-      centralBranchId,
-      newIngredientId,
-      newQuantity,
-      data.id,
-      `Supplier Delivery Update: ${data.supplierName ?? existing.supplierName}`,
-    );
-  } else {
-    // Same ingredient — add the new quantity
-    await upsertInventory(
-      centralBranchId,
-      newIngredientId,
-      newQuantity,
-      data.id,
-      `Supplier Delivery Update: ${data.supplierName ?? existing.supplierName}`,
-    );
-  }
+  const centralBranchId = await getCentralBranchId();
 
   // Look up new supplier ID if name changed
   let newSupplierId = existing.supplierId;
@@ -309,18 +320,41 @@ export async function updateSupplierDeliveryCore(
     newSupplierId = supplier?.id ?? null;
   }
 
-  // Update delivery record
-  const [updated] = await db
-    .update(supplierDeliveries)
-    .set({
-      supplierId: newSupplierId,
-      supplierName: data.supplierName ?? existing.supplierName,
-      ingredientId: newIngredientId,
-      quantity: newQuantity,
-      price: data.price ?? existing.price,
-    })
-    .where(eq(supplierDeliveries.id, data.id))
-    .returning();
+  // Revert, re-apply, and rewrite the delivery row in one transaction. The revert
+  // can be refused for want of stock, and a refusal must not leave the revert
+  // applied with the re-apply missing.
+  const updated = await db.transaction(async (tx) => {
+    await upsertInventory(
+      tx,
+      centralBranchId,
+      oldIngredientId,
+      -oldQuantity,
+      data.id,
+      `Revert Supplier Delivery: ${existing.supplierName}`,
+    );
+
+    await upsertInventory(
+      tx,
+      centralBranchId,
+      newIngredientId,
+      newQuantity,
+      data.id,
+      `Supplier Delivery Update: ${data.supplierName ?? existing.supplierName}`,
+    );
+
+    const [row] = await tx
+      .update(supplierDeliveries)
+      .set({
+        supplierId: newSupplierId,
+        supplierName: data.supplierName ?? existing.supplierName,
+        ingredientId: newIngredientId,
+        quantity: newQuantity,
+        price: data.price ?? existing.price,
+      })
+      .where(eq(supplierDeliveries.id, data.id))
+      .returning();
+    return row;
+  });
 
   await logSystemAction(
     user,
@@ -359,17 +393,18 @@ export async function deleteSupplierDeliveryCore(user: AppUser, data: { id: stri
 
   const centralBranchId = await getCentralBranchId();
 
-  // Deduct from inventory
-  await upsertInventory(
-    centralBranchId,
-    existing.ingredientId,
-    -existing.quantity,
-    data.id,
-    `Delete Supplier Delivery: ${existing.supplierName}`,
-  );
-
-  // Delete delivery record
-  await db.delete(supplierDeliveries).where(eq(supplierDeliveries.id, data.id));
+  // Deduct and remove the record together: a refusal must keep the delivery row.
+  await db.transaction(async (tx) => {
+    await upsertInventory(
+      tx,
+      centralBranchId,
+      existing.ingredientId,
+      -existing.quantity,
+      data.id,
+      `Delete Supplier Delivery: ${existing.supplierName}`,
+    );
+    await tx.delete(supplierDeliveries).where(eq(supplierDeliveries.id, data.id));
+  });
 
   await logSystemAction(
     user,

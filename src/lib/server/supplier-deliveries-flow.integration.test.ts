@@ -241,6 +241,157 @@ describe("Supplier deliveries — full lifecycle via the real server-function co
   );
 });
 
+describe("Supplier deliveries — a reversal may not exceed the stock on hand", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "delete refuses to reverse more than Central holds, and writes no ledger row",
+    async () => {
+      const central = await seedBranch("CENTRAL", "Central");
+      const ingredient = await seedIngredient(uniq("SD-SHORT"));
+      await seedSupplier("PT Kreasi Delapan Delapan");
+      const adminPusat = await seedUser("admin_pusat");
+
+      const delivery = await sd.createSupplierDeliveryCore(adminPusat, {
+        supplierName: "PT Kreasi Delapan Delapan",
+        ingredientId: ingredient,
+        quantity: 36000,
+        price: 12000,
+      });
+      expect(await getStock(central, ingredient)).toBe(36000);
+
+      // The goods left the warehouse after the delivery was booked. 22968 of the
+      // 36000 is still on hand, so the booking cannot be reversed in full.
+      await db
+        .update(schema.inventory)
+        .set({ quantity: 22968 })
+        .where(
+          and(
+            eq(schema.inventory.branchId, central),
+            eq(schema.inventory.ingredientId, ingredient),
+          ),
+        );
+      const rowsBefore = (await ledgerRows(delivery.id)).length;
+
+      await expect(sd.deleteSupplierDeliveryCore(adminPusat, { id: delivery.id })).rejects.toThrow(
+        /22968/,
+      );
+
+      expect(await getStock(central, ingredient)).toBe(22968);
+      expect(await ledgerRows(delivery.id)).toHaveLength(rowsBefore);
+      const [still] = await db
+        .select({ id: schema.supplierDeliveries.id })
+        .from(schema.supplierDeliveries)
+        .where(eq(schema.supplierDeliveries.id, delivery.id));
+      expect(still).toBeDefined();
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "update refuses to revert more than Central holds, and leaves stock untouched",
+    async () => {
+      const central = await seedBranch("CENTRAL", "Central");
+      const ingredient = await seedIngredient(uniq("SD-SHORT2"));
+      await seedSupplier("PT Supplier A");
+      const adminPusat = await seedUser("admin_pusat");
+
+      const delivery = await sd.createSupplierDeliveryCore(adminPusat, {
+        supplierName: "PT Supplier A",
+        ingredientId: ingredient,
+        quantity: 100,
+        price: 5000,
+      });
+      await db
+        .update(schema.inventory)
+        .set({ quantity: 30 })
+        .where(
+          and(
+            eq(schema.inventory.branchId, central),
+            eq(schema.inventory.ingredientId, ingredient),
+          ),
+        );
+      const rowsBefore = (await ledgerRows(delivery.id)).length;
+
+      await expect(
+        sd.updateSupplierDeliveryCore(adminPusat, { id: delivery.id, quantity: 120 }),
+      ).rejects.toThrow(/30/);
+
+      expect(await getStock(central, ingredient)).toBe(30);
+      expect(await ledgerRows(delivery.id)).toHaveLength(rowsBefore);
+      const [unchanged] = await db
+        .select({ quantity: schema.supplierDeliveries.quantity })
+        .from(schema.supplierDeliveries)
+        .where(eq(schema.supplierDeliveries.id, delivery.id));
+      expect(unchanged.quantity).toBe(100);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a refused update leaves the revert unapplied, not half of it",
+    async () => {
+      const central = await seedBranch("CENTRAL", "Central");
+      const ingredient = await seedIngredient(uniq("SD-HALF"));
+      await seedSupplier("PT Supplier A");
+      const adminPusat = await seedUser("admin_pusat");
+
+      const delivery = await sd.createSupplierDeliveryCore(adminPusat, {
+        supplierName: "PT Supplier A",
+        ingredientId: ingredient,
+        quantity: 100,
+        price: 5000,
+      });
+      // Stock consumed down to nothing, then a negative quantity asked for. The
+      // revert succeeds and the re-apply becomes an OUT that cannot be covered.
+      await db
+        .update(schema.inventory)
+        .set({ quantity: 0 })
+        .where(
+          and(
+            eq(schema.inventory.branchId, central),
+            eq(schema.inventory.ingredientId, ingredient),
+          ),
+        );
+      const rowsBefore = (await ledgerRows(delivery.id)).length;
+
+      await expect(
+        sd.updateSupplierDeliveryCore(adminPusat, { id: delivery.id, quantity: -50 }),
+      ).rejects.toThrow();
+
+      expect(await getStock(central, ingredient)).toBe(0);
+      expect(await ledgerRows(delivery.id)).toHaveLength(rowsBefore);
+      const [unchanged] = await db
+        .select({ quantity: schema.supplierDeliveries.quantity })
+        .from(schema.supplierDeliveries)
+        .where(eq(schema.supplierDeliveries.id, delivery.id));
+      expect(unchanged.quantity).toBe(100);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a non-positive quantity is refused and leaves no orphan delivery row",
+    async () => {
+      const central = await seedBranch("CENTRAL", "Central");
+      const ingredient = await seedIngredient(uniq("SD-BADQTY"));
+      await seedSupplier("PT Supplier A");
+      const adminPusat = await seedUser("admin_pusat");
+
+      await expect(
+        sd.createSupplierDeliveryCore(adminPusat, {
+          supplierName: "PT Supplier A",
+          ingredientId: ingredient,
+          quantity: -50,
+          price: 5000,
+        }),
+      ).rejects.toThrow(/lebih dari 0/);
+
+      expect(await getStock(central, ingredient)).toBe(0);
+      const orphans = await db
+        .select({ id: schema.supplierDeliveries.id })
+        .from(schema.supplierDeliveries)
+        .where(eq(schema.supplierDeliveries.ingredientId, ingredient));
+      expect(orphans).toHaveLength(0);
+    },
+  );
+});
+
 describe("Supplier deliveries — wrong-role actors are rejected", () => {
   it.skipIf(!hasTestDatabaseUrl)(
     "create/update/delete/complete all reject non-central roles without side effects",
