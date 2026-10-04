@@ -7,6 +7,7 @@ import {
   ingredients,
   branches,
   recipes,
+  recipeInventory,
   stockOpnames,
   stockOpnameItems,
   systemNotifications,
@@ -431,7 +432,156 @@ export async function getStockLedgerCore(user: AppUser, data: GetStockLedgerData
     .leftJoin(orders, orderRefJoin)
     .where(ledgerFilters);
 
-  return { data: result, total: totalRow?.count ?? 0 };
+  return { data: await withRunningSaldo(result), total: totalRow?.count ?? 0 };
+}
+
+/** One ledger series: a branch's stock of a single item. Ingredient movements
+ *  and recipe movements are separate series and never share one. */
+type LedgerSeriesKey = {
+  branchId: string;
+  ingredientId: string | null;
+  recipeId: string | null;
+};
+
+function seriesKeyOf(row: {
+  branchId: string;
+  ingredientId: string | null;
+  recipeId: string | null;
+}): LedgerSeriesKey {
+  return { branchId: row.branchId, ingredientId: row.ingredientId, recipeId: row.recipeId };
+}
+
+/**
+ * Replace each row's stored `stock_ledger.balance` with the series' running
+ * movement total.
+ *
+ * `balance` is a denormalized snapshot of `inventory.quantity` taken when the row
+ * was written, and nothing enforces that it stayed that way. The 0059 backfill
+ * re-stamped repaired rows with the *original* movement time while deriving
+ * `balance` from the balance at *repair* time, so every row written in between
+ * carries an off-by-N snapshot and the Saldo column reads backwards. Recomputing
+ * from `type` + `quantity` is correct by construction, needs no data repair, and
+ * repairs history retroactively.
+ *
+ * The total is then anchored to the item's current stock so the newest row
+ * reports the same number `/inventory` and the POS show. Two items in production
+ * have a movement sum that no longer matches their stock — a supplier-delivery
+ * delete drove Central's Tepung Terigu to −13 032 gr — and without the anchor
+ * the newest row would disagree with every other screen.
+ *
+ * Only the series on this page are walked: at most one history per row on the
+ * page, so a 15-row page reads 15 item histories, not the whole table.
+ */
+async function withRunningSaldo<T extends LedgerSeriesKey & { id: string; balance: number }>(
+  rows: T[],
+): Promise<(Omit<T, "balance"> & { balance: number })[]> {
+  if (rows.length === 0) return [];
+
+  const keys = [...new Map(rows.map((r) => [seriesKeyOf(r), seriesKeyOf(r)])).values()];
+  const ingredientKeys = keys.filter((k) => k.ingredientId !== null);
+  const recipeKeys = keys.filter((k) => k.recipeId !== null);
+
+  const history = await db
+    .select({
+      id: stockLedger.id,
+      branchId: stockLedger.branchId,
+      ingredientId: stockLedger.ingredientId,
+      recipeId: stockLedger.recipeId,
+      type: stockLedger.type,
+      quantity: stockLedger.quantity,
+    })
+    .from(stockLedger)
+    .where(
+      or(
+        ...keys.map((k) =>
+          and(
+            eq(stockLedger.branchId, k.branchId),
+            k.ingredientId !== null
+              ? eq(stockLedger.ingredientId, k.ingredientId)
+              : isNull(stockLedger.ingredientId),
+            k.recipeId !== null
+              ? eq(stockLedger.recipeId, k.recipeId)
+              : isNull(stockLedger.recipeId),
+          ),
+        ),
+      ),
+    )
+    .orderBy(asc(stockLedger.createdAt), asc(stockLedger.id));
+
+  const currentStock = new Map<string, number>();
+  if (ingredientKeys.length > 0) {
+    const rowsForIngredients = await db
+      .select({
+        branchId: inventory.branchId,
+        ingredientId: inventory.ingredientId,
+        quantity: inventory.quantity,
+      })
+      .from(inventory)
+      .where(
+        or(
+          ...ingredientKeys.map((k) =>
+            and(eq(inventory.branchId, k.branchId), eq(inventory.ingredientId, k.ingredientId!)),
+          ),
+        ),
+      );
+    for (const r of rowsForIngredients) {
+      currentStock.set(`${r.branchId}|i|${r.ingredientId}`, Number(r.quantity));
+    }
+  }
+  if (recipeKeys.length > 0) {
+    const rowsForRecipes = await db
+      .select({
+        branchId: recipeInventory.branchId,
+        recipeId: recipeInventory.recipeId,
+        quantity: recipeInventory.quantity,
+      })
+      .from(recipeInventory)
+      .where(
+        or(
+          ...recipeKeys.map((k) =>
+            and(
+              eq(recipeInventory.branchId, k.branchId),
+              eq(recipeInventory.recipeId, k.recipeId!),
+            ),
+          ),
+        ),
+      );
+    for (const r of rowsForRecipes) {
+      currentStock.set(`${r.branchId}|r|${r.recipeId}`, Number(r.quantity));
+    }
+  }
+
+  const stockKeyOf = (k: LedgerSeriesKey) =>
+    k.ingredientId !== null ? `${k.branchId}|i|${k.ingredientId}` : `${k.branchId}|r|${k.recipeId}`;
+
+  const runningById = new Map<string, number>();
+  const totalBySeries = new Map<string, number>();
+  let run = 0;
+  let currentSeries: LedgerSeriesKey | null = null;
+  for (const row of history) {
+    if (
+      !currentSeries ||
+      currentSeries.branchId !== row.branchId ||
+      currentSeries.ingredientId !== row.ingredientId ||
+      currentSeries.recipeId !== row.recipeId
+    ) {
+      if (currentSeries) totalBySeries.set(stockKeyOf(currentSeries), run);
+      currentSeries = seriesKeyOf(row);
+      run = 0;
+    }
+    run += row.type === "IN" ? Number(row.quantity) : -Number(row.quantity);
+    runningById.set(row.id, run);
+  }
+  if (currentSeries) totalBySeries.set(stockKeyOf(currentSeries), run);
+
+  return rows.map(({ balance: stored, ...row }) => {
+    const total = runningById.get(row.id);
+    if (total === undefined) return { ...row, balance: stored };
+    const seriesKey = stockKeyOf(seriesKeyOf(row));
+    const seriesTotal = totalBySeries.get(seriesKey) ?? total;
+    const anchor = currentStock.get(seriesKey) ?? seriesTotal;
+    return { ...row, balance: total + (anchor - seriesTotal) };
+  });
 }
 
 export const triggerStockOpname = createServerFn({ method: "POST" })
