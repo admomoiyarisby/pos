@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { sessionModeUrl, requireScriptDatabaseUrl } from "./db-url.mjs";
 
@@ -35,9 +35,35 @@ describe("sessionModeUrl", () => {
 });
 
 describe("requireScriptDatabaseUrl", () => {
+  // The helper resolves DATABASE_URL from the ambient environment, falling back
+  // to .env.local. CI has neither — .env.local is gitignored and the workflow
+  // passes only SUPABASE_URL — so this test must supply its own value rather
+  // than depend on whatever the machine happens to have. Without it the helper
+  // reaches `process.exit(1)`, which fails the run with a bare "process.exit
+  // unexpectedly called" and no hint that a gitignored file is the cause.
+  // Restored afterwards so this file cannot leak an override into later tests.
+  let original;
+
+  beforeEach(() => {
+    original = process.env.DATABASE_URL;
+  });
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = original;
+  });
+
   it("returns a session-mode URL", () => {
-    // The live value from .env.local is the 6543 pooler; the helper must hand
-    // back 5432 so a script cannot poison the app's pool.
-    expect(["5432", ""]).toContain(new URL(requireScriptDatabaseUrl()).port);
+    // loadEnvLocal does not overwrite a variable already in the environment, so
+    // this value wins over .env.local. The helper must hand back 5432 so a
+    // script cannot poison the app's pool.
+    process.env.DATABASE_URL =
+      "postgresql://postgres.abc:pw@aws-1.pooler.supabase.com:6543/postgres";
+    expect(new URL(requireScriptDatabaseUrl()).port).toBe("5432");
+  });
+
+  it("leaves a non-pooler URL alone", () => {
+    process.env.DATABASE_URL = "postgresql://u:p@localhost:5433/db";
+    expect(new URL(requireScriptDatabaseUrl()).port).toBe("5433");
   });
 });
