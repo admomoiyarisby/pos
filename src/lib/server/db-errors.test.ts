@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { DrizzleError, DrizzleQueryError } from "drizzle-orm";
-import { describeDbError, isUniqueViolation } from "#/lib/server/db-errors";
+import { describeDbError, isReadOnlyTransaction, isUniqueViolation } from "#/lib/server/db-errors";
 import type { UnknownRecord } from "#/lib/unknown-record";
 
 /** Stand in for the pg driver error Drizzle nests in `cause`. */
@@ -65,6 +65,33 @@ describe("describeDbError", () => {
     expect(describeDbError(queryError(pgError({ code: "23514" })))).toBe(
       "Nilai tidak sesuai aturan yang berlaku.",
     );
+  });
+
+  // The full POS outage: order creation and the verified toggle both failed
+  // with this, while reads kept working so every page still rendered. The
+  // driver's text names neither the cause nor the remedy, so a branch admin
+  // retrying the save would never get anywhere on their own.
+  it("names the read-only pool and the command that clears it", () => {
+    const out = describeDbError(
+      queryError(
+        pgError({
+          code: "25006",
+          message: "cannot execute UPDATE in a read-only transaction",
+        }),
+      ),
+    );
+    expect(out).toContain("read-only");
+    expect(out).toContain("scripts/fix-readonly-pooler.mjs");
+    // Must not read as a data problem, or the branch admin blames their input.
+    expect(out).not.toContain("read-only transaction");
+    expect(out).toContain("bukan masalah data");
+  });
+
+  it("detects the read-only transaction by SQLSTATE", () => {
+    expect(isReadOnlyTransaction(queryError(pgError({ code: "25006" })))).toBe(true);
+    expect(isReadOnlyTransaction(queryError(pgError({ code: "23505" })))).toBe(false);
+    expect(isReadOnlyTransaction(queryError(new Error("plain")))).toBe(false);
+    expect(isReadOnlyTransaction(queryError(undefined))).toBe(false);
   });
 
   it("explains a value that does not fit its column", () => {

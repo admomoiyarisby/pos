@@ -1,37 +1,28 @@
 // Read-only production query runner: `node scripts/read-only-query.mjs query.sql`.
-// Results print one JSON object per row. Every query runs inside a
-// `BEGIN READ ONLY` transaction, so an accidental write in the SQL cannot
-// commit — same guarantee as the session-level setting, minus the damage.
+// Results print one JSON object per row.
+//
+// Two independent guards, because either alone has a gap:
+//
+//  1. Connects in session mode (port 5432) via `requireScriptDatabaseUrl()`, so
+//     anything this script changes about the session dies with the connection
+//     instead of being inherited by the app. The app stays on transaction mode
+//     (6543), which does not reset session state on checkout.
+//  2. Runs the query inside `BEGIN READ ONLY`, so an accidental write in the SQL
+//     cannot commit.
 //
 // Do NOT add a session-level `SET default_transaction_read_only = on` (or
-// `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY`) here. The app reaches
-// the database through Supabase's shared transaction-mode pooler (port 6543),
-// which keeps a backend connection between transactions and does not reset
-// session state on checkout. A session-level SET sticks to that backend after
-// this script disconnects, and every later INSERT/UPDATE from the app then
-// fails with "cannot execute ... in a read-only transaction" until someone runs
-// `SET default_transaction_read_only = off`. `BEGIN READ ONLY` scopes the
-// protection to this one transaction, so there is nothing left behind.
+// `SET SESSION CHARACTERISTICS ...`) as a third guard. It reads as the safest
+// option and is the one that took the POS down: on a transaction-mode pooler the
+// setting survives the connection and breaks every later write in the app until
+// someone runs `node scripts/fix-readonly-pooler.mjs`. The
+// `anti-slop/no-pooled-session-set` lint rule rejects it.
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import pg from "pg";
 
-function loadEnvLocal() {
-  try {
-    const env = readFileSync(".env.local", "utf8");
-    for (const line of env.split("\n")) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-    }
-  } catch {}
-}
-loadEnvLocal();
+import { requireScriptDatabaseUrl } from "./db-url.mjs";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  console.error("No DATABASE_URL");
-  process.exit(1);
-}
+const connectionString = requireScriptDatabaseUrl();
 
 const sqlPath = process.argv[2];
 if (!sqlPath) {

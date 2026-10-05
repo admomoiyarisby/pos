@@ -56,6 +56,10 @@ const config = defineConfig({
       "anti-slop/no-known-value-widening": "error",
       "anti-slop/no-module-mocking": "error",
       "anti-slop/no-object-parameters": "error",
+      // A session-level SET on the shared transaction-mode pooler survives the
+      // connection and breaks every later write in the app. Cost us a full POS
+      // outage once; see scripts/fix-readonly-pooler.mjs.
+      "anti-slop/no-pooled-session-set": "error",
       "anti-slop/no-reflect-apply": "error",
       "anti-slop/no-reflect-get": "error",
       "anti-slop/no-runtime-typeof": "error",
