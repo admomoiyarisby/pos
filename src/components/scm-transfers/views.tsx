@@ -166,7 +166,13 @@ function useTransferActions(transferId: string) {
           reason?: string;
           rejectionDisposition?: RejectionDisposition;
         }>,
-      ) => run(() => finishReceiveMut({ data: { transferId, items } })),
+        opts: { acceptedAllWithoutCount?: boolean } = {},
+      ) =>
+        run(() =>
+          finishReceiveMut({
+            data: { transferId, items, acceptedAllWithoutCount: opts.acceptedAllWithoutCount },
+          }),
+        ),
       markPaid: () => run(() => markPaidMut({ data: { transferId } })),
       cancel: (reason: string) => run(() => cancelMut({ data: { transferId, reason } })),
       printSJ: async () => {
@@ -937,19 +943,72 @@ export function DeliveredReceiverForm(props: TransferViewProps) {
   );
 }
 
+/**
+ * Resolving a line's current review state.
+ *
+ * `received` defaults to **0**, never to the promised `quantity`. It used to
+ * default to `it.quantity`, which meant a receiver who opened the form and
+ * clicked Submit — never touching a field — recorded a perfect delivery. All 22
+ * transfers in the database were received that way: 100% credited,
+ * `rejectedQuantity` 0 on every line, so a physical shortage was never once
+ * representable and `inventory` drifted above what actually arrived. See
+ * ADR 0019.
+ *
+ * A partially-reviewed transfer (one where `finish-receive` already ran, e.g.
+ * re-opened) keeps whatever was previously recorded.
+ */
+type ReviewEdit = {
+  received: number;
+  rejected: number;
+  reason: string;
+  disposition: RejectionDisposition;
+};
+
+function resolveReviewEdit(it: TransferItemRow, override?: ReviewEdit): ReviewEdit {
+  if (override) return override;
+  if (it.receivedQuantity != null) {
+    return {
+      received: it.receivedQuantity,
+      rejected: it.rejectedQuantity ?? 0,
+      reason: it.reason ?? "",
+      disposition: toDisposition(it.rejectionDisposition ?? "Return to Source"),
+    };
+  }
+  return {
+    received: 0,
+    rejected: 0,
+    reason: "",
+    disposition: "Return to Source",
+  };
+}
+
 export function ReviewingReceiverInteractive(props: TransferViewProps) {
   const { transfer, items, ingredientById, auditLog } = props;
   const { error, setError, actions } = useTransferActions(transfer.id);
-  const [reviewEdits, setReviewEdits] = useState<
-    Record<
-      string,
-      { received: number; rejected: number; reason: string; disposition: RejectionDisposition }
-    >
-  >({});
+  const [reviewEdits, setReviewEdits] = useState<Record<string, ReviewEdit>>({});
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [confirmFullReject, setConfirmFullReject] = useState(false);
+  // Mirror of the Jambangan-incident guard on the reject side: accepting a
+  // whole delivery without counting is the exact gesture that hid the Royal
+  // Plaza gaps, so it gets its own explicit confirmation.
+  const [confirmAcceptAll, setConfirmAcceptAll] = useState(false);
+  const [acceptAllWithoutCount, setAcceptAllWithoutCount] = useState(false);
 
-  const submitReview = async () => {
+  const editFor = (it: TransferItemRow): ReviewEdit => resolveReviewEdit(it, reviewEdits[it.id]);
+
+  /** Every line at 100% accepted, nothing rejected — the ambiguous case. */
+  const isWholeDeliveryAccepted = () =>
+    items.length > 0 &&
+    items.every((it) => {
+      const e = editFor(it);
+      return e.rejected === 0 && e.received === it.quantity;
+    });
+
+  /** Has the receiver touched this line, or is it still the untouched 0 default? */
+  const untouchedCount = () =>
+    items.filter((it) => reviewEdits[it.id] === undefined && it.receivedQuantity == null).length;
+
+  const submitReview = async (opts: { withoutCount?: boolean } = {}) => {
     setReviewError(null);
     const payload: Array<{
       id: string;
@@ -959,17 +1018,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
       rejectionDisposition?: RejectionDisposition;
     }> = [];
     for (const it of items) {
-      const edit: {
-        received: number;
-        rejected: number;
-        reason: string;
-        disposition: RejectionDisposition;
-      } = reviewEdits[it.id] ?? {
-        received: it.receivedQuantity ?? it.quantity,
-        rejected: it.rejectedQuantity ?? 0,
-        reason: it.reason ?? "",
-        disposition: toDisposition(it.rejectionDisposition ?? "Return to Source"),
-      };
+      const edit = editFor(it);
       if (edit.received + edit.rejected !== it.quantity) {
         const ing = ingredientById.get(it.ingredientId);
         setReviewError(
@@ -991,12 +1040,31 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
       });
     }
     try {
-      await actions.finishReceive(payload);
+      await actions.finishReceive(payload, {
+        acceptedAllWithoutCount: opts.withoutCount === true,
+      });
       toast.success("Penerimaan Mutasi Stok berhasil. Stok telah diperbarui.");
     } catch (err) {
       toast.error(`Gagal memperbarui stok: ${err instanceof Error ? err.message : String(err)}`);
     }
     setReviewEdits({});
+    setReviewError(null);
+    setConfirmAcceptAll(false);
+    setAcceptAllWithoutCount(false);
+  };
+
+  /**
+   * Fill every line with the promised quantity. Deliberately a separate,
+   * named action rather than a default, so "we didn't count" is a decision the
+   * receiver makes in front of them and is recorded as one.
+   */
+  const fillAllAsPromised = () => {
+    const next: Record<string, ReviewEdit> = {};
+    for (const it of items) {
+      const base = editFor(it);
+      next[it.id] = { ...base, received: it.quantity, rejected: 0 };
+    }
+    setReviewEdits(next);
     setReviewError(null);
   };
 
@@ -1009,7 +1077,8 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
           <div>
             <h3 className="text-sm font-medium">Review Penerimaan</h3>
             <p className="text-xs text-muted-foreground">
-              Masukkan jumlah yang diterima dan ditolak untuk setiap item.
+              Hitung jumlah yang benar-benar tiba untuk setiap item, lalu isi kolom diterima dan
+              ditolak. Kolom dimulai kosong — sistem tidak boleh mencatat lebih dari yang ada.
             </p>
           </div>
           {reviewError && (
@@ -1018,20 +1087,22 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
             </span>
           )}
         </div>
+
+        {untouchedCount() > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-amber-500/5 px-4 py-3">
+            <p className="text-xs text-muted-foreground">
+              {untouchedCount()} dari {items.length} item belum dihitung. Kalau barang tidak sempat
+              dihitung, gunakan tombol di bawah — pilihan ini akan dicatat di log dokumen.
+            </p>
+            <Button variant="outline" size="sm" onClick={fillAllAsPromised}>
+              Terima semua sesuai janji
+            </Button>
+          </div>
+        )}
         <div className="divide-y">
           {items.map((it) => {
             const ing = ingredientById.get(it.ingredientId);
-            const edit: {
-              received: number;
-              rejected: number;
-              reason: string;
-              disposition: RejectionDisposition;
-            } = reviewEdits[it.id] ?? {
-              received: it.receivedQuantity ?? it.quantity,
-              rejected: it.rejectedQuantity ?? 0,
-              reason: it.reason ?? "",
-              disposition: toDisposition(it.rejectionDisposition ?? "Return to Source"),
-            };
+            const edit = editFor(it);
             const sumOk = edit.received + edit.rejected === it.quantity;
             return (
               <div key={it.id} className="space-y-2 p-4">
@@ -1054,10 +1125,10 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                       step="any"
                       value={edit.received}
                       onChange={(e) => {
-                        const val = Number(e.target.value);
+                        const val = e.target.value === "" ? 0 : Number(e.target.value);
                         setReviewEdits((prev) => ({
                           ...prev,
-                          [it.id]: { ...(prev[it.id] ?? edit), received: val },
+                          [it.id]: { ...edit, received: val },
                         }));
                       }}
                       className="h-8 w-20 rounded-md border border-input bg-background px-2 text-right text-sm"
@@ -1071,10 +1142,10 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                       step="any"
                       value={edit.rejected}
                       onChange={(e) => {
-                        const val = Number(e.target.value);
+                        const val = e.target.value === "" ? 0 : Number(e.target.value);
                         setReviewEdits((prev) => ({
                           ...prev,
-                          [it.id]: { ...(prev[it.id] ?? edit), rejected: val },
+                          [it.id]: { ...edit, rejected: val },
                         }));
                       }}
                       className="h-8 w-20 rounded-md border border-input bg-background px-2 text-right text-sm"
@@ -1089,10 +1160,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                           onChange={(e) =>
                             setReviewEdits((prev) => ({
                               ...prev,
-                              [it.id]: {
-                                ...(prev[it.id] ?? edit),
-                                reason: e.target.value,
-                              },
+                              [it.id]: { ...edit, reason: e.target.value },
                             }))
                           }
                           placeholder="Wajib"
@@ -1106,10 +1174,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                           onChange={(e) =>
                             setReviewEdits((prev) => ({
                               ...prev,
-                              [it.id]: {
-                                ...(prev[it.id] ?? edit),
-                                disposition: toDisposition(e.target.value),
-                              },
+                              [it.id]: { ...edit, disposition: toDisposition(e.target.value) },
                             }))
                           }
                           className="h-8 rounded-md border border-input bg-background px-2 text-sm"
@@ -1146,12 +1211,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
               <span>
                 Diterima:{" "}
                 <strong>
-                  {formatQuantity(
-                    items.reduce((s, it) => {
-                      const edit = reviewEdits[it.id];
-                      return s + (edit?.received ?? it.receivedQuantity ?? it.quantity);
-                    }, 0),
-                  )}
+                  {formatQuantity(items.reduce((s, it) => s + editFor(it).received, 0))}
                 </strong>
               </span>
               <span>
@@ -1188,21 +1248,20 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
               // Jambangan-incident guard: rejecting EVERY line requires an
               // explicit confirmation click before anything is submitted.
               const effectiveRejected =
-                items.some((it) => {
-                  const edit = reviewEdits[it.id];
-                  const rejected = edit?.rejected ?? it.rejectedQuantity ?? 0;
-                  return rejected > 0;
-                }) &&
-                items.every((it) => {
-                  const edit = reviewEdits[it.id];
-                  const rejected = edit?.rejected ?? it.rejectedQuantity ?? 0;
-                  return rejected >= it.quantity;
-                });
+                items.some((it) => editFor(it).rejected > 0) &&
+                items.every((it) => editFor(it).rejected >= it.quantity);
               if (effectiveRejected) {
                 setConfirmFullReject(true);
                 return;
               }
-              void submitReview();
+              // Mirror guard on the accept side: accepting every line in full
+              // is the gesture that hid the Royal Plaza gaps, so it must be a
+              // deliberate choice, and we ask whether anything was counted.
+              if (isWholeDeliveryAccepted() && !acceptAllWithoutCount) {
+                setConfirmAcceptAll(true);
+                return;
+              }
+              void submitReview({ withoutCount: acceptAllWithoutCount });
             }}
           >
             <Check className="mr-1 h-4 w-4" />
@@ -1210,6 +1269,48 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
           </Button>
         </div>
       </div>
+
+      <Modal
+        open={confirmAcceptAll}
+        onClose={() => setConfirmAcceptAll(false)}
+        title="Terima 100% sesuai janji?"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Semua {items.length} item akan dicatat <strong>diterima penuh</strong> sesuai jumlah
+            yang dijanjikan, tanpa ada yang ditolak. Kalau barangnya kurang, catat sekarang —
+            setelah disimpan, stok tidak bisa dikoreksi lagi lewat penerimaan ini.
+          </p>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={acceptAllWithoutCount}
+              onChange={(e) => setAcceptAllWithoutCount(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Barang <strong>tidak dihitung</strong> — saya hanya menyalin jumlah janji.
+              <span className="block text-xs text-muted-foreground">
+                Centang ini akan tercatat pada log dokumen, sehingga selisih stok yang baru ketahuan
+                nanti bisa ditelusuri ke penerimaan ini.
+              </span>
+            </span>
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmAcceptAll(false)}>
+              Periksa lagi
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmAcceptAll(false);
+                void submitReview({ withoutCount: acceptAllWithoutCount });
+              }}
+            >
+              Ya, terima semua
+            </Button>
+          </div>
+        </div>
+      </Modal>
       <Modal
         open={confirmFullReject}
         onClose={() => setConfirmFullReject(false)}

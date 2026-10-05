@@ -1499,6 +1499,12 @@ export const scmTransferItems = pgTable(
   (t) => [
     index("stxi_transfer_idx").on(t.scmTransferId),
     index("stxi_ingredient_idx").on(t.ingredientId),
+    // One line per ingredient per transfer. Without this, the same ingredient
+    // can appear twice on one SuratJalan and `finish-receive` credits BOTH
+    // lines into `inventory` — the branch ends up holding stock that was never
+    // delivered (observed 2026-10-04: MT/CENTRAL/041026/06 listed Simple Syrup
+    // as 1000 + 3000, both credited). See ADR 0019.
+    unique("stxi_transfer_ingredient_unique").on(t.scmTransferId, t.ingredientId),
     check("stxi_qty_positive", sql`${t.quantity} > 0`),
     check("stxi_received_nonneg", sql`${t.receivedQuantity} IS NULL OR ${t.receivedQuantity} >= 0`),
     check("stxi_rejected_nonneg", sql`${t.rejectedQuantity} IS NULL OR ${t.rejectedQuantity} >= 0`),

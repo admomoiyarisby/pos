@@ -10,6 +10,7 @@ import PageHeader from "#/components/ui/PageHeader";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import DataTable, { type Column } from "#/components/ui/DataTable";
 import Modal from "#/components/ui/Modal";
+import { Button } from "#/components/ui/button";
 import {
   getYieldConversions,
   createYieldConversion,
@@ -394,6 +395,7 @@ function YieldTrackingPage() {
       void queryClient.invalidateQueries({ queryKey: ["yield-conversions"] });
       void queryClient.invalidateQueries({ queryKey: ["branch-inventory"] });
       setModalOpen(false);
+      setDuplicatePrompt(null);
       const v = createMutation.variables?.data;
       setResult({
         outCount: v?.out?.length ?? 0,
@@ -407,9 +409,30 @@ function YieldTrackingPage() {
     // promise with `void ...mutateAsync()`, so a refused action looked
     // exactly like an unresponsive control.
     onError: (error: Error) => {
+      // A duplicate is recoverable — keep the operator's input on screen and
+      // offer the explicit "yes, separate batch" path rather than a dead-end
+      // toast. ADR 0019.
+      if (error.name === "DuplicateProductionError") {
+        setDuplicatePrompt({ message: error.message, payload: createMutation.variables?.data });
+        return;
+      }
       toast.error("Gagal menyimpan", { description: error.message });
     },
   });
+
+  // A rejected duplicate submission, held so the operator can confirm it was a
+  // genuinely separate batch. `payload` is the exact submission that was
+  // refused, so confirming re-sends it verbatim with `confirmDuplicate`.
+  const [duplicatePrompt, setDuplicatePrompt] = useState<{
+    message: string;
+    payload?: {
+      branchId: string;
+      out: { ingredientId: string; quantity: number }[];
+      produced: { ingredientId: string; quantity: number }[];
+      notes?: string;
+      productionDate?: string;
+    };
+  } | null>(null);
 
   // ── Cancel Produksi (branch_admin → super_admin/area_manager)
   const [cancelTarget, setCancelTarget] = useState<ProductionRow | null>(null);
@@ -560,20 +583,33 @@ function YieldTrackingPage() {
   const removeProducedItem = (ingredientId: string) =>
     setProducedItems((p) => p.filter((i) => i.ingredientId !== ingredientId));
 
+  /**
+   * Submits the production form. A duplicate-production rejection is not a dead
+   * end: it re-opens the same form with a confirmation prompt, because the
+   * operator may genuinely be cooking two identical batches on the same date
+   * (Royal Plaza, 2026-10-03/04 — ADR 0019).
+   */
+  const submitProduction = (data: {
+    branchId: string;
+    out: { ingredientId: string; quantity: number }[];
+    produced: { ingredientId: string; quantity: number }[];
+    notes?: string;
+    productionDate?: string;
+    confirmDuplicate?: boolean;
+  }) => createMutation.mutateAsync({ data });
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const out = outItems.filter((s) => s.ingredientId && s.quantity > 0);
     const produced = producedItems.filter((s) => s.ingredientId && s.quantity > 0);
 
-    void createMutation.mutateAsync({
-      data: {
-        branchId: formText(fd, "branchId"),
-        out,
-        produced,
-        notes: formText(fd, "notes") || undefined,
-        productionDate: formText(fd, "productionDate") || undefined,
-      },
+    void submitProduction({
+      branchId: formText(fd, "branchId"),
+      out,
+      produced,
+      notes: formText(fd, "notes") || undefined,
+      productionDate: formText(fd, "productionDate") || undefined,
     });
   };
 
@@ -1044,6 +1080,39 @@ function YieldTrackingPage() {
               </button>
             </div>
           </form>
+        </Modal>
+
+        {/* ── Duplicate Production Confirm Modal (ADR 0019) ── */}
+        <Modal
+          open={!!duplicatePrompt}
+          onClose={() => setDuplicatePrompt(null)}
+          title="Produksi ini sudah pernah dicatat"
+        >
+          <div className="space-y-4">
+            <div className="flex gap-2 rounded-md bg-amber-500/10 p-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-sm text-muted-foreground">{duplicatePrompt?.message}</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Memastikan ini batch terpisah akan menambah stok sekali lagi. Kalau sebenarnya hanya
+              satu batch yang terkirim dua kali, batalkan saja catatan yang sebelumnya — stok akan
+              dikembalikan secara otomatis.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDuplicatePrompt(null)}>
+                Batal, periksa dulu
+              </Button>
+              <Button
+                onClick={() => {
+                  const payload = duplicatePrompt?.payload;
+                  if (!payload) return;
+                  void submitProduction({ ...payload, confirmDuplicate: true });
+                }}
+              >
+                Ya, ini batch terpisah
+              </Button>
+            </div>
+          </div>
         </Modal>
 
         <Modal

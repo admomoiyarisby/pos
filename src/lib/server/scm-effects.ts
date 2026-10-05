@@ -92,12 +92,22 @@ export interface FsmPayload {
     readyQuantity?: number;
     rejectionNote?: string;
   }>;
+  /**
+   * Set by `finishReceiveMutasiTransferCore` when every line is accepted at
+   * 100% with nothing rejected AND the receiver confirmed they had not counted
+   * each line. Lets the receiving audit entry distinguish "counted, and it
+   * matched" from "assumed". See ADR 0019.
+   */
+  acceptedWholeWithoutCount?: boolean;
 }
 
 export const FsmPayloadSchema = z.object({
   reason: z.string().optional(),
   notes: z.string().optional(),
   invoiceCode: z.string().optional(),
+  // Recorded, never inferred: set by the receiving form's explicit "tidak
+  // dihitung" confirmation. See ADR 0019.
+  acceptedWholeWithoutCount: z.boolean().optional(),
   // Quantities are real (fractional allowed) — guarded to finite non-negatives
   // so a NaN/Infinity/negative from the client can never reach the stock math.
   // A blank reason on a rejected line is rejected by validateReceivePayload

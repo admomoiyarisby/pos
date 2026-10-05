@@ -937,3 +937,223 @@ describe("Mutasi Stok — wrong-role and wrong-branch actors are rejected", () =
     },
   );
 });
+
+// =============================================================================
+// ADR 0019 — prevention guards for double-credit on receiving
+//
+// Two defects found auditing Royal Plaza (2026-10-05), both "recorded twice":
+//
+//  1. `MT/CENTRAL/041026/06` listed Simple Syrup on two lines (1000 + 3000)
+//     and `finish-receive` credited BOTH — the outlet held 4000 against 3000
+//     delivered. Now blocked by `stxi_transfer_ingredient_unique` plus an
+//     application-level message.
+//
+//  2. The reviewing form pre-filled `received` with the promised quantity, so
+//     submitting it untouched always meant "received everything". All 22
+//     transfers in the database were received that way, `rejectedQuantity` 0
+//     on every line — a physical shortage was never representable. The form now
+//     starts at 0 and a whole-delivery acceptance is recorded as such.
+// =============================================================================
+
+describe("Mutasi Stok — duplicate lines and un-counted receipts (ADR 0019)", () => {
+  /** Walk a draft to ReviewingSJ so `finish-receive` is legal. */
+  async function draftToReviewing(
+    sender: MutasiActorUser,
+    receiver: MutasiActorUser,
+    manager: MutasiActorUser,
+    fromBranch: string,
+    toBranch: string,
+    ingredientId: string,
+  ): Promise<{ transferId: string; itemIds: string[] }> {
+    const { transfer } = await scm.createMutasiTransferCore(sender, {
+      fromBranchId: fromBranch,
+      toBranchId: toBranch,
+      items: [{ ingredientId, quantity: 10 }],
+    });
+    await scm.submitMutasiTransferCore(sender, { transferId: transfer.id });
+    await scm.approveMutasiTransferCore(manager, { transferId: transfer.id });
+    await scm.shipMutasiTransferCore(sender, { transferId: transfer.id });
+    await scm.markDeliveredMutasiTransferCore(receiver, { transferId: transfer.id });
+    await scm.openReceiveMutasiTransferCore(receiver, { transferId: transfer.id });
+    const items = await db
+      .select({ id: schema.scmTransferItems.id })
+      .from(schema.scmTransferItems)
+      .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+    return { transferId: transfer.id, itemIds: items.map((i) => i.id) };
+  }
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "refuses a transfer that lists the same ingredient on two lines",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-DUP-A"));
+      const toBranch = await seedBranch(uniq("MT-DUP-B"));
+      const ingredient = await seedIngredient(uniq("MT-SYRUP"));
+      await seedInventory(fromBranch, ingredient, 100);
+      const sender = await seedUser("branch_admin", fromBranch);
+
+      // The Royal Plaza shape: one ingredient, two lines.
+      await expect(
+        scm.createMutasiTransferCore(sender, {
+          fromBranchId: fromBranch,
+          toBranchId: toBranch,
+          items: [
+            { ingredientId: ingredient, quantity: 10 },
+            { ingredientId: ingredient, quantity: 30 },
+          ],
+        }),
+      ).rejects.toThrow(/tidak boleh muncul lebih dari satu kali/i);
+
+      // Nothing was written — no orphan draft, no partial items.
+      const drafts = await db
+        .select()
+        .from(schema.scmTransfers)
+        .where(eq(schema.scmTransfers.fromBranchId, fromBranch));
+      expect(drafts).toHaveLength(0);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)("refuses a duplicate line at the database level too", async () => {
+    const fromBranch = await seedBranch(uniq("MT-DBC-A"));
+    const toBranch = await seedBranch(uniq("MT-DBC-B"));
+    const ingredient = await seedIngredient(uniq("MT-DBC-ING"));
+    await seedInventory(fromBranch, ingredient, 100);
+    const sender = await seedUser("branch_admin", fromBranch);
+    const { transfer } = await scm.createMutasiTransferCore(sender, {
+      fromBranchId: fromBranch,
+      toBranchId: toBranch,
+      items: [{ ingredientId: ingredient, quantity: 10 }],
+    });
+
+    // Bypass the application check entirely — the constraint is the backstop.
+    await expect(
+      db.insert(schema.scmTransferItems).values({
+        scmTransferId: transfer.id,
+        ingredientId: ingredient,
+        sortOrder: 9,
+        quantity: 30,
+        unitPrice: 1000,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a partial receipt is credited only for what was counted",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-PART-A"));
+      const toBranch = await seedBranch(uniq("MT-PART-B"));
+      const bowls = await seedIngredient(uniq("MT-BOWL"));
+      await seedInventory(fromBranch, bowls, 100);
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+      const manager = await seedUser("area_manager", undefined, [fromBranch, toBranch]);
+
+      const { transferId, itemIds } = await draftToReviewing(
+        sender,
+        receiver,
+        manager,
+        fromBranch,
+        toBranch,
+        bowls,
+      );
+      // 10 promised, 6 actually arrived, 4 short and sent back.
+      await expect(
+        scm.finishReceiveMutasiTransferCore(receiver, {
+          transferId,
+          items: [
+            {
+              id: itemIds[0],
+              receivedQuantity: 6,
+              rejectedQuantity: 4,
+              reason: "Rusak di jalan",
+            },
+          ],
+        }),
+      ).resolves.toMatchObject({ status: "WaitingForPayment" });
+
+      // The point of the whole change: inventory reflects the count, not the promise.
+      expect(await getStock(toBranch, bowls)).toBe(6);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a whole-delivery acceptance without counting is recorded on the document",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-ALL-A"));
+      const toBranch = await seedBranch(uniq("MT-ALL-B"));
+      const rolls = await seedIngredient(uniq("MT-NOTA"));
+      await seedInventory(fromBranch, rolls, 100);
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+      const manager = await seedUser("area_manager", undefined, [fromBranch, toBranch]);
+
+      const { transferId, itemIds } = await draftToReviewing(
+        sender,
+        receiver,
+        manager,
+        fromBranch,
+        toBranch,
+        rolls,
+      );
+      await expect(
+        scm.finishReceiveMutasiTransferCore(receiver, {
+          transferId,
+          acceptedAllWithoutCount: true,
+          items: [{ id: itemIds[0], receivedQuantity: 10, rejectedQuantity: 0 }],
+        }),
+      ).resolves.toMatchObject({ status: "WaitingForPayment" });
+
+      // The marker rides on the document's own audit trail.
+      const [entry] = await db
+        .select({ note: schema.scmTransferAuditLog.note })
+        .from(schema.scmTransferAuditLog)
+        .where(
+          and(
+            eq(schema.scmTransferAuditLog.scmTransferId, transferId),
+            eq(schema.scmTransferAuditLog.event, "finish-receive"),
+          ),
+        );
+      expect(entry.note).toMatch(/tanpa menghitung/i);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a counted-and-matched receipt carries no such marker",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-OK-A"));
+      const toBranch = await seedBranch(uniq("MT-OK-B"));
+      const cups = await seedIngredient(uniq("MT-CUP"));
+      await seedInventory(fromBranch, cups, 100);
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+      const manager = await seedUser("area_manager", undefined, [fromBranch, toBranch]);
+
+      const { transferId, itemIds } = await draftToReviewing(
+        sender,
+        receiver,
+        manager,
+        fromBranch,
+        toBranch,
+        cups,
+      );
+      // Counted, and the count matched the promise — the common good case must
+      // not be flagged as an assumption.
+      await expect(
+        scm.finishReceiveMutasiTransferCore(receiver, {
+          transferId,
+          items: [{ id: itemIds[0], receivedQuantity: 10, rejectedQuantity: 0 }],
+        }),
+      ).resolves.toMatchObject({ status: "WaitingForPayment" });
+
+      const [entry] = await db
+        .select({ note: schema.scmTransferAuditLog.note })
+        .from(schema.scmTransferAuditLog)
+        .where(
+          and(
+            eq(schema.scmTransferAuditLog.scmTransferId, transferId),
+            eq(schema.scmTransferAuditLog.event, "finish-receive"),
+          ),
+        );
+      expect(entry.note ?? "").not.toMatch(/tanpa menghitung/i);
+    },
+  );
+});

@@ -338,7 +338,15 @@ export async function transitionTransfer(
         toState: rule.to,
         actorId: actor.id,
         actorRole: actor.role,
-        note: payload.reason ?? payload.notes,
+        // The "no count" marker rides along in the note so it is visible on the
+        // document's own audit trail, not only in the system log. See ADR 0019.
+        note:
+          event === "finish-receive" && payload.acceptedWholeWithoutCount
+            ? [payload.reason ?? payload.notes, "Diterima 100% tanpa menghitung per-item"]
+                .filter(Boolean)
+                .join(" — ")
+                .replace(/^—\s*/, "")
+            : (payload.reason ?? payload.notes),
       });
 
       return rule.to;

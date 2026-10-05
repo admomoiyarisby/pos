@@ -26,6 +26,23 @@ import { logSystemAction, logAudit } from "./logging";
 
 type YieldTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/**
+ * Thrown when a submission is byte-for-byte a repeat of an existing production
+ * record. A distinct class so the form can offer a "yes, this is a separate
+ * batch" confirmation instead of showing a generic failure (ADR 0019).
+ */
+export class DuplicateProductionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DuplicateProductionError";
+  }
+}
+
+/** Trim float noise so 882 and 882.0 fingerprint identically. */
+function roundQty(q: number): string {
+  return String(Math.round(q * 1e6) / 1e6);
+}
+
 async function applyYieldStockEffect(
   tx: YieldTx,
   branchId: string,
@@ -219,12 +236,21 @@ export const createYieldConversion = createServerFn({ method: "POST" })
       produced: { ingredientId: string; quantity: number }[];
       notes?: string;
       productionDate?: string;
+      /** See `createYieldConversionCore`. */
+      confirmDuplicate?: boolean;
     }) => data,
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "central_kitchen", "branch_admin");
     return createYieldConversionCore(user, data);
   });
+
+/**
+ * Error surfaced to the form when a submission duplicates an existing record.
+ * Read by the client (via the thrown error's `name`) to decide whether to show
+ * the "ini batch terpisah?" confirmation. See ADR 0019.
+ */
+export const DUPLICATE_PRODUCTION_ERROR = "DuplicateProductionError";
 
 /** The business logic behind `createYieldConversion`, parameterized by an
  *  explicit user so it can be driven directly (e.g. from integration tests).
@@ -238,6 +264,12 @@ export async function createYieldConversionCore(
     produced: { ingredientId: string; quantity: number }[];
     notes?: string;
     productionDate?: string;
+    /**
+     * Set by the form after the operator is shown the duplicate-production
+     * warning and confirms this really is a separate batch. Never inferred
+     * server-side.
+     */
+    confirmDuplicate?: boolean;
   },
 ) {
   if (!["super_admin", "central_kitchen", "branch_admin"].includes(user.role)) {
@@ -285,6 +317,73 @@ export async function createYieldConversionCore(
   );
   const missing = [...allIds].filter((id) => !ingMap.has(id));
   if (missing.length > 0) throw new Error(`Bahan tidak ditemukan: ${missing.join(", ")}`);
+
+  // ─── Duplicate-production guard (ADR 0019) ────────────────────────────────
+  // Royal Plaza recorded two batches twice on 2026-10-03/04: `232cf7d4` /
+  // `3b2682c3` (51s apart, +6900 g Nasi Putih each) and `5698667d` /
+  // `f89936b3` (+2300 g each) — identical productionDate, notes, and inputs.
+  // The second "Masak nasi pagi" drove `Beras` to -72, which is only possible
+  // if the same batch was submitted twice. Each duplicate inflated the branch's
+  // stock by a whole batch with no physical counterpart.
+  //
+  // Match on branch + productionDate + normalized notes + the full item set.
+  // All four together keep false positives near zero: genuinely separate
+  // batches that happen to share a date almost never share free-text notes AND
+  // an identical input/output multiset. The operator can always confirm with
+  // `confirmDuplicate`, so this delays a legitimate double-entry rather than
+  // forbidding it.
+  if (!data.confirmDuplicate) {
+    const productionDate = data.productionDate ? new Date(data.productionDate) : new Date();
+    const notesKey = (data.notes ?? "").trim().toLowerCase();
+
+    // Canonical fingerprint of this submission's items, so the comparison is on
+    // content rather than row order or float formatting.
+    const fingerprint = (rows: { ingredientId: string; quantity: number }[]) =>
+      rows
+        .map((r) => `${r.ingredientId}@${roundQty(r.quantity)}`)
+        .sort()
+        .join("|");
+
+    const candidates = await db
+      .select({
+        id: yieldConversions.id,
+        notes: yieldConversions.notes,
+        productionDate: yieldConversions.productionDate,
+      })
+      .from(yieldConversions)
+      .where(
+        and(
+          eq(yieldConversions.branchId, branchId),
+          eq(yieldConversions.status, "Active"),
+          isNull(yieldConversions.deletedAt),
+          eq(yieldConversions.productionDate, productionDate),
+        ),
+      );
+
+    for (const cand of candidates) {
+      if ((cand.notes ?? "").trim().toLowerCase() !== notesKey) continue;
+      const existingItems = await db
+        .select({
+          ingredientId: yieldConversionItems.ingredientId,
+          quantity: yieldConversionItems.quantity,
+          direction: yieldConversionItems.direction,
+        })
+        .from(yieldConversionItems)
+        .where(eq(yieldConversionItems.conversionId, cand.id));
+
+      const existingOut = existingItems.filter((i) => i.direction === "OUT");
+      const existingProduced = existingItems.filter((i) => i.direction === "PRODUCED");
+      if (
+        fingerprint(existingOut) === fingerprint(out) &&
+        fingerprint(existingProduced) === fingerprint(produced)
+      ) {
+        throw new DuplicateProductionError(
+          `Produksi identik sudah tercatat pada tanggal yang sama (catatan #${cand.id.slice(0, 8)}, dicatat ${new Date(cand.productionDate).toLocaleString("id-ID")}). ` +
+            `Bila ini memang batch terpisah, konfirmasi; bila tidak, batalkan catatan sebelumnya agar stok tidak ditambah dua kali.`,
+        );
+      }
+    }
+  }
 
   // Record + stock effect in ONE transaction (ADR 0012) — an error anywhere
   // leaves no partial writes.

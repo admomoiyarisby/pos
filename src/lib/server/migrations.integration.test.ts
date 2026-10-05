@@ -65,6 +65,26 @@ describe("database migrations", () => {
           "branch_id",
           "created_at",
         ]);
+
+        // ADR 0019 — the duplicate-line guard must exist in the database, not
+        // only in application code. `finish-receive` credits each item line
+        // independently, so a repeated ingredient on one transfer inflated
+        // stock twice (MT/CENTRAL/041026/06, Simple Syrup 1000 + 3000).
+        const guard = await client.query<{ indexname: string; indexdef: string }>(
+          `select indexname, indexdef from pg_indexes
+           where schemaname = 'public' and indexname = 'stxi_transfer_ingredient_unique'`,
+        );
+        expect(guard.rows).toHaveLength(1);
+        expect(guard.rows[0].indexdef).toMatch(/UNIQUE/i);
+        expect(guard.rows[0].indexdef).toMatch(/scm_transfer_id/);
+        expect(guard.rows[0].indexdef).toMatch(/ingredient_id/);
+
+        // The duplicate-production lookup runs on every production submission.
+        const yieldIdx = await client.query<{ indexname: string }>(
+          `select indexname from pg_indexes
+           where schemaname = 'public' and indexname = 'yield_conversions_branch_date_idx'`,
+        );
+        expect(yieldIdx.rows).toHaveLength(1);
       } finally {
         await client.end();
       }

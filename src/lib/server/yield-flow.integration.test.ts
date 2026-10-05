@@ -521,3 +521,167 @@ describe("Yield — wrong-role and wrong-branch actors are rejected", () => {
     },
   );
 });
+
+// =============================================================================
+// ADR 0019 — duplicate-production guard
+//
+// Royal Plaza, 2026-10-03/04: `232cf7d4` / `3b2682c3` (51s apart, +6900 g
+// Nasi Putih each) and `5698667d` / `f89936b3` (+2300 g each) — identical
+// productionDate, notes and inputs. Each duplicate inflated stock by a whole
+// batch with no physical counterpart. These tests pin the guard that stops the
+// next one, and pin that it never blocks a legitimately different batch.
+// =============================================================================
+
+describe.skipIf(!hasTestDatabaseUrl)("Yield — duplicate-production guard (ADR 0019)", () => {
+  let branchAdmin: AppUser;
+  let superAdmin: AppUser;
+  let branchId: string;
+  let berasId: string;
+  let nasiId: string;
+  let airId: string;
+
+  /** One "Masak malam" batch: 2,646 g Beras + 4,200 gr Air → 6,900 gr Nasi Putih. */
+  const batch = (notes = "Masak malam") => ({
+    branchId,
+    out: [
+      { ingredientId: berasId, quantity: 2646 },
+      { ingredientId: airId, quantity: 4200 },
+    ],
+    produced: [{ ingredientId: nasiId, quantity: 6900 }],
+    notes,
+    productionDate: "2026-10-03T16:00:00.000Z",
+  });
+
+  // Seeded lazily inside each test, not in beforeAll: `setupFlowHarness`
+  // TRUNCATEs the root tables before every test, so fixture rows created once
+  // in beforeAll are gone by the time the first test body runs.
+  async function seedBatchFixtures(): Promise<void> {
+    branchId = await seedBranch(uniq("DUP"), "Outlet");
+    branchAdmin = await seedUser("branch_admin", branchId);
+    superAdmin = await seedUser("super_admin");
+    berasId = await seedIngredient(uniq("BERAS"));
+    nasiId = await seedIngredient(uniq("NASI"));
+    airId = await seedIngredient(uniq("AIR"));
+  }
+
+  it("refuses a byte-identical re-submission and leaves stock untouched", async () => {
+    await seedBatchFixtures();
+    const first = await yieldApi.createYieldConversionCore(branchAdmin, batch());
+    expect(first.success).toBe(true);
+
+    const nasiBefore = await getStock(branchId, nasiId);
+    const berasBefore = await getStock(branchId, berasId);
+
+    // The exact Royal Plaza failure: same date, same notes, same inputs.
+    await expect(yieldApi.createYieldConversionCore(branchAdmin, batch())).rejects.toThrow(
+      /Produksi identik sudah tercatat/,
+    );
+
+    // Stock is untouched — the guard fires before the transaction opens, so no
+    // phantom +6900 g Nasi Putih and no second draw on Beras.
+    expect(await getStock(branchId, nasiId)).toBe(nasiBefore);
+    expect(await getStock(branchId, berasId)).toBe(berasBefore);
+  });
+
+  it("throws DuplicateProductionError, so the form can offer a confirmation", async () => {
+    await seedBatchFixtures();
+    await yieldApi.createYieldConversionCore(branchAdmin, batch("Masak siang"));
+    const err = await yieldApi
+      .createYieldConversionCore(branchAdmin, batch("Masak siang"))
+      .then(() => null)
+      .catch((e: Error) => e);
+    expect(err).not.toBeNull();
+    expect(err?.name).toBe("DuplicateProductionError");
+  });
+
+  it("allows the operator to confirm it really is a separate batch", async () => {
+    await seedBatchFixtures();
+    const first = await yieldApi.createYieldConversionCore(branchAdmin, batch("Masak pagi"));
+    const nasiAfterFirst = await getStock(branchId, nasiId);
+
+    const second = await yieldApi.createYieldConversionCore(branchAdmin, {
+      ...batch("Masak pagi"),
+      confirmDuplicate: true,
+    });
+    expect(second.success).toBe(true);
+    // A confirmed second batch really does add the stock again — the guard
+    // delays the mistake, it does not forbid the action.
+    expect(await getStock(branchId, nasiId)).toBe(nasiAfterFirst + 6900);
+
+    await yieldApi.directCancelYieldConversionCore(superAdmin, {
+      yieldConversionId: second.conversion.id,
+      reason: "test cleanup",
+    });
+    await yieldApi.directCancelYieldConversionCore(superAdmin, {
+      yieldConversionId: first.conversion.id,
+      reason: "test cleanup",
+    });
+  });
+
+  it("does not fire when the notes differ — separate cooks, same date", async () => {
+    await seedBatchFixtures();
+    const a = await yieldApi.createYieldConversionCore(branchAdmin, batch("Masak pagi"));
+    const b = await yieldApi.createYieldConversionCore(branchAdmin, batch("Masak pagi 2"));
+    expect(b.success).toBe(true);
+    // Stock moved twice: 2 real batches on the same production date is normal
+    // kitchen practice and must not be blocked.
+    expect(await getStock(branchId, nasiId)).toBeGreaterThan(0);
+    for (const c of [a, b]) {
+      await yieldApi.directCancelYieldConversionCore(superAdmin, {
+        yieldConversionId: c.conversion.id,
+        reason: "test cleanup",
+      });
+    }
+  });
+
+  it("does not fire when the quantities differ", async () => {
+    await seedBatchFixtures();
+    const data = batch("Masak malam");
+    await yieldApi.createYieldConversionCore(branchAdmin, data);
+    const bigger = await yieldApi.createYieldConversionCore(branchAdmin, {
+      ...data,
+      produced: [{ ingredientId: nasiId, quantity: 9200 }],
+    });
+    expect(bigger.success).toBe(true);
+    await yieldApi.directCancelYieldConversionCore(superAdmin, {
+      yieldConversionId: bigger.conversion.id,
+      reason: "test cleanup",
+    });
+  });
+
+  it("does not fire for a different branch on the same date", async () => {
+    await seedBatchFixtures();
+    const otherBranch = await seedBranch(uniq("DUP2"), "Outlet");
+    const otherAdmin = await seedUser("branch_admin", otherBranch);
+    const data = batch("Masak malam");
+    await yieldApi.createYieldConversionCore(branchAdmin, data);
+    // The guard is branch-scoped: two outlets cooking the same thing on the
+    // same day is not a duplicate.
+    const elsewhere = await yieldApi.createYieldConversionCore(otherAdmin, {
+      ...data,
+      branchId: otherBranch,
+    });
+    expect(elsewhere.success).toBe(true);
+    await yieldApi.directCancelYieldConversionCore(superAdmin, {
+      yieldConversionId: elsewhere.conversion.id,
+      reason: "test cleanup",
+    });
+  });
+
+  it("does not fire once the earlier record is cancelled", async () => {
+    await seedBatchFixtures();
+    const first = await yieldApi.createYieldConversionCore(branchAdmin, batch("Masak rebound"));
+    await yieldApi.directCancelYieldConversionCore(superAdmin, {
+      yieldConversionId: first.conversion.id,
+      reason: "salah catat, dibatalkan",
+    });
+    // A cancelled record has had its stock reversed; re-recording the same
+    // batch afterwards is the correct recovery, not a duplicate.
+    const again = await yieldApi.createYieldConversionCore(branchAdmin, batch("Masak rebound"));
+    expect(again.success).toBe(true);
+    await yieldApi.directCancelYieldConversionCore(superAdmin, {
+      yieldConversionId: again.conversion.id,
+      reason: "test cleanup",
+    });
+  });
+});

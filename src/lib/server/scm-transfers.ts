@@ -12,6 +12,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
+import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import {
@@ -24,6 +25,7 @@ import {
   scmTransfers,
 } from "#/db/schema";
 import { type ScmTransferEvent, transitionTransfer, updateTransferItem } from "./scm-transfer-fsm";
+import type { FsmPayload } from "./scm-effects";
 import {
   assertTransferAccess,
   listTransfersForUser,
@@ -45,6 +47,9 @@ export type MutasiActorUser = {
   role: string;
   branchId?: string;
   assignedBranches?: string[] | null;
+  /** Display name, when the caller has one. Only used for log rows. */
+  name?: string;
+  email?: string;
 };
 
 // -----------------------------------------------------------------------------
@@ -269,14 +274,38 @@ export async function createMutasiTransferCore(
     currentBranchId: user.branchId,
   });
   const ingredientRows = await db
-    .select({ id: ingredients.id, averageCost: ingredients.averageCost })
+    .select({
+      id: ingredients.id,
+      name: ingredients.name,
+      averageCost: ingredients.averageCost,
+    })
     .from(ingredients)
     .where(branchClause);
   const avgById = new Map(ingredientRows.map((i) => [i.id, i.averageCost]));
+  const nameById = new Map(ingredientRows.map((i) => [i.id, i.name]));
 
   const itemIngredientIds = [...new Set(data.items.map((it) => it.ingredientId))];
   if (itemIngredientIds.some((id) => !avgById.has(id))) {
     throw new Error("Forbidden: one or more ingredients are not available to your branch");
+  }
+
+  // One line per ingredient. `finish-receive` credits each line independently,
+  // so the same ingredient listed twice silently credits the branch twice over —
+  // MT/CENTRAL/041026/06 listed Simple Syrup as 1000 + 3000 and both landed,
+  // leaving the outlet 1000 ml richer than the delivery. A unique constraint
+  // (`stxi_transfer_ingredient_unique`, migration 0060) makes the database the
+  // backstop; this check turns the constraint's error into advice the sender
+  // can act on. See ADR 0019.
+  if (itemIngredientIds.length !== data.items.length) {
+    const counts = new Map<string, number>();
+    for (const it of data.items)
+      counts.set(it.ingredientId, (counts.get(it.ingredientId) ?? 0) + 1);
+    const dupes = [...counts.entries()]
+      .filter(([, n]) => n > 1)
+      .map(([id]) => nameById.get(id) ?? id);
+    throw new Error(
+      `Bahan sama tidak boleh muncul lebih dari satu kali: ${dupes.join(", ")}. Gabungkan menjadi satu baris dengan total jumlah.`,
+    );
   }
 
   // Get branch code for document code generation
@@ -608,6 +637,8 @@ export async function finishReceiveMutasiTransferCore(
   user: MutasiActorUser,
   data: {
     transferId: string;
+    /** See the `finishReceiveMutasiTransfer` validator. */
+    acceptedAllWithoutCount?: boolean;
     items: Array<{
       id: string;
       receivedQuantity: number;
@@ -633,19 +664,70 @@ export async function finishReceiveMutasiTransferCore(
   if (!toBranch) throw new Error("Receiver branch not found");
 
   const invoiceCode = await nextTransferInvoiceCode(toBranch.code);
-  return runTransition({
+
+  // Whole-delivery shortcut detection. The reviewing form used to pre-fill
+  // `received` with the promised quantity, so submitting it untouched always
+  // meant "received everything" — which is exactly what all 22 transfers in the
+  // database did, with `rejected_quantity` 0 on every line and no physical
+  // shortage ever representable. The form now starts at 0, so a 100%-accepted
+  // payload means the sender either counted and it matched, or used the
+  // shortcut. We record which, so an inflated `inventory` can be traced back to
+  // a name instead of looking like a mystery. See ADR 0019.
+  const acceptedWhole = data.items.every(
+    (it) => (it.rejectedQuantity ?? 0) === 0 && it.receivedQuantity > 0,
+  );
+  const withoutCount = acceptedWhole && data.acceptedAllWithoutCount === true;
+
+  const payload: FsmPayload = { items: data.items, invoiceCode };
+  if (withoutCount) payload.acceptedWholeWithoutCount = true;
+
+  const result = await runTransition({
     transferId: data.transferId,
     event: "finish-receive",
     user,
     branchGuard: "receiver",
-    payload: { items: data.items, invoiceCode },
+    payload,
   });
+
+  if (withoutCount) {
+    // The document's own audit note already carries the marker (written inside
+    // the transition, so it commits atomically with the stock effect). This is
+    // the branch-wide searchable copy.
+    const logActor: AppUser = {
+      id: user.id,
+      name: user.name ?? user.id,
+      email: user.email ?? "",
+      // SAFETY: `MutasiActorUser.role` is `string` because the FSM transition
+      // table is keyed by role name; the FSM has already matched this actor
+      // against `requireAuth()`'s UserRole-typed value before reaching here.
+      role: user.role as AppUser["role"],
+      status: "Active",
+      branchId: user.branchId,
+    };
+    await logSystemAction(
+      logActor,
+      "Accept Whole Delivery Without Count",
+      `Penerimaan ${invoiceCode} dicatat 100% tanpa menghitung per-item oleh ${logActor.name}. Selisih fisik (jika ada) tidak tercatat di sistem.`,
+      // Marked Warning, not Success: the stock effect is correct, but this row
+      // is the lead on any later POS-vs-physical gap on this delivery.
+      "Warning",
+    );
+  }
+
+  return result;
 }
 
 export const finishReceiveMutasiTransfer = createServerFn({ method: "POST" })
   .validator(
     (data: {
       transferId: string;
+      /**
+       * Set by the reviewing form when the receiver used the "accept
+       * everything as promised" shortcut instead of counting each line.
+       * Recorded in the system log so a later POS-vs-physical gap on this
+       * delivery has a documented cause. Never inferred server-side.
+       */
+      acceptedAllWithoutCount?: boolean;
       // Quantities are real (fractional allowed) — guarded to finite non-negatives.
       items: Array<{
         id: string;

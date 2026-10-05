@@ -41,6 +41,13 @@ export interface FsmPayload {
    * event on Mutasi transfers. Not used by Pengadaan.
    */
   invoiceCode?: string;
+  /**
+   * Set by `finishReceiveMutasiTransferCore` when every line is accepted at
+   * 100% with nothing rejected AND the receiver ticked the "accept as
+   * promised, did not count" box. Lets the receiving audit entry distinguish
+   * "counted, and it matched" from "assumed". See ADR 0019.
+   */
+  acceptedWholeWithoutCount?: boolean;
   items?: Array<{
     id: string;
     receivedQuantity?: number;
@@ -57,6 +64,12 @@ export interface FsmPayload {
      */
     rejectionDisposition?: "Return to Source" | "Scrap" | "Quarantine";
   }>;
+  /**
+   * Set by `finishReceiveMutasiTransferCore` when every line is accepted at
+   * 100% with nothing rejected AND the receiver ticked the "accept as
+   * promised, did not count" box. Carried here so the receiving audit entry
+   * can distinguish "counted, matched" from "assumed". See ADR 0019.
+   */
 }
 
 // -----------------------------------------------------------------------------

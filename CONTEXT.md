@@ -133,6 +133,10 @@ _Avoid_: shrinkage, loss, buang
 Setting a waste entry's status to `Cancelled` — allowed only for `super_admin` (any branch) and `area_manager` (assigned branches only), with a required reason. The stock effect is reversed: the quantity is restored to the same inventory surface it was deducted from (`inventory` for ingredients, `recipeInventory` for recipes) with an IN row on the same stock ledger reference. The cancelled entry stays visible with a badge, stops counting toward loss totals, and can no longer be edited or investigated. Mirrors Production cancellation (ADR 0012).
 _Avoid_: waste void, delete waste
 
+**Double-Entry Prevention (Pencegahan Catatan Ganda)**:
+The set of guards that stop one physical movement from being recorded twice and inflating stock without a physical counterpart (ADR 0019). Three shapes: one item line per ingredient per Stock Transfer (unique constraint `stxi_transfer_ingredient_unique`); a Receiving review that starts every `Diterima` field at 0 rather than at the promised quantity, so a shortage is cheap to record and a whole-delivery acceptance is a deliberate, recorded choice; and a Production record that is refused when it duplicates an existing Active record on branch + production date + notes + item set, unless the recorder confirms it is a genuinely separate batch. A refusal always offers a way forward — none of these guards is a dead end.
+_Avoid_: duplicate prevention, validation (too broad — this is specifically about one movement recorded twice)
+
 **Recipe Inventory**:
 Finished-good stock per branch (`recipeInventory`): the quantity of a recipe's plated units held at a branch (e.g., ready iced teas at an outlet). Upserted-from-0 when first stocked or first wasted; negative allowed with warning, consistent with ingredient inventory / POS / Production (ADR 0012). Movements are written to Kartu Stok via `stockLedger.recipeId` (production IN via `assignRecipeStock`, waste OUT, cancellation IN). Not to be confused with `inventory` (ingredient stock) or BOM ingredients.
 _Avoid_: menu stock (ambiguous), finished-goods inventory (when referring to the ingredient FG skuType)
