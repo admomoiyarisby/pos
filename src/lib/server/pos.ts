@@ -1088,13 +1088,28 @@ export const createOrder = createServerFn({ method: "POST" })
   });
 
 /** Filters shared by the history list and its row count. */
+/** An `order_channel` value. Derived from the same const array the pgEnum is
+ *  built from, so adding a channel widens this and the column together. */
+type OrderChannel = (typeof ORDER_CHANNEL_VALUES)[number];
+
 export interface OrderFilters {
   branchId?: string;
   dateFrom?: string;
   dateTo?: string;
   status?: string;
   search?: string;
-  channel?: string;
+  /**
+   * Typed as the enum union rather than `string` because `orders.channel` is a
+   * pgEnum column: `eq(orders.channel, <string>)` does not typecheck, and the
+   * only way it ever compiled was the caller passing the validator's already-
+   * narrowed value. Declaring `string` here made the scope builder (the shared
+   * `ordersScopeClauses`) the one place that could not hold a valid channel.
+   *
+   * Safe for the boundary: every `createServerFn` using `OrderFilters`
+   * normalizes through `z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined)`
+   * first, so a raw/garbage string never reaches this type.
+   */
+  channel?: OrderChannel;
   limit?: number;
   page?: number;
 }

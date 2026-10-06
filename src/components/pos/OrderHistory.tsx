@@ -9,6 +9,9 @@ import OrderItemsTray from "#/components/pos/OrderItemsTray";
 import HistoryDateFilter from "#/components/pos/HistoryDateFilter";
 import HistoryPagination from "#/components/pos/HistoryPagination";
 import { ORDER_CHANNEL_OPTIONS, channelLabel } from "#/lib/order-channels";
+import type { ORDER_CHANNEL_VALUES } from "#/db/schema";
+
+type OrderChannel = (typeof ORDER_CHANNEL_VALUES)[number];
 
 interface RequestStatus {
   status: string;
@@ -26,7 +29,10 @@ interface OrderHistoryProps {
   onDateChange: (dateFrom: string, dateTo: string) => void;
   /** Active channel filter ("" = all channels); drives server-side getOrders. */
   channelFilter: string;
-  onChannelFilterChange: (channel: string) => void;
+  /** `""` = all channels, otherwise a real `order_channel` value. The select
+   *  below only renders ORDER_CHANNEL_OPTIONS, so narrowing here keeps the
+   *  narrowing honest instead of asserting it away at each call site. */
+  onChannelFilterChange: (channel: OrderChannel | "") => void;
   page: number;
   hasNextPage: boolean;
   /** Total pages for the current filter, when the row count is known. */
@@ -77,7 +83,11 @@ export default function OrderHistory({
           <select
             value={channelFilter}
             onChange={function (e) {
-              onChannelFilterChange(e.target.value);
+              // SAFETY: this select only renders ORDER_CHANNEL_OPTIONS keys
+              // plus the "" all-channels entry, so `e.target.value` is either
+              // "" or a valid channel — the assertion is a type bridge, not a
+              // runtime guess about user input.
+              onChannelFilterChange(e.target.value as OrderChannel | "");
             }}
             aria-label="Filter channel"
             className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-medium text-foreground"

@@ -252,7 +252,11 @@ function PosPage() {
   let setOrderDateTo = _z[1];
   // History channel filter — "" means all channels; filters server-side so
   // pagination stays consistent.
-  let orderChannelFilterState = useState("");
+  // Narrowed to the enum union because the select below is a fixed option list:
+  // every value it can produce is a valid channel, and `getOrders`/`countOrders`
+  // type `channel` as that union (`OrderFilters`). An empty string means "all
+  // channels", hence the `|| undefined` at each call site.
+  let orderChannelFilterState = useState<(typeof ORDER_CHANNEL_VALUES)[number] | "">("");
   let orderChannelFilter = orderChannelFilterState[0];
   let setOrderChannelFilter = orderChannelFilterState[1];
   // History page index (0-based, newest first). Reset whenever the branch or
@@ -1558,7 +1562,12 @@ function PosPage() {
                       <select
                         value={orderChannelFilter}
                         onChange={function (e) {
-                          setOrderChannelFilter(e.target.value);
+                          // SAFETY: this select only renders
+                          // ORDER_CHANNEL_OPTIONS keys plus the "" entry, so the
+                          // value is always "" or a valid order_channel.
+                          setOrderChannelFilter(
+                            e.target.value as (typeof ORDER_CHANNEL_VALUES)[number] | "",
+                          );
                           setHistoryPage(0);
                         }}
                         aria-label="Filter channel"
@@ -1919,7 +1928,7 @@ function PosPage() {
               setHistoryPage(0);
             }}
             channelFilter={orderChannelFilter}
-            onChannelFilterChange={function (channel: string) {
+            onChannelFilterChange={function (channel) {
               setOrderChannelFilter(channel);
               setHistoryPage(0);
             }}
