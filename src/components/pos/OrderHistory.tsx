@@ -29,6 +29,8 @@ interface OrderHistoryProps {
   onChannelFilterChange: (channel: string) => void;
   page: number;
   hasNextPage: boolean;
+  /** Total pages for the current filter, when the row count is known. */
+  totalPages?: number | null;
   onPageChange: (page: number) => void;
   onPrintClick: (orderId: string) => void;
   onCancelClick: (orderId: string) => void;
@@ -48,6 +50,7 @@ export default function OrderHistory({
   onChannelFilterChange,
   page,
   hasNextPage,
+  totalPages,
   onPageChange,
   onPrintClick,
   onCancelClick,
@@ -306,7 +309,12 @@ export default function OrderHistory({
           })
         )}
       </div>
-      <HistoryPagination page={page} hasNext={hasNextPage} onPageChange={onPageChange} />
+      <HistoryPagination
+        page={page}
+        hasNext={hasNextPage}
+        totalPages={totalPages}
+        onPageChange={onPageChange}
+      />
     </div>
   );
 }

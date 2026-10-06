@@ -1087,69 +1087,84 @@ export const createOrder = createServerFn({ method: "POST" })
     return createOrderCore(user, data);
   });
 
+/** Filters shared by the history list and its row count. */
+export interface OrderFilters {
+  branchId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  status?: string;
+  search?: string;
+  channel?: string;
+  limit?: number;
+  page?: number;
+}
+
+/**
+ * Single source of truth for "which orders may this user see in history".
+ *
+ * Both `getOrders` (the paged rows) and `countOrders` (the row total) build
+ * their WHERE clause here, so the count can never drift from the list it
+ * describes — a badge reading "137" next to a list that shows a different
+ * 137 would be worse than no badge at all.
+ */
+function ordersScopeClauses(user: AppUser, data: OrderFilters): SQL[] {
+  // Role-scoped branch bound (branch-visibility pattern): central roles
+  // (super_admin / admin_pusat) may read any branch — or all branches when
+  // no branch is requested — area managers only their assigned branches,
+  // and branch admins only their own session branch, even if the client
+  // sends a different branch id.
+  const whereClauses: SQL[] = [];
+  // Soft-deleted orders never appear in history lists (tombstone pattern).
+  whereClauses.push(isNull(orders.deletedAt));
+  if (user.role === "branch_admin" && user.branchId) {
+    whereClauses.push(eq(orders.branchId, user.branchId));
+  } else if (user.role === "area_manager") {
+    const assigned = user.assignedBranches ?? [];
+    whereClauses.push(
+      data.branchId && assigned.includes(data.branchId)
+        ? eq(orders.branchId, data.branchId)
+        : inArray(orders.branchId, assigned),
+    );
+  } else if (data.branchId) {
+    whereClauses.push(eq(orders.branchId, data.branchId));
+  }
+
+  // Optional date range bound. Dates arrive as "YYYY-MM-DD" and are
+  // compared against the order's Jakarta-local calendar day (same pattern
+  // as finance.ts) so the boundary matches what the store sees.
+  if (data.dateFrom) {
+    whereClauses.push(
+      sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
+    );
+  }
+  if (data.dateTo) {
+    whereClauses.push(
+      sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
+    );
+  }
+
+  // Optional channel bound (e.g. POS history filtered to ShopeeFood only).
+  if (data.channel) {
+    whereClauses.push(eq(orders.channel, data.channel));
+  }
+
+  return whereClauses;
+}
+
 export const getOrders = createServerFn({ method: "GET" })
-  .validator(
-    (data: {
-      branchId?: string;
-      dateFrom?: string;
-      dateTo?: string;
-      status?: string;
-      search?: string;
-      channel?: string;
-      limit?: number;
-      page?: number;
-    }) => ({
-      ...data,
-      // Normalize the channel filter at the boundary: only the enum's values
-      // are meaningful; anything else (including "" and garbage) → undefined.
-      channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
-    }),
-  )
+  .validator((data: OrderFilters) => ({
+    ...data,
+    // Normalize the channel filter at the boundary: only the enum's values
+    // are meaningful; anything else (including "" and garbage) → undefined.
+    channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+  }))
   .handler(async ({ data }) => {
     const user = await requireAuth();
 
     const limit = data.limit ?? 20;
     const offset = (data.page ?? 0) * limit;
 
-    // Role-scoped branch bound (branch-visibility pattern): central roles
-    // (super_admin / admin_pusat) may read any branch — or all branches when
-    // no branch is requested — area managers only their assigned branches,
-    // and branch admins only their own session branch, even if the client
-    // sends a different branch id.
-    const whereClauses: SQL[] = [];
-    // Soft-deleted orders never appear in history lists (tombstone pattern).
-    whereClauses.push(isNull(orders.deletedAt));
-    if (user.role === "branch_admin" && user.branchId) {
-      whereClauses.push(eq(orders.branchId, user.branchId));
-    } else if (user.role === "area_manager") {
-      const assigned = user.assignedBranches ?? [];
-      whereClauses.push(
-        data.branchId && assigned.includes(data.branchId)
-          ? eq(orders.branchId, data.branchId)
-          : inArray(orders.branchId, assigned),
-      );
-    } else if (data.branchId) {
-      whereClauses.push(eq(orders.branchId, data.branchId));
-    }
-
-    // Optional date range bound. Dates arrive as "YYYY-MM-DD" and are
-    // compared against the order's Jakarta-local calendar day (same pattern
-    // as finance.ts) so the boundary matches what the store sees.
-    if (data.dateFrom) {
-      whereClauses.push(
-        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
-      );
-    }
-    if (data.dateTo) {
-      whereClauses.push(
-        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
-      );
-    }
-
-    // Optional channel bound (e.g. POS history filtered to ShopeeFood only).
-    if (data.channel) {
-      whereClauses.push(eq(orders.channel, data.channel));
-    }
+    const whereClauses = ordersScopeClauses(user, data);
 
     const result = await db
       .select({
@@ -1181,6 +1196,32 @@ export const getOrders = createServerFn({ method: "GET" })
       .offset(offset);
 
     return result;
+  });
+
+/**
+ * Total number of orders matching a history filter, ignoring pagination.
+ *
+ * The POS history badge used to render `rows.length`, which is capped by the
+ * page size — so a busy branch saw a permanent "20" no matter how many orders
+ * had actually been placed. Counting separately lets the UI state the real
+ * number ("20 dari 137") instead of implying the list stops at the page size.
+ */
+export const countOrders = createServerFn({ method: "GET" })
+  .validator((data: OrderFilters) => ({
+    ...data,
+    channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+  }))
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+
+    const whereClauses = ordersScopeClauses(user, data);
+
+    const [row] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(orders)
+      .where(whereClauses.length > 0 ? and(...whereClauses) : undefined);
+
+    return row?.count ?? 0;
   });
 
 export const getOrderWithItems = createServerFn({ method: "GET" })

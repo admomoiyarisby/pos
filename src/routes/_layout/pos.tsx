@@ -15,6 +15,7 @@ import {
   closeShift,
   adjustCashFloat,
   getOrders,
+  countOrders,
   voidOrder,
   requestReprint,
   getOrderWithItems,
@@ -300,8 +301,48 @@ function PosPage() {
     retry: 1,
   });
   let recentOrders = ordersResult.data || [];
-  // A full page strongly suggests older orders exist on the next page.
-  let hasMoreOrders = (ordersResult.data ?? []).length === HISTORY_PAGE_SIZE;
+
+  // Total orders matching the same filters, counted server-side without the
+  // page bound. The list itself is paged, so `recentOrders.length` is only the
+  // rows on this page — rendering it as a count made the badge read a flat "20"
+  // on any busy branch. This is the real number behind the current filter.
+  let ordersTotalResult = useQuery({
+    queryKey: [
+      "pos-orders-total",
+      activeBranchId,
+      user?.role,
+      orderDateFrom,
+      orderDateTo,
+      orderChannelFilter,
+    ],
+    queryFn: function () {
+      return countOrders({
+        data: {
+          branchId: isBranchScopedUser ? activeBranchId : undefined,
+          dateFrom: orderDateFrom || undefined,
+          dateTo: orderDateTo || undefined,
+          channel: orderChannelFilter || undefined,
+        },
+      });
+    },
+    enabled: isBranchScopedUser ? !!activeBranchId : true,
+    retry: 1,
+  });
+  // Null while loading or on error: callers fall back to page-derived wording
+  // rather than flashing a wrong total.
+  let ordersTotal = ordersTotalResult.data ?? null;
+  let totalHistoryPages =
+    ordersTotal === null ? null : Math.max(1, Math.ceil(ordersTotal / HISTORY_PAGE_SIZE));
+  // Older rows exist when the rows past this page haven't all been fetched.
+  // Exact when the total is known; otherwise a full page is the best signal.
+  let hasMoreOrders =
+    ordersTotal === null
+      ? (ordersResult.data ?? []).length === HISTORY_PAGE_SIZE
+      : (historyPage + 1) * HISTORY_PAGE_SIZE < ordersTotal;
+  // Badge value: the true total when known, otherwise this page's rows. Capped
+  // at 99+ so a week of orders can't stretch the pill out of the tab bar.
+  let historyBadgeCount =
+    (ordersTotal ?? recentOrders.length) > 99 ? "99+" : String(ordersTotal ?? recentOrders.length);
 
   // When the list spans more than one branch (super_admin / area_manager),
   // label each row with its branch so the transactions are easy to tell
@@ -1496,9 +1537,11 @@ function PosPage() {
                       <History className="h-4 w-4" /> Riwayat Pesanan
                     </h3>
                     <span className="text-xs text-muted-foreground">
-                      {hasMoreOrders || historyPage > 0
-                        ? "Hal " + (historyPage + 1)
-                        : recentOrders.length + " pesanan"}
+                      {totalHistoryPages !== null
+                        ? "Hal " + (historyPage + 1) + " dari " + totalHistoryPages
+                        : hasMoreOrders || historyPage > 0
+                          ? "Hal " + (historyPage + 1)
+                          : recentOrders.length + " pesanan"}
                     </span>
                   </div>
                   <div className="px-3 py-2 border-b bg-muted/20">
@@ -1736,6 +1779,7 @@ function PosPage() {
                   <HistoryPagination
                     page={historyPage}
                     hasNext={hasMoreOrders}
+                    totalPages={totalHistoryPages}
                     onPageChange={setHistoryPage}
                   />
                 </div>
@@ -1787,7 +1831,12 @@ function PosPage() {
                   setMobileTab("history");
                 }}
                 aria-label={
-                  "Riwayat" + (recentOrders.length > 0 ? " (" + recentOrders.length + ")" : "")
+                  "Riwayat" +
+                  (ordersTotal !== null
+                    ? " (" + ordersTotal + " pesanan)"
+                    : recentOrders.length > 0
+                      ? " (" + recentOrders.length + ")"
+                      : "")
                 }
                 title="Riwayat"
                 className={
@@ -1799,9 +1848,9 @@ function PosPage() {
               >
                 <History className="h-4 w-4" />
                 <span className="sr-only">Riwayat</span>
-                {recentOrders.length > 0 && (
+                {(ordersTotal ?? recentOrders.length) > 0 && (
                   <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted-foreground/10 text-muted-foreground text-[11px] font-bold px-1">
-                    {recentOrders.length}
+                    {historyBadgeCount}
                   </span>
                 )}
               </button>
@@ -1876,6 +1925,7 @@ function PosPage() {
             }}
             page={historyPage}
             hasNextPage={hasMoreOrders}
+            totalPages={totalHistoryPages}
             onPageChange={setHistoryPage}
             onPrintClick={function (orderId: string) {
               if (canDirectPrint) {

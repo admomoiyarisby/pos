@@ -10,15 +10,29 @@ interface HistoryPaginationProps {
   page: number;
   /** True when the server may have older rows beyond this page. */
   hasNext: boolean;
+  /**
+   * Total pages, when the row count is known. Without it the pager can only
+   * say "Hal 3", which reads as if the list ended there — the store has no
+   * other way to learn how much history sits behind the current page.
+   */
+  totalPages?: number | null;
   onPageChange: (page: number) => void;
 }
 
-export default function HistoryPagination({ page, hasNext, onPageChange }: HistoryPaginationProps) {
-  if (page === 0 && !hasNext) return null;
+export default function HistoryPagination({
+  page,
+  hasNext,
+  totalPages,
+  onPageChange,
+}: HistoryPaginationProps) {
+  if (page === 0 && !hasNext && (totalPages ?? 1) <= 1) return null;
 
   return (
     <div className="flex items-center justify-between gap-2 border-t bg-muted/20 px-4 py-2 shrink-0">
-      <span className="text-[10px] font-medium text-muted-foreground">Hal {page + 1}</span>
+      <span className="text-[10px] font-medium text-muted-foreground">
+        Hal {page + 1}
+        {totalPages && totalPages > 1 ? " dari " + totalPages : ""}
+      </span>
       <div className="flex items-center gap-1.5">
         <button
           onClick={function () {
