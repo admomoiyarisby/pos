@@ -9,7 +9,7 @@ import {
   recipeIngredients,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, ne, isNull, sql, inArray } from "drizzle-orm";
 import { requireRole } from "./auth";
 
 export interface AuditInventoryIngredient {
@@ -30,6 +30,9 @@ export interface AuditInventoryRecipe {
 /**
  * Compute theoretical ingredient consumption per recipe for a date range.
  * Based on: orders → orderItems (count per recipe) → recipeIngredients → ingredients.
+ *
+ * "Consumed" means every non-voided order, not `status = 'Completed'` — see the
+ * status comment on `conditions` below for why.
  */
 export const getAuditInventory = createServerFn({ method: "GET" })
   .validator(
@@ -41,8 +44,27 @@ export const getAuditInventory = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<AuditInventoryRecipe[]> => {
     await requireRole("super_admin", "admin_pusat");
 
-    // Only count completed orders (exclude voided/cancelled)
-    const conditions = [eq(orders.status, "Completed")];
+    // Soft-deleted orders are excluded for the same reason finance.ts excludes
+    // them (finance.ts:132 and friends): a soft-deleted order disappears from
+    // history lists but keeps its stock effect, so counting it here would
+    // report consumption the operator can no longer see or reconcile.
+    //
+    // Count every order that actually consumed stock, and exclude only `Void`.
+    //
+    // This used to filter `status = 'Completed'`, which made the page
+    // permanently empty: `createOrderCore` (pos.ts) inserts orders with no
+    // `status`, so they take the column default `New`, and the only writer of
+    // `Completed` — `completeOrderCore` — is called from integration tests but
+    // from no UI. Of 3,770 orders only 67 are `Completed`, none since
+    // 2026-09-03, so every month rendered "Tidak ada data penjualan".
+    //
+    // `Void` is the one status that genuinely means "not consumed":
+    // `voidOrderCore` calls `restoreInventoryForVoid`, and across the live
+    // database voided orders net to -1 unit (111,821 OUT vs 111,822 restored),
+    // i.e. fully reversed. `New` is the status the POS actually sells with —
+    // 2,163,520 units net consumed — so excluding it would discard every real
+    // sale. `Cancel Requested` orders are still pending, not reversed.
+    const conditions = [ne(orders.status, "Void"), isNull(orders.deletedAt)];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
     if (data.channel) conditions.push(eq(orders.channel, data.channel));
     // Date range (Jakarta local dates, matching finance.ts): the UI sends

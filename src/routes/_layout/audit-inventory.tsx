@@ -91,6 +91,16 @@ function AuditInventoryPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
+      {/* What this page counts, stated up front: a reader comparing it against
+          Kartu Stok needs to know that "Void" is excluded but "New" is NOT,
+          because the POS sells with status `New` and voiding is what reverses
+          stock. Without this the numbers look irreconcilable with the ledger. */}
+      <p className="mb-4 text-xs text-muted-foreground">
+        Menghitung seluruh order yang bukan berstatus <span className="font-medium">Void</span>{" "}
+        (order void mengembalikan stok). Order berstatus <span className="font-medium">New</span>{" "}
+        tetap dihitung — itulah status yang dipakai POS saat penjualan.
+      </p>
+
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3 mb-6 p-4 rounded-lg border">
         {/* Month picker */}
@@ -169,7 +179,9 @@ function AuditInventoryPage() {
               ) : (
                 <tr>
                   <td colSpan={5} className="py-10 text-center text-muted-foreground">
-                    Tidak ada data penjualan untuk periode ini
+                    {selectedBranchId
+                      ? "Tidak ada penjualan (non-void) di cabang ini untuk periode ini"
+                      : "Tidak ada penjualan (non-void) untuk periode ini"}
                   </td>
                 </tr>
               )}
