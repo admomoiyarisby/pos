@@ -74,7 +74,19 @@ function LedgerPage() {
     bomRecipe?: string;
     dateFrom?: string;
     dateTo?: string;
-  }>(["branchId", "ingredientId", "reference", "bom", "bomRecipe", "dateFrom", "dateTo"]);
+    timeFrom?: string;
+    timeTo?: string;
+  }>([
+    "branchId",
+    "ingredientId",
+    "reference",
+    "bom",
+    "bomRecipe",
+    "dateFrom",
+    "dateTo",
+    "timeFrom",
+    "timeTo",
+  ]);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -106,6 +118,11 @@ function LedgerPage() {
   // Date range (YYYY-MM-DD): shows only movements within the range.
   const dateFrom = filters.dateFrom ?? "";
   const dateTo = filters.dateTo ?? "";
+  // Time-of-day window (HH:MM), Jakarta local. Each half needs its date bound,
+  // so the inputs are only usable when the matching date is set — otherwise a
+  // bare clock time would silently match that hour on every date in the range.
+  const timeFrom = dateFrom ? (filters.timeFrom ?? "") : "";
+  const timeTo = dateTo ? (filters.timeTo ?? "") : "";
   // Quick presets: chip is active only when the URL range matches it exactly
   // (same semantics as HISTORY_PRESETS in HistoryDateFilter).
   const DATE_PRESETS = [
@@ -116,6 +133,15 @@ function LedgerPage() {
   const setDateRange = (from: string, to: string) => {
     setFilter("dateFrom", from);
     setFilter("dateTo", to);
+    setPage(0);
+  };
+  /** Setting a clock time also guarantees its date bound, so the pair can never
+   *  end up half-applied (a time filter the server would ignore). */
+  const setTimeRange = (from: string, to: string) => {
+    if (from && !dateFrom) setFilter("dateFrom", isoDateDaysAgo(0));
+    if (to && !dateTo) setFilter("dateTo", isoDateDaysAgo(0));
+    setFilter("timeFrom", from);
+    setFilter("timeTo", to);
     setPage(0);
   };
 
@@ -158,6 +184,8 @@ function LedgerPage() {
       bomRecipeId: bomRecipe,
       dateFrom,
       dateTo,
+      timeFrom,
+      timeTo,
       sort,
     }),
   );
@@ -426,7 +454,11 @@ function LedgerPage() {
             an exact range match so hand-picked dates show no active chip. */}
         <div className="flex items-center gap-1.5 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
-            onClick={() => setDateRange("", "")}
+            onClick={() => {
+              setDateRange("", "");
+              setFilter("timeFrom", "");
+              setFilter("timeTo", "");
+            }}
             aria-pressed={!dateFrom && !dateTo}
             className={`shrink-0 inline-flex items-center h-11 sm:h-7 px-3.5 sm:px-2.5 rounded-full border text-sm sm:text-xs font-medium whitespace-nowrap transition-colors ${
               !dateFrom && !dateTo
@@ -475,6 +507,61 @@ function LedgerPage() {
           <span className="hidden sm:inline text-muted-foreground text-xs" aria-hidden="true">
             —
           </span>
+          {/* Time-of-day window (WIB). Present but disabled until its date bound
+              is set, because a clock time without a date would match that hour
+              on every date in the range. This is what lets a reviewer isolate
+              the hours around a physical count across an overnight close. */}
+          <div className="flex items-center gap-2 min-w-0">
+            <label
+              htmlFor="ledger-time-from"
+              className="w-14 shrink-0 text-sm text-muted-foreground sm:w-auto sm:text-xs"
+            >
+              Jam
+            </label>
+            <input
+              id="ledger-time-from"
+              type="time"
+              step="60"
+              value={timeFrom}
+              disabled={!dateFrom}
+              title={
+                dateFrom
+                  ? "Filter jam mulai (WIB)"
+                  : "Isi tanggal 'Dari' dulu — filter jam butuh tanggal"
+              }
+              onChange={(e) => setTimeRange(e.target.value, timeTo)}
+              aria-label="Jam mulai"
+              className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-[16px] font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:h-8 sm:w-auto sm:min-w-[110px] sm:flex-none sm:rounded-md sm:px-2 sm:text-sm sm:font-normal sm:shadow-none"
+            />
+            <span className="hidden sm:inline text-muted-foreground text-xs" aria-hidden="true">
+              —
+            </span>
+            <input
+              id="ledger-time-to"
+              type="time"
+              step="60"
+              value={timeTo}
+              disabled={!dateTo}
+              title={
+                dateTo
+                  ? "Filter jam selesai (WIB)"
+                  : "Isi tanggal 'Sampai' dulu — filter jam butuh tanggal"
+              }
+              onChange={(e) => setTimeRange(timeFrom, e.target.value)}
+              aria-label="Jam selesai"
+              className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-[16px] font-medium shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:h-8 sm:w-auto sm:min-w-[110px] sm:flex-none sm:rounded-md sm:px-2 sm:text-sm sm:font-normal sm:shadow-none"
+            />
+            {(timeFrom || timeTo) && (
+              <button
+                onClick={() => setTimeRange("", "")}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+                title="Hapus filter jam"
+                aria-label="Hapus filter jam"
+              >
+                <X className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2 min-w-0">
             <label
               htmlFor="ledger-date-to"

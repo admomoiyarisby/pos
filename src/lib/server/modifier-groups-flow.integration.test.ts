@@ -93,7 +93,12 @@ async function linkedRecipes(groupId: string): Promise<string[]> {
     .select({ recipeId: schema.recipeModifierGroups.recipeId })
     .from(schema.recipeModifierGroups)
     .where(eq(schema.recipeModifierGroups.modifierGroupId, groupId));
-  return rows.map((r) => r.recipeId);
+  // Sorted: this SELECT has no ORDER BY, so Postgres returns rows in whatever
+  // order the plan produces. Callers compare with `toEqual([r1, r2])`, and since
+  // the recipes are random UUIDs that array order flips between runs — the
+  // assertion failed roughly every other run. Sorting makes it compare the
+  // *set*, which is what "these recipes are linked" actually means.
+  return rows.map((r) => r.recipeId).sort();
 }
 
 async function groupExists(id: string): Promise<boolean> {
@@ -159,7 +164,9 @@ describe("Modifier groups — full lifecycle via the real server-function cores"
         recipeIds: [r1, r2],
       });
       expect(link.success).toBe(true);
-      expect(await linkedRecipes(created.id)).toEqual([r1, r2]);
+      // `[r1, r2].sort()` mirrors the sorted helper: this asserts the two recipes
+      // are linked, not that Postgres happened to return them in insert order.
+      expect(await linkedRecipes(created.id)).toEqual([r1, r2].sort());
 
       // Replace with just r1
       await mgApi.linkRecipesToModifierGroupCore(superAdmin, {

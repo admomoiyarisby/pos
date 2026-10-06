@@ -258,6 +258,18 @@ export interface GetStockLedgerData {
   search?: string;
   dateFrom?: string;
   dateTo?: string;
+  /**
+   * Jakarta-local `HH:MM` lower bound (inclusive), applied on top of
+   * `dateFrom`. Both are required together — a clock time with no date is
+   * ambiguous, so a lone `timeFrom` is ignored.
+   *
+   * Needed because an outlet closes overnight: a date range alone cannot
+   * isolate the hours around a physical stock count when the ledger has a ~12h
+   * no-activity gap in the middle of it (Royal Plaza rice audit, 2026-10-04/05).
+   */
+  timeFrom?: string;
+  /** Jakarta-local `HH:MM` upper bound (inclusive); requires `dateTo`. */
+  timeTo?: string;
   page?: number;
   limit?: number;
   /** Sort key: createdAt (default) or type (IN/OUT grouping). */
@@ -348,6 +360,17 @@ export async function getStockLedgerCore(user: AppUser, data: GetStockLedgerData
       : undefined,
     data.dateTo
       ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
+      : undefined,
+    // Time-of-day window, on the same Jakarta-local clock as the date bounds
+    // above. Each bound needs its date, otherwise `TO_CHAR` would match the
+    // same clock time on every day in the range — filtering to "10:00" would
+    // return an hour of movements from every date at once, which is not what
+    // anyone means by a time filter.
+    data.dateFrom && data.timeFrom
+      ? sql`TO_CHAR((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta', 'HH24:MI') >= ${data.timeFrom}`
+      : undefined,
+    data.dateTo && data.timeTo
+      ? sql`TO_CHAR((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta', 'HH24:MI') <= ${data.timeTo}`
       : undefined,
     data.search
       ? fuzzySearch(

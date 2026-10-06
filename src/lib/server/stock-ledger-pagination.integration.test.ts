@@ -196,3 +196,169 @@ describe.skipIf(!hasTestDatabaseUrl)(
     });
   },
 );
+
+// =============================================================================
+// Time-of-day filter (Kartu Stok `timeFrom` / `timeTo`)
+// =============================================================================
+
+describe.skipIf(!hasTestDatabaseUrl)(
+  "Kartu Stok time-of-day filter — WIB window over an overnight range",
+  () => {
+    /**
+     * One ingredient's movements spread across two WIB days, with a deliberate
+     * ~12h no-activity gap between them — the shape a closed outlet leaves, and
+     * the shape that made the Royal Plaza rice variance impossible to read from
+     * a date-only filter (2026-10-04/05).
+     *
+     * `stock_ledger.created_at` is a NAIVE column storing UTC wall-clock, so the
+     * UTC instants below are what the server converts to WIB before comparing.
+     */
+    async function seedOvernightLedger(): Promise<{
+      branchId: string;
+      ingredientId: string;
+      /** WIB "HH:MM" of each seeded row, in insertion order. */
+      wibTimes: string[];
+    }> {
+      const db = testDb();
+      const branchId = crypto.randomUUID();
+      await db.insert(schema.branches).values({
+        id: branchId,
+        code: "TWM",
+        name: "Time Window Branch",
+        location: "Test",
+        type: "Outlet",
+      });
+      const ingredientId = crypto.randomUUID();
+      await db.insert(schema.ingredients).values({
+        id: ingredientId,
+        code: "TWM-001",
+        name: "Nasi Putih",
+        category: "Fresh",
+        skuType: "FG",
+        purchaseUnit: "gr",
+        stockUnit: "gr",
+        conversionFactor: 1,
+        averageCost: 1000,
+      });
+
+      // 2026-10-04 13:00WIB = 06:00Z … 2026-10-05 12:00WIB = 05:00Z, with the
+      // 22:00WIB→10:00WIB stretch deliberately empty.
+      const utcInstants = [
+        "2026-10-04T06:00:00.000Z", // 13:00 WIB day 1
+        "2026-10-04T12:00:00.000Z", // 19:00 WIB day 1
+        "2026-10-04T15:10:00.000Z", // 22:10 WIB day 1  (last movement)
+        "2026-10-05T03:44:00.000Z", // 10:44 WIB day 2  (first movement after the gap)
+        "2026-10-05T05:35:00.000Z", // 12:35 WIB day 2
+      ];
+      const wibTimes = ["13:00", "19:00", "22:10", "10:44", "12:35"];
+
+      await db.insert(schema.stockLedger).values(
+        utcInstants.map((iso, i) => ({
+          branchId,
+          ingredientId,
+          type: "OUT" as const,
+          quantity: 180,
+          balance: 1000 - i * 180,
+          reference: `TWM-${i}`,
+          notes: "overnight spread",
+          createdAt: new Date(iso),
+        })),
+      );
+      return { branchId, ingredientId, wibTimes };
+    }
+
+    it("narrows to a WIB window on each day of the range", async () => {
+      const { branchId, ingredientId } = await seedOvernightLedger();
+
+      // A time window is a *clock* filter applied per day, not a 24h-spanning
+      // range: 19:00-23:59 on the 4th keeps the two evening rows, and the
+      // overnight gap means the 5th contributes nothing inside that clock band.
+      const evening = await getStockLedgerCore(auditor, {
+        branchId,
+        ingredientId,
+        dateFrom: "2026-10-04",
+        dateTo: "2026-10-05",
+        timeFrom: "19:00",
+        timeTo: "23:59",
+        page: 0,
+        limit: 50,
+      });
+      expect(evening.total).toBe(2);
+      expect(evening.data.map((r) => r.reference).sort()).toEqual(["TWM-1", "TWM-2"]);
+
+      // And the morning band on the 5th keeps the two rows after the gap.
+      const morning = await getStockLedgerCore(auditor, {
+        branchId,
+        ingredientId,
+        dateFrom: "2026-10-04",
+        dateTo: "2026-10-05",
+        timeFrom: "00:00",
+        timeTo: "12:35",
+        page: 0,
+        limit: 50,
+      });
+      expect(morning.total).toBe(2);
+      expect(morning.data.map((r) => r.reference).sort()).toEqual(["TWM-3", "TWM-4"]);
+    });
+
+    it("excludes rows outside the window while keeping the date range", async () => {
+      const { branchId, ingredientId } = await seedOvernightLedger();
+
+      // Two rows sit in this band — 13:00 on the 4th and 12:35 on the 5th — and the
+      // other three must drop out. A clock band is per-day, so it can legitimately
+      // match on both dates in the range; that is why this is pinned as a set
+      // rather than a single row.
+      const res = await getStockLedgerCore(auditor, {
+        branchId,
+        ingredientId,
+        dateFrom: "2026-10-04",
+        dateTo: "2026-10-05",
+        timeFrom: "12:00",
+        timeTo: "14:00",
+        page: 0,
+        limit: 50,
+      });
+      expect(res.total).toBe(2);
+      expect(res.data.map((r) => r.reference).sort()).toEqual(["TWM-0", "TWM-4"]);
+    });
+
+    it("ignores a clock time that has no matching date bound", async () => {
+      const { branchId, ingredientId } = await seedOvernightLedger();
+
+      // A bare `timeFrom` would otherwise match 13:00 on *every* date in scope.
+      // With no date bound the server must ignore it and return everything.
+      const res = await getStockLedgerCore(auditor, {
+        branchId,
+        ingredientId,
+        timeFrom: "13:00",
+        page: 0,
+        limit: 50,
+      });
+      expect(res.total).toBe(5);
+
+      // Same for the upper bound alone.
+      const res2 = await getStockLedgerCore(auditor, {
+        branchId,
+        ingredientId,
+        timeTo: "12:35",
+        page: 0,
+        limit: 50,
+      });
+      expect(res2.total).toBe(5);
+    });
+
+    it("still honours the date bounds when no clock time is given", async () => {
+      const { branchId, ingredientId } = await seedOvernightLedger();
+
+      const res = await getStockLedgerCore(auditor, {
+        branchId,
+        ingredientId,
+        dateFrom: "2026-10-04",
+        dateTo: "2026-10-04",
+        page: 0,
+        limit: 50,
+      });
+      expect(res.total).toBe(3);
+    });
+  },
+);

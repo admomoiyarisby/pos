@@ -54,6 +54,20 @@ export interface StockLedgerQueryInput {
   dateFrom?: string;
   /** Jakarta-local `YYYY-MM-DD` upper bound (inclusive). */
   dateTo?: string;
+  /**
+   * Jakarta-local `HH:MM` lower bound, inclusive. Narrows a movement to a
+   * time-of-day window on top of `dateFrom`/`dateTo`.
+   *
+   * An outlet closes overnight, so a date range alone cannot isolate the hours
+   * around a stock count — the Royal Plaza rice audit needed "22:10 on the 4th
+   * to 13:00 on the 5th" to see where a balance walked from 6,737 to −103
+   * across an ~12h closure. Only meaningful together with its matching date
+   * bound; when either is missing the pair is ignored, since a bare clock time
+   * with no date is ambiguous.
+   */
+  timeFrom?: string;
+  /** Jakarta-local `HH:MM` upper bound, inclusive. */
+  timeTo?: string;
   /** Server-side sort; `null` = newest first (server default). */
   sort?: { key: string; dir: "asc" | "desc" } | null;
 }
@@ -79,6 +93,11 @@ export function stockLedgerQuery(input: StockLedgerQueryInput) {
     wasteBomRecipeId: input.bomOnly && input.bomRecipeId ? input.bomRecipeId : undefined,
     dateFrom: input.dateFrom || undefined,
     dateTo: input.dateTo || undefined,
+    // A clock time is only meaningful against a date, so both halves of each
+    // end are required before one is sent — otherwise "10:00" alone would read
+    // as a filter the user cannot see or clear.
+    timeFrom: input.dateFrom && input.timeFrom ? input.timeFrom : undefined,
+    timeTo: input.dateTo && input.timeTo ? input.timeTo : undefined,
     // Unsorted = server default (newest first).
     sortBy: input.sort?.key || undefined,
     sortDir: input.sort?.dir || undefined,
@@ -110,6 +129,18 @@ export const stockLedgerSearchSchema = z.object({
   bomRecipe: z.string().optional().catch(undefined),
   dateFrom: z.string().optional().catch(undefined),
   dateTo: z.string().optional().catch(undefined),
+  // `HH:MM` 24h. A bare `HH:MM`/`:MM` value is rejected so a malformed URL
+  // degrades to "no time filter" rather than an impossible range.
+  timeFrom: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .optional()
+    .catch(undefined),
+  timeTo: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .optional()
+    .catch(undefined),
 });
 
 export type StockLedgerSearch = z.infer<typeof stockLedgerSearchSchema>;
@@ -126,6 +157,8 @@ export function stockLedgerInputFromSearch(search: StockLedgerSearch): StockLedg
     bomRecipeId: search.bomRecipe,
     dateFrom: search.dateFrom,
     dateTo: search.dateTo,
+    timeFrom: search.timeFrom,
+    timeTo: search.timeTo,
     // Mirrors useTableUrlState: only a non-empty key with a valid direction
     // pair is a real sort.
     sort: search.sortKey && search.sortDir ? { key: search.sortKey, dir: search.sortDir } : null,
