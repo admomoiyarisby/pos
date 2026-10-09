@@ -213,7 +213,7 @@ describe.skipIf(!hasTestDatabaseUrl)("Data Penjualan — stock effects and Kartu
     expect(deleteIns[0].branchId).toBe(branchB);
   });
 
-  it("create with no inventory row for the branch is a silent no-op (same as POS), delete of such an order never negative", async () => {
+  it("create with no inventory row for the branch now upserts from 0 and records (ADR 0020)", async () => {
     const branchId = await seedBranch();
     const admin = await seedUser("admin_pusat");
     const [catRow] = await db
@@ -222,21 +222,32 @@ describe.skipIf(!hasTestDatabaseUrl)("Data Penjualan — stock effects and Kartu
       .returning({ id: schema.categories.id });
     const ingId = await seedIngredient();
     const recipeId = await seedRecipe(catRow.id, ingId);
-    // No inventory row seeded for this branch — matches createOrder behavior.
+    // No inventory row seeded for this branch — the movement used to be
+    // silently dropped (no stock change, no ledger row). It is now recorded
+    // against an upserted-from-0 row, the same policy as waste/yield.
 
     const order = await salesDataApi.createSalesOrderCore(admin, {
       branchId,
       channel: "Gofood",
       items: [{ recipeId, quantity: 2, price: 10000 }],
     });
-    expect(await inventoryQty(branchId, ingId)).toBeNull();
-    expect(await ledgerRows(order.id)).toHaveLength(0);
+    expect(await inventoryQty(branchId, ingId)).toBe(-4);
 
-    // Deleting an order whose stock was never deducted must not create a
-    // phantom IN ledger row.
+    const createLedger = await ledgerRows(order.id);
+    expect(createLedger).toHaveLength(1);
+    expect(createLedger[0].type).toBe("OUT");
+    expect(createLedger[0].quantity).toBe(4);
+    expect(createLedger[0].balance).toBe(-4);
+
+    // Deleting the order restores it to 0 and records the IN row — no phantom,
+    // no silent skip.
     await salesDataApi.deleteSalesOrderCore(admin, { id: order.id });
-    expect(await ledgerRows(order.id)).toHaveLength(0);
-    expect(await inventoryQty(branchId, ingId)).toBeNull();
+    expect(await inventoryQty(branchId, ingId)).toBe(0);
+
+    const deleteLedger = (await ledgerRows(order.id)).filter((r) => r.type === "IN");
+    expect(deleteLedger).toHaveLength(1);
+    expect(deleteLedger[0].quantity).toBe(4);
+    expect(deleteLedger[0].balance).toBe(0);
   });
 });
 

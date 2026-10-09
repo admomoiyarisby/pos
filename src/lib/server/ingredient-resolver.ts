@@ -10,6 +10,7 @@ import {
   modifierRecipes,
   orderItemModifiers,
   orderItemExclusions,
+  orderItemIngredients,
   orderItems,
   ingredients,
 } from "#/db/schema";
@@ -308,7 +309,15 @@ export async function resolveNewItemIngredients(
 }
 
 // =============================================================================
-// Function B — For voidOrder flow (resolves from persisted DB state)
+// Function B — For voidOrder / edit / delete restore flows (resolves from
+// persisted DB state)
+//
+// ADR 0020: the transaction-time snapshot written by `createOrderCore` /
+// `createSalesOrderCore` is authoritative — replaying it makes a restore put
+// back exactly what the sale deducted, no matter how the recipe changed since.
+// Only orders created before the snapshot existed (no rows) fall back to
+// re-resolving the live BOM, which is the drift this ADR removes; those
+// fallback resolutions are warned so they can be reconciled manually.
 // =============================================================================
 
 export async function resolvePersistedItemIngredients(
@@ -330,6 +339,53 @@ export async function resolvePersistedItemIngredients(
   if (!orderItem) {
     throw new Error(`Order item not found: ${orderItemId}`);
   }
+
+  // 2. Frozen snapshot path (ADR 0020) — replay exactly what was consumed.
+  const snapshot = await conn
+    .select({
+      ingredientId: orderItemIngredients.ingredientId,
+      quantity: orderItemIngredients.quantity,
+    })
+    .from(orderItemIngredients)
+    .where(eq(orderItemIngredients.orderItemId, orderItemId));
+
+  if (snapshot.length > 0) {
+    const ingredientIds = [...new Set(snapshot.map((r) => r.ingredientId))];
+    const nameMap = await fetchIngredientNames(ingredientIds, tx);
+
+    // Cost basis stays current (average cost moves); only the *quantities*
+    // are frozen. Same total-line shape the live resolver produces.
+    const costMap = new Map<string, number>();
+    if (includeCost) {
+      const costRows = await conn
+        .select({ id: ingredients.id, averageCost: ingredients.averageCost })
+        .from(ingredients)
+        .where(inArray(ingredients.id, ingredientIds));
+      for (const r of costRows) costMap.set(r.id, Number(r.averageCost ?? 0));
+    }
+
+    const ingredientsList: ResolvedIngredient[] = [];
+    for (const row of snapshot) {
+      if (row.quantity === 0) continue;
+      const entry: ResolvedIngredient = {
+        ingredientId: row.ingredientId,
+        quantity: row.quantity,
+        ingredientName: nameMap.get(row.ingredientId) ?? row.ingredientId,
+      };
+      if (includeCost) {
+        entry.cost = Math.round((costMap.get(row.ingredientId) ?? 0) * row.quantity);
+      }
+      ingredientsList.push(entry);
+    }
+
+    return { ingredients: ingredientsList, exclusionRecords: [] };
+  }
+
+  console.warn(
+    `[resolvePersistedItemIngredients] order item ${orderItemId} has no order_item_ingredients snapshot ` +
+      `(created before ADR 0020) — falling back to live BOM resolution; a restore of this item ` +
+      `may not equal its original deduction if the recipe was edited since.`,
+  );
 
   const { recipeId, quantity } = orderItem;
 

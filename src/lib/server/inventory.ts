@@ -23,6 +23,7 @@ import { escapeHtml, buildPrintHtml } from "./html-utils";
 import { DrizzleQueryError } from "drizzle-orm";
 import { describeDbError } from "./db-errors";
 import { roundQuantity, formatQuantity } from "#/lib/utils";
+import { ensureInventoryRow } from "./sales-data";
 
 /**
  * A physical count is a finite, non-negative number of stock units — a fraction
@@ -1065,57 +1066,51 @@ export async function approveStockOpnameCore(
     .filter((d): d is NonNullable<typeof d> => d !== null);
 
   for (const item of countedItems) {
-    // Find inventory record
-    const [inv] = await db
-      .select()
-      .from(inventory)
-      .where(
-        and(eq(inventory.branchId, so.branchId), eq(inventory.ingredientId, item.ingredientId)),
-      )
-      .limit(1);
+    // Never skip a counted item silently: the inventory row is created at 0
+    // when it was never seeded (the old `if (inv)` branch dropped the whole
+    // adjustment — including its Kartu Stok row — for exactly the ingredients
+    // an operator is most likely correcting).
+    const inv = await ensureInventoryRow(db, so.branchId, item.ingredientId);
+    const oldQuantity = inv.quantity;
 
-    if (inv) {
-      const oldQuantity = inv.quantity;
+    await db
+      .update(inventory)
+      .set({
+        quantity: item.physicalStock,
+        lastUpdated: new Date(),
+      })
+      .where(eq(inventory.id, inv.id));
 
-      await db
-        .update(inventory)
-        .set({
-          quantity: item.physicalStock,
-          lastUpdated: new Date(),
-        })
-        .where(eq(inventory.id, inv.id));
-
-      // Create ledger adjustment entry using current inventory as reference
-      const currentVariance = item.physicalStock - inv.quantity;
-      changes.push({
+    // Create ledger adjustment entry using current inventory as reference
+    const currentVariance = item.physicalStock - inv.quantity;
+    changes.push({
+      ingredientId: item.ingredientId,
+      ingredientName: "",
+      systemStock: item.systemStock,
+      oldQuantity,
+      newQuantity: item.physicalStock,
+      delta: currentVariance,
+    });
+    if (currentVariance !== 0) {
+      await db.insert(stockLedger).values({
+        branchId: so.branchId,
         ingredientId: item.ingredientId,
-        ingredientName: "",
-        systemStock: item.systemStock,
-        oldQuantity,
-        newQuantity: item.physicalStock,
-        delta: currentVariance,
+        type: currentVariance > 0 ? "IN" : "OUT",
+        quantity: Math.abs(currentVariance),
+        balance: item.physicalStock,
+        reference: data.soId,
+        notes: `SO Adjustment${data.investigationNote ? ": " + data.investigationNote : ""}`,
       });
-      if (currentVariance !== 0) {
-        await db.insert(stockLedger).values({
-          branchId: so.branchId,
-          ingredientId: item.ingredientId,
-          type: currentVariance > 0 ? "IN" : "OUT",
-          quantity: Math.abs(currentVariance),
-          balance: item.physicalStock,
-          reference: data.soId,
-          notes: `SO Adjustment${data.investigationNote ? ": " + data.investigationNote : ""}`,
-        });
-      }
+    }
 
-      // Alert if inventory went negative
-      if (item.physicalStock < 0) {
-        await db.insert(systemNotifications).values({
-          userId: so.submittedBy,
-          title: "⚠️ Stok Negatif setelah SO",
-          message: `Item ${item.ingredientId} menjadi ${item.physicalStock} setelah penyesuaian SO.`,
-          type: "alert",
-        });
-      }
+    // Alert if inventory went negative
+    if (item.physicalStock < 0) {
+      await db.insert(systemNotifications).values({
+        userId: so.submittedBy,
+        title: "⚠️ Stok Negatif setelah SO",
+        message: `Item ${item.ingredientId} menjadi ${item.physicalStock} setelah penyesuaian SO.`,
+        type: "alert",
+      });
     }
   }
 
@@ -1367,36 +1362,32 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
 
         if (!rawIngredient) continue;
 
-        // Get current inventory for this raw ingredient
-        const [inv] = await db
-          .select()
-          .from(inventory)
-          .where(
-            and(eq(inventory.branchId, so.branchId), eq(inventory.ingredientId, rawIngredient.id)),
-          )
-          .limit(1);
+        // Same loud-missing-row policy as the normal path below.
+        const inv = await ensureInventoryRow(db, so.branchId, rawIngredient.id);
+        // Nasi was made from raw ingredients, so subtract them
+        const rawAmount = conv.totalAmount;
+        // Clamp to what is actually there, and record the *applied* amount —
+        // the old code wrote `rawAmount` to the ledger while inventory only
+        // lost `min(stock, rawAmount)`, so the ledger overstated the
+        // movement whenever stock was short.
+        const applied = Math.min(inv.quantity, rawAmount);
+        const newQty = inv.quantity - applied;
 
-        if (inv) {
-          // Nasi was made from raw ingredients, so subtract them
-          const rawAmount = conv.totalAmount;
-          const newQty = Math.max(0, inv.quantity - rawAmount);
+        await db
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, inv.id));
 
-          await db
-            .update(inventory)
-            .set({ quantity: newQty, lastUpdated: new Date() })
-            .where(eq(inventory.id, inv.id));
-
-          if (rawAmount > 0) {
-            await db.insert(stockLedger).values({
-              branchId: so.branchId,
-              ingredientId: rawIngredient.id,
-              type: "OUT",
-              quantity: rawAmount,
-              balance: newQty,
-              reference: `SO:${data.soId}`,
-              notes: `SO Realization: Nasi ${nasiPortions} porsi → ${conv.ingredientName} -${rawAmount}${conv.unit}`,
-            });
-          }
+        if (applied > 0) {
+          await db.insert(stockLedger).values({
+            branchId: so.branchId,
+            ingredientId: rawIngredient.id,
+            type: "OUT",
+            quantity: applied,
+            balance: newQty,
+            reference: `SO:${data.soId}`,
+            notes: `SO Realization: Nasi ${nasiPortions} porsi → ${conv.ingredientName} -${applied}${conv.unit}`,
+          });
         }
       }
       // Skip the normal inventory adjustment for Nasi
@@ -1404,40 +1395,32 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
     }
 
     // Normal items: adjust inventory to match physical stock
-    const [inv] = await db
-      .select()
-      .from(inventory)
-      .where(
-        and(eq(inventory.branchId, so.branchId), eq(inventory.ingredientId, item.ingredientId)),
-      )
-      .limit(1);
+    // (row created at 0 when missing — never skip the correction silently)
+    const inv = await ensureInventoryRow(db, so.branchId, item.ingredientId);
+    const oldQty = inv.quantity;
+    const newQty = item.physicalStock;
+    const delta = newQty - oldQty;
 
-    if (inv) {
-      const oldQty = inv.quantity;
-      const newQty = item.physicalStock;
-      const delta = newQty - oldQty;
+    // Update inventory
+    await db
+      .update(inventory)
+      .set({
+        quantity: newQty,
+        lastUpdated: new Date(),
+      })
+      .where(eq(inventory.id, inv.id));
 
-      // Update inventory
-      await db
-        .update(inventory)
-        .set({
-          quantity: newQty,
-          lastUpdated: new Date(),
-        })
-        .where(eq(inventory.id, inv.id));
-
-      // Create stock ledger entry for the adjustment
-      if (delta !== 0) {
-        await db.insert(stockLedger).values({
-          branchId: so.branchId,
-          ingredientId: item.ingredientId,
-          type: delta > 0 ? "IN" : "OUT",
-          quantity: Math.abs(delta),
-          balance: newQty,
-          reference: `SO:${data.soId}`,
-          notes: `SO Realization: Adjusted from ${oldQty} to ${newQty}`,
-        });
-      }
+    // Create stock ledger entry for the adjustment
+    if (delta !== 0) {
+      await db.insert(stockLedger).values({
+        branchId: so.branchId,
+        ingredientId: item.ingredientId,
+        type: delta > 0 ? "IN" : "OUT",
+        quantity: Math.abs(delta),
+        balance: newQty,
+        reference: `SO:${data.soId}`,
+        notes: `SO Realization: Adjusted from ${oldQty} to ${newQty}`,
+      });
     }
   }
 

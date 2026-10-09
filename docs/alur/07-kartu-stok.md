@@ -120,3 +120,22 @@ A: Saat ini Kartu Stok menampilkan semua riwayat dari terbaru ke terlama. Gunaka
 
 **Q: Kenapa stok di Kartu Stok berbeda dengan stok di halaman Inventory?**
 A: Seharusnya sama. Jika berbeda, mungkin ada transaksi yang belum tercatat atau ada kesalahan sistem. Lakukan stock opname untuk verifikasi.
+
+## Restorasi = potongan, otomatis (ADR 0020)
+
+Setiap penjualan **membekukan** bahan yang dikonsumsinya di tabel
+`order_item_ingredients` (di transaksi yang sama dengan pengurangan stok — sama
+seperti `cogs_at_transaction`). Void, edit order, dan hapus order **memakai
+bekuan itu** untuk mengembalikan stok; sistem tidak lagi menghitung ulang dari
+resep.
+
+Efeknya: kalau resep **diedit setelah** ada penjualan, stok yang kembali tetap
+sama persis dengan yang terpotong dulu. Sebelumnya, perubahan resep membuat
+jumlah kembalinya berbeda tanpa jejak di Kartu Stok — inilah penyebab
+selisih "Cup gelas PP 14Oz" Mulyorejo (POS 1 vs fisik 59, 58 pcs hilang tanpa
+catatan).
+
+Catatan: order yang dibuat **sebelum migrasi 0061 (Oktober 2026)** tidak punya
+bekuan. Merestorasi order seperti itu memakai resep terkini (perilaku lama) dan
+mencatat peringatan di log. Kalau jumlah stok yang kembali terlihat janggal,
+periksa dulu umur order-nya.

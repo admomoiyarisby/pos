@@ -20,6 +20,7 @@ import {
   areaManagerBranches,
   inventory,
   stockLedger,
+  orderItemIngredients,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { requireAuth, requireRole } from "#/lib/server/auth";
@@ -37,8 +38,49 @@ import type { DbTx } from "./ingredient-resolver";
 
 type IngredientDelta = { ingredientId: string; quantity: number };
 
+/**
+ * Resolve the (branch, ingredient) inventory row, creating it at 0 when it has
+ * never been seeded, and take the row lock.
+ *
+ * Every previous stock path silently skipped the movement — update *and*
+ * ledger row — when `if (!inv) continue` found no inventory row for the
+ * branch/ingredient pair. A sale, void, or restore would then appear to work
+ * in the UI while nothing was recorded on Kartu Stok, which is how inventory
+ * drifts with no audit trail at all. A missing row is a *setup gap*, not a
+ * reason to drop a real movement: create the row, then apply and record.
+ *
+ * Same upsert-then-write pattern as `adjustBranchStockBatch`
+ * (inventory.ts), which has always handled this correctly.
+ */
+export async function ensureInventoryRow(tx: DbTx, branchId: string, ingredientId: string) {
+  await tx
+    .insert(inventory)
+    .values({ branchId, ingredientId, quantity: 0 })
+    .onConflictDoNothing({ target: [inventory.branchId, inventory.ingredientId] });
+
+  const [inv] = await tx
+    .select()
+    .from(inventory)
+    .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, ingredientId)))
+    .for("update")
+    .limit(1);
+
+  // Loud by construction: after the upsert the row must exist. If it somehow
+  // does not (e.g. the ingredient row was deleted mid-transaction) the
+  // movement is abandoned here rather than applied unrecorded.
+  if (!inv) {
+    throw new Error(
+      `Inventory row tidak ditemukan dan gagal dibuat untuk ingredient ${ingredientId} di branch ${branchId}`,
+    );
+  }
+  return inv;
+}
+
 /** Apply a signed ingredient delta to inventory, writing one ledger row per
- *  ingredient. Positive quantity = consumption (OUT); negative = restore (IN). */
+ *  ingredient. Positive quantity = consumption (OUT); negative = restore (IN).
+ *
+ *  The ledger row is written unconditionally: the movement either happens and
+ *  is recorded, or the transaction fails — never silently dropped. */
 async function applyIngredientDelta(
   tx: DbTx,
   branchId: string,
@@ -49,13 +91,7 @@ async function applyIngredientDelta(
   for (const delta of deltas) {
     if (delta.quantity === 0) continue;
 
-    const [inv] = await tx
-      .select()
-      .from(inventory)
-      .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, delta.ingredientId)))
-      .for("update")
-      .limit(1);
-    if (!inv) continue;
+    const inv = await ensureInventoryRow(tx, branchId, delta.ingredientId);
 
     const newQty = inv.quantity - delta.quantity;
     await tx
@@ -75,6 +111,29 @@ async function applyIngredientDelta(
   }
 }
 
+/**
+ * Freeze an order item's resolved consumption into `order_item_ingredients`
+ * (ADR 0020) so every later restore replays the transaction-time quantities
+ * instead of re-resolving the (possibly edited) recipe BOM.
+ */
+async function writeOrderItemIngredientSnapshot(
+  tx: DbTx,
+  orderItemId: string,
+  ingredients: Array<{ ingredientId: string; quantity: number }>,
+): Promise<void> {
+  const rows = ingredients
+    .filter((ing) => ing.quantity !== 0)
+    .map((ing) => ({ orderItemId, ingredientId: ing.ingredientId, quantity: ing.quantity }));
+  if (rows.length === 0) return;
+  await tx
+    .insert(orderItemIngredients)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [orderItemIngredients.orderItemId, orderItemIngredients.ingredientId],
+      set: { quantity: sql`excluded.quantity` },
+    });
+}
+
 /** Net ingredient consumption across an item list (adds matching entries). */
 function sumDeltas(...groups: IngredientDelta[][]): IngredientDelta[] {
   const map = new Map<string, number>();
@@ -84,16 +143,6 @@ function sumDeltas(...groups: IngredientDelta[][]): IngredientDelta[] {
     }
   }
   return [...map].map(([ingredientId, quantity]) => ({ ingredientId, quantity }));
-}
-
-/** Resolve BOM consumption for the given item list (client input shape). */
-async function resolveItemsDelta(
-  items: { recipeId: string; quantity: number }[],
-): Promise<IngredientDelta[]> {
-  const groups = await Promise.all(
-    items.map((item) => resolveNewItemIngredients(item.recipeId, item.quantity)),
-  );
-  return sumDeltas(...groups.map((r) => r.ingredients));
 }
 
 /** Resolve BOM consumption for the order's persisted items. */
@@ -342,6 +391,14 @@ export async function createSalesOrderCore(
   const totalAmount = subtotal;
   const netSales = totalAmount;
 
+  // Resolve each item's consumption once and reuse it for both the snapshot
+  // and the stock delta — the ADR 0020 frozen quantities every later restore
+  // will replay.
+  const resolvedPerItem = await Promise.all(
+    data.items.map((item) => resolveNewItemIngredients(item.recipeId, item.quantity)),
+  );
+  const delta = sumDeltas(...resolvedPerItem.map((r) => r.ingredients));
+
   // Create order in transaction
   const order = await db.transaction(async (tx) => {
     // Determine createdAt date
@@ -368,22 +425,25 @@ export async function createSalesOrderCore(
       })
       .returning();
 
-    // Insert items
-    if (itemDetails.length > 0) {
-      await tx.insert(orderItems).values(
-        itemDetails.map((item) => ({
+    // Insert items + their frozen ingredient snapshot (ADR 0020)
+    for (let i = 0; i < data.items.length; i++) {
+      const detail = itemDetails[i];
+      const [orderItem] = await tx
+        .insert(orderItems)
+        .values({
           orderId: newOrder.id,
-          recipeId: item.recipeId,
-          quantity: item.quantity,
-          price: item.price,
-          cogsAtTransaction: item.cogsAtTransaction,
-          notes: item.notes,
-        })),
-      );
+          recipeId: detail.recipeId,
+          quantity: detail.quantity,
+          price: detail.price,
+          cogsAtTransaction: detail.cogsAtTransaction,
+          notes: detail.notes,
+        })
+        .returning();
+
+      await writeOrderItemIngredientSnapshot(tx, orderItem.id, resolvedPerItem[i].ingredients);
     }
 
     // Deduct inventory + write Kartu Stok rows (same as POS createOrder)
-    const delta = await resolveItemsDelta(data.items);
     await applyIngredientDelta(
       tx,
       data.branchId,
@@ -475,10 +535,24 @@ export async function updateSalesOrderCore(
   const totalAmount = subtotal;
   const netSales = totalAmount;
 
+  // Resolve the new items' consumption once; the snapshot and the re-deduction
+  // must agree, so they share this resolution (ADR 0020).
+  const resolvedPerItem = await Promise.all(
+    data.items.map((item) => resolveNewItemIngredients(item.recipeId, item.quantity)),
+  );
+  const newDelta = sumDeltas(...resolvedPerItem.map((r) => r.ingredients));
+
   await db.transaction(async (tx) => {
     // Capture the order's pre-edit state for the stock reversal
     const [oldOrder] = await tx.select().from(orders).where(eq(orders.id, data.id)).limit(1);
     if (!oldOrder) throw new Error("Order not found");
+    // A voided order's stock was already restored by the void. Editing it
+    // would stack a second restore (plus a re-deduction) on top — the same
+    // "the same thing recorded twice" family as ADR 0019. Corrections to a
+    // voided order go through a new order, not an edit.
+    if (oldOrder.status === "Void") {
+      throw new Error("Order sudah di-void — buat order baru untuk mengoreksi input");
+    }
     const oldDelta = await resolveOrderDelta(data.id, tx);
 
     // Update order
@@ -507,23 +581,28 @@ export async function updateSalesOrderCore(
     // Delete existing items and re-insert
     await tx.delete(orderItems).where(eq(orderItems.orderId, data.id));
 
-    if (itemDetails.length > 0) {
-      await tx.insert(orderItems).values(
-        itemDetails.map((item) => ({
+    for (let i = 0; i < data.items.length; i++) {
+      const detail = itemDetails[i];
+      const [orderItem] = await tx
+        .insert(orderItems)
+        .values({
           orderId: data.id,
-          recipeId: item.recipeId,
-          quantity: item.quantity,
-          price: item.price,
-          cogsAtTransaction: item.cogsAtTransaction,
-          notes: item.notes,
-        })),
-      );
+          recipeId: detail.recipeId,
+          quantity: detail.quantity,
+          price: detail.price,
+          cogsAtTransaction: detail.cogsAtTransaction,
+          notes: detail.notes,
+        })
+        .returning();
+
+      await writeOrderItemIngredientSnapshot(tx, orderItem.id, resolvedPerItem[i].ingredients);
     }
 
     // Reconcile stock: restore what the old items consumed (from the old
     // branch), deduct what the new items consume. Each side writes its own
-    // Kartu Stok rows so the edit is fully traceable.
-    const newDelta = await resolveItemsDelta(data.items);
+    // Kartu Stok rows so the edit is fully traceable. The restore replays the
+    // frozen per-item snapshot, so an edit of an order whose recipe has since
+    // changed still puts back exactly what went out.
     await applyIngredientDelta(
       tx,
       oldOrder.branchId,

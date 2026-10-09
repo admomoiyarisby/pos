@@ -697,6 +697,46 @@ export const orderItemExclusions = pgTable(
   (t) => [index("oie_item_idx").on(t.orderItemId)],
 );
 
+/**
+ * ADR 0020 — transaction-time ingredient consumption per order item.
+ *
+ * `resolvePersistedItemIngredients` used to re-resolve the recipe BOM at
+ * *restore* time (void / edit / delete), so every restore replayed whatever
+ * the BOM said that day. A recipe edited between sale and restore made the
+ * restored quantity differ from the deducted one, and the difference vanished
+ * without any ledger row — the silent half of the Royal Plaza / Mulyorejo
+ * inventory audits (system owed physical stock back).
+ *
+ * These rows are written inside the same transaction that deducts stock, so
+ * they freeze exactly what the sale consumed — the same pattern
+ * `order_items.cogsAtTransaction` already applies to cost. Restores replay
+ * these values instead of re-resolving, which makes
+ * "restored == deducted" true by construction.
+ *
+ * positive = consumed, negative = exclusion restored back at sale time —
+ * identical sign convention to ResolvedIngredient.quantity.
+ * Orders created before this table existed have no rows; the resolver falls
+ * back to live BOM resolution for exactly those (with a console warning).
+ */
+export const orderItemIngredients = pgTable(
+  "order_item_ingredients",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderItemId: uuid("order_item_id")
+      .notNull()
+      .references(() => orderItems.id, { onDelete: "cascade" }),
+    ingredientId: uuid("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id),
+    quantity: real("quantity").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("order_item_ingredient_unique").on(t.orderItemId, t.ingredientId),
+    index("oii_item_idx").on(t.orderItemId),
+  ],
+);
+
 export const cancelRequests = pgTable(
   "cancel_requests",
   {

@@ -17,6 +17,7 @@ import {
   orderItems,
   orderItemModifiers,
   orderItemExclusions,
+  orderItemIngredients,
   recipeModifierExclusions,
   recipeBranches,
   shifts,
@@ -42,6 +43,7 @@ import {
   resolvePersistedItemIngredients,
   type DbTx,
 } from "./ingredient-resolver";
+import { ensureInventoryRow } from "./sales-data";
 import { z } from "zod";
 
 export const getPosMenu = createServerFn({ method: "GET" })
@@ -1007,6 +1009,20 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
           quantity: ex.quantity,
         });
       }
+
+      // ADR 0020: freeze this item's consumption so every later void/restore
+      // replays it exactly, instead of re-resolving a recipe that may have
+      // been edited since (which silently restored less than was deducted).
+      const snapshotRows = resolved.ingredients
+        .filter((ing) => ing.quantity !== 0)
+        .map((ing) => ({
+          orderItemId: orderItem.id,
+          ingredientId: ing.ingredientId,
+          quantity: ing.quantity,
+        }));
+      if (snapshotRows.length > 0) {
+        await tx.insert(orderItemIngredients).values(snapshotRows);
+      }
     }
 
     // Deduct inventory (with FOR UPDATE row locks to prevent double-spend)
@@ -1017,53 +1033,41 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
         if (seenIngredients.has(ing.ingredientId)) continue;
         seenIngredients.add(ing.ingredientId);
 
-        const [inv] = await tx
-          .select()
-          .from(inventory)
-          .where(
-            and(
-              eq(inventory.branchId, data.branchId),
-              eq(inventory.ingredientId, ing.ingredientId),
-            ),
-          )
-          .for("update")
-          .limit(1);
+        const inv = await ensureInventoryRow(tx, data.branchId, ing.ingredientId);
 
-        if (inv) {
-          // Calculate net delta: sum across all items for this ingredient
-          let netDelta = 0;
-          for (let j = 0; j < data.items.length; j++) {
-            const r = resolvedPerItem[j];
-            const match = r.ingredients.find((x) => x.ingredientId === ing.ingredientId);
-            if (match) netDelta += match.quantity;
-          }
-
-          const newQty = inv.quantity - netDelta;
-          // Authoritative re-check under FOR UPDATE: a concurrent order may
-          // have spent the same stock between the read-only check and here.
-          if (netDelta > 0 && newQty < 0) {
-            throw new OrderInsufficientStockError([
-              `${netConsumption.get(ing.ingredientId)?.name ?? ing.ingredientName}: stok berubah saat memproses (sisa ${inv.quantity}), transaksi tidak dapat diproses`,
-            ]);
-          }
-          await tx
-            .update(inventory)
-            .set({ quantity: newQty, lastUpdated: new Date() })
-            .where(eq(inventory.id, inv.id));
-
-          await tx.insert(stockLedger).values({
-            branchId: data.branchId,
-            ingredientId: ing.ingredientId,
-            type: netDelta > 0 ? "OUT" : "IN",
-            quantity: Math.abs(netDelta),
-            balance: newQty,
-            reference: newOrder.id,
-            notes:
-              netDelta > 0
-                ? `POS Order ${newOrder.id.slice(0, 8)}`
-                : `Exclusion restore: ${newOrder.id.slice(0, 8)}`,
-          });
+        // Calculate net delta: sum across all items for this ingredient
+        let netDelta = 0;
+        for (let j = 0; j < data.items.length; j++) {
+          const r = resolvedPerItem[j];
+          const match = r.ingredients.find((x) => x.ingredientId === ing.ingredientId);
+          if (match) netDelta += match.quantity;
         }
+
+        const newQty = inv.quantity - netDelta;
+        // Authoritative re-check under FOR UPDATE: a concurrent order may
+        // have spent the same stock between the read-only check and here.
+        if (netDelta > 0 && newQty < 0) {
+          throw new OrderInsufficientStockError([
+            `${netConsumption.get(ing.ingredientId)?.name ?? ing.ingredientName}: stok berubah saat memproses (sisa ${inv.quantity}), transaksi tidak dapat diproses`,
+          ]);
+        }
+        await tx
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, inv.id));
+
+        await tx.insert(stockLedger).values({
+          branchId: data.branchId,
+          ingredientId: ing.ingredientId,
+          type: netDelta > 0 ? "OUT" : "IN",
+          quantity: Math.abs(netDelta),
+          balance: newQty,
+          reference: newOrder.id,
+          notes:
+            netDelta > 0
+              ? `POS Order ${newOrder.id.slice(0, 8)}`
+              : `Exclusion restore: ${newOrder.id.slice(0, 8)}`,
+        });
       }
     }
 
@@ -1379,34 +1383,29 @@ async function restoreInventoryForVoid(
     const resolved = await resolvePersistedItemIngredients(oi.id, { tx });
 
     for (const ing of resolved.ingredients) {
-      const [inv] = await tx
-        .select()
-        .from(inventory)
-        .where(and(eq(inventory.branchId, branchId), eq(inventory.ingredientId, ing.ingredientId)))
-        .for("update")
-        .limit(1);
+      // ADR 0020 + loud-missing-row policy: the inventory row is created at 0
+      // when it was never seeded instead of skipping the restore silently.
+      const inv = await ensureInventoryRow(tx, branchId, ing.ingredientId);
 
-      if (inv) {
-        const newQty = inv.quantity + ing.quantity;
-        await tx
-          .update(inventory)
-          .set({ quantity: newQty, lastUpdated: new Date() })
-          .where(eq(inventory.id, inv.id));
+      const newQty = inv.quantity + ing.quantity;
+      await tx
+        .update(inventory)
+        .set({ quantity: newQty, lastUpdated: new Date() })
+        .where(eq(inventory.id, inv.id));
 
-        if (ing.quantity !== 0) {
-          await tx.insert(stockLedger).values({
-            branchId,
-            ingredientId: ing.ingredientId,
-            type: ing.quantity > 0 ? "IN" : "OUT",
-            quantity: Math.abs(ing.quantity),
-            balance: newQty,
-            reference: orderId,
-            notes:
-              ing.quantity > 0
-                ? `Void Order ${orderIdShort}: ${reason}`
-                : `Void re-deduct exclusion: ${orderIdShort}`,
-          });
-        }
+      if (ing.quantity !== 0) {
+        await tx.insert(stockLedger).values({
+          branchId,
+          ingredientId: ing.ingredientId,
+          type: ing.quantity > 0 ? "IN" : "OUT",
+          quantity: Math.abs(ing.quantity),
+          balance: newQty,
+          reference: orderId,
+          notes:
+            ing.quantity > 0
+              ? `Void Order ${orderIdShort}: ${reason}`
+              : `Void re-deduct exclusion: ${orderIdShort}`,
+        });
       }
     }
   }
