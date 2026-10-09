@@ -1127,12 +1127,15 @@ export async function approveStockOpnameCore(
   }
 
   // Notify the branch admin who submitted the SO. Approve no longer moves
-  // stock (ADR 0021) — the message says so, so the counter does not expect the
-  // books to have changed.
+  // stock (ADR 0021) — and for a non-25th opname it never will, so the message
+  // must not promise a realize that will be refused.
+  const soIsMonthly = Number.parseInt(so.date.slice(8, 10), 10) === 25;
   await db.insert(systemNotifications).values({
     userId: so.submittedBy,
     title: "Stock Opname Approved",
-    message: `Stock opname cabang telah disetujui oleh ${user.name}${data.investigationNote ? ". Catatan: " + data.investigationNote : ""}. Stok belum berubah — perubahan diterapkan saat Realize (SO tanggal 25).`,
+    message: soIsMonthly
+      ? `Stock opname cabang telah disetujui oleh ${user.name}${data.investigationNote ? ". Catatan: " + data.investigationNote : ""}. Stok belum berubah — perubahan diterapkan saat Realize (opname tanggal 25).`
+      : `Stock opname cabang ${so.date} telah disetujui oleh ${user.name}${data.investigationNote ? ". Catatan: " + data.investigationNote : ""}. Opname di luar tanggal 25 hanya catatan — stok tidak berubah.`,
     type: "info",
   });
 

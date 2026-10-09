@@ -41,7 +41,7 @@ const markdownContent = `
 >
 > **Minyak Goreng:** Sistem 30, Fisik 32 → Variance +2 (perlu investigasi)
 >
-> **Hasil:** Setelah approval, stok disesuaikan ke angka fisik
+> **Hasil:** Setelah **realize** (opname tanggal 25), stok disesuaikan ke angka fisik
 
 ## Pertanyaan Umum
 
@@ -53,9 +53,13 @@ Untuk mencegah counter "mengikuti" angka sistem. Penghitungan harus berdasarkan 
 
 Idealnya setiap bulan, tapi tergantung kebutuhan bisnis.
 
+**Opname di luar tanggal 25 apakah mengubah stok?**
+
+Tidak. Hanya opname yang **tanggalnya 25** yang mengubah stok saat di-realize. Opname tanggal lain hanya catatan/audit.
+
 **Apa itu "realize" pada tanggal 25?**
 
-Realisasi adalah proses final yang menerapkan penyesuaian SO secara permanen. Hanya bisa dilakukan tanggal 25 oleh Super Admin.
+Realisasi adalah proses final yang menerapkan penyesuaian SO ke stok. Hanya bisa untuk opname yang tanggalnya 25, oleh Super Admin/Admin Pusat.
 `;
 
 function StokOpnamePage() {

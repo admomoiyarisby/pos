@@ -73,6 +73,11 @@ function StockOpnameDetailPage() {
     initialData: initial,
   });
 
+  // ADR 0021: the opname's OWN date decides whether it can ever touch stock —
+  // only the 25th. Every other date is a note, forever.
+  const soDay = Number.parseInt(String(detail?.date ?? "").slice(8, 10), 10);
+  const soIs25th = soDay === 25;
+
   const submitMutation = useMutation({
     mutationFn: submitStockOpname,
     onSuccess: (result) => {
@@ -97,13 +102,13 @@ function StockOpnameDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setApproveModal(false);
       // ADR 0021: approve no longer touches stock. The counts become a signed
-      // note; realize (SO dated the 25th) is what applies them.
+      // note. Whether they can EVER be applied depends on the opname's date:
+      // only the 25th gets a realize; anything else is a note permanently.
       const changed = result.changes.filter((c) => c.delta !== 0).length;
       toast.success("Stock opname disetujui", {
-        description:
-          changed > 0
-            ? `${changed} item tercatat sebagai selisih. Stok belum berubah — perubahan diterapkan saat Realize (opname tanggal 25).`
-            : "Tidak ada selisih. Stok belum berubah.",
+        description: soIs25th
+          ? `${changed} item tercatat sebagai selisih. Stok belum berubah — perubahan diterapkan saat Realize (opname tanggal 25).`
+          : `${changed} item tercatat sebagai selisih. Opname di luar tanggal 25 hanya catatan — stok tidak akan berubah.`,
       });
       if (result.drift.length > 0) {
         toast.warning("Stok bergerak sejak SO dibuat", {
@@ -178,8 +183,6 @@ function StockOpnameDetailPage() {
 
   // ADR 0021: realize is gated on the OPNAME's own date, not today's date. An
   // SO dated the 25th is the monthly baseline — the only SO that moves stock.
-  const soDay = Number.parseInt(String(detail.date ?? "").slice(8, 10), 10);
-  const soIs25th = soDay === 25;
   const canRealize =
     soIs25th &&
     ["super_admin", "admin_pusat"].includes(user?.role ?? "") &&
@@ -625,7 +628,9 @@ function StockOpnameDetailPage() {
           <div className="rounded-xl border bg-blue-50/50 p-4 shadow-xs">
             <p className="text-sm font-medium mb-2">Konversi Nasi Putih → Bahan Baku</p>
             <p className="text-xs text-muted-foreground mb-3">
-              Stok fisik Nasi akan dikonversi ke bahan baku saat Realize SO.
+              {soIs25th
+                ? "Stok fisik Nasi akan dikonversi ke bahan baku saat Realize SO."
+                : "Konversi Nasi hanya berlaku saat Realize — opname di luar tanggal 25 hanya catatan, jadi tidak ada pengurangan bahan baku."}
             </p>
             {detail.items
               .filter((item: any) => item.isNasi)
