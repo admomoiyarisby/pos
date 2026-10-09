@@ -1310,8 +1310,17 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
       `Hanya stock opname tanggal 25 yang mengubah stok — opname tanggal ${so.date} hanya catatan`,
     );
   }
-  if (so.date > jakartaToday()) {
-    throw new Error(`Stock opname bertanggal ${so.date} belum bisa di-realize`);
+  // The opname's date identifies its monthly CYCLE, not a deadline. A branch
+  // may count continuously and realize the month's 25th opname any day within
+  // that month (e.g. count through the month, realize on the 10th). Only a
+  // FUTURE cycle's opname is refused — realizing November's opname in October
+  // would apply a count of a cycle that has not started.
+  const soCycle = so.date.slice(0, 7); // YYYY-MM
+  const currentCycle = jakartaToday().slice(0, 7);
+  if (soCycle > currentCycle) {
+    throw new Error(
+      `Stock opname periode ${soCycle} belum bisa di-realize — periode ini ${currentCycle}`,
+    );
   }
 
   if (so.status !== "Approved") {

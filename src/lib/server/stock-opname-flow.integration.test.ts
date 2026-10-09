@@ -350,6 +350,64 @@ describe("Stock opname — state guards", () => {
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
+    "a 25th opname can be realized early inside its own month, but not a future cycle",
+    async () => {
+      const branch = await seedBranch(uniq("SO-CYC"));
+      const ingredient = await seedIngredient(uniq("SO-CYCING"));
+      await seedInventory(branch, ingredient, 10);
+      const ba = await seedUser("branch_admin", branch);
+      const am = await seedUser("area_manager", undefined, [branch]);
+      const superAdmin = await seedUser("super_admin");
+
+      // Today is mid-cycle: 2026-10-10 12:00 Jakarta. The opname is dated the
+      // month's 25th (2026-10-25) — the branch counts continuously, so realize
+      // must work now. This is the exact case the user hit.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-10T05:00:00Z")); // 12:00 Asia/Jakarta
+      try {
+        const so = await inv.triggerStockOpnameCore(ba, {
+          branchId: branch,
+          date: "2026-10-25",
+        });
+        const item = await firstItem(so.id);
+        await inv.submitStockOpnameCore(ba, {
+          soId: so.id,
+          items: [{ itemId: item.id, physicalStock: 8 }],
+        });
+        await inv.approveStockOpnameCore(am, { soId: so.id });
+
+        const realized = await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
+        expect(realized.success).toBe(true);
+        expect(await getStock(branch, ingredient)).toBe(8);
+
+        // A FUTURE cycle's opname is still refused — realizing next month's
+        // opname today would apply a count of a cycle that has not started.
+        const branchB = await seedBranch(uniq("SO-CYC-B"));
+        const ingredientB = await seedIngredient(uniq("SO-CYCINGB"));
+        await seedInventory(branchB, ingredientB, 10);
+        const baB = await seedUser("branch_admin", branchB);
+        const amB = await seedUser("area_manager", undefined, [branchB]);
+        const soB = await inv.triggerStockOpnameCore(baB, {
+          branchId: branchB,
+          date: "2026-11-25",
+        });
+        const itemB = await firstItem(soB.id);
+        await inv.submitStockOpnameCore(baB, {
+          soId: soB.id,
+          items: [{ itemId: itemB.id, physicalStock: 9 }],
+        });
+        await inv.approveStockOpnameCore(amB, { soId: soB.id });
+        await expect(inv.realizeStockOpnameCore(superAdmin, { soId: soB.id })).rejects.toThrow(
+          "belum bisa di-realize",
+        );
+        expect(await getStock(branchB, ingredientB)).toBe(10);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
     "realize refuses non-25th opnames (notes only) and unapproved SOs",
     async () => {
       // An opname dated outside the 25th is a note: it can be counted,

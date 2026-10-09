@@ -74,9 +74,19 @@ function StockOpnameDetailPage() {
   });
 
   // ADR 0021: the opname's OWN date decides whether it can ever touch stock —
-  // only the 25th. Every other date is a note, forever.
+  // only the 25th. And the date identifies a monthly CYCLE: a 25th opname can
+  // be realized any day within that month (count continuously, realize early),
+  // but not before its month starts. Mirrors the server guard exactly so the
+  // button never shows for an opname the server would refuse.
   const soDay = Number.parseInt(String(detail?.date ?? "").slice(8, 10), 10);
   const soIs25th = soDay === 25;
+  const soCycle = String(detail?.date ?? "").slice(0, 7); // YYYY-MM
+  const currentCycle = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+  }).format(new Date());
+  const soCycleOpen = soCycle !== "" && soCycle <= currentCycle;
 
   const submitMutation = useMutation({
     mutationFn: submitStockOpname,
@@ -103,12 +113,15 @@ function StockOpnameDetailPage() {
       setApproveModal(false);
       // ADR 0021: approve no longer touches stock. The counts become a signed
       // note. Whether they can EVER be applied depends on the opname's date:
-      // only the 25th gets a realize; anything else is a note permanently.
+      // only the 25th gets a realize (once its month is open); anything else
+      // is a note permanently.
       const changed = result.changes.filter((c) => c.delta !== 0).length;
       toast.success("Stock opname disetujui", {
-        description: soIs25th
-          ? `${changed} item tercatat sebagai selisih. Stok belum berubah — perubahan diterapkan saat Realize (opname tanggal 25).`
-          : `${changed} item tercatat sebagai selisih. Opname di luar tanggal 25 hanya catatan — stok tidak akan berubah.`,
+        description: !soIs25th
+          ? `${changed} item tercatat sebagai selisih. Opname di luar tanggal 25 hanya catatan — stok tidak akan berubah.`
+          : soCycleOpen
+            ? `${changed} item tercatat sebagai selisih. Stok belum berubah — perubahan diterapkan saat Realize.`
+            : `${changed} item tercatat sebagai selisih. Stok belum berubah — Realize terbuka mulai periode ${soCycle}.`,
       });
       if (result.drift.length > 0) {
         toast.warning("Stok bergerak sejak SO dibuat", {
@@ -182,9 +195,11 @@ function StockOpnameDetailPage() {
     detail.status === "Submitted" && ["super_admin", "area_manager"].includes(user?.role ?? "");
 
   // ADR 0021: realize is gated on the OPNAME's own date, not today's date. An
-  // SO dated the 25th is the monthly baseline — the only SO that moves stock.
+  // SO dated the 25th is the monthly baseline — the only SO that moves stock —
+  // and it becomes realizable once its calendar month opens.
   const canRealize =
     soIs25th &&
+    soCycleOpen &&
     ["super_admin", "admin_pusat"].includes(user?.role ?? "") &&
     detail.status === "Approved" &&
     !detail.realizedAt;
@@ -719,6 +734,17 @@ function StockOpnameDetailPage() {
             {detail.status === "Approved" && !soIs25th && !detail.realizedAt && (
               <p className="text-xs text-muted-foreground w-full sm:w-auto sm:self-center">
                 Opname di luar tanggal 25 hanya catatan — tidak ada perubahan stok.
+              </p>
+            )}
+            {soIs25th && !soCycleOpen && detail.status !== "Approved" && (
+              <p className="text-xs text-muted-foreground w-full sm:w-auto sm:self-center">
+                Opname periode {soCycle} — Realize terbuka mulai periode {soCycle} (bulan itu).
+              </p>
+            )}
+            {soIs25th && !soCycleOpen && detail.status === "Approved" && !detail.realizedAt && (
+              <p className="text-xs text-muted-foreground w-full sm:w-auto sm:self-center">
+                Realize terbuka mulai {soCycle} — belum bisa menerapkan stok untuk periode
+                mendatang.
               </p>
             )}
           </div>

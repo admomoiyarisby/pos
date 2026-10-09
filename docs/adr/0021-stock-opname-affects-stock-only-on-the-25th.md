@@ -34,11 +34,14 @@ for an opname dated the 25th.**
    inventory, exactly what realize will apply — ADR 0001's measurement rule).
    The approval notification now says the stock has not changed yet.
 2. `realizeStockOpnameCore` loads the opname and guards on its **own** date:
-   `day-of-month === 25`, plus a future-date refusal (the trigger form accepts
-   any date). Error messages say the opname is "hanya catatan" when it is not a
-   25th opname. Everything else is unchanged — the counted items are applied
-   with the ADR 0020 upsert/clamp fixes, `SO Realization` ledger rows are
-   written, `realizedAt`/`realizedBy` are stamped.
+   `day-of-month === 25`, plus a **cycle** guard — the opname's `YYYY-MM` must
+   not be in the future, since realizing next month's opname today would apply
+   a count of a cycle that has not started. Within its own month a 25th opname
+   may be realized **any day** (a branch that counts continuously realizes the
+   month's opname on the 10th, not only on the 25th). Everything else is
+   unchanged — the counted items are applied with the ADR 0020 upsert/clamp
+   fixes, `SO Realization` ledger rows are written, `realizedAt`/`realizedBy`
+   are stamped.
 3. `getStockOpnameDetail`'s change summary now hinges on `realizedAt`, not the
    Approved status — "Sudah diterapkan ke stok" only after realize.
 4. UI copy follows: the approve button is "Setujui Opname" (was "Setujui &
@@ -61,6 +64,12 @@ for an opname dated the 25th.**
   `SO Realization` row — the same "point-in-time value applied to later books"
   pattern as the drift discussion. The drift report at approve surfaces it; a
   realize-time drift guard is the natural follow-up.
+- Revision (Oct 10): the first cut refused any opname dated later than
+  _today_, which blocked the real workflow of realizing the month's 25th
+  opname before the 25th arrives. The guard is now by **cycle**: any day
+  inside the opname's own month is allowed; only a future month's opname is
+  refused. The UI mirrors the same rule so the button is never shown for an
+  opname the server would refuse.
 - Tests in `stock-opname-flow.integration.test.ts` were rewritten to the new
   contract, including a new case asserting a non-25th opname changes nothing and
   its realize is refused.

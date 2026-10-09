@@ -73,9 +73,10 @@ Setelah submit, supervisor mereview:
 Hanya opname yang **tanggalnya 25** yang bisa di-realize:
 
 1. Hanya bisa dilakukan oleh Super Admin atau Admin Pusat
-2. Sistem menyesuaikan stok sistem sesuai stok fisik untuk setiap item yang dihitung
-3. Kartu Stok mencatat penyesuaian sebagai **`SO Realization`**
-4. Opname di luar tanggal 25 akan ditolak: "hanya catatan"
+2. Bisa dilakukan **di hari mana pun dalam bulan itu** — cabang boleh menghitung terus-menerus dan realize opname tanggal 25 kapan saja dalam bulan tersebut. Opname untuk bulan yang belum mulai akan ditolak.
+3. Sistem menyesuaikan stok sistem sesuai stok fisik untuk setiap item yang dihitung
+4. Kartu Stok mencatat penyesuaian sebagai **`SO Realization`**
+5. Opname di luar tanggal 25 akan ditolak: "hanya catatan"
 
 **Penting**: Setelah realize, stok sistem = stok fisik. Nilai inilah yang menjadi **baseline** stok bulan berikutnya. Item yang tidak dihitung tidak berubah.
 
