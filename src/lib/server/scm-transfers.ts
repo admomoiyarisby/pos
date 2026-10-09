@@ -355,42 +355,79 @@ export const createMutasiTransfer = createServerFn({ method: "POST" })
 // UPDATE: in-draft item edits (not a state transition; no FSM call)
 // =============================================================================
 
-export const updateMutasiTransferDraftItems = createServerFn({ method: "POST" })
-  .validator((data: { transferId: string; items: Array<{ id: string; quantity: number }> }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    const result = await loadTransferWithItems(data.transferId);
-    if (!result) throw new Error("Transfer not found");
-    assertTransferAccess(user, result.transfer, "act");
+export async function updateMutasiTransferDraftItemsCore(
+  user: MutasiActorUser,
+  data: { transferId: string; items: Array<{ id: string; quantity: number }> },
+) {
+  const result = await loadTransferWithItems(data.transferId);
+  if (!result) throw new Error("Transfer not found");
+  assertTransferAccess(user, result.transfer, "act");
 
-    if (result.transfer.status !== "SuratJalanDraft") {
-      throw new Error("Items can only be edited while in SuratJalanDraft");
-    }
-    if (user.branchId !== result.transfer.fromBranchId) {
-      throw new Error("Only the sender branch can edit the draft");
-    }
+  if (result.transfer.status !== "SuratJalanDraft") {
+    throw new Error("Items can only be edited while in SuratJalanDraft");
+  }
+  // super_admin edits on behalf of the sender branch (emergency override,
+  // ADR 0006); every other actor must sit at the sender branch itself.
+  if (user.role !== "super_admin" && user.branchId !== result.transfer.fromBranchId) {
+    throw new Error("Only the sender branch can edit the draft");
+  }
 
-    // Hard stock guardrail: block save if any item exceeds available stock.
-    const candidateItems = data.items.map((it) => {
-      const orig = result.items.find((i) => i.id === it.id);
-      return { ingredientId: orig!.ingredientId, quantity: it.quantity };
-    });
-    await hardStockCheck(result.transfer.fromBranchId, candidateItems);
-
-    for (const item of data.items) {
-      await db
-        .update(scmTransferItems)
-        .set({ quantity: item.quantity })
-        .where(
-          and(
-            eq(scmTransferItems.id, item.id),
-            eq(scmTransferItems.scmTransferId, data.transferId),
-          ),
-        );
-    }
-
-    return { success: true };
+  // Resolve every patch against a real line up front, so an unknown item id
+  // fails the whole request instead of half-applying it.
+  const patches = data.items.map((it) => {
+    const orig = result.items.find((i) => i.id === it.id);
+    if (!orig) throw new Error(`Item ${it.id} not found in transfer ${data.transferId}`);
+    return { itemId: it.id, ingredientId: orig.ingredientId, from: orig.quantity, to: it.quantity };
   });
+
+  // Hard stock guardrail, run before any write so a rejected save leaves the
+  // original quantities and audit trail untouched.
+  if (patches.some((p) => p.to !== p.from)) {
+    await hardStockCheck(
+      result.transfer.fromBranchId,
+      patches.map((p) => ({ ingredientId: p.ingredientId, quantity: p.to })),
+    );
+  }
+
+  for (const p of patches) {
+    if (p.to === p.from) continue;
+    await db
+      .update(scmTransferItems)
+      .set({ quantity: p.to })
+      .where(
+        and(eq(scmTransferItems.id, p.itemId), eq(scmTransferItems.scmTransferId, data.transferId)),
+      );
+    // A changed promise belongs in the document's own trail — it is what a
+    // later shortfall is measured against. Reuses the `item-update` event the
+    // receiver-side edits already write (and the audit UI already renders).
+    await db.insert(scmTransferAuditLog).values({
+      scmTransferId: data.transferId,
+      event: "item-update",
+      fromState: result.transfer.status,
+      toState: result.transfer.status,
+      itemId: p.itemId,
+      actorId: user.id,
+      actorRole: user.role,
+      note: JSON.stringify({ quantity: { from: p.from, to: p.to } }),
+    });
+  }
+
+  return { success: true };
+}
+
+export const updateMutasiTransferDraftItems = createServerFn({ method: "POST" })
+  .validator((data: { transferId: string; items: Array<{ id: string; quantity: number }> }) => {
+    // Quantities are real (fractional allowed) — guarded to finite positives,
+    // mirroring the receiver-side item edit. A draft line can't be zeroed out:
+    // this endpoint has no counterpart that removes a line.
+    for (const it of data.items) {
+      if (!Number.isFinite(it.quantity) || it.quantity <= 0) {
+        throw new Error("Quantities must be finite and greater than 0");
+      }
+    }
+    return data;
+  })
+  .handler(async ({ data }) => updateMutasiTransferDraftItemsCore(await requireAuth(), data));
 
 // =============================================================================
 // UPDATE: in-state per-line edits (Q11, only in Delivered/ReviewingSJ)

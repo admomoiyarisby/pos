@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
 import Modal from "#/components/ui/Modal";
+import { getInventory } from "#/lib/server/inventory";
 
 import {
   Send,
@@ -29,6 +30,7 @@ import {
   finishReceiveMutasiTransfer,
   markPaidMutasiTransfer,
   cancelMutasiTransfer,
+  updateMutasiTransferDraftItems,
 } from "#/lib/server/scm-transfers";
 import { printMutasiSuratJalan, printMutasiInvoice } from "#/lib/server/scm-transfer-print";
 import { openPrintWindow } from "#/lib/print-window";
@@ -58,6 +60,8 @@ export interface TransferRow {
   id: string;
   code: string;
   status: string;
+  /** Sender branch — the draft editor reads its stock for the hard guardrail hint. */
+  fromBranchId: string;
 }
 
 /** Transfer line item as rendered by these views. */
@@ -139,6 +143,7 @@ function useTransferActions(transferId: string) {
   const finishReceiveMut = useServerFn(finishReceiveMutasiTransfer);
   const markPaidMut = useServerFn(markPaidMutasiTransfer);
   const cancelMut = useServerFn(cancelMutasiTransfer);
+  const saveDraftItemsMut = useServerFn(updateMutasiTransferDraftItems);
   const printSJ = useServerFn(printMutasiSuratJalan);
   const printInv = useServerFn(printMutasiInvoice);
 
@@ -182,6 +187,21 @@ function useTransferActions(transferId: string) {
         ),
       markPaid: () => run(() => markPaidMut({ data: { transferId } })),
       cancel: (reason: string) => run(() => cancelMut({ data: { transferId, reason } })),
+      /**
+       * Edit draft line quantities. Re-throws on failure so the caller can tell
+       * success (clear edits, toast) from the banner error `setError` shows.
+       */
+      saveDraftItems: async (items: Array<{ id: string; quantity: number }>) => {
+        setError(null);
+        try {
+          await saveDraftItemsMut({ data: { transferId, items } });
+          void queryClient.invalidateQueries({ queryKey: ["scm-transfer", transferId] });
+          void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Aksi gagal");
+          throw err;
+        }
+      },
       printSJ: async () => {
         const html = await printSJ({ data: { transferId } });
         openPrintWindow(html);
@@ -505,11 +525,152 @@ function InvoiceCard({
 // Sender BA views
 // ---------------------------------------------------------------------------
 
+/**
+ * Editable line quantities for a `SuratJalanDraft`.
+ *
+ * The promised quantity is the number every later stage is measured against,
+ * so it has to be correctable *before* the AM sees it. Editing lives here
+ * rather than in the shared `ReadOnlyItems` because only this state permits it
+ * — the server rejects the same call in any other state.
+ */
+function EditableDraftItems({
+  items,
+  ingredientById,
+  edits,
+  onEdit,
+  stockByIngredient,
+  showPrices = true,
+}: {
+  items: TransferItemRow[];
+  ingredientById: Map<string, { id: string; name: string; stockUnit: string }>;
+  /** Raw input values by item id; a missing key means "as stored". */
+  edits: Record<string, string>;
+  onEdit: (itemId: string, value: string) => void;
+  stockByIngredient: Map<string, number>;
+  /** Per-unit HPP snapshot — hidden for branch_admin, same rule everywhere else. */
+  showPrices?: boolean;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+        Belum ada item.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border">
+      <div className="divide-y">
+        {items.map((it) => {
+          const ing = ingredientById.get(it.ingredientId);
+          const raw = edits[it.id] ?? String(it.quantity);
+          const value = Number(raw);
+          const invalid = !Number.isFinite(value) || value <= 0;
+          const available = stockByIngredient.get(it.ingredientId);
+          // Mirrors new.tsx's over-stock warning. The server enforces the same
+          // ceiling on save (hardStockCheck); this only avoids a failed save.
+          const overStock = available != null && !invalid && value > available + 1e-9;
+          return (
+            <div key={it.id} className="flex items-center gap-4 p-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {ing?.name ?? it.ingredientId.slice(0, 8) + "..."}
+                  {ing?.stockUnit ? (
+                    <span className="text-xs text-muted-foreground"> ({ing.stockUnit})</span>
+                  ) : null}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <label
+                  className={`block text-[11px] ${invalid ? "text-destructive" : "text-muted-foreground"}`}
+                >
+                  Jumlah
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={raw}
+                  aria-label={`Jumlah ${ing?.name ?? it.ingredientId.slice(0, 8)}`}
+                  onChange={(e) => onEdit(it.id, e.target.value)}
+                  className={`h-9 w-24 rounded-md border px-2 text-sm text-right ${
+                    invalid || overStock
+                      ? "border-destructive bg-destructive/5 text-destructive"
+                      : "border-input bg-background"
+                  }`}
+                />
+                <span
+                  className={`mt-0.5 block text-[10px] ${
+                    overStock ? "text-destructive font-medium" : "text-muted-foreground"
+                  }`}
+                >
+                  {overStock ? "melebihi stok" : "tersedia"}{" "}
+                  {available != null ? formatQuantity(available) : "?"}
+                  {ing?.stockUnit ? ` ${ing.stockUnit}` : ""}
+                </span>
+                {showPrices && (
+                  <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                    @ Rp {it.unitPrice.toLocaleString("id-ID")}
+                    {ing?.stockUnit ? `/${ing.stockUnit}` : ""}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function DraftSenderForm(props: TransferViewProps) {
   const { transfer, items, ingredientById, auditLog } = props;
   const { error, setError, actions } = useTransferActions(transfer.id);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  // In-place quantity edits. Keyed by item id; absent = keep the stored value.
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [isSaving, setIsSaving] = useState(false);
+
+  // The sender's stock, so the form can flag a line that the server's
+  // hardStockCheck would refuse before the user hits save.
+  const { data: inventoryResult } = useQuery({
+    queryKey: ["inventory-branch", transfer.fromBranchId],
+    queryFn: () => getInventory({ data: { branchId: transfer.fromBranchId, limit: 1000 } }),
+  });
+  const stockByIngredient = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const inv of inventoryResult?.data ?? []) m.set(inv.ingredientId, inv.quantity);
+    return m;
+  }, [inventoryResult]);
+
+  const parsed = items.map((it) => ({
+    id: it.id,
+    quantity: Number(edits[it.id] ?? String(it.quantity)),
+  }));
+  const hasInvalid = parsed.some((p) => !Number.isFinite(p.quantity) || p.quantity <= 0);
+  const hasChanges = items.some(
+    (it) => Number(edits[it.id] ?? String(it.quantity)) !== it.quantity,
+  );
+
+  const saveQuantities = async () => {
+    setError(null);
+    if (hasInvalid) {
+      setError("Jumlah harus berupa angka lebih dari 0");
+      return;
+    }
+    if (!hasChanges) return;
+    setIsSaving(true);
+    try {
+      await actions.saveDraftItems(parsed);
+      setEdits({});
+      toast.success("Jumlah item draft diperbarui.");
+    } catch {
+      // The server message is already in the banner (set by the action).
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <Section>
@@ -517,11 +678,36 @@ export function DraftSenderForm(props: TransferViewProps) {
 
       <div>
         <SectionHeading>Item</SectionHeading>
-        <ReadOnlyItems
+        <EditableDraftItems
           items={items}
           ingredientById={ingredientById}
+          edits={edits}
+          onEdit={(itemId, value) => setEdits((prev) => ({ ...prev, [itemId]: value }))}
+          stockByIngredient={stockByIngredient}
           showPrices={props.showPrices ?? true}
         />
+        <ActionBar>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={saveQuantities}
+            disabled={isSaving || !hasChanges || hasInvalid}
+          >
+            Simpan Jumlah
+          </Button>
+          {hasChanges && (
+            <Button variant="ghost" size="sm" onClick={() => setEdits({})} disabled={isSaving}>
+              Batalkan Perubahan
+            </Button>
+          )}
+        </ActionBar>
+        {/* The save button is disabled while a line is invalid, so the reason
+            has to be stated rather than left to the red border. */}
+        {hasInvalid && (
+          <p className="text-xs text-destructive">
+            Jumlah setiap item harus berupa angka lebih dari 0.
+          </p>
+        )}
       </div>
 
       <SectionDivider />

@@ -1157,3 +1157,173 @@ describe("Mutasi Stok — duplicate lines and un-counted receipts (ADR 0019)", (
     },
   );
 });
+
+describe("Mutasi Stok — draft line-quantity edits", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "sender branch_admin can change a draft quantity, and the change is audited in place",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-ED1"));
+      const toBranch = await seedBranch(uniq("MT-ED2"));
+      const ingredient = await seedIngredient(uniq("MT-EDING"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+      const [item] = await db
+        .select({ id: schema.scmTransferItems.id, quantity: schema.scmTransferItems.quantity })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+      expect(item.quantity).toBe(5);
+
+      await expect(
+        scm.updateMutasiTransferDraftItemsCore(sender, {
+          transferId: transfer.id,
+          items: [{ id: item.id, quantity: 8 }],
+        }),
+      ).resolves.toMatchObject({ success: true });
+
+      // State is untouched — this is an in-state edit, not a transition.
+      expect((await transferStatus(transfer.id)).status).toBe("SuratJalanDraft");
+      const [after] = await db
+        .select({ quantity: schema.scmTransferItems.quantity })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.id, item.id));
+      expect(after.quantity).toBe(8);
+
+      // The changed promise lands on the document's own trail, which is what a
+      // later shortfall gets measured against.
+      const [audit] = await db
+        .select({ note: schema.scmTransferAuditLog.note, event: schema.scmTransferAuditLog.event })
+        .from(schema.scmTransferAuditLog)
+        .where(eq(schema.scmTransferAuditLog.scmTransferId, transfer.id));
+      expect(audit.event).toBe("item-update");
+      expect(JSON.parse(audit.note ?? "{}")).toEqual({ quantity: { from: 5, to: 8 } });
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "the stock guardrail rejects a quantity the sender branch does not hold",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-ED3"));
+      const toBranch = await seedBranch(uniq("MT-ED4"));
+      const ingredient = await seedIngredient(uniq("MT-EDING2"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+      const [item] = await db
+        .select({ id: schema.scmTransferItems.id, quantity: schema.scmTransferItems.quantity })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+
+      // 11 > 10 available. The failed save must leave the original quantity.
+      await expect(
+        scm.updateMutasiTransferDraftItemsCore(sender, {
+          transferId: transfer.id,
+          items: [{ id: item.id, quantity: 11 }],
+        }),
+      ).rejects.toThrow(/Stok tidak mencukupi/);
+
+      const [after] = await db
+        .select({ quantity: schema.scmTransferItems.quantity })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.id, item.id));
+      expect(after.quantity).toBe(5);
+
+      // Exactly the available quantity is allowed (no off-by-one from epsilons).
+      await expect(
+        scm.updateMutasiTransferDraftItemsCore(sender, {
+          transferId: transfer.id,
+          items: [{ id: item.id, quantity: 10 }],
+        }),
+      ).resolves.toMatchObject({ success: true });
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "only the sender branch (or super_admin) may edit; other states reject the edit",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-ED5"));
+      const toBranch = await seedBranch(uniq("MT-ED6"));
+      const unrelatedBranch = await seedBranch(uniq("MT-ED7"));
+      const ingredient = await seedIngredient(uniq("MT-EDING3"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+      const unrelated = await seedUser("branch_admin", unrelatedBranch);
+      const adminPusat = await seedUser("admin_pusat");
+      const manager = await seedUser("area_manager", undefined, [fromBranch, toBranch]);
+      const superAdmin = await seedUser("super_admin");
+
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+      const [item] = await db
+        .select({ id: schema.scmTransferItems.id })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+      const patch = { transferId: transfer.id, items: [{ id: item.id, quantity: 6 }] };
+
+      // Wrong side, wrong branch, non-actor, and the AM (who only reviews).
+      await expect(scm.updateMutasiTransferDraftItemsCore(receiver, patch)).rejects.toThrow(
+        "Only the sender branch can edit the draft",
+      );
+      await expect(scm.updateMutasiTransferDraftItemsCore(unrelated, patch)).rejects.toThrow(
+        "branch_admin can only access transfers involving their branch",
+      );
+      await expect(scm.updateMutasiTransferDraftItemsCore(adminPusat, patch)).rejects.toThrow(
+        "admin_pusat cannot access Mutasi Stok transfers",
+      );
+      await expect(scm.updateMutasiTransferDraftItemsCore(manager, patch)).rejects.toThrow(
+        "Only the sender branch can edit the draft",
+      );
+
+      // super_admin is the emergency override: it edits on the sender's behalf.
+      await expect(
+        scm.updateMutasiTransferDraftItemsCore(superAdmin, patch),
+      ).resolves.toMatchObject({ success: true });
+
+      // Once the draft is submitted, the promise is frozen until it is withdrawn.
+      await scm.submitMutasiTransferCore(sender, { transferId: transfer.id });
+      await expect(scm.updateMutasiTransferDraftItemsCore(sender, patch)).rejects.toThrow(
+        "Items can only be edited while in SuratJalanDraft",
+      );
+      // ...and a rejected edit leaves no trace on the audit trail.
+      const rows = await db
+        .select({ id: schema.scmTransferAuditLog.id })
+        .from(schema.scmTransferAuditLog)
+        .where(eq(schema.scmTransferAuditLog.event, "item-update"));
+      expect(rows).toHaveLength(1);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)("an unknown item id fails the whole request", async () => {
+    const fromBranch = await seedBranch(uniq("MT-ED8"));
+    const toBranch = await seedBranch(uniq("MT-ED9"));
+    const ingredient = await seedIngredient(uniq("MT-EDING4"));
+    await seedInventory(fromBranch, ingredient, 10);
+
+    const sender = await seedUser("branch_admin", fromBranch);
+    const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+    const [item] = await db
+      .select({ id: schema.scmTransferItems.id })
+      .from(schema.scmTransferItems)
+      .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+
+    await expect(
+      scm.updateMutasiTransferDraftItemsCore(sender, {
+        transferId: transfer.id,
+        items: [
+          { id: item.id, quantity: 7 },
+          { id: crypto.randomUUID(), quantity: 3 },
+        ],
+      }),
+    ).rejects.toThrow(/not found in transfer/);
+
+    // Nothing was half-applied.
+    const [after] = await db
+      .select({ quantity: schema.scmTransferItems.quantity })
+      .from(schema.scmTransferItems)
+      .where(eq(schema.scmTransferItems.id, item.id));
+    expect(after.quantity).toBe(5);
+  });
+});
