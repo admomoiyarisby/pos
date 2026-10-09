@@ -238,13 +238,14 @@ describe("Stock opname — full lifecycle via the real server-function cores", (
       expect(item.physicalStock).toBe(8);
       expect(item.variance).toBe(-2);
 
-      // 5. Approve — inventory adjusted to physical (10 → 8), ledger row written
+      // 5. Approve — REVIEW ONLY (ADR 0021): no stock change, no ledger row.
+      // The counts become a signed note; realize is what applies them.
       const approved = await inv.approveStockOpnameCore(am, { soId: so.id });
       st = await soStatus(so.id);
       expect(st.status).toBe("Approved");
-      expect(await getStock(branch, ingredient)).toBe(8);
+      expect(await getStock(branch, ingredient)).toBe(10); // untouched
 
-      // Approve returns the change summary (counted items only)
+      // Approve returns the preview the approver signed (counted items only)
       expect(approved.counted).toBe(1);
       expect(approved.skipped).toBe(0);
       expect(approved.changes).toHaveLength(1);
@@ -257,10 +258,23 @@ describe("Stock opname — full lifecycle via the real server-function cores", (
         }),
       );
 
+      // No ledger row exists yet — approve writes none.
+      expect(
+        await db.select().from(schema.stockLedger).where(eq(schema.stockLedger.reference, so.id)),
+      ).toHaveLength(0);
+
+      // 6. Realize — the SO is dated the 25th, so it applies (no wall-clock
+      // pinning: the guard reads the opname's own date, ADR 0021).
+      const realized = await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
+      expect(realized.success).toBe(true);
+      expect(await getStock(branch, ingredient)).toBe(8);
+      st = await soStatus(so.id);
+      expect(st.realizedAt).toBeTruthy();
+
       const ledger = await db
         .select()
         .from(schema.stockLedger)
-        .where(eq(schema.stockLedger.reference, so.id));
+        .where(eq(schema.stockLedger.reference, `SO:${so.id}`));
       expect(ledger).toHaveLength(1);
       expect(ledger[0]).toEqual(
         expect.objectContaining({
@@ -268,27 +282,14 @@ describe("Stock opname — full lifecycle via the real server-function cores", (
           type: "OUT",
           quantity: 2,
           balance: 8,
-          notes: "SO Adjustment",
+          notes: "SO Realization: Adjusted from 10 to 8",
         }),
       );
 
-      // 6. Realize — only on the 25th; marks the SO realized. The date guard
-      // runs before the status/duplicate guards, so stay on the 25th.
-      vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date(2026, 7, 25, 10, 0, 0));
-      try {
-        const realized = await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
-        expect(realized.success).toBe(true);
-        st = await soStatus(so.id);
-        expect(st.realizedAt).toBeTruthy();
-
-        // Double-realize is refused
-        await expect(inv.realizeStockOpnameCore(superAdmin, { soId: so.id })).rejects.toThrow(
-          "Stock Opname sudah di-realize sebelumnya",
-        );
-      } finally {
-        vi.useRealTimers();
-      }
+      // Double-realize is refused
+      await expect(inv.realizeStockOpnameCore(superAdmin, { soId: so.id })).rejects.toThrow(
+        "Stock Opname sudah di-realize sebelumnya",
+      );
     },
   );
 });
@@ -348,26 +349,57 @@ describe("Stock opname — state guards", () => {
     },
   );
 
-  it.skipIf(!hasTestDatabaseUrl)("realize refuses wrong dates and unapproved SOs", async () => {
-    const { so, ba, am, superAdmin } = await seededSo();
-    const item = await firstItem(so.id);
-    await inv.submitStockOpnameCore(ba, {
-      soId: so.id,
-      items: [{ itemId: item.id, physicalStock: 8 }],
-    });
-    await inv.approveStockOpnameCore(am, { soId: so.id });
+  it.skipIf(!hasTestDatabaseUrl)(
+    "realize refuses non-25th opnames (notes only) and unapproved SOs",
+    async () => {
+      // An opname dated outside the 25th is a note: it can be counted,
+      // submitted, and approved, but realize must refuse to touch stock.
+      const branch = await seedBranch(uniq("SO-N25"));
+      const ingredient = await seedIngredient(uniq("SO-N25ING"));
+      await seedInventory(branch, ingredient, 10);
+      const ba = await seedUser("branch_admin", branch);
+      const am = await seedUser("area_manager", undefined, [branch]);
+      const superAdmin = await seedUser("super_admin");
 
-    // Wrong date (not the 25th)
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(2026, 7, 10, 10, 0, 0));
-    try {
-      await expect(inv.realizeStockOpnameCore(superAdmin, { soId: so.id })).rejects.toThrow(
-        "Stock Opname hanya bisa di-realize pada tanggal 25",
+      const noteSo = await inv.triggerStockOpnameCore(ba, {
+        branchId: branch,
+        date: "2026-08-12",
+      });
+      const noteItem = await firstItem(noteSo.id);
+      await inv.submitStockOpnameCore(ba, {
+        soId: noteSo.id,
+        items: [{ itemId: noteItem.id, physicalStock: 4 }],
+      });
+      await inv.approveStockOpnameCore(am, { soId: noteSo.id });
+
+      await expect(inv.realizeStockOpnameCore(superAdmin, { soId: noteSo.id })).rejects.toThrow(
+        "hanya catatan",
       );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+      // Nothing moved, and nothing was written.
+      expect(await getStock(branch, ingredient)).toBe(10);
+      expect(
+        await db
+          .select()
+          .from(schema.stockLedger)
+          .where(eq(schema.stockLedger.reference, `SO:${noteSo.id}`)),
+      ).toHaveLength(0);
+
+      // A 25th-dated SO that was never approved is refused on status instead.
+      const branchB = await seedBranch(uniq("SO-U25"));
+      const ingredientB = await seedIngredient(uniq("SO-U25ING"));
+      await seedInventory(branchB, ingredientB, 10);
+      const baB = await seedUser("branch_admin", branchB);
+      const soB = await inv.triggerStockOpnameCore(baB, { branchId: branchB, date: "2026-08-25" });
+      const itemB = await firstItem(soB.id);
+      await inv.submitStockOpnameCore(baB, {
+        soId: soB.id,
+        items: [{ itemId: itemB.id, physicalStock: 8 }],
+      });
+      await expect(inv.realizeStockOpnameCore(superAdmin, { soId: soB.id })).rejects.toThrow(
+        "Stock Opname harus di-approve terlebih dahulu",
+      );
+    },
+  );
 
   it.skipIf(!hasTestDatabaseUrl)("every core refuses a missing SO", async () => {
     const missing = crypto.randomUUID();
@@ -384,16 +416,11 @@ describe("Stock opname — state guards", () => {
     await expect(inv.approveStockOpnameCore(am, { soId: missing })).rejects.toThrow(
       "Stock opname not found",
     );
-    // The date guard runs first — pin the 25th so the not-found guard is reached.
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(2026, 7, 25, 10, 0, 0));
-    try {
-      await expect(inv.realizeStockOpnameCore(superAdmin, { soId: missing })).rejects.toThrow(
-        "Stock Opname tidak ditemukan",
-      );
-    } finally {
-      vi.useRealTimers();
-    }
+    // The SO lookup precedes the date guard (the rule reads the opname's own
+    // date), so a missing SO reports not-found with no timer pinning.
+    await expect(inv.realizeStockOpnameCore(superAdmin, { soId: missing })).rejects.toThrow(
+      "Stock Opname tidak ditemukan",
+    );
   });
 });
 
@@ -416,9 +443,9 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
   }
 
   it.skipIf(!hasTestDatabaseUrl)(
-    "submit fills only the sent items; approve leaves uncounted stock untouched and summarizes changes",
+    "submit fills only the sent items; approve is note-only; realize applies counted stock",
     async () => {
-      const { so, items, ba, am, branch, ingA, ingB } = await seededPairSo();
+      const { so, items, ba, am, superAdmin, branch, ingA, ingB } = await seededPairSo();
       expect(items).toHaveLength(2);
 
       // Count only item A (10 → 7); item B is left blank
@@ -436,12 +463,15 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
       expect(afterSubmit.find((i) => i.id === itemA.id)?.countedAt).not.toBeNull();
       expect(afterSubmit.find((i) => i.id === itemB.id)?.countedAt).toBeNull();
 
-      // Approve: A adjusted 10 → 7 (ledger OUT 3), B untouched at 20
+      // Approve (ADR 0021): no stock change, no ledger row — review only.
       const result = await inv.approveStockOpnameCore(am, { soId: so.id });
-      expect(await getStock(branch, ingA)).toBe(7);
+      expect(await getStock(branch, ingA)).toBe(10);
       expect(await getStock(branch, ingB)).toBe(20);
+      expect(
+        await db.select().from(schema.stockLedger).where(eq(schema.stockLedger.reference, so.id)),
+      ).toHaveLength(0);
 
-      // Summary covers only counted items
+      // Summary (the preview the approver signed) covers only counted items
       expect(result.counted).toBe(1);
       expect(result.skipped).toBe(1);
       expect(result.changes).toHaveLength(1);
@@ -455,19 +485,34 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
         }),
       );
 
+      // Realize: A adjusted 10 → 7, B untouched at 20
+      const realized = await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
+      expect(realized.itemsAdjusted).toBe(1);
+      expect(realized.itemsSkipped).toBe(1);
+      expect(await getStock(branch, ingA)).toBe(7);
+      expect(await getStock(branch, ingB)).toBe(20);
+
       const ledger = await db
         .select()
         .from(schema.stockLedger)
-        .where(eq(schema.stockLedger.reference, so.id));
+        .where(eq(schema.stockLedger.reference, `SO:${so.id}`));
       expect(ledger).toHaveLength(1);
-      expect(ledger[0].ingredientId).toBe(ingA);
+      expect(ledger[0]).toEqual(
+        expect.objectContaining({
+          ingredientId: ingA,
+          type: "OUT",
+          quantity: 3,
+          balance: 7,
+          notes: "SO Realization: Adjusted from 10 to 7",
+        }),
+      );
     },
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
-    "an explicit 0 count is a real count (approve zeroes stock); an SO with no counts is refused",
+    "an explicit 0 count is a real count (realize zeroes stock); an SO with no counts is refused",
     async () => {
-      const { so, items, ba, am, branch, ingA } = await seededPairSo();
+      const { so, items, ba, am, superAdmin, branch, ingA } = await seededPairSo();
       const itemA = items.find((i) => i.ingredientId === ingA)!;
 
       // Explicit zero is a valid count: countedAt must be set
@@ -481,7 +526,12 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
         .where(eq(schema.stockOpnameItems.id, itemA.id));
       expect(counted[0]?.countedAt).not.toBeNull();
 
+      // Approve is note-only: the stock is still 10 until realize
       await inv.approveStockOpnameCore(am, { soId: so.id });
+      expect(await getStock(branch, ingA)).toBe(10);
+
+      const realized = await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
+      expect(realized.itemsAdjusted).toBe(1);
       expect(await getStock(branch, ingA)).toBe(0);
 
       // Fresh SO with zero filled fields → approve refused (blank-submit guard)
@@ -608,17 +658,14 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
         soId: so.id,
         items: [{ itemId: itemA.id, physicalStock: 5 }],
       });
+      // Approve is note-only (ADR 0021): nothing has moved yet.
       await inv.approveStockOpnameCore(am, { soId: so.id });
+      expect(await getStock(branch, ingA)).toBe(10);
+      expect(await getStock(branch, ingB)).toBe(20);
 
-      vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date(2026, 7, 25, 10, 0, 0));
-      try {
-        const realized = await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
-        expect(realized.itemsAdjusted).toBe(1);
-        expect(realized.itemsSkipped).toBe(1);
-      } finally {
-        vi.useRealTimers();
-      }
+      const realized = await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
+      expect(realized.itemsAdjusted).toBe(1);
+      expect(realized.itemsSkipped).toBe(1);
       expect(await getStock(branch, ingA)).toBe(5);
       expect(await getStock(branch, ingB)).toBe(20);
     },
@@ -636,8 +683,8 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
       });
 
       // Stock moves after trigger: A loses 3 to sales (10 → 7), B untouched.
-      // Approve still targets physical 7 — but now the delta is 0, and the
-      // drift report must explain that 7 is measured from current stock.
+      // Approve still previews physical 7 measured from current stock — and,
+      // per ADR 0021, applies nothing at all.
       await db
         .update(schema.inventory)
         .set({ quantity: 7 })
@@ -654,10 +701,15 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
           currentQuantity: 7,
         }),
       );
-      // The change is measured against current stock: 7 → 7, no ledger row
+      // The preview is measured against current stock: 7 → 7, no change
       expect(result.changes[0]).toEqual(
         expect.objectContaining({ oldQuantity: 7, newQuantity: 7, delta: 0 }),
       );
+      // Note-only approval: no stock movement, no ledger row.
+      expect(await getStock(branch, ingA)).toBe(7);
+      expect(
+        await db.select().from(schema.stockLedger).where(eq(schema.stockLedger.reference, so.id)),
+      ).toHaveLength(0);
 
       // Count matches current stock exactly (no movement since trigger) → no
       // drift; the change is a plain snapshot variance.
@@ -733,16 +785,11 @@ describe("Stock opname — wrong-role and wrong-branch actors are rejected", () 
       await expect(inv.realizeStockOpnameCore(am, { soId: so.id })).rejects.toThrow(
         "Forbidden: insufficient role (user ",
       );
-      // The date guard runs before the status guard — pin the 25th.
-      vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date(2026, 7, 25, 10, 0, 0));
-      try {
-        await expect(inv.realizeStockOpnameCore(superAdmin, { soId: so.id })).rejects.toThrow(
-          "Stock Opname harus di-approve terlebih dahulu",
-        );
-      } finally {
-        vi.useRealTimers();
-      }
+      // The SO is dated the 25th (seededSo), so the date guard passes and the
+      // status guard is what refuses an unapproved opname.
+      await expect(inv.realizeStockOpnameCore(superAdmin, { soId: so.id })).rejects.toThrow(
+        "Stock Opname harus di-approve terlebih dahulu",
+      );
 
       // No side effects from the rejected attempts
       const [row] = await db

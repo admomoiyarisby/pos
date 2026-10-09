@@ -2,7 +2,10 @@
 
 ## Kapan Digunakan?
 
-Secara berkala (biasanya setiap bulan) untuk memverifikasi bahwa stok fisik di gudang/cabang sesuai dengan catatan sistem. Ini adalah proses **audit stok**.
+Secara berkala (biasanya setiap bulan) untuk memverifikasi bahwa stok fisik di gudang/cabang sesuai dengan catatan sistem. Ada dua jenis pemakaian:
+
+- **Tanggal 25** — opname bulanan. Ini satu-satunya yang **mengubah stok**.
+- **Tanggal lain** — catatan/audit. Bisa dihitung & disetujui, tapi **tidak mengubah stok**.
 
 ## Siapa yang Melakukan?
 
@@ -62,18 +65,19 @@ Setelah submit, supervisor mereview:
 ### 5. Persetujuan (Approval)
 
 1. Supervisor menyetujui hasil SO
-2. Sistem menyesuaikan stok sistem sesuai stok fisik
-3. Kartu Stok mencatat penyesuaian sebagai "SO Adjustment"
+2. **Stok TIDAK berubah** — approval hanya menandai hasil hitungan sebagai catatan resmi
+3. Halaman menampilkan "Ringkasan Perubahan" sebagai **pratinjau**: apa yang akan diterapkan
 
-**Penting**: Setelah disetujui, stok sistem = stok fisik. Ini adalah **satu-satunya cara** untuk mengubah stok sistem tanpa transaksi normal.
+### 6. Realisasi (Tanggal 25) — mengubah stok
 
-### 6. Realisasi (Tanggal 25)
+Hanya opname yang **tanggalnya 25** yang bisa di-realize:
 
-Stock opname yang sudah disetujui bisa **di-realize** pada tanggal 25:
+1. Hanya bisa dilakukan oleh Super Admin atau Admin Pusat
+2. Sistem menyesuaikan stok sistem sesuai stok fisik untuk setiap item yang dihitung
+3. Kartu Stok mencatat penyesuaian sebagai **`SO Realization`**
+4. Opname di luar tanggal 25 akan ditolak: "hanya catatan"
 
-1. Hanya bisa dilakukan oleh Super Admin
-2. Hanya pada tanggal 25
-3. Menerapkan penyesuaian stok secara permanen
+**Penting**: Setelah realize, stok sistem = stok fisik. Nilai inilah yang menjadi **baseline** stok bulan berikutnya. Item yang tidak dihitung tidak berubah.
 
 ## Contoh Kasus
 
@@ -93,19 +97,20 @@ Stock opname yang sudah disetujui bisa **di-realize** pada tanggal 25:
 5. Area Manager minta hitung ulang minyak goreng
 6. Counter hitung ulang, ternyata ada 1 botol tersembunyi
 7. Counter perbaiki: Minyak Goreng = 31 (selisih +1)
-8. Area Manager setujui
-9. Sistem sesuaikan stok:
+8. Area Manager setujui — stok **belum** berubah, hasil hitungan jadi catatan resmi
+9. Pada tanggal 25, Super Admin/Admin Pusat **realize** → baru stok menyesuaikan:
    - Ayam Mentah: 50 → 48
    - Minyak Goreng: 30 → 31
+     (Keduanya tercatat di Kartu Stok sebagai `SO Realization`)
 
 ## Status Stock Opname
 
 | Status                  | Arti                               | Siapa yang Bertindak |
 | ----------------------- | ---------------------------------- | -------------------- |
-| **Draft**               | Baru dipicu, menunggu penghitungan | Counter              |
 | **Submitted**           | Sudah dihitung, menunggu review    | Supervisor           |
 | **Under Investigation** | Perlu hitung ulang                 | Counter              |
-| **Approved**            | Disetujui, stok disesuaikan        | —                    |
+| **Approved**            | Disetujui — stok belum berubah     | —                    |
+| **Realized**            | Diterapkan ke stok (opname tgl 25) | —                    |
 
 ## Pertanyaan Umum
 
@@ -116,7 +121,10 @@ A: Idealnya setiap bulan, tapi tergantung kebutuhan bisnis. Beberapa cabang mung
 A: Untuk mencegah counter "mengikuti" angka sistem. Penghitungan harus berdasarkan apa yang benar-benar ada di fisik.
 
 **Q: Apa yang terjadi dengan selisih stok?**
-A: Setelah SO disetujui, stok sistem disesuaikan sesuai stok fisik. Selisih dicatat di Kartu Stok sebagai "SO Adjustment".
+A: Selisih baru masuk ke stok setelah opname **tanggal 25 di-realize**, dan tercatat di Kartu Stok sebagai `SO Realization`. Approval saja tidak mengubah stok.
+
+**Q: Kalau opname di luar tanggal 25, apakah selisihnya hilang?**
+A: Tidak hilang — opname luar tanggal 25 adalah **catatan/audit**. Hasil hitungannya tetap tersimpan dan terlihat di halaman SO, tapi tidak mengubah stok sistem.
 
 **Q: Bagaimana kalau selisihnya sangat besar?**
 A: Supervisor akan meminta investigasi lebih lanjut. Selisih besar bisa mengindikasikan masalah (pencurian, kesalahan pencatatan, dll).
@@ -125,4 +133,4 @@ A: Supervisor akan meminta investigasi lebih lanjut. Selisih besar bisa mengindi
 A: Tidak. Setiap SO untuk satu cabang saja. Buat beberapa SO jika perlu audit beberapa cabang.
 
 **Q: Apa itu "realize" pada tanggal 25?**
-A: Realisasi adalah proses final yang menerapkan penyesuaian SO secara permanen. Hanya bisa dilakukan tanggal 25 oleh Super Admin. Ini memberi waktu untuk klarifikasi sebelum perubahan final.
+A: Realisasi adalah proses final yang menerapkan penyesuaian SO ke stok. Hanya bisa untuk opname yang **tanggalnya 25**. Hasilnya jadi baseline stok bulan berikutnya.

@@ -1,5 +1,11 @@
 # Stock Opname Inventory Adjustment Strategy
 
+> **Superseded in part by ADR 0021.** Approval no longer adjusts inventory —
+> it is a review-only step. Only an opname **dated the 25th**, once _realized_,
+> changes stock. The measurement rule below (adjust against _current_
+> inventory, not the frozen trigger snapshot) still stands and is what both the
+> approve preview and the realize application use.
+
 When a Stock Opname (SO) is approved, the system adjusts inventory to match the physical count by comparing physical stock against _current_ inventory at approval time — not against the frozen system stock captured at trigger time.
 
 ## Context

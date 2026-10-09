@@ -96,12 +96,14 @@ function StockOpnameDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["stock-opname", soId] });
       void queryClient.invalidateQueries({ queryKey: ["stock-opnames"] });
       setApproveModal(false);
+      // ADR 0021: approve no longer touches stock. The counts become a signed
+      // note; realize (SO dated the 25th) is what applies them.
       const changed = result.changes.filter((c) => c.delta !== 0).length;
-      toast.success("Stock opname berhasil diapprove", {
+      toast.success("Stock opname disetujui", {
         description:
           changed > 0
-            ? `${changed} item berubah stoknya — lihat Ringkasan Perubahan di bawah.`
-            : "Tidak ada stok yang berubah.",
+            ? `${changed} item tercatat sebagai selisih. Stok belum berubah — perubahan diterapkan saat Realize (opname tanggal 25).`
+            : "Tidak ada selisih. Stok belum berubah.",
       });
       if (result.drift.length > 0) {
         toast.warning("Stok bergerak sejak SO dibuat", {
@@ -174,10 +176,12 @@ function StockOpnameDetailPage() {
   const canMarkInvestigation =
     detail.status === "Submitted" && ["super_admin", "area_manager"].includes(user?.role ?? "");
 
-  const today = new Date();
-  const is25th = today.getDate() === 25;
+  // ADR 0021: realize is gated on the OPNAME's own date, not today's date. An
+  // SO dated the 25th is the monthly baseline — the only SO that moves stock.
+  const soDay = Number.parseInt(String(detail.date ?? "").slice(8, 10), 10);
+  const soIs25th = soDay === 25;
   const canRealize =
-    is25th &&
+    soIs25th &&
     ["super_admin", "admin_pusat"].includes(user?.role ?? "") &&
     detail.status === "Approved" &&
     !detail.realizedAt;
@@ -193,7 +197,7 @@ function StockOpnameDetailPage() {
   };
 
   // Partial opname: only the fields the counter actually filled are sent.
-  // Unfilled items keep their stock unchanged on approve/realize — but at
+  // Unfilled items keep their stock unchanged on realize — but at
   // least one field must be filled, otherwise submitting is pointless.
   const buildItems = () => {
     const filled = detail.items
@@ -556,7 +560,7 @@ function StockOpnameDetailPage() {
           </table>
         </div>
 
-        {/* Persistent change summary — pending (pre-approval) or applied (post-approval).
+        {/* Persistent change summary — pending (until realized) or applied (realize).
             Server strips it for blind roles, so an empty list hides the block. */}
         {!isBlind && detail.summary.length > 0 && (
           <div className="rounded-xl border bg-card p-3.5 sm:p-4 shadow-xs">
@@ -568,7 +572,7 @@ function StockOpnameDetailPage() {
                 variant={detail.summary[0]?.applied ? "success" : "outline"}
                 className="rounded-full px-2.5 py-0.5 text-[11px]"
               >
-                {detail.status === "Approved" ? "Sudah diterapkan" : "Akan diterapkan saat approve"}
+                {detail.realizedAt ? "Sudah diterapkan ke stok" : "Belum diterapkan ke stok"}
               </Badge>
             </div>
             <div className="mt-3 space-y-1.5">
@@ -601,9 +605,11 @@ function StockOpnameDetailPage() {
               ))}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              {detail.status === "Approved"
+              {detail.realizedAt
                 ? "Perubahan di atas sudah masuk ke stok dan Kartu Stok."
-                : "Item yang tidak dihitung tidak muncul di sini — stoknya tetap saat approve."}
+                : soIs25th
+                  ? "Item yang tidak dihitung tidak muncul di sini — stoknya tetap. Perubahan masuk ke stok saat Realize."
+                  : "Opname di luar tanggal 25 hanya catatan — perubahan ini tidak akan masuk ke stok."}
             </p>
           </div>
         )}
@@ -687,7 +693,7 @@ function StockOpnameDetailPage() {
                 onClick={() => setApproveModal(true)}
                 className="inline-flex items-center justify-center h-11 sm:h-10 px-4 rounded-xl sm:rounded-md bg-primary text-primary-foreground text-sm font-medium w-full sm:w-auto shadow-sm"
               >
-                Setujui & Sesuaikan
+                Setujui Opname
               </button>
             )}
             {canRealize && (
@@ -696,8 +702,19 @@ function StockOpnameDetailPage() {
                 disabled={realizeMutation.isPending}
                 className="inline-flex items-center justify-center h-11 sm:h-10 px-4 rounded-xl sm:rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50 w-full sm:w-auto"
               >
-                {realizeMutation.isPending ? "Memproses..." : "Realize SO"}
+                {realizeMutation.isPending ? "Memproses..." : "Realize SO — terapkan ke stok"}
               </button>
+            )}
+            {/* Note-only opnames: the whole flow runs, nothing moves (ADR 0021) */}
+            {detail.status !== "Approved" && !soIs25th && (
+              <p className="text-xs text-muted-foreground w-full sm:w-auto sm:self-center">
+                Opname di luar tanggal 25 hanya catatan — realisasi tidak mengubah stok.
+              </p>
+            )}
+            {detail.status === "Approved" && !soIs25th && !detail.realizedAt && (
+              <p className="text-xs text-muted-foreground w-full sm:w-auto sm:self-center">
+                Opname di luar tanggal 25 hanya catatan — tidak ada perubahan stok.
+              </p>
             )}
           </div>
           {detail.realizedAt && (
@@ -721,8 +738,9 @@ function StockOpnameDetailPage() {
           <div className="rounded-md bg-warning/10 p-3 text-sm text-warning-foreground">
             <p className="font-medium">Perhatian</p>
             <p>
-              Approval akan menyesuaikan stok sistem ke stok fisik item yang dihitung dan membuat
-              jurnal ledger. Item yang tidak dihitung tidak akan diubah.
+              Persetujuan <b>tidak mengubah stok</b>. Hasil hitungan disimpan sebagai catatan resmi.
+              Stok sistem baru menyesuaikan saat <b>Realize</b> — dan hanya untuk opname yang
+              tanggalnya 25.
             </p>
           </div>
           {detail.drift.length > 0 && (
@@ -837,7 +855,8 @@ function StockOpnameDetailPage() {
               Cabang: <span className="font-medium text-foreground">{detail.branchName}</span>
             </p>
             <p className="mt-2 text-xs">
-              Aksi ini tidak dapat dibatalkan. Hanya dapat dilakukan pada tanggal 25.
+              Aksi ini tidak dapat dibatalkan. Hanya opname tanggal 25 yang bisa di-realize — opname
+              lain tidak mengubah stok.
             </p>
           </div>
           <div className="flex justify-end gap-2">

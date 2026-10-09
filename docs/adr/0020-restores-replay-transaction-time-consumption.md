@@ -79,3 +79,7 @@ a setup gap to create, not a reason to drop a movement.**
   (`SELECT … SUM(CASE WHEN type…) GROUP BY reference`) can finally be trusted to
   surface only real discrepancies, because asymmetric restores can no longer
   occur for post-0061 orders.
+
+See also ADR 0021: the stock-opname paths this invariant covers changed again —
+approve is review-only, and realize (25th-dated opnames only) is the single
+stock-affecting step.

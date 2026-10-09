@@ -460,6 +460,11 @@ function StockOpnamePage() {
               onChange={(e) => setSelectedDate(e.target.value)}
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
+            {/* ADR 0021: the opname's date decides whether it moves stock */}
+            <p className="text-xs text-muted-foreground">
+              Hanya opname tanggal <b>25</b> yang mengubah stok saat di-realize. Tanggal lain hanya
+              catatan/audit — bisa dihitung & disetujui, tapi stok sistem tidak berubah.
+            </p>
           </div>
           <button
             onClick={handleTrigger}

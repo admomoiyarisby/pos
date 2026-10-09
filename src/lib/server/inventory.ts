@@ -41,6 +41,20 @@ function normalizePhysicalCount(value: number): number {
   return roundQuantity(value);
 }
 
+/**
+ * Today as a Jakarta-local `YYYY-MM-DD` string — the same format as
+ * `stockOpnames.date`. Used by the realize guard to refuse future-dated
+ * opnames (the trigger form accepts any date).
+ */
+function jakartaToday(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 export const getInventory = createServerFn({ method: "GET" })
   .validator(
     (data: {
@@ -709,7 +723,7 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
 
     // Snapshot drift: counted items whose current inventory no longer matches
     // the systemStock snapshot taken at trigger time. Stock can move during the
-    // opname window (sales, waste, transfers), and approve adjusts from the
+    // opname window (sales, waste, transfers), and realize adjusts from the
     // *current* quantity, not the stale snapshot — surface the difference so
     // the approver is not surprised by a delta measured against 88 when the
     // table showed 97. Approvers only: for blind roles this would leak system
@@ -747,10 +761,10 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
       }
     }
 
-    // Change summary ("Ringkasan Perubahan"). Before approval it previews what
-    // approval *will* change: counted items whose count differs from system
-    // stock. After approval it reports what actually changed: the ledger rows
-    // this SO wrote (approve uses reference = soId, realize uses SO:<soId>).
+    // Change summary ("Ringkasan Perubahan"). Before realize it previews what
+    // realize *will* apply: counted items whose count differs from current
+    // stock. After realize it reports what actually changed: the ledger rows
+    // this SO wrote (reference `SO:<soId>` — approve writes none, ADR 0021).
     // Blind roles get neither — old/new quantities would leak system stock.
     type SummaryRow = {
       ingredientName: string;
@@ -999,7 +1013,6 @@ export async function approveStockOpnameCore(
 
   const oldSo = { ...so };
 
-  // Adjust inventory to physical stock
   const items = await db
     .select()
     .from(stockOpnameItems)
@@ -1016,8 +1029,9 @@ export async function approveStockOpnameCore(
     );
   }
 
-  // Summary of what this approval changes: only counted items are adjusted;
-  // uncounted items keep their stock exactly as-is (partial opname).
+  // Preview of what this approval signs off: only counted items change;
+  // uncounted items keep their stock exactly as-is (partial opname). The
+  // values are applied by realize — never by this function (ADR 0021).
   const changes: {
     ingredientId: string;
     ingredientName: string;
@@ -1028,7 +1042,7 @@ export async function approveStockOpnameCore(
   }[] = [];
 
   // Current inventory for all counted items, fetched once — used both for the
-  // drift report below and as the adjustment baseline in the loop that follows.
+  // drift report below and as the preview baseline in the loop that follows.
   const countedIngredientIds = countedItems.map((i) => i.ingredientId);
   const currentInventory =
     countedIngredientIds.length > 0
@@ -1048,7 +1062,7 @@ export async function approveStockOpnameCore(
   const inventoryByIngredient = new Map(currentInventory.map((r) => [r.ingredientId, r]));
 
   // Snapshot drift at approve time: counted items whose current inventory no
-  // longer matches the trigger-time snapshot. The adjustment below is measured
+  // longer matches the trigger-time snapshot. The preview below is measured
   // against current inventory, so report the real "from" value in the summary
   // the approver sees — the SO table's Stok Sistem column may be stale.
   const drift = countedItems
@@ -1065,53 +1079,24 @@ export async function approveStockOpnameCore(
     })
     .filter((d): d is NonNullable<typeof d> => d !== null);
 
+  // ADR 0021: approve is a REVIEW step only. It writes no inventory change and
+  // no ledger row — realize is the only step that moves stock, and only for an
+  // SO dated the 25th. The loop below stays as the preview the approver signs
+  // off on: measured against the CURRENT inventory (ADR 0001's rule), i.e.
+  // exactly what realize will apply on the 25th. Rows are not created here —
+  // a preview must not have side effects.
   for (const item of countedItems) {
-    // Never skip a counted item silently: the inventory row is created at 0
-    // when it was never seeded (the old `if (inv)` branch dropped the whole
-    // adjustment — including its Kartu Stok row — for exactly the ingredients
-    // an operator is most likely correcting).
-    const inv = await ensureInventoryRow(db, so.branchId, item.ingredientId);
-    const oldQuantity = inv.quantity;
+    const invRow = inventoryByIngredient.get(item.ingredientId);
+    const oldQuantity = invRow?.quantity ?? 0;
 
-    await db
-      .update(inventory)
-      .set({
-        quantity: item.physicalStock,
-        lastUpdated: new Date(),
-      })
-      .where(eq(inventory.id, inv.id));
-
-    // Create ledger adjustment entry using current inventory as reference
-    const currentVariance = item.physicalStock - inv.quantity;
     changes.push({
       ingredientId: item.ingredientId,
       ingredientName: "",
       systemStock: item.systemStock,
       oldQuantity,
       newQuantity: item.physicalStock,
-      delta: currentVariance,
+      delta: item.physicalStock - oldQuantity,
     });
-    if (currentVariance !== 0) {
-      await db.insert(stockLedger).values({
-        branchId: so.branchId,
-        ingredientId: item.ingredientId,
-        type: currentVariance > 0 ? "IN" : "OUT",
-        quantity: Math.abs(currentVariance),
-        balance: item.physicalStock,
-        reference: data.soId,
-        notes: `SO Adjustment${data.investigationNote ? ": " + data.investigationNote : ""}`,
-      });
-    }
-
-    // Alert if inventory went negative
-    if (item.physicalStock < 0) {
-      await db.insert(systemNotifications).values({
-        userId: so.submittedBy,
-        title: "⚠️ Stok Negatif setelah SO",
-        message: `Item ${item.ingredientId} menjadi ${item.physicalStock} setelah penyesuaian SO.`,
-        type: "alert",
-      });
-    }
   }
 
   await db
@@ -1141,11 +1126,13 @@ export async function approveStockOpnameCore(
     }
   }
 
-  // Notify the branch admin who submitted the SO
+  // Notify the branch admin who submitted the SO. Approve no longer moves
+  // stock (ADR 0021) — the message says so, so the counter does not expect the
+  // books to have changed.
   await db.insert(systemNotifications).values({
     userId: so.submittedBy,
     title: "Stock Opname Approved",
-    message: `Stock opname cabang telah disetujui oleh ${user.name}${data.investigationNote ? ". Catatan: " + data.investigationNote : ""}`,
+    message: `Stock opname cabang telah disetujui oleh ${user.name}${data.investigationNote ? ". Catatan: " + data.investigationNote : ""}. Stok belum berubah — perubahan diterapkan saat Realize (SO tanggal 25).`,
     type: "info",
   });
 
@@ -1301,17 +1288,27 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
     );
   }
 
-  // 1. Verify current date is the 25th
-  const today = new Date();
-  if (today.getDate() !== 25) {
-    throw new Error("Stock Opname hanya bisa di-realize pada tanggal 25");
-  }
-
-  // 2. Get the SO and verify status is Approved
+  // The SO is loaded first: the rule below is about the OPNAME's own date, so
+  // a missing SO must still report "not found" rather than a date error.
   const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.soId)).limit(1);
 
   if (!so) {
     throw new Error("Stock Opname tidak ditemukan");
+  }
+
+  // ADR 0021: ONLY the opname dated the 25th moves stock. Every other opname is
+  // a note — it can be counted, submitted, investigated, and approved, but it
+  // never changes inventory. This replaces the old `today.getDate() !== 25`
+  // wall-clock check, which both applied mid-month opnames that happened to be
+  // realized on the 25th and blocked 25th-dated opnames realized later.
+  const soDay = Number.parseInt(so.date.slice(8, 10), 10);
+  if (soDay !== 25) {
+    throw new Error(
+      `Hanya stock opname tanggal 25 yang mengubah stok — opname tanggal ${so.date} hanya catatan`,
+    );
+  }
+  if (so.date > jakartaToday()) {
+    throw new Error(`Stock opname bertanggal ${so.date} belum bisa di-realize`);
   }
 
   if (so.status !== "Approved") {

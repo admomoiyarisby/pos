@@ -46,15 +46,15 @@ Waktu          Bahan           Tipe   Qty    Saldo   Referensi      Keterangan
 
 ## Sumber Pergerakan Stok
 
-| Sumber                | Tipe   | Contoh Keterangan                          |
-| --------------------- | ------ | ------------------------------------------ |
-| **Supplier Delivery** | IN     | `Supplier Delivery: PT Ayam Segar`         |
-| **Yield/Produksi**    | IN/OUT | `Yield: Ayam Mentah → produksi`            |
-| **Pengadaan**         | OUT    | `Procurement: Transfer ke Cabang Surabaya` |
-| **Mutasi Stok**       | IN/OUT | `Mutasi dari Cabang Malang`                |
-| **POS (Penjualan)**   | OUT    | `POS-12345: Nasi Goreng Spesial (Beras)`   |
-| **Stock Opname**      | IN/OUT | `SO Adjustment: Disesuaikan dari 50 ke 48` |
-| **Void/Pembatalan**   | IN     | `Void POS-12345: Restorasi stok`           |
+| Sumber                | Tipe   | Contoh Keterangan                                                     |
+| --------------------- | ------ | --------------------------------------------------------------------- |
+| **Supplier Delivery** | IN     | `Supplier Delivery: PT Ayam Segar`                                    |
+| **Yield/Produksi**    | IN/OUT | `Yield: Ayam Mentah → produksi`                                       |
+| **Pengadaan**         | OUT    | `Procurement: Transfer ke Cabang Surabaya`                            |
+| **Mutasi Stok**       | IN/OUT | `Mutasi dari Cabang Malang`                                           |
+| **POS (Penjualan)**   | OUT    | `POS-12345: Nasi Goreng Spesial (Beras)`                              |
+| **Stock Opname**      | IN/OUT | `SO Realization: Adjusted from 50 to 48` (realize, opname tanggal 25) |
+| **Void/Pembatalan**   | IN     | `Void POS-12345: Restorasi stok`                                      |
 
 ## Filter dan Pencarian
 
@@ -139,3 +139,11 @@ Catatan: order yang dibuat **sebelum migrasi 0061 (Oktober 2026)** tidak punya
 bekuan. Merestorasi order seperti itu memakai resep terkini (perilaku lama) dan
 mencatat peringatan di log. Kalau jumlah stok yang kembali terlihat janggal,
 periksa dulu umur order-nya.
+
+## Stock opname: hanya tanggal 25 yang mengubah stok (ADR 0021)
+
+- **Approve (persetujuan) tidak mengubah stok** — hanya menandai hasil hitungan
+  sebagai catatan resmi. Tidak ada baris ledger dari approve.
+- **Realize** adalah satu-satunya langkah yang menyesuaikan stok, dan hanya untuk
+  opname yang **tanggalnya 25**. Baris ledger-nya berjudul `SO Realization`.
+- Opname di tanggal lain = catatan/audit murni. Sistem akan menolak realize-nya.
