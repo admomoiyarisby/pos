@@ -27,7 +27,7 @@ import { requireAuth, requireRole } from "#/lib/server/auth";
 import type { AppUser } from "./auth";
 import { resolveNewItemIngredients, resolvePersistedItemIngredients } from "./ingredient-resolver";
 import { eq, ne, and, sql, desc, count, inArray } from "drizzle-orm";
-import type { DbTx } from "./ingredient-resolver";
+import type { DbOrTx, DbTx } from "./ingredient-resolver";
 
 // ─── Stock effects (Kartu Stok) ────────────────────────────────────────────
 // Data Penjualan orders live in the same `orders` table as POS orders, so
@@ -52,7 +52,7 @@ type IngredientDelta = { ingredientId: string; quantity: number };
  * Same upsert-then-write pattern as `adjustBranchStockBatch`
  * (inventory.ts), which has always handled this correctly.
  */
-export async function ensureInventoryRow(tx: DbTx, branchId: string, ingredientId: string) {
+export async function ensureInventoryRow(tx: DbOrTx, branchId: string, ingredientId: string) {
   await tx
     .insert(inventory)
     .values({ branchId, ingredientId, quantity: 0 })
