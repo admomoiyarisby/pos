@@ -139,6 +139,7 @@ function TransferDetailPage() {
   const isSenderBa = user.role === "branch_admin" && user.branchId === transfer.fromBranchId;
   const isReceiverBa = user.role === "branch_admin" && user.branchId === transfer.toBranchId;
   const isAm = user.role === "area_manager";
+  const isSuperAdmin = user.role === "super_admin";
   const amInJurisdiction =
     isAm && user.assignedBranches
       ? canAmAct({ assignedBranches: user.assignedBranches }, transfer)
@@ -247,6 +248,7 @@ function TransferDetailPage() {
           isSenderBa={isSenderBa}
           isReceiverBa={isReceiverBa}
           isAm={isAm}
+          isSuperAdmin={isSuperAdmin}
           amInJurisdiction={amInJurisdiction}
           onBack={() =>
             navigate({
@@ -268,30 +270,43 @@ function TransferDetailPage() {
 }
 
 function DispatchView(props: TransferViewProps) {
-  const { transfer, isSenderBa, isReceiverBa, isAm } = props;
+  const { transfer, isSenderBa, isReceiverBa, isSuperAdmin } = props;
   const status = transfer.status;
   // Per-unit prices are the HPP snapshot — branch admins on either side
   // must not see them. Invoice totals stay visible (transaction amounts).
   const showPrices = !isSenderBa && !isReceiverBa;
 
+  // super_admin is the emergency override (ADR 0006): the FSM allows it on
+  // every transition and the server's branch guard is skipped for it, so it
+  // gets the action views of whichever actor owns the current state. Mirrors
+  // the `isCA` widening in scm-procurements' DispatchView.
+  const senderSide = isSenderBa || isSuperAdmin;
+  const receiverSide = isReceiverBa || isSuperAdmin;
+  const amSide = props.isAm || isSuperAdmin;
+
   if (status === "SuratJalanDraft") {
-    if (isSenderBa) return <DraftSenderForm {...props} showPrices={showPrices} />;
+    if (senderSide) return <DraftSenderForm {...props} showPrices={showPrices} />;
   }
   if (status === "PendingAMReview") {
-    if (isAm) return <PendingAmReview {...props} showPrices={showPrices} />;
-    if (isSenderBa) return <PendingSenderWaiting {...props} showPrices={showPrices} />;
+    // super_admin takes the AM's review controls (approve/reject), the
+    // highest-privilege actor for this state. Withdraw-to-draft — the
+    // sender BA's action here — stays BA-only, exactly as it is for an AM.
+    // It is not lost to super_admin: it reappears in the Approved view
+    // ("Tarik ke Draft") one state later.
+    if (amSide) return <PendingAmReview {...props} showPrices={showPrices} />;
+    if (senderSide) return <PendingSenderWaiting {...props} showPrices={showPrices} />;
   }
   if (status === "Approved") {
-    if (isSenderBa) return <ApprovedSenderShip {...props} showPrices={showPrices} />;
+    if (senderSide) return <ApprovedSenderShip {...props} showPrices={showPrices} />;
   }
   if (status === "InTransit") {
-    if (isReceiverBa) return <InTransitReceiverTracking {...props} showPrices={showPrices} />;
+    if (receiverSide) return <InTransitReceiverTracking {...props} showPrices={showPrices} />;
   }
   if (status === "Delivered") {
-    if (isReceiverBa) return <DeliveredReceiverForm {...props} showPrices={showPrices} />;
+    if (receiverSide) return <DeliveredReceiverForm {...props} showPrices={showPrices} />;
   }
   if (status === "ReviewingSJ") {
-    if (isReceiverBa) return <ReviewingReceiverInteractive {...props} showPrices={showPrices} />;
+    if (receiverSide) return <ReviewingReceiverInteractive {...props} showPrices={showPrices} />;
   }
   if (status === "WaitingForPayment") {
     return <WaitingInvoice {...props} showPrices={showPrices} />;

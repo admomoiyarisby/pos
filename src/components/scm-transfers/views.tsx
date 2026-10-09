@@ -105,6 +105,13 @@ export interface TransferViewProps {
   isAm: boolean;
   /** Whether the AM can act on this transfer (both branches in jurisdiction) */
   amInJurisdiction: boolean;
+  /**
+   * Whether the current user is a super_admin. Emergency override (ADR 0006):
+   * the FSM permits it on every transition and `assertTransferAccess` lets it
+   * act on any branch's transfer, so it is shown the action views of whichever
+   * actor owns the current state — sender BA, receiver BA, or AM.
+   */
+  isSuperAdmin: boolean;
   /** Navigate back to the list page */
   onBack: () => void;
   /**
@@ -1376,7 +1383,7 @@ export function WaitingInvoice(props: TransferViewProps) {
         </>
       )}
 
-      {props.isSenderBa && (
+      {(props.isSenderBa || props.isSuperAdmin) && (
         <>
           <SectionDivider />
           <div>
@@ -1405,7 +1412,7 @@ export function WaitingInvoice(props: TransferViewProps) {
         </>
       )}
 
-      {props.amInJurisdiction && (
+      {(props.amInJurisdiction || props.isSuperAdmin) && (
         <>
           <SectionDivider />
           <div>

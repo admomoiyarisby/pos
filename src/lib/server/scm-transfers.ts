@@ -419,7 +419,11 @@ export const updateMutasiTransferItem = createServerFn({ method: "POST" })
     if (!result) throw new Error("Transfer not found");
     assertTransferAccess(user, result.transfer, "act");
 
-    if (user.role !== "branch_admin" || user.branchId !== result.transfer.toBranchId) {
+    // super_admin acts on behalf of the receiver branch (emergency override,
+    // ADR 0006); every other actor must be the receiver's own branch_admin.
+    const isReceiverBa =
+      user.role === "branch_admin" && user.branchId === result.transfer.toBranchId;
+    if (user.role !== "super_admin" && !isReceiverBa) {
       throw new Error("Only the Receiver Branch Admin can edit received/rejected quantities");
     }
 
@@ -462,6 +466,11 @@ async function runTransition(args: {
    *   "receiver" → user must be BA at toBranchId
    *   "either"   → user must be BA at fromBranchId OR toBranchId
    * If omitted, the branch check is skipped (used for AM transitions).
+   *
+   * `super_admin` skips the branch check entirely: it is the emergency
+   * override (ADR 0006) and acts on behalf of the branch — the same
+   * allowance `createMutasiTransferCore` already grants it for any sender
+   * branch. Every other non-branch_admin actor is still rejected here.
    */
   branchGuard?: "sender" | "receiver" | "either";
 }) {
@@ -469,7 +478,7 @@ async function runTransition(args: {
   if (!result) throw new Error("Transfer not found");
   assertTransferAccess(args.user, result.transfer, "act");
 
-  if (args.branchGuard) {
+  if (args.branchGuard && args.user.role !== "super_admin") {
     if (args.user.role !== "branch_admin") {
       throw new Error(`Only a Branch Admin can perform ${args.event}`);
     }
