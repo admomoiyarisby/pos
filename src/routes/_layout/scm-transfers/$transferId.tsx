@@ -112,7 +112,7 @@ function TransferDetailPage() {
   if (isLoading && !result) {
     return (
       <RoleGuard
-        allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}
+        allowedRoles={["super_admin", "area_manager", "branch_admin"]}
         deniedTo="/scm-transfers"
       >
         <div className="space-y-4">
@@ -127,7 +127,7 @@ function TransferDetailPage() {
   if (!result || !user) {
     return (
       <RoleGuard
-        allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}
+        allowedRoles={["super_admin", "area_manager", "branch_admin"]}
         deniedTo="/scm-transfers"
       >
         <div className="p-6 text-muted-foreground">Mutasi tidak ditemukan</div>
@@ -149,8 +149,10 @@ function TransferDetailPage() {
   const toName = branchById.get(transfer.toBranchId)?.name ?? transfer.toBranchId.slice(0, 8);
 
   return (
+    // admin_pusat is deliberately absent: assertTransferAccess rejects them
+    // for Mutasi (Q4 / Q8). The two guards above mirror this list.
     <RoleGuard
-      allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}
+      allowedRoles={["super_admin", "area_manager", "branch_admin"]}
       deniedTo="/scm-transfers"
     >
       <div className="space-y-4">

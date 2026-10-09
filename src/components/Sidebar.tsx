@@ -168,7 +168,10 @@ const navGroups: NavGroup[] = [
         label: "Mutasi Stok",
         to: "/scm-transfers",
         icon: ArrowRightLeft,
-        roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin"],
+        // admin_pusat excluded on purpose: assertTransferAccess rejects them
+        // for Mutasi (Q4 / Q8). Unlike Pengadaan/Retur Barang, they are not an
+        // actor on branch-to-branch transfers.
+        roles: ["super_admin", "area_manager", "branch_admin"],
       },
       {
         // ADR 0018: rejected stock on its way back to the source. Branch admins

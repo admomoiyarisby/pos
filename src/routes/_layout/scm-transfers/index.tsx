@@ -328,7 +328,9 @@ function TransfersListPage() {
   ];
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
+    <RoleGuard allowedRoles={["super_admin", "area_manager", "branch_admin"]}>
+      {/* admin_pusat is deliberately absent from the guard: assertTransferAccess
+          rejects them for Mutasi (Q4 / Q8), so it must not promise them entry. */}
       <div className="space-y-4">
         {/* ── Toolbar: search + primary action (mobile-first) ── */}
         <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
