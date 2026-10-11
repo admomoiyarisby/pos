@@ -161,11 +161,22 @@ async function soStatus(id: string): Promise<{ status: string; realizedAt: Date 
   return row;
 }
 
-async function firstItem(soId: string) {
+/** First SO item of an opname, optionally scoped to one ingredient.
+ *
+ *  The SO item list is the whole catalog, so an opname carries every catalog
+ *  item — not only the ones with a stock record. A test that seeds more than
+ *  one ingredient must therefore say which line it means, otherwise "the first
+ *  item" is whichever row the database happened to return. */
+async function firstItem(soId: string, ingredientId?: string) {
   const [row] = await db
     .select()
     .from(schema.stockOpnameItems)
-    .where(eq(schema.stockOpnameItems.stockOpnameId, soId))
+    .where(
+      and(
+        eq(schema.stockOpnameItems.stockOpnameId, soId),
+        ingredientId ? eq(schema.stockOpnameItems.ingredientId, ingredientId) : undefined,
+      ),
+    )
     .limit(1);
   if (!row) throw new Error(`no items for SO ${soId}`);
   return row;
@@ -391,7 +402,7 @@ describe("Stock opname — state guards", () => {
           branchId: branchB,
           date: "2026-11-25",
         });
-        const itemB = await firstItem(soB.id);
+        const itemB = await firstItem(soB.id, ingredientB);
         await inv.submitStockOpnameCore(baB, {
           soId: soB.id,
           items: [{ itemId: itemB.id, physicalStock: 9 }],
@@ -448,7 +459,7 @@ describe("Stock opname — state guards", () => {
       await seedInventory(branchB, ingredientB, 10);
       const baB = await seedUser("branch_admin", branchB);
       const soB = await inv.triggerStockOpnameCore(baB, { branchId: branchB, date: "2026-08-25" });
-      const itemB = await firstItem(soB.id);
+      const itemB = await firstItem(soB.id, ingredientB);
       await inv.submitStockOpnameCore(baB, {
         soId: soB.id,
         items: [{ itemId: itemB.id, physicalStock: 8 }],
@@ -871,22 +882,25 @@ describe("Stock opname — trigger item list scope (why 'trigger SO cuma 35 item
   }
 
   it.skipIf(!hasTestDatabaseUrl)(
-    "only ingredients with an existing inventory row at the branch get SO items",
+    "the catalog decides the item list, not the presence of a stock record",
     async () => {
       const branch = await seedBranch(uniq("SO-C"));
-      // A: has inventory row → in the SO
+      // A: stocked here → in the SO with its quantity
       const ingWithRow = await seedIngredient(uniq("SO-C-WITH"));
       await seedInventory(branch, ingWithRow, 5);
-      // B: countable + visible but NO inventory row at this branch → NOT in the SO
-      await seedIngredient(uniq("SO-C-NOINV"));
-      // C: inventory row exists but ingredient is Deleted → NOT in the SO
+      // B: countable + not deleted, but NO stock record at this branch → STILL
+      // in the SO, at systemStock 0. Before, the stock record was the scope, so
+      // this line was silently missing from every count sheet (29-33 items per
+      // outlet in production) and a 0-stock item could never be counted.
+      const ingNoRow = await seedIngredient(uniq("SO-C-NOINV"));
+      // C: stock record exists but ingredient is Deleted → NOT in the SO
       const deletedIng = await seedIngredient(uniq("SO-C-DEL"));
       await db
         .update(schema.ingredients)
         .set({ status: "Deleted" })
         .where(eq(schema.ingredients.id, deletedIng));
       await seedInventory(branch, deletedIng, 3);
-      // D: inventory row but countable = false (e.g. porsi shelf) → NOT in the SO
+      // D: stock record but countable = false (e.g. porsi shelf) → NOT in the SO
       const nonCountable = await seedIngredient(uniq("SO-C-NONCT"));
       await db
         .update(schema.ingredients)
@@ -900,14 +914,18 @@ describe("Stock opname — trigger item list scope (why 'trigger SO cuma 35 item
         date: "2026-08-25",
       });
 
-      // Exactly one SO item: only the ingredient with a countable, non-deleted,
-      // inventory-backed row.
-      expect(await soItemCount(so.id)).toBe(1);
-      const [only] = await db
-        .select({ ingredientId: schema.stockOpnameItems.ingredientId })
-        .from(schema.stockOpnameItems)
-        .where(eq(schema.stockOpnameItems.stockOpnameId, so.id));
-      expect(only.ingredientId).toBe(ingWithRow);
+      // Exactly two SO items: A (real quantity) and B (0 — never stocked).
+      expect(await soItemCount(so.id)).toBe(2);
+      const withRow = await firstItem(so.id, ingWithRow);
+      expect(withRow.systemStock).toBe(5);
+      const noRow = await firstItem(so.id, ingNoRow);
+      expect(noRow.systemStock).toBe(0);
+      expect(noRow.physicalStock).toBe(0);
+      // A fresh line is uncounted: 0 is the trigger default, not a count.
+      expect(noRow.countedAt).toBeNull();
+      // C (Deleted) and D (not countable) stay out.
+      await expect(firstItem(so.id, deletedIng)).rejects.toThrow("no items for SO");
+      await expect(firstItem(so.id, nonCountable)).rejects.toThrow("no items for SO");
     },
   );
 
@@ -962,6 +980,22 @@ describe("Stock opname — trigger item list scope (why 'trigger SO cuma 35 item
         .from(schema.stockOpnameItems)
         .where(eq(schema.stockOpnameItems.stockOpnameId, outletSo.id));
       expect(outletItems.map((i) => i.ingredientId)).toEqual([visible]);
+
+      // Catalog membership decides the sheet, not the stock records: an outlet
+      // item the branch has never received is now on the sheet at systemStock 0
+      // instead of being silently absent. Its line is a real count line — the
+      // counter writes what they find on the shelf, including nothing.
+      const neverStocked = await seedIngredient(uniq("SO-NOSTOCK"), { isBranchVisible: true });
+      const outletSo2 = await inv.triggerStockOpnameCore(outletBa, {
+        branchId: outlet,
+        date: "2026-08-26",
+      });
+      expect(await soItemCount(outletSo2.id)).toBe(2);
+      const noStockLine = await firstItem(outletSo2.id, neverStocked);
+      expect(noStockLine.systemStock).toBe(0);
+      expect(noStockLine.countedAt).toBeNull();
+      // The non-catalog item the outlet physically holds stays out of the sheet.
+      expect(outletSo2.id).not.toBe(outletSo.id);
     },
   );
 
@@ -1062,6 +1096,70 @@ describe("Stock opname — trigger item list scope (why 'trigger SO cuma 35 item
         )
         .where(eq(schema.stockOpnames.branchId, branch));
       expect(items).toHaveLength(0);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "the detail view is a snapshot — later master-data changes do not drop counted lines",
+    async () => {
+      // The detail page used to re-apply the trigger's catalog filters
+      // (`isBranchVisible`, `status <> 'Deleted'`) on every read. A line then
+      // vanished from the page as soon as the ingredient was flagged off or
+      // soft-deleted — while `realize` still applies that same counted row (its
+      // query never had the filters). A count the user cannot see must not move
+      // stock, so the read must report exactly what the trigger wrote.
+      const branch = await seedBranch(uniq("SO-SNAP"), "Outlet");
+      const stocked = await seedIngredient(uniq("SO-SNAP-STK"), { isBranchVisible: true });
+      await seedInventory(branch, stocked, 10);
+      // A catalog item never stocked here — the case that motivated reading the
+      // item list from the catalog in the first place.
+      const zeroLine = await seedIngredient(uniq("SO-SNAP-ZERO"), { isBranchVisible: true });
+
+      const ba = await seedUser("branch_admin", branch);
+      const so = await inv.triggerStockOpnameCore(ba, { branchId: branch, date: "2026-08-25" });
+
+      // Count both lines: the stocked one at 8, the never-stocked one at 0.
+      await inv.submitStockOpnameCore(ba, {
+        soId: so.id,
+        items: [
+          { itemId: (await firstItem(so.id, stocked)).id, physicalStock: 8 },
+          { itemId: (await firstItem(so.id, zeroLine)).id, physicalStock: 0 },
+        ],
+      });
+
+      // Master data moves under the opname: the item leaves the branch catalog
+      // and the other one is tombstoned.
+      await db
+        .update(schema.ingredients)
+        .set({ isBranchVisible: false })
+        .where(eq(schema.ingredients.id, stocked));
+      await db
+        .update(schema.ingredients)
+        .set({ status: "Deleted" })
+        .where(eq(schema.ingredients.id, zeroLine));
+
+      // A supervisor (non-blind) reads the opname.
+      const am = await seedUser("area_manager", undefined, [branch]);
+      const detail = await inv.getStockOpnameDetailCore(am, { id: so.id });
+
+      // Both counted lines survive, with their names still resolvable.
+      expect(detail?.totalCount).toBe(2);
+      const names = detail?.items.map((i) => i.ingredientName) ?? [];
+      expect(names.some((n) => n?.includes("SO-SNAP-STK"))).toBe(true);
+      expect(names.some((n) => n?.includes("SO-SNAP-ZERO"))).toBe(true);
+      expect(detail?.countedCount).toBe(2);
+      // The snapshot values are intact — the view did not re-read the catalog.
+      expect(detail?.items.find((i) => i.ingredientId === stocked)?.systemStock).toBe(10);
+      expect(detail?.items.find((i) => i.ingredientId === stocked)?.physicalStock).toBe(8);
+      expect(detail?.items.find((i) => i.ingredientId === zeroLine)?.systemStock).toBe(0);
+
+      // And realize still applies both counts, so the view and the writer agree.
+      await inv.approveStockOpnameCore(am, { soId: so.id });
+      const superAdmin = await seedUser("super_admin");
+      const realized = await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
+      expect(realized.itemsAdjusted).toBe(2);
+      expect(await getStock(branch, stocked)).toBe(8);
+      expect(await getStock(branch, zeroLine)).toBe(0);
     },
   );
 });

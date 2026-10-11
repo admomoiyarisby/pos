@@ -1,8 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { DrizzleQueryError } from "drizzle-orm";
 import { db } from "#/lib/server/db";
-import { ingredients, recipeIngredients, ingredientBranches } from "#/db/schema";
-import { eq, and, ne } from "drizzle-orm";
+import {
+  ingredients,
+  recipeIngredients,
+  ingredientBranches,
+  inventory,
+  branches,
+} from "#/db/schema";
+import { eq, and, ne, count, sql } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import type { AppUser } from "./auth";
@@ -11,7 +17,6 @@ import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { describeDbError, isUniqueViolation } from "#/lib/server/db-errors";
 import { z } from "zod";
-import { sql } from "drizzle-orm";
 
 const ingredientInput = z.object({
   code: z.string().min(1).max(30),
@@ -43,77 +48,148 @@ export const getIngredients = createServerFn({ method: "GET" })
   )
   .handler(async ({ data }) => {
     await requireAuth();
-
-    const user = await getCurrentUserRaw();
-    const currentBranchId = user?.branchId;
-
-    // Build conditions list, then apply all at once (mirrors getRecipes).
-    const conditions: import("drizzle-orm").SQL[] = [];
-
-    // ADR-0009 mirror: tombstoned (Deleted) ingredients never appear in lists.
-    // Inactive stays visible (search/sort/filter); only Deleted is hidden.
-    conditions.push(ne(ingredients.status, "Deleted"));
-    if (data.search) {
-      conditions.push(
-        fuzzySearch([ingredients.name, ingredients.code, ingredients.alias], data.search),
-      );
-    }
-    if (data.category) {
-      conditions.push(eq(ingredients.category, data.category));
-    }
-    if (data.skuType) {
-      conditions.push(eq(ingredients.skuType, data.skuType));
-    }
-    if (data.excludeNasi) {
-      conditions.push(eq(ingredients.isNasi, false));
-    }
-
-    // Branch-vs-central visibility (omoiyari stock-opname catalog): outlet
-    // branches (branch_admin) see ONLY branch-visible items. Central warehouse
-    // and management roles (super_admin / admin_pusat / central_kitchen /
-    // area_manager) see everything. The per-branch `ingredient_branches` link
-    // below is ANDed on top, so the future case "only some specific branches
-    // see item X" still works (link the item to those branches).
-    if (user?.role === "branch_admin") {
-      conditions.push(eq(ingredients.isBranchVisible, true));
-    }
-
-    // Branch visibility gate (mirrors getRecipes / getPosMenu): a branch-scoped
-    // caller sees only ingredients allowed at their branch; an ingredient with
-    // no ingredient_branches rows is visible everywhere (NULL = all branches).
-    const branchClause = branchVisibleClause({
-      linkTable: ingredientBranches,
-      linkRowId: ingredientBranches.ingredientId,
-      rowId: ingredients.id,
-      linkBranchId: ingredientBranches.branchId,
-      currentBranchId,
-    });
-    if (branchClause) conditions.push(branchClause);
-
-    const result = await db
-      .select()
-      .from(ingredients)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(
-        data.search
-          ? fuzzyRank([ingredients.name, ingredients.code, ingredients.alias], data.search)
-          : ingredients.name,
-      );
-
-    // Branch admins must never see the stock HPP (averageCost / plannedCost).
-    // The ingredient master pages are role-gated, but the same serializer is
-    // used by branch-facing flows (procurement request form, waste combobox,
-    // Mutasi detail), so strip the cost fields at the view/serializer layer.
-    if (user?.role === "branch_admin") {
-      return result.map((ing) => ({
-        ...ing,
-        averageCost: 0,
-        plannedCost: ing.plannedCost === null ? null : 0,
-      }));
-    }
-
-    return result;
+    return getIngredientsCore(await getCurrentUserRaw(), data);
   });
+
+/** The business logic behind `getIngredients`, parameterized by an explicit
+ *  user so the branch-catalog scope can be driven without a session.
+ *
+ *  ADR 0015 keeps read-only endpoints uncored by default; this is the read-path
+ *  exception (rule 4). The catalog-parity test (`ingredient-catalog-parity
+ *  .integration.test.ts`) pins that this list is the one definition of "the
+ *  branch catalog" that every branch-scoped read — including the stock opname
+ *  — must agree with. */
+export async function getIngredientsCore(
+  user: AppUser | null,
+  data: {
+    search?: string;
+    category?: "Fresh" | "Dry" | "Packaging" | null;
+    skuType?: "RM" | "SFG" | "FG" | null;
+    excludeNasi?: boolean;
+  },
+) {
+  const currentBranchId = user?.branchId;
+
+  // Build conditions list, then apply all at once (mirrors getRecipes).
+  const conditions: import("drizzle-orm").SQL[] = [];
+
+  // ADR-0009 mirror: tombstoned (Deleted) ingredients never appear in lists.
+  // Inactive stays visible (search/sort/filter); only Deleted is hidden.
+  conditions.push(ne(ingredients.status, "Deleted"));
+  if (data.search) {
+    conditions.push(
+      fuzzySearch([ingredients.name, ingredients.code, ingredients.alias], data.search),
+    );
+  }
+  if (data.category) {
+    conditions.push(eq(ingredients.category, data.category));
+  }
+  if (data.skuType) {
+    conditions.push(eq(ingredients.skuType, data.skuType));
+  }
+  if (data.excludeNasi) {
+    conditions.push(eq(ingredients.isNasi, false));
+  }
+
+  // Branch-vs-central visibility (omoiyari stock-opname catalog): outlet
+  // branches (branch_admin) see ONLY branch-visible items. Central warehouse
+  // and management roles (super_admin / admin_pusat / central_kitchen /
+  // area_manager) see everything. The per-branch `ingredient_branches` link
+  // below is ANDed on top, so the future case "only some specific branches
+  // see item X" still works (link the item to those branches).
+  if (user?.role === "branch_admin") {
+    conditions.push(eq(ingredients.isBranchVisible, true));
+  }
+
+  // Branch visibility gate (mirrors getRecipes / getPosMenu): a branch-scoped
+  // caller sees only ingredients allowed at their branch; an ingredient with
+  // no ingredient_branches rows is visible everywhere (NULL = all branches).
+  const branchClause = branchVisibleClause({
+    linkTable: ingredientBranches,
+    linkRowId: ingredientBranches.ingredientId,
+    rowId: ingredients.id,
+    linkBranchId: ingredientBranches.branchId,
+    currentBranchId,
+  });
+  if (branchClause) conditions.push(branchClause);
+
+  const result = await db
+    .select()
+    .from(ingredients)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(
+      data.search
+        ? fuzzyRank([ingredients.name, ingredients.code, ingredients.alias], data.search)
+        : ingredients.name,
+    );
+
+  // Branch admins must never see the stock HPP (averageCost / plannedCost).
+  // The ingredient master pages are role-gated, but the same serializer is
+  // used by branch-facing flows (procurement request form, waste combobox,
+  // Mutasi detail), so strip the cost fields at the view/serializer layer.
+  if (user?.role === "branch_admin") {
+    return result.map((ing) => ({
+      ...ing,
+      averageCost: 0,
+      plannedCost: ing.plannedCost === null ? null : 0,
+    }));
+  }
+
+  return result;
+}
+
+export const getBranchCatalogGaps = createServerFn({ method: "GET" })
+  .validator((data: Record<string, never> = {}) => data)
+  .handler(async () => {
+    await requireAuth();
+    return getBranchCatalogGapsCore();
+  });
+
+/** The business logic behind `getBranchCatalogGaps`, extracted so the report's
+ *  filter contract can be driven without a session (ADR 0015 rule 4 — the
+ *  read-path exception, same as `getIngredientsCore` in this file). */
+export async function getBranchCatalogGapsCore() {
+  // Ingredients that a branch physically holds but whose catalog flag is
+  // FALSE. Since the opname count sheet is the branch catalog
+  // (ADR 0023), these items are stocked at an outlet and yet can never
+  // appear on any outlet opname. The flag defaults to FALSE, so a new
+  // ingredient lands here by default — this list is the audit surface that
+  // turns that silent trap into a checkable decision.
+  const rows = await db
+    .select({
+      ingredientId: ingredients.id,
+      code: ingredients.code,
+      name: ingredients.name,
+      category: ingredients.category,
+      outletCount: count(sql`distinct ${branches.id}`),
+      outlets: sql<string>`string_agg(distinct ${branches.name}, ', ')`,
+      totalQuantity: sql<string>`sum(${inventory.quantity})`,
+    })
+    .from(ingredients)
+    .innerJoin(inventory, eq(inventory.ingredientId, ingredients.id))
+    .innerJoin(branches, eq(branches.id, inventory.branchId))
+    .where(
+      and(
+        eq(ingredients.isBranchVisible, false),
+        eq(ingredients.countable, true),
+        ne(ingredients.status, "Deleted"),
+        eq(branches.type, "Outlet"),
+      ),
+    )
+    .groupBy(ingredients.id, ingredients.code, ingredients.name, ingredients.category)
+    .orderBy(sql`count(distinct ${branches.id}) desc`, ingredients.name);
+
+  return rows.map((r) => ({
+    ingredientId: r.ingredientId,
+    code: r.code,
+    name: r.name,
+    category: r.category,
+    outletCount: Number(r.outletCount),
+    outlets: r.outlets,
+    // `sum(real)` comes back from the driver as text.
+    totalQuantity: Number(r.totalQuantity ?? 0),
+  }));
+}
 
 export const getIngredient = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)

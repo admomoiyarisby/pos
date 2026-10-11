@@ -12,6 +12,7 @@ import {
   systemNotifications,
   areaManagerBranches,
   orders,
+  ingredientBranches,
 } from "#/db/schema";
 import { eq, and, or, desc, asc, count, inArray, sql, ilike, ne, isNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
@@ -24,6 +25,7 @@ import { DrizzleQueryError } from "drizzle-orm";
 import { describeDbError } from "./db-errors";
 import { roundQuantity, formatQuantity } from "#/lib/utils";
 import { ensureInventoryRow } from "./sales-data";
+import { branchVisibleClause } from "./branch-visibility";
 
 /**
  * A physical count is a finite, non-negative number of stock units — a fraction
@@ -499,6 +501,14 @@ export async function triggerStockOpnameCore(
     throw new Error("Branch Admin hanya bisa trigger SO untuk cabang sendiri");
   }
 
+  // The item list is the branch CATALOG, read from `ingredients` — not the
+  // stock records. A stock record is created only by a movement (sale,
+  // delivery, transfer-in, waste, yield), so an item a branch is responsible
+  // for but never received had no record and never reached the count sheet:
+  // 29-33 catalog items per outlet were silently missing. LEFT JOIN `inventory`
+  // keeps the catalog complete and reads the quantity when a record exists
+  // (`coalesce(..., 0)` for items that have never been stocked here).
+  //
   // Outlet SOs only carry the branch (outlet) catalog (isBranchVisible = true);
   // central-warehouse SOs include everything. Deleted ingredients are
   // tombstoned from the master and never appear in an SO (mirrors getIngredients).
@@ -510,21 +520,45 @@ export async function triggerStockOpnameCore(
   const isOutlet = branch?.type === "Outlet";
 
   // Get current inventory for the branch (only countable items)
+  //
+  // Outlet catalog = the flag gate AND the `ingredient_branches` allow-list —
+  // the same two conditions `getIngredients` applies, so a line cannot sit on an
+  // outlet's count sheet while its ingredient list hides the item (4 such lines
+  // existed). Central scopes get no link narrowing: the link data has no
+  // coverage of the second central branch (Central Kitchen Food Prep), so
+  // applying it there would drop 20 lines from that branch's sheet through a
+  // data gap, not through intent.
+  const branchCatalogClause = isOutlet
+    ? branchVisibleClause({
+        linkTable: ingredientBranches,
+        linkRowId: ingredientBranches.ingredientId,
+        rowId: ingredients.id,
+        linkBranchId: ingredientBranches.branchId,
+        currentBranchId: data.branchId,
+      })
+    : undefined;
+
   const invItems = await db
     .select({
-      ingredientId: inventory.ingredientId,
+      ingredientId: ingredients.id,
       quantity: inventory.quantity,
     })
-    .from(inventory)
-    .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
+    .from(ingredients)
+    .leftJoin(
+      inventory,
+      and(eq(inventory.ingredientId, ingredients.id), eq(inventory.branchId, data.branchId)),
+    )
     .where(
       and(
-        eq(inventory.branchId, data.branchId),
         eq(ingredients.countable, true),
         ne(ingredients.status, "Deleted"),
         isOutlet ? eq(ingredients.isBranchVisible, true) : undefined,
+        branchCatalogClause,
       ),
-    );
+    )
+    // Stable order so the count sheet (and the multi-row INSERT) is
+    // reproducible instead of whatever order Postgres returned the join in.
+    .orderBy(ingredients.name);
 
   // Create the SO header and ALL items atomically in one transaction with a
   // single multi-row INSERT. A per-item loop over 50+ sequential round-trips
@@ -558,8 +592,11 @@ export async function triggerStockOpnameCore(
             ingredientId: item.ingredientId,
             // Rounded off the float32 residue `inventory.quantity` can carry
             // (23.499999), so the count sheet and the variance it computes are
-            // readable instead of showing 6-decimal noise.
-            systemStock: roundQuantity(item.quantity),
+            // readable instead of showing 6-decimal noise. A catalog item with
+            // no stock record at this branch has no row to read — the branch
+            // holds none of it, so the snapshot starts at 0 and the counter
+            // writes the real number they find on the shelf.
+            systemStock: roundQuantity(item.quantity ?? 0),
             physicalStock: 0,
             variance: 0,
           })),
@@ -663,176 +700,187 @@ export const getStockOpnameDetail = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
-
-    const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.id)).limit(1);
-
-    if (!so) return null;
-
-    // Branch access check
-    if (user.role === "branch_admin" && user.branchId && so.branchId !== user.branchId) {
-      throw new Error("Unauthorized: you can only view Stock Opnames for your branch");
-    }
-
-    // Fetch branch name + type (type decides the SO catalog below)
-    const [branch] = await db
-      .select({ name: branches.name, type: branches.type })
-      .from(branches)
-      .where(eq(branches.id, so.branchId))
-      .limit(1);
-
-    // Outlet SOs only show the branch (outlet) catalog; central-warehouse SOs
-    // show everything. Deleted ingredients are tombstoned from the master and
-    // never shown (mirrors getIngredients).
-    const isOutlet = branch?.type === "Outlet";
-
-    const items = await db
-      .select({
-        id: stockOpnameItems.id,
-        ingredientId: stockOpnameItems.ingredientId,
-        systemStock: stockOpnameItems.systemStock,
-        physicalStock: stockOpnameItems.physicalStock,
-        variance: stockOpnameItems.variance,
-        variancePercentage: stockOpnameItems.variancePercentage,
-        investigationNote: stockOpnameItems.investigationNote,
-        countedAt: stockOpnameItems.countedAt,
-        ingredientName: ingredients.name,
-        ingredientCode: ingredients.code,
-        ingredientCategory: ingredients.category,
-        isNasi: ingredients.isNasi,
-      })
-      .from(stockOpnameItems)
-      .leftJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
-      .where(
-        and(
-          eq(stockOpnameItems.stockOpnameId, data.id),
-          ne(ingredients.status, "Deleted"),
-          isOutlet ? eq(ingredients.isBranchVisible, true) : undefined,
-        ),
-      );
-
-    // Access check for admin_pusat - can only view Central Warehouse SOs
-    if (user.role === "admin_pusat") {
-      const centralBranch = await getCentralWarehouse(db);
-      if (centralBranch && so.branchId !== centralBranch.id) {
-        throw new Error("Unauthorized: Admin Pusat can only view Central Warehouse Stock Opnames");
-      }
-    }
-
-    // For blind roles, strip system stock
-    const isBlind = user.role === "branch_admin" || user.role === "admin_pusat";
-
-    // Snapshot drift: counted items whose current inventory no longer matches
-    // the systemStock snapshot taken at trigger time. Stock can move during the
-    // opname window (sales, waste, transfers), and realize adjusts from the
-    // *current* quantity, not the stale snapshot — surface the difference so
-    // the approver is not surprised by a delta measured against 88 when the
-    // table showed 97. Approvers only: for blind roles this would leak system
-    // stock, and they cannot approve anyway.
-    type DriftRow = {
-      ingredientName: string;
-      systemStock: number;
-      currentQuantity: number;
-    };
-    let drift: DriftRow[] = [];
-    if (!isBlind && so.status !== "Approved") {
-      const countedIds = items.filter((i) => i.countedAt !== null).map((i) => i.ingredientId);
-      if (countedIds.length > 0) {
-        const currentInv = await db
-          .select({
-            ingredientId: inventory.ingredientId,
-            quantity: inventory.quantity,
-          })
-          .from(inventory)
-          .where(
-            and(eq(inventory.branchId, so.branchId), inArray(inventory.ingredientId, countedIds)),
-          );
-        const qtyByIngredient = new Map(currentInv.map((r) => [r.ingredientId, r.quantity]));
-        drift = items
-          .filter((i) => {
-            if (i.countedAt === null) return false;
-            const current = qtyByIngredient.get(i.ingredientId);
-            return current !== undefined && current !== i.systemStock;
-          })
-          .map((i) => ({
-            ingredientName: i.ingredientName ?? i.ingredientId,
-            systemStock: i.systemStock,
-            currentQuantity: qtyByIngredient.get(i.ingredientId) ?? 0,
-          }));
-      }
-    }
-
-    // Change summary ("Ringkasan Perubahan"). Before realize it previews what
-    // realize *will* apply: counted items whose count differs from current
-    // stock. After realize it reports what actually changed: the ledger rows
-    // this SO wrote (reference `SO:<soId>` — approve writes none, ADR 0021).
-    // Blind roles get neither — old/new quantities would leak system stock.
-    type SummaryRow = {
-      ingredientName: string;
-      oldQuantity: number;
-      newQuantity: number;
-      delta: number;
-      applied: boolean;
-    };
-    let summary: SummaryRow[] = [];
-    if (!isBlind) {
-      if (so.status === "Approved") {
-        const ledgerRows = await db
-          .select({
-            ingredientId: stockLedger.ingredientId,
-            type: stockLedger.type,
-            quantity: stockLedger.quantity,
-            balance: stockLedger.balance,
-            ingredientName: ingredients.name,
-          })
-          .from(stockLedger)
-          .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
-          .where(
-            and(
-              eq(stockLedger.branchId, so.branchId),
-              or(eq(stockLedger.reference, data.id), eq(stockLedger.reference, `SO:${data.id}`)),
-            ),
-          )
-          .orderBy(asc(stockLedger.createdAt), asc(stockLedger.id));
-        summary = ledgerRows.map((r) => {
-          const delta = r.type === "IN" ? r.quantity : -r.quantity;
-          return {
-            ingredientName: r.ingredientName ?? r.ingredientId ?? "",
-            oldQuantity: r.balance - delta,
-            newQuantity: r.balance,
-            delta,
-            applied: true,
-          };
-        });
-      } else {
-        summary = items
-          .filter((i) => i.countedAt !== null && i.variance !== 0)
-          .map((i) => ({
-            ingredientName: i.ingredientName ?? i.ingredientId,
-            oldQuantity: i.systemStock,
-            newQuantity: i.physicalStock,
-            delta: i.variance,
-            applied: false,
-          }));
-      }
-    }
-
-    return {
-      ...so,
-      branchName: branch?.name ?? so.branchId,
-      items: isBlind
-        ? items.map((i) => ({
-            ...i,
-            systemStock: 0,
-            variance: 0,
-          }))
-        : items,
-      isBlind,
-      summary,
-      drift,
-      countedCount: items.filter((i) => i.countedAt !== null).length,
-      totalCount: items.length,
-    };
+    return getStockOpnameDetailCore(user, data);
   });
+
+/** The business logic behind `getStockOpnameDetail`, parameterized by an
+ *  explicit user so the snapshot contract can be driven directly.
+ *
+ *  ADR 0015 keeps read-only endpoints uncored by default; this is the
+ *  documented exception — a read-path contract worth pinning (ADR 0015 rule 4,
+ *  `getStockLedgerCore` precedent): the detail page must show the opname as it
+ *  was triggered, untouched by later master-data changes. */
+export async function getStockOpnameDetailCore(user: AppUser, data: { id: string }) {
+  const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.id)).limit(1);
+
+  if (!so) return null;
+
+  // Branch access check
+  if (user.role === "branch_admin" && user.branchId && so.branchId !== user.branchId) {
+    throw new Error("Unauthorized: you can only view Stock Opnames for your branch");
+  }
+
+  // Fetch branch name (displayed on the detail page).
+  const [branch] = await db
+    .select({ name: branches.name })
+    .from(branches)
+    .where(eq(branches.id, so.branchId))
+    .limit(1);
+
+  // The opname is a SNAPSHOT: the item list is whatever the trigger wrote,
+  // read back verbatim. It is NOT re-filtered against the current master
+  // data. Re-applying `isBranchVisible` / `status <> Deleted` here made a
+  // line vanish from the page, the printout and the summary as soon as the
+  // ingredient was soft-deleted or its flag flipped — while `realize` still
+  // applies that same counted row (its query has no such filter). A count the
+  // user cannot see must not move stock. The trigger decides the scope; the
+  // view only reports it.
+  //
+  // Ordered by name so a 60-90 line count sheet is stable across requests
+  // (the raw join order is not).
+  const items = await db
+    .select({
+      id: stockOpnameItems.id,
+      ingredientId: stockOpnameItems.ingredientId,
+      systemStock: stockOpnameItems.systemStock,
+      physicalStock: stockOpnameItems.physicalStock,
+      variance: stockOpnameItems.variance,
+      variancePercentage: stockOpnameItems.variancePercentage,
+      investigationNote: stockOpnameItems.investigationNote,
+      countedAt: stockOpnameItems.countedAt,
+      ingredientName: ingredients.name,
+      ingredientCode: ingredients.code,
+      ingredientCategory: ingredients.category,
+      isNasi: ingredients.isNasi,
+    })
+    .from(stockOpnameItems)
+    .leftJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
+    .where(eq(stockOpnameItems.stockOpnameId, data.id))
+    .orderBy(ingredients.name);
+
+  // Access check for admin_pusat - can only view Central Warehouse SOs
+  if (user.role === "admin_pusat") {
+    const centralBranch = await getCentralWarehouse(db);
+    if (centralBranch && so.branchId !== centralBranch.id) {
+      throw new Error("Unauthorized: Admin Pusat can only view Central Warehouse Stock Opnames");
+    }
+  }
+
+  // For blind roles, strip system stock
+  const isBlind = user.role === "branch_admin" || user.role === "admin_pusat";
+
+  // Snapshot drift: counted items whose current inventory no longer matches
+  // the systemStock snapshot taken at trigger time. Stock can move during the
+  // opname window (sales, waste, transfers), and realize adjusts from the
+  // *current* quantity, not the stale snapshot — surface the difference so
+  // the approver is not surprised by a delta measured against 88 when the
+  // table showed 97. Approvers only: for blind roles this would leak system
+  // stock, and they cannot approve anyway.
+  type DriftRow = {
+    ingredientName: string;
+    systemStock: number;
+    currentQuantity: number;
+  };
+  let drift: DriftRow[] = [];
+  if (!isBlind && so.status !== "Approved") {
+    const countedIds = items.filter((i) => i.countedAt !== null).map((i) => i.ingredientId);
+    if (countedIds.length > 0) {
+      const currentInv = await db
+        .select({
+          ingredientId: inventory.ingredientId,
+          quantity: inventory.quantity,
+        })
+        .from(inventory)
+        .where(
+          and(eq(inventory.branchId, so.branchId), inArray(inventory.ingredientId, countedIds)),
+        );
+      const qtyByIngredient = new Map(currentInv.map((r) => [r.ingredientId, r.quantity]));
+      drift = items
+        .filter((i) => {
+          if (i.countedAt === null) return false;
+          const current = qtyByIngredient.get(i.ingredientId);
+          return current !== undefined && current !== i.systemStock;
+        })
+        .map((i) => ({
+          ingredientName: i.ingredientName ?? i.ingredientId,
+          systemStock: i.systemStock,
+          currentQuantity: qtyByIngredient.get(i.ingredientId) ?? 0,
+        }));
+    }
+  }
+
+  // Change summary ("Ringkasan Perubahan"). Before realize it previews what
+  // realize *will* apply: counted items whose count differs from current
+  // stock. After realize it reports what actually changed: the ledger rows
+  // this SO wrote (reference `SO:<soId>` — approve writes none, ADR 0021).
+  // Blind roles get neither — old/new quantities would leak system stock.
+  type SummaryRow = {
+    ingredientName: string;
+    oldQuantity: number;
+    newQuantity: number;
+    delta: number;
+    applied: boolean;
+  };
+  let summary: SummaryRow[] = [];
+  if (!isBlind) {
+    if (so.status === "Approved") {
+      const ledgerRows = await db
+        .select({
+          ingredientId: stockLedger.ingredientId,
+          type: stockLedger.type,
+          quantity: stockLedger.quantity,
+          balance: stockLedger.balance,
+          ingredientName: ingredients.name,
+        })
+        .from(stockLedger)
+        .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
+        .where(
+          and(
+            eq(stockLedger.branchId, so.branchId),
+            or(eq(stockLedger.reference, data.id), eq(stockLedger.reference, `SO:${data.id}`)),
+          ),
+        )
+        .orderBy(asc(stockLedger.createdAt), asc(stockLedger.id));
+      summary = ledgerRows.map((r) => {
+        const delta = r.type === "IN" ? r.quantity : -r.quantity;
+        return {
+          ingredientName: r.ingredientName ?? r.ingredientId ?? "",
+          oldQuantity: r.balance - delta,
+          newQuantity: r.balance,
+          delta,
+          applied: true,
+        };
+      });
+    } else {
+      summary = items
+        .filter((i) => i.countedAt !== null && i.variance !== 0)
+        .map((i) => ({
+          ingredientName: i.ingredientName ?? i.ingredientId,
+          oldQuantity: i.systemStock,
+          newQuantity: i.physicalStock,
+          delta: i.variance,
+          applied: false,
+        }));
+    }
+  }
+
+  return {
+    ...so,
+    branchName: branch?.name ?? so.branchId,
+    items: isBlind
+      ? items.map((i) => ({
+          ...i,
+          systemStock: 0,
+          variance: 0,
+        }))
+      : items,
+    isBlind,
+    summary,
+    drift,
+    countedCount: items.filter((i) => i.countedAt !== null).length,
+    totalCount: items.length,
+  };
+}
 
 export const submitStockOpname = createServerFn({ method: "POST" })
   .validator((data: { soId: string; items: { itemId: string; physicalStock: number }[] }) => data)
@@ -1482,10 +1530,12 @@ export const printStockOpname = createServerFn({ method: "GET" })
 
     const [branch] = await db.select().from(branches).where(eq(branches.id, so.branchId)).limit(1);
 
-    // Outlet SOs only carry the branch (outlet) catalog; Deleted ingredients are
-    // tombstoned from the master and never shown (mirrors getStockOpnameDetail).
-    const isOutlet = branch?.type === "Outlet";
-
+    // The printed sheet is the same SNAPSHOT the detail view shows: exactly the
+    // rows the trigger wrote, with no second master-data filter — an ingredient
+    // flagged off or soft-deleted after the trigger keeps its line, because
+    // realize still applies its count. LEFT JOIN (not INNER) so a row whose
+    // ingredient was hard-deleted still prints instead of silently shrinking
+    // the sheet. Same order as the detail page.
     const items = await db
       .select({
         id: stockOpnameItems.id,
@@ -1497,14 +1547,8 @@ export const printStockOpname = createServerFn({ method: "GET" })
         countedAt: stockOpnameItems.countedAt,
       })
       .from(stockOpnameItems)
-      .innerJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
-      .where(
-        and(
-          eq(stockOpnameItems.stockOpnameId, data.soId),
-          ne(ingredients.status, "Deleted"),
-          isOutlet ? eq(ingredients.isBranchVisible, true) : undefined,
-        ),
-      )
+      .leftJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
+      .where(eq(stockOpnameItems.stockOpnameId, data.soId))
       .orderBy(ingredients.name);
 
     // Blind SO: branch admins (and admin pusat on the central warehouse) must

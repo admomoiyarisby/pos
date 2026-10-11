@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { useState, useMemo } from "react";
-import { formText } from "#/lib/utils";
+import { formText, formatQuantity } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
@@ -17,13 +17,14 @@ import {
   createIngredient,
   updateIngredient,
   deleteIngredient,
+  getBranchCatalogGaps,
 } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Switch } from "#/components/ui/switch";
-import { ArrowRight, Trash2, Check, Search, X, Plus, Package } from "lucide-react";
+import { ArrowRight, Trash2, Check, Search, X, Plus, Package, AlertTriangle } from "lucide-react";
 
 interface IngredientRow {
   id: string;
@@ -88,12 +89,22 @@ function IngredientsPage() {
     initialData: initial,
   });
 
+  // Catalog completeness: ingredients an outlet physically holds but which are
+  // flagged "central only", so they can never appear on any branch stock
+  // opname (ADR 0023). The list is the audit surface for a flag that defaults
+  // to FALSE — without it, a new ingredient silently joins the blind spot.
+  const { data: catalogGaps = [] } = useQuery({
+    queryKey: ["ingredient-catalog-gaps"],
+    queryFn: () => getBranchCatalogGaps({ data: {} }),
+  });
+  const [gapsDismissed, setGapsDismissed] = useState(false);
+
   const filteredIngredients = ingredients;
 
   const createMutation = useMutation({
     mutationFn: createIngredient,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
+      void queryClient.invalidateQueries({ queryKey: ["ingredients", "ingredient-catalog-gaps"] });
       setModalOpen(false);
       toast.success("Bahan baku berhasil ditambahkan");
     },
@@ -105,7 +116,7 @@ function IngredientsPage() {
   const updateMutation = useMutation({
     mutationFn: updateIngredient,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
+      void queryClient.invalidateQueries({ queryKey: ["ingredients", "ingredient-catalog-gaps"] });
       toast.success("Status bahan baku berhasil diubah");
     },
     onError: (error: Error) => {
@@ -117,7 +128,7 @@ function IngredientsPage() {
     mutationFn: ({ data }: { data: { id: string; hardDelete: boolean } }) =>
       deleteIngredient({ data }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
+      void queryClient.invalidateQueries({ queryKey: ["ingredients", "ingredient-catalog-gaps"] });
       setDeleteModalOpen(false);
       setIngredientToDelete(null);
       toast.success("Bahan baku berhasil dihapus");
@@ -279,6 +290,68 @@ function IngredientsPage() {
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "central_kitchen"]}>
+      {/* ── Catalog completeness: stock at an outlet, but outside the outlet
+             catalog, so the item can never appear on any branch opname ── */}
+      {catalogGaps.length > 0 && !gapsDismissed && (
+        <div className="mb-4 rounded-md bg-warning/10 border border-warning/30 px-4 py-3 text-sm">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-warning" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-warning">
+                {catalogGaps.length} bahan ada stok di cabang tapi tidak masuk katalog cabang
+              </p>
+              <p className="text-warning/80 mt-1">
+                Bahan ini bertanda “hanya Pusat” (Tampil di Cabang nonaktif), jadi tidak pernah
+                muncul di halaman stock opname cabang mana pun — cabang memegangnya, tetapi tidak
+                pernah dihitung. Aktifkan “Tampil di Cabang” bila cabang memang menjualnya.
+              </p>
+              <ul className="mt-3 space-y-2">
+                {catalogGaps.slice(0, 6).map((g) => (
+                  <li
+                    key={g.ingredientId}
+                    className="flex items-center justify-between gap-3 rounded-md border border-warning/20 bg-background/60 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-mono text-xs text-muted-foreground truncate">
+                        {g.code}
+                      </div>
+                      <Link
+                        to="/ingredients/$ingId"
+                        params={{ ingId: g.ingredientId }}
+                        className="truncate text-sm font-medium hover:underline underline-offset-4"
+                      >
+                        {g.name}
+                      </Link>
+                      <div className="text-xs text-muted-foreground truncate">{g.outlets}</div>
+                    </div>
+                    <div className="shrink-0 text-right text-xs">
+                      <div className="font-medium tabular-nums">{g.outletCount} cabang</div>
+                      <div className="text-muted-foreground tabular-nums">
+                        stok {formatQuantity(g.totalQuantity)}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {catalogGaps.length > 6 && (
+                <p className="mt-2 text-xs text-warning/80">
+                  dan {catalogGaps.length - 6} bahan lainnya — aktifkan “Tampil di Cabang” pada
+                  masing-masing halaman bahan.
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              aria-label="Tutup peringatan katalog"
+              onClick={() => setGapsDismissed(true)}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-warning/70 hover:bg-warning/10 hover:text-warning transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Toolbar: search + action (mobile-first) ── */}
       <div className="space-y-3 mb-4">
         <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
@@ -643,6 +716,12 @@ function IngredientsPage() {
                 Aktif = masuk katalog cabang (terlihat branch_admin). Nonaktif = hanya Gudang Pusat
                 &amp; manajemen.
               </p>
+              {!isBranchVisible && (
+                <p className="text-xs text-warning mt-1">
+                  Bahan ini tidak akan muncul di stock opname cabang mana pun. Cabang yang
+                  memegangnya tidak akan pernah menghitungnya.
+                </p>
+              )}
             </div>
             <Switch
               checked={isBranchVisible}

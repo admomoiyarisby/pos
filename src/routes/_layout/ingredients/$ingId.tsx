@@ -248,6 +248,12 @@ function IngredientDetailPage() {
                   Aktif = masuk katalog cabang (terlihat branch_admin). Nonaktif = hanya Gudang
                   Pusat &amp; manajemen.
                 </p>
+                {!isBranchVisible && (
+                  <p className="text-xs text-warning mt-1">
+                    Bahan ini tidak akan muncul di stock opname cabang mana pun. Cabang yang
+                    memegangnya tidak akan pernah menghitungnya.
+                  </p>
+                )}
               </div>
               <Switch
                 checked={isBranchVisible}
