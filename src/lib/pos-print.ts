@@ -2,6 +2,10 @@
 // POS Print Utilities — receipt and bill generation
 // ============================================================
 
+import { toast } from "sonner";
+
+import { printViaBridge } from "./print-bridge";
+import type { BridgeBlock } from "./print-bridge";
 import type { CartItem, OrderResult } from "./pos-types";
 
 interface PrintBillParams {
@@ -81,7 +85,187 @@ function buildReceiptItemsHtml(cartItems: CartItem[]): string {
   return itemsHtml;
 }
 
-export function printReceipt({
+// ============================================================
+// Thermal layouts — block payloads for the Cleanter bridge
+//
+// The browser paths build HTML because the browser draws the page. A
+// thermal printer gets no page: Cleanter turns a flat list of blocks into
+// ESC/POS bytes, so these carry the same content as blocks instead.
+// ============================================================
+
+/** Cleanter's line widths: 48 characters on 80mm paper, 32 on 58mm. */
+const THERMAL_80MM_CHARS = 48;
+const THERMAL_58MM_CHARS = 32;
+
+/** How much of a line our own item labels may take before the price. */
+const THERMAL_ITEM_LABEL_CHARS = THERMAL_58MM_CHARS - 10;
+
+/**
+ * Receipt text lands on paper, not in a DOM: a stray newline would split a
+ * line in two, so flatten all whitespace before it becomes ESC/POS.
+ */
+function thermalText(text: string): string {
+  return text.replace(/\s+/gu, " ").trim();
+}
+
+/** Thermal print heads stop at the paper edge, so clip and mark the cut. */
+function fitThermal(text: string, maxChars: number): string {
+  let flat = thermalText(text);
+  if (flat.length <= maxChars) return flat;
+  return flat.slice(0, Math.max(maxChars - 3, 0)) + "...";
+}
+
+function thermalMoney(value: number): string {
+  return "Rp " + value.toLocaleString("id-ID");
+}
+
+/**
+ * Item lines as blocks: `2x Nasi Goreng .... 50.000`, with modifiers and
+ * notes indented underneath in a smaller size.
+ */
+function thermalItemLines(cartItems: CartItem[]): BridgeBlock[] {
+  let blocks: BridgeBlock[] = [];
+  for (let i = 0; i < cartItems.length; i++) {
+    let item = cartItems[i];
+    blocks.push({
+      type: "row",
+      left: fitThermal(item.quantity + "x " + item.name, THERMAL_ITEM_LABEL_CHARS),
+      right: (item.price * item.quantity).toLocaleString("id-ID"),
+      bold: true,
+    });
+    for (let j = 0; j < item.modifiers.length; j++) {
+      let m = item.modifiers[j];
+      blocks.push({
+        type: "text",
+        text: fitThermal((m.isExclusion ? "X " : "+ ") + m.name, THERMAL_58MM_CHARS),
+        size: "small",
+      });
+    }
+    if (item.notes) {
+      blocks.push({
+        type: "text",
+        text: fitThermal("Note: " + item.notes, THERMAL_58MM_CHARS),
+        size: "small",
+      });
+    }
+  }
+  return blocks;
+}
+
+/**
+ * A thermal printer failure has to reach the cashier in words they can act
+ * on. Cleanter's 503 body is written for exactly that ("Turn Bluetooth
+ * on"), so surface it verbatim instead of a generic error.
+ */
+function reportPrintFailure(message: string): void {
+  toast.error("Gagal mencetak: " + message);
+}
+
+/**
+ * Receipt for the customer: same content as the browser document, laid out
+ * as blocks for a 58mm roll.
+ */
+function receiptBlocks({
+  order,
+  cartItems,
+  branchName,
+  branchAddress,
+  branchPhone,
+}: PrintReceiptParams): BridgeBlock[] {
+  let idStr = order.id.slice(0, 8).toUpperCase();
+  let blocks: BridgeBlock[] = [
+    { type: "text", text: "Omoiyari", align: "center", bold: true, size: "large" },
+    {
+      type: "text",
+      text: thermalText(branchAddress || branchName),
+      align: "center",
+      size: "small",
+    },
+  ];
+  if (branchAddress) {
+    blocks.push({
+      type: "text",
+      text: thermalText(branchName),
+      align: "center",
+      size: "small",
+    });
+  }
+  blocks.push(
+    {
+      type: "text",
+      text: "Telp: " + thermalText(branchPhone || "-"),
+      align: "center",
+      size: "small",
+    },
+    {
+      type: "text",
+      text: new Date().toLocaleString("id-ID"),
+      align: "center",
+      size: "small",
+    },
+    { type: "divider" },
+    { type: "row", left: "Kode Order", right: thermalText(order.orderCode || idStr) },
+    { type: "row", left: "Pelanggan", right: thermalText(order.customerName || "-") },
+    { type: "row", left: "Channel", right: thermalText(order.channel) },
+    { type: "row", left: "Pembayaran", right: thermalText(order.paymentMethod || "-") },
+    { type: "divider" },
+    { type: "row", left: "Jml  Nama Menu", right: "Harga" },
+  );
+  for (const block of thermalItemLines(cartItems)) blocks.push(block);
+  blocks.push(
+    { type: "divider" },
+    { type: "row", left: "Subtotal", right: order.subtotal.toLocaleString("id-ID") },
+  );
+  if (order.voucherDiscount) {
+    blocks.push({
+      type: "row",
+      left: "Diskon",
+      right: "-" + order.voucherDiscount.toLocaleString("id-ID"),
+    });
+  }
+  if (order.taxAmount) {
+    blocks.push({
+      type: "row",
+      left: "PB1",
+      right: order.taxAmount.toLocaleString("id-ID"),
+    });
+  }
+  blocks.push(
+    { type: "row", left: "TOTAL", right: order.totalAmount.toLocaleString("id-ID"), bold: true },
+    { type: "divider" },
+    {
+      type: "text",
+      text: "Terima kasih sudah makan di Omoiyari! Selamat menikmati",
+      align: "center",
+      size: "small",
+    },
+    { type: "text", text: "INI BARU KARAAGE!!", align: "center", bold: true },
+    { type: "feed", lines: 3 },
+  );
+  return blocks;
+}
+
+/**
+ * Prints the customer receipt on the thermal printer when a printer is
+ * attached (Android tablet running Cleanter). Otherwise falls back to the
+ * browser print dialog, which is the only option on desktop.
+ */
+export async function printReceipt(params: PrintReceiptParams): Promise<void> {
+  let result = await printViaBridge({
+    content: receiptBlocks(params),
+    paperWidth: 58,
+    cut: true,
+    reference: params.order.orderCode ?? params.order.id.slice(0, 8).toUpperCase(),
+  });
+  if (result.kind === "printed") return;
+  if (result.kind === "unavailable") {
+    printReceiptInBrowser(params);
+    return;
+  }
+  reportPrintFailure(result.message);
+}
+
+function printReceiptInBrowser({
   order,
   cartItems,
   branchName,
@@ -177,7 +361,111 @@ export function printReceipt({
   printWindow.document.close();
 }
 
-export function printBill({
+/**
+ * Pre-checkout bill as blocks for a 58mm roll. Carries the same UNPAID
+ * marking as the browser document so it cannot be mistaken for a receipt.
+ */
+function billBlocks({
+  cartItems,
+  branchName,
+  branchAddress,
+  branchPhone,
+  subtotal,
+  voucherDiscount,
+  taxAmount,
+  finalTotal,
+  customerName,
+  orderCode,
+}: PrintBillParams): BridgeBlock[] {
+  let blocks: BridgeBlock[] = [
+    { type: "text", text: "BELUM DIBAYAR / UNPAID", align: "center", bold: true, size: "large" },
+    { type: "text", text: "Omoiyari", align: "center", bold: true },
+    {
+      type: "text",
+      text: thermalText(branchAddress || branchName),
+      align: "center",
+      size: "small",
+    },
+  ];
+  if (branchAddress) {
+    blocks.push({
+      type: "text",
+      text: thermalText(branchName),
+      align: "center",
+      size: "small",
+    });
+  }
+  blocks.push(
+    {
+      type: "text",
+      text: "Telp: " + thermalText(branchPhone || "-"),
+      align: "center",
+      size: "small",
+    },
+    {
+      type: "text",
+      text: new Date().toLocaleString("id-ID"),
+      align: "center",
+      size: "small",
+    },
+    { type: "divider" },
+    { type: "row", left: "Kode Order", right: thermalText(orderCode || "-") },
+    { type: "row", left: "Pelanggan", right: thermalText(customerName || "-") },
+    { type: "divider" },
+    { type: "row", left: "Jml  Nama Menu", right: "Harga" },
+  );
+  for (const block of thermalItemLines(cartItems)) blocks.push(block);
+  blocks.push(
+    { type: "divider" },
+    { type: "row", left: "Subtotal", right: subtotal.toLocaleString("id-ID") },
+  );
+  if (voucherDiscount > 0) {
+    blocks.push({
+      type: "row",
+      left: "Diskon",
+      right: "-" + voucherDiscount.toLocaleString("id-ID"),
+    });
+  }
+  if (taxAmount > 0) {
+    blocks.push({
+      type: "row",
+      left: "PB1",
+      right: taxAmount.toLocaleString("id-ID"),
+    });
+  }
+  blocks.push(
+    { type: "row", left: "TOTAL", right: finalTotal.toLocaleString("id-ID"), bold: true },
+    { type: "divider" },
+    {
+      type: "text",
+      text: "Terima kasih sudah makan di Omoiyari! Selamat menikmati",
+      align: "center",
+      size: "small",
+    },
+    { type: "text", text: "INI BARU KARAAGE!!", align: "center", bold: true },
+    { type: "text", text: "BELUM DIBAYAR", align: "center", bold: true },
+    { type: "feed", lines: 3 },
+  );
+  return blocks;
+}
+
+/** Falls back to the browser print dialog when no thermal printer is attached. */
+export async function printBill(params: PrintBillParams): Promise<void> {
+  let result = await printViaBridge({
+    content: billBlocks(params),
+    paperWidth: 58,
+    cut: true,
+    reference: params.orderCode,
+  });
+  if (result.kind === "printed") return;
+  if (result.kind === "unavailable") {
+    printBillInBrowser(params);
+    return;
+  }
+  reportPrintFailure(result.message);
+}
+
+function printBillInBrowser({
   cartItems,
   branchName,
   branchAddress,
@@ -354,24 +642,93 @@ export function printSuratJalan(dn: {
   pw.document.close();
 }
 
-export function printSCMInvoice(
-  inv: {
-    code: string;
-    dnCode: string;
-    totalAmount: number;
-    status: string;
-    items: {
-      ingredientName: string;
-      quantity: number;
-      unitPrice: number;
-      totalPrice: number;
-    }[];
-    createdAt: Date;
-  },
+/** Invoice payload shared by the thermal blocks and the browser document. */
+interface SCMInvoiceParams {
+  code: string;
+  dnCode: string;
+  totalAmount: number;
+  status: string;
+  items: {
+    ingredientName: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }[];
+  createdAt: Date;
+}
+
+/**
+ * Invoice as blocks for an 80mm roll. An A4 invoice cannot be squeezed
+ * onto 58mm paper, so each item prints as a name line followed by a
+ * quantity / total line instead of a four-column table.
+ */
+function scmInvoiceBlocks(inv: SCMInvoiceParams, showUnitPrice: boolean): BridgeBlock[] {
+  let blocks: BridgeBlock[] = [
+    { type: "text", text: "INVOICE SCM", align: "center", bold: true, size: "large" },
+    { type: "text", text: inv.code, align: "center" },
+    {
+      type: "text",
+      text: new Date(inv.createdAt).toLocaleString("id-ID"),
+      align: "center",
+      size: "small",
+    },
+    { type: "divider" },
+    { type: "row", left: "Surat Jalan", right: inv.dnCode },
+    { type: "divider" },
+  ];
+  for (let i = 0; i < inv.items.length; i++) {
+    let item = inv.items[i];
+    blocks.push({
+      type: "text",
+      text: fitThermal(item.ingredientName, THERMAL_80MM_CHARS),
+      bold: true,
+    });
+    blocks.push({
+      type: "row",
+      left: showUnitPrice
+        ? item.quantity + " x " + thermalMoney(item.unitPrice)
+        : "Qty " + item.quantity,
+      right: thermalMoney(item.totalPrice),
+    });
+  }
+  blocks.push(
+    { type: "divider" },
+    { type: "row", left: "TOTAL", right: thermalMoney(inv.totalAmount), bold: true },
+    { type: "divider" },
+    {
+      type: "text",
+      text: "Status: " + (inv.status === "Unpaid" ? "BELUM DIBAYAR" : "LUNAS"),
+      align: "center",
+      size: "small",
+    },
+    { type: "text", text: "Dicetak dari Omoiyari POS", align: "center", size: "small" },
+    { type: "feed", lines: 3 },
+  );
+  return blocks;
+}
+
+/** Falls back to the browser print dialog when no thermal printer is attached. */
+export async function printSCMInvoice(
+  inv: SCMInvoiceParams,
   opts?: { showUnitPrice?: boolean },
-) {
+): Promise<void> {
   // Per-unit prices are the HPP snapshot — hidden for branch_admin.
   const showUnitPrice = opts?.showUnitPrice ?? true;
+  let result = await printViaBridge({
+    content: scmInvoiceBlocks(inv, showUnitPrice),
+    paperWidth: 80,
+    cut: true,
+    reference: inv.code,
+  });
+  if (result.kind === "printed") return;
+  if (result.kind === "unavailable") {
+    printSCMInvoiceInBrowser(inv, showUnitPrice);
+    return;
+  }
+  reportPrintFailure(result.message);
+}
+
+function printSCMInvoiceInBrowser(inv: SCMInvoiceParams, showUnitPrice: boolean) {
   const lines: string[] = [
     "<html><head>",
     "<title>Invoice - " + inv.code + "</title>",

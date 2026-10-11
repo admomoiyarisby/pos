@@ -170,7 +170,7 @@ function SCMInvoicePage() {
               e.stopPropagation();
               void getSCMInvoice({ data: { id: row.original.id } }).then(function (inv) {
                 if (!inv) return;
-                printSCMInvoice(
+                void printSCMInvoice(
                   {
                     code: inv.code,
                     dnCode: inv.deliveryNoteId.slice(0, 8).toUpperCase(),

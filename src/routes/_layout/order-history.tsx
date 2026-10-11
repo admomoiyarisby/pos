@@ -423,7 +423,7 @@ function OrderHistoryPage() {
                     createdAt: orderData.createdAt,
                     completedAt: orderData.completedAt,
                   };
-                  printReceipt({
+                  void printReceipt({
                     order: printOrder,
                     cartItems,
                     branchName: selectedOrder.branchName ?? "",

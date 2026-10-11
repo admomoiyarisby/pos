@@ -432,7 +432,7 @@ function PosPage() {
       completedAt: orderData.completedAt,
     };
 
-    printReceipt({
+    void printReceipt({
       order: printOrder,
       cartItems: cartItems,
       branchName: branchName,
@@ -1452,7 +1452,7 @@ function PosPage() {
                       {cart.length > 0 && (
                         <button
                           onClick={function () {
-                            printBill({
+                            void printBill({
                               cartItems: cart,
                               branchName: userBranch?.name ?? "Cabang",
                               branchAddress: userBranch?.location,
@@ -1893,7 +1893,7 @@ function PosPage() {
           onPaymentMethodChange={handlePaymentMethodChange}
           onCheckout={handleCheckout}
           onPrintBill={function () {
-            printBill({
+            void printBill({
               cartItems: cart,
               branchName: userBranch?.name ?? "Cabang",
               branchAddress: userBranch?.location,
@@ -2076,7 +2076,7 @@ function PosPage() {
           resetForm();
         }}
         onPrintReceipt={function (order, cartItems, branch) {
-          printReceipt({
+          void printReceipt({
             order: order,
             cartItems: cartItems,
             branchName: branch.name,
