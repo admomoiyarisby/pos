@@ -139,22 +139,29 @@ export async function getIngredientsCore(
 }
 
 export const getBranchCatalogGaps = createServerFn({ method: "GET" })
-  .validator((data: Record<string, never> = {}) => data)
-  .handler(async () => {
+  .validator((data: { branchId?: string } = {}) => data)
+  .handler(async ({ data }) => {
     await requireAuth();
-    return getBranchCatalogGapsCore();
+    return getBranchCatalogGapsCore(data);
   });
 
 /** The business logic behind `getBranchCatalogGaps`, extracted so the report's
  *  filter contract can be driven without a session (ADR 0015 rule 4 — the
- *  read-path exception, same as `getIngredientsCore` in this file). */
-export async function getBranchCatalogGapsCore() {
+ *  read-path exception, same as `getIngredientsCore` in this file).
+ *
+ *  Omit `branchId` for the whole-network report the ingredient master shows.
+ *  Pass one to count that branch's gaps alone — the trigger modal uses it to
+ *  warn before an opname starts. */
+export async function getBranchCatalogGapsCore(data: { branchId?: string } = {}) {
   // Ingredients that a branch physically holds but whose catalog flag is
-  // FALSE. Since the opname count sheet is the branch catalog
-  // (ADR 0023), these items are stocked at an outlet and yet can never
-  // appear on any outlet opname. The flag defaults to FALSE, so a new
-  // ingredient lands here by default — this list is the audit surface that
-  // turns that silent trap into a checkable decision.
+  // FALSE. The flag defaults to FALSE, so a new ingredient lands here by
+  // default — this list is the audit surface that turns that silent trap into
+  // a checkable decision. Such items ARE counted on an outlet opname (the
+  // sheet counts the catalog plus everything the branch holds), but they are
+  // marked, and someone must still decide the flag.
+  const branchCondition = data.branchId
+    ? eq(branches.id, data.branchId)
+    : eq(branches.type, "Outlet");
   const rows = await db
     .select({
       ingredientId: ingredients.id,
@@ -173,7 +180,7 @@ export async function getBranchCatalogGapsCore() {
         eq(ingredients.isBranchVisible, false),
         eq(ingredients.countable, true),
         ne(ingredients.status, "Deleted"),
-        eq(branches.type, "Outlet"),
+        branchCondition,
       ),
     )
     .groupBy(ingredients.id, ingredients.code, ingredients.name, ingredients.category)

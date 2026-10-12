@@ -131,6 +131,39 @@ trap is now visible:
   _Tepung Panir Katsu Kuning_ (666 + 333), _Tepung Panir Katsu Putih_
   (1334 + 667), _Miso Pasta_ (30), _Vaccum Pack 30x40_ (1).
 
+## The sheet counts what the branch holds
+
+The catalog scope is not the whole answer. Five write paths create a stock
+record without reading the catalog flag: manual adjustment, SCM transfer-in,
+supplier delivery, waste/yield, and `ensureInventoryRow` on a sale. Each one
+treats a missing record as a setup gap, not as a reason to refuse a real
+movement. A branch can therefore hold real stock for an item flagged out of its
+catalog, and the ledger proves it: all 6 production cases carry an `ADJ-`
+reference whose notes read "stock awal" / "barang masuk".
+
+The outlet sheet is therefore a union:
+
+```
+SO lines = branch catalog UNION { countable, not Deleted, held at this branch }
+```
+
+Central scope is unchanged (its catalog already includes every countable item).
+Those union lines carry `outsideBranchCatalog: true` on the detail and a
+`[di luar katalog]` suffix on the printout, so a counter working from paper sees
+them too. A central role gets a link to the ingredient edit page to fix the flag;
+a `branch_admin` gets the badge and the banner but not the link, because the
+ingredient page is role-guarded to central roles. The trigger modal warns before
+an opname starts.
+
+Measured: 88-91 lines per outlet, of which 0-2 are held outside the catalog
+(6 lines across the network, the same 4 ingredients). The union breaks the strict
+parity invariant, so the parity test now pins the union and asserts that exactly
+the flagged-out lines carry the marker.
+
+Known edge, left deliberately: lines that are flagged TRUE but restricted away by
+the allow-list are counted through the union half with **no** marker, because the
+marker reports the flag and not the link. 4 live lines are in that state.
+
 ## Still unresolved — role vs branch type
 
 The ingredient master gates the flag by **role** (`branch_admin`), while the

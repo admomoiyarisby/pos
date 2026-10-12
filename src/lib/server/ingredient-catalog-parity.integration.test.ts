@@ -127,6 +127,22 @@ async function seedUser(role: UserRole, branchId?: string): Promise<AppUser> {
   };
 }
 
+/** The SO line for one ingredient, when a test seeded several of them. */
+async function firstItem(soId: string, ingredientId: string) {
+  const [row] = await db
+    .select()
+    .from(schema.stockOpnameItems)
+    .where(
+      and(
+        eq(schema.stockOpnameItems.stockOpnameId, soId),
+        eq(schema.stockOpnameItems.ingredientId, ingredientId),
+      ),
+    )
+    .limit(1);
+  if (!row) throw new Error(`no SO line for ingredient ${ingredientId} in ${soId}`);
+  return row;
+}
+
 /** The ingredient ids a triggered SO put on the branch's count sheet. */
 async function soLineIds(soId: string): Promise<string[]> {
   const rows = await db
@@ -161,26 +177,34 @@ beforeAll(async () => {
 
 describe("branch catalog parity — every branch-scoped read must agree", () => {
   it.skipIf(!hasTestDatabaseUrl)(
-    "an outlet's stock opname lists exactly that outlet's branch catalog",
+    "an outlet's stock opname counts its catalog AND everything it physically holds",
     async () => {
       const outlet = await seedBranch(uniq("CP-OUT"), "Outlet");
       const otherOutlet = await seedBranch(uniq("CP-OTHR"), "Outlet");
 
       // Catalog member, held here and unrestricted.
       const inCatalog = await seedIngredient(uniq("CP-IN"), { isBranchVisible: true });
-      // Catalog member, never received at this branch — the count line at 0.
+      // Catalog member, never received at this branch: a real count line at 0.
       const neverStocked = await seedIngredient(uniq("CP-NOSTK"), { isBranchVisible: true });
-      // Central-only: the outlet holds stock for it, but it is not in the catalog.
-      const centralOnly = await seedIngredient(uniq("CP-CENT"), { isBranchVisible: false });
+      // Flagged out of the catalog, never stocked here: NOT counted.
+      const flaggedOutNotHeld = await seedIngredient(uniq("CP-FALSN"), {
+        isBranchVisible: false,
+      });
+      // Flagged out of the catalog, but the branch HOLDS it: counted + marked.
+      const flaggedOutHeld = await seedIngredient(uniq("CP-FALSE"), { isBranchVisible: false });
+      await seedInventory(outlet, flaggedOutHeld, 12);
       // Catalog member, unrestricted by links.
       const unrestricted = await seedIngredient(uniq("CP-UNR"), { isBranchVisible: true });
-      // Catalog member whose allow-list names a DIFFERENT branch.
+      // Catalog member whose allow-list names a DIFFERENT branch. It IS held
+      // here so it is still counted, but its flag is TRUE: counted WITHOUT a
+      // marker. Documented edge: the marker reports the flag, not the link.
       const linkedAway = await seedIngredient(uniq("CP-AWAY"), { isBranchVisible: true });
       await seedBranchLinks(linkedAway, [otherOutlet]);
+      await seedInventory(outlet, linkedAway, 3);
       // Catalog member whose allow-list names THIS branch.
       const linkedHere = await seedIngredient(uniq("CP-HERE"), { isBranchVisible: true });
       await seedBranchLinks(linkedHere, [outlet]);
-      // Excluded by opname-only rules, not by catalog scope.
+      // Excluded by the opname-only rules, not by catalog scope.
       const deleted = await seedIngredient(uniq("CP-DEL"), {
         isBranchVisible: true,
         status: "Deleted",
@@ -189,52 +213,59 @@ describe("branch catalog parity — every branch-scoped read must agree", () => 
         isBranchVisible: true,
         countable: false,
       });
+      // Flagged out, held here, but caught by an opname-only rule.
+      const nonCountableHeld = await seedIngredient(uniq("CP-NCTH"), {
+        isBranchVisible: false,
+        countable: false,
+      });
+      await seedInventory(outlet, nonCountableHeld, 9);
+      const deletedHeld = await seedIngredient(uniq("CP-DELH"), {
+        isBranchVisible: false,
+        status: "Deleted",
+      });
+      await seedInventory(outlet, deletedHeld, 4);
 
-      // Only some of them have stock records — the scope must not depend on it.
-      // `neverStocked` is the catalog member with no row at all: it is a real
-      // count line at 0, the case that motivated reading the catalog.
-      for (const ingredientId of [
-        inCatalog,
-        centralOnly,
-        unrestricted,
-        linkedAway,
-        linkedHere,
-        deleted,
-        nonCountable,
-      ]) {
+      // Only the held items need a stock record — the catalog half of the scope
+      // must not depend on one.
+      for (const ingredientId of [inCatalog, unrestricted, linkedHere]) {
         await seedInventory(outlet, ingredientId, 7);
       }
 
       const ba = await seedUser("branch_admin", outlet);
       const so = await inv.triggerStockOpnameCore(ba, { branchId: outlet, date: "2026-08-25" });
 
-      // The catalog the branch sees in its own ingredient list. `countable` is
-      // an opname-only rule (ADR 0001 §6), so drop that line before comparing.
-      const catalogIds = (await masterCatalogIds(ba)).filter((id) => id !== nonCountable);
-
+      // SO lines = the branch catalog UNION everything the branch holds, minus
+      // the opname-only exclusions (countable, not Deleted).
+      const expected = [
+        inCatalog,
+        neverStocked,
+        unrestricted,
+        linkedHere,
+        linkedAway,
+        flaggedOutHeld,
+      ];
       const lines = await soLineIds(so.id);
-      if (lines.join(",") !== catalogIds.join(",")) {
-        const missing = catalogIds.filter((id) => !lines.includes(id));
-        const extra = lines.filter((id) => !catalogIds.includes(id));
-        console.error(
-          `catalog parity FAILED for outlet ${outlet}\n` +
-            `  on the count sheet but NOT in the branch catalog: ${extra.length}\n` +
-            `  in the branch catalog but NOT on the count sheet: ${missing.length}`,
-        );
-      }
-      expect(lines).toEqual(catalogIds);
+      expect(lines).toEqual(expected.sort());
 
-      // The 0-stock line is a real line, counted like any other.
-      const zero = await db
-        .select({ systemStock: schema.stockOpnameItems.systemStock })
-        .from(schema.stockOpnameItems)
-        .where(
-          and(
-            eq(schema.stockOpnameItems.stockOpnameId, so.id),
-            eq(schema.stockOpnameItems.ingredientId, neverStocked),
-          ),
-        );
-      expect(zero[0]?.systemStock).toBe(0);
+      // The marker names exactly one of them: flagged out of the catalog, but
+      // physically held.
+      const detail = await inv.getStockOpnameDetailCore(ba, { id: so.id });
+      const marked =
+        detail?.items.filter((i) => i.outsideBranchCatalog).map((i) => i.ingredientId) ?? [];
+      expect(marked).toEqual([flaggedOutHeld]);
+      expect(detail?.outsideCatalogCount).toBe(1);
+
+      // Not counted, in any guise.
+      for (const id of [flaggedOutNotHeld, nonCountableHeld, deletedHeld, nonCountable, deleted]) {
+        expect(lines).not.toContain(id);
+      }
+
+      // The held-but-uncatalogued line is a real count line at its real stock.
+      const held = await firstItem(so.id, flaggedOutHeld);
+      expect(held.systemStock).toBe(12);
+      expect(held.countedAt).toBeNull();
+      // The catalog member with no record at all is still a line, at 0.
+      expect((await firstItem(so.id, neverStocked)).systemStock).toBe(0);
     },
   );
 

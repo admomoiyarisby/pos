@@ -965,24 +965,34 @@ describe("Stock opname — trigger item list scope (why 'trigger SO cuma 35 item
       });
       expect(await soItemCount(centralSo.id)).toBe(2);
 
-      // Outlet SO: the central-only ingredient is dropped from the snapshot —
-      // even though the outlet physically holds an inventory row for it. A
-      // brand-new ingredient (default isBranchVisible=false) is also absent.
+      // Outlet SO: the catalog gate decides which items are CATALOG members,
+      // but the sheet also counts everything the outlet physically holds —
+      // including the two flagged-out ingredients below. Stock held outside
+      // the catalog is counted, not dropped.
       const neverCataloged = await seedIngredient(uniq("SO-NEW"));
       await seedInventory(outlet, neverCataloged, 9);
       const outletSo = await inv.triggerStockOpnameCore(outletBa, {
         branchId: outlet,
         date: "2026-08-25",
       });
-      expect(await soItemCount(outletSo.id)).toBe(1);
+      expect(await soItemCount(outletSo.id)).toBe(3);
       const outletItems = await db
         .select({ ingredientId: schema.stockOpnameItems.ingredientId })
         .from(schema.stockOpnameItems)
         .where(eq(schema.stockOpnameItems.stockOpnameId, outletSo.id));
-      expect(outletItems.map((i) => i.ingredientId)).toEqual([visible]);
+      expect(outletItems.map((i) => i.ingredientId).sort()).toEqual(
+        [visible, centralOnly, neverCataloged].sort(),
+      );
+
+      // The two flagged-out lines are marked as outside the branch catalog.
+      const outletDetail = await inv.getStockOpnameDetailCore(outletBa, { id: outletSo.id });
+      const marked =
+        outletDetail?.items.filter((i) => i.outsideBranchCatalog).map((i) => i.ingredientId) ?? [];
+      expect(marked.sort()).toEqual([centralOnly, neverCataloged].sort());
+      expect(outletDetail?.outsideCatalogCount).toBe(2);
 
       // Catalog membership decides the sheet, not the stock records: an outlet
-      // item the branch has never received is now on the sheet at systemStock 0
+      // item the branch has never received is on the sheet at systemStock 0
       // instead of being silently absent. Its line is a real count line — the
       // counter writes what they find on the shelf, including nothing.
       const neverStocked = await seedIngredient(uniq("SO-NOSTOCK"), { isBranchVisible: true });
@@ -990,12 +1000,11 @@ describe("Stock opname — trigger item list scope (why 'trigger SO cuma 35 item
         branchId: outlet,
         date: "2026-08-26",
       });
-      expect(await soItemCount(outletSo2.id)).toBe(2);
+      // Catalog member (no stock) + the three already present + the new one.
+      expect(await soItemCount(outletSo2.id)).toBe(4);
       const noStockLine = await firstItem(outletSo2.id, neverStocked);
       expect(noStockLine.systemStock).toBe(0);
       expect(noStockLine.countedAt).toBeNull();
-      // The non-catalog item the outlet physically holds stays out of the sheet.
-      expect(outletSo2.id).not.toBe(outletSo.id);
     },
   );
 

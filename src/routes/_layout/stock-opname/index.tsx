@@ -15,6 +15,7 @@ import {
   softDeleteStockOpname,
 } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
+import { getBranchCatalogGaps } from "#/lib/server/ingredients";
 import { Badge } from "#/components/ui/badge";
 import {
   ArrowRight,
@@ -25,6 +26,7 @@ import {
   CalendarDays,
   FileText,
   Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -172,6 +174,18 @@ function StockOpnamePage() {
     queryFn: () => getStockOpnames({ data: {} }),
     initialData: initial,
   });
+
+  // Count the items the selected branch holds outside its catalog, so the
+  // trigger modal can say so before the opname starts. Only meaningful for an
+  // Outlet branch — a central branch's sheet has no catalog gate to fall
+  // outside of.
+  const selectedBranchType = visibleBranches.find((b) => b.id === selectedBranch)?.type;
+  const { data: branchGaps } = useQuery({
+    queryKey: ["ingredient-catalog-gaps", selectedBranch],
+    queryFn: () => getBranchCatalogGaps({ data: { branchId: selectedBranch } }),
+    enabled: !!selectedBranch && selectedBranchType === "Outlet",
+  });
+  const branchGapCount = branchGaps?.length ?? 0;
 
   const triggerMutation = useMutation({
     mutationFn: triggerStockOpname,
@@ -465,6 +479,22 @@ function StockOpnamePage() {
               Hanya opname tanggal <b>25</b> yang mengubah stok saat di-realize. Tanggal lain hanya
               catatan/audit — bisa dihitung & disetujui, tapi stok sistem tidak berubah.
             </p>
+            {/* Lembar hitungan = katalog cabang PLUS semua yang benar-benar
+                dipegang cabang. Bahan di luar katalog ikut terhitung — beri tahu
+                sebelum opname dimulai agar tidak mengejutkan. */}
+            {selectedBranch && branchGapCount > 0 && (
+              <div className="rounded-md bg-warning/10 border border-warning/30 px-3 py-2 text-xs">
+                <p className="font-medium text-warning flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  {branchGapCount} bahan di luar katalog cabang
+                </p>
+                <p className="text-warning/80 mt-1">
+                  Cabang ini memegang {branchGapCount} bahan bertanda nonaktif di “Tampil di
+                  Cabang”. Bahan tersebut tetap masuk lembar hitungan dan tetap dihitung. Perbaiki
+                  tanda pada halaman bahan bila perlu.
+                </p>
+              </div>
+            )}
           </div>
           <button
             onClick={handleTrigger}

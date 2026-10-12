@@ -14,6 +14,8 @@ import {
   printStockOpname,
 } from "#/lib/server/inventory";
 import { Badge } from "#/components/ui/badge";
+import { Link } from "@tanstack/react-router";
+import { AlertTriangle } from "lucide-react";
 import { openPrintWindow } from "#/lib/print-window";
 import { cn, formatQuantity, parseQuantityInput, roundQuantity } from "#/lib/utils";
 import { toast } from "sonner";
@@ -180,6 +182,13 @@ function StockOpnameDetailPage() {
   }
 
   const isBlind = detail.isBlind;
+  // Only central roles can open the ingredient edit page (RoleGuard on that
+  // route), so only they get the "fix the flag" link. The badge itself is
+  // factual and shown to everyone who can see the sheet.
+  const canEditIngredients = ["super_admin", "admin_pusat", "central_kitchen"].includes(
+    user?.role ?? "",
+  );
+  const outsideCatalogCount = detail.outsideCatalogCount ?? 0;
   const canApprove =
     ["super_admin", "area_manager"].includes(user?.role ?? "") && detail.status !== "Approved";
   // Supervisors can run the full flow themselves (trigger → count → submit →
@@ -389,6 +398,31 @@ function StockOpnameDetailPage() {
           </div>
         )}
 
+        {/* ── Held outside the branch catalog ──
+             These lines are on the sheet because the branch holds stock for
+             them, not because the branch catalog names them. They are counted
+             like any other line; the count is what makes them visible. */}
+        {outsideCatalogCount > 0 && (
+          <div className="mb-4 rounded-md bg-warning/10 border border-warning/30 px-4 py-3 text-sm">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-warning" />
+              <div className="flex-1">
+                <p className="font-medium text-warning">
+                  {outsideCatalogCount} bahan di luar katalog cabang
+                </p>
+                <p className="text-warning/80 mt-1">
+                  Cabang ini memegang bahan tersebut, tetapi bahannya bertanda nonaktif di “Tampil
+                  di Cabang”. Bahan tetap dihitung di lembar ini. Bahan bertanda
+                  <span className="font-medium"> [di luar katalog]</span> dibawah.
+                  {canEditIngredients
+                    ? " Perbaiki tanda pada halaman bahan agar masuk katalog cabang."
+                    : " Mintalah admin pusat memperbaiki tanda pada halaman bahan."}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Mobile cards */}
         <div className="md:hidden space-y-2.5 -mx-4 px-4">
           {detail.items.map((item: any, idx: number) => {
@@ -424,7 +458,17 @@ function StockOpnameDetailPage() {
                         </span>
                       )}
                     </div>
-                    <div className="font-medium text-sm truncate mt-1">{item.ingredientName}</div>
+                    <div className="font-medium text-sm truncate mt-1">
+                      {item.ingredientName}
+                      {item.outsideBranchCatalog && (
+                        <Badge
+                          variant="outline"
+                          className="ml-1.5 border-warning/40 bg-warning/10 text-[10px] h-5 align-middle"
+                        >
+                          di luar katalog
+                        </Badge>
+                      )}
+                    </div>
                     {!isBlind && (
                       <div className="text-xs text-muted-foreground mt-0.5">
                         Sistem:{" "}
@@ -517,7 +561,29 @@ function StockOpnameDetailPage() {
                   <tr key={item.id} className={`border-b ${hasVariance ? "bg-warning/10" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground">{idx + 1}</td>
                     <td className="px-4 py-3 font-mono text-xs">{item.ingredientCode}</td>
-                    <td className="px-4 py-3">{item.ingredientName}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1.5">
+                        {item.ingredientName}
+                        {item.outsideBranchCatalog && (
+                          <Badge
+                            variant="outline"
+                            className="border-warning/40 bg-warning/10 text-[10px] h-5"
+                          >
+                            di luar katalog
+                          </Badge>
+                        )}
+                        {item.outsideBranchCatalog &&
+                          (canEditIngredients ? (
+                            <Link
+                              to="/ingredients/$ingId"
+                              params={{ ingId: item.ingredientId }}
+                              className="text-xs text-primary hover:underline underline-offset-4"
+                            >
+                              perbaiki tanda
+                            </Link>
+                          ) : null)}
+                      </span>
+                    </td>
                     {!isBlind && (
                       <td className="px-4 py-3 text-right">{formatQuantity(item.systemStock)}</td>
                     )}

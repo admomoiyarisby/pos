@@ -519,24 +519,36 @@ export async function triggerStockOpnameCore(
     .limit(1);
   const isOutlet = branch?.type === "Outlet";
 
-  // Get current inventory for the branch (only countable items)
+  // Scope of the count sheet, in two parts.
   //
-  // Outlet catalog = the flag gate AND the `ingredient_branches` allow-list —
-  // the same two conditions `getIngredients` applies, so a line cannot sit on an
-  // outlet's count sheet while its ingredient list hides the item (4 such lines
-  // existed). Central scopes get no link narrowing: the link data has no
-  // coverage of the second central branch (Central Kitchen Food Prep), so
-  // applying it there would drop 20 lines from that branch's sheet through a
-  // data gap, not through intent.
+  // PART 1 — the branch catalog. For an Outlet that is the flag gate AND the
+  // `ingredient_branches` allow-list, the same two conditions `getIngredients`
+  // applies, so a line cannot sit on an outlet's sheet while its ingredient
+  // list hides it. Central branches get no narrowing: their catalog is every
+  // countable, active ingredient. (The link data has no coverage of the second
+  // central branch, Central Kitchen Food Prep, so applying it there would drop
+  // 20 lines from that sheet through a data gap rather than an intent.)
   const branchCatalogClause = isOutlet
-    ? branchVisibleClause({
-        linkTable: ingredientBranches,
-        linkRowId: ingredientBranches.ingredientId,
-        rowId: ingredients.id,
-        linkBranchId: ingredientBranches.branchId,
-        currentBranchId: data.branchId,
-      })
+    ? and(
+        eq(ingredients.isBranchVisible, true),
+        branchVisibleClause({
+          linkTable: ingredientBranches,
+          linkRowId: ingredientBranches.ingredientId,
+          rowId: ingredients.id,
+          linkBranchId: ingredientBranches.branchId,
+          currentBranchId: data.branchId,
+        }),
+      )
     : undefined;
+
+  // PART 2 — everything the branch physically holds. A stock record is written
+  // by a sale, a delivery, a transfer, waste, yield or a manual adjustment, and
+  // none of those paths reads the catalog flag. A branch can therefore hold
+  // real stock for an item that is flagged out of its catalog — 6 lines in
+  // production. The old scope dropped them, so the branch never counted stock
+  // it actually had. The sheet now counts them too, marked
+  // `outsideBranchCatalog` so the disagreement is visible instead of silent.
+  const heldAtBranch = sql`exists (select 1 from ${inventory} where ${inventory.ingredientId} = ${ingredients.id} and ${inventory.branchId} = ${data.branchId})`;
 
   const invItems = await db
     .select({
@@ -552,8 +564,9 @@ export async function triggerStockOpnameCore(
       and(
         eq(ingredients.countable, true),
         ne(ingredients.status, "Deleted"),
-        isOutlet ? eq(ingredients.isBranchVisible, true) : undefined,
-        branchCatalogClause,
+        // Central: every countable item (already includes everything held).
+        // Outlet: the catalog, OR stock the branch physically holds.
+        branchCatalogClause ? or(branchCatalogClause, heldAtBranch) : undefined,
       ),
     )
     // Stable order so the count sheet (and the multi-row INSERT) is
@@ -722,10 +735,11 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
 
   // Fetch branch name (displayed on the detail page).
   const [branch] = await db
-    .select({ name: branches.name })
+    .select({ name: branches.name, type: branches.type })
     .from(branches)
     .where(eq(branches.id, so.branchId))
     .limit(1);
+  const isOutlet = branch?.type === "Outlet";
 
   // The opname is a SNAPSHOT: the item list is whatever the trigger wrote,
   // read back verbatim. It is NOT re-filtered against the current master
@@ -735,6 +749,12 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
   // applies that same counted row (its query has no such filter). A count the
   // user cannot see must not move stock. The trigger decides the scope; the
   // view only reports it.
+  //
+  // `outsideBranchCatalog` is the ONE thing recomputed rather than snapshotted:
+  // it states the item's *current* catalog status, because its purpose is to
+  // point at a fix the user can make now. An item counted while in-catalog and
+  // flagged out afterwards therefore gains the marker — truthful, and it says
+  // "change this flag now".
   //
   // Ordered by name so a 60-90 line count sheet is stable across requests
   // (the raw join order is not).
@@ -752,11 +772,19 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
       ingredientCode: ingredients.code,
       ingredientCategory: ingredients.category,
       isNasi: ingredients.isNasi,
+      isBranchVisible: ingredients.isBranchVisible,
     })
     .from(stockOpnameItems)
     .leftJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
     .where(eq(stockOpnameItems.stockOpnameId, data.id))
     .orderBy(ingredients.name);
+
+  // Flag the held-but-uncatalogued lines. Computed here, not in the query, so
+  // the rule stays in one readable place and the snapshot read stays verbatim.
+  const lines = items.map((i) => ({
+    ...i,
+    outsideBranchCatalog: isOutlet ? !i.isBranchVisible : false,
+  }));
 
   // Access check for admin_pusat - can only view Central Warehouse SOs
   if (user.role === "admin_pusat") {
@@ -783,7 +811,7 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
   };
   let drift: DriftRow[] = [];
   if (!isBlind && so.status !== "Approved") {
-    const countedIds = items.filter((i) => i.countedAt !== null).map((i) => i.ingredientId);
+    const countedIds = lines.filter((i) => i.countedAt !== null).map((i) => i.ingredientId);
     if (countedIds.length > 0) {
       const currentInv = await db
         .select({
@@ -795,7 +823,7 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
           and(eq(inventory.branchId, so.branchId), inArray(inventory.ingredientId, countedIds)),
         );
       const qtyByIngredient = new Map(currentInv.map((r) => [r.ingredientId, r.quantity]));
-      drift = items
+      drift = lines
         .filter((i) => {
           if (i.countedAt === null) return false;
           const current = qtyByIngredient.get(i.ingredientId);
@@ -852,7 +880,7 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
         };
       });
     } else {
-      summary = items
+      summary = lines
         .filter((i) => i.countedAt !== null && i.variance !== 0)
         .map((i) => ({
           ingredientName: i.ingredientName ?? i.ingredientId,
@@ -868,15 +896,16 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
     ...so,
     branchName: branch?.name ?? so.branchId,
     items: isBlind
-      ? items.map((i) => ({
+      ? lines.map((i) => ({
           ...i,
           systemStock: 0,
           variance: 0,
         }))
-      : items,
+      : lines,
     isBlind,
     summary,
     drift,
+    outsideCatalogCount: lines.filter((i) => i.outsideBranchCatalog).length,
     countedCount: items.filter((i) => i.countedAt !== null).length,
     totalCount: items.length,
   };
@@ -1545,11 +1574,21 @@ export const printStockOpname = createServerFn({ method: "GET" })
         physicalStock: stockOpnameItems.physicalStock,
         variance: stockOpnameItems.variance,
         countedAt: stockOpnameItems.countedAt,
+        isBranchVisible: ingredients.isBranchVisible,
       })
       .from(stockOpnameItems)
       .leftJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
       .where(eq(stockOpnameItems.stockOpnameId, data.soId))
       .orderBy(ingredients.name);
+
+    // Same marker as the detail page: the line is on the sheet because the
+    // branch holds it, not because the branch catalog names it. Printed as a
+    // suffix so a counter working from paper still sees it.
+    const lines = items.map((it) => ({
+      ...it,
+      outsideBranchCatalog: branch?.type === "Outlet" && !it.isBranchVisible,
+    }));
+    const outsideCount = lines.filter((l) => l.outsideBranchCatalog).length;
 
     // Blind SO: branch admins (and admin pusat on the central warehouse) must
     // not see system stock or variance — same rule as getStockOpnameDetail.
@@ -1557,13 +1596,13 @@ export const printStockOpname = createServerFn({ method: "GET" })
 
     // Uncounted items are printed as "—": partial opname means an unfilled
     // field was never counted, not that stock was counted as 0.
-    const rows = items
+    const rows = lines
       .map(
         (it, idx) => `
         <tr>
           <td style="text-align:center;">${idx + 1}</td>
           <td>${escapeHtml(it.ingredientCode ?? "")}</td>
-          <td>${escapeHtml(it.ingredientName ?? "")}</td>
+          <td>${escapeHtml(it.ingredientName ?? "")}${it.outsideBranchCatalog ? ' <span style="color:#b45309;font-size:9pt;">[di luar katalog]</span>' : ""}</td>
           ${
             isBlind
               ? `<td style="text-align:right;">${it.countedAt ? formatQuantity(it.physicalStock) : "—"}</td>`
@@ -1609,6 +1648,7 @@ export const printStockOpname = createServerFn({ method: "GET" })
 </tr></thead>
 <tbody>${rows}</tbody>
 </table>
+${outsideCount > 0 ? `<p style="margin-top:6pt;font-size:9pt;color:#b45309;">[di luar katalog] = ${outsideCount} bahan ada stok di cabang ini tetapi bertanda nonaktif di "Tampil di Cabang". Bahan tetap dihitung. Perbaiki tanda pada halaman bahan.</p>` : ""}
 <div class="signature">
   <div><p>Pencatat,</p><div class="line">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div></div>
   <div><p>Mengetahui,</p><div class="line">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div></div>
