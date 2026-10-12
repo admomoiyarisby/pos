@@ -64,19 +64,22 @@ function uniq(prefix: string): string {
   return `${prefix}-${seedCounter++}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-async function seedBranch(code: string): Promise<string> {
+async function seedBranch(code: string, type: "Central" | "Outlet" = "Outlet"): Promise<string> {
   const id = crypto.randomUUID();
   await db.insert(schema.branches).values({
     id,
     code,
     name: `ITS ${code}`,
     location: "Test",
-    type: "Outlet",
+    type,
   });
   return id;
 }
 
-async function seedIngredient(code: string, averageCost = 1000): Promise<string> {
+async function seedIngredient(
+  code: string,
+  opts: { isBranchVisible?: boolean; averageCost?: number } = {},
+): Promise<string> {
   const id = crypto.randomUUID();
   await db.insert(schema.ingredients).values({
     id,
@@ -87,9 +90,18 @@ async function seedIngredient(code: string, averageCost = 1000): Promise<string>
     purchaseUnit: "pcs",
     stockUnit: "pcs",
     conversionFactor: 1,
-    averageCost,
+    averageCost: opts.averageCost ?? 1000,
+    isBranchVisible: opts.isBranchVisible ?? false,
   });
   return id;
+}
+
+/** Restrict an ingredient to specific branches (the allow-list). */
+async function seedBranchLinks(ingredientId: string, branchIds: string[]) {
+  if (branchIds.length === 0) return;
+  await db
+    .insert(schema.ingredientBranches)
+    .values(branchIds.map((branchId) => ({ ingredientId, branchId })));
 }
 
 async function seedUser(role: UserRole): Promise<AppUser> {
@@ -138,13 +150,15 @@ async function createDn(
   ingredientId: string,
   qty: number,
 ) {
-  return scm.createDeliveryNoteCore(admin, {
-    code: uniq("SJ"),
-    fromBranchId,
-    toBranchId,
-    driverName: "Pak Sopir",
-    items: [{ ingredientId, quantity: qty, readyQuantity: qty }],
-  });
+  return (
+    await scm.createDeliveryNoteCore(admin, {
+      code: uniq("SJ"),
+      fromBranchId,
+      toBranchId,
+      driverName: "Pak Sopir",
+      items: [{ ingredientId, quantity: qty, readyQuantity: qty }],
+    })
+  ).dn;
 }
 
 async function shipDn(admin: AppUser, dnId: string) {
@@ -343,7 +357,7 @@ describe("Delivery notes — wrong-role and state-guard negatives", () => {
         "Forbidden: insufficient role",
       );
 
-      const dn = await scm.createDeliveryNoteCore(adminPusat, createInput);
+      const { dn } = await scm.createDeliveryNoteCore(adminPusat, createInput);
       const [item] = await db
         .select()
         .from(schema.deliveryNoteItems)
@@ -432,6 +446,77 @@ describe("Delivery notes — wrong-role and state-guard negatives", () => {
       await expect(
         scm.cancelDeliveryNoteCore(adminPusat, { dnId: dn.id, reason: "x" }),
       ).rejects.toThrow("Can only cancel SJ in Picking or In Transit status");
+    },
+  );
+});
+
+// =============================================================================
+// RECEIVER CATALOG WARNING (ADR 0023)
+//
+// A delivery note credits the PR's requesting branch, which can be an Outlet.
+// Delivering an item that branch has flagged out of its catalog creates stock it
+// never counts, so creation warns — non-blocking, so a legitimate movement
+// still goes through. Same shared helper as the Mutasi transfer and the opname
+// marker, so the three cannot drift.
+// =============================================================================
+
+describe("Delivery notes — receiver branch catalog warning (ADR 0023)", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "warns for items the receiver's catalog does not name, and still creates the SJ",
+    async () => {
+      const fromBranch = await seedBranch(uniq("SJ-CAT-A"));
+      const toBranch = await seedBranch(uniq("SJ-CAT-B"));
+
+      const inCatalog = await seedIngredient(uniq("SJ-CAT-IN"), { isBranchVisible: true });
+      const flaggedOut = await seedIngredient(uniq("SJ-CAT-OUT"), { isBranchVisible: false });
+      const linkedAway = await seedIngredient(uniq("SJ-CAT-LNK"), { isBranchVisible: true });
+      await seedBranchLinks(linkedAway, [fromBranch]);
+
+      const adminPusat = await seedUser("admin_pusat");
+      const { dn, catalogWarnings } = await scm.createDeliveryNoteCore(adminPusat, {
+        code: uniq("SJ-CAT"),
+        fromBranchId: fromBranch,
+        toBranchId: toBranch,
+        driverName: "Pak Sopir",
+        items: [
+          { ingredientId: inCatalog, quantity: 5, readyQuantity: 5 },
+          { ingredientId: flaggedOut, quantity: 5, readyQuantity: 5 },
+          { ingredientId: linkedAway, quantity: 5, readyQuantity: 5 },
+        ],
+      });
+
+      // The SJ is created — warned, never blocked.
+      expect(dn.id).toBeTruthy();
+      expect(dn.status).toBe("Picking");
+      // Both halves of the catalog produce a warning.
+      expect(catalogWarnings.map((w) => w.ingredientId).sort()).toEqual(
+        [flaggedOut, linkedAway].sort(),
+      );
+      expect(catalogWarnings.every((w) => w.ingredientName.length > 0)).toBe(true);
+      expect(catalogWarnings.map((w) => w.ingredientId)).not.toContain(inCatalog);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a central receiver has no catalog gate, so nothing is warned",
+    async () => {
+      const fromBranch = await seedBranch(uniq("SJ-CATC-A"));
+      const toCentral = await seedBranch(uniq("SJ-CATC-C"), "Central");
+
+      const anyIngredient = await seedIngredient(uniq("SJ-CATC-ANY"), {
+        isBranchVisible: false,
+      });
+
+      const adminPusat = await seedUser("admin_pusat");
+      const { catalogWarnings } = await scm.createDeliveryNoteCore(adminPusat, {
+        code: uniq("SJ-CATC"),
+        fromBranchId: fromBranch,
+        toBranchId: toCentral,
+        driverName: "Pak Sopir",
+        items: [{ ingredientId: anyIngredient, quantity: 5, readyQuantity: 5 }],
+      });
+
+      expect(catalogWarnings).toEqual([]);
     },
   );
 });

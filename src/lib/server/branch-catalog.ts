@@ -1,5 +1,6 @@
-import { and, eq, sql, type SQL } from "drizzle-orm";
-import { ingredients, inventory, ingredientBranches } from "#/db/schema";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { branches, ingredients, inventory, ingredientBranches } from "#/db/schema";
+import { db } from "./db";
 import { branchVisibleClause } from "./branch-visibility";
 
 /**
@@ -64,4 +65,52 @@ export function isOutsideBranchCatalog(
  */
 export function heldAtBranchClause(branchId: string): SQL {
   return sql`exists (select 1 from ${inventory} where ${inventory.ingredientId} = ${ingredients.id} and ${inventory.branchId} = ${branchId})`;
+}
+
+/**
+ * Of the given ingredient ids, the ones that are NOT in one branch's catalog,
+ * each named so a warning can be read.
+ *
+ * The write-side counterpart of the read-time marker. Every creation point
+ * (Mutasi transfer, delivery note) calls this before stock lands, so the
+ * disagreement is reported while it is still free to fix. A Central destination
+ * has no catalog gate and returns nothing.
+ *
+ * WARN, NEVER BLOCK: every production case of this shape was a legitimate
+ * movement ("stock awal"), so a gate would have stopped real work.
+ */
+export async function outsideBranchCatalogItems(
+  branchId: string,
+  ingredientIds: string[],
+): Promise<Array<{ ingredientId: string; ingredientName: string }>> {
+  const uniqueIds = [...new Set(ingredientIds)];
+  if (uniqueIds.length === 0) return [];
+
+  const [branch] = await db
+    .select({ type: branches.type })
+    .from(branches)
+    .where(eq(branches.id, branchId))
+    .limit(1);
+  // Not an Outlet, or an unknown branch: no catalog gate to fall outside of.
+  if (branch?.type !== "Outlet") return [];
+
+  const catalogRows = await db
+    .select({ id: ingredients.id })
+    .from(ingredients)
+    .where(branchCatalogClause({ branchId, isOutlet: true }));
+  const inCatalog = new Set(catalogRows.map((r) => r.id));
+
+  const outsideIds = uniqueIds.filter((id) => !inCatalog.has(id));
+  if (outsideIds.length === 0) return [];
+
+  const nameRows = await db
+    .select({ id: ingredients.id, name: ingredients.name })
+    .from(ingredients)
+    .where(inArray(ingredients.id, outsideIds));
+  const nameById = new Map(nameRows.map((r) => [r.id, r.name]));
+
+  return outsideIds.map((id) => ({
+    ingredientId: id,
+    ingredientName: nameById.get(id) ?? id,
+  }));
 }

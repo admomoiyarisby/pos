@@ -181,16 +181,33 @@ Before this the rule lived in four copies (SO trigger, SO detail, SO print,
 ingredient-master gap report) and had already drifted. Every consumer now reads
 the helper.
 
-The write side, where the disagreement is actually created:
+The write side, where the disagreement is actually created.
+`outsideBranchCatalogItems(branchId, ingredientIds)` in `branch-catalog.ts` is
+the check every creation point calls: it returns every ingredient id the given
+branch's catalog does not name, so no third copy can appear and no two banners
+can disagree.
 
-`softCatalogCheck(toBranchId, items)` in `scm-transfers.ts` warns, non-blocking,
-for every line the **receiver's** catalog does not name. The sender check
+**Mutasi transfer.** `createMutasiTransferCore` warns, non-blocking, for every
+line the **receiver's** catalog does not name. The sender check
 (`branchVisibleClause` on the sender) already proved the item is transferable
 _from_ here and says nothing about the receiver — the exact hole through which
-the six production lines arrived. `createMutasiTransferCore` returns
-`catalogWarnings` alongside `warnings`, mirroring `softStockCheck`'s contract,
-and the Mutasi form shows a `bg-warning` banner before submit through
-`getBranchCatalogIds`.
+the six production lines arrived. It returns `catalogWarnings` alongside
+`warnings`, mirroring `softStockCheck`'s contract, and the Mutasi form shows a
+`bg-warning` banner before submit through `getBranchCatalogIds`.
+
+**Delivery note.** Its destination is the PR's requesting branch, which can be an
+Outlet, and `receiveDeliveryNoteCore` credits that branch. So
+`createDeliveryNoteCore` warns the same way and returns `{ dn, catalogWarnings }`;
+its form makes the two branch selects controlled and shows the same banner. This
+is the second creation point.
+
+Two candidates checked and ruled out on evidence, not assumption:
+
+- **Supplier deliveries** always credit `CENTRAL` — all four cores call
+  `getCentralBranchId()` — and a Central branch has no catalog gate. Nothing to
+  warn about.
+- **`receivePurchaseOrderCore`** writes no inventory at all; it only updates
+  `receivedQuantity` and status. Not a creation point.
 
 Warn, never block: every production case of this shape was a legitimate movement
 ("stock awal"), so a gate would have stopped real work.

@@ -8,14 +8,14 @@
 // =============================================================================
 
 import { createServerFn } from "@tanstack/react-start";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
-import { branchCatalogClause } from "#/lib/server/branch-catalog";
+import { outsideBranchCatalogItems } from "#/lib/server/branch-catalog";
 import {
   branches,
   ingredients,
@@ -82,49 +82,6 @@ async function softStockCheck(
     }
   }
   return warnings;
-}
-
-/**
- * Read the RECEIVER branch's catalog for the given ingredient ids and return a
- * warning for every one it does not name. Non-blocking, same contract as
- * `softStockCheck`.
- *
- * A Central receiver has no catalog gate, so this returns nothing for it. The
- * catalog set comes from `branch-catalog.ts`, the one shared definition, so this
- * check cannot drift from the stock opname scope.
- */
-async function softCatalogCheck(
-  toBranchId: string,
-  items: { ingredientId: string; quantity: number }[],
-): Promise<Array<{ ingredientId: string; ingredientName: string }>> {
-  const [toBranch] = await db
-    .select({ type: branches.type })
-    .from(branches)
-    .where(eq(branches.id, toBranchId))
-    .limit(1);
-  if (toBranch?.type !== "Outlet") return [];
-
-  const catalogRows = await db
-    .select({ id: ingredients.id })
-    .from(ingredients)
-    .where(branchCatalogClause({ branchId: toBranchId, isOutlet: true }));
-  const inCatalog = new Set(catalogRows.map((r) => r.id));
-
-  const outsideIds = [...new Set(items.map((it) => it.ingredientId))].filter(
-    (id) => !inCatalog.has(id),
-  );
-  if (outsideIds.length === 0) return [];
-
-  const nameRows = await db
-    .select({ id: ingredients.id, name: ingredients.name })
-    .from(ingredients)
-    .where(inArray(ingredients.id, outsideIds));
-  const nameById = new Map(nameRows.map((r) => [r.id, r.name]));
-
-  return outsideIds.map((id) => ({
-    ingredientId: id,
-    ingredientName: nameById.get(id) ?? id,
-  }));
 }
 
 // -----------------------------------------------------------------------------
@@ -313,7 +270,10 @@ export async function createMutasiTransferCore(
   // point where it is still free to fix. WARN, never block: the six production
   // cases of this shape were legitimate movements ("stock awal"), so refusing
   // them would break real work.
-  const catalogWarnings = await softCatalogCheck(data.toBranchId, data.items);
+  const catalogWarnings = await outsideBranchCatalogItems(
+    data.toBranchId,
+    data.items.map((it) => it.ingredientId),
+  );
 
   // Snapshot the unitPrice from the global ingredients.averageCost at this
   // moment. (Q11 / ADR 0006 sub-decision: matches Pengadaan's pattern in

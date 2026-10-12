@@ -29,6 +29,7 @@ import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
+import { outsideBranchCatalogItems } from "#/lib/server/branch-catalog";
 
 // ─── Helpers ───
 
@@ -886,10 +887,24 @@ export async function createDeliveryNoteCore(
     );
   }
 
+  // Receiver catalog check, non-blocking (ADR 0023). The destination here is
+  // the PR's requesting branch, which can be an Outlet. Delivering an item that
+  // branch has flagged out of its catalog creates stock it never counts — the
+  // same disagreement the opname marker reports, caught one step earlier while
+  // it is still free to fix. Through the shared helper, so it cannot drift from
+  // the Mutasi check or the opname scope.
+  //
+  // WARN, NEVER BLOCK: every production case of this shape was a legitimate
+  // movement, so a gate would break real work.
+  const catalogWarnings = await outsideBranchCatalogItems(
+    data.toBranchId,
+    data.items.map((it) => it.ingredientId),
+  );
+
   await logSystemAction(user, "Create Delivery Note", `SJ "${data.code}" dibuat oleh ${user.name}`);
   await logAudit(user, "deliveryNotes", dn.id, "CREATE", undefined, dn);
 
-  return dn;
+  return { dn, catalogWarnings };
 }
 
 export const updateDeliveryNote = createServerFn({ method: "POST" })

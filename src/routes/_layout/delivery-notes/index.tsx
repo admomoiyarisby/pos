@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { lookupLabel } from "#/lib/label-lookup";
 import { badgeVariant } from "#/lib/utils";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { formText } from "#/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -18,12 +18,20 @@ import {
   generateSCMInvoice,
 } from "#/lib/server/scm";
 import { getBranches } from "#/lib/server/branches";
-import { getIngredients } from "#/lib/server/ingredients";
+import { getIngredients, getBranchCatalogIds } from "#/lib/server/ingredients";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
-import { ArrowRight, Truck, CheckCircle, DollarSign, AlertCircle } from "lucide-react";
+import {
+  ArrowRight,
+  Truck,
+  CheckCircle,
+  DollarSign,
+  AlertCircle,
+  AlertTriangle,
+} from "lucide-react";
+import { toast } from "sonner";
 
 interface DNRow {
   id: string;
@@ -70,6 +78,30 @@ function DNPage() {
   const [reviewSJ, setReviewSJ] = useState<DNRow | null>(null);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Controlled so the receiver-catalog warning can react to the destination.
+  const [fromBranchId, setFromBranchId] = useState("");
+  const [toBranchId, setToBranchId] = useState("");
+
+  // Lines the RECEIVER's branch catalog does not name (ADR 0023). Same rule and
+  // same shared helper as the Mutasi transfer and the opname marker, so the
+  // three cannot drift. Non-blocking: delivering such stock is legitimate — the
+  // six production cases were real movements — so the SJ is still created.
+  const toBranchType = branches.find((b) => b.id === toBranchId)?.type;
+  const { data: receiverCatalogIds } = useQuery({
+    queryKey: ["branch-catalog-ids", toBranchId],
+    queryFn: () => getBranchCatalogIds({ data: { branchId: toBranchId } }),
+    enabled: !!toBranchId && toBranchType === "Outlet",
+  });
+  const itemsOutsideCatalog: Array<{ ingredientId: string; name: string }> = useMemo(() => {
+    if (!receiverCatalogIds) return [];
+    const inCatalog = new Set(receiverCatalogIds);
+    return dnItems
+      .filter((it) => !inCatalog.has(it.ingredientId))
+      .map((it) => ({
+        ingredientId: it.ingredientId,
+        name: ingredients.find((i) => i.id === it.ingredientId)?.name ?? it.ingredientId,
+      }));
+  }, [dnItems, receiverCatalogIds, ingredients]);
 
   const { data: dns } = useQuery({
     queryKey: ["delivery-notes"],
@@ -82,11 +114,18 @@ function DNPage() {
 
   const createMutation = useMutation({
     mutationFn: createDeliveryNote,
-    onSuccess: () => {
+    onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
       setModalOpen(false);
       setDnItems([]);
       setSubmitError(null);
+      // Server echoed the same check for direct callers; surface it so a
+      // bypassed UI still reports the fact.
+      if (result.catalogWarnings.length > 0) {
+        toast.warning(`${result.catalogWarnings.length} bahan di luar katalog cabang penerima`, {
+          description: `${result.catalogWarnings.map((w) => w.ingredientName).join(", ")} — cabang akan memegangnya di luar katalog.`,
+        });
+      }
     },
     onError: (err) => {
       setSubmitError(err instanceof Error ? err.message : "Gagal membuat SJ");
@@ -133,8 +172,8 @@ function DNPage() {
     const fd = new FormData(e.currentTarget);
     const data = {
       code: formText(fd, "code"),
-      fromBranchId: formText(fd, "fromBranchId"),
-      toBranchId: formText(fd, "toBranchId"),
+      fromBranchId,
+      toBranchId,
       driverName: formText(fd, "driverName"),
       vehicleNumber: formText(fd, "vehicleNumber"),
       items: dnItems,
@@ -371,9 +410,11 @@ function DNPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium">Dari Cabang</label>
               <select
-                name="fromBranchId"
+                value={fromBranchId}
+                onChange={(e) => setFromBranchId(e.target.value)}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
+                <option value="">Pilih cabang…</option>
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
@@ -384,9 +425,11 @@ function DNPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium">Ke Cabang</label>
               <select
-                name="toBranchId"
+                value={toBranchId}
+                onChange={(e) => setToBranchId(e.target.value)}
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
+                <option value="">Pilih cabang…</option>
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
@@ -497,6 +540,27 @@ function DNPage() {
               Simpan
             </button>
           </div>
+          {/* Outside the receiver's catalog: the branch will hold stock it does
+              not count. Warning only — the SJ is still created. */}
+          {itemsOutsideCatalog.length > 0 && (
+            <div className="rounded-md bg-warning/10 border border-warning/30 px-4 py-3 text-sm">
+              <p className="font-medium text-warning flex items-center gap-1.5">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                {itemsOutsideCatalog.length} bahan di luar katalog cabang penerima
+              </p>
+              <p className="text-warning/80 mt-1">
+                Cabang penerima bertanda nonaktif untuk bahan berikut di “Tampil di Cabang”. Cabang
+                akan memegangnya, tetapi bahan tersebut tidak masuk katalog cabang dan ditandai{" "}
+                <span className="font-medium">di luar katalog</span> di lembar opname. SJ tetap bisa
+                dibuat.
+              </p>
+              <ul className="mt-1 text-warning/80 list-disc list-inside">
+                {itemsOutsideCatalog.map((w) => (
+                  <li key={w.ingredientId}>{w.name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </form>
       </Modal>
     </RoleGuard>

@@ -108,7 +108,7 @@ async function receivedDn(
   ingredientId: string,
   receivedQty: number,
 ): Promise<{ dnId: string }> {
-  const dn = await scm.createDeliveryNoteCore(admin, {
+  const { dn } = await scm.createDeliveryNoteCore(admin, {
     code: uniq("SJ-INV"),
     fromBranchId,
     toBranchId,
@@ -247,7 +247,7 @@ describe("SCM invoices — wrong-role and guard negatives", () => {
       ).rejects.toThrow("Delivery note not found");
 
       // DN with no items → cannot invoice
-      const emptyDn = await scm.createDeliveryNoteCore(adminPusat, {
+      const { dn: emptyDn } = await scm.createDeliveryNoteCore(adminPusat, {
         code: uniq("SJ-EMPTY"),
         fromBranchId: fromBranch,
         toBranchId: toBranch,
