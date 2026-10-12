@@ -365,28 +365,66 @@ describe("branch catalog parity — every branch-scoped read must agree", () => 
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
-    "the opname scope follows the branch type, not the caller's role",
+    "a branch_admin at a CENTRAL branch sees everything — list and sheet agree",
     async () => {
-      // A branch_admin assigned to a Central-type branch (Central Kitchen Food
-      // Prep) has their ingredient list narrowed by the ROLE gate in
-      // getIngredients, while the opname is scoped by BRANCH TYPE. This test
-      // pins the opname half so a future "unify by role" change cannot silently
-      // drop central-only items from a central kitchen's count sheet.
-      const central = await seedBranch(uniq("CP-CK"));
+      // A branch_admin is assigned to a Central-type branch: the Central
+      // Warehouse has one in production (Eva). The warehouse is precisely the
+      // branch that HOLDS the central-only items, so both surfaces must be
+      // unfiltered there. Keying the ingredient list on the ROLE alone (the old
+      // behaviour) hid them from the one person who needs to move them — 52 of
+      // the 135 countable items her warehouse held were unselectable in the
+      // Mutasi transfer form, while her count sheet listed all of them.
+      const central = await seedBranch(uniq("CP-CK"), "Central");
       const centralOnly = await seedIngredient(uniq("CP-CK-ONLY"), { isBranchVisible: false });
       const branchVisible = await seedIngredient(uniq("CP-CK-VIS"), { isBranchVisible: true });
       await seedInventory(central, centralOnly, 5);
       await seedInventory(central, branchVisible, 6);
 
       const ckAdmin = await seedUser("branch_admin", central);
-      // Their own ingredient list is narrowed to the 93 branch-visible items …
-      expect(await masterCatalogIds(ckAdmin)).toEqual([branchVisible].sort());
-      // … but the opname of their Central branch counts everything.
+
+      // The ingredient list is unfiltered for a Central branch …
+      expect(await masterCatalogIds(ckAdmin)).toEqual([centralOnly, branchVisible].sort());
+      // … and the opname agrees with it, item for item. That agreement is the
+      // point: the two surfaces answer from the same key.
       const so = await inv.triggerStockOpnameCore(ckAdmin, {
         branchId: central,
         date: "2026-08-25",
       });
-      expect(await soLineIds(so.id)).toEqual([centralOnly, branchVisible].sort());
+      expect(await soLineIds(so.id)).toEqual(await masterCatalogIds(ckAdmin));
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a branch_admin at an OUTLET still sees only that outlet's catalog",
+    async () => {
+      // The other side of the same gate: 33 of the 34 branch_admins in
+      // production are at outlets, and for them role and branch type agreed
+      // already. Their list must stay narrowed — an outlet neither holds nor
+      // counts the central-only items.
+      const outlet = await seedBranch(uniq("CP-RO"), "Outlet");
+      const branchVisible = await seedIngredient(uniq("CP-RO-VIS"), { isBranchVisible: true });
+      // Held at the outlet and flagged off: still absent from the admin's list.
+      await seedIngredient(uniq("CP-RO-ONLY"), { isBranchVisible: false });
+      await seedInventory(outlet, branchVisible, 5);
+
+      const outletAdmin = await seedUser("branch_admin", outlet);
+      expect(await masterCatalogIds(outletAdmin)).toEqual([branchVisible].sort());
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a non-branch_admin is unfiltered whatever branch they sit at",
+    async () => {
+      // Deliberately NOT switched to pure branch-type gating: an area_manager
+      // covering an outlet is a supervisor and must still see every ingredient
+      // to approve, order, and troubleshoot. Only the branch_admin role, whose
+      // single branch defines what it can actually stock, gets the gate.
+      const outlet = await seedBranch(uniq("CP-AM"), "Outlet");
+      const centralOnly = await seedIngredient(uniq("CP-AM-ONLY"), { isBranchVisible: false });
+      const branchVisible = await seedIngredient(uniq("CP-AM-VIS"), { isBranchVisible: true });
+
+      const areaManager = await seedUser("area_manager", outlet);
+      expect(await masterCatalogIds(areaManager)).toEqual([centralOnly, branchVisible].sort());
     },
   );
 });

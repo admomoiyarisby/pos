@@ -212,16 +212,53 @@ Two candidates checked and ruled out on evidence, not assumption:
 Warn, never block: every production case of this shape was a legitimate movement
 ("stock awal"), so a gate would have stopped real work.
 
-## Still unresolved — role vs branch type
+## Role vs branch type — settled for branch_admin
 
-The ingredient master gates the flag by **role** (`branch_admin`), while the
-opname gates it by **branch type** (`Outlet`). A `branch_admin` assigned to a
-Central-type branch (Central Kitchen Food Prep) therefore sees 93 ingredients
-but a 152-line sheet. Parity test 3 pins the opname half so a future "unify by
-role" change cannot silently drop central-only items from that branch's count
-sheet. Either the master half must follow the branch type, or someone must
-state that "what can this user see" and "what does this branch count" are two
-different questions on purpose. That call is still owed.
+The ingredient master gated the catalog flag on the caller's **role**
+(`role === "branch_admin"`), while the opname and the inventory list gate it on
+the branch's **type**. That disagreed for one real account: the Central
+Warehouse has a branch_admin, and the warehouse is precisely the branch that
+_holds_ the flag-off ingredients. The role-only gate hid them from the one
+person who needs to move them — measured: her picker showed 90 ingredients while
+her warehouse held 135 countable ones, so **52 items she physically held were
+unselectable in the Mutasi transfer form** while her count sheet listed all of
+them. Nothing had caught it because 33 of the 34 branch_admins are at outlets,
+where role and branch type already agreed.
+
+The gate now keys on the branch: a `branch_admin` is filtered only when their own
+branch is an `Outlet`. One extra lookup in `getIngredientsCore`, one behaviour
+change, for one account:
+
+| Account                                  | Before | After           |
+| ---------------------------------------- | ------ | --------------- |
+| branch_admin @ Central Warehouse         | 90     | 152 — unblocked |
+| branch_admin @ an Outlet                 | 89     | 89 — unchanged  |
+| area_manager / super_admin / admin_pusat | all    | all — unchanged |
+
+Supervisors are deliberately still unfiltered: an area manager covering an outlet
+must see every ingredient to approve, order, and troubleshoot. Only the
+branch_admin role, whose single branch defines what it can actually stock, gets
+the gate. That choice is now pinned by three tests rather than left implicit.
+
+Consequence worth knowing, not a bug: an outlet admin still cannot move an item
+it holds but has flagged out of its catalog (2 lines at Darmo Permai). That
+follows from `is_branch_visible` meaning "this is an outlet catalog item", which
+is the model question below.
+
+## Still open — the flag default
+
+`is_branch_visible` defaults to **FALSE**, so every new ingredient starts
+central-only and lands in no outlet catalog. Production holds 93 catalog items
+and 59 central-only. Nobody chose this default; it is a product question:
+
+- Keep `false`: new items start central-only, and someone adds them to branches.
+- Change to `true`: new items start in every outlet catalog, and someone
+  excludes them.
+
+Flipping it is one line of schema and a cleanup of the existing 59. The guards
+built above (the gap panel, the two create-form warnings, the opname marker,
+the two write-side warnings) make the current default visible rather than
+silent, so the decision can be taken with evidence instead of in the dark.
 
 ## References
 

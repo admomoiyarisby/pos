@@ -71,6 +71,27 @@ export async function getIngredientsCore(
 ) {
   const currentBranchId = user?.branchId;
 
+  // Whether the caller's OWN branch is an Outlet. This is the key the catalog
+  // gate below uses, and the same one the stock opname and the inventory list
+  // already use — not the role alone.
+  //
+  // It matters because the Central Warehouse has a branch_admin (Eva, in
+  // production). The warehouse is precisely the branch that HOLDS the
+  // flag-off ingredients, so the old role-only gate hid the central-only items
+  // from the one person who needs to move them: 52 of the 135 countable items
+  // her warehouse held were unselectable in the Mutasi transfer form. Keying on
+  // the branch fixes that account and changes nothing for the 33 outlet
+  // branch_admins, where role and branch type already agreed.
+  let ownBranchIsOutlet = false;
+  if (currentBranchId) {
+    const [ownBranch] = await db
+      .select({ type: branches.type })
+      .from(branches)
+      .where(eq(branches.id, currentBranchId))
+      .limit(1);
+    ownBranchIsOutlet = ownBranch?.type === "Outlet";
+  }
+
   // Build conditions list, then apply all at once (mirrors getRecipes).
   const conditions: import("drizzle-orm").SQL[] = [];
 
@@ -92,13 +113,15 @@ export async function getIngredientsCore(
     conditions.push(eq(ingredients.isNasi, false));
   }
 
-  // Branch-vs-central visibility (omoiyari stock-opname catalog): outlet
-  // branches (branch_admin) see ONLY branch-visible items. Central warehouse
-  // and management roles (super_admin / admin_pusat / central_kitchen /
-  // area_manager) see everything. The per-branch `ingredient_branches` link
-  // below is ANDed on top, so the future case "only some specific branches
-  // see item X" still works (link the item to those branches).
-  if (user?.role === "branch_admin") {
+  // Branch-vs-central visibility (omoiyari stock-opname catalog): an Outlet's
+  // branch admin sees ONLY branch-visible items, because an outlet neither
+  // holds nor counts the central-only ones. Central branches have no such
+  // gate — Central Warehouse IS where those items live — and management roles
+  // (super_admin / admin_pusat / central_kitchen / area_manager) see everything.
+  // The per-branch `ingredient_branches` link below is ANDed on top, so the
+  // future case "only some specific branches see item X" still works (link the
+  // item to those branches).
+  if (user?.role === "branch_admin" && ownBranchIsOutlet) {
     conditions.push(eq(ingredients.isBranchVisible, true));
   }
 
