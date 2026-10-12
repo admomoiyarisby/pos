@@ -371,11 +371,15 @@ export const createMutasiTransfer = createServerFn({ method: "POST" })
 // UPDATE: in-draft item edits (not a state transition; no FSM call)
 // =============================================================================
 
-export async function updateMutasiTransferDraftItemsCore(
-  user: MutasiActorUser,
-  data: { transferId: string; items: Array<{ id: string; quantity: number }> },
-) {
-  const result = await loadTransferWithItems(data.transferId);
+/**
+ * The one gate every in-draft item write goes through — edit, add, or remove.
+ *
+ * `updateTransferItem` (the FSM path) cannot serve this: adding and removing
+ * lines are not per-line patches, they change the shape of the document. So the
+ * three preconditions they share are asserted here rather than repeated.
+ */
+async function assertDraftEditable(user: MutasiActorUser, transferId: string) {
+  const result = await loadTransferWithItems(transferId);
   if (!result) throw new Error("Transfer not found");
   assertTransferAccess(user, result.transfer, "act");
 
@@ -387,6 +391,44 @@ export async function updateMutasiTransferDraftItemsCore(
   if (user.role !== "super_admin" && user.branchId !== result.transfer.fromBranchId) {
     throw new Error("Only the sender branch can edit the draft");
   }
+
+  return result;
+}
+
+/**
+ * Current per-branch average cost for an ingredient, or null when the branch
+ * cannot see it at all. The `branchVisibleClause` fold is the write-path
+ * defense shared with `createMutasiTransferCore`: a restricted ingredient is
+ * refused here rather than resolvable by guessing its id.
+ */
+async function visibleIngredient(
+  user: MutasiActorUser,
+  ingredientId: string,
+): Promise<{ id: string; name: string; averageCost: number } | null> {
+  const clause = branchVisibleClause({
+    linkTable: ingredientBranches,
+    linkRowId: ingredientBranches.ingredientId,
+    rowId: ingredients.id,
+    linkBranchId: ingredientBranches.branchId,
+    currentBranchId: user.branchId,
+  });
+  const [row] = await db
+    .select({
+      id: ingredients.id,
+      name: ingredients.name,
+      averageCost: ingredients.averageCost,
+    })
+    .from(ingredients)
+    .where(and(eq(ingredients.id, ingredientId), clause))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function updateMutasiTransferDraftItemsCore(
+  user: MutasiActorUser,
+  data: { transferId: string; items: Array<{ id: string; quantity: number }> },
+) {
+  const result = await assertDraftEditable(user, data.transferId);
 
   // Resolve every patch against a real line up front, so an unknown item id
   // fails the whole request instead of half-applying it.
@@ -435,7 +477,7 @@ export const updateMutasiTransferDraftItems = createServerFn({ method: "POST" })
   .validator((data: { transferId: string; items: Array<{ id: string; quantity: number }> }) => {
     // Quantities are real (fractional allowed) — guarded to finite positives,
     // mirroring the receiver-side item edit. A draft line can't be zeroed out:
-    // this endpoint has no counterpart that removes a line.
+    // removing a line is `removeMutasiTransferDraftItem`, not a quantity of 0.
     for (const it of data.items) {
       if (!Number.isFinite(it.quantity) || it.quantity <= 0) {
         throw new Error("Quantities must be finite and greater than 0");
@@ -444,6 +486,142 @@ export const updateMutasiTransferDraftItems = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }) => updateMutasiTransferDraftItemsCore(await requireAuth(), data));
+
+export async function addMutasiTransferDraftItemCore(
+  user: MutasiActorUser,
+  data: { transferId: string; ingredientId: string; quantity: number },
+) {
+  const result = await assertDraftEditable(user, data.transferId);
+
+  // ADR 0019: one line per ingredient per SuratJalan. The unique constraint is
+  // the database backstop; this turns it into advice the sender can act on,
+  // and names the line already holding the ingredient.
+  if (result.items.some((i) => i.ingredientId === data.ingredientId)) {
+    const ing = await visibleIngredient(user, data.ingredientId);
+    throw new Error(
+      `Bahan "${ing?.name ?? data.ingredientId}" sudah ada di draft ini. Ubah jumlahnya pada baris yang ada, jangan tambahkan baris kedua.`,
+    );
+  }
+
+  const ing = await visibleIngredient(user, data.ingredientId);
+  if (!ing) {
+    throw new Error("Forbidden: one or more ingredients are not available to your branch");
+  }
+
+  await hardStockCheck(result.transfer.fromBranchId, [
+    { ingredientId: data.ingredientId, quantity: data.quantity },
+  ]);
+
+  // Append after the last line so the printed Surat Jalan keeps the order the
+  // sender built it in.
+  const nextSortOrder = result.items.reduce((max, it) => Math.max(max, it.sortOrder), -1) + 1;
+
+  const [row] = await db
+    .insert(scmTransferItems)
+    .values({
+      scmTransferId: data.transferId,
+      ingredientId: data.ingredientId,
+      sortOrder: nextSortOrder,
+      quantity: data.quantity,
+      // Same snapshot source and timing as `createMutasiTransferCore`: the
+      // sender's promise is priced the moment the line is written.
+      unitPrice: ing.averageCost ?? 0,
+    })
+    .returning();
+
+  await db.insert(scmTransferAuditLog).values({
+    scmTransferId: data.transferId,
+    event: "item-add",
+    fromState: result.transfer.status,
+    toState: result.transfer.status,
+    itemId: row.id,
+    actorId: user.id,
+    actorRole: user.role,
+    note: JSON.stringify({
+      ingredientId: data.ingredientId,
+      ingredientName: ing.name,
+      quantity: data.quantity,
+    }),
+  });
+
+  return { id: row.id };
+}
+
+export const addMutasiTransferDraftItem = createServerFn({ method: "POST" })
+  .validator((data: { transferId: string; ingredientId: string; quantity: number }) => {
+    if (!data.ingredientId) throw new Error("An ingredient must be chosen");
+    if (!Number.isFinite(data.quantity) || data.quantity <= 0) {
+      throw new Error("Quantities must be finite and greater than 0");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => addMutasiTransferDraftItemCore(await requireAuth(), data));
+
+export async function removeMutasiTransferDraftItemCore(
+  user: MutasiActorUser,
+  data: { transferId: string; itemId: string },
+) {
+  const result = await assertDraftEditable(user, data.transferId);
+
+  const item = result.items.find((i) => i.id === data.itemId);
+  if (!item) throw new Error(`Item ${data.itemId} not found in transfer ${data.transferId}`);
+  // A Surat Jalan with no lines can never be shipped or invoiced. Leaving the
+  // sender a draft they cannot submit is a worse outcome than a rejected click.
+  if (result.items.length <= 1) {
+    throw new Error("Draft harus punya minimal satu item");
+  }
+
+  const ing = await visibleIngredient(user, item.ingredientId);
+
+  // `scm_transfer_audit_log.item_id` is ON DELETE no action, so the delete below
+  // is refused while any audit row still points at this line — and a line the
+  // sender has already edited always has an `item-update` row pointing at it.
+  // Detaching first is what makes removal possible at all; every entry itself
+  // survives, with its event, actor, time and note intact.
+  await db
+    .update(scmTransferAuditLog)
+    .set({ itemId: null })
+    .where(
+      and(
+        eq(scmTransferAuditLog.scmTransferId, data.transferId),
+        eq(scmTransferAuditLog.itemId, data.itemId),
+      ),
+    );
+
+  await db
+    .delete(scmTransferItems)
+    .where(
+      and(
+        eq(scmTransferItems.id, data.itemId),
+        eq(scmTransferItems.scmTransferId, data.transferId),
+      ),
+    );
+
+  // Written after the delete, and with no itemId: the line it describes no
+  // longer exists, so the note is the whole record. Same shape as the
+  // `item-add` note — whoever reads the timeline needs the name, not a
+  // dangling foreign key.
+  await db.insert(scmTransferAuditLog).values({
+    scmTransferId: data.transferId,
+    event: "item-remove",
+    fromState: result.transfer.status,
+    toState: result.transfer.status,
+    itemId: null,
+    actorId: user.id,
+    actorRole: user.role,
+    note: JSON.stringify({
+      ingredientId: item.ingredientId,
+      ingredientName: ing?.name ?? null,
+      quantity: item.quantity,
+    }),
+  });
+
+  return { success: true };
+}
+
+export const removeMutasiTransferDraftItem = createServerFn({ method: "POST" })
+  .validator((data: { transferId: string; itemId: string }) => data)
+  .handler(async ({ data }) => removeMutasiTransferDraftItemCore(await requireAuth(), data));
 
 // =============================================================================
 // UPDATE: in-state per-line edits (Q11, only in Delivered/ReviewingSJ)

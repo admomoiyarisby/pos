@@ -104,6 +104,20 @@ A transition table (the "spec" of the FSM) lives in `src/lib/server/scm-transfer
 
 In-state item edits (e.g., Receiver BA setting `receivedQuantity` per item during `ReviewingSJ`) are handled by a separate `updateItem(transferId, itemId, patch, actor)` function. The audit log records these as `item-update` events.
 
+### Adding and removing lines in `SuratJalanDraft`
+
+A draft is built by hand, so the sender often misses a line — or adds one by mistake. Correcting the _line set_ is therefore allowed in `SuratJalanDraft`, alongside the existing quantity edits: `addMutasiTransferDraftItem` appends a line, `removeMutasiTransferDraftItem` drops one, both audited as `item-add` / `item-remove`. Neither is an FSM transition — the status stays `SuratJalanDraft`.
+
+The three constraints follow from decisions already made elsewhere, not new ones:
+
+- **Same gate as a quantity edit.** Both writes go through one `assertDraftEditable` helper, so a line can only be added or removed in `SuratJalanDraft`, by the sender branch (or `super_admin` acting on its behalf). The server rejects the same call in any other state.
+- **One line per ingredient (ADR 0019).** The add refuses an ingredient already on the document and names it, so the sender edits the existing quantity instead of creating a second line. `finish-receive` credits each line independently, so a duplicate is the double-credit bug ADR 0019 was written about.
+- **The last line cannot be removed.** A Surat Jalan with no lines can never be shipped or invoiced, so the UI disables the button and the server refuses with a reason.
+
+**Removal detaches audit rows before deleting, and that ordering is load-bearing.** `scm_transfer_audit_log.item_id` is `ON DELETE no action`, so deleting a line is refused while any audit row still points at it — and a line whose quantity was edited always has an `item-update` row pointing at it. So `removeMutasiTransferDraftItem` first sets `item_id = NULL` on rows for that line, then deletes it, then writes the `item-remove` entry with `itemId: null` and the ingredient id and quantity in the note. Every audit entry survives with its event, actor, timestamp and note intact; only the link to a row that no longer exists is dropped.
+
+This is not a Mutasi-only subtlety — `removeProcurementItem` in Pengadaan had the same delete-then-log ordering and therefore could not remove any line that had ever been edited. It now uses the same detach-then-delete order.
+
 **Effect handler reuse:** the stock-reversal helpers from Pengadaan (`reverseInTransitOnCancel`, `reversePendingReviewOnCancel`) can be **parameterized** over the root FK column (`scmProcurementId` vs `scmTransferId`) and reused verbatim. The `writeInTransitInventory` and `moveStockToPendingReview` effects can be shared with a thin wrapper that supplies the right FK. The `generateInvoiceSnapshot` and `markInvoicePaid` effects can be copied with table-name swaps (the `totalAmount` formula is identical).
 
 ### The UI

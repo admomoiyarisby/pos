@@ -18,7 +18,17 @@ import {
   Undo2,
   Printer,
   AlertCircle,
+  Plus,
+  Trash2,
 } from "lucide-react";
+import {
+  Combobox,
+  ComboboxInput,
+  ComboboxContent,
+  ComboboxList,
+  ComboboxItem,
+  ComboboxEmpty,
+} from "#/components/ui/combobox";
 import {
   submitMutasiTransfer,
   approveMutasiTransfer,
@@ -31,6 +41,8 @@ import {
   markPaidMutasiTransfer,
   cancelMutasiTransfer,
   updateMutasiTransferDraftItems,
+  addMutasiTransferDraftItem,
+  removeMutasiTransferDraftItem,
 } from "#/lib/server/scm-transfers";
 import { printMutasiSuratJalan, printMutasiInvoice } from "#/lib/server/scm-transfer-print";
 import { openPrintWindow } from "#/lib/print-window";
@@ -75,6 +87,13 @@ export interface TransferItemRow {
   reason: string | null;
   /** Receiver BA's chosen disposition for the rejected qty. */
   rejectionDisposition?: RejectionDisposition | null;
+}
+
+/** An ingredient offered by the draft's "Tambah Item" picker. */
+interface AddableOption {
+  id: string;
+  name: string;
+  stockUnit: string;
 }
 
 /** Transfer invoice header — fields these views render. */
@@ -144,6 +163,8 @@ function useTransferActions(transferId: string) {
   const markPaidMut = useServerFn(markPaidMutasiTransfer);
   const cancelMut = useServerFn(cancelMutasiTransfer);
   const saveDraftItemsMut = useServerFn(updateMutasiTransferDraftItems);
+  const addDraftItemMut = useServerFn(addMutasiTransferDraftItem);
+  const removeDraftItemMut = useServerFn(removeMutasiTransferDraftItem);
   const printSJ = useServerFn(printMutasiSuratJalan);
   const printInv = useServerFn(printMutasiInvoice);
 
@@ -195,6 +216,30 @@ function useTransferActions(transferId: string) {
         setError(null);
         try {
           await saveDraftItemsMut({ data: { transferId, items } });
+          void queryClient.invalidateQueries({ queryKey: ["scm-transfer", transferId] });
+          void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Aksi gagal");
+          throw err;
+        }
+      },
+      /** Append a line to the draft. Re-throws, as `saveDraftItems` does. */
+      addDraftItem: async (ingredientId: string, quantity: number) => {
+        setError(null);
+        try {
+          await addDraftItemMut({ data: { transferId, ingredientId, quantity } });
+          void queryClient.invalidateQueries({ queryKey: ["scm-transfer", transferId] });
+          void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Aksi gagal");
+          throw err;
+        }
+      },
+      /** Drop a line from the draft. Re-throws, as `saveDraftItems` does. */
+      removeDraftItem: async (itemId: string) => {
+        setError(null);
+        try {
+          await removeDraftItemMut({ data: { transferId, itemId } });
           void queryClient.invalidateQueries({ queryKey: ["scm-transfer", transferId] });
           void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
         } catch (err) {
@@ -529,15 +574,17 @@ function InvoiceCard({
  * Editable line quantities for a `SuratJalanDraft`.
  *
  * The promised quantity is the number every later stage is measured against,
- * so it has to be correctable *before* the AM sees it. Editing lives here
- * rather than in the shared `ReadOnlyItems` because only this state permits it
- * — the server rejects the same call in any other state.
+ * so it has to be correctable *before* the AM sees it — and so does the set of
+ * lines itself: a draft built by hand usually misses something. Editing lives
+ * here rather than in the shared `ReadOnlyItems` because only this state
+ * permits it — the server rejects the same call in any other state.
  */
 function EditableDraftItems({
   items,
   ingredientById,
   edits,
   onEdit,
+  onRemove,
   stockByIngredient,
   showPrices = true,
 }: {
@@ -546,10 +593,16 @@ function EditableDraftItems({
   /** Raw input values by item id; a missing key means "as stored". */
   edits: Record<string, string>;
   onEdit: (itemId: string, value: string) => void;
+  onRemove: (itemId: string) => void;
   stockByIngredient: Map<string, number>;
   /** Per-unit HPP snapshot — hidden for branch_admin, same rule everywhere else. */
   showPrices?: boolean;
 }) {
+  // A Surat Jalan with no lines can never be shipped or invoiced, so the last
+  // line is not offered up for removal — the server refuses it too, but a
+  // disabled button with a reason beats a click that comes back as an error.
+  const canRemove = items.length > 1;
+
   if (items.length === 0) {
     return (
       <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -615,6 +668,20 @@ function EditableDraftItems({
                   </span>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={() => onRemove(it.id)}
+                disabled={!canRemove}
+                title={
+                  canRemove
+                    ? `Hapus ${ing?.name ?? "item"} dari draft`
+                    : "Draft harus punya minimal satu item"
+                }
+                aria-label={`Hapus ${ing?.name ?? it.ingredientId.slice(0, 8)}`}
+                className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-md text-destructive hover:bg-destructive/10 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
             </div>
           );
         })}
@@ -653,6 +720,57 @@ export function DraftSenderForm(props: TransferViewProps) {
     (it) => Number(edits[it.id] ?? String(it.quantity)) !== it.quantity,
   );
 
+  // Adding a line writes straight through — there is no staged draft to save,
+  // and an unsaved-quantity edit on another row is not affected by it.
+  const [newIngredientId, setNewIngredientId] = useState("");
+  const [newQuantity, setNewQuantity] = useState("1");
+  const [isMutating, setIsMutating] = useState(false);
+
+  // Everything in the branch catalog that is not already a line. ADR 0019
+  // allows one line per ingredient, so an ingredient already on the draft is
+  // filtered out here rather than refused after a round trip.
+  const addableOptions = useMemo(() => {
+    const taken = new Set(items.map((it) => it.ingredientId));
+    return [...ingredientById.values()]
+      .filter((ing) => !taken.has(ing.id))
+      .sort((a, b) => a.name.localeCompare(b.name, "id"));
+  }, [ingredientById, items]);
+
+  const addItem = async () => {
+    const quantity = Number(newQuantity);
+    if (!newIngredientId) {
+      setError("Pilih bahan yang akan ditambahkan");
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setError("Jumlah harus berupa angka lebih dari 0");
+      return;
+    }
+    setIsMutating(true);
+    try {
+      await actions.addDraftItem(newIngredientId, quantity);
+      setNewIngredientId("");
+      setNewQuantity("1");
+      toast.success("Item ditambahkan ke draft.");
+    } catch {
+      // The server message is already in the banner (set by the action).
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const removeItem = async (itemId: string) => {
+    setIsMutating(true);
+    try {
+      await actions.removeDraftItem(itemId);
+      toast.success("Item dihapus dari draft.");
+    } catch {
+      // The server message is already in the banner (set by the action).
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
   const saveQuantities = async () => {
     setError(null);
     if (hasInvalid) {
@@ -672,6 +790,8 @@ export function DraftSenderForm(props: TransferViewProps) {
     }
   };
 
+  const busy = isSaving || isMutating;
+
   return (
     <Section>
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
@@ -683,6 +803,7 @@ export function DraftSenderForm(props: TransferViewProps) {
           ingredientById={ingredientById}
           edits={edits}
           onEdit={(itemId, value) => setEdits((prev) => ({ ...prev, [itemId]: value }))}
+          onRemove={removeItem}
           stockByIngredient={stockByIngredient}
           showPrices={props.showPrices ?? true}
         />
@@ -691,12 +812,12 @@ export function DraftSenderForm(props: TransferViewProps) {
             variant="outline"
             size="sm"
             onClick={saveQuantities}
-            disabled={isSaving || !hasChanges || hasInvalid}
+            disabled={busy || !hasChanges || hasInvalid}
           >
             Simpan Jumlah
           </Button>
           {hasChanges && (
-            <Button variant="ghost" size="sm" onClick={() => setEdits({})} disabled={isSaving}>
+            <Button variant="ghost" size="sm" onClick={() => setEdits({})} disabled={busy}>
               Batalkan Perubahan
             </Button>
           )}
@@ -708,6 +829,84 @@ export function DraftSenderForm(props: TransferViewProps) {
             Jumlah setiap item harus berupa angka lebih dari 0.
           </p>
         )}
+
+        {/* A draft is built by hand and usually misses something, so the line
+            set is correctable here too — the last stage at which it can be,
+            before the AM reviews the promise. */}
+        <div className="space-y-2 border-t pt-3">
+          <label className="block text-sm font-medium">Tambah Item</label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Combobox
+              value={null}
+              onValueChange={(val) => {
+                // SAFETY: the combobox is fed addableOptions, so a non-null
+                // value is always one of those AddableOption rows.
+                const picked = val as AddableOption | null;
+                setNewIngredientId(picked?.id ?? "");
+              }}
+              items={addableOptions}
+              itemToStringValue={(item: AddableOption) => item.id}
+              itemToStringLabel={(item: AddableOption) => item.name}
+              isItemEqualToValue={(a: AddableOption | null, b: AddableOption | null) =>
+                a?.id === b?.id
+              }
+            >
+              <ComboboxInput
+                showClear={!!newIngredientId}
+                placeholder={
+                  addableOptions.length === 0 ? "Semua bahan sudah ada di draft" : "Cari bahan…"
+                }
+                className="h-9 min-w-48 flex-1"
+              />
+              <ComboboxContent>
+                <ComboboxList>
+                  {(item: AddableOption) => {
+                    const available = stockByIngredient.get(item.id);
+                    const out = available != null && available <= 0;
+                    return (
+                      <ComboboxItem key={item.id} value={item}>
+                        <div className="flex w-full items-center justify-between gap-4">
+                          <span>
+                            {item.name}{" "}
+                            <span className="text-muted-foreground">({item.stockUnit})</span>
+                          </span>
+                          <span
+                            className={
+                              "text-xs " +
+                              (out ? "text-destructive font-medium" : "text-muted-foreground")
+                            }
+                          >
+                            Stok: {available ?? 0}
+                            {out && " ⛔ habis"}
+                          </span>
+                        </div>
+                      </ComboboxItem>
+                    );
+                  }}
+                </ComboboxList>
+                <ComboboxEmpty>Tidak ada bahan yang cocok</ComboboxEmpty>
+              </ComboboxContent>
+            </Combobox>
+            <input
+              type="number"
+              min={0}
+              step="any"
+              aria-label="Jumlah item baru"
+              value={newQuantity}
+              onChange={(e) => setNewQuantity(e.target.value)}
+              className="h-9 w-24 rounded-md border border-input bg-background px-2 text-sm text-right"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={addItem}
+              disabled={busy || !newIngredientId || addableOptions.length === 0}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Tambah
+            </Button>
+          </div>
+        </div>
       </div>
 
       <SectionDivider />

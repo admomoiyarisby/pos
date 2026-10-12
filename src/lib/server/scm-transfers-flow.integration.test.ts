@@ -1340,6 +1340,440 @@ describe("Mutasi Stok — draft line-quantity edits", () => {
   });
 });
 
+// Note: `seedIngredient` leaves stock at 0, and `createMutasiTransferCore`'s
+// hard guardrail refuses a draft whose lines it cannot cover — so each test
+// seeds inventory before building the draft.
+describe("Mutasi Stok — adding a line to a draft", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "the sender can add a line, and it is appended last with the same price snapshot source",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-ADD1"));
+      const toBranch = await seedBranch(uniq("MT-ADD2"));
+      const first = await seedIngredient(uniq("MT-ADDING1"));
+      const second = await seedIngredient(uniq("MT-ADDING2"));
+      await seedInventory(fromBranch, first, 10);
+      await seedInventory(fromBranch, second, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, first);
+
+      // The added line is priced from the ingredient's own averageCost, the
+      // same source `createMutasiTransferCore` snapshots at.
+      await expect(
+        scm.addMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          ingredientId: second,
+          quantity: 7,
+        }),
+      ).resolves.toMatchObject({ id: expect.any(String) });
+
+      const rows = await db
+        .select({
+          ingredientId: schema.scmTransferItems.ingredientId,
+          quantity: schema.scmTransferItems.quantity,
+          sortOrder: schema.scmTransferItems.sortOrder,
+          unitPrice: schema.scmTransferItems.unitPrice,
+        })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id))
+        .orderBy(schema.scmTransferItems.sortOrder);
+      expect(rows).toHaveLength(2);
+      expect(rows[0].ingredientId).toBe(first);
+      expect(rows[1].ingredientId).toBe(second);
+      expect(rows[1].quantity).toBe(7);
+      expect(rows[1].unitPrice).toBe(1000);
+
+      // Appending, not inserting — the printed SJ keeps the order it was built in.
+      expect(rows[1].sortOrder).toBeGreaterThan(rows[0].sortOrder);
+
+      // Still a draft: adding a line is not a transition.
+      expect((await transferStatus(transfer.id)).status).toBe("SuratJalanDraft");
+
+      const [audit] = await db
+        .select({
+          event: schema.scmTransferAuditLog.event,
+          note: schema.scmTransferAuditLog.note,
+        })
+        .from(schema.scmTransferAuditLog)
+        .where(eq(schema.scmTransferAuditLog.event, "item-add"));
+      expect(audit.event).toBe("item-add");
+      expect(JSON.parse(audit.note ?? "{}")).toMatchObject({ ingredientId: second, quantity: 7 });
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "the same ingredient cannot be added twice, and the refusal names the line to edit",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-ADD3"));
+      const toBranch = await seedBranch(uniq("MT-ADD4"));
+      const ingredient = await seedIngredient(uniq("MT-ADDING3"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+
+      // ADR 0019: one line per ingredient. A second line would be credited
+      // twice by finish-receive, so the database rejects it too.
+      await expect(
+        scm.addMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          ingredientId: ingredient,
+          quantity: 3,
+        }),
+      ).rejects.toThrow(/sudah ada di draft ini/);
+
+      const rows = await db
+        .select({ id: schema.scmTransferItems.id })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+      expect(rows).toHaveLength(1);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "the stock guardrail applies to an added line, and a refused add writes nothing",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-ADD5"));
+      const toBranch = await seedBranch(uniq("MT-ADD6"));
+      const first = await seedIngredient(uniq("MT-ADDING4"));
+      const second = await seedIngredient(uniq("MT-ADDING5"));
+      await seedInventory(fromBranch, first, 10);
+      await seedInventory(fromBranch, second, 3);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, first);
+
+      await expect(
+        scm.addMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          ingredientId: second,
+          quantity: 4,
+        }),
+      ).rejects.toThrow(/Stok tidak mencukupi/);
+
+      const rows = await db
+        .select({ id: schema.scmTransferItems.id })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+      expect(rows).toHaveLength(1);
+
+      // Exactly the available quantity is allowed.
+      await expect(
+        scm.addMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          ingredientId: second,
+          quantity: 3,
+        }),
+      ).resolves.toMatchObject({ id: expect.any(String) });
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "only the sender branch (or super_admin) may add; other states and forbidden ingredients refuse",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-ADD7"));
+      const toBranch = await seedBranch(uniq("MT-ADD8"));
+      // `hidden` carries an allow-list naming only another branch, so the sender
+      // branch cannot see it at all. (Visibility keys off the link table, not
+      // the boolean: a row with no link rows is visible everywhere.) The draft
+      // is built from `start`, which the sender branch does hold.
+      const hidden = await seedIngredient(uniq("MT-ADDING6"));
+      const start = await seedIngredient(uniq("MT-ADDING8"));
+      const extra = await seedIngredient(uniq("MT-ADDING7"));
+      await seedBranchLinks(hidden, [toBranch]);
+      await seedInventory(fromBranch, start, 10);
+      await seedInventory(fromBranch, extra, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+      const superAdmin = await seedUser("super_admin");
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, start);
+
+      // Not visible to the sender's branch — refused before any write.
+      await expect(
+        scm.addMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          ingredientId: hidden,
+          quantity: 2,
+        }),
+      ).rejects.toThrow(/not available to your branch/);
+
+      await expect(
+        scm.addMutasiTransferDraftItemCore(receiver, {
+          transferId: transfer.id,
+          ingredientId: extra,
+          quantity: 2,
+        }),
+      ).rejects.toThrow("Only the sender branch can edit the draft");
+
+      await expect(
+        scm.addMutasiTransferDraftItemCore(superAdmin, {
+          transferId: transfer.id,
+          ingredientId: extra,
+          quantity: 2,
+        }),
+      ).resolves.toMatchObject({ id: expect.any(String) });
+
+      // Once submitted, the promise is frozen.
+      await scm.submitMutasiTransferCore(sender, { transferId: transfer.id });
+      await expect(
+        scm.addMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          ingredientId: hidden,
+          quantity: 2,
+        }),
+      ).rejects.toThrow("Items can only be edited while in SuratJalanDraft");
+    },
+  );
+});
+
+describe("Mutasi Stok — removing a line from a draft", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "removes the line, keeps the rest, and records the removal with the ingredient named",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-RM1"));
+      const toBranch = await seedBranch(uniq("MT-RM2"));
+      const first = await seedIngredient(uniq("MT-RMING1"));
+      const second = await seedIngredient(uniq("MT-RMING2"));
+      await seedInventory(fromBranch, first, 10);
+      await seedInventory(fromBranch, second, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const { transfer } = await scm.createMutasiTransferCore(sender, {
+        fromBranchId: fromBranch,
+        toBranchId: toBranch,
+        items: [
+          { ingredientId: first, quantity: 5 },
+          { ingredientId: second, quantity: 6 },
+        ],
+      });
+
+      const rows = await db
+        .select({
+          id: schema.scmTransferItems.id,
+          ingredientId: schema.scmTransferItems.ingredientId,
+        })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id))
+        .orderBy(schema.scmTransferItems.sortOrder);
+      const target = rows.find((r) => r.ingredientId === second);
+      if (!target) throw new Error("expected the second line to exist");
+
+      await expect(
+        scm.removeMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          itemId: target.id,
+        }),
+      ).resolves.toMatchObject({ success: true });
+
+      const after = await db
+        .select({ ingredientId: schema.scmTransferItems.ingredientId })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+      expect(after.map((r) => r.ingredientId)).toEqual([first]);
+
+      // The removal is in the document's own trail, and names the line by
+      // ingredient — there is no item row left to point an FK at.
+      const [audit] = await db
+        .select({
+          event: schema.scmTransferAuditLog.event,
+          itemId: schema.scmTransferAuditLog.itemId,
+          note: schema.scmTransferAuditLog.note,
+        })
+        .from(schema.scmTransferAuditLog)
+        .where(eq(schema.scmTransferAuditLog.event, "item-remove"));
+      expect(audit.event).toBe("item-remove");
+      expect(audit.itemId).toBeNull();
+      expect(JSON.parse(audit.note ?? "{}")).toMatchObject({ ingredientId: second, quantity: 6 });
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a line whose quantity was edited can still be removed, and the edit stays in the trail",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-RM3"));
+      const toBranch = await seedBranch(uniq("MT-RM4"));
+      const first = await seedIngredient(uniq("MT-RMING3"));
+      const second = await seedIngredient(uniq("MT-RMING4"));
+      await seedInventory(fromBranch, first, 10);
+      await seedInventory(fromBranch, second, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const { transfer } = await scm.createMutasiTransferCore(sender, {
+        fromBranchId: fromBranch,
+        toBranchId: toBranch,
+        items: [
+          { ingredientId: first, quantity: 5 },
+          { ingredientId: second, quantity: 6 },
+        ],
+      });
+
+      const rows = await db
+        .select({
+          id: schema.scmTransferItems.id,
+          ingredientId: schema.scmTransferItems.ingredientId,
+        })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+      const target = rows.find((r) => r.ingredientId === second);
+      if (!target) throw new Error("expected the second line to exist");
+
+      // The edit writes an `item-update` audit row pointing at the line. The
+      // FK on audit_log.item_id is ON DELETE no action, so this is exactly the
+      // case that made removal fail before it detached those rows first.
+      await scm.updateMutasiTransferDraftItemsCore(sender, {
+        transferId: transfer.id,
+        items: [{ id: target.id, quantity: 8 }],
+      });
+
+      await expect(
+        scm.removeMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          itemId: target.id,
+        }),
+      ).resolves.toMatchObject({ success: true });
+
+      // The line is gone...
+      const after = await db
+        .select({ id: schema.scmTransferItems.id })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.id, target.id));
+      expect(after).toHaveLength(0);
+
+      // ...and so is nothing else: the edit's audit entry survives, detached,
+      // with its own content intact.
+      const trail = await db
+        .select({
+          event: schema.scmTransferAuditLog.event,
+          itemId: schema.scmTransferAuditLog.itemId,
+          note: schema.scmTransferAuditLog.note,
+        })
+        .from(schema.scmTransferAuditLog)
+        .where(eq(schema.scmTransferAuditLog.scmTransferId, transfer.id))
+        .orderBy(schema.scmTransferAuditLog.createdAt);
+      const update = trail.find((e) => e.event === "item-update");
+      expect(update).toBeDefined();
+      expect(update?.itemId).toBeNull();
+      expect(JSON.parse(update?.note ?? "{}")).toEqual({ quantity: { from: 6, to: 8 } });
+      expect(trail.some((e) => e.event === "item-remove")).toBe(true);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "the last line cannot be removed — a draft with no lines can never be shipped",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-RM5"));
+      const toBranch = await seedBranch(uniq("MT-RM6"));
+      const ingredient = await seedIngredient(uniq("MT-RMING5"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+      const [item] = await db
+        .select({ id: schema.scmTransferItems.id })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+
+      await expect(
+        scm.removeMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          itemId: item.id,
+        }),
+      ).rejects.toThrow(/minimal satu item/);
+
+      const rows = await db
+        .select({ id: schema.scmTransferItems.id })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+      expect(rows).toHaveLength(1);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "only the sender branch may remove; other states refuse; an unknown id fails cleanly",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-RM7"));
+      const toBranch = await seedBranch(uniq("MT-RM8"));
+      const first = await seedIngredient(uniq("MT-RMING6"));
+      const second = await seedIngredient(uniq("MT-RMING7"));
+      await seedInventory(fromBranch, first, 10);
+      await seedInventory(fromBranch, second, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+      const superAdmin = await seedUser("super_admin");
+      const { transfer } = await scm.createMutasiTransferCore(sender, {
+        fromBranchId: fromBranch,
+        toBranchId: toBranch,
+        items: [
+          { ingredientId: first, quantity: 5 },
+          { ingredientId: second, quantity: 6 },
+        ],
+      });
+      const rows = await db
+        .select({
+          id: schema.scmTransferItems.id,
+          ingredientId: schema.scmTransferItems.ingredientId,
+        })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, transfer.id));
+      const target = rows.find((r) => r.ingredientId === second);
+      if (!target) throw new Error("expected the second line to exist");
+
+      await expect(
+        scm.removeMutasiTransferDraftItemCore(receiver, {
+          transferId: transfer.id,
+          itemId: target.id,
+        }),
+      ).rejects.toThrow("Only the sender branch can edit the draft");
+
+      // The receiver branch's own transfer would be refused on access first.
+      await expect(
+        scm.removeMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          itemId: crypto.randomUUID(),
+        }),
+      ).rejects.toThrow(/not found in transfer/);
+
+      await scm.submitMutasiTransferCore(sender, { transferId: transfer.id });
+      await expect(
+        scm.removeMutasiTransferDraftItemCore(sender, {
+          transferId: transfer.id,
+          itemId: target.id,
+        }),
+      ).rejects.toThrow("Items can only be edited while in SuratJalanDraft");
+
+      // super_admin is the emergency override, and it works in a draft.
+      const draft2 = await createDraft(sender, fromBranch, toBranch, second);
+      const [item2] = await db
+        .select({ id: schema.scmTransferItems.id })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, draft2.transfer.id));
+      await scm.addMutasiTransferDraftItemCore(superAdmin, {
+        transferId: draft2.transfer.id,
+        ingredientId: first,
+        quantity: 1,
+      });
+      const addedRows = await db
+        .select({
+          id: schema.scmTransferItems.id,
+          ingredientId: schema.scmTransferItems.ingredientId,
+        })
+        .from(schema.scmTransferItems)
+        .where(eq(schema.scmTransferItems.scmTransferId, draft2.transfer.id));
+      const addedLine = addedRows.find((r) => r.ingredientId === first);
+      if (!addedLine) throw new Error("expected the added line to exist");
+      expect(item2).toBeDefined();
+      await expect(
+        scm.removeMutasiTransferDraftItemCore(superAdmin, {
+          transferId: draft2.transfer.id,
+          itemId: addedLine.id,
+        }),
+      ).resolves.toMatchObject({ success: true });
+    },
+  );
+});
+
 // =============================================================================
 // DESTINATION CATALOG WARNING (ADR 0023)
 //

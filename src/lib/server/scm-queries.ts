@@ -530,6 +530,82 @@ export const updateProcurementItem = createServerFn({ method: "POST" })
 // the current ingredients.averageCost as unitPrice, mirroring createProcurement.
 // Audit event: 'item-add'. (ADR 0004 §3)
 
+export async function addProcurementItemCore(
+  user: { id: string; role: string; branchId?: string },
+  data: { procurementId: string; ingredientId: string; quantity: number },
+) {
+  return await db.transaction(async (tx) => {
+    const [proc] = await tx
+      .select({
+        id: scmProcurements.id,
+        status: scmProcurements.status,
+        branchId: scmProcurements.branchId,
+      })
+      .from(scmProcurements)
+      .where(eq(scmProcurements.id, data.procurementId))
+      .for("update");
+    if (!proc) throw new Error("Procurement not found");
+    if (proc.status !== "Draft") {
+      throw new Error("Items can only be added while the procurement is in Draft");
+    }
+    if (user.role === "branch_admin" && user.branchId && proc.branchId !== user.branchId) {
+      throw new Error("Forbidden");
+    }
+
+    // Determine next sortOrder
+    const [{ next }] = await tx
+      .select({
+        next: sql<number>`cast(coalesce(max(${scmProcurementItems.sortOrder}), -1) + 1 as integer)`,
+      })
+      .from(scmProcurementItems)
+      .where(eq(scmProcurementItems.scmProcurementId, data.procurementId));
+
+    // Snapshot unitPrice (ADR 0003). Write-path defense: re-check the
+    // ingredient is visible to the caller's branch — the picker is bypassable.
+    const [ing] = await tx
+      .select({ averageCost: ingredients.averageCost })
+      .from(ingredients)
+      .where(
+        and(
+          eq(ingredients.id, data.ingredientId),
+          branchVisibleClause({
+            linkTable: ingredientBranches,
+            linkRowId: ingredientBranches.ingredientId,
+            rowId: ingredients.id,
+            linkBranchId: ingredientBranches.branchId,
+            currentBranchId: user.branchId,
+          }),
+        ),
+      )
+      .limit(1);
+    if (!ing) throw new Error("Forbidden: ingredient is not available to your branch");
+
+    const [row] = await tx
+      .insert(scmProcurementItems)
+      .values({
+        scmProcurementId: data.procurementId,
+        ingredientId: data.ingredientId,
+        quantity: data.quantity,
+        sortOrder: next,
+        unitPrice: ing.averageCost ?? null,
+      })
+      .returning({ id: scmProcurementItems.id });
+
+    await tx.insert(scmProcurementAuditLog).values({
+      scmProcurementId: data.procurementId,
+      event: "item-add",
+      fromState: "Draft",
+      toState: "Draft",
+      itemId: row?.id ?? null,
+      actorId: user.id,
+      actorRole: user.role,
+      note: JSON.stringify({ ingredientId: data.ingredientId, quantity: data.quantity }),
+    });
+
+    return { id: row?.id };
+  });
+}
+
 export const addProcurementItem = createServerFn({ method: "POST" })
   .validator((data: { procurementId: string; ingredientId: string; quantity: number }) => {
     // Quantities are real (fractional allowed) — finite positive required.
@@ -540,76 +616,7 @@ export const addProcurementItem = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const user = await requireRole("branch_admin", "super_admin");
-    return await db.transaction(async (tx) => {
-      const [proc] = await tx
-        .select({
-          id: scmProcurements.id,
-          status: scmProcurements.status,
-          branchId: scmProcurements.branchId,
-        })
-        .from(scmProcurements)
-        .where(eq(scmProcurements.id, data.procurementId))
-        .for("update");
-      if (!proc) throw new Error("Procurement not found");
-      if (proc.status !== "Draft") {
-        throw new Error("Items can only be added while the procurement is in Draft");
-      }
-      if (user.role === "branch_admin" && user.branchId && proc.branchId !== user.branchId) {
-        throw new Error("Forbidden");
-      }
-
-      // Determine next sortOrder
-      const [{ next }] = await tx
-        .select({
-          next: sql<number>`cast(coalesce(max(${scmProcurementItems.sortOrder}), -1) + 1 as integer)`,
-        })
-        .from(scmProcurementItems)
-        .where(eq(scmProcurementItems.scmProcurementId, data.procurementId));
-
-      // Snapshot unitPrice (ADR 0003). Write-path defense: re-check the
-      // ingredient is visible to the caller's branch — the picker is bypassable.
-      const [ing] = await tx
-        .select({ averageCost: ingredients.averageCost })
-        .from(ingredients)
-        .where(
-          and(
-            eq(ingredients.id, data.ingredientId),
-            branchVisibleClause({
-              linkTable: ingredientBranches,
-              linkRowId: ingredientBranches.ingredientId,
-              rowId: ingredients.id,
-              linkBranchId: ingredientBranches.branchId,
-              currentBranchId: user.branchId,
-            }),
-          ),
-        )
-        .limit(1);
-      if (!ing) throw new Error("Forbidden: ingredient is not available to your branch");
-
-      const [row] = await tx
-        .insert(scmProcurementItems)
-        .values({
-          scmProcurementId: data.procurementId,
-          ingredientId: data.ingredientId,
-          quantity: data.quantity,
-          sortOrder: next,
-          unitPrice: ing.averageCost ?? null,
-        })
-        .returning({ id: scmProcurementItems.id });
-
-      await tx.insert(scmProcurementAuditLog).values({
-        scmProcurementId: data.procurementId,
-        event: "item-add",
-        fromState: "Draft",
-        toState: "Draft",
-        itemId: row?.id ?? null,
-        actorId: user.id,
-        actorRole: user.role,
-        note: JSON.stringify({ ingredientId: data.ingredientId, quantity: data.quantity }),
-      });
-
-      return { id: row?.id };
-    });
+    return await addProcurementItemCore(user, data);
   });
 
 // =============================================================================
@@ -619,53 +626,93 @@ export const addProcurementItem = createServerFn({ method: "POST" })
 // Removes an item from a Draft procurement. Gated on Draft status.
 // Audit event: 'item-remove'. (ADR 0004 §3)
 
+export async function removeProcurementItemCore(
+  user: { id: string; role: string; branchId?: string },
+  data: { procurementId: string; itemId: string },
+) {
+  return await db.transaction(async (tx) => {
+    const [proc] = await tx
+      .select({
+        id: scmProcurements.id,
+        status: scmProcurements.status,
+        branchId: scmProcurements.branchId,
+      })
+      .from(scmProcurements)
+      .where(eq(scmProcurements.id, data.procurementId))
+      .for("update");
+    if (!proc) throw new Error("Procurement not found");
+    if (proc.status !== "Draft") {
+      throw new Error("Items can only be removed while the procurement is in Draft");
+    }
+    if (user.role === "branch_admin" && user.branchId && proc.branchId !== user.branchId) {
+      throw new Error("Forbidden");
+    }
+
+    const [item] = await tx
+      .select({
+        id: scmProcurementItems.id,
+        ingredientId: scmProcurementItems.ingredientId,
+        quantity: scmProcurementItems.quantity,
+      })
+      .from(scmProcurementItems)
+      .where(
+        and(
+          eq(scmProcurementItems.id, data.itemId),
+          eq(scmProcurementItems.scmProcurementId, data.procurementId),
+        ),
+      )
+      .limit(1);
+    if (!item) throw new Error("Item not found");
+
+    // `scm_procurement_audit_log.item_id` is ON DELETE no action, so the
+    // delete below is refused while any audit row still points at this line —
+    // and a line whose quantity was edited always has one. Detaching first is
+    // what makes removal possible at all; every entry itself survives, with
+    // its event, actor, time and note intact.
+    await tx
+      .update(scmProcurementAuditLog)
+      .set({ itemId: null })
+      .where(
+        and(
+          eq(scmProcurementAuditLog.scmProcurementId, data.procurementId),
+          eq(scmProcurementAuditLog.itemId, data.itemId),
+        ),
+      );
+
+    await tx
+      .delete(scmProcurementItems)
+      .where(
+        and(
+          eq(scmProcurementItems.id, data.itemId),
+          eq(scmProcurementItems.scmProcurementId, data.procurementId),
+        ),
+      );
+
+    // Written after the delete, and with no itemId: the line it describes no
+    // longer exists, so the note is the whole record.
+    await tx.insert(scmProcurementAuditLog).values({
+      scmProcurementId: data.procurementId,
+      event: "item-remove",
+      fromState: "Draft",
+      toState: "Draft",
+      itemId: null,
+      actorId: user.id,
+      actorRole: user.role,
+      note: JSON.stringify({
+        ingredientId: item.ingredientId,
+        quantity: item.quantity,
+      }),
+    });
+
+    return { ok: true };
+  });
+}
+
 export const removeProcurementItem = createServerFn({ method: "POST" })
   .validator((data: { procurementId: string; itemId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("branch_admin", "super_admin");
-    return await db.transaction(async (tx) => {
-      const [proc] = await tx
-        .select({
-          id: scmProcurements.id,
-          status: scmProcurements.status,
-          branchId: scmProcurements.branchId,
-        })
-        .from(scmProcurements)
-        .where(eq(scmProcurements.id, data.procurementId))
-        .for("update");
-      if (!proc) throw new Error("Procurement not found");
-      if (proc.status !== "Draft") {
-        throw new Error("Items can only be removed while the procurement is in Draft");
-      }
-      if (user.role === "branch_admin" && user.branchId && proc.branchId !== user.branchId) {
-        throw new Error("Forbidden");
-      }
-
-      const deleted = await tx
-        .delete(scmProcurementItems)
-        .where(
-          and(
-            eq(scmProcurementItems.id, data.itemId),
-            eq(scmProcurementItems.scmProcurementId, data.procurementId),
-          ),
-        )
-        .returning({ id: scmProcurementItems.id });
-
-      if (deleted.length === 0) throw new Error("Item not found");
-
-      await tx.insert(scmProcurementAuditLog).values({
-        scmProcurementId: data.procurementId,
-        event: "item-remove",
-        fromState: "Draft",
-        toState: "Draft",
-        itemId: data.itemId,
-        actorId: user.id,
-        actorRole: user.role,
-        note: null,
-      });
-
-      return { ok: true };
-    });
+    return await removeProcurementItemCore(user, data);
   });
 
 // =============================================================================

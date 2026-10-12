@@ -907,3 +907,127 @@ describe("Pengadaan — multiple Central-type branches (production bug 2026-09-2
     },
   );
 });
+
+// =============================================================================
+// DRAFT ITEM ADD / REMOVE
+//
+// `scm_procurement_audit_log.item_id` is ON DELETE no action, so removing a
+// line that any audit row still points at is refused by the database. A line
+// whose quantity was edited always has such a row. These tests pin the
+// detach-then-delete order that makes removal possible at all.
+// =============================================================================
+
+describe("Pengadaan — removing a draft line", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a line whose quantity was edited can still be removed, and the edit stays in the trail",
+    async () => {
+      const outlet = await seedBranch(uniq("PR-RM-OUT"));
+      const first = await seedIngredient(uniq("PR-RM-ING1"));
+      const second = await seedIngredient(uniq("PR-RM-ING2"));
+
+      const requester = await seedUser("branch_admin", outlet);
+      const { id: procurementId } = await scm.createProcurementCore(requester, {
+        branchId: outlet,
+        items: [
+          { ingredientId: first, quantity: 5 },
+          { ingredientId: second, quantity: 6 },
+        ],
+      });
+
+      const rows = await db
+        .select({
+          id: schema.scmProcurementItems.id,
+          ingredientId: schema.scmProcurementItems.ingredientId,
+        })
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.scmProcurementId, procurementId));
+      const target = rows.find((r) => r.ingredientId === second);
+      if (!target) throw new Error("expected the second line to exist");
+
+      // The edit writes an audit row pointing at the line — the exact case that
+      // made removal fail before the audit rows were detached first.
+      await scm.updateProcurementItemCore(requester, {
+        procurementId,
+        itemId: target.id,
+        patch: { quantity: 8 },
+      });
+
+      await expect(
+        scm.removeProcurementItemCore(requester, {
+          procurementId,
+          itemId: target.id,
+        }),
+      ).resolves.toMatchObject({ ok: true });
+
+      const after = await db
+        .select({ id: schema.scmProcurementItems.id })
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.id, target.id));
+      expect(after).toHaveLength(0);
+
+      // The edit's audit entry survives, detached, with its content intact.
+      const trail = await db
+        .select({
+          event: schema.scmProcurementAuditLog.event,
+          itemId: schema.scmProcurementAuditLog.itemId,
+          note: schema.scmProcurementAuditLog.note,
+        })
+        .from(schema.scmProcurementAuditLog)
+        .where(eq(schema.scmProcurementAuditLog.scmProcurementId, procurementId));
+      const update = trail.find((e) => e.event === "item-update");
+      expect(update).toBeDefined();
+      expect(update?.itemId).toBeNull();
+
+      // The removal is recorded, naming the ingredient — there is no row left
+      // to point a foreign key at.
+      const removal = trail.find((e) => e.event === "item-remove");
+      expect(removal?.itemId).toBeNull();
+      expect(JSON.parse(removal?.note ?? "{}")).toMatchObject({ ingredientId: second });
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "removal is refused once the procurement has left Draft, and by another branch",
+    async () => {
+      const outlet = await seedBranch(uniq("PR-RM2-OUT"));
+      const otherOutlet = await seedBranch(uniq("PR-RM2-OTHER"));
+      const first = await seedIngredient(uniq("PR-RM2-ING1"));
+      const second = await seedIngredient(uniq("PR-RM2-ING2"));
+
+      const requester = await seedUser("branch_admin", outlet);
+      const otherBa = await seedUser("branch_admin", otherOutlet);
+      const { id: procurementId } = await scm.createProcurementCore(requester, {
+        branchId: outlet,
+        items: [
+          { ingredientId: first, quantity: 5 },
+          { ingredientId: second, quantity: 6 },
+        ],
+      });
+      const rows = await db
+        .select({
+          id: schema.scmProcurementItems.id,
+          ingredientId: schema.scmProcurementItems.ingredientId,
+        })
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.scmProcurementId, procurementId));
+      const target = rows.find((r) => r.ingredientId === second);
+      if (!target) throw new Error("expected the second line to exist");
+
+      await expect(
+        scm.removeProcurementItemCore(otherBa, { procurementId, itemId: target.id }),
+      ).rejects.toThrow("Forbidden");
+
+      await t(requester, procurementId, "submit");
+      await expect(
+        scm.removeProcurementItemCore(requester, { procurementId, itemId: target.id }),
+      ).rejects.toThrow("Items can only be removed while the procurement is in Draft");
+
+      // The refused removals left the line alone.
+      const after = await db
+        .select({ id: schema.scmProcurementItems.id })
+        .from(schema.scmProcurementItems)
+        .where(eq(schema.scmProcurementItems.id, target.id));
+      expect(after).toHaveLength(1);
+    },
+  );
+});
