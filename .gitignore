@@ -21,3 +21,4 @@ todos.json
 
 # Playwright verify-script output (scripts/verify-*.mjs screenshots)
 screenshots/
+.vercel
