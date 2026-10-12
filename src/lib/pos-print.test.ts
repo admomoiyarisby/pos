@@ -161,11 +161,47 @@ describe("thermal receipt printing", () => {
       right: "30.000",
       bold: true,
     });
-    expect(blocks).toContainEqual({ type: "text", text: "   Extra Telur", size: "small" });
+    // Full size, like the item — separated by the missing bold, not by a
+    // smaller font.
+    expect(blocks).toContainEqual({ type: "text", text: "   Extra Telur" });
     expect(blocks).toContainEqual({ type: "row", left: "TOTAL", right: "34.089", bold: true });
-    expect(blocks[blocks.length - 1]).toEqual({ type: "feed", lines: 3 });
+    expect(blocks[blocks.length - 1]).toEqual({ type: "feed", lines: 6 });
     // Bridged means never touching the browser print dialog.
     expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it("ends every document with the agreed sign-off and a pull-off tail", async () => {
+    for (const print of [
+      () =>
+        printReceipt({
+          order: order,
+          cartItems: [cartItem],
+          branchName: "Omoiyari Sudirman",
+        }),
+      () =>
+        printBill({
+          cartItems: [cartItem],
+          branchName: "Omoiyari Sudirman",
+          subtotal: 30000,
+          voucherDiscount: 0,
+          taxAmount: 3000,
+          finalTotal: 33000,
+          orderCode: "B-1",
+        }),
+      () => printChecker({ cartItems: [cartItem], branchName: "Omoiyari Sudirman" }),
+    ]) {
+      fetchMock.mockClear();
+      await print();
+      const printed = postedBlocks()
+        .map((block) => (block.type === "text" ? block.text : ""))
+        .filter(Boolean);
+      if (printed.includes("Terima kasih dan selamat menikmati.")) {
+        expect(printed).toContain("INI BARU KARAAGE!");
+      }
+      // A cut flush against the last line has to be pulled off by hand, and a
+      // short one tears inside the printer — so every document feeds a tail.
+      expect(postedBlocks()[postedBlocks().length - 1]).toEqual({ type: "feed", lines: 6 });
+    }
   });
 
   it("prints add-on wording the way the Web UI cart does", async () => {
@@ -190,8 +226,8 @@ describe("thermal receipt printing", () => {
     });
 
     const blocks = postedBlocks();
-    expect(blocks).toContainEqual({ type: "text", text: "   Extra Telur", size: "small" });
-    expect(blocks).toContainEqual({ type: "text", text: "   Tanpa Saus Sambal", size: "small" });
+    expect(blocks).toContainEqual({ type: "text", text: "   Extra Telur" });
+    expect(blocks).toContainEqual({ type: "text", text: "   Tanpa Saus Sambal" });
     // The "+"/"X" markers the receipt used to carry are not wording the Web
     // UI cart ever showed, and not wording a kitchen reads.
     expect(blocks.some((block) => block.type === "text" && block.text.includes("+ "))).toBe(false);
@@ -343,7 +379,7 @@ describe("thermal checker printing", () => {
       left: "Pelanggan",
       right: "Dine in / Dapur Uyung",
     });
-    expect(blocks[blocks.length - 1]).toEqual({ type: "feed", lines: 3 });
+    expect(blocks[blocks.length - 1]).toEqual({ type: "feed", lines: 6 });
   });
 
   it("falls back to the browser dialog when no bridge answers", async () => {

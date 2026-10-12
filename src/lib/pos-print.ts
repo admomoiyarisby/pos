@@ -59,13 +59,13 @@ function buildReceiptItemsHtml(cartItems: CartItem[], showPrice = true): string 
         let m = item.modifiers[j];
         parts.push((m.isExclusion ? "Tanpa " : "") + m.name);
       }
-      addonLines =
-        '<div style="font-size: 10px; color: #444; padding-left: 8mm;">' +
-        parts.join("<br>") +
-        "</div>";
+      // Full size, not bold — the same weight the item itself is set at, so
+      // the only thing separating an add-on from its item is the indent and the
+      // missing bold. See `thermalItemLines` for the thermal-side reasoning.
+      addonLines = '<div style="color: #444; padding-left: 8mm;">' + parts.join("<br>") + "</div>";
     }
     let noteLine = item.notes
-      ? '<div style="font-size: 10px; font-style: italic; color: #666; padding-left: 8mm;">Note: ' +
+      ? '<div style="font-style: italic; color: #666; padding-left: 8mm;">Note: ' +
         item.notes +
         "</div>"
       : "";
@@ -98,6 +98,29 @@ function buildReceiptItemsHtml(cartItems: CartItem[], showPrice = true): string 
 // thermal printer gets no page: Cleanter turns a flat list of blocks into
 // ESC/POS bytes, so these carry the same content as blocks instead.
 // ============================================================
+
+/** Sign-off, shared by the receipt and the bill so the two never drift. */
+const FAREWELL = "Terima kasih dan selamat menikmati.";
+
+/** Brand line under the sign-off. */
+const TAGLINE = "INI BARU KARAAGE!";
+
+/**
+ * Blank lines fed after the last text, before the cut.
+ *
+ * The cut lands a few millimetres past the tear bar, so a receipt trimmed to
+ * the last printed line has to be pulled off the slot by hand — and a short
+ * one tears while still partly inside the printer. Feeding several blank lines
+ * gives the tear bar something to work against and leaves a grippable tail.
+ */
+const PULL_TRAILER_FEED_LINES = 6;
+
+/**
+ * Height of one line of text on the roll — used only to size the browser
+ * fallback's blank trailer to match the thermal one. The receipt is set at
+ * 11px with 1.5 line-height, so a line is about 3.7mm.
+ */
+const RECEIPT_LINE_MM = 3.7;
 
 /** Cleanter's line widths: 48 characters on 80mm paper, 32 on 58mm. */
 const THERMAL_80MM_CHARS = 48;
@@ -244,9 +267,14 @@ function thermalMoney(value: number): string {
 
 /**
  * Item lines as blocks: `2x Nasi Goreng .... 50.000`, with add-ons and notes
- * indented underneath in a smaller size. Add-on wording mirrors the cart in
- * the Web UI — the cashier confirmed the order from that screen, so the
- * kitchen has to read the same words off paper.
+ * indented underneath. Add-on wording mirrors the cart in the Web UI — the
+ * cashier confirmed the order from that screen, so the kitchen has to read the
+ * same words off paper.
+ *
+ * Add-ons print at full size, distinguished from the item by the absence of
+ * bold rather than by a smaller font: a half-height line under a full-height
+ * one is hard to read on a thermal head, which has no antialiasing to keep
+ * small glyphs legible.
  *
  * `showPrice` off drops the money column entirely, for the checker slip: it
  * is printed before payment to be checked against the order, not to be paid.
@@ -272,7 +300,6 @@ function thermalItemLines(cartItems: CartItem[], width: number, showPrice = true
       blocks.push(
         ...thermalLines((m.isExclusion ? "Tanpa " : "") + m.name, {
           width,
-          size: "small",
           prefix: THERMAL_ITEM_INDENT,
         }),
       );
@@ -281,7 +308,6 @@ function thermalItemLines(cartItems: CartItem[], width: number, showPrice = true
       blocks.push(
         ...thermalLines("Note: " + item.notes, {
           width,
-          size: "small",
           prefix: THERMAL_ITEM_INDENT,
         }),
       );
@@ -352,13 +378,9 @@ function receiptBlocks({
   blocks.push(
     ...thermalRow("TOTAL", order.totalAmount.toLocaleString("id-ID"), { width, bold: true }),
     { type: "divider" },
-    ...thermalLines("Terima kasih sudah makan di Omoiyari! Selamat menikmati", {
-      width,
-      align: "center",
-      size: "small",
-    }),
-    { type: "text", text: "INI BARU KARAAGE!!", align: "center", bold: true },
-    { type: "feed", lines: 3 },
+    ...thermalLines(FAREWELL, { width, align: "center" }),
+    { type: "text", text: TAGLINE, align: "center", bold: true },
+    { type: "feed", lines: PULL_TRAILER_FEED_LINES },
   );
   return blocks;
 }
@@ -416,8 +438,11 @@ function printReceiptInBrowser({
     ".colhead .qty { width: 8mm; }",
     ".row { display: flex; justify-content: space-between; }",
     ".total { font-size: 13px; font-weight: bold; margin-top: 2mm; }",
-    ".footer { margin-top: 4mm; font-size: 10px; color: #444; text-align: center; }",
+    ".footer { margin-top: 4mm; font-size: 11px; color: #444; text-align: center; }",
     ".tagline { margin-top: 1mm; font-size: 12px; font-weight: bold; text-align: center; }",
+    // Blank tail so the receipt can be pulled off the slot without tearing it
+    // inside the printer — the browser stand-in for the thermal feed.
+    ".trailer { height: " + (PULL_TRAILER_FEED_LINES * RECEIPT_LINE_MM).toString() + "mm; }",
     "</style></head><body>",
     '<div class="wm-wrap"><img src="/logo-for-light-mode.png" alt="" /></div>',
     '<div class="content">',
@@ -468,8 +493,10 @@ function printReceiptInBrowser({
       order.totalAmount.toLocaleString("id-ID") +
       "</span></div>",
     '<div class="divider"></div>',
-    '<div class="footer">Terima kasih sudah makan di Omoiyari! Selamat menikmati 🙏</div>',
-    '<div class="tagline">INI BARU KARAAGE!!</div>',
+    '<div class="footer">' + FAREWELL + "</div>",
+    '<div class="tagline">' + TAGLINE + "</div>",
+    // Blank tail for the tear bar — see PULL_TRAILER_FEED_LINES.
+    '<div class="trailer"></div>',
     "</div>",
     "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",
     "</body></html>",
@@ -533,14 +560,10 @@ function billBlocks({
   blocks.push(
     ...thermalRow("TOTAL", finalTotal.toLocaleString("id-ID"), { width, bold: true }),
     { type: "divider" },
-    ...thermalLines("Terima kasih sudah makan di Omoiyari! Selamat menikmati", {
-      width,
-      align: "center",
-      size: "small",
-    }),
-    { type: "text", text: "INI BARU KARAAGE!!", align: "center", bold: true },
+    ...thermalLines(FAREWELL, { width, align: "center" }),
+    { type: "text", text: TAGLINE, align: "center", bold: true },
     { type: "text", text: "BELUM DIBAYAR", align: "center", bold: true },
-    { type: "feed", lines: 3 },
+    { type: "feed", lines: PULL_TRAILER_FEED_LINES },
   );
   return blocks;
 }
@@ -598,8 +621,11 @@ function printBillInBrowser({
     ".colhead .qty { width: 8mm; }",
     ".row { display: flex; justify-content: space-between; }",
     ".total { font-size: 13px; font-weight: bold; margin-top: 2mm; }",
-    ".footer { margin-top: 4mm; font-size: 10px; color: #444; text-align: center; }",
+    ".footer { margin-top: 4mm; font-size: 11px; color: #444; text-align: center; }",
     ".tagline { margin-top: 1mm; font-size: 12px; font-weight: bold; text-align: center; }",
+    // Blank tail so the receipt can be pulled off the slot without tearing it
+    // inside the printer — the browser stand-in for the thermal feed.
+    ".trailer { height: " + (PULL_TRAILER_FEED_LINES * RECEIPT_LINE_MM).toString() + "mm; }",
     ".watermark { text-align: center; border: 2px dashed #999; padding: 2mm; margin: 3mm 0; color: #999; font-weight: bold; font-size: 13px; }",
     "</style></head><body>",
     '<div class="wm-wrap"><img src="/logo-for-light-mode.png" alt="" /></div>',
@@ -644,9 +670,11 @@ function printBillInBrowser({
       finalTotal.toLocaleString("id-ID") +
       "</span></div>",
     '<div class="divider"></div>',
-    '<div class="footer">Terima kasih sudah makan di Omoiyari! Selamat menikmati 🙏</div>',
-    '<div class="tagline">INI BARU KARAAGE!!</div>',
+    '<div class="footer">' + FAREWELL + "</div>",
+    '<div class="tagline">' + TAGLINE + "</div>",
     '<div class="watermark">BELUM DIBAYAR</div>',
+    // Blank tail for the tear bar — see PULL_TRAILER_FEED_LINES.
+    '<div class="trailer"></div>',
     "</div>",
     "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",
     "</body></html>",
@@ -717,7 +745,7 @@ function checkerBlocks({
     ...thermalLines("Jml  Nama Menu", { width, size: "small" }),
   );
   blocks.push(...thermalItemLines(cartItems, width, false));
-  blocks.push({ type: "feed", lines: 3 });
+  blocks.push({ type: "feed", lines: PULL_TRAILER_FEED_LINES });
   return blocks;
 }
 

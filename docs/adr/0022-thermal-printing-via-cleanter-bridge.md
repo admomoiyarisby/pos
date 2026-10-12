@@ -45,6 +45,16 @@ localhost-only HTTP bridge, and keep the browser print dialog as the fallback.**
    Receipt, bill and checker go on 58mm, matching the existing 57mm HTML page;
    the invoice goes on 80mm, since a four-column A4 invoice cannot be squeezed
    onto 58mm — each item becomes a name line plus a quantity/total line.
+
+   Two typographic rules apply to all of them. **Add-ons print at the same size
+   as their item**, distinguished by the absence of bold rather than by a
+   smaller font: a thermal head has no antialiasing, so half-height glyphs under
+   full-height ones are markedly harder to read, and the item is the thing that
+   needs the weight. **Every document feeds a blank tail** before the cut
+   (`PULL_TRAILER_FEED_LINES`). The cut lands a few millimetres past the tear
+   bar, so a receipt trimmed to its last printed line has to be pulled off the
+   slot by hand and a short one tears while still partly inside the printer.
+
 3. **Bridge first, browser dialog second.** `printReceipt`, `printBill`,
    `printChecker` and `printSCMInvoice` now await `printViaBridge` and fall
    back to the unchanged HTML popup only when the call never connected. When
