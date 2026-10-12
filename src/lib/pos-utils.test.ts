@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  ACTIVE_REQUESTS_POLL_MS,
+  IDLE_REQUESTS_POLL_MS,
+  activeRequestsPollMs,
   appliedModifierLines,
   appliedModifiersSummary,
   calculateCartCount,
@@ -7,7 +10,7 @@ import {
   getStockQuantity,
   resolveAppliedVoucher,
 } from "#/lib/pos-utils";
-import type { AppliedModifier } from "#/lib/pos-utils";
+import type { ActiveRequestRow, AppliedModifier } from "#/lib/pos-utils";
 import type { CartItem, MenuItem, Voucher } from "#/lib/pos-types";
 
 const baseItem: MenuItem = {
@@ -200,5 +203,46 @@ describe("applied modifier formatting", () => {
 
   it("joins group lines into a single summary string", () => {
     expect(appliedModifiersSummary([pedas, keju])).toBe("Level Pedas: Pedas · Topping: Keju");
+  });
+});
+
+describe("activeRequestsPollMs", () => {
+  let req = (
+    print: ActiveRequestRow["print"],
+    cancel: ActiveRequestRow["cancel"] = null,
+  ): ActiveRequestRow => ({ print, cancel });
+  let printReq = (status: string) => req({ requestId: "p1", status });
+  let cancelReq = (status: string) =>
+    req({ requestId: "p1", status: "Approved" }, { requestId: "c1", status, reason: "" });
+
+  it("polls fast while a print request is awaiting approval", () => {
+    expect(activeRequestsPollMs([printReq("Pending")])).toBe(ACTIVE_REQUESTS_POLL_MS);
+  });
+
+  it("polls fast while a cancel request is awaiting approval", () => {
+    expect(activeRequestsPollMs([cancelReq("Pending")])).toBe(ACTIVE_REQUESTS_POLL_MS);
+  });
+
+  it("finds the pending row among many, rather than only checking the first", () => {
+    expect(
+      activeRequestsPollMs([printReq("Approved"), printReq("Approved"), cancelReq("Pending")]),
+    ).toBe(ACTIVE_REQUESTS_POLL_MS);
+  });
+
+  it("slows down once nothing is pending", () => {
+    expect(activeRequestsPollMs([])).toBe(IDLE_REQUESTS_POLL_MS);
+    expect(activeRequestsPollMs(undefined)).toBe(IDLE_REQUESTS_POLL_MS);
+    expect(activeRequestsPollMs([req(null, null)])).toBe(IDLE_REQUESTS_POLL_MS);
+  });
+
+  it("does not poll fast for a request that is already approved", () => {
+    // An approved request is rendered as actionable from the data the cashier
+    // already holds; what happens next is their click, not a poll.
+    expect(activeRequestsPollMs([printReq("Approved")])).toBe(IDLE_REQUESTS_POLL_MS);
+    expect(activeRequestsPollMs([cancelReq("Approved")])).toBe(IDLE_REQUESTS_POLL_MS);
+  });
+
+  it("cuts idle traffic hard — the 5s poll was 51.8% of all server calls", () => {
+    expect(IDLE_REQUESTS_POLL_MS / ACTIVE_REQUESTS_POLL_MS).toBe(12);
   });
 });

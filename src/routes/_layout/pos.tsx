@@ -50,7 +50,8 @@ import { toast } from "sonner";
 
 import type { CartModifier, CartItem, MenuItem, Voucher, OrderResult } from "#/lib/pos-types";
 import { printReceipt, printBill, printChecker } from "#/lib/pos-print";
-import { getStockQuantity, resolveAppliedVoucher } from "#/lib/pos-utils";
+import { activeRequestsPollMs, getStockQuantity, resolveAppliedVoucher } from "#/lib/pos-utils";
+import type { ActiveRequestRow } from "#/lib/pos-utils";
 
 import MenuGrid from "#/components/pos/MenuGrid";
 import CartSidebar from "#/components/pos/CartSidebar";
@@ -368,18 +369,22 @@ function PosPage() {
       return getActiveRequestsForOrders({ data: { orderIds: orderIds } });
     },
     enabled: orderIds.length > 0,
-    refetchInterval: 5000,
+    // Fast only while an approval is actually outstanding. Reading the query's
+    // own data (rather than a value captured at setup) means the cadence drops
+    // the moment the last request is consumed, not one render later.
+    refetchInterval: function (query) {
+      // SAFETY: `query` is this query — the callback React Query passes to
+      // refetchInterval is typed against the query's own unknown data, but the
+      // only queryFn feeding this key is `getActiveRequestsForOrders`, whose
+      // result is `ActiveRequestRow[]`. Reading a stale value can only make the
+      // cadence wrong for one tick, never miscast a shape at runtime.
+      return activeRequestsPollMs(query.state.data as ActiveRequestRow[] | undefined);
+    },
   });
   let activeRequestsData = activeRequestsResult.data ?? [];
 
   // Convert array to a record keyed by orderId for O(1) lookup
-  let activeRequestsMap: Record<
-    string,
-    {
-      print: { requestId: string; status: string } | null;
-      cancel: { requestId: string; status: string; reason: string } | null;
-    }
-  > = {};
+  let activeRequestsMap: Record<string, ActiveRequestRow> = {};
   for (let i = 0; i < activeRequestsData.length; i++) {
     let r = activeRequestsData[i];
     activeRequestsMap[r.orderId] = r;

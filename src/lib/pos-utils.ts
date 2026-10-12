@@ -74,6 +74,50 @@ export function resolveAppliedVoucher(
   return { voucher: selected, discount: Math.min(raw, cartTotal) };
 }
 
+// ── Reprint / cancel approval polling ──
+//
+// The POS polls for pending print and cancel requests because the approval
+// happens on a *different* user session — there is no push, so the poll is the
+// only way the requesting cashier learns a supervisor said yes.
+//
+// Measured on production (35 min of Vercel request logs, serverFn ids resolved
+// against the built bundle): this poll was 51.8% of every server call the app
+// made, ticking every 5s whether or not anything was pending. An order with no
+// outstanding request cannot change state, so most of those ticks re-read rows
+// that could not move.
+//
+// Only a `Pending` request justifies the fast cadence. `Approved` is already
+// rendered as actionable from the response the cashier holds, and what happens
+// next is driven by their own click — so polling faster buys nothing.
+
+export const ACTIVE_REQUESTS_POLL_MS = 5_000;
+export const IDLE_REQUESTS_POLL_MS = 60_000;
+
+export interface ActiveRequestRow {
+  print: { requestId: string; status: string } | null;
+  cancel: { requestId: string; status: string; reason: string } | null;
+}
+
+/**
+ * Poll cadence for the reprint/cancel approval poll: fast while an approval is
+ * outstanding, slow once the queue is empty.
+ *
+ * `Pending` is the only status worth the fast tick — it is the one a supervisor
+ * can change out from under the client. An `Approved` request is already
+ * visible and actionable, so a slower tick costs nothing except latency in the
+ * rare case another terminal consumes it first.
+ */
+export function activeRequestsPollMs(rows: ActiveRequestRow[] | undefined): number {
+  if (!rows) return IDLE_REQUESTS_POLL_MS;
+  for (let i = 0; i < rows.length; i++) {
+    let row = rows[i];
+    if (row.print?.status === "Pending" || row.cancel?.status === "Pending") {
+      return ACTIVE_REQUESTS_POLL_MS;
+    }
+  }
+  return IDLE_REQUESTS_POLL_MS;
+}
+
 // ── Applied modifier formatting (order history / data-penjualan detail) ──
 //
 // The server returns each applied option as a structured row carrying its
