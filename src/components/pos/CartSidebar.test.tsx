@@ -32,6 +32,7 @@ function renderCart(overrides: Partial<React.ComponentProps<typeof CartSidebar>>
     onPaymentMethodChange: vi.fn(),
     onCheckout: vi.fn(),
     onPrintBill: vi.fn(),
+    onPrintChecker: vi.fn(),
     onClearError: vi.fn(),
     onClearStockError: vi.fn(),
     onPpnToggle: vi.fn(),
@@ -107,6 +108,7 @@ describe("CartSidebar", () => {
         onPaymentMethodChange={vi.fn()}
         onCheckout={vi.fn()}
         onPrintBill={vi.fn()}
+        onPrintChecker={vi.fn()}
         onClearError={vi.fn()}
         onClearStockError={vi.fn()}
         onPpnToggle={vi.fn()}
@@ -139,6 +141,7 @@ describe("CartSidebar", () => {
         onPaymentMethodChange={vi.fn()}
         onCheckout={vi.fn()}
         onPrintBill={vi.fn()}
+        onPrintChecker={vi.fn()}
         onClearError={vi.fn()}
         onClearStockError={vi.fn()}
         onPpnToggle={vi.fn()}
@@ -165,6 +168,25 @@ describe("CartSidebar", () => {
 
     fireEvent.click(voucherButton);
     expect(callbacks.onToggleVoucher).not.toHaveBeenCalled();
+  });
+
+  it("sends the bill and checker print actions separately", () => {
+    const callbacks = renderCart();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cetak Tagihan" }));
+    expect(callbacks.onPrintBill).toHaveBeenCalledTimes(1);
+    expect(callbacks.onPrintChecker).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cetak Checker" }));
+    expect(callbacks.onPrintChecker).toHaveBeenCalledTimes(1);
+    expect(callbacks.onPrintBill).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides both print actions when the cart is empty", () => {
+    renderCart({ cart: [] });
+
+    expect(screen.queryByRole("button", { name: "Cetak Tagihan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cetak Checker" })).toBeNull();
   });
 
   it("switches to the history panel", () => {

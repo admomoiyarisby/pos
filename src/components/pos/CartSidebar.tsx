@@ -35,6 +35,7 @@ interface CartSidebarProps {
   onPaymentMethodChange: (method: string) => void;
   onCheckout: () => void;
   onPrintBill: () => void;
+  onPrintChecker: () => void;
   onClearError: () => void;
   onClearStockError: () => void;
   onPpnToggle: (checked: boolean) => void;
@@ -66,6 +67,7 @@ export default function CartSidebar({
   onPaymentMethodChange,
   onCheckout,
   onPrintBill,
+  onPrintChecker,
   onClearError,
   onClearStockError,
   onPpnToggle,
@@ -298,16 +300,26 @@ export default function CartSidebar({
               </div>
             )}
 
-            {/* Print Bill button */}
+            {/* Print Bill + Checker buttons */}
             {cart.length > 0 && (
-              <button
-                onClick={function () {
-                  onPrintBill();
-                }}
-                className="w-full h-8 rounded-md border border-dashed text-xs font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-1.5"
-              >
-                <Printer className="h-3 w-3" /> Cetak Tagihan
-              </button>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={function () {
+                    onPrintBill();
+                  }}
+                  className="flex-1 h-8 rounded-md border border-dashed text-xs font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-1.5"
+                >
+                  <Printer className="h-3 w-3" /> Cetak Tagihan
+                </button>
+                <button
+                  onClick={function () {
+                    onPrintChecker();
+                  }}
+                  className="flex-1 h-8 rounded-md border border-dashed text-xs font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-1.5"
+                >
+                  <Printer className="h-3 w-3" /> Cetak Checker
+                </button>
+              </div>
             )}
 
             {/* Checkout button */}

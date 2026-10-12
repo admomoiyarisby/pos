@@ -49,7 +49,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { toast } from "sonner";
 
 import type { CartModifier, CartItem, MenuItem, Voucher, OrderResult } from "#/lib/pos-types";
-import { printReceipt, printBill } from "#/lib/pos-print";
+import { printReceipt, printBill, printChecker } from "#/lib/pos-print";
 import { getStockQuantity, resolveAppliedVoucher } from "#/lib/pos-utils";
 
 import MenuGrid from "#/components/pos/MenuGrid";
@@ -1450,25 +1450,42 @@ function PosPage() {
                         </div>
                       )}
                       {cart.length > 0 && (
-                        <button
-                          onClick={function () {
-                            void printBill({
-                              cartItems: cart,
-                              branchName: userBranch?.name ?? "Cabang",
-                              branchAddress: userBranch?.location,
-                              branchPhone: userBranch?.phone,
-                              subtotal: cartTotal,
-                              voucherDiscount: voucherDiscount,
-                              taxAmount: taxAmount,
-                              finalTotal: finalTotal,
-                              customerName: customerName || undefined,
-                              orderCode: orderCode || undefined,
-                            });
-                          }}
-                          className="w-full h-9 rounded-full border border-dashed text-sm font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-1.5"
-                        >
-                          <Receipt className="h-3.5 w-3.5" /> Cetak Tagihan
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={function () {
+                              void printBill({
+                                cartItems: cart,
+                                branchName: userBranch?.name ?? "Cabang",
+                                branchAddress: userBranch?.location,
+                                branchPhone: userBranch?.phone,
+                                subtotal: cartTotal,
+                                voucherDiscount: voucherDiscount,
+                                taxAmount: taxAmount,
+                                finalTotal: finalTotal,
+                                customerName: customerName || undefined,
+                                orderCode: orderCode || undefined,
+                              });
+                            }}
+                            className="flex-1 h-9 rounded-full border border-dashed text-sm font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-1.5"
+                          >
+                            <Receipt className="h-3.5 w-3.5" /> Cetak Tagihan
+                          </button>
+                          <button
+                            onClick={function () {
+                              void printChecker({
+                                cartItems: cart,
+                                branchName: userBranch?.name ?? "Cabang",
+                                branchAddress: userBranch?.location,
+                                branchPhone: userBranch?.phone,
+                                customerName: customerName || undefined,
+                                orderCode: orderCode || undefined,
+                              });
+                            }}
+                            className="flex-1 h-9 rounded-full border border-dashed text-sm font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-1.5"
+                          >
+                            <Receipt className="h-3.5 w-3.5" /> Cetak Checker
+                          </button>
+                        </div>
                       )}
                       <button
                         onClick={handleCheckout}
@@ -1902,6 +1919,16 @@ function PosPage() {
               voucherDiscount: voucherDiscount,
               taxAmount: taxAmount,
               finalTotal: finalTotal,
+              customerName: customerName || undefined,
+              orderCode: orderCode || undefined,
+            });
+          }}
+          onPrintChecker={function () {
+            void printChecker({
+              cartItems: cart,
+              branchName: userBranch?.name ?? "Cabang",
+              branchAddress: userBranch?.location,
+              branchPhone: userBranch?.phone,
               customerName: customerName || undefined,
               orderCode: orderCode || undefined,
             });

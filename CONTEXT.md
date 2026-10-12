@@ -16,6 +16,10 @@ _Avoid_: Invoice (when referring to customer receipts; invoice is reserved for S
 A pre-checkout printed document for dine-in orders, generated before payment. Shows Kode Order (from the external platform when applicable, otherwise "-") and Pelanggan (customer name or "-").
 _Avoid_: Invoice, receipt
 
+**Checker**:
+A pre-payment slip read back at the counter to confirm an order before it is paid. Carries the items, quantities and add-ons of a Bill — and no money: no prices, no totals, no sign-off. Titled `CHECKER`.
+_Avoid_: Invoice, receipt, Bill
+
 **Thermal Print (Cetak Termal)**:
 Printing a struk or bill on a Bluetooth Classic (ESC/POS) roll printer attached to the cashier's Android tablet. Browsers cannot reach such a printer — Web Bluetooth is Bluetooth LE only — so printing goes through a local bridge app (Cleanter) that runs a `localhost` HTTP server on the same tablet; the web app POSTs a document as JSON blocks and the bridge converts them to ESC/POS bytes. See ADR 0022. On a desktop, where no bridge exists, the same documents fall back to the browser print dialog.
 _Avoid_: Bluetooth printing, direct printing, ESC/POS over the browser

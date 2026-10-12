@@ -5,7 +5,7 @@
 import { toast } from "sonner";
 
 import { printViaBridge } from "./print-bridge";
-import type { BridgeBlock } from "./print-bridge";
+import type { BridgeAlign, BridgeBlock, BridgeTextSize } from "./print-bridge";
 import type { CartItem, OrderResult } from "./pos-types";
 
 interface PrintBillParams {
@@ -42,18 +42,22 @@ const RECEIPT_WIDTH_MM = 57;
 /**
  * Receipt item layout: Jumlah | Nama menu | Harga, with add-ons (modifiers)
  * indented under the item name. Shared by the customer receipt only — the
- * dine-in bill keeps its own Nama | Qty | Harga layout.
+ * dine-in bill keeps its own Nama | Qty | Harga layout. The checker slip is
+ * the same list with `showPrice` off: it exists to be checked, not charged.
  */
-function buildReceiptItemsHtml(cartItems: CartItem[]): string {
+function buildReceiptItemsHtml(cartItems: CartItem[], showPrice = true): string {
   let itemsHtml = "";
   for (let i = 0; i < cartItems.length; i++) {
     let item = cartItems[i];
     let addonLines = "";
     if (item.modifiers.length > 0) {
+      // Same wording as the cart the cashier confirmed from: a bare add-on
+      // name, or "Tanpa" for an exclusion. The kitchen reads this line, so it
+      // has to say what the screen said.
       let parts: string[] = [];
       for (let j = 0; j < item.modifiers.length; j++) {
         let m = item.modifiers[j];
-        parts.push((m.isExclusion ? "X " : "+ ") + m.name);
+        parts.push((m.isExclusion ? "Tanpa " : "") + m.name);
       }
       addonLines =
         '<div style="font-size: 10px; color: #444; padding-left: 8mm;">' +
@@ -71,12 +75,14 @@ function buildReceiptItemsHtml(cartItems: CartItem[]): string {
       '<div style="width: 8mm; text-align: left;">' +
       item.quantity +
       "</div>" +
-      '<div style="flex: 1;">' +
+      '<div style="flex: 1; min-width: 0; overflow-wrap: break-word;">' +
       item.name +
       "</div>" +
-      '<div style="text-align: right; white-space: nowrap;">' +
-      (item.price * item.quantity).toLocaleString("id-ID") +
-      "</div>" +
+      (showPrice
+        ? '<div style="text-align: right; white-space: nowrap;">' +
+          (item.price * item.quantity).toLocaleString("id-ID") +
+          "</div>"
+        : "") +
       "</div>" +
       addonLines +
       noteLine +
@@ -97,8 +103,33 @@ function buildReceiptItemsHtml(cartItems: CartItem[]): string {
 const THERMAL_80MM_CHARS = 48;
 const THERMAL_58MM_CHARS = 32;
 
-/** How much of a line our own item labels may take before the price. */
-const THERMAL_ITEM_LABEL_CHARS = THERMAL_58MM_CHARS - 10;
+/** Add-ons sit this far in, and stay there however far their name wraps. */
+const THERMAL_ITEM_INDENT = "   ";
+
+/**
+ * Below this a label has no room left to share a line with its value, so the
+ * pair stops being columns and becomes two stacked lines instead.
+ */
+const THERMAL_MIN_LABEL_CHARS = 12;
+
+interface ThermalTextOptions {
+  /** Printable width in characters — 32 on 58mm, 48 on 80mm. */
+  width: number;
+  align?: BridgeAlign;
+  bold?: boolean;
+  size?: BridgeTextSize;
+  /** Indent for the first line — how an add-on tucks under its item. */
+  prefix?: string;
+  /** Indent for wrapped continuation lines. Defaults to `prefix`. */
+  indent?: string;
+}
+
+interface ThermalRowOptions {
+  width: number;
+  bold?: boolean;
+  /** Indent that wrapped label lines hang under column one. */
+  indent?: string;
+}
 
 /**
  * Receipt text lands on paper, not in a DOM: a stray newline would split a
@@ -108,11 +139,103 @@ function thermalText(text: string): string {
   return text.replace(/\s+/gu, " ").trim();
 }
 
-/** Thermal print heads stop at the paper edge, so clip and mark the cut. */
-function fitThermal(text: string, maxChars: number): string {
-  let flat = thermalText(text);
-  if (flat.length <= maxChars) return flat;
-  return flat.slice(0, Math.max(maxChars - 3, 0)) + "...";
+/**
+ * A print head stops at the paper edge, and Cleanter marks whatever runs past
+ * it with an ellipsis. On a menu like "Combo Hemat C (Caramel + Free Pork +
+ * Extra Teh)" that yields "Combo Hemat C (Crum..." — which tells the kitchen
+ * nothing at all. So no line is ever handed over too wide: text is wrapped
+ * here instead, breaking on spaces so a word is never split.
+ */
+function wrapThermal(
+  text: string,
+  width: number,
+  firstIndent = "",
+  restIndent = firstIndent,
+): string[] {
+  let words = thermalText(text).split(" ").filter(Boolean);
+  let lines: string[] = [];
+  let current = "";
+  for (let i = 0; i < words.length; i++) {
+    let word = words[i];
+    let limit = Math.max(width - (lines.length === 0 ? firstIndent.length : restIndent.length), 1);
+    if (word.length > limit) {
+      if (current) {
+        lines.push(current);
+        current = "";
+      }
+      // A single token longer than the paper (a code, a URL) still has to fit.
+      let room = Math.max(width - restIndent.length, 1);
+      let rest = word;
+      while (rest.length > room) {
+        lines.push(rest.slice(0, room));
+        rest = rest.slice(room);
+      }
+      current = rest;
+      continue;
+    }
+    let candidate = current ? current + " " + word : word;
+    if (candidate.length <= limit) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = word;
+  }
+  if (current) lines.push(current);
+  return lines.map(function (line, index) {
+    return (index === 0 ? firstIndent : restIndent) + line;
+  });
+}
+
+/** Wrapped text as one `text` block per line — a roll has no page to flow. */
+function thermalLines(text: string, opts: ThermalTextOptions): BridgeBlock[] {
+  return wrapThermal(text, opts.width, opts.prefix, opts.indent ?? opts.prefix).map(
+    function (line) {
+      return {
+        type: "text",
+        text: line,
+        align: opts.align,
+        bold: opts.bold,
+        size: opts.size,
+      };
+    },
+  );
+}
+
+/**
+ * A label/value pair that wraps instead of clipping. When both sides cannot
+ * share one line, the label takes the lines it needs and the value stays
+ * flush-right on the last of them — the column still lines up down the
+ * receipt, and nothing is cut off.
+ */
+function thermalRow(left: string, right: string, opts: ThermalRowOptions): BridgeBlock[] {
+  let flatLeft = thermalText(left);
+  let flatRight = thermalText(right);
+  if (!flatLeft) {
+    return [{ type: "row", left: "", right: flatRight, bold: opts.bold }];
+  }
+  if (flatLeft.length + flatRight.length + 1 <= opts.width) {
+    return [{ type: "row", left: flatLeft, right: flatRight, bold: opts.bold }];
+  }
+  let labelWidth = opts.width - flatRight.length - 1;
+  if (labelWidth < THERMAL_MIN_LABEL_CHARS) {
+    // The value is wider than the paper can share with anything. Stack it
+    // under the label instead, wrapped, rather than let the head clip it.
+    let blocks = thermalLines(flatLeft, {
+      width: opts.width,
+      bold: opts.bold,
+      prefix: opts.indent,
+    });
+    blocks.push(...thermalLines(flatRight, { width: opts.width, bold: opts.bold }));
+    return blocks;
+  }
+  let lines = wrapThermal(flatLeft, labelWidth, "", opts.indent);
+  let last = lines.pop() ?? "";
+  let blocks: BridgeBlock[] = lines.map(function (line) {
+    return { type: "text", text: line, bold: opts.bold };
+  });
+  blocks.push({ type: "row", left: last, right: flatRight, bold: opts.bold });
+  return blocks;
 }
 
 function thermalMoney(value: number): string {
@@ -120,33 +243,48 @@ function thermalMoney(value: number): string {
 }
 
 /**
- * Item lines as blocks: `2x Nasi Goreng .... 50.000`, with modifiers and
- * notes indented underneath in a smaller size.
+ * Item lines as blocks: `2x Nasi Goreng .... 50.000`, with add-ons and notes
+ * indented underneath in a smaller size. Add-on wording mirrors the cart in
+ * the Web UI — the cashier confirmed the order from that screen, so the
+ * kitchen has to read the same words off paper.
+ *
+ * `showPrice` off drops the money column entirely, for the checker slip: it
+ * is printed before payment to be checked against the order, not to be paid.
  */
-function thermalItemLines(cartItems: CartItem[]): BridgeBlock[] {
+function thermalItemLines(cartItems: CartItem[], width: number, showPrice = true): BridgeBlock[] {
   let blocks: BridgeBlock[] = [];
   for (let i = 0; i < cartItems.length; i++) {
     let item = cartItems[i];
-    blocks.push({
-      type: "row",
-      left: fitThermal(item.quantity + "x " + item.name, THERMAL_ITEM_LABEL_CHARS),
-      right: (item.price * item.quantity).toLocaleString("id-ID"),
-      bold: true,
-    });
+    let label = item.quantity + "x " + item.name;
+    if (showPrice) {
+      blocks.push(
+        ...thermalRow(label, (item.price * item.quantity).toLocaleString("id-ID"), {
+          width,
+          bold: true,
+          indent: THERMAL_ITEM_INDENT,
+        }),
+      );
+    } else {
+      blocks.push(...thermalLines(label, { width, bold: true, indent: THERMAL_ITEM_INDENT }));
+    }
     for (let j = 0; j < item.modifiers.length; j++) {
       let m = item.modifiers[j];
-      blocks.push({
-        type: "text",
-        text: fitThermal((m.isExclusion ? "X " : "+ ") + m.name, THERMAL_58MM_CHARS),
-        size: "small",
-      });
+      blocks.push(
+        ...thermalLines((m.isExclusion ? "Tanpa " : "") + m.name, {
+          width,
+          size: "small",
+          prefix: THERMAL_ITEM_INDENT,
+        }),
+      );
     }
     if (item.notes) {
-      blocks.push({
-        type: "text",
-        text: fitThermal("Note: " + item.notes, THERMAL_58MM_CHARS),
-        size: "small",
-      });
+      blocks.push(
+        ...thermalLines("Note: " + item.notes, {
+          width,
+          size: "small",
+          prefix: THERMAL_ITEM_INDENT,
+        }),
+      );
     }
   }
   return blocks;
@@ -172,73 +310,53 @@ function receiptBlocks({
   branchAddress,
   branchPhone,
 }: PrintReceiptParams): BridgeBlock[] {
+  let width = THERMAL_58MM_CHARS;
   let idStr = order.id.slice(0, 8).toUpperCase();
   let blocks: BridgeBlock[] = [
     { type: "text", text: "Omoiyari", align: "center", bold: true, size: "large" },
-    {
-      type: "text",
-      text: thermalText(branchAddress || branchName),
-      align: "center",
-      size: "small",
-    },
   ];
+  blocks.push(
+    ...thermalLines(branchAddress || branchName, { width, align: "center", size: "small" }),
+  );
   if (branchAddress) {
-    blocks.push({
-      type: "text",
-      text: thermalText(branchName),
-      align: "center",
-      size: "small",
-    });
+    blocks.push(...thermalLines(branchName, { width, align: "center", size: "small" }));
   }
   blocks.push(
-    {
-      type: "text",
-      text: "Telp: " + thermalText(branchPhone || "-"),
+    ...thermalLines("Telp: " + (branchPhone || "-"), { width, align: "center", size: "small" }),
+    ...thermalLines(new Date().toLocaleString("id-ID"), {
+      width,
       align: "center",
       size: "small",
-    },
-    {
-      type: "text",
-      text: new Date().toLocaleString("id-ID"),
-      align: "center",
-      size: "small",
-    },
+    }),
     { type: "divider" },
-    { type: "row", left: "Kode Order", right: thermalText(order.orderCode || idStr) },
-    { type: "row", left: "Pelanggan", right: thermalText(order.customerName || "-") },
-    { type: "row", left: "Channel", right: thermalText(order.channel) },
-    { type: "row", left: "Pembayaran", right: thermalText(order.paymentMethod || "-") },
+    ...thermalRow("Kode Order", order.orderCode || idStr, { width }),
+    ...thermalRow("Pelanggan", order.customerName || "-", { width }),
+    ...thermalRow("Channel", order.channel, { width }),
+    ...thermalRow("Pembayaran", order.paymentMethod || "-", { width }),
     { type: "divider" },
-    { type: "row", left: "Jml  Nama Menu", right: "Harga" },
+    ...thermalRow("Jml  Nama Menu", "Harga", { width }),
   );
-  for (const block of thermalItemLines(cartItems)) blocks.push(block);
+  blocks.push(...thermalItemLines(cartItems, width));
   blocks.push(
     { type: "divider" },
-    { type: "row", left: "Subtotal", right: order.subtotal.toLocaleString("id-ID") },
+    ...thermalRow("Subtotal", order.subtotal.toLocaleString("id-ID"), { width }),
   );
   if (order.voucherDiscount) {
-    blocks.push({
-      type: "row",
-      left: "Diskon",
-      right: "-" + order.voucherDiscount.toLocaleString("id-ID"),
-    });
+    blocks.push(
+      ...thermalRow("Diskon", "-" + order.voucherDiscount.toLocaleString("id-ID"), { width }),
+    );
   }
   if (order.taxAmount) {
-    blocks.push({
-      type: "row",
-      left: "PB1",
-      right: order.taxAmount.toLocaleString("id-ID"),
-    });
+    blocks.push(...thermalRow("PB1", order.taxAmount.toLocaleString("id-ID"), { width }));
   }
   blocks.push(
-    { type: "row", left: "TOTAL", right: order.totalAmount.toLocaleString("id-ID"), bold: true },
+    ...thermalRow("TOTAL", order.totalAmount.toLocaleString("id-ID"), { width, bold: true }),
     { type: "divider" },
-    {
-      type: "text",
-      text: "Terima kasih sudah makan di Omoiyari! Selamat menikmati",
+    ...thermalLines("Terima kasih sudah makan di Omoiyari! Selamat menikmati", {
+      width,
       align: "center",
       size: "small",
-    },
+    }),
     { type: "text", text: "INI BARU KARAAGE!!", align: "center", bold: true },
     { type: "feed", lines: 3 },
   );
@@ -285,7 +403,7 @@ function printReceiptInBrowser({
     "@page { margin: 0; size: " + RECEIPT_WIDTH_MM + "mm auto; }",
     "body { font-family: 'Courier New', monospace; width: " +
       RECEIPT_WIDTH_MM +
-      "mm; margin: 0; padding: 2mm; font-size: 11px; position: relative; }",
+      "mm; margin: 0; padding: 2mm; font-size: 11px; position: relative; overflow-wrap: break-word; }",
     ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
     ".wm-wrap img { max-width: 45mm; opacity: 0.06; }",
     ".content { position: relative; z-index: 1; }",
@@ -377,71 +495,49 @@ function billBlocks({
   customerName,
   orderCode,
 }: PrintBillParams): BridgeBlock[] {
+  let width = THERMAL_58MM_CHARS;
   let blocks: BridgeBlock[] = [
     { type: "text", text: "BELUM DIBAYAR / UNPAID", align: "center", bold: true, size: "large" },
     { type: "text", text: "Omoiyari", align: "center", bold: true },
-    {
-      type: "text",
-      text: thermalText(branchAddress || branchName),
-      align: "center",
-      size: "small",
-    },
   ];
+  blocks.push(
+    ...thermalLines(branchAddress || branchName, { width, align: "center", size: "small" }),
+  );
   if (branchAddress) {
-    blocks.push({
-      type: "text",
-      text: thermalText(branchName),
-      align: "center",
-      size: "small",
-    });
+    blocks.push(...thermalLines(branchName, { width, align: "center", size: "small" }));
   }
   blocks.push(
-    {
-      type: "text",
-      text: "Telp: " + thermalText(branchPhone || "-"),
+    ...thermalLines("Telp: " + (branchPhone || "-"), { width, align: "center", size: "small" }),
+    ...thermalLines(new Date().toLocaleString("id-ID"), {
+      width,
       align: "center",
       size: "small",
-    },
-    {
-      type: "text",
-      text: new Date().toLocaleString("id-ID"),
-      align: "center",
-      size: "small",
-    },
+    }),
     { type: "divider" },
-    { type: "row", left: "Kode Order", right: thermalText(orderCode || "-") },
-    { type: "row", left: "Pelanggan", right: thermalText(customerName || "-") },
+    ...thermalRow("Kode Order", orderCode || "-", { width }),
+    ...thermalRow("Pelanggan", customerName || "-", { width }),
     { type: "divider" },
-    { type: "row", left: "Jml  Nama Menu", right: "Harga" },
+    ...thermalRow("Jml  Nama Menu", "Harga", { width }),
   );
-  for (const block of thermalItemLines(cartItems)) blocks.push(block);
+  blocks.push(...thermalItemLines(cartItems, width));
   blocks.push(
     { type: "divider" },
-    { type: "row", left: "Subtotal", right: subtotal.toLocaleString("id-ID") },
+    ...thermalRow("Subtotal", subtotal.toLocaleString("id-ID"), { width }),
   );
   if (voucherDiscount > 0) {
-    blocks.push({
-      type: "row",
-      left: "Diskon",
-      right: "-" + voucherDiscount.toLocaleString("id-ID"),
-    });
+    blocks.push(...thermalRow("Diskon", "-" + voucherDiscount.toLocaleString("id-ID"), { width }));
   }
   if (taxAmount > 0) {
-    blocks.push({
-      type: "row",
-      left: "PB1",
-      right: taxAmount.toLocaleString("id-ID"),
-    });
+    blocks.push(...thermalRow("PB1", taxAmount.toLocaleString("id-ID"), { width }));
   }
   blocks.push(
-    { type: "row", left: "TOTAL", right: finalTotal.toLocaleString("id-ID"), bold: true },
+    ...thermalRow("TOTAL", finalTotal.toLocaleString("id-ID"), { width, bold: true }),
     { type: "divider" },
-    {
-      type: "text",
-      text: "Terima kasih sudah makan di Omoiyari! Selamat menikmati",
+    ...thermalLines("Terima kasih sudah makan di Omoiyari! Selamat menikmati", {
+      width,
       align: "center",
       size: "small",
-    },
+    }),
     { type: "text", text: "INI BARU KARAAGE!!", align: "center", bold: true },
     { type: "text", text: "BELUM DIBAYAR", align: "center", bold: true },
     { type: "feed", lines: 3 },
@@ -489,7 +585,7 @@ function printBillInBrowser({
     "@page { margin: 0; size: " + RECEIPT_WIDTH_MM + "mm auto; }",
     "body { font-family: 'Courier New', monospace; width: " +
       RECEIPT_WIDTH_MM +
-      "mm; margin: 0; padding: 2mm; font-size: 11px; position: relative; }",
+      "mm; margin: 0; padding: 2mm; font-size: 11px; position: relative; overflow-wrap: break-word; }",
     ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
     ".wm-wrap img { max-width: 45mm; opacity: 0.06; }",
     ".content { position: relative; z-index: 1; }",
@@ -555,6 +651,144 @@ function printBillInBrowser({
     "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",
     "</body></html>",
   );
+
+  printWindow.document.write(lines.join("\n"));
+  printWindow.document.close();
+}
+
+// ============================================================
+// Checker — the pre-payment slip
+// ============================================================
+
+/**
+ * The checker reads the order back against the counter before it is paid:
+ * the menu, the quantities, and the add-ons, and nothing else. It carries no
+ * money fields at all — not "hidden" — so there is nothing on this document
+ * for a slip that leaves the counter to quote a price off.
+ */
+interface PrintCheckerParams {
+  cartItems: CartItem[];
+  branchName: string;
+  /** Outlet address (branches.location) — printed under the brand name. */
+  branchAddress?: string | null;
+  /** Outlet phone (branches.phone) — printed under the address. */
+  branchPhone?: string | null;
+  /** Customer name. Omit to show "-". */
+  customerName?: string;
+  /** External order code (delivery platforms). Omit to show "-". */
+  orderCode?: string;
+}
+
+/**
+ * The pre-payment bill's own header, minus the price column, the totals and
+ * the sign-off. `CHECKER` stands where `BELUM DIBAYAR / UNPAID` does on the
+ * bill — both say "this is not a receipt", and the checker names its purpose.
+ */
+function checkerBlocks({
+  cartItems,
+  branchName,
+  branchAddress,
+  branchPhone,
+  customerName,
+  orderCode,
+}: PrintCheckerParams): BridgeBlock[] {
+  let width = THERMAL_58MM_CHARS;
+  let blocks: BridgeBlock[] = [
+    { type: "text", text: "CHECKER", align: "center", bold: true, size: "large" },
+    { type: "text", text: "Omoiyari", align: "center", bold: true },
+  ];
+  blocks.push(
+    ...thermalLines(branchAddress || branchName, { width, align: "center", size: "small" }),
+  );
+  if (branchAddress) {
+    blocks.push(...thermalLines(branchName, { width, align: "center", size: "small" }));
+  }
+  blocks.push(
+    ...thermalLines("Telp: " + (branchPhone || "-"), { width, align: "center", size: "small" }),
+    ...thermalLines(new Date().toLocaleString("id-ID"), {
+      width,
+      align: "center",
+      size: "small",
+    }),
+    { type: "divider" },
+    ...thermalRow("Kode Order", orderCode || "-", { width }),
+    ...thermalRow("Pelanggan", customerName || "-", { width }),
+    { type: "divider" },
+    ...thermalLines("Jml  Nama Menu", { width, size: "small" }),
+  );
+  blocks.push(...thermalItemLines(cartItems, width, false));
+  blocks.push({ type: "feed", lines: 3 });
+  return blocks;
+}
+
+/** Falls back to the browser print dialog when no thermal printer is attached. */
+export async function printChecker(params: PrintCheckerParams): Promise<void> {
+  let result = await printViaBridge({
+    content: checkerBlocks(params),
+    paperWidth: 58,
+    cut: true,
+    reference: params.orderCode,
+  });
+  if (result.kind === "printed") return;
+  if (result.kind === "unavailable") {
+    printCheckerInBrowser(params);
+    return;
+  }
+  reportPrintFailure(result.message);
+}
+
+function printCheckerInBrowser({
+  cartItems,
+  branchName,
+  branchAddress,
+  branchPhone,
+  customerName,
+  orderCode,
+}: PrintCheckerParams) {
+  let printWindow = window.open("", "_blank");
+  if (!printWindow) return;
+
+  let itemsHtml = buildReceiptItemsHtml(cartItems, false);
+
+  const lines: string[] = [
+    "<html><head>",
+    "<title>Checker</title>",
+    "<style>",
+    "@page { margin: 0; size: " + RECEIPT_WIDTH_MM + "mm auto; }",
+    "body { font-family: 'Courier New', monospace; width: " +
+      RECEIPT_WIDTH_MM +
+      "mm; margin: 0; padding: 2mm; font-size: 11px; position: relative; overflow-wrap: break-word; }",
+    ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
+    ".wm-wrap img { max-width: 45mm; opacity: 0.06; }",
+    ".content { position: relative; z-index: 1; }",
+    ".center { text-align: center; }",
+    ".logo { max-width: 25mm; max-height: 15mm; margin-bottom: 1mm; }",
+    ".header { font-size: 14px; font-weight: bold; margin-bottom: 1mm; }",
+    ".subheader { font-size: 10px; color: #444; margin-bottom: 1mm; }",
+    ".divider { border-top: 1px dashed #000; margin: 2mm 0; }",
+    ".row { display: flex; justify-content: space-between; }",
+    ".watermark { text-align: center; border: 2px dashed #999; padding: 2mm; margin: 3mm 0; color: #999; font-weight: bold; font-size: 13px; }",
+    "</style></head><body>",
+    '<div class="wm-wrap"><img src="/logo-for-light-mode.png" alt="" /></div>',
+    '<div class="content">',
+    '<div class="watermark">CHECKER</div>',
+    '<div class="center"><img class="logo" src="/logo-for-light-mode.png" alt="Omoiyari" /></div>',
+    '<div class="center header">Omoiyari</div>',
+    '<div class="center subheader">' + (branchAddress || branchName) + "</div>",
+    branchAddress ? '<div class="center subheader">' + branchName + "</div>" : "",
+    '<div class="center subheader">Telp: ' + (branchPhone || "-") + "</div>",
+    '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
+    '<div class="divider"></div>',
+    '<div class="row"><span>Kode Order:</span><span>' + (orderCode || "-") + "</span></div>",
+    '<div class="row"><span>Pelanggan:</span><span>' + (customerName || "-") + "</span></div>",
+    '<div class="divider"></div>',
+    // Column header: Jumlah | Nama menu. No Harga — nothing here is priced.
+    '<div class="colhead"><span class="qty">Jml</span><span>Nama Menu</span></div>',
+    itemsHtml,
+    "</div>",
+    "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",
+    "</body></html>",
+  ];
 
   printWindow.document.write(lines.join("\n"));
   printWindow.document.close();
@@ -663,6 +897,7 @@ interface SCMInvoiceParams {
  * quantity / total line instead of a four-column table.
  */
 function scmInvoiceBlocks(inv: SCMInvoiceParams, showUnitPrice: boolean): BridgeBlock[] {
+  let width = THERMAL_80MM_CHARS;
   let blocks: BridgeBlock[] = [
     { type: "text", text: "INVOICE SCM", align: "center", bold: true, size: "large" },
     { type: "text", text: inv.code, align: "center" },
@@ -673,27 +908,25 @@ function scmInvoiceBlocks(inv: SCMInvoiceParams, showUnitPrice: boolean): Bridge
       size: "small",
     },
     { type: "divider" },
-    { type: "row", left: "Surat Jalan", right: inv.dnCode },
+    ...thermalRow("Surat Jalan", inv.dnCode, { width }),
     { type: "divider" },
   ];
   for (let i = 0; i < inv.items.length; i++) {
     let item = inv.items[i];
-    blocks.push({
-      type: "text",
-      text: fitThermal(item.ingredientName, THERMAL_80MM_CHARS),
-      bold: true,
-    });
-    blocks.push({
-      type: "row",
-      left: showUnitPrice
-        ? item.quantity + " x " + thermalMoney(item.unitPrice)
-        : "Qty " + item.quantity,
-      right: thermalMoney(item.totalPrice),
-    });
+    blocks.push(...thermalLines(item.ingredientName, { width, bold: true }));
+    blocks.push(
+      ...thermalRow(
+        showUnitPrice
+          ? item.quantity + " x " + thermalMoney(item.unitPrice)
+          : "Qty " + item.quantity,
+        thermalMoney(item.totalPrice),
+        { width },
+      ),
+    );
   }
   blocks.push(
     { type: "divider" },
-    { type: "row", left: "TOTAL", right: thermalMoney(inv.totalAmount), bold: true },
+    ...thermalRow("TOTAL", thermalMoney(inv.totalAmount), { width, bold: true }),
     { type: "divider" },
     {
       type: "text",

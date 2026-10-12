@@ -2,12 +2,12 @@
 
 ## Context
 
-The POS prints three documents: the customer receipt (struk), the
-pre-checkout bill, and the SCM invoice. All three were built as HTML
-documents opened in a popup and handed to `window.print()`. That works on a
-desktop, where the browser can reach an installed printer. The client runs the
-POS on an **Android tablet** with a **Bluetooth thermal printer**, and that path
-does not work there:
+The POS prints four documents: the customer receipt (struk), the
+pre-checkout bill, the pre-payment checker, and the SCM invoice. All four were
+built as HTML documents opened in a popup and handed to `window.print()`. That
+works on a desktop, where the browser can reach an installed printer. The
+client runs the POS on an **Android tablet** with a **Bluetooth thermal
+printer**, and that path does not work there:
 
 - Android's print dialog has no route to a thermal ESC/POS printer, so the
   print preview either offers nothing sensible or sends a scaled A4 page.
@@ -33,20 +33,37 @@ localhost-only HTTP bridge, and keep the browser print dialog as the fallback.**
    never be mistaken for "no bridge".
 2. Layouts are built as **content blocks** — `text`, `row`, `divider`,
    `feed` — in `src/lib/pos-print.ts`, because a roll of paper has no page to
-   style. `row` lets Cleanter pad the columns; we only supply content and clip
-   our own text to the printable width (48 characters at 80mm, 32 at 58mm).
-   Receipt and bill go on 58mm, matching the existing 57mm HTML page; the
-   invoice goes on 80mm, since a four-column A4 invoice cannot be squeezed
+   style. `row` lets Cleanter pad the columns; we only supply content, and we
+   supply it **already wrapped** to the printable width (48 characters at
+   80mm, 32 at 58mm). Clipping is not an option: a print head stops at the
+   paper edge and Cleanter marks the overflow with an ellipsis, so a menu
+   called "Combo Hemat C (Caramel + Free Pork + Extra Teh)" would reach the
+   kitchen as "Combo Hemat C (Crum...". Text is therefore wrapped on word
+   boundaries into one block per line, and a `row` whose label and value
+   cannot share a line wraps the label and keeps the value flush-right on the
+   last line.
+   Receipt, bill and checker go on 58mm, matching the existing 57mm HTML page;
+   the invoice goes on 80mm, since a four-column A4 invoice cannot be squeezed
    onto 58mm — each item becomes a name line plus a quantity/total line.
-3. **Bridge first, browser dialog second.** `printReceipt`, `printBill` and
-   `printSCMInvoice` now await `printViaBridge` and fall back to the unchanged
-   HTML popup only when the call never connected. When Cleanter answers `503`
-   (printer off, out of paper, Bluetooth off) the app does **not** fall back:
-   the browser dialog cannot print either, and opening it would invite the
-   cashier to press print again. Instead the toast shows Cleanter's own `fix`
-   sentence, which is written for the person at the counter.
+3. **Bridge first, browser dialog second.** `printReceipt`, `printBill`,
+   `printChecker` and `printSCMInvoice` now await `printViaBridge` and fall
+   back to the unchanged HTML popup only when the call never connected. When
+   Cleanter answers `503` (printer off, out of paper, Bluetooth off) the app
+   does **not** fall back: the browser dialog cannot print either, and opening
+   it would invite the cashier to press print again. Instead the toast shows
+   Cleanter's own `fix` sentence, which is written for the person at the
+   counter.
 4. `printSuratJalan` stays on the A4 browser path — it is a delivery document
    printed on office paper, not a roll.
+
+**The checker carries no money.** `printChecker` is the bill's header, the
+bill's opening rows, and the bill's items — with no price column, no totals and
+no sign-off. It takes no money fields at all, rather than hiding them, so
+nothing on a slip that leaves the counter can be used to quote a price off. The
+one place the two documents differ in wording is the title: the bill leads with
+`BELUM DIBAYAR / UNPAID` to mark itself as not a receipt, and the checker leads
+with `CHECKER` to name its purpose. Both say the same thing about the money;
+only one of them has any.
 
 The constraint the client owns: the bridge and the web app must run on the
 **same tablet**, because Cleanter binds to `localhost`. Nothing in the app
@@ -71,4 +88,7 @@ behaviour.
   only if the client cares.
 - Tests in `src/lib/pos-print.test.ts` assert the posted payload (paper width,
   cut, reference, block order, HPP hiding) and the fallback contract, so a
-  layout regression fails loudly instead of producing unreadable receipts.
+  layout regression fails loudly instead of producing unreadable receipts. A
+  shared `expectFitsPaper` helper asserts the invariant behind this decision
+  for both roll widths — no block may exceed the printable width, and no
+  printed string may contain an ellipsis.
