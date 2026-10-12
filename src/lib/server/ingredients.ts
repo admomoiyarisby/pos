@@ -15,6 +15,7 @@ import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
+import { branchCatalogClause } from "#/lib/server/branch-catalog";
 import { describeDbError, isUniqueViolation } from "#/lib/server/db-errors";
 import { z } from "zod";
 
@@ -197,6 +198,23 @@ export async function getBranchCatalogGapsCore(data: { branchId?: string } = {})
     totalQuantity: Number(r.totalQuantity ?? 0),
   }));
 }
+
+/**
+ * The ids of the ingredients in ONE branch's catalog. Non-blocking UX support:
+ * the Mutasi form uses it to warn, before submit, about lines the receiver does
+ * not count — the same rule `softCatalogCheck` enforces server-side, through the
+ * same shared definition, so the two cannot disagree.
+ */
+export const getBranchCatalogIds = createServerFn({ method: "GET" })
+  .validator((data: { branchId: string }) => data)
+  .handler(async ({ data }) => {
+    await requireAuth();
+    const rows = await db
+      .select({ id: ingredients.id })
+      .from(ingredients)
+      .where(branchCatalogClause({ branchId: data.branchId, isOutlet: true }));
+    return rows.map((r) => r.id);
+  });
 
 export const getIngredient = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)

@@ -164,6 +164,37 @@ Known edge, left deliberately: lines that are flagged TRUE but restricted away b
 the allow-list are counted through the union half with **no** marker, because the
 marker reports the flag and not the link. 4 live lines are in that state.
 
+## One definition, and the write side
+
+`src/lib/server/branch-catalog.ts` holds the single definition of "which
+ingredients are in one branch's catalog":
+
+- `branchCatalogClause({ branchId, isOutlet })` — SQL. For an Outlet, the flag
+  gate AND the `ingredient_branches` allow-list; for a Central branch,
+  `undefined` (no catalog gate at all), so callers drop it from the WHERE.
+- `isOutsideBranchCatalog(branchType, isBranchVisible)` — the read-time marker,
+  flag half only, no query.
+- `heldAtBranchClause(branchId)` — the branch holds stock for this ingredient,
+  independent of catalog membership.
+
+Before this the rule lived in four copies (SO trigger, SO detail, SO print,
+ingredient-master gap report) and had already drifted. Every consumer now reads
+the helper.
+
+The write side, where the disagreement is actually created:
+
+`softCatalogCheck(toBranchId, items)` in `scm-transfers.ts` warns, non-blocking,
+for every line the **receiver's** catalog does not name. The sender check
+(`branchVisibleClause` on the sender) already proved the item is transferable
+_from_ here and says nothing about the receiver — the exact hole through which
+the six production lines arrived. `createMutasiTransferCore` returns
+`catalogWarnings` alongside `warnings`, mirroring `softStockCheck`'s contract,
+and the Mutasi form shows a `bg-warning` banner before submit through
+`getBranchCatalogIds`.
+
+Warn, never block: every production case of this shape was a legitimate movement
+("stock awal"), so a gate would have stopped real work.
+
 ## Still unresolved — role vs branch type
 
 The ingredient master gates the flag by **role** (`branch_admin`), while the

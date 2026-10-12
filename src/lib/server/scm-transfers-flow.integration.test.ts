@@ -63,19 +63,22 @@ function uniq(prefix: string): string {
   return `${prefix}-${seedCounter++}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-async function seedBranch(code: string): Promise<string> {
+async function seedBranch(code: string, type: "Central" | "Outlet" = "Outlet"): Promise<string> {
   const id = crypto.randomUUID();
   await db.insert(schema.branches).values({
     id,
     code,
     name: `ITS ${code}`,
     location: "Test",
-    type: "Outlet",
+    type,
   });
   return id;
 }
 
-async function seedIngredient(code: string): Promise<string> {
+async function seedIngredient(
+  code: string,
+  opts: { isBranchVisible?: boolean } = {},
+): Promise<string> {
   const id = crypto.randomUUID();
   await db.insert(schema.ingredients).values({
     id,
@@ -87,8 +90,17 @@ async function seedIngredient(code: string): Promise<string> {
     stockUnit: "pcs",
     conversionFactor: 1,
     averageCost: 1000,
+    isBranchVisible: opts.isBranchVisible ?? false,
   });
   return id;
+}
+
+/** Restrict an ingredient to specific branches (the allow-list). */
+async function seedBranchLinks(ingredientId: string, branchIds: string[]) {
+  if (branchIds.length === 0) return;
+  await db
+    .insert(schema.ingredientBranches)
+    .values(branchIds.map((branchId) => ({ ingredientId, branchId })));
 }
 
 async function seedInventory(
@@ -1326,4 +1338,80 @@ describe("Mutasi Stok — draft line-quantity edits", () => {
       .where(eq(schema.scmTransferItems.id, item.id));
     expect(after.quantity).toBe(5);
   });
+});
+
+// =============================================================================
+// DESTINATION CATALOG WARNING (ADR 0023)
+//
+// The sender check proves the ingredient is transferable FROM here; it says
+// nothing about the receiver. Delivering an item the receiver has flagged out
+// of its branch catalog creates stock the receiver never counts, so the
+// transfer warns — non-blocking, so a legitimate movement still goes through.
+// =============================================================================
+
+describe("Mutasi Stok — receiver branch catalog warning (ADR 0023)", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "warns for items the receiver's catalog does not name, and stays submittable",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-CAT-A"));
+      const toBranch = await seedBranch(uniq("MT-CAT-B"));
+
+      // In the receiver's catalog (flag on) and flagged out of it.
+      const inCatalog = await seedIngredient(uniq("MT-CAT-IN"), { isBranchVisible: true });
+      const outsideCatalog = await seedIngredient(uniq("MT-CAT-OUT"), {
+        isBranchVisible: false,
+      });
+      // Link-restricted away from the receiver: still not in its catalog.
+      const linkedAway = await seedIngredient(uniq("MT-CAT-LNK"), { isBranchVisible: true });
+      await seedBranchLinks(linkedAway, [fromBranch]);
+
+      await seedInventory(fromBranch, inCatalog, 10);
+      await seedInventory(fromBranch, outsideCatalog, 10);
+      await seedInventory(fromBranch, linkedAway, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+
+      const result = await scm.createMutasiTransferCore(sender, {
+        fromBranchId: fromBranch,
+        toBranchId: toBranch,
+        items: [
+          { ingredientId: inCatalog, quantity: 5 },
+          { ingredientId: outsideCatalog, quantity: 5 },
+          { ingredientId: linkedAway, quantity: 5 },
+        ],
+      });
+
+      // The transfer is created — warned, never blocked.
+      expect(result.transfer.id).toBeTruthy();
+      // Every line outside the receiver's catalog is named, both halves
+      // (flag and allow-list), through the one shared definition.
+      expect(result.catalogWarnings.map((w) => w.ingredientId).sort()).toEqual(
+        [outsideCatalog, linkedAway].sort(),
+      );
+      expect(result.catalogWarnings.every((w) => w.ingredientName.length > 0)).toBe(true);
+      expect(result.catalogWarnings.map((w) => w.ingredientId)).not.toContain(inCatalog);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a central receiver has no catalog gate, so nothing is warned",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-CATC-A"));
+      const toCentral = await seedBranch(uniq("MT-CATC-C"), "Central");
+
+      const anyIngredient = await seedIngredient(uniq("MT-CATC-ANY"), {
+        isBranchVisible: false,
+      });
+      await seedInventory(fromBranch, anyIngredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const result = await scm.createMutasiTransferCore(sender, {
+        fromBranchId: fromBranch,
+        toBranchId: toCentral,
+        items: [{ ingredientId: anyIngredient, quantity: 5 }],
+      });
+
+      expect(result.catalogWarnings).toEqual([]);
+    },
+  );
 });

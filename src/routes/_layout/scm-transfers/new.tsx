@@ -5,7 +5,7 @@ import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
 import { Button } from "#/components/ui/button";
-import { AlertCircle, ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Plus, Trash2, AlertTriangle } from "lucide-react";
 import {
   Combobox,
   ComboboxInput,
@@ -16,7 +16,7 @@ import {
 } from "#/components/ui/combobox";
 import { createMutasiTransfer } from "#/lib/server/scm-transfers";
 import { getBranches } from "#/lib/server/branches";
-import { getIngredients } from "#/lib/server/ingredients";
+import { getIngredients, getBranchCatalogIds } from "#/lib/server/ingredients";
 import { getInventory } from "#/lib/server/inventory";
 import { useUnsavedDraft } from "#/hooks/useUnsavedDraft";
 import { RestoreDraftBanner } from "#/components/draft/RestoreDraftBanner";
@@ -113,6 +113,35 @@ function NewMutasiPage() {
 
   const ingredientById = useMemo(() => new Map(ingredients.map((i) => [i.id, i])), [ingredients]);
 
+  // The receiver's branch catalog. Used to warn — before submit — about lines
+  // the receiver does not count. Same rule as `softCatalogCheck` server-side,
+  // through the same shared definition, so the two cannot disagree. Only an
+  // Outlet receiver has a catalog to fall outside of; a central receiver has no
+  // catalog gate at all.
+  const toBranchType = branches.find((b) => b.id === toBranchId)?.type;
+  const { data: receiverCatalogIds } = useQuery({
+    queryKey: ["branch-catalog-ids", toBranchId],
+    queryFn: () => getBranchCatalogIds({ data: { branchId: toBranchId } }),
+    enabled: !!toBranchId && toBranchType === "Outlet",
+  });
+
+  // Lines the receiver's catalog does not name. NON-BLOCKING: the transfer is
+  // still submittable, because a legitimate reason to move such stock exists
+  // (every production case was a real "stock awal" entry). Warning, not a gate.
+  const itemsOutsideCatalog = useMemo(() => {
+    if (!receiverCatalogIds) return [];
+    const inCatalog = new Set(receiverCatalogIds);
+    const outside: Array<{ ingredientId: string; name: string }> = [];
+    for (const it of items) {
+      if (!it.ingredientId || inCatalog.has(it.ingredientId)) continue;
+      outside.push({
+        ingredientId: it.ingredientId,
+        name: ingredientById.get(it.ingredientId)?.name ?? it.ingredientId,
+      });
+    }
+    return outside;
+  }, [items, receiverCatalogIds, ingredientById]);
+
   // Map ingredientId → available qty in the sender's inventory
   const stockByIngredient = useMemo(() => {
     const m = new Map<string, number>();
@@ -201,6 +230,14 @@ function NewMutasiPage() {
         },
       });
       clearDraft();
+
+      // Server echoed the same check for direct callers; surface it so a
+      // bypassed UI still reports the fact.
+      if (result.catalogWarnings.length > 0) {
+        toast.warning(`${result.catalogWarnings.length} bahan di luar katalog cabang penerima`, {
+          description: `${result.catalogWarnings.map((w) => w.ingredientName).join(", ")} — cabang akan memegangnya di luar katalog.`,
+        });
+      }
 
       void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
       void queryClient.invalidateQueries({ queryKey: ["inventory-branch"] });
@@ -298,6 +335,29 @@ function NewMutasiPage() {
                   </li>
                 );
               })}
+            </ul>
+          </div>
+        )}
+
+        {/* Outside the receiver's catalog. Warning only — the transfer still
+            submits. Delivering it creates stock the receiver never counts, and
+            the stock opname later marks each such line "di luar katalog". */}
+        {itemsOutsideCatalog.length > 0 && (
+          <div className="rounded-md bg-warning/10 border border-warning/30 px-4 py-3 text-sm">
+            <p className="font-medium text-warning flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              {itemsOutsideCatalog.length} bahan di luar katalog cabang penerima
+            </p>
+            <p className="text-warning/80 mt-1">
+              Cabang penerima bertanda nonaktif untuk bahan berikut di “Tampil di Cabang”. Cabang
+              akan memegangnya, tetapi bahan tersebut tidak masuk katalog cabang dan ditandai{" "}
+              <span className="font-medium">di luar katalog</span> di lembar opname. Mutasi tetap
+              bisa dilanjutkan.
+            </p>
+            <ul className="mt-1 text-warning/80 list-disc list-inside">
+              {itemsOutsideCatalog.map((w) => (
+                <li key={w.ingredientId}>{w.name}</li>
+              ))}
             </ul>
           </div>
         )}

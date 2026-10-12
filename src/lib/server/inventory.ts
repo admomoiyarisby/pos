@@ -12,7 +12,6 @@ import {
   systemNotifications,
   areaManagerBranches,
   orders,
-  ingredientBranches,
 } from "#/db/schema";
 import { eq, and, or, desc, asc, count, inArray, sql, ilike, ne, isNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
@@ -25,7 +24,7 @@ import { DrizzleQueryError } from "drizzle-orm";
 import { describeDbError } from "./db-errors";
 import { roundQuantity, formatQuantity } from "#/lib/utils";
 import { ensureInventoryRow } from "./sales-data";
-import { branchVisibleClause } from "./branch-visibility";
+import { branchCatalogClause, heldAtBranchClause, isOutsideBranchCatalog } from "./branch-catalog";
 
 /**
  * A physical count is a finite, non-negative number of stock units — a fraction
@@ -521,34 +520,18 @@ export async function triggerStockOpnameCore(
 
   // Scope of the count sheet, in two parts.
   //
-  // PART 1 — the branch catalog. For an Outlet that is the flag gate AND the
-  // `ingredient_branches` allow-list, the same two conditions `getIngredients`
-  // applies, so a line cannot sit on an outlet's sheet while its ingredient
-  // list hides it. Central branches get no narrowing: their catalog is every
-  // countable, active ingredient. (The link data has no coverage of the second
-  // central branch, Central Kitchen Food Prep, so applying it there would drop
-  // 20 lines from that sheet through a data gap rather than an intent.)
-  const branchCatalogClause = isOutlet
-    ? and(
-        eq(ingredients.isBranchVisible, true),
-        branchVisibleClause({
-          linkTable: ingredientBranches,
-          linkRowId: ingredientBranches.ingredientId,
-          rowId: ingredients.id,
-          linkBranchId: ingredientBranches.branchId,
-          currentBranchId: data.branchId,
-        }),
-      )
-    : undefined;
-
-  // PART 2 — everything the branch physically holds. A stock record is written
-  // by a sale, a delivery, a transfer, waste, yield or a manual adjustment, and
-  // none of those paths reads the catalog flag. A branch can therefore hold
-  // real stock for an item that is flagged out of its catalog — 6 lines in
+  // PART 1 — the branch catalog, from the ONE shared definition
+  // (`branch-catalog.ts`): for an Outlet the flag gate AND the
+  // `ingredient_branches` allow-list, for a Central branch nothing at all.
+  //
+  // PART 2 — everything the branch physically holds. Stock records are written
+  // by a movement, and no movement path reads the catalog flag, so a branch can
+  // hold real stock for an item flagged out of its catalog — 6 lines in
   // production. The old scope dropped them, so the branch never counted stock
-  // it actually had. The sheet now counts them too, marked
-  // `outsideBranchCatalog` so the disagreement is visible instead of silent.
-  const heldAtBranch = sql`exists (select 1 from ${inventory} where ${inventory.ingredientId} = ${ingredients.id} and ${inventory.branchId} = ${data.branchId})`;
+  // it actually had. They are counted now and marked `outsideBranchCatalog`,
+  // which turns the disagreement into something a human can fix.
+  const heldAtBranch = heldAtBranchClause(data.branchId);
+  const branchCatalog = branchCatalogClause({ branchId: data.branchId, isOutlet });
 
   const invItems = await db
     .select({
@@ -566,7 +549,7 @@ export async function triggerStockOpnameCore(
         ne(ingredients.status, "Deleted"),
         // Central: every countable item (already includes everything held).
         // Outlet: the catalog, OR stock the branch physically holds.
-        branchCatalogClause ? or(branchCatalogClause, heldAtBranch) : undefined,
+        branchCatalog ? or(branchCatalog, heldAtBranch) : undefined,
       ),
     )
     // Stable order so the count sheet (and the multi-row INSERT) is
@@ -739,7 +722,6 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
     .from(branches)
     .where(eq(branches.id, so.branchId))
     .limit(1);
-  const isOutlet = branch?.type === "Outlet";
 
   // The opname is a SNAPSHOT: the item list is whatever the trigger wrote,
   // read back verbatim. It is NOT re-filtered against the current master
@@ -781,9 +763,11 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
 
   // Flag the held-but-uncatalogued lines. Computed here, not in the query, so
   // the rule stays in one readable place and the snapshot read stays verbatim.
+  // The shared helper is the one definition; the SO uses its flag half because
+  // the read cannot evaluate the allow-list per row.
   const lines = items.map((i) => ({
     ...i,
-    outsideBranchCatalog: isOutlet ? !i.isBranchVisible : false,
+    outsideBranchCatalog: isOutsideBranchCatalog(branch?.type, i.isBranchVisible),
   }));
 
   // Access check for admin_pusat - can only view Central Warehouse SOs
@@ -1581,12 +1565,11 @@ export const printStockOpname = createServerFn({ method: "GET" })
       .where(eq(stockOpnameItems.stockOpnameId, data.soId))
       .orderBy(ingredients.name);
 
-    // Same marker as the detail page: the line is on the sheet because the
-    // branch holds it, not because the branch catalog names it. Printed as a
-    // suffix so a counter working from paper still sees it.
+    // Same marker as the detail page, through the same shared helper. Printed
+    // as a suffix so a counter working from paper still sees it.
     const lines = items.map((it) => ({
       ...it,
-      outsideBranchCatalog: branch?.type === "Outlet" && !it.isBranchVisible,
+      outsideBranchCatalog: isOutsideBranchCatalog(branch?.type, it.isBranchVisible),
     }));
     const outsideCount = lines.filter((l) => l.outsideBranchCatalog).length;
 
