@@ -44,6 +44,7 @@ const actionLabels = {
 
 function formatDateTime(d: Date) {
   return new Date(d).toLocaleString("id-ID", {
+    timeZone: "Asia/Jakarta",
     day: "2-digit",
     month: "short",
     hour: "2-digit",

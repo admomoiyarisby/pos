@@ -1656,6 +1656,7 @@ function PosPage() {
                                   </span>
                                   <span className="text-xs text-muted-foreground">
                                     {new Date(o.createdAt).toLocaleTimeString("id-ID", {
+                                      timeZone: "Asia/Jakarta",
                                       hour: "2-digit",
                                       minute: "2-digit",
                                     })}
@@ -2274,6 +2275,7 @@ function PosPage() {
               <p>
                 Shift dimulai:{" "}
                 {new Date(activeShift.startTime).toLocaleTimeString("id-ID", {
+                  timeZone: "Asia/Jakarta",
                   hour: "2-digit",
                   minute: "2-digit",
                 })}
@@ -2303,6 +2305,7 @@ function PosPage() {
               <p>
                 Shift dimulai:{" "}
                 {new Date(activeShift.startTime).toLocaleTimeString("id-ID", {
+                  timeZone: "Asia/Jakarta",
                   hour: "2-digit",
                   minute: "2-digit",
                 })}{" "}

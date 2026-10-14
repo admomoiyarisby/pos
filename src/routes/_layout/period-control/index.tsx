@@ -102,14 +102,19 @@ function PeriodControlPage() {
       accessorKey: "openedAt",
       header: "Dibuka",
       enableSorting: true,
-      cell: ({ row }) => new Date(row.original.openedAt).toLocaleDateString("id-ID"),
+      cell: ({ row }) =>
+        new Date(row.original.openedAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" }),
     },
     {
       accessorKey: "closedAt",
       header: "Ditutup",
       enableSorting: true,
       cell: ({ row }) =>
-        row.original.closedAt ? new Date(row.original.closedAt).toLocaleDateString("id-ID") : "-",
+        row.original.closedAt
+          ? new Date(row.original.closedAt).toLocaleDateString("id-ID", {
+              timeZone: "Asia/Jakarta",
+            })
+          : "-",
     },
     {
       accessorKey: "id",
@@ -343,7 +348,8 @@ function PeriodControlPage() {
               <div>
                 <p className="font-medium">{p.periodName}</p>
                 <p className="text-sm text-muted-foreground">
-                  Dibuka {new Date(p.openedAt).toLocaleDateString("id-ID")}
+                  Dibuka{" "}
+                  {new Date(p.openedAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}
                 </p>
               </div>
               <button

@@ -1713,6 +1713,7 @@ function FinancePage() {
                           <span className="block text-sm font-semibold tabular-nums">
                             {r.closedAt
                               ? new Date(r.closedAt).toLocaleString("id-ID", {
+                                  timeZone: "Asia/Jakarta",
                                   day: "2-digit",
                                   month: "short",
                                   hour: "2-digit",
@@ -1819,6 +1820,7 @@ function FinancePage() {
                               <td className="py-2.5 px-3 tabular-nums whitespace-nowrap">
                                 {r.closedAt
                                   ? new Date(r.closedAt).toLocaleString("id-ID", {
+                                      timeZone: "Asia/Jakarta",
                                       day: "2-digit",
                                       month: "short",
                                       hour: "2-digit",
@@ -1902,6 +1904,7 @@ function FinancePage() {
                       <div className="truncate text-sm font-semibold">{entry.ingredientName}</div>
                       <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">
                         {new Date(entry.createdAt).toLocaleDateString("id-ID", {
+                          timeZone: "Asia/Jakarta",
                           day: "numeric",
                           month: "short",
                           year: "numeric",
@@ -1957,6 +1960,7 @@ function FinancePage() {
                       <tr key={entry.id} className="border-b hover:bg-muted/40 transition-colors">
                         <td className="py-2.5 px-3">
                           {new Date(entry.createdAt).toLocaleDateString("id-ID", {
+                            timeZone: "Asia/Jakarta",
                             day: "numeric",
                             month: "short",
                             year: "numeric",

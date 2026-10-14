@@ -54,6 +54,7 @@ export function ShiftCashDetail({
             const isIn = tx.direction === "in";
             const meta = [
               new Date(tx.occurredAt).toLocaleTimeString("id-ID", {
+                timeZone: "Asia/Jakarta",
                 hour: "2-digit",
                 minute: "2-digit",
               }),

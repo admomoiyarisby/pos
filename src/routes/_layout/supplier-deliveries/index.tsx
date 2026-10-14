@@ -187,6 +187,7 @@ function SupplierDeliveriesPage() {
     if (!printWindow) return;
 
     const dateStr = new Date(row.deliveryDate).toLocaleDateString("id-ID", {
+      timeZone: "Asia/Jakarta",
       year: "numeric",
       month: "long",
       day: "numeric",
@@ -274,6 +275,7 @@ function SupplierDeliveriesPage() {
 
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleDateString("id-ID", {
+      timeZone: "Asia/Jakarta",
       day: "2-digit",
       month: "short",
       year: "numeric",

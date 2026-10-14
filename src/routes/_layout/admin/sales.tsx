@@ -175,6 +175,7 @@ function SalesAdminPage() {
       width: "w-28",
       cell: ({ row }) =>
         new Date(row.original.createdAt).toLocaleDateString("id-ID", {
+          timeZone: "Asia/Jakarta",
           day: "2-digit",
           month: "short",
         }),
@@ -445,6 +446,7 @@ function SalesAdminPage() {
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <CalendarDays className="h-3 w-3" />
                       {new Date(r.createdAt).toLocaleDateString("id-ID", {
+                        timeZone: "Asia/Jakarta",
                         day: "2-digit",
                         month: "short",
                       })}{" "}

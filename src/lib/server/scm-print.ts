@@ -34,8 +34,8 @@ interface SuratJalanData {
 
 function buildSuratJalanHtml(d: SuratJalanData): string {
   const date = d.shippedAt
-    ? new Date(d.shippedAt).toLocaleDateString("id-ID")
-    : new Date(d.createdAt).toLocaleDateString("id-ID");
+    ? new Date(d.shippedAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })
+    : new Date(d.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" });
 
   const rows = d.items
     .filter((it) => (it.pickedQuantity ?? 0) > 0)
@@ -67,9 +67,11 @@ function buildSuratJalanHtml(d: SuratJalanData): string {
   table { width: 100%; border-collapse: collapse; margin-top: 12pt; }
   thead th { background: #f0f0f0; padding: 8pt; text-align: left; border-bottom: 1.5pt solid #000; font-size: 10pt; }
   tbody td { padding: 6pt 8pt; border-bottom: 0.5pt solid #ccc; }
-  .signatures { display: flex; justify-content: space-around; margin-top: 48pt; }
-  .sig-block { text-align: center; min-width: 200pt; }
-  .sig-line { margin-top: 48pt; border-top: 1pt solid #000; padding-top: 4pt; }
+  .signatures { display: flex; flex-wrap: wrap; margin-top: 32pt; }
+  .sig-block { width: 50%; box-sizing: border-box; text-align: left; padding: 12pt 16pt; font-size: 10pt; }
+  .sig-date { margin-bottom: 2pt; }
+  .sig-space { height: 56pt; }
+  .sig-name { border-top: 1pt solid #000; padding-top: 4pt; }
   .empty { text-align: center; color: #999; padding: 16pt; }
 </style>
 </head>
@@ -112,12 +114,28 @@ function buildSuratJalanHtml(d: SuratJalanData): string {
 
   <div class="signatures">
     <div class="sig-block">
-      <div>Pengirim,</div>
-      <div class="sig-line">${escapeHtml(d.sourceBranchName)}</div>
+      <div class="sig-date">Tanggal: ....................</div>
+      <div>Pihak Central Kitchen (Nama &amp; ttd)</div>
+      <div class="sig-space"></div>
+      <div class="sig-name">( ........................................ )</div>
     </div>
     <div class="sig-block">
-      <div>Penerima,</div>
-      <div class="sig-line">${escapeHtml(d.destBranchName)}</div>
+      <div class="sig-date">Tanggal: ....................</div>
+      <div>Pihak Penerima (Nama &amp; ttd)</div>
+      <div class="sig-space"></div>
+      <div class="sig-name">( ........................................ )</div>
+    </div>
+    <div class="sig-block">
+      <div class="sig-date">Tanggal: ....................</div>
+      <div>Diperiksa Oleh (Nama &amp; ttd)</div>
+      <div class="sig-space"></div>
+      <div class="sig-name">( ........................................ )</div>
+    </div>
+    <div class="sig-block">
+      <div class="sig-date">Tanggal: ....................</div>
+      <div>Diperiksa Oleh (Nama &amp; ttd)</div>
+      <div class="sig-space"></div>
+      <div class="sig-name">( ........................................ )</div>
     </div>
   </div>
 
@@ -261,9 +279,9 @@ function buildInvoiceHtml(d: InvoiceData): string {
     <div class="meta">
       <div>No Invoice: <strong>INV-${escapeHtml(d.code)}</strong></div>
       <div>No Pengadaan: ${escapeHtml(d.code)}</div>
-      <div>Tanggal: ${new Date(d.generatedAt).toLocaleDateString("id-ID")}</div>
+      <div>Tanggal: ${new Date(d.generatedAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}</div>
       <div class="${d.paidAt ? "paid" : "unpaid"}">
-        ${d.paidAt ? `LUNAS — ${new Date(d.paidAt).toLocaleDateString("id-ID")}` : "BELUM DIBAYAR"}
+        ${d.paidAt ? `LUNAS — ${new Date(d.paidAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}` : "BELUM DIBAYAR"}
       </div>
     </div>
   </div>

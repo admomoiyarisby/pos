@@ -201,6 +201,7 @@ function TransferDetailPage() {
               <div className="text-xs text-muted-foreground">Dibuat</div>
               <div className="text-xs font-medium tabular-nums">
                 {new Date(transfer.createdAt).toLocaleString("id-ID", {
+                  timeZone: "Asia/Jakarta",
                   day: "2-digit",
                   month: "short",
                   hour: "2-digit",
@@ -222,7 +223,7 @@ function TransferDetailPage() {
           </div>
           <div className="sm:hidden mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
             <CalendarDays className="h-3 w-3" />
-            {new Date(transfer.createdAt).toLocaleString("id-ID")}
+            {new Date(transfer.createdAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
           </div>
         </div>
 

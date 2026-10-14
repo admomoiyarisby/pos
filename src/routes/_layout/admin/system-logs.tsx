@@ -61,6 +61,7 @@ function SystemLogsPage() {
       width: "w-36",
       cell: ({ row }) =>
         new Date(row.original.createdAt).toLocaleString("id-ID", {
+          timeZone: "Asia/Jakarta",
           day: "2-digit",
           month: "short",
           hour: "2-digit",

@@ -355,9 +355,7 @@ function OrderHistoryPage() {
               <div className="rounded-md border p-3">
                 <p className="text-xs text-muted-foreground uppercase">Waktu</p>
                 <p className="font-medium">
-                  {new Date(selectedOrder.createdAt).toLocaleString("id-ID", {
-                    timeZone: "Asia/Jakarta",
-                  })}
+                  {new Date(selectedOrder.createdAt).toLocaleString("id-ID", {})}
                 </p>
               </div>
             </div>

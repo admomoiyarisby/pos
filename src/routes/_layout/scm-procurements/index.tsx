@@ -219,7 +219,8 @@ function ProcurementsListPage() {
     {
       accessorKey: "createdAt",
       header: "Tanggal",
-      render: (row) => new Date(row.createdAt).toLocaleDateString("id-ID"),
+      render: (row) =>
+        new Date(row.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" }),
     },
     {
       accessorKey: "actions",
@@ -483,6 +484,7 @@ function ProcurementsListPage() {
                     <div className="shrink-0 inline-flex items-center gap-1 text-xs text-muted-foreground">
                       <CalendarDays className="h-3.5 w-3.5" />
                       {new Date(row.createdAt).toLocaleDateString("id-ID", {
+                        timeZone: "Asia/Jakarta",
                         day: "2-digit",
                         month: "short",
                       })}

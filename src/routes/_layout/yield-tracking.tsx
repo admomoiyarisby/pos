@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
-import { formText } from "#/lib/utils";
+import { formText, formatJakartaDate, formatJakartaTime, todayDateInputValue } from "#/lib/utils";
 import { useState, useMemo, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -652,26 +652,14 @@ function YieldTrackingPage() {
       header: "Tanggal Produksi",
       width: "w-32",
       enableSorting: true,
-      cell: ({ row }) =>
-        new Date(row.original.productionDate ?? row.original.createdAt).toLocaleDateString(
-          "id-ID",
-          {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          },
-        ),
+      cell: ({ row }) => formatJakartaDate(row.original.productionDate ?? row.original.createdAt),
     },
     {
       accessorKey: "createdAt",
       header: "Jam Input",
       width: "w-24",
       enableSorting: true,
-      cell: ({ row }) =>
-        new Date(row.original.createdAt).toLocaleString("id-ID", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
+      cell: ({ row }) => formatJakartaTime(row.original.createdAt),
     },
     {
       accessorKey: "branchName",
@@ -994,7 +982,7 @@ function YieldTrackingPage() {
               <input
                 type="date"
                 name="productionDate"
-                defaultValue={new Date().toISOString().slice(0, 10)}
+                defaultValue={todayDateInputValue()}
                 className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
@@ -1150,9 +1138,7 @@ function YieldTrackingPage() {
               <div className="rounded-md border p-3 text-sm space-y-1">
                 <p className="font-medium">
                   Produksi {cancelTarget.id.slice(0, 8)} —{" "}
-                  {new Date(
-                    cancelTarget.productionDate ?? cancelTarget.createdAt,
-                  ).toLocaleDateString("id-ID")}
+                  {formatJakartaDate(cancelTarget.productionDate ?? cancelTarget.createdAt)}
                 </p>
                 <p className="text-muted-foreground text-xs">
                   {cancelTarget.branchName ?? "-"} · {cancelTarget.recordedByName ?? "-"} ·{" "}

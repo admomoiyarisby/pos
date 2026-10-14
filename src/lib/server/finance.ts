@@ -1953,7 +1953,7 @@ export const printFinancePage = createServerFn({ method: "GET" })
   <tr><td class="label" style="color: ${opClass};">Operating Profit</td><td class="value" style="color: ${opClass};">${opSign}${formatRupiah(Math.abs(summary.operatingProfit))}</td></tr>
 </table>
 
-<div class="footer">Dicetak dari Omoiyari POS — ${new Date().toLocaleDateString("id-ID")}</div>
+<div class="footer">Dicetak dari Omoiyari POS — ${new Date().toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}</div>
 <script>window.onload = function() { window.print(); };</script>
 </body></html>`;
 

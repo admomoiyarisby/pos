@@ -201,6 +201,7 @@ function DashboardPage() {
             <p className="text-xs text-muted-foreground">
               Terakhir diperbarui:{" "}
               {new Date(dataUpdatedAt).toLocaleString("id-ID", {
+                timeZone: "Asia/Jakarta",
                 day: "2-digit",
                 month: "short",
                 hour: "2-digit",

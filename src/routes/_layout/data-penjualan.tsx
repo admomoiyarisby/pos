@@ -33,7 +33,7 @@ import {
   deleteSalesOrder,
   toggleSalesOrderVerified,
 } from "#/lib/server/sales-data";
-import { formatRp } from "#/lib/utils";
+import { formatRp, toDateInputValue } from "#/lib/utils";
 import { appliedModifierLines } from "#/lib/pos-utils";
 
 export const Route = createFileRoute("/_layout/data-penjualan")({
@@ -533,6 +533,7 @@ function OrderRow({
         <td className="py-2 px-3 text-muted-foreground">
           {order.createdAt
             ? new Date(order.createdAt).toLocaleDateString("id-ID", {
+                timeZone: "Asia/Jakarta",
                 day: "numeric",
                 month: "short",
               })
@@ -769,6 +770,7 @@ function MobileOrderCard({
             <CalendarDays className="h-3 w-3 shrink-0" />
             {order.createdAt
               ? new Date(order.createdAt).toLocaleDateString("id-ID", {
+                  timeZone: "Asia/Jakarta",
                   day: "numeric",
                   month: "short",
                 })
@@ -997,9 +999,9 @@ function OrderEditModal({
   const [notes, setNotes] = useState(order?.notes ?? "");
   const [date, setDate] = useState(() => {
     if (order?.createdAt) {
-      return new Date(order.createdAt).toISOString().split("T")[0];
+      return toDateInputValue(order.createdAt);
     }
-    return defaultDate ?? new Date().toISOString().split("T")[0];
+    return defaultDate ?? toDateInputValue(new Date());
   });
   const [items, setItems] = useState<OrderItemInput[]>([]);
 

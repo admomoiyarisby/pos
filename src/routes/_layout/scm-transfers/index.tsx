@@ -280,7 +280,8 @@ function TransfersListPage() {
       accessorKey: "createdAt",
       header: "Tgl Dibuat",
       enableSorting: true,
-      cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString("id-ID"),
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" }),
     },
     {
       accessorKey: "id",
@@ -537,6 +538,7 @@ function TransfersListPage() {
                       <div className="shrink-0 inline-flex items-center gap-1 text-xs text-muted-foreground">
                         <CalendarDays className="h-3.5 w-3.5" />
                         {new Date(row.createdAt).toLocaleDateString("id-ID", {
+                          timeZone: "Asia/Jakarta",
                           day: "2-digit",
                           month: "short",
                         })}

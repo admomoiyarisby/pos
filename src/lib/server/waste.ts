@@ -16,6 +16,7 @@ import {
 import { eq, and, desc, inArray, or, sql, isNull } from "drizzle-orm";
 import { fuzzySearch } from "./fuzzy";
 import { resolveNewItemIngredients } from "./ingredient-resolver";
+import { todayDateInputValue } from "#/lib/utils";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
@@ -240,7 +241,7 @@ export async function createWasteEntryCore(
         wasteEntryId: inserted.id,
         category: "Biaya Operasional",
         amount: valuation,
-        date: new Date().toISOString().split("T")[0],
+        date: todayDateInputValue(),
         notes: data.notes ?? `Auto-generated from Waste Entry ${inserted.id}`,
         submittedBy: user.id,
       });
@@ -980,7 +981,7 @@ export async function createBomWasteEntryCore(
           wasteEntryId: entry.id,
           category: "Biaya Operasional",
           amount: valuation,
-          date: new Date().toISOString().split("T")[0],
+          date: todayDateInputValue(),
           notes: data.notes ?? `Auto-generated from Waste Entry ${entry.id}`,
           submittedBy: user.id,
         });

@@ -69,7 +69,7 @@ export function buildPrintHtml(
 </style>
 </head><body>
 ${bodyHtml}
-<div class="footer">Dicetak dari Omoiyari POS — ${new Date().toLocaleDateString("id-ID")}</div>
+<div class="footer">Dicetak dari Omoiyari POS — ${new Date().toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}</div>
 <script>window.onload = function() { window.print(); };</script>
 </body></html>`;
 }

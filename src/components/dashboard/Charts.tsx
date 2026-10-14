@@ -8,6 +8,7 @@ import { Chart } from "@tanstack/charts/react";
 import { pie, polar, radialArc, radialRule, radialText } from "@tanstack/charts/polar";
 import { d3Curve } from "@tanstack/charts/d3/shape";
 import { curveMonotoneX } from "d3-shape";
+import { toDateInputValue } from "#/lib/utils";
 
 const CHANNEL_COLORS = [
   "var(--color-chart-1)",
@@ -48,18 +49,15 @@ interface ManualRevenue {
 
 export function computeSalesTrend(orders: Order[]) {
   const days: { name: string; sales: number }[] = [];
-  const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
   for (let i = 6; i >= 0; i--) {
-    // Use UTC date strings to avoid TZ mismatch between server (UTC)
-    // and client (any TZ). toDateString() uses local timezone, which
-    // can include/exclude orders depending on the viewer's locale.
-    const d = new Date(Date.now() - i * 86400000);
-    const dStr = d.toISOString().slice(0, 10);
-    const dayOrders = orders.filter(
-      (o) => new Date(o.createdAt).toISOString().slice(0, 10) === dStr,
-    );
+    // Bucket by Jakarta calendar day: the business day runs 00:00–23:59 WIB.
+    // UTC-day bucketing attributed 00:00–06:59 WIB sales to the previous day,
+    // and `getDay()` labels them in the device timezone — both wrong here.
+    const ref = new Date(Date.now() - i * 86400000);
+    const dStr = toDateInputValue(ref);
+    const dayOrders = orders.filter((o) => toDateInputValue(o.createdAt) === dStr);
     days.push({
-      name: dayNames[d.getDay()],
+      name: ref.toLocaleDateString("id-ID", { weekday: "short", timeZone: "Asia/Jakarta" }),
       sales: dayOrders.reduce((acc, o) => acc + o.totalAmount, 0) / 1000,
     });
   }

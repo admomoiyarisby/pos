@@ -16,6 +16,7 @@ import {
 } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
 import { getBranchCatalogGaps } from "#/lib/server/ingredients";
+import { toDateInputValue } from "#/lib/utils";
 import { Badge } from "#/components/ui/badge";
 import {
   ArrowRight,
@@ -65,7 +66,7 @@ function StockOpnamePage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const [triggerModal, setTriggerModal] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState("");
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(() => toDateInputValue(new Date()));
 
   // Soft-delete (history housekeeping) — super_admin only.
   const [deleteTarget, setDeleteTarget] = useState<SORow | null>(null);
@@ -102,6 +103,7 @@ function StockOpnamePage() {
       enableSorting: true,
       cell: ({ row }) =>
         new Date(row.original.createdAt).toLocaleString("id-ID", {
+          timeZone: "Asia/Jakarta",
           day: "2-digit",
           month: "short",
           hour: "2-digit",
@@ -354,6 +356,7 @@ function StockOpnamePage() {
                 <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground border-t pt-2">
                   <span className="tabular-nums">
                     {new Date(r.createdAt).toLocaleString("id-ID", {
+                      timeZone: "Asia/Jakarta",
                       day: "2-digit",
                       month: "short",
                       hour: "2-digit",

@@ -1613,7 +1613,7 @@ export const printStockOpname = createServerFn({ method: "GET" })
   <div class="meta">
     <div><strong>Tanggal:</strong> ${so.date}</div>
     <div><strong>Status:</strong> ${statusLabel}</div>
-    <div><strong>Dibuat:</strong> ${new Date(so.createdAt).toLocaleDateString("id-ID")}</div>
+    <div><strong>Dibuat:</strong> ${new Date(so.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}</div>
   </div>
 </div>
 <table>

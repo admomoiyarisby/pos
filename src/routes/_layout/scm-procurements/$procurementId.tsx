@@ -110,7 +110,7 @@ function ProcurementDetailPage() {
   usePageTitle(
     procurementQ.data ? procurementQ.data.code : "Pengadaan",
     procurementQ.data
-      ? `Pengadaan ke cabang • dibuat ${new Date(procurementQ.data.createdAt).toLocaleString("id-ID")}`
+      ? `Pengadaan ke cabang • dibuat ${new Date(procurementQ.data.createdAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}`
       : undefined,
   );
 
@@ -193,6 +193,7 @@ function ProcurementDetailPage() {
               <div className="text-xs text-muted-foreground">Dibuat</div>
               <div className="text-xs font-medium tabular-nums">
                 {new Date(proc.createdAt).toLocaleString("id-ID", {
+                  timeZone: "Asia/Jakarta",
                   day: "2-digit",
                   month: "short",
                   hour: "2-digit",
@@ -225,7 +226,7 @@ function ProcurementDetailPage() {
             </div>
           </div>
           <div className="sm:hidden mt-2 text-[11px] text-muted-foreground tabular-nums">
-            Dibuat {new Date(proc.createdAt).toLocaleString("id-ID")}
+            Dibuat {new Date(proc.createdAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
           </div>
         </div>
 

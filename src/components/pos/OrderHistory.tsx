@@ -156,6 +156,7 @@ export default function OrderHistory({
                     </span>
                     <span className="truncate text-muted-foreground">
                       {new Date(o.createdAt).toLocaleTimeString("id-ID", {
+                        timeZone: "Asia/Jakarta",
                         hour: "2-digit",
                         minute: "2-digit",
                       })}

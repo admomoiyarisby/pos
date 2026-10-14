@@ -195,6 +195,7 @@ export default function NotificationBell() {
                       </p>
                       <p className="text-[11px] text-muted-foreground mt-1.5 tabular-nums">
                         {new Date(n.createdAt).toLocaleString("id-ID", {
+                          timeZone: "Asia/Jakarta",
                           hour: "2-digit",
                           minute: "2-digit",
                           day: "2-digit",
@@ -292,6 +293,7 @@ export default function NotificationBell() {
                         </p>
                         <p className="text-[11px] text-muted-foreground mt-2 tabular-nums">
                           {new Date(n.createdAt).toLocaleString("id-ID", {
+                            timeZone: "Asia/Jakarta",
                             hour: "2-digit",
                             minute: "2-digit",
                             day: "2-digit",

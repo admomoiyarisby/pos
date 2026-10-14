@@ -34,7 +34,8 @@ function PeriodDetailPage() {
           <div>
             <h1 className="text-2xl font-bold">{period.periodName}</h1>
             <p className="text-sm text-muted-foreground">
-              Dibuka: {new Date(period.openedAt).toLocaleString("id-ID")}
+              Dibuka:{" "}
+              {new Date(period.openedAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
             </p>
           </div>
           <Badge variant={period.status === "Open" ? "success" : "secondary"}>
@@ -45,7 +46,9 @@ function PeriodDetailPage() {
         {period.closedAt && (
           <div className="rounded-lg border p-4">
             <p className="text-sm text-muted-foreground">Ditutup</p>
-            <p className="font-medium">{new Date(period.closedAt).toLocaleString("id-ID")}</p>
+            <p className="font-medium">
+              {new Date(period.closedAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
+            </p>
           </div>
         )}
 

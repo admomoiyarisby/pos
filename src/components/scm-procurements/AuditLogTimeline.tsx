@@ -76,7 +76,7 @@ export function AuditLogTimeline({
                 {e.note ? <p className="mt-1 text-xs text-muted-foreground">{e.note}</p> : null}
               </div>
               <div className="text-right text-xs text-muted-foreground">
-                <p>{new Date(e.timestamp).toLocaleString("id-ID")}</p>
+                <p>{new Date(e.timestamp).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}</p>
                 <p className="capitalize">{e.actorRole.replace("_", " ")}</p>
               </div>
             </li>

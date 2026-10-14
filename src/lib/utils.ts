@@ -109,6 +109,94 @@ export function formatJakartaDateTime(value: Date | string): string {
 }
 
 /**
+ * Date-only variant of `formatJakartaDateTime`: "14 Okt 2026".
+ *
+ * Calendar dates (production date, request date) are days, not instants. The
+ * pinned timezone keeps a tablet with a misconfigured system timezone from
+ * shifting the day: a UTC-midnight instant renders as the previous day on any
+ * device set behind UTC.
+ */
+export function formatJakartaDate(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Jakarta",
+  });
+}
+
+/**
+ * Time-only variant of `formatJakartaDateTime`: "22.02".
+ */
+export function formatJakartaTime(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toLocaleString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  });
+}
+
+/** Strict `YYYY-MM-DD` shape produced by `<input type="date">`. */
+const DATE_ONLY_INPUT = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Parse a `<input type="date">` value into a Date that cannot drift across
+ * midnight.
+ *
+ * `new Date("2026-10-14")` is UTC midnight by spec, so storing that instant
+ * and rendering it in a timezone behind UTC shows the 13th. Noon UTC stays on
+ * the same calendar day from UTC-12 to UTC+12, and pairs with the
+ * Jakarta-pinned formatters so the listed day always matches the picked day.
+ * Noon is fixed in UTC (not server-local) so dev, test, and Vercel runtimes
+ * all store the identical instant.
+ *
+ * Returns null for anything that is not a valid calendar date.
+ */
+export function parseDateOnlyInput(value: string): Date | null {
+  const match = DATE_ONLY_INPUT.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+/**
+ * Format any instant as a `YYYY-MM-DD` day in the application timezone, for
+ * `<input type="date">` values, date-column comparisons, and day bucketing.
+ */
+export function toDateInputValue(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+/**
+ * Today's date as a `<input type="date">` value, in the application timezone.
+ *
+ * `new Date().toISOString().slice(0, 10)` is the UTC date, which is yesterday
+ * during 00:00–06:59 WIB — the form would open on the wrong day.
+ */
+export function todayDateInputValue(now: Date = new Date()): string {
+  return toDateInputValue(now);
+}
+
+/**
  * Read a text field from a FormData at its I/O boundary.
  *
  * `FormData.get` returns `FormDataEntryValue | null` (a string or a File).

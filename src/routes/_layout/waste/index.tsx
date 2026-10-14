@@ -790,6 +790,7 @@ function WastePage() {
       enableSorting: true,
       cell: ({ row }) =>
         new Date(row.original.createdAt).toLocaleString("id-ID", {
+          timeZone: "Asia/Jakarta",
           day: "2-digit",
           month: "short",
           hour: "2-digit",
@@ -1333,6 +1334,7 @@ function WastePage() {
                     </div>
                     <div className="tabular-nums">
                       {new Date(row.createdAt).toLocaleString("id-ID", {
+                        timeZone: "Asia/Jakarta",
                         day: "2-digit",
                         month: "short",
                         hour: "2-digit",

@@ -133,7 +133,8 @@ function SCMInvoicePage() {
       accessorKey: "createdAt",
       header: "Dibuat",
       enableSorting: true,
-      cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString("id-ID"),
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" }),
     },
     {
       accessorKey: "id",

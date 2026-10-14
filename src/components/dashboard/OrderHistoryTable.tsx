@@ -48,7 +48,7 @@ export function OrderHistoryTable({
       o.id.toLowerCase().includes(q) ||
       (o.orderCode ?? "").toLowerCase().includes(q) ||
       o.channel.toLowerCase().includes(q) ||
-      new Date(o.createdAt).toLocaleDateString("id-ID").includes(q) ||
+      new Date(o.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" }).includes(q) ||
       o.status.toLowerCase().includes(q)
     );
   });
@@ -148,6 +148,7 @@ export function OrderHistoryTable({
                     </td>
                     <td className="whitespace-nowrap px-4 py-4 text-sm text-muted-foreground">
                       {new Date(order.createdAt).toLocaleDateString("id-ID", {
+                        timeZone: "Asia/Jakarta",
                         day: "2-digit",
                         month: "short",
                         hour: "2-digit",

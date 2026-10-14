@@ -141,6 +141,7 @@ function PrintRequestsPage() {
                   <tr key={r.id} className="border-b hover:bg-muted/30">
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                       {new Date(r.createdAt).toLocaleString("id-ID", {
+                        timeZone: "Asia/Jakarta",
                         day: "2-digit",
                         month: "short",
                         hour: "2-digit",

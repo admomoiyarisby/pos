@@ -816,7 +816,8 @@ function StockOpnameDetailPage() {
           </div>
           {detail.realizedAt && (
             <div className="text-xs text-muted-foreground text-center sm:text-right w-full sm:w-auto">
-              Di-realize pada {new Date(detail.realizedAt).toLocaleString("id-ID")}
+              Di-realize pada{" "}
+              {new Date(detail.realizedAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
             </div>
           )}
           {isDev && canSubmit && (

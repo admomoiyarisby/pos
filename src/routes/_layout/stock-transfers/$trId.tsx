@@ -86,7 +86,9 @@ function TransferDetailPage() {
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Tanggal</p>
             <p className="font-medium mt-1">
-              {new Date(transfer.createdAt).toLocaleDateString("id-ID")}
+              {new Date(transfer.createdAt).toLocaleDateString("id-ID", {
+                timeZone: "Asia/Jakarta",
+              })}
             </p>
           </div>
         </div>

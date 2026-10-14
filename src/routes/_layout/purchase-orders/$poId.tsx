@@ -221,7 +221,9 @@ function PODetailPage() {
           </div>
           <div className="rounded-lg border p-4">
             <p className="text-xs text-muted-foreground uppercase">Dibuat</p>
-            <p className="font-medium mt-1">{new Date(po.createdAt).toLocaleDateString("id-ID")}</p>
+            <p className="font-medium mt-1">
+              {new Date(po.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}
+            </p>
           </div>
         </div>
 

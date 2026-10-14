@@ -394,7 +394,7 @@ function AuditLog({ rows }: { rows: TransferAuditRow[] }) {
         {rows.map((row) => (
           <div key={row.id} className="flex items-center gap-3 p-3 text-sm">
             <span className="w-32 text-xs text-muted-foreground">
-              {new Date(row.createdAt).toLocaleString("id-ID")}
+              {new Date(row.createdAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
             </span>
             <span className="font-medium">
               {lookupLabel(auditEventLabels, String(row.event)) ?? String(row.event)}
@@ -558,7 +558,8 @@ function InvoiceCard({
         )}
         {invoice.paidAt ? (
           <p className="text-xs text-muted-foreground">
-            Dibayar: {new Date(invoice.paidAt).toLocaleDateString("id-ID")}
+            Dibayar:{" "}
+            {new Date(invoice.paidAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}
           </p>
         ) : null}
       </div>

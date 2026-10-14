@@ -467,6 +467,7 @@ function VouchersPage() {
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-xs text-muted-foreground tabular-nums">
                     {new Date(r.createdAt).toLocaleDateString("id-ID", {
+                      timeZone: "Asia/Jakarta",
                       day: "2-digit",
                       month: "short",
                     })}

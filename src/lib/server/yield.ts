@@ -15,6 +15,7 @@ import {
 import { and, eq, inArray, desc, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
+import { formatJakartaDateTime, parseDateOnlyInput } from "#/lib/utils";
 import { logSystemAction, logAudit } from "./logging";
 
 // ─── Stock effect (ADR 0012) ────────────────────────────────────────────────
@@ -41,6 +42,20 @@ export class DuplicateProductionError extends Error {
 /** Trim float noise so 882 and 882.0 fingerprint identically. */
 function roundQty(q: number): string {
   return String(Math.round(q * 1e6) / 1e6);
+}
+
+/**
+ * Resolve the production-date input to a storable Date.
+ *
+ * `<input type="date">` sends a day ("2026-10-14"), not an instant.
+ * `parseDateOnlyInput` anchors it at noon UTC so the stored instant can
+ * never render as the neighbouring day; anything else (e.g. a full ISO
+ * timestamp from tests or API callers) falls back to `new Date`, and an
+ * absent value means "now".
+ */
+function resolveProductionDate(value: string | undefined): Date {
+  if (!value) return new Date();
+  return parseDateOnlyInput(value) ?? new Date(value);
 }
 
 async function applyYieldStockEffect(
@@ -333,7 +348,7 @@ export async function createYieldConversionCore(
   // `confirmDuplicate`, so this delays a legitimate double-entry rather than
   // forbidding it.
   if (!data.confirmDuplicate) {
-    const productionDate = data.productionDate ? new Date(data.productionDate) : new Date();
+    const productionDate = resolveProductionDate(data.productionDate);
     const notesKey = (data.notes ?? "").trim().toLowerCase();
 
     // Canonical fingerprint of this submission's items, so the comparison is on
@@ -378,7 +393,7 @@ export async function createYieldConversionCore(
         fingerprint(existingProduced) === fingerprint(produced)
       ) {
         throw new DuplicateProductionError(
-          `Produksi identik sudah tercatat pada tanggal yang sama (catatan #${cand.id.slice(0, 8)}, dicatat ${new Date(cand.productionDate).toLocaleString("id-ID")}). ` +
+          `Produksi identik sudah tercatat pada tanggal yang sama (catatan #${cand.id.slice(0, 8)}, dicatat ${formatJakartaDateTime(cand.productionDate)}). ` +
             `Bila ini memang batch terpisah, konfirmasi; bila tidak, batalkan catatan sebelumnya agar stok tidak ditambah dua kali.`,
         );
       }
@@ -394,7 +409,7 @@ export async function createYieldConversionCore(
         branchId,
         notes: data.notes,
         processedBy: user.id,
-        productionDate: data.productionDate ? new Date(data.productionDate) : new Date(),
+        productionDate: resolveProductionDate(data.productionDate),
       })
       .returning();
 

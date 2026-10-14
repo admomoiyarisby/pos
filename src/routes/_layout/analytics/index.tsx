@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { getSalesAnalytics } from "#/lib/server/finance";
-import { formatRp } from "#/lib/utils";
+import { formatRp, toDateInputValue } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
 import { BarChart3, AlertCircle, RefreshCw, Calendar, PieChart as PieIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
@@ -25,10 +25,6 @@ export const Route = createFileRoute("/_layout/analytics/")({
     return { branches };
   },
 });
-
-function toDateInputValue(d: Date): string {
-  return d.toISOString().split("T")[0];
-}
 
 function getDefaultRange() {
   const d = new Date();

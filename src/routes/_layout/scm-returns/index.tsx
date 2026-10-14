@@ -289,7 +289,8 @@ function ReturnsListPage() {
       header: "Ditolak",
       width: "w-32",
       enableSorting: true,
-      cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString("id-ID"),
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" }),
     },
     {
       accessorKey: "status",
@@ -302,7 +303,9 @@ function ReturnsListPage() {
           </Badge>
           {row.original.status === "PickedUp" && row.original.pickedUpAt ? (
             <span className="text-[11px] text-muted-foreground">
-              {new Date(row.original.pickedUpAt).toLocaleDateString("id-ID")}
+              {new Date(row.original.pickedUpAt).toLocaleDateString("id-ID", {
+                timeZone: "Asia/Jakarta",
+              })}
               {row.original.pickedUpByName ? ` · ${row.original.pickedUpByName}` : ""}
             </span>
           ) : null}
@@ -544,7 +547,11 @@ function ReturnsListPage() {
                       <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
                         Ditolak
                       </div>
-                      <div>{new Date(row.createdAt).toLocaleDateString("id-ID")}</div>
+                      <div>
+                        {new Date(row.createdAt).toLocaleDateString("id-ID", {
+                          timeZone: "Asia/Jakarta",
+                        })}
+                      </div>
                     </div>
                     <div className="col-span-2 min-w-0">
                       <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">

@@ -349,7 +349,7 @@ function receiptBlocks({
   }
   blocks.push(
     ...thermalLines("Telp: " + (branchPhone || "-"), { width, align: "center", size: "small" }),
-    ...thermalLines(new Date().toLocaleString("id-ID"), {
+    ...thermalLines(new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }), {
       width,
       align: "center",
       size: "small",
@@ -452,7 +452,9 @@ function printReceiptInBrowser({
     '<div class="center subheader">' + (branchAddress || branchName) + "</div>",
     branchAddress ? '<div class="center subheader">' + branchName + "</div>" : "",
     '<div class="center subheader">Telp: ' + (branchPhone || "-") + "</div>",
-    '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
+    '<div class="center subheader">' +
+      new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) +
+      "</div>",
     '<div class="divider"></div>',
     '<div class="row"><span>Kode Order:</span><span>' +
       (order.orderCode || idStr) +
@@ -535,7 +537,7 @@ function billBlocks({
   }
   blocks.push(
     ...thermalLines("Telp: " + (branchPhone || "-"), { width, align: "center", size: "small" }),
-    ...thermalLines(new Date().toLocaleString("id-ID"), {
+    ...thermalLines(new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }), {
       width,
       align: "center",
       size: "small",
@@ -637,7 +639,9 @@ function printBillInBrowser({
     '<div class="center subheader">' + (branchAddress || branchName) + "</div>",
     branchAddress ? '<div class="center subheader">' + branchName + "</div>" : "",
     '<div class="center subheader">Telp: ' + (branchPhone || "-") + "</div>",
-    '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
+    '<div class="center subheader">' +
+      new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) +
+      "</div>",
     '<div class="divider"></div>',
     '<div class="row"><span>Kode Order:</span><span>' + (orderCode || "-") + "</span></div>",
     '<div class="row"><span>Pelanggan:</span><span>' + (customerName || "-") + "</span></div>",
@@ -733,7 +737,7 @@ function checkerBlocks({
   }
   blocks.push(
     ...thermalLines("Telp: " + (branchPhone || "-"), { width, align: "center", size: "small" }),
-    ...thermalLines(new Date().toLocaleString("id-ID"), {
+    ...thermalLines(new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }), {
       width,
       align: "center",
       size: "small",
@@ -805,7 +809,9 @@ function printCheckerInBrowser({
     '<div class="center subheader">' + (branchAddress || branchName) + "</div>",
     branchAddress ? '<div class="center subheader">' + branchName + "</div>" : "",
     '<div class="center subheader">Telp: ' + (branchPhone || "-") + "</div>",
-    '<div class="center subheader">' + new Date().toLocaleString("id-ID") + "</div>",
+    '<div class="center subheader">' +
+      new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) +
+      "</div>",
     '<div class="divider"></div>',
     '<div class="row"><span>Kode Order:</span><span>' + (orderCode || "-") + "</span></div>",
     '<div class="row"><span>Pelanggan:</span><span>' + (customerName || "-") + "</span></div>",
@@ -856,12 +862,19 @@ export function printSuratJalan(dn: {
     "th { border-bottom: 1px solid #000; padding: 2mm; text-align: left; }",
     "td { padding: 2mm; border-bottom: 1px dashed #ccc; }",
     "td:last-child, th:last-child { text-align: right; }",
+    ".signatures { display: flex; flex-wrap: wrap; margin-top: 10mm; }",
+    ".sig-block { width: 50%; box-sizing: border-box; padding: 3mm 5mm; font-size: 11px; }",
+    ".sig-date { margin-bottom: 1mm; }",
+    ".sig-space { height: 22mm; }",
+    ".sig-name { border-top: 1px solid #000; padding-top: 1mm; }",
     ".footer { margin-top: 10mm; font-size: 10px; text-align: center; color: #666; }",
     "</style></head><body>",
     '<div style="text-align: center; margin-bottom: 3mm;"><img src="/logo.png" alt="Logo" style="max-height: 40px;"/></div>',
     '<div class="header">SURAT JALAN</div>',
     '<div class="subheader">' + dn.code + "</div>",
-    '<div class="subheader">' + new Date(dn.createdAt).toLocaleString("id-ID") + "</div>",
+    '<div class="subheader">' +
+      new Date(dn.createdAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) +
+      "</div>",
     '<div class="divider"></div>',
     '<div class="info-grid">',
     '<div class="info-block"><strong>Dari:</strong><br>' + dn.fromBranchName + "</div>",
@@ -894,7 +907,20 @@ export function printSuratJalan(dn: {
   lines.push(
     "</tbody></table>",
     '<div class="divider"></div>',
+    '<div class="signatures">',
+    '<div class="sig-block"><div class="sig-date">Tanggal: ....................</div><div>Pihak ' +
+      dn.fromBranchName +
+      " (Nama &amp; ttd)</div>" +
+      '<div class="sig-space"></div><div class="sig-name">( ........................................ )</div></div>',
+    '<div class="sig-block"><div class="sig-date">Tanggal: ....................</div><div>Pihak Penerima (Nama &amp; ttd)</div>' +
+      '<div class="sig-space"></div><div class="sig-name">( ........................................ )</div></div>',
+    '<div class="sig-block"><div class="sig-date">Tanggal: ....................</div><div>Diperiksa Oleh (Nama &amp; ttd)</div>' +
+      '<div class="sig-space"></div><div class="sig-name">( ........................................ )</div></div>',
+    '<div class="sig-block"><div class="sig-date">Tanggal: ....................</div><div>Diperiksa Oleh (Nama &amp; ttd)</div>' +
+      '<div class="sig-space"></div><div class="sig-name">( ........................................ )</div></div>',
+    "</div>",
     '<div class="footer">Dokumen ini dicetak dari Omoiyari POS</div>',
+    "<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); }</script>",
     "</body></html>",
   );
 
@@ -931,7 +957,7 @@ function scmInvoiceBlocks(inv: SCMInvoiceParams, showUnitPrice: boolean): Bridge
     { type: "text", text: inv.code, align: "center" },
     {
       type: "text",
-      text: new Date(inv.createdAt).toLocaleString("id-ID"),
+      text: new Date(inv.createdAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }),
       align: "center",
       size: "small",
     },
@@ -1011,7 +1037,9 @@ function printSCMInvoiceInBrowser(inv: SCMInvoiceParams, showUnitPrice: boolean)
     '<div style="text-align: center; margin-bottom: 3mm;"><img src="/logo.png" alt="Logo" style="max-height: 40px;"/></div>',
     '<div class="header">INVOICE SCM</div>',
     '<div class="subheader">' + inv.code + "</div>",
-    '<div class="subheader">' + new Date(inv.createdAt).toLocaleString("id-ID") + "</div>",
+    '<div class="subheader">' +
+      new Date(inv.createdAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) +
+      "</div>",
     '<div class="info"><strong>Surat Jalan:</strong> ' + inv.dnCode + "</div>",
     '<div class="divider"></div>',
     "<table>",

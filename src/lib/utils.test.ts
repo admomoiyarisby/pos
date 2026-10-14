@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vite-plus/test";
-import { formatJakartaDateTime, formatQuantity, parseQuantityInput, roundQuantity } from "./utils";
+import {
+  formatJakartaDate,
+  formatJakartaDateTime,
+  formatJakartaTime,
+  formatQuantity,
+  parseDateOnlyInput,
+  parseQuantityInput,
+  roundQuantity,
+  toDateInputValue,
+  todayDateInputValue,
+} from "./utils";
 
 describe("formatJakartaDateTime", () => {
   it("uses Jakarta time regardless of the runtime timezone", () => {
@@ -115,5 +125,69 @@ describe("parseQuantityInput", () => {
     for (const value of [0, 90, 6000, 1234.5, 23.5, 0.5, 0.125]) {
       expect(parseQuantityInput(formatQuantity(value))).toBe(value);
     }
+  });
+});
+
+describe("formatJakartaDate", () => {
+  it("renders the picked day even on a device set behind UTC", () => {
+    // Regression: input 14/10 stored as UTC midnight rendered as 13 Okt on a
+    // tablet whose system timezone was behind UTC.
+    const storedAsUtcMidnight = new Date("2026-10-14T00:00:00.000Z");
+    expect(formatJakartaDate(storedAsUtcMidnight)).toBe("14 Okt 2026");
+  });
+});
+
+describe("formatJakartaTime", () => {
+  it("renders the Jakarta clock regardless of device timezone", () => {
+    expect(formatJakartaTime(new Date("2026-10-13T15:02:00.000Z"))).toBe("22.02");
+  });
+});
+
+describe("parseDateOnlyInput", () => {
+  it("anchors a picked day at noon so no timezone renders it as a neighbour day", () => {
+    const parsed = parseDateOnlyInput("2026-10-14");
+    expect(parsed).not.toBeNull();
+    // SAFETY: null is ruled out by the assertion above, so the value is a Date here.
+    const at = parsed as Date;
+    expect(at.toISOString()).toBe("2026-10-14T12:00:00.000Z");
+    // Noon UTC is the same calendar day from UTC-12 to UTC+12, unlike the old
+    // `new Date("2026-10-14")` (UTC midnight) which is the 13th behind UTC.
+    for (const timeZone of ["Asia/Jakarta", "America/Los_Angeles", "Pacific/Midway"]) {
+      const rendered = at.toLocaleDateString("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      expect(rendered).toBe("2026-10-14");
+    }
+    expect(formatJakartaDate(at)).toBe("14 Okt 2026");
+  });
+
+  it("rejects non-dates", () => {
+    expect(parseDateOnlyInput("")).toBeNull();
+    expect(parseDateOnlyInput("14/10/2026")).toBeNull();
+    expect(parseDateOnlyInput("2026-10-14T00:00:00.000Z")).toBeNull();
+    expect(parseDateOnlyInput("2026-13-01")).toBeNull();
+    expect(parseDateOnlyInput("2026-02-30")).toBeNull();
+  });
+});
+
+describe("todayDateInputValue", () => {
+  it("is the Jakarta date, not the UTC date", () => {
+    // 03:00 WIB on the 14th is still the 13th in UTC — the old
+    // `toISOString().slice(0, 10)` default opened the form on the wrong day.
+    expect(todayDateInputValue(new Date("2026-10-13T20:00:00.000Z"))).toBe("2026-10-14");
+    expect(todayDateInputValue(new Date("2026-10-14T16:00:00.000Z"))).toBe("2026-10-14");
+  });
+});
+
+describe("toDateInputValue", () => {
+  it("renders the Jakarta calendar day of any instant", () => {
+    // 02:00 WIB on the 14th is still the 13th in UTC — UTC-day bucketing
+    // attributed it to the previous day.
+    expect(toDateInputValue(new Date("2026-10-13T19:00:00.000Z"))).toBe("2026-10-14");
+    expect(toDateInputValue(new Date("2026-10-14T00:00:00.000Z"))).toBe("2026-10-14");
+    expect(toDateInputValue("2026-10-14")).toBe("2026-10-14");
   });
 });
