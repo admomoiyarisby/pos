@@ -484,3 +484,174 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
     },
   );
 });
+
+describe("Finance — channel P&L Omzet Real comes from Input Revenue", () => {
+  // Noon UTC lands on the same Jakarta calendar day, so the tanggal bucket
+  // is deterministic regardless of server timezone.
+  const day = new Date(Date.UTC(2026, 9, 13, 12, 0, 0));
+
+  async function seedOrder(
+    branchId: string,
+    channel: "ShopeeFood" | "Gofood",
+    totalAmount: number,
+    totalCogs: number,
+    netSales: number,
+  ) {
+    await db.insert(schema.orders).values({
+      branchId,
+      channel,
+      subtotal: totalAmount,
+      totalAmount,
+      totalCogs,
+      netSales,
+      createdAt: day,
+    });
+  }
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "rows without revenue input report null Omzet Real and null margin",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      await seedOrder(branchId, "ShopeeFood", 1526500, 442212, 1221200);
+      await seedOrder(branchId, "Gofood", 479400, 133290, 383520);
+
+      const rows = await financeApi.getChannelPnlCore(admin, {
+        branchId,
+        dateFrom: "2026-10-13",
+        dateTo: "2026-10-13",
+      });
+      expect(rows).toHaveLength(2);
+      for (const r of rows) {
+        expect(r.tanggal).toBe("2026-10-13");
+        expect(r.omzetReal).toBeNull();
+        expect(r.margin).toBeNull();
+      }
+      // POS facts are still reported.
+      const shopee = rows.find((r) => r.channel === "ShopeeFood");
+      expect(shopee?.grossSales).toBe(1526500);
+      expect(shopee?.hpp).toBe(442212);
+      expect(shopee?.netSales).toBe(1221200);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "an input sets Omzet Real and margin for its cell only",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      await seedOrder(branchId, "ShopeeFood", 1526500, 442212, 1221200);
+      await seedOrder(branchId, "Gofood", 479400, 133290, 383520);
+
+      await financeApi.createChannelRevenueCore(admin, {
+        branchId,
+        date: "2026-10-13",
+        channel: "ShopeeFood",
+        amount: 569226,
+      });
+
+      const rows = await financeApi.getChannelPnlCore(admin, {
+        branchId,
+        dateFrom: "2026-10-13",
+        dateTo: "2026-10-13",
+      });
+      const shopee = rows.find((r) => r.channel === "ShopeeFood");
+      expect(shopee?.omzetReal).toBe(569226);
+      expect(shopee?.margin).toBeCloseTo((569226 - 442212) / 569226, 10);
+      const gojek = rows.find((r) => r.channel === "Gofood");
+      expect(gojek?.omzetReal).toBeNull();
+      expect(gojek?.margin).toBeNull();
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)("inputs from another branch do not leak in", async () => {
+    const admin = await seedUser("super_admin");
+    const branchId = await seedBranch();
+    const otherBranchId = await seedBranch();
+    await seedOrder(branchId, "ShopeeFood", 1526500, 442212, 1221200);
+
+    await financeApi.createChannelRevenueCore(admin, {
+      branchId: otherBranchId,
+      date: "2026-10-13",
+      channel: "ShopeeFood",
+      amount: 999,
+    });
+
+    const rows = await financeApi.getChannelPnlCore(admin, {
+      branchId,
+      dateFrom: "2026-10-13",
+      dateTo: "2026-10-13",
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].omzetReal).toBeNull();
+    expect(rows[0].margin).toBeNull();
+  });
+
+  it.skipIf(!hasTestDatabaseUrl)("upsert creates then updates the same cell", async () => {
+    const admin = await seedUser("super_admin");
+    const branchId = await seedBranch();
+    await seedOrder(branchId, "ShopeeFood", 1526500, 442212, 1221200);
+
+    const created = await financeApi.upsertChannelRevenueCore(admin, {
+      branchId,
+      date: "2026-10-13",
+      channel: "ShopeeFood",
+      amount: 569226,
+    });
+    expect(created.amount).toBe(569226);
+
+    const updated = await financeApi.upsertChannelRevenueCore(admin, {
+      branchId,
+      date: "2026-10-13",
+      channel: "ShopeeFood",
+      amount: 600000,
+      notes: "revisi payout",
+    });
+    expect(updated.id).toBe(created.id);
+    expect(updated.amount).toBe(600000);
+
+    const stored = await db
+      .select()
+      .from(schema.channelRevenues)
+      .where(
+        and(
+          eq(schema.channelRevenues.branchId, branchId),
+          eq(schema.channelRevenues.date, "2026-10-13"),
+          eq(schema.channelRevenues.channel, "ShopeeFood"),
+        ),
+      );
+    expect(stored).toHaveLength(1);
+
+    const rows = await financeApi.getChannelPnlCore(admin, {
+      branchId,
+      dateFrom: "2026-10-13",
+      dateTo: "2026-10-13",
+    });
+    expect(rows[0].omzetReal).toBe(600000);
+    expect(rows[0].margin).toBeCloseTo((600000 - 442212) / 600000, 10);
+  });
+
+  it.skipIf(!hasTestDatabaseUrl)("upsert rejects wrong roles and negative amounts", async () => {
+    const branchAdmin = await seedUser("branch_admin");
+    const admin = await seedUser("super_admin");
+    const branchId = await seedBranch();
+
+    await expect(
+      financeApi.upsertChannelRevenueCore(branchAdmin, {
+        branchId,
+        date: "2026-10-13",
+        channel: "ShopeeFood",
+        amount: 1000,
+      }),
+    ).rejects.toThrow("Forbidden: insufficient role");
+
+    await expect(
+      financeApi.upsertChannelRevenueCore(admin, {
+        branchId,
+        date: "2026-10-13",
+        channel: "ShopeeFood",
+        amount: -5,
+      }),
+    ).rejects.toThrow("non-negatif");
+  });
+});

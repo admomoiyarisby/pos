@@ -18,6 +18,7 @@ import {
   type ChannelPnlRow,
   getDailyIngredientUsage,
   upsertDailyOverride,
+  upsertChannelRevenue,
   createManualRevenue,
   createChannelRevenue,
   createManualExpense,
@@ -27,6 +28,7 @@ import { getBrokenStock } from "#/lib/server/waste";
 import { getBranches } from "#/lib/server/branches";
 import {
   ChevronRight,
+  Check,
   Lock,
   Pencil,
   Printer,
@@ -36,6 +38,7 @@ import {
   PackageX,
 } from "lucide-react";
 import { z } from "zod";
+import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { formatRp, formText } from "#/lib/utils";
 import { openPrintWindow } from "#/lib/print-window";
 import { toast } from "sonner";
@@ -272,11 +275,86 @@ const CHANNEL_LABELS = {
 const channelLabelOf = (channel: string) =>
   channel in CHANNEL_LABELS ? CHANNEL_LABELS[channel as keyof typeof CHANNEL_LABELS] : channel;
 
+// Inline Omzet Real input per table row: type the payout, hit save. The cell
+// remounts (via key at the call site) whenever the stored value changes, so
+// the field always shows what is saved. Revenue is per-branch: saving without
+// a selected branch toasts guidance instead of writing anywhere ambiguous.
+function RealInputCell({
+  branchId,
+  tanggal,
+  channel,
+  current,
+}: {
+  branchId: string | undefined;
+  tanggal: string;
+  channel: string;
+  current: number | null;
+}) {
+  const queryClient = useQueryClient();
+  // Empty/reset state is 0, not blank: an untouched cell reads "Rp 0".
+  const [amount, setAmount] = useState<number | null>(current ?? 0);
+  const saveMutation = useMutation({
+    mutationFn: upsertChannelRevenue,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["channel-pnl"] });
+      void queryClient.invalidateQueries({ queryKey: ["manual-finance-entries"] });
+      toast.success("Omzet Real tersimpan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menyimpan Omzet Real", { description: error.message });
+    },
+  });
+
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <MoneyInput
+        defaultValue={current ?? 0}
+        onChange={setAmount}
+        className="h-8 min-w-0 flex-1 px-2 text-right text-xs"
+        aria-label={`Omzet Real ${channelLabelOf(channel)} ${tanggal}`}
+      />
+      <button
+        type="button"
+        disabled={saveMutation.isPending || amount === null || amount === current}
+        onClick={() => {
+          if (!branchId) {
+            toast.error("Pilih cabang terlebih dahulu untuk menginput Omzet Real");
+            return;
+          }
+          if (amount === null) return;
+          void saveMutation.mutateAsync({
+            data: {
+              branchId,
+              date: tanggal,
+              channel: z.enum(ORDER_CHANNEL_VALUES).parse(channel),
+              amount,
+            },
+          });
+        }}
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-40"
+        title="Simpan Omzet Real"
+        aria-label={`Simpan Omzet Real ${channelLabelOf(channel)} ${tanggal}`}
+      >
+        <Check className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 // ── Breakdown per Channel: Channel × HPP × Omzet POS × Omzet Real × Margin %
-// Margin dihitung dari Omzet Real (= netSales, ADR 0017 #1), bukan Omzet POS.
+//
+// Omzet Real HANYA dari Input Revenue (Per Channel) — sel kosong (—) bila
+// belum diinput, dan Margin ikut kosong. Margin = (Omzet Real − HPP) /
+// Omzet Real. Subtotal/total mengagregasi sel yang ada inputnya saja.
 // Dilayar sebagai satu tabel per tanggal (grup per hari) + baris total per
 // hari. Dipakai bersama desktop (tabel) dan mobile (kartu per hari).
-function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
+function ChannelPnlSection({
+  rows,
+  branchId,
+}: {
+  rows: ChannelPnlRow[];
+  branchId: string | undefined;
+}) {
   const byDate = useMemo(() => {
     const map = new Map<string, ChannelPnlRow[]>();
     for (const r of rows) {
@@ -298,6 +376,26 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
     );
   }
 
+  // Agregat atas sel yang punya input: Omzet Real = Σ input yang ada (null
+  // bila tidak ada satu pun), margin dihitung atas HPP sel-sel itu saja agar
+  // channel yang belum diinput tidak mengecilkan margin channel yang sudah.
+  const sumReal = (list: ChannelPnlRow[]) => {
+    let real = 0;
+    let hppOfReal = 0;
+    let hasReal = false;
+    for (const r of list) {
+      if (r.omzetReal !== null) {
+        real += r.omzetReal;
+        hppOfReal += r.hpp;
+        hasReal = true;
+      }
+    }
+    return {
+      real: hasReal ? real : null,
+      margin: hasReal && real > 0 ? (real - hppOfReal) / real : null,
+    };
+  };
+
   // Total seluruh periode (semua tanggal & channel).
   const totals = rows.reduce(
     (acc, r) => ({
@@ -309,7 +407,7 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
     }),
     { orderCount: 0, grossSales: 0, hpp: 0, discountAndMdr: 0, netSales: 0 },
   );
-  const totalMargin = totals.netSales > 0 ? (totals.netSales - totals.hpp) / totals.netSales : 0;
+  const totalReal = sumReal(rows);
 
   return (
     <div className="space-y-3">
@@ -324,7 +422,7 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
                 <th className="text-right py-2.5 px-3 font-medium w-20">Order</th>
                 <th className="text-right py-2.5 px-3 font-medium w-32">HPP</th>
                 <th className="text-right py-2.5 px-3 font-medium w-32">Omzet POS</th>
-                <th className="text-right py-2.5 px-3 font-medium w-32">Omzet Real</th>
+                <th className="text-right py-2.5 px-3 font-medium w-44">Omzet Real</th>
                 <th className="text-right py-2.5 px-3 font-medium w-24">Margin %</th>
               </tr>
             </thead>
@@ -340,10 +438,7 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
                   }),
                   { orderCount: 0, grossSales: 0, hpp: 0, discountAndMdr: 0, netSales: 0 },
                 );
-                const dayMargin =
-                  dayTotals.netSales > 0
-                    ? (dayTotals.netSales - dayTotals.hpp) / dayTotals.netSales
-                    : 0;
+                const dayReal = sumReal(dayRows);
                 return (
                   <Fragment key={tanggal}>
                     {dayRows.map((r, i) => (
@@ -366,14 +461,24 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
                           {formatRp(r.grossSales)}
                         </td>
                         <td className="py-2 px-3 text-right tabular-nums font-medium">
-                          {formatRp(r.netSales)}
+                          <RealInputCell
+                            key={`${r.tanggal}-${r.channel}-${r.omzetReal ?? "empty"}`}
+                            branchId={branchId}
+                            tanggal={r.tanggal}
+                            channel={r.channel}
+                            current={r.omzetReal}
+                          />
                         </td>
                         <td
                           className={`py-2 px-3 text-right tabular-nums ${
-                            r.margin >= 0 ? "text-emerald-600" : "text-destructive"
+                            r.margin !== null && r.margin >= 0
+                              ? "text-emerald-600"
+                              : r.margin !== null
+                                ? "text-destructive"
+                                : "text-muted-foreground"
                           }`}
                         >
-                          {(r.margin * 100).toFixed(1)}%
+                          {r.margin !== null ? `${(r.margin * 100).toFixed(1)}%` : "—"}
                         </td>
                       </tr>
                     ))}
@@ -388,10 +493,14 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
                         {formatRp(dayTotals.grossSales)}
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums">
-                        {formatRp(dayTotals.netSales)}
+                        {dayReal.real !== null ? (
+                          formatRp(dayReal.real)
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums">
-                        {(dayMargin * 100).toFixed(1)}%
+                        {dayReal.margin !== null ? `${(dayReal.margin * 100).toFixed(1)}%` : "—"}
                       </td>
                     </tr>
                   </Fragment>
@@ -408,9 +517,15 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
                 <td className="py-2.5 px-3 text-right tabular-nums">
                   {formatRp(totals.grossSales)}
                 </td>
-                <td className="py-2.5 px-3 text-right tabular-nums">{formatRp(totals.netSales)}</td>
                 <td className="py-2.5 px-3 text-right tabular-nums">
-                  {(totalMargin * 100).toFixed(1)}%
+                  {totalReal.real !== null ? (
+                    formatRp(totalReal.real)
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </td>
+                <td className="py-2.5 px-3 text-right tabular-nums">
+                  {totalReal.margin !== null ? `${(totalReal.margin * 100).toFixed(1)}%` : "—"}
                 </td>
               </tr>
             </tfoot>
@@ -421,17 +536,7 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
       {/* Mobile: kartu per tanggal */}
       <div className="md:hidden space-y-2.5">
         {[...byDate.entries()].map(([tanggal, dayRows]) => {
-          const dayTotals = dayRows.reduce(
-            (acc, r) => ({
-              orderCount: acc.orderCount + r.orderCount,
-              grossSales: acc.grossSales + r.grossSales,
-              hpp: acc.hpp + r.hpp,
-              netSales: acc.netSales + r.netSales,
-            }),
-            { orderCount: 0, grossSales: 0, hpp: 0, netSales: 0 },
-          );
-          const dayMargin =
-            dayTotals.netSales > 0 ? (dayTotals.netSales - dayTotals.hpp) / dayTotals.netSales : 0;
+          const dayReal = sumReal(dayRows);
           return (
             <div key={tanggal} className="rounded-xl border bg-card shadow-xs overflow-hidden">
               <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-3.5 py-2.5">
@@ -443,7 +548,7 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
                   })}
                 </span>
                 <span className="text-xs tabular-nums text-muted-foreground">
-                  Margin {(dayMargin * 100).toFixed(1)}%
+                  Margin {dayReal.margin !== null ? `${(dayReal.margin * 100).toFixed(1)}%` : "—"}
                 </span>
               </div>
               <div className="divide-y">
@@ -453,10 +558,14 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
                       <span className="text-sm font-medium">{channelLabelOf(r.channel)}</span>
                       <span
                         className={`text-sm font-semibold tabular-nums ${
-                          r.margin >= 0 ? "text-emerald-600" : "text-destructive"
+                          r.margin !== null && r.margin >= 0
+                            ? "text-emerald-600"
+                            : r.margin !== null
+                              ? "text-destructive"
+                              : "text-muted-foreground"
                         }`}
                       >
-                        {(r.margin * 100).toFixed(1)}%
+                        {r.margin !== null ? `${(r.margin * 100).toFixed(1)}%` : "—"}
                       </span>
                     </div>
                     <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
@@ -470,7 +579,15 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
                       </div>
                       <div>
                         <div className="text-muted-foreground">Omzet Real</div>
-                        <div className="tabular-nums font-medium">{formatRp(r.netSales)}</div>
+                        <div className="tabular-nums font-medium">
+                          <RealInputCell
+                            key={`${r.tanggal}-${r.channel}-${r.omzetReal ?? "empty"}`}
+                            branchId={branchId}
+                            tanggal={r.tanggal}
+                            channel={r.channel}
+                            current={r.omzetReal}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -482,7 +599,8 @@ function ChannelPnlSection({ rows }: { rows: ChannelPnlRow[] }) {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Omzet Real = Omzet POS − Diskon Merchant − MDR. Margin dihitung dari Omzet Real.
+        Omzet Real = nilai yang diinput via Input Revenue (Per Channel). Kosong bila belum diinput;
+        Margin dihitung dari Omzet Real.
       </p>
     </div>
   );
@@ -1582,7 +1700,7 @@ function FinancePage() {
 
       {/* Breakdown per Channel — sub-tab Per Channel */}
       {activeTab === "keuangan" && subTab === "channel" && (
-        <ChannelPnlSection rows={channelPnl ?? []} />
+        <ChannelPnlSection rows={channelPnl ?? []} branchId={branchId} />
       )}
 
       {/* Rincian Stok Keluar — sub-tab Stok Keluar */}

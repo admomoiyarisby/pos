@@ -932,70 +932,111 @@ export interface ChannelPnlRow {
   hpp: number;
   /** Σ orders.merchantDiscount + mdrFee — potongan channel/platform. */
   discountAndMdr: number;
-  /** Σ orders.netSales — Omzet Real (yang benar-benar diterima). */
+  /** Σ orders.netSales — net POS (referensi/audit, bukan Omzet Real). */
   netSales: number;
-  /** Margin = (netSales − hpp) / netSales. Berbasis Omzet Real. */
-  margin: number;
+  /**
+   * Omzet Real: nilai yang diinput via Input Revenue (Per Channel) untuk
+   * tanggal+channel ini, atau null bila belum ada input. Unique constraint
+   * (branch, date, channel) menjamin maksimal satu baris input per sel.
+   */
+  omzetReal: number | null;
+  /**
+   * Margin = (omzetReal − hpp) / omzetReal. null bila tidak ada input
+   * (atau input ≤ 0) — tanpa Omzet Real tidak ada margin yang bisa dihitung.
+   */
+  margin: number | null;
 }
 
-// Per-day, per-channel P&L from orders. Omzet POS = totalAmount (harga menu),
-// Omzet Real = netSales (setelah diskon merchant + MDR, ADR 0017 #1), HPP dari
-// totalCogs. Margin wajib dihitung dari Omzet Real. Void dan soft-deleted
-// orders dikecualikan (ADR 0017 #3). IncludeInPnl manual revenue TIDAK masuk
-// sini — itu memo (ADR 0017 #2), bukan penjualan per channel.
+// Per-day, per-channel P&L from orders, overlaid with Input Revenue.
+// Omzet POS, HPP, and net POS selalu dari orders; Omzet Real HANYA dari
+// channel_revenues (input manual per channel) — null bila belum diinput.
+// Margin dihitung dari Omzet Real. Void dan soft-deleted orders dikecualikan
+// (ADR 0017 #3). Manual revenue tetap memo (ADR 0017 #2) dan tidak masuk
+// agregat P&L lain — pengecualiannya justru kolom ini (ADR 0024).
 export const getChannelPnl = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
   .handler(async ({ data }): Promise<ChannelPnlRow[]> => {
-    await requireRole("super_admin", "admin_pusat");
-
-    const conditions = [
-      ne(orders.status, "Void"),
-      isNull(orders.deletedAt),
-      data.branchId ? eq(orders.branchId, data.branchId) : undefined,
-      data.dateFrom
-        ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
-        : undefined,
-      data.dateTo
-        ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
-        : undefined,
-    ];
-
-    const rows = await db
-      .select({
-        tanggal: sql<string>`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`,
-        channel: orders.channel,
-        orderCount: sql<number>`COUNT(*)`,
-        grossSales: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
-        hpp: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
-        discountAndMdr: sql<number>`COALESCE(SUM(${orders.merchantDiscount} + ${orders.mdrFee}), 0)`,
-        netSales: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
-      })
-      .from(orders)
-      .where(and(...conditions))
-      .groupBy(
-        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`,
-        orders.channel,
-      )
-      .orderBy(
-        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`,
-        orders.channel,
-      );
-
-    return rows.map((r) => {
-      const netSales = Number(r.netSales);
-      const hpp = Number(r.hpp);
-      return {
-        tanggal: r.tanggal,
-        channel: r.channel,
-        orderCount: Number(r.orderCount),
-        grossSales: Number(r.grossSales),
-        hpp,
-        discountAndMdr: Number(r.discountAndMdr),
-        netSales,
-        margin: netSales > 0 ? (netSales - hpp) / netSales : 0,
-      };
-    });
+    const user = await requireRole("super_admin", "admin_pusat");
+    return getChannelPnlCore(user, data);
   });
+
+/** `getChannelPnl` minus the session lookup — the ADR 0015 core seam. */
+export async function getChannelPnlCore(
+  user: AppUser,
+  data: { branchId?: string; dateFrom?: string; dateTo?: string },
+): Promise<ChannelPnlRow[]> {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  const posDay = sql<string>`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`;
+  const conditions = [
+    ne(orders.status, "Void"),
+    isNull(orders.deletedAt),
+    data.branchId ? eq(orders.branchId, data.branchId) : undefined,
+    data.dateFrom ? sql`${posDay} >= ${data.dateFrom}` : undefined,
+    data.dateTo ? sql`${posDay} <= ${data.dateTo}` : undefined,
+  ];
+
+  // Input revenue per tanggal+channel (scope cabang sama dengan sisi POS).
+  const revenueAgg = db
+    .select({
+      date: channelRevenues.date,
+      channel: channelRevenues.channel,
+      total: sql<number>`COALESCE(SUM(${channelRevenues.amount}), 0)`.as("total"),
+      entries: sql<number>`COUNT(*)`.as("entries"),
+    })
+    .from(channelRevenues)
+    .where(
+      and(
+        data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
+        data.dateFrom ? gte(channelRevenues.date, data.dateFrom) : undefined,
+        data.dateTo ? lte(channelRevenues.date, data.dateTo) : undefined,
+      ),
+    )
+    .groupBy(channelRevenues.date, channelRevenues.channel)
+    .as("revenue_agg");
+
+  const rows = await db
+    .select({
+      tanggal: posDay,
+      channel: orders.channel,
+      orderCount: sql<number>`COUNT(*)`,
+      grossSales: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+      hpp: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
+      discountAndMdr: sql<number>`COALESCE(SUM(${orders.merchantDiscount} + ${orders.mdrFee}), 0)`,
+      netSales: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
+      revenueTotal: sql<number | null>`SUM(${revenueAgg.total})`,
+      revenueEntries: sql<number | null>`SUM(${revenueAgg.entries})`,
+    })
+    .from(orders)
+    .leftJoin(
+      revenueAgg,
+      and(sql`${revenueAgg.date}::date = ${posDay}`, eq(revenueAgg.channel, orders.channel)),
+    )
+    .where(and(...conditions))
+    .groupBy(posDay, orders.channel, revenueAgg.total, revenueAgg.entries)
+    .orderBy(posDay, orders.channel);
+
+  return rows.map((r) => {
+    const hpp = Number(r.hpp);
+    const entries = Number(r.revenueEntries ?? 0);
+    const omzetReal = entries > 0 ? Number(r.revenueTotal) : null;
+    return {
+      tanggal: r.tanggal,
+      channel: r.channel,
+      orderCount: Number(r.orderCount),
+      grossSales: Number(r.grossSales),
+      hpp,
+      discountAndMdr: Number(r.discountAndMdr),
+      netSales: Number(r.netSales),
+      omzetReal,
+      margin: omzetReal !== null && omzetReal > 0 ? (omzetReal - hpp) / omzetReal : null,
+    };
+  });
+}
 
 // ─── Rincian Stok Keluar Harian (usage per bahan) ───
 
@@ -1274,6 +1315,77 @@ export const createChannelRevenue = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
     return createChannelRevenueCore(user, data);
+  });
+
+// User-parameterized core (ADR-0015). Insert-or-update for the Per Channel
+// table's inline Omzet Real inputs: the unique (branch, date, channel) key
+// means re-saving a cell updates the input instead of failing. Notes are
+// only overwritten when explicitly provided, so a noteless inline save
+// never wipes a note written via the Input Revenue modal.
+export async function upsertChannelRevenueCore(
+  user: AppUser,
+  data: {
+    branchId: string;
+    date: string;
+    channel: (typeof ORDER_CHANNEL_VALUES)[number];
+    amount: number;
+    notes?: string;
+  },
+) {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+  if (!Number.isInteger(data.amount) || data.amount < 0) {
+    throw new Error("Nominal Omzet Real harus bilangan bulat non-negatif");
+  }
+
+  // A noteless inline save must never wipe a note written via the modal.
+  const updateSet =
+    data.notes === undefined
+      ? { amount: data.amount, submittedBy: user.id }
+      : { amount: data.amount, notes: data.notes, submittedBy: user.id };
+
+  const [revenue] = await db
+    .insert(channelRevenues)
+    .values({
+      branchId: data.branchId,
+      date: data.date,
+      channel: data.channel,
+      amount: data.amount,
+      notes: data.notes,
+      submittedBy: user.id,
+    })
+    .onConflictDoUpdate({
+      target: [channelRevenues.branchId, channelRevenues.date, channelRevenues.channel],
+      set: updateSet,
+    })
+    .returning();
+
+  await logSystemAction(
+    user,
+    "Upsert Channel Revenue",
+    `Omzet Real ${data.channel} ${data.date} Rp${data.amount.toLocaleString()} disimpan oleh ${user.name}`,
+  );
+  await logAudit(user, "revenues", revenue.id, "UPDATE", undefined, revenue);
+
+  return revenue;
+}
+
+export const upsertChannelRevenue = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      branchId: string;
+      date: string;
+      channel: (typeof ORDER_CHANNEL_VALUES)[number];
+      amount: number;
+      notes?: string;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+    return upsertChannelRevenueCore(user, data);
   });
 
 // ─── Manual Expenses ───
