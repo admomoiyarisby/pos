@@ -162,5 +162,12 @@ jobs:
 
             docker compose pull app
             docker compose up -d --remove-orphans
+
+            # The Caddyfile is bind-mounted, so `up -d` does not restart Caddy
+            # for a changed file, and Caddy's own file watcher misses scp's
+            # atomic replace (the inode changes). Reload via the admin API: it
+            # validates the config first and applies it with no downtime.
+            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+
             docker image prune -f
             docker compose ps

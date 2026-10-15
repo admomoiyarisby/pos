@@ -2,7 +2,7 @@ name: omoiyari-pos
 
 services:
   app:
-    # Built by GitHub Actions (.github/workflows/deploy.yml) and pushed to
+    # Built by GitHub Actions (.github/workflows/ci.yml) and pushed to
     # GHCR. The VPS only pulls it — it never builds.
     image: ${POS_IMAGE:-ghcr.io/admomoiyarisby/pos:latest}
     # To build locally instead of pulling, comment the `image:` line above and
