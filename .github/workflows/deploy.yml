@@ -49,6 +49,31 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      # The deploy job runs on its own fresh runner — without this, the
+      # workspace is empty and scp has nothing to archive.
+      - uses: actions/checkout@v4
+
+      # Fail early with a clear message if a secret is missing or misnamed,
+      # instead of the cryptic "can't connect without a private SSH key".
+      - name: Verify deploy secrets
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+          DIR: ${{ secrets.VPS_APP_DIR }}
+        run: |
+          fail=0
+          for v in HOST USER KEY DIR; do
+            val="${!v}"
+            if [ -z "$val" ]; then
+              echo "::error::$v is empty — add it under Settings → Secrets and variables → Actions → Secrets (repository), not the Variables tab and not an Environment."
+              fail=1
+            else
+              echo "$v: set (${#val} chars)"
+            fi
+          done
+          exit $fail
+
       # Keep compose.yaml + Caddyfile in sync with main. deploy/.env is NOT
       # copied, so the VPS's real secrets are never overwritten.
       - uses: appleboy/scp-action@v1
