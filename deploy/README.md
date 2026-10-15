@@ -14,7 +14,7 @@ Target spec: **2 vCPU / 2 GB RAM / 40 GB SSD, in the same region as Supabase
 3. The same workflow SSHes into the VPS, syncs `compose.yaml` + `Caddyfile`,
    pulls the new image, and runs `docker compose up -d`.
 
-The VPS **never builds** — it only pulls. Workflow: `.github/workflows/deploy.yml`.
+The VPS **never builds** — it only pulls. Workflow: `.github/workflows/ci.yml`.
 
 ## Prerequisites
 
@@ -138,10 +138,9 @@ Supabase does not pause during quiet hours:
 - **Keep assets immutable.** Nitro already sends
   `Cache-Control: public, max-age=31536000, immutable` for `/assets/*`. Put
   Cloudflare in front and those requests stop reaching the VPS entirely.
-- **Deploys are not gated on tests.** `deploy.yml` builds the image (so a broken
-  _build_ blocks the deploy) but does not run `vp check`/`vp test`. To gate on
-  those, trigger deploy via `workflow_run` after CI succeeds, or add a
-  `needs:` job that runs them.
+- **Deploys are gated on tests.** In `ci.yml` the `deploy` job `needs: build`,
+  which `needs: [check, test, drift]` — so a failing lint, test, or drift check
+  blocks the deploy. The app is compiled once, inside the image build.
 
 ## Local build (no CI)
 
