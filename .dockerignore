@@ -1,0 +1,27 @@
+node_modules
+.output
+.git
+.github
+.vercel
+.analysis
+.scratch
+.claude
+.codex
+.cursor
+.impeccable
+.newer
+.vite-hooks
+.tanstack
+.content-collections
+screenshots
+review
+learning-records
+lessons
+reference
+ui-plan
+
+# Never bake secrets into the image (root or nested, e.g. deploy/.env).
+.env
+.env.*
+**/.env
+**/.env.*

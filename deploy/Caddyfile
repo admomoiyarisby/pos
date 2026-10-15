@@ -1,0 +1,38 @@
+# ── Omoiyari POS — Caddy reverse proxy ─────────────────────────────────
+# TEMPORARY TEST HOSTNAME. sslip.io is a free wildcard-DNS service: this name
+# resolves straight to the VPS, so Caddy can issue a real certificate without
+# owning a domain. Swap it for your real domain when ready, and keep
+# BETTER_AUTH_URL in deploy/.env in sync. (Passkeys do NOT work on this name.)
+{
+	# Used only for certificate-expiry notices. Change to your own address.
+	email edwardmanhattan27@gmail.com
+
+	# If you put Cloudflare in front of this VPS, uncomment to make Caddy
+	# log the real client IP. `trusted_proxies cloudflare` needs the
+	# caddy-cloudflare-ip module (stock Caddy does not include it); without
+	# it, list Cloudflare's ranges as `trusted_proxies static <cidr> ...`.
+	# servers {
+	# 	trusted_proxies cloudflare
+	# }
+}
+
+43-134-231-134.sslip.io {
+	# gzip + zstd ship in the stock Caddy binary. This is what turns the
+	# ~2.7 MB of JS into ~780 KB and the 15 KB HTML into ~4 KB. HTTP/2 and
+	# HTTP/3 are enabled automatically once TLS is active.
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy app:3000
+
+	log {
+		output stdout
+		format json
+	}
+}

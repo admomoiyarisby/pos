@@ -1,0 +1,52 @@
+name: omoiyari-pos
+
+services:
+  app:
+    # Built by GitHub Actions (.github/workflows/deploy.yml) and pushed to
+    # GHCR. The VPS only pulls it — it never builds.
+    image: ${POS_IMAGE:-ghcr.io/admomoiyarisby/pos:latest}
+    # To build locally instead of pulling, comment the `image:` line above and
+    # uncomment this block:
+    # build:
+    #   context: ..
+    #   dockerfile: deploy/Dockerfile
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOST: 0.0.0.0
+    restart: unless-stopped
+    expose:
+      - "3000"
+    healthcheck:
+      # /login returns 200 once SSR is up. Swap for /api/keepalive if you
+      # also want the probe to touch the database.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
