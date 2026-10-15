@@ -6,6 +6,13 @@ const hasEnv = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_
 describe("supabase server client", () => {
   it.skipIf(!hasEnv)(
     "authenticates with the service-role key and finds the public recipe-images bucket",
+    // Live call to the Supabase project over the public internet. GitHub-hosted
+    // runners occasionally take longer than the 5s default to reach it, which
+    // failed runs against a perfectly healthy project — and, because `deploy`
+    // now `needs` this job, blocked the deploy. A generous timeout plus retries
+    // keeps the check meaningful without letting a network blip decide whether
+    // code ships.
+    { timeout: 30_000, retry: 3 },
     async () => {
       const client = getSupabaseServerClient();
 
