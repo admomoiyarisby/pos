@@ -31,6 +31,7 @@ import {
   ArrowRightLeft,
   PackageMinus,
   PackagePlus,
+  Search,
   X,
   Trash2,
   Check,
@@ -62,6 +63,8 @@ type IngredientLike = {
   name: string;
   stockUnit: string | null;
   category: string | null;
+  code?: string | null;
+  alias?: string | null;
 };
 
 /**
@@ -100,7 +103,7 @@ function SidePicker({
   setOpenCats: Dispatch<SetStateAction<Set<string>>>;
   otherSelectedIds: Set<string>;
   onToggle: (ing: IngredientLike) => void;
-  onToggleCat: (cat: string) => void;
+  onToggleCat: (opts: IngredientLike[]) => void;
   onUpdateQty: (ingredientId: string, qty: number) => void;
   onRemove: (ingredientId: string) => void;
   stockByIngredient: Map<string, number>;
@@ -117,6 +120,26 @@ function SidePicker({
   }, [allIngredients]);
   const categoryOrder = ["Fresh", "Dry", "Packaging", "Lainnya"];
   const isIncluded = (id: string) => items.some((i) => i.ingredientId === id);
+
+  // Type-ahead filter over the grouped list. The catalogue runs to hundreds of
+  // items, so scrolling the checkboxes is the slow path; typing narrows it to
+  // matches by name, code, or alias (case-insensitive substring).
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const visibleGroups = useMemo(() => {
+    if (!q) return grouped;
+    const m: Record<string, IngredientLike[]> = {};
+    for (const [cat, opts] of Object.entries(grouped)) {
+      const hits = opts.filter(
+        (o) =>
+          o.name.toLowerCase().includes(q) ||
+          (o.code ?? "").toLowerCase().includes(q) ||
+          (o.alias ?? "").toLowerCase().includes(q),
+      );
+      if (hits.length > 0) m[cat] = hits;
+    }
+    return m;
+  }, [grouped, q]);
 
   return (
     <div className="rounded-md border p-4 space-y-4">
@@ -139,12 +162,45 @@ function SidePicker({
         </button>
         {pickerOpen && (
           <div className="rounded-md border max-h-[34vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 border-b bg-background p-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="search"
+                  inputMode="search"
+                  autoComplete="off"
+                  aria-label={`Cari bahan — ${title}`}
+                  placeholder="Cari bahan, kode…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="h-10 md:h-9 w-full rounded-md border border-input bg-background pl-9 pr-9 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    aria-label="Hapus pencarian"
+                    onClick={() => setQuery("")}
+                    className="absolute right-1.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {q && Object.keys(visibleGroups).length === 0 && (
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                Tidak ada bahan yang cocok
+              </p>
+            )}
             {categoryOrder
-              .filter((c) => grouped[c]?.length)
+              .filter((c) => visibleGroups[c]?.length)
               .map((cat) => {
-                const opts = grouped[cat] ?? [];
+                const opts = visibleGroups[cat] ?? [];
                 const catAll = opts.length > 0 && opts.every((o) => isIncluded(o.id));
                 const catSome = opts.some((o) => isIncluded(o.id));
+                // While searching, every group with a match is shown expanded —
+                // otherwise the one match could hide inside a collapsed type.
+                const expanded = !!q || openCats.has(cat);
                 return (
                   <div key={cat} className="border-b last:border-b-0">
                     <div className="flex w-full items-center justify-between px-3 py-2">
@@ -157,7 +213,7 @@ function SidePicker({
                             if (el) el.indeterminate = catSome && !catAll;
                           }}
                           checked={catAll}
-                          onChange={() => onToggleCat(cat)}
+                          onChange={() => onToggleCat(opts)}
                         />
                         <button
                           type="button"
@@ -175,23 +231,27 @@ function SidePicker({
                           <span className="text-muted-foreground text-xs"> ({opts.length})</span>
                         </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpenCats((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(cat)) next.delete(cat);
-                            else next.add(cat);
-                            return next;
-                          })
-                        }
-                        className="text-muted-foreground"
-                        aria-label={openCats.has(cat) ? "Tutup" : "Buka"}
-                      >
-                        {openCats.has(cat) ? "▾" : "▸"}
-                      </button>
+                      {/* While searching every matching type is force-expanded,
+                          so there is nothing left for the chevron to do. */}
+                      {!q && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenCats((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(cat)) next.delete(cat);
+                              else next.add(cat);
+                              return next;
+                            })
+                          }
+                          className="text-muted-foreground"
+                          aria-label={openCats.has(cat) ? "Tutup" : "Buka"}
+                        >
+                          {openCats.has(cat) ? "▾" : "▸"}
+                        </button>
+                      )}
                     </div>
-                    {openCats.has(cat) && (
+                    {expanded && (
                       <div className="divide-y">
                         {opts.map((opt) => {
                           const disabled = otherSelectedIds.has(opt.id);
@@ -524,21 +584,11 @@ function YieldTrackingPage() {
     () => new Set(producedItems.map((i) => i.ingredientId)),
     [producedItems],
   );
-  const grouped = useMemo(() => {
-    const m: Record<string, IngredientLike[]> = {};
-    for (const ing of ingredients) {
-      const cat = ing.category ?? "Lainnya";
-      (m[cat] ??= []).push(ing);
-    }
-    return m;
-  }, [ingredients]);
-
   const toggleOutInclude = (ing: IngredientLike) => {
     if (outIds.has(ing.id)) setOutItems((p) => p.filter((i) => i.ingredientId !== ing.id));
     else setOutItems((p) => [...p, { ingredientId: ing.id, quantity: 0 }]);
   };
-  const toggleOutCatAll = (cat: string) => {
-    const opts = grouped[cat] ?? [];
+  const toggleOutCatAll = (opts: IngredientLike[]) => {
     const allIn = opts.length > 0 && opts.every((o) => outIds.has(o.id));
     if (allIn) {
       const ids = new Set(opts.map((o) => o.id));
@@ -563,8 +613,7 @@ function YieldTrackingPage() {
       setProducedItems((p) => p.filter((i) => i.ingredientId !== ing.id));
     else setProducedItems((p) => [...p, { ingredientId: ing.id, quantity: 0 }]);
   };
-  const toggleProducedCatAll = (cat: string) => {
-    const opts = grouped[cat] ?? [];
+  const toggleProducedCatAll = (opts: IngredientLike[]) => {
     const allIn = opts.length > 0 && opts.every((o) => producedIds.has(o.id));
     if (allIn) {
       const ids = new Set(opts.map((o) => o.id));
