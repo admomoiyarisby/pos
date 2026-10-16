@@ -39,6 +39,11 @@ interface LedgerRow {
   orderCode: string | null;
   /** Channel of the POS transaction behind this movement, if any. */
   orderChannel: string | null;
+  /**
+   * The other branch on a Mutasi movement: where the stock went (sender's row)
+   * or where it came from (receiver's row). NULL for every other movement.
+   */
+  counterpartBranchName: string | null;
 }
 
 export const Route = createFileRoute("/_layout/inventory/ledger")({
@@ -281,6 +286,19 @@ function LedgerPage() {
     return <span className="font-mono text-xs">{display}</span>;
   };
 
+  const renderNotes = (row: LedgerRow) => (
+    <div className="space-y-0.5 min-w-0">
+      <div className="truncate">{row.notes ?? "-"}</div>
+      {/* Mutasi only: the other end of the movement, so a sender's ledger says
+          which branch received the goods (and the receiver's, where from). */}
+      {row.counterpartBranchName && (
+        <div className="text-xs text-muted-foreground truncate">
+          {row.type === "OUT" ? "ke" : "dari"} {row.counterpartBranchName}
+        </div>
+      )}
+    </div>
+  );
+
   const columns: Column<LedgerRow>[] = [
     {
       accessorKey: "createdAt",
@@ -351,7 +369,7 @@ function LedgerPage() {
       width: "w-36",
       cell: ({ row }) => renderReference(row.original),
     },
-    { accessorKey: "notes", header: "Keterangan", cell: ({ row }) => row.original.notes ?? "-" },
+    { accessorKey: "notes", header: "Keterangan", cell: ({ row }) => renderNotes(row.original) },
   ];
   usePageTitle("Kartu Stok", "Riwayat mutasi masuk dan keluar");
 
@@ -737,7 +755,7 @@ function LedgerPage() {
                   <div className="min-w-0">
                     <div className="truncate">{renderReference(row)}</div>
                   </div>
-                  {row.notes && <div className="truncate">{row.notes}</div>}
+                  {row.notes && renderNotes(row)}
                 </div>
               </li>
             );

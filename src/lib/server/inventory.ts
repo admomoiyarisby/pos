@@ -12,7 +12,9 @@ import {
   systemNotifications,
   areaManagerBranches,
   orders,
+  scmTransfers,
 } from "#/db/schema";
+import { alias } from "drizzle-orm/pg-core";
 import { eq, and, or, desc, asc, count, inArray, sql, ilike, ne, isNull } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
@@ -356,9 +358,34 @@ export async function getStockLedgerCore(user: AppUser, data: GetStockLedgerData
     bomRecipeName = bomRecipe.name;
   }
 
+  // POS movements use the order id as the ledger reference; joining orders
+  // lets the Kartu Stok surface the cashier's Kode Order (ojol) and the
+  // channel so the reference is auditable without leaving the page.
+  // reference is text while orders.id is uuid — Postgres has no text = uuid
+  // operator, so the join must cast the uuid side to text.
+  const orderRefJoin = eq(stockLedger.reference, sql`${orders.id}::text`);
+  // Mutasi movements use the transfer id as the ledger reference, so the same
+  // trick names the OTHER side of the movement: the sender's "… dikirim" row
+  // can say which branch received it, and the receiver's "… diterima" row
+  // where it came from. Two aliases of `branches` because a transfer has both
+  // ends at once; the CASE picks whichever end is not this row's branch.
+  // `scm_transfers.id` is the primary key, so each join matches at most one
+  // row and neither the page nor the count can fan out.
+  const mutasiFromBranch = alias(branches, "mutasi_from_branch");
+  const mutasiToBranch = alias(branches, "mutasi_to_branch");
+  const transferRefJoin = eq(stockLedger.reference, sql`${scmTransfers.id}::text`);
+  // The other end of the movement, exactly as the Keterangan cell renders it:
+  // the sender's row names the receiver, the receiver's row names the sender.
+  // Shared by the select and the search filter so the page can never show text
+  // that typing it cannot find (or match text it does not show).
+  const counterpartBranchName = sql<
+    string | null
+  >`CASE WHEN ${stockLedger.branchId} = ${scmTransfers.fromBranchId} THEN ${mutasiToBranch.name} ELSE ${mutasiFromBranch.name} END`;
+
   // Build the filter list once so the page query and the pagination count
-  // stay consistent. fuzzySearch references ingredients/recipes columns, so
-  // any query using it must carry the same left joins as the page query.
+  // stay consistent. fuzzySearch references ingredients/recipes/orders and the
+  // Mutasi branch aliases, so any query using it must carry the same left
+  // joins as the page query.
   const ledgerFilters = and(
     effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
     assignedBranchIds ? inArray(stockLedger.branchId, assignedBranchIds) : undefined,
@@ -396,6 +423,10 @@ export async function getStockLedgerCore(user: AppUser, data: GetStockLedgerData
             stockLedger.reference,
             stockLedger.notes,
             orders.orderCode,
+            // The counterpart branch is rendered in the Keterangan cell, so it
+            // has to be searchable too — otherwise the page shows a branch name
+            // that typing it cannot find.
+            counterpartBranchName,
           ],
           data.search,
         )
@@ -403,12 +434,6 @@ export async function getStockLedgerCore(user: AppUser, data: GetStockLedgerData
     data.wasteBomOnly || data.wasteBomRecipeId ? wasteBomLedgerFilter(bomRecipeName) : undefined,
   );
 
-  // POS movements use the order id as the ledger reference; joining orders
-  // lets the Kartu Stok surface the cashier's Kode Order (ojol) and the
-  // channel so the reference is auditable without leaving the page.
-  // reference is text while orders.id is uuid — Postgres has no text = uuid
-  // operator, so the join must cast the uuid side to text.
-  const orderRefJoin = eq(stockLedger.reference, sql`${orders.id}::text`);
   const result = await db
     .select({
       id: stockLedger.id,
@@ -427,12 +452,17 @@ export async function getStockLedgerCore(user: AppUser, data: GetStockLedgerData
       branchName: branches.name,
       orderCode: orders.orderCode,
       orderChannel: orders.channel,
+      // NULL for every non-Mutasi row (the reference matches no transfer).
+      counterpartBranchName,
     })
     .from(stockLedger)
     .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
     .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
     .leftJoin(branches, eq(stockLedger.branchId, branches.id))
     .leftJoin(orders, orderRefJoin)
+    .leftJoin(scmTransfers, transferRefJoin)
+    .leftJoin(mutasiFromBranch, eq(scmTransfers.fromBranchId, mutasiFromBranch.id))
+    .leftJoin(mutasiToBranch, eq(scmTransfers.toBranchId, mutasiToBranch.id))
     .where(ledgerFilters)
     .orderBy(
       // type sort groups IN/OUT together; time is the tiebreaker so each
@@ -461,13 +491,18 @@ export async function getStockLedgerCore(user: AppUser, data: GetStockLedgerData
     .offset((data.page ?? 0) * (data.limit ?? 50));
 
   // Total row count under the same filters, so the client can compute the
-  // real page count for pagination (sales-data.ts pattern).
+  // real page count for pagination (sales-data.ts pattern). Same left joins as
+  // the page query: fuzzySearch now reads the Mutasi branch aliases too, and
+  // every join is on a unique key, so the count cannot fan out.
   const [totalRow] = await db
     .select({ count: count() })
     .from(stockLedger)
     .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
     .leftJoin(recipes, eq(stockLedger.recipeId, recipes.id))
     .leftJoin(orders, orderRefJoin)
+    .leftJoin(scmTransfers, transferRefJoin)
+    .leftJoin(mutasiFromBranch, eq(scmTransfers.fromBranchId, mutasiFromBranch.id))
+    .leftJoin(mutasiToBranch, eq(scmTransfers.toBranchId, mutasiToBranch.id))
     .where(ledgerFilters);
 
   return { data: result, total: totalRow?.count ?? 0 };
