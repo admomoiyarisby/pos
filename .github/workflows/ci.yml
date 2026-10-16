@@ -163,11 +163,16 @@ jobs:
             docker compose pull app
             docker compose up -d --remove-orphans
 
-            # The Caddyfile is bind-mounted, so `up -d` does not restart Caddy
-            # for a changed file, and Caddy's own file watcher misses scp's
-            # atomic replace (the inode changes). Reload via the admin API: it
-            # validates the config first and applies it with no downtime.
-            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+            # `Caddyfile` is a *file* bind mount, and a file bind mount pins the
+            # inode. scp replaces the file atomically (new inode), so a running
+            # container keeps reading the OLD file forever — and `caddy reload`
+            # re-reads that same stale copy, reapplies identical config, and
+            # exits 0 while changing nothing. Only a fresh container re-resolves
+            # the mount, so recreate caddy. Validate the freshly-written file
+            # first, so a typo'd config can't take the site down.
+            docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+              caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            docker compose up -d --force-recreate caddy
 
             docker image prune -f
             docker compose ps
