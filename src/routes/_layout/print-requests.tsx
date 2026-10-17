@@ -7,7 +7,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { Badge } from "#/components/ui/badge";
 import Modal from "#/components/ui/Modal";
 import { getPendingPrintRequests, approveReprint, rejectReprint } from "#/lib/server/pos";
-import { Printer } from "lucide-react";
+import { Ban, CheckCircle2, Printer } from "lucide-react";
 import { toast } from "sonner";
 
 interface PrintRequest {
@@ -37,6 +37,16 @@ function StatusBadge(props: { status: string }) {
       {s === "Pending" ? "Menunggu" : s === "Approved" ? "Disetujui" : "Ditolak"}
     </Badge>
   );
+}
+
+function formatDateTime(d: Date) {
+  return new Date(d).toLocaleString("id-ID", {
+    timeZone: "Asia/Jakarta",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function PrintRequestsPage() {
@@ -121,86 +131,161 @@ function PrintRequestsPage() {
           <p className="text-xs">Permintaan dari kasir akan muncul di sini</p>
         </div>
       ) : (
-        <div className="rounded-md border overflow-x-auto">
-          <table className="w-full text-sm min-w-[640px]">
-            <thead className="border-b bg-muted/50">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium">Waktu</th>
-                <th className="px-4 py-3 text-left font-medium">Order</th>
-                <th className="px-4 py-3 text-left font-medium">Channel</th>
-                <th className="px-4 py-3 text-left font-medium">Total</th>
-                <th className="px-4 py-3 text-left font-medium">Tipe</th>
-                <th className="px-4 py-3 text-left font-medium">Diajukan Oleh</th>
-                <th className="px-4 py-3 text-left font-medium">Status</th>
-                <th className="px-4 py-3 text-right font-medium">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map(function (r) {
-                return (
-                  <tr key={r.id} className="border-b hover:bg-muted/30">
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                      {new Date(r.createdAt).toLocaleString("id-ID", {
-                        timeZone: "Asia/Jakarta",
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs">
-                      #{(r.orderId || "").slice(0, 8).toUpperCase()}
+        <>
+          {/* Mobile cards — own everything below lg: at md (768px) the fixed
+              16rem sidebar leaves only ~460px of content width, less than the
+              desktop table's min-w-[640px], so the table would overflow. */}
+          <div className="lg:hidden space-y-2.5 -mx-4 px-4">
+            {requests.map(function (r) {
+              return (
+                <div
+                  key={r.id}
+                  className={
+                    "rounded-xl border bg-card p-3.5 shadow-xs " +
+                    (r.status === "Pending" ? "border-warning/40" : "")
+                  }
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-sm font-semibold tracking-tight">
+                        #{(r.orderId || "").slice(0, 8).toUpperCase()}
+                      </div>
                       {r.orderCode && (
-                        <span className="ml-1 text-muted-foreground">({r.orderCode})</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline">
-                        {r.orderChannel
-                          ? (lookupLabel(channelLabels, r.orderChannel) ?? r.orderChannel)
-                          : "-"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 font-medium">
-                      Rp {(r.orderTotal ?? 0).toLocaleString("id-ID")}
-                    </td>
-                    <td className="px-4 py-3">
-                      {r.requestType === "reprint" ? "Cetak Ulang" : "Bill"}
-                    </td>
-                    <td className="px-4 py-3">{r.requestedByName ?? "-"}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={r.status} />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {r.status === "Pending" && (
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={function () {
-                              setSelectedRequest(r.id);
-                              setConfirmAction("reject");
-                            }}
-                            className="h-8 px-3 rounded-md border text-xs text-destructive hover:bg-destructive/10"
-                          >
-                            Reject
-                          </button>
-                          <button
-                            onClick={function () {
-                              setSelectedRequest(r.id);
-                              setConfirmAction("approve");
-                            }}
-                            className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs"
-                          >
-                            Approve
-                          </button>
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {r.orderCode}
                         </div>
                       )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                    <StatusBadge status={r.status} />
+                  </div>
+
+                  <div className="mt-2.5 flex items-center gap-1.5 text-xs">
+                    <Badge variant="outline" className="shrink-0">
+                      {r.orderChannel
+                        ? (lookupLabel(channelLabels, r.orderChannel) ?? r.orderChannel)
+                        : "-"}
+                    </Badge>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="font-medium">
+                      {r.requestType === "reprint" ? "Cetak Ulang" : "Bill"}
+                    </span>
+                  </div>
+
+                  <div className="mt-2.5 flex items-end justify-between gap-3 border-t pt-2.5">
+                    <div className="text-sm font-semibold tabular-nums">
+                      Rp {(r.orderTotal ?? 0).toLocaleString("id-ID")}
+                    </div>
+                    <div className="min-w-0 text-right text-xs text-muted-foreground">
+                      <div className="tabular-nums">{formatDateTime(r.createdAt)}</div>
+                      <div className="truncate">{r.requestedByName ?? "-"}</div>
+                    </div>
+                  </div>
+
+                  {r.status === "Pending" && (
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={function () {
+                          setSelectedRequest(r.id);
+                          setConfirmAction("reject");
+                        }}
+                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border text-sm font-medium text-destructive transition-transform hover:bg-destructive/10 active:scale-[0.99]"
+                      >
+                        <Ban className="h-3.5 w-3.5" />
+                        Tolak
+                      </button>
+                      <button
+                        onClick={function () {
+                          setSelectedRequest(r.id);
+                          setConfirmAction("approve");
+                        }}
+                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-primary text-sm font-medium text-primary-foreground transition-transform active:scale-[0.99]"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Setujui
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden lg:block rounded-md border overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
+              <thead className="border-b bg-muted/50">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">Waktu</th>
+                  <th className="px-4 py-3 text-left font-medium">Order</th>
+                  <th className="px-4 py-3 text-left font-medium">Channel</th>
+                  <th className="px-4 py-3 text-left font-medium">Total</th>
+                  <th className="px-4 py-3 text-left font-medium">Tipe</th>
+                  <th className="px-4 py-3 text-left font-medium">Diajukan Oleh</th>
+                  <th className="px-4 py-3 text-left font-medium">Status</th>
+                  <th className="px-4 py-3 text-right font-medium">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.map(function (r) {
+                  return (
+                    <tr key={r.id} className="border-b hover:bg-muted/30">
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap tabular-nums">
+                        {formatDateTime(r.createdAt)}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">
+                        #{(r.orderId || "").slice(0, 8).toUpperCase()}
+                        {r.orderCode && (
+                          <span className="ml-1 text-muted-foreground">({r.orderCode})</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline">
+                          {r.orderChannel
+                            ? (lookupLabel(channelLabels, r.orderChannel) ?? r.orderChannel)
+                            : "-"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 font-medium">
+                        Rp {(r.orderTotal ?? 0).toLocaleString("id-ID")}
+                      </td>
+                      <td className="px-4 py-3">
+                        {r.requestType === "reprint" ? "Cetak Ulang" : "Bill"}
+                      </td>
+                      <td className="px-4 py-3">{r.requestedByName ?? "-"}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={r.status} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {r.status === "Pending" && (
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={function () {
+                                setSelectedRequest(r.id);
+                                setConfirmAction("reject");
+                              }}
+                              className="h-8 px-3 rounded-md border text-xs font-medium text-destructive hover:bg-destructive/10"
+                            >
+                              Tolak
+                            </button>
+                            <button
+                              onClick={function () {
+                                setSelectedRequest(r.id);
+                                setConfirmAction("approve");
+                              }}
+                              className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-medium"
+                            >
+                              Setujui
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* Confirm modal */}
@@ -218,12 +303,13 @@ function PrintRequestsPage() {
               ? "Apakah Anda yakin ingin menyetujui permintaan cetak ulang ini?"
               : "Apakah Anda yakin ingin menolak permintaan cetak ulang ini?"}
           </p>
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2">
             <button
               onClick={function () {
                 setConfirmAction(null);
               }}
-              className="h-9 px-4 rounded-md border text-sm"
+              disabled={approveMutation.isPending || rejectMutation.isPending}
+              className="h-10 sm:h-9 px-4 rounded-md border text-sm disabled:opacity-50"
             >
               Batal
             </button>
@@ -234,11 +320,15 @@ function PrintRequestsPage() {
               }}
               disabled={approveMutation.isPending || rejectMutation.isPending}
               className={
-                "h-9 px-4 rounded-md text-sm text-white disabled:opacity-50 " +
+                "h-10 sm:h-9 px-4 rounded-md text-sm text-white disabled:opacity-50 " +
                 (confirmAction === "approve" ? "bg-primary" : "bg-destructive")
               }
             >
-              {confirmAction === "approve" ? "Setujui" : "Tolak"}
+              {approveMutation.isPending || rejectMutation.isPending
+                ? "Memproses..."
+                : confirmAction === "approve"
+                  ? "Setujui"
+                  : "Tolak"}
             </button>
           </div>
         </div>
