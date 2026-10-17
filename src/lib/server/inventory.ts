@@ -58,133 +58,176 @@ function jakartaToday(): string {
   }).format(new Date());
 }
 
+export interface GetInventoryData {
+  branchId?: string;
+  search?: string;
+  category?: "Fresh" | "Dry" | "Packaging" | null;
+  skuType?: "RM" | "SFG" | "FG" | null;
+  locationType?: "Central" | "Outlet" | null; // ID18
+  /**
+   * Read the branch's actual stock records instead of its catalog.
+   *
+   * `isBranchVisible` says what a branch COUNTS, not what it HOLDS (ADR 0023),
+   * so the two are independent facts and only the list should read the flag.
+   * Availability surfaces — POS sellability and the waste modal today — set
+   * this, because hiding held stock makes a stocked item unsellable: reading
+   * the catalog here turned a 300-pcs "Sendok Makan" into a HABIS menu card
+   * while the Kartu Stok showed the balance.
+   */
+  includeNonCatalog?: boolean;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  negative?: boolean;
+}
+
 export const getInventory = createServerFn({ method: "GET" })
-  .validator(
-    (data: {
-      branchId?: string;
-      search?: string;
-      category?: "Fresh" | "Dry" | "Packaging" | null;
-      skuType?: "RM" | "SFG" | "FG" | null;
-      locationType?: "Central" | "Outlet" | null; // ID18
-      // Skip the outlet-catalog (isBranchVisible) filter and return the branch's
-      // actual stock — used by the waste modal, where a branch can physically
-      // hold and waste items outside its display catalog.
-      includeNonCatalog?: boolean;
-      page?: number;
-      limit?: number;
-      sortBy?: string;
-      sortOrder?: "asc" | "desc";
-      negative?: boolean;
-    }) => data,
-  )
+  .validator((data: GetInventoryData) => data)
   .handler(async ({ data }) => {
     const user = await requireAuth();
+    return getInventoryCore(user, data);
+  });
 
-    // Always use the provided branchId for filtering
-    // For branch_admin, override with their assigned branch
-    let branchFilter = data.branchId;
-    if (user.role === "branch_admin" && user.branchId) {
-      branchFilter = user.branchId;
-    }
+/**
+ * `getInventory` minus the session lookup — the ADR 0015 read-path core seam,
+ * extracted so a test can drive which scope a reader gets.
+ */
+export async function getInventoryCore(user: AppUser, data: GetInventoryData) {
+  // Always use the provided branchId for filtering
+  // For branch_admin, override with their assigned branch
+  let branchFilter = data.branchId;
+  if (user.role === "branch_admin" && user.branchId) {
+    branchFilter = user.branchId;
+  }
 
-    // Ensure pg_trgm is available for similarity(); ignore if the DB user lacks CREATE privilege
-    // (the fallback ILIKE path below will keep search usable).
-    try {
-      await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
-    } catch {
-      // ignore - will fallback to ILIKE-only search if similarity() is missing
-    }
+  // Ensure pg_trgm is available for similarity(); ignore if the DB user lacks CREATE privilege
+  // (the fallback ILIKE path below will keep search usable).
+  try {
+    await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+  } catch {
+    // ignore - will fallback to ILIKE-only search if similarity() is missing
+  }
 
-    const buildSearchCondition = (term: string) =>
-      fuzzySearch([ingredients.name, ingredients.code], term);
-    const buildFallbackSearchCondition = (term: string) =>
-      sql`(${ilike(ingredients.name, `%${term}%`)} OR ${ilike(ingredients.code, `%${term}%`)})`;
+  const buildSearchCondition = (term: string) =>
+    fuzzySearch([ingredients.name, ingredients.code], term);
+  const buildFallbackSearchCondition = (term: string) =>
+    sql`(${ilike(ingredients.name, `%${term}%`)} OR ${ilike(ingredients.code, `%${term}%`)})`;
 
-    // Outlet branches only see their branch (outlet) catalog — same rule as the
-    // stock-opname catalog and the ingredient master (getIngredients). Central
-    // warehouse and management views keep everything. Callers that need actual
-    // stock (waste modal) opt out via `includeNonCatalog`.
-    const branchCatalogCondition = data.includeNonCatalog
-      ? undefined
-      : or(ne(branches.type, "Outlet"), eq(ingredients.isBranchVisible, true));
+  // Outlet branches' list shows the branch (outlet) catalog — same rule as
+  // the ingredient master (getIngredients). Central warehouse and management
+  // views keep everything. Availability readers opt out via
+  // `includeNonCatalog`; the opname answers the same "catalog or held?"
+  // question with `heldAtBranchClause`, and both must agree that a branch
+  // holding an item can count it AND sell it.
+  const branchCatalogCondition = data.includeNonCatalog
+    ? undefined
+    : or(ne(branches.type, "Outlet"), eq(ingredients.isBranchVisible, true));
 
-    let useFallback = false;
-    const conditions = [
-      branchFilter ? eq(inventory.branchId, branchFilter) : undefined,
-      data.search ? buildSearchCondition(data.search) : undefined,
-      data.category ? eq(ingredients.category, data.category) : undefined,
-      data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
-      data.locationType ? eq(branches.type, data.locationType) : undefined, // ID18
-      data.negative ? sql`${inventory.quantity} <= 0` : undefined,
-      branchCatalogCondition,
-    ];
-    let where = and(...conditions.filter(Boolean));
+  let useFallback = false;
+  const conditions = [
+    branchFilter ? eq(inventory.branchId, branchFilter) : undefined,
+    data.search ? buildSearchCondition(data.search) : undefined,
+    data.category ? eq(ingredients.category, data.category) : undefined,
+    data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
+    data.locationType ? eq(branches.type, data.locationType) : undefined, // ID18
+    data.negative ? sql`${inventory.quantity} <= 0` : undefined,
+    branchCatalogCondition,
+  ];
+  let where = and(...conditions.filter(Boolean));
 
-    // Get total count — retry with ILIKE-only if pg_trgm/similarity() is unavailable
-    let totalResult: { total: number } | undefined;
-    try {
+  // Get total count — retry with ILIKE-only if pg_trgm/similarity() is unavailable
+  let totalResult: { total: number } | undefined;
+  try {
+    [totalResult] = await db
+      .select({ total: count() })
+      .from(inventory)
+      .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
+      .leftJoin(branches, eq(inventory.branchId, branches.id))
+      .where(where);
+  } catch (e) {
+    // SAFETY: caught value is unknown, narrow to Error to read message for pg_trgm fallback
+    const msg = String((e as Error)?.message ?? e);
+    if (data.search && (msg.includes("similarity") || msg.includes("pg_trgm"))) {
+      useFallback = true;
+      const fallbackConditions = [
+        branchFilter ? eq(inventory.branchId, branchFilter) : undefined,
+        data.search ? buildFallbackSearchCondition(data.search) : undefined,
+        data.category ? eq(ingredients.category, data.category) : undefined,
+        data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
+        data.locationType ? eq(branches.type, data.locationType) : undefined,
+        data.negative ? sql`${inventory.quantity} <= 0` : undefined,
+        branchCatalogCondition,
+      ];
+      where = and(...fallbackConditions.filter(Boolean));
       [totalResult] = await db
         .select({ total: count() })
         .from(inventory)
         .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
         .leftJoin(branches, eq(inventory.branchId, branches.id))
         .where(where);
-    } catch (e) {
-      // SAFETY: caught value is unknown, narrow to Error to read message for pg_trgm fallback
-      const msg = String((e as Error)?.message ?? e);
-      if (data.search && (msg.includes("similarity") || msg.includes("pg_trgm"))) {
-        useFallback = true;
-        const fallbackConditions = [
-          branchFilter ? eq(inventory.branchId, branchFilter) : undefined,
-          data.search ? buildFallbackSearchCondition(data.search) : undefined,
-          data.category ? eq(ingredients.category, data.category) : undefined,
-          data.skuType ? eq(ingredients.skuType, data.skuType) : undefined,
-          data.locationType ? eq(branches.type, data.locationType) : undefined,
-          data.negative ? sql`${inventory.quantity} <= 0` : undefined,
-          branchCatalogCondition,
-        ];
-        where = and(...fallbackConditions.filter(Boolean));
-        [totalResult] = await db
-          .select({ total: count() })
-          .from(inventory)
-          .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
-          .leftJoin(branches, eq(inventory.branchId, branches.id))
-          .where(where);
-      } else {
-        throw e;
-      }
+    } else {
+      throw e;
     }
+  }
 
-    const total = totalResult?.total ?? 0;
-    const limit = data.limit ? Math.min(data.limit, 1000) : 50;
-    const offset = (data.page ?? 0) * limit;
+  const total = totalResult?.total ?? 0;
+  const limit = data.limit ? Math.min(data.limit, 1000) : 50;
+  const offset = (data.page ?? 0) * limit;
 
-    const orderByExpr = data.search
-      ? useFallback
-        ? asc(ingredients.name)
-        : fuzzyRank([ingredients.name, ingredients.code], data.search)
-      : (() => {
-          const dir = data.sortOrder === "desc" ? desc : asc;
-          switch (data.sortBy) {
-            case "ingredientCode":
-              return dir(ingredients.code);
-            case "ingredientName":
-              return dir(ingredients.name);
-            case "ingredientSkuType":
-              return dir(ingredients.skuType);
-            case "ingredientCategory":
-              return dir(ingredients.category);
-            case "quantity":
-              return dir(inventory.quantity);
-            case "branchName":
-              return dir(branches.name);
-            default:
-              return asc(ingredients.name);
-          }
-        })();
+  const orderByExpr = data.search
+    ? useFallback
+      ? asc(ingredients.name)
+      : fuzzyRank([ingredients.name, ingredients.code], data.search)
+    : (() => {
+        const dir = data.sortOrder === "desc" ? desc : asc;
+        switch (data.sortBy) {
+          case "ingredientCode":
+            return dir(ingredients.code);
+          case "ingredientName":
+            return dir(ingredients.name);
+          case "ingredientSkuType":
+            return dir(ingredients.skuType);
+          case "ingredientCategory":
+            return dir(ingredients.category);
+          case "quantity":
+            return dir(inventory.quantity);
+          case "branchName":
+            return dir(branches.name);
+          default:
+            return asc(ingredients.name);
+        }
+      })();
 
-    let result;
-    try {
+  let result;
+  try {
+    result = await db
+      .select({
+        id: inventory.id,
+        branchId: inventory.branchId,
+        ingredientId: inventory.ingredientId,
+        quantity: inventory.quantity,
+        lastUpdated: inventory.lastUpdated,
+        ingredientName: ingredients.name,
+        ingredientCode: ingredients.code,
+        ingredientCategory: ingredients.category,
+        ingredientSkuType: ingredients.skuType,
+        purchaseUnit: ingredients.purchaseUnit,
+        stockUnit: ingredients.stockUnit,
+        branchName: branches.name,
+      })
+      .from(inventory)
+      .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
+      .leftJoin(branches, eq(inventory.branchId, branches.id))
+      .where(where)
+      .orderBy(orderByExpr)
+      .limit(limit)
+      .offset(offset);
+  } catch (e) {
+    // SAFETY: caught value is unknown, narrow to Error to read message for pg_trgm fallback
+    const msg = String((e as Error)?.message ?? e);
+    if (data.search && !useFallback && (msg.includes("similarity") || msg.includes("pg_trgm"))) {
+      // Fallback already prepared for count; reuse ILIKE ranking (simple name order)
       result = await db
         .select({
           id: inventory.id,
@@ -204,43 +247,16 @@ export const getInventory = createServerFn({ method: "GET" })
         .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
         .leftJoin(branches, eq(inventory.branchId, branches.id))
         .where(where)
-        .orderBy(orderByExpr)
+        .orderBy(asc(ingredients.name))
         .limit(limit)
         .offset(offset);
-    } catch (e) {
-      // SAFETY: caught value is unknown, narrow to Error to read message for pg_trgm fallback
-      const msg = String((e as Error)?.message ?? e);
-      if (data.search && !useFallback && (msg.includes("similarity") || msg.includes("pg_trgm"))) {
-        // Fallback already prepared for count; reuse ILIKE ranking (simple name order)
-        result = await db
-          .select({
-            id: inventory.id,
-            branchId: inventory.branchId,
-            ingredientId: inventory.ingredientId,
-            quantity: inventory.quantity,
-            lastUpdated: inventory.lastUpdated,
-            ingredientName: ingredients.name,
-            ingredientCode: ingredients.code,
-            ingredientCategory: ingredients.category,
-            ingredientSkuType: ingredients.skuType,
-            purchaseUnit: ingredients.purchaseUnit,
-            stockUnit: ingredients.stockUnit,
-            branchName: branches.name,
-          })
-          .from(inventory)
-          .leftJoin(ingredients, eq(inventory.ingredientId, ingredients.id))
-          .leftJoin(branches, eq(inventory.branchId, branches.id))
-          .where(where)
-          .orderBy(asc(ingredients.name))
-          .limit(limit)
-          .offset(offset);
-      } else {
-        throw e;
-      }
+    } else {
+      throw e;
     }
+  }
 
-    return { data: result, total };
-  });
+  return { data: result, total };
+}
 
 /**
  * ADR 0013 — predicate matching ledger rows written by Waste BOM entries: the

@@ -471,10 +471,22 @@ function PosPage() {
   });
   let activeShift = shiftResult.data;
 
+  // Availability must read the branch's real stock, not its catalog: the
+  // `isBranchVisible` flag decides which items an outlet counts, so filtering
+  // on it here once turned a stocked ingredient into a HABIS menu card while
+  // the Kartu Stok still showed the balance. `includeNonCatalog` is the same
+  // override the waste modal uses; limit 1000 covers every BOM ingredient
+  // (the 50-row default silently hides items and reads as 0 stock).
+  //
+  // The key carries "pos" because purchase-requisitions fetches ["inventory",
+  // branchId] with different args — the same key would serve its catalog-scoped
+  // page out of this cache and put the flag back in the way.
   let invResult = useQuery({
-    queryKey: ["inventory", activeBranchId],
+    queryKey: ["inventory", "pos", activeBranchId],
     queryFn: function () {
-      return getInventory({ data: { branchId: activeBranchId, limit: 500 } });
+      return getInventory({
+        data: { branchId: activeBranchId, limit: 1000, includeNonCatalog: true },
+      });
     },
     enabled: !!activeBranchId,
   });
