@@ -159,16 +159,47 @@ export const Route = createFileRoute("/_layout/modifier-groups/$mgId")({
   },
 });
 
-// A thin full-width separator row rendered between table rows during a
-// view-mode drag. Signals where the dragged modifier will land on drop.
+// The view-mode option shape, shared by the desktop row and the mobile card so
+// the two layouts cannot drift into showing different fields.
+type ModifierOption = {
+  id: string;
+  name: string;
+  alias?: string | null;
+  price: number;
+  isExclusion: boolean;
+  ingredients?: { id: string; ingredientId: string; quantity: number }[];
+};
+
+// The bar marking where a dragged option will land. It is wrapped in a
+// full-width table row on desktop and stands bare between cards on mobile.
+function DropIndicator() {
+  return <div className="h-0.5 w-full rounded-full bg-primary" />;
+}
+
 function DropIndicatorRow() {
   return (
     <tr>
       <td colSpan={5} className="p-0">
-        <div className="h-0.5 w-full bg-primary rounded-full" />
+        <DropIndicator />
       </td>
     </tr>
   );
+}
+
+function ModifierOptionBadge({ isExclusion }: { isExclusion: boolean }) {
+  return isExclusion ? (
+    <Badge variant="destructive" className="text-[10px]">
+      Exclusion
+    </Badge>
+  ) : (
+    <Badge variant="outline" className="text-[10px]">
+      Regular
+    </Badge>
+  );
+}
+
+function ModifierOptionPrice({ price }: { price: number }) {
+  return <>{price > 0 ? `Rp ${price.toLocaleString("id-ID")}` : "—"}</>;
 }
 
 // A single drag-and-drop sortable row in the view-mode modifier table. Keyed
@@ -204,18 +235,10 @@ function SortableModifierRow({ mod }: { mod: any }) {
         )}
       </td>
       <td className="px-4 py-2 text-right">
-        {mod.price > 0 ? `Rp ${mod.price.toLocaleString("id-ID")}` : "—"}
+        <ModifierOptionPrice price={mod.price} />
       </td>
       <td className="px-4 py-2 text-center">
-        {mod.isExclusion ? (
-          <Badge variant="destructive" className="text-[10px]">
-            Exclusion
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="text-[10px]">
-            Regular
-          </Badge>
-        )}
+        <ModifierOptionBadge isExclusion={mod.isExclusion} />
       </td>
       <td className="px-4 py-2 text-xs text-muted-foreground">
         {mod.ingredients?.length > 0 ? (
@@ -231,6 +254,69 @@ function SortableModifierRow({ mod }: { mod: any }) {
         )}
       </td>
     </tr>
+  );
+}
+
+// Mobile counterpart of SortableModifierRow, shown below lg. It registers in its
+// own DndContext rather than the table's: both lists mount the same modifier ids,
+// and dnd-kit keeps one node per id per context, so a shared context would have
+// the two lists clobber each other's drag targets.
+function SortableModifierCard({ mod }: { mod: ModifierOption }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: mod.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="rounded-xl border bg-card p-3.5 shadow-xs">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{mod.alias ?? mod.name}</div>
+          {mod.alias && mod.alias !== mod.name && (
+            <div className="mt-0.5 truncate text-xs text-muted-foreground">{mod.name}</div>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <ModifierOptionBadge isExclusion={mod.isExclusion} />
+          <button
+            type="button"
+            className="inline-flex h-10 w-10 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-2.5 space-y-2 border-t pt-2.5">
+        <div>
+          <div className="text-xs text-muted-foreground">Bahan Baku</div>
+          {mod.ingredients && mod.ingredients.length > 0 ? (
+            <div className="mt-1 space-y-0.5 border-l-2 border-border pl-3 text-xs text-muted-foreground">
+              {mod.ingredients.map((mi) => (
+                <div key={mi.id} className="truncate">
+                  {mi.ingredientId} × {mi.quantity}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-1 text-xs text-muted-foreground">—</div>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">Harga Pengantar</span>
+          <span className="text-sm font-semibold tabular-nums">
+            <ModifierOptionPrice price={mod.price} />
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -699,52 +785,92 @@ function ModifierGroupDetailPage() {
               {group.modifiers.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Tidak ada opsi</p>
               ) : (
-                <DndContext
-                  // Explicit id so dnd-kit's aria-describedby (built from a
-                  // module-level counter otherwise) is identical on server and
-                  // client — without it, hydration mismatches on every handle.
-                  id="modifier-group-view-dnd"
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragOver={handleViewDragOver}
-                  onDragEnd={(e) => {
-                    handleViewDragEnd(e);
-                    clearViewDrag();
-                  }}
-                  onDragCancel={clearViewDrag}
-                >
-                  <SortableContext
-                    items={group.modifiers.map((m: any) => m.id)}
-                    strategy={verticalListSortingStrategy}
+                <>
+                  {/* Mobile cards own everything below lg: at md (768px) the fixed
+                      16rem sidebar leaves only ~464px of content, less than this
+                      table's min-w-[480px]. The page's other table shares this
+                      breakpoint so the page never switches modes at two widths. */}
+                  <DndContext
+                    // Own context, separate from the table below: that table is
+                    // still mounted (just hidden) and registers the same ids.
+                    id="modifier-group-view-dnd-mobile"
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragOver={handleViewDragOver}
+                    onDragEnd={(e) => {
+                      handleViewDragEnd(e);
+                      clearViewDrag();
+                    }}
+                    onDragCancel={clearViewDrag}
                   >
-                    <div className="rounded-md border overflow-x-auto">
-                      <table className="w-full text-sm min-w-[480px]">
-                        <thead className="border-b bg-muted/50">
-                          <tr>
-                            <th className="w-8 px-2 py-2"></th>
-                            <th className="px-4 py-2 text-left font-medium">Nama Opsi</th>
-                            <th className="px-4 py-2 text-right font-medium">Harga Pengantar</th>
-                            <th className="px-4 py-2 text-center font-medium">Exclusion</th>
-                            <th className="px-4 py-2 text-left font-medium">Bahan Baku</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.modifiers.map((mod: any, i: number) => (
-                            <Fragment key={mod.id}>
-                              {viewDragOverId === mod.id &&
-                                viewDragActiveId !== mod.id &&
-                                i === 0 && <DropIndicatorRow />}
-                              <SortableModifierRow mod={mod} />
-                              {viewDragOverId === mod.id &&
-                                viewDragActiveId !== mod.id &&
-                                i > 0 && <DropIndicatorRow />}
-                            </Fragment>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </SortableContext>
-                </DndContext>
+                    <SortableContext
+                      items={group.modifiers.map((m) => m.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="lg:hidden space-y-2.5 -mx-4 px-4">
+                        {group.modifiers.map((mod, i) => (
+                          <Fragment key={mod.id}>
+                            {viewDragOverId === mod.id &&
+                              viewDragActiveId !== mod.id &&
+                              i === 0 && <DropIndicator />}
+                            <SortableModifierCard mod={mod} />
+                            {viewDragOverId === mod.id && viewDragActiveId !== mod.id && i > 0 && (
+                              <DropIndicator />
+                            )}
+                          </Fragment>
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+
+                  {/* Desktop table */}
+                  <DndContext
+                    // Explicit id so dnd-kit's aria-describedby (built from a
+                    // module-level counter otherwise) is identical on server and
+                    // client — without it, hydration mismatches on every handle.
+                    id="modifier-group-view-dnd"
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragOver={handleViewDragOver}
+                    onDragEnd={(e) => {
+                      handleViewDragEnd(e);
+                      clearViewDrag();
+                    }}
+                    onDragCancel={clearViewDrag}
+                  >
+                    <SortableContext
+                      items={group.modifiers.map((m: any) => m.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="hidden lg:block rounded-md border overflow-x-auto">
+                        <table className="w-full text-sm min-w-[480px]">
+                          <thead className="border-b bg-muted/50">
+                            <tr>
+                              <th className="w-8 px-2 py-2"></th>
+                              <th className="px-4 py-2 text-left font-medium">Nama Opsi</th>
+                              <th className="px-4 py-2 text-right font-medium">Harga Pengantar</th>
+                              <th className="px-4 py-2 text-center font-medium">Exclusion</th>
+                              <th className="px-4 py-2 text-left font-medium">Bahan Baku</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.modifiers.map((mod: any, i: number) => (
+                              <Fragment key={mod.id}>
+                                {viewDragOverId === mod.id &&
+                                  viewDragActiveId !== mod.id &&
+                                  i === 0 && <DropIndicatorRow />}
+                                <SortableModifierRow mod={mod} />
+                                {viewDragOverId === mod.id &&
+                                  viewDragActiveId !== mod.id &&
+                                  i > 0 && <DropIndicatorRow />}
+                              </Fragment>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                </>
               )}
             </div>
 
@@ -763,26 +889,46 @@ function ModifierGroupDetailPage() {
                   Belum ada menu yang menggunakan grup modifier ini
                 </p>
               ) : (
-                <div className="rounded-md border overflow-x-auto">
-                  <table className="w-full text-sm min-w-[400px]">
-                    <thead className="border-b bg-muted/50">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-medium">Kode</th>
-                        <th className="px-4 py-2 text-left font-medium">Nama Menu</th>
-                        <th className="px-4 py-2 text-left font-medium">Kategori</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.recipes.map((recipe: any) => (
-                        <tr key={recipe.id} className="border-b hover:bg-muted/30">
-                          <td className="px-4 py-2 text-muted-foreground">{recipe.code}</td>
-                          <td className="px-4 py-2 font-medium">{recipe.name}</td>
-                          <td className="px-4 py-2">{recipe.categoryName ?? "—"}</td>
+                <>
+                  <div className="lg:hidden space-y-2.5 -mx-4 px-4">
+                    {group.recipes.map((recipe) => (
+                      <div key={recipe.id} className="rounded-xl border bg-card p-3.5 shadow-xs">
+                        <div className="truncate font-mono text-xs text-muted-foreground">
+                          {recipe.code}
+                        </div>
+                        <div className="mt-0.5 truncate text-sm font-medium">{recipe.name}</div>
+                        <div className="mt-2.5 flex items-center justify-between gap-2 border-t pt-2.5">
+                          <span className="shrink-0 text-xs text-muted-foreground">Kategori</span>
+                          <span className="min-w-0 truncate text-xs">
+                            {recipe.categoryName ?? "—"}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop table */}
+                  <div className="hidden lg:block rounded-md border overflow-x-auto">
+                    <table className="w-full text-sm min-w-[400px]">
+                      <thead className="border-b bg-muted/50">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-medium">Kode</th>
+                          <th className="px-4 py-2 text-left font-medium">Nama Menu</th>
+                          <th className="px-4 py-2 text-left font-medium">Kategori</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {group.recipes.map((recipe: any) => (
+                          <tr key={recipe.id} className="border-b hover:bg-muted/30">
+                            <td className="px-4 py-2 text-muted-foreground">{recipe.code}</td>
+                            <td className="px-4 py-2 font-medium">{recipe.name}</td>
+                            <td className="px-4 py-2">{recipe.categoryName ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </>

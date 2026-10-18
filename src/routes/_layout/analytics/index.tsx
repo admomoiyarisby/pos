@@ -165,7 +165,7 @@ function AnalyticsPage() {
     <RoleGuard allowedRoles={["super_admin"]}>
       <div className="space-y-6">
         {/* Filters */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <select
             value={selectedBranch}
             onChange={(e) => setSelectedBranch(e.target.value)}
@@ -258,8 +258,39 @@ function AnalyticsPage() {
               </div>
             </div>
 
-            {/* Top Sales Table */}
-            <div className="rounded-md border overflow-x-auto">
+            {/* Mobile cards — at md (768px) the fixed 16rem sidebar plus p-6
+                leaves ~464px, less than the table's min-w-[480px], so cards
+                own everything below lg. */}
+            <div className="lg:hidden space-y-2.5 -mx-4 px-4">
+              {topSales.length === 0 ? (
+                <div className="rounded-xl border bg-card p-3.5 shadow-xs text-center text-sm text-muted-foreground">
+                  Belum ada data menu pada rentang ini
+                </div>
+              ) : (
+                topSales.map((item) => (
+                  <div key={item.recipeId} className="rounded-xl border bg-card p-3.5 shadow-xs">
+                    <div className="truncate font-medium">{item.name}</div>
+                    <div className="mt-2.5 grid grid-cols-2 gap-3 border-t pt-2.5">
+                      <div className="min-w-0">
+                        <div className="text-xs text-muted-foreground">Qty Terjual</div>
+                        <div className="mt-0.5 text-sm font-semibold tabular-nums">
+                          {item.totalQty.toLocaleString("id-ID")}
+                        </div>
+                      </div>
+                      <div className="min-w-0 text-right">
+                        <div className="text-xs text-muted-foreground">Revenue</div>
+                        <div className="mt-0.5 text-sm font-semibold tabular-nums">
+                          {formatRp(item.totalRevenue)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden lg:block rounded-md border overflow-x-auto">
               <table className="w-full text-sm min-w-[480px]">
                 <thead className="border-b bg-muted/50">
                   <tr>

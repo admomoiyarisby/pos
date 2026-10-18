@@ -80,7 +80,7 @@ function SCMInvoiceDetailPage() {
             <h1 className="text-2xl font-bold">{invoice.code}</h1>
             <p className="text-sm text-muted-foreground">Invoice SCM</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant={badgeVariant(statusColors[invoice.status])}>{invoice.status}</Badge>
             {canAct && (
               <>
@@ -122,7 +122,49 @@ function SCMInvoiceDetailPage() {
           </div>
         </div>
 
-        <div className="rounded-md border overflow-x-auto">
+        {/* Mobile cards — own everything below lg: at md (768px) the fixed 16rem
+            sidebar leaves only ~460px of content, less than the table's
+            min-w-[480px], so the table would scroll sideways. */}
+        <div className="lg:hidden space-y-2.5 -mx-4 px-4">
+          {invoice.items.map(
+            (item: {
+              id: string;
+              ingredientName: string | null;
+              quantity: number;
+              unitPrice: number;
+              totalPrice: number;
+            }) => (
+              <div key={item.id} className="rounded-xl border bg-card p-3.5 shadow-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1 text-sm font-medium">{item.ingredientName}</div>
+                  <div className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                    Qty {item.quantity}
+                  </div>
+                </div>
+                <div className="mt-2.5 flex items-end justify-between gap-3 border-t pt-2.5">
+                  <div className="min-w-0 text-xs text-muted-foreground">
+                    {showUnitPrice ? (
+                      <>
+                        Harga satuan{" "}
+                        <span className="font-medium text-foreground tabular-nums">
+                          Rp {item.unitPrice.toLocaleString("id-ID")}
+                        </span>
+                      </>
+                    ) : (
+                      "Total"
+                    )}
+                  </div>
+                  <div className="shrink-0 text-sm font-semibold tabular-nums">
+                    Rp {item.totalPrice.toLocaleString("id-ID")}
+                  </div>
+                </div>
+              </div>
+            ),
+          )}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden lg:block rounded-md border overflow-x-auto">
           <table className="w-full text-sm min-w-[480px]">
             <thead className="border-b bg-muted/50">
               <tr>

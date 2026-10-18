@@ -211,7 +211,7 @@ function DNDetailPage() {
             <h1 className="text-2xl font-bold">{dn.code}</h1>
             <p className="text-sm text-muted-foreground">Surat Jalan & Transfer Stok</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => {
                 printSuratJalan({
@@ -290,7 +290,143 @@ function DNDetailPage() {
           </div>
         )}
 
-        <div className="rounded-md border overflow-x-auto">
+        {/* Mobile cards — own everything below lg: at md (768px) the fixed 16rem
+            sidebar leaves only ~460px of content, less than the table's
+            min-w-[640px], so the table would scroll sideways. */}
+        <div className="lg:hidden space-y-2.5 -mx-4 px-4">
+          {dn.items.map((item: DNItem) => (
+            <div key={item.id} className="rounded-xl border bg-card p-3.5 shadow-xs">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">
+                    {item.ingredientName ?? item.ingredientCode}
+                  </div>
+                  {item.ingredientName && (
+                    <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                      {item.ingredientCode}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-1.5 text-xs text-muted-foreground tabular-nums">
+                Diorder {formatQuantity(item.quantity)} · Ready{" "}
+                {item.readyQuantity != null ? formatQuantity(item.readyQuantity) : "-"} · Dikirim{" "}
+                {formatQuantity(item.pickedQuantity ?? item.quantity)}
+              </div>
+
+              {canReceive ? (
+                <div className="mt-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Diterima
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        defaultValue={item.receivedQuantity ?? item.pickedQuantity ?? item.quantity}
+                        onChange={(e) =>
+                          setReceiveInputs((prev) => ({
+                            ...prev,
+                            [item.id]: { ...prev[item.id], received: e.target.value },
+                          }))
+                        }
+                        className="mt-1 h-11 w-full rounded-md border border-input bg-background px-2 text-sm text-right tabular-nums"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Reject
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        defaultValue={item.rejectedQuantity ?? 0}
+                        onChange={(e) =>
+                          setReceiveInputs((prev) => ({
+                            ...prev,
+                            [item.id]: { ...prev[item.id], rejected: e.target.value },
+                          }))
+                        }
+                        className="mt-1 h-11 w-full rounded-md border border-input bg-background px-2 text-sm text-right tabular-nums"
+                      />
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Keterangan..."
+                    aria-label="Keterangan"
+                    onChange={(e) =>
+                      setReceiveInputs((prev) => ({
+                        ...prev,
+                        [item.id]: { ...prev[item.id], note: e.target.value },
+                      }))
+                    }
+                    className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                  {Number(receiveInputs[item.id]?.rejected ?? item.rejectedQuantity ?? 0) > 0 && (
+                    <select
+                      onChange={(e) =>
+                        setReceiveInputs((prev) => ({
+                          ...prev,
+                          [item.id]: {
+                            ...prev[item.id],
+                            disposition:
+                              e.target.value === "Scrap" || e.target.value === "Quarantine"
+                                ? e.target.value
+                                : "Return to Source",
+                          },
+                        }))
+                      }
+                      defaultValue={item.rejectionDisposition ?? "Return to Source"}
+                      className="h-11 w-full rounded-md border border-input bg-background px-2 text-sm"
+                      aria-label={`Disposisi barang ditolak: ${item.ingredientName ?? item.ingredientCode}`}
+                    >
+                      <option value="Return to Source">Kembalikan ke Pusat</option>
+                      <option value="Scrap">Buang / Rusak (jadi Waste)</option>
+                      <option value="Quarantine">Karantina</option>
+                    </select>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="mt-2.5 flex items-end justify-between gap-3 border-t pt-2.5">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Diterima</div>
+                      <div className="text-sm font-semibold tabular-nums">
+                        {item.receivedQuantity != null
+                          ? formatQuantity(item.receivedQuantity)
+                          : "-"}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground">Reject</div>
+                      <div className="text-sm font-semibold tabular-nums">
+                        {item.rejectedQuantity != null
+                          ? formatQuantity(item.rejectedQuantity)
+                          : "-"}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {item.discrepancyNote ?? "-"}
+                    {item.rejectionDisposition && (
+                      <span className="ml-1 text-warning-foreground">
+                        ({item.rejectionDisposition})
+                      </span>
+                    )}
+                  </p>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden lg:block rounded-md border overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">
             <thead className="border-b bg-muted/50">
               <tr>

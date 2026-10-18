@@ -118,7 +118,7 @@ function CategoryDetailPage() {
         </button>
 
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
               <Tag className="h-5 w-5 text-primary" />
@@ -156,41 +156,71 @@ function CategoryDetailPage() {
               </p>
             </div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <table className="w-full text-sm min-w-[400px]">
-                <thead className="border-b bg-muted/50">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium">Kode</th>
-                    <th className="px-4 py-3 text-left font-medium">Nama Menu</th>
-                    <th className="px-4 py-3 text-center font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recipes.map((recipe: any) => (
-                    <tr key={recipe.id} className="border-b hover:bg-muted/30">
-                      <td className="px-4 py-3 text-muted-foreground">{recipe.code}</td>
-                      <td className="px-4 py-3 font-medium">
+            <>
+              {/* Mobile cards — at md (768px) the fixed 16rem sidebar plus p-6
+                  leaves ~464px, still wider than the table's min-w-[400px]. */}
+              <div className="md:hidden space-y-2.5 -mx-4 px-4">
+                {recipes.map((recipe) => (
+                  <div key={recipe.id} className="rounded-xl border bg-card p-3.5 shadow-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
                         <Link
                           to="/recipes/$recipeId"
                           params={{ recipeId: recipe.id }}
-                          className="hover:text-primary transition-colors"
+                          className="block truncate font-medium hover:text-primary transition-colors"
                         >
                           {recipe.name}
                         </Link>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <Badge
-                          variant={recipe.status === "Active" ? "success" : "secondary"}
-                          className="text-[10px]"
-                        >
-                          {recipe.status === "Active" ? "Aktif" : "Nonaktif"}
-                        </Badge>
-                      </td>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{recipe.code}</div>
+                      </div>
+                      <Badge
+                        variant={recipe.status === "Active" ? "success" : "secondary"}
+                        className="shrink-0 text-[10px]"
+                      >
+                        {recipe.status === "Active" ? "Aktif" : "Nonaktif"}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden md:block rounded-md border overflow-x-auto">
+                <table className="w-full text-sm min-w-[400px]">
+                  <thead className="border-b bg-muted/50">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium">Kode</th>
+                      <th className="px-4 py-3 text-left font-medium">Nama Menu</th>
+                      <th className="px-4 py-3 text-center font-medium">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {recipes.map((recipe: any) => (
+                      <tr key={recipe.id} className="border-b hover:bg-muted/30">
+                        <td className="px-4 py-3 text-muted-foreground">{recipe.code}</td>
+                        <td className="px-4 py-3 font-medium">
+                          <Link
+                            to="/recipes/$recipeId"
+                            params={{ recipeId: recipe.id }}
+                            className="hover:text-primary transition-colors"
+                          >
+                            {recipe.name}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <Badge
+                            variant={recipe.status === "Active" ? "success" : "secondary"}
+                            className="text-[10px]"
+                          >
+                            {recipe.status === "Active" ? "Aktif" : "Nonaktif"}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 

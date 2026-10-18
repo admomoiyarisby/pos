@@ -129,7 +129,7 @@ function PRDetailPage() {
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "branch_admin"]}>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-2xl font-bold">{pr.code}</h1>
             <p className="text-sm text-muted-foreground">
@@ -140,7 +140,7 @@ function PRDetailPage() {
               )}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant={lookupLabel(statusColors, pr.status) ?? "default"}>{pr.status}</Badge>
             {canProcess && (
               <button
@@ -198,7 +198,58 @@ function PRDetailPage() {
           </div>
         </div>
 
-        <div className="rounded-md border overflow-x-auto">
+        {/* Mobile cards — the table is min-w-[480px] and at md (768px) the fixed
+            16rem sidebar plus p-6 still leaves only ~464px of content, so the
+            cards own everything below lg. */}
+        <div className="lg:hidden space-y-2.5">
+          {pr.items.map(
+            (item: {
+              id: string;
+              ingredientCode: string | null;
+              ingredientName: string | null;
+              quantity: number;
+              stockUnit: string | null;
+            }) => (
+              <div key={item.id} className="rounded-xl border bg-card p-3.5 shadow-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-sm truncate">{item.ingredientName}</div>
+                    <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                      {item.ingredientCode}
+                    </div>
+                  </div>
+                  {item.stockUnit && (
+                    <span className="shrink-0 text-xs text-muted-foreground">{item.stockUnit}</span>
+                  )}
+                </div>
+
+                <div className="mt-2.5 flex items-center justify-between gap-3 border-t pt-2.5">
+                  <span className="text-xs text-muted-foreground">Qty Order</span>
+                  {isEditing ? (
+                    <input
+                      type="number"
+                      min={1}
+                      value={editedQuantities[item.id] ?? item.quantity}
+                      onChange={(e) =>
+                        setEditedQuantities((prev) => ({
+                          ...prev,
+                          [item.id]: Number(e.target.value),
+                        }))
+                      }
+                      className="h-10 w-28 rounded-md border border-input bg-background px-2 text-sm text-right"
+                    />
+                  ) : (
+                    <span className="text-sm font-semibold tabular-nums">
+                      {item.quantity.toLocaleString("id-ID")}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ),
+          )}
+        </div>
+
+        <div className="hidden lg:block rounded-md border overflow-x-auto">
           <table className="w-full text-sm min-w-[480px]">
             <thead className="border-b bg-muted/50">
               <tr>

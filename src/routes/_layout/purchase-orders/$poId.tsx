@@ -144,7 +144,7 @@ function PODetailPage() {
             <h1 className="text-2xl font-bold">{po.code}</h1>
             <p className="text-sm text-muted-foreground">Purchase Order</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant={badgeVariant(lookupLabel(statusColors, po.status))}>{po.status}</Badge>
             {canEdit && (
               <button
@@ -227,7 +227,107 @@ function PODetailPage() {
           </div>
         </div>
 
-        <div className="rounded-md border overflow-x-auto">
+        {/* Mobile cards — the table is min-w-[480px] and at md (768px) the fixed
+            16rem sidebar plus p-6 still leaves only ~464px of content, so the
+            cards own everything below lg. */}
+        <div className="lg:hidden space-y-2.5">
+          {po.items.map(
+            (item: {
+              id: string;
+              ingredientId: string;
+              ingredientName: string | null;
+              ingredientCode: string | null;
+              quantity: number;
+              unitPrice: number | null;
+              totalPrice: number | null;
+              receivedQuantity?: number | null;
+            }) => {
+              const ing = ingredients.find((i) => i.id === item.ingredientId);
+              const editItem = editItems.find((pi) => pi.ingredientId === item.ingredientId);
+              return (
+                <div key={item.id} className="rounded-xl border bg-card p-3.5 shadow-xs">
+                  <div className="font-medium text-sm truncate">
+                    {item.ingredientName ?? ing?.name ?? item.ingredientId.slice(0, 8)}
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-lg bg-muted/40 px-2.5 py-2">
+                      <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
+                        Qty Order
+                      </div>
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          min={1}
+                          defaultValue={item.quantity}
+                          onChange={(e) =>
+                            setEditItems((prev) =>
+                              prev.map((pi) =>
+                                pi.ingredientId === item.ingredientId
+                                  ? { ...pi, quantity: Number(e.target.value) }
+                                  : pi,
+                              ),
+                            )
+                          }
+                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-2 text-sm text-right"
+                        />
+                      ) : (
+                        <div className="mt-0.5 font-medium tabular-nums">
+                          {item.quantity.toLocaleString("id-ID")}
+                        </div>
+                      )}
+                    </div>
+                    <div className="rounded-lg bg-muted/40 px-2.5 py-2">
+                      <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
+                        Harga Satuan
+                      </div>
+                      {isEditing ? (
+                        <MoneyInput
+                          value={editItem?.unitPrice ?? null}
+                          onChange={(raw) =>
+                            setEditItems((prev) =>
+                              prev.map((pi) =>
+                                pi.ingredientId === item.ingredientId
+                                  ? { ...pi, unitPrice: raw ?? undefined }
+                                  : pi,
+                              ),
+                            )
+                          }
+                          className="mt-1 h-10 text-right"
+                        />
+                      ) : (
+                        <div className="mt-0.5 font-medium tabular-nums">
+                          Rp {(item.unitPrice ?? 0).toLocaleString("id-ID")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-2.5 flex items-end justify-between gap-3 border-t pt-2.5">
+                    <div>
+                      <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
+                        Total
+                      </div>
+                      <div className="text-sm font-semibold tabular-nums">
+                        {isEditing ? "-" : `Rp ${(item.totalPrice ?? 0).toLocaleString("id-ID")}`}
+                      </div>
+                    </div>
+                    {po.status !== "Draft" && (
+                      <div className="min-w-0 text-right text-xs text-muted-foreground">
+                        <div>Diterima</div>
+                        <div className="font-medium tabular-nums text-foreground">
+                          {item.receivedQuantity?.toLocaleString("id-ID") ?? "-"}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            },
+          )}
+        </div>
+
+        <div className="hidden lg:block rounded-md border overflow-x-auto">
           <table className="w-full text-sm min-w-[480px]">
             <thead className="border-b bg-muted/50">
               <tr>
