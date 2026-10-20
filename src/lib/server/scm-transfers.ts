@@ -22,6 +22,7 @@ import {
   ingredientBranches,
   inventory,
   scmTransferAuditLog,
+  scmTransferInvoices,
   scmTransferItems,
   scmTransfers,
 } from "#/db/schema";
@@ -189,6 +190,9 @@ export const getMutasiTransfer = createServerFn({ method: "GET" })
           paidAt: result.invoice.paidAt,
           paidById: result.invoice.paidById,
           cancelledAt: result.invoice.cancelledAt,
+          checked: result.invoice.checked,
+          checkedAt: result.invoice.checkedAt,
+          checkedById: result.invoice.checkedById,
           lineItems: isBranchAdmin
             ? invoiceLineItems.map((li) => ({ ...li, unitPrice: 0 }))
             : invoiceLineItems,
@@ -1021,6 +1025,67 @@ export async function cancelMutasiTransferCore(
 export const cancelMutasiTransfer = createServerFn({ method: "POST" })
   .validator((data: { transferId: string; reason: string }) => data)
   .handler(async ({ data }) => cancelMutasiTransferCore(await requireAuth(), data));
+
+// ─── Invoice "sudah dicek" flag ────────────────────────────────────────
+// A manual marker on the transfer's invoice: somebody verified it against
+// the receiver's review, but the money has not moved yet. It is NOT an FSM
+// transition — the transfer stays in WaitingForPayment — and it never gates
+// `mark-paid`. It is bookkeeping, exactly like `orders.verified` in Data
+// Penjualan, and lives on the invoice because the invoice is the document
+// being checked (it only exists from `finish-receive` onwards).
+export async function toggleMutasiInvoiceCheckedCore(
+  user: MutasiActorUser,
+  data: { transferId: string; checked: boolean },
+) {
+  const result = await loadTransferWithItems(data.transferId);
+  if (!result) throw new Error("Transfer tidak ditemukan");
+  // Visibility, not transition authority: everyone who can see the mutasi may
+  // tick the box. The flag carries no stock or money effect, so it is not
+  // restricted to the actor who owns the current state.
+  assertTransferAccess(user, result.transfer, "view");
+
+  const [invoice] = await db
+    .select()
+    .from(scmTransferInvoices)
+    .where(eq(scmTransferInvoices.scmTransferId, data.transferId))
+    .limit(1);
+  if (!invoice) throw new Error("Invoice belum dibuat untuk mutasi ini");
+  if (invoice.cancelledAt) throw new Error("Invoice sudah dibatalkan");
+  if (invoice.paidAt) throw new Error("Invoice sudah lunas — tidak perlu ditandai sudah dicek");
+  if (invoice.checked === data.checked) {
+    return { success: true, checked: invoice.checked };
+  }
+
+  const [updated] = await db
+    .update(scmTransferInvoices)
+    .set({
+      checked: data.checked,
+      checkedAt: data.checked ? new Date() : null,
+      checkedById: data.checked ? user.id : null,
+    })
+    .where(eq(scmTransferInvoices.id, invoice.id))
+    .returning();
+
+  // The Mutasi timeline (`scm_transfer_audit_log`) is the canonical trail for
+  // in-state writes — the same place `item-add` / `item-update` land — so the
+  // check mark is recorded there rather than in the generic admin audit log.
+  await db.insert(scmTransferAuditLog).values({
+    scmTransferId: data.transferId,
+    event: data.checked ? "invoice-checked" : "invoice-unchecked",
+    fromState: result.transfer.status,
+    toState: result.transfer.status,
+    itemId: null,
+    actorId: user.id,
+    actorRole: user.role,
+    note: JSON.stringify({ invoiceCode: invoice.code, checked: data.checked }),
+  });
+
+  return { success: true, checked: updated.checked };
+}
+
+export const toggleMutasiInvoiceChecked = createServerFn({ method: "POST" })
+  .validator((data: { transferId: string; checked: boolean }) => data)
+  .handler(async ({ data }) => toggleMutasiInvoiceCheckedCore(await requireAuth(), data));
 
 // ─── Soft Delete (admin housekeeping) ──────────────────────────────────
 // Tombstones the transfer (deleted_at = now). Its items, audit log and invoice

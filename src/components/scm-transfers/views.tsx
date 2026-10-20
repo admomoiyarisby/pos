@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
+import { Checkbox } from "#/components/ui/checkbox";
 import Modal from "#/components/ui/Modal";
 import { getInventory } from "#/lib/server/inventory";
 
@@ -20,6 +21,7 @@ import {
   AlertCircle,
   Plus,
   Trash2,
+  BadgeCheck,
 } from "lucide-react";
 import {
   Combobox,
@@ -43,6 +45,7 @@ import {
   updateMutasiTransferDraftItems,
   addMutasiTransferDraftItem,
   removeMutasiTransferDraftItem,
+  toggleMutasiInvoiceChecked,
 } from "#/lib/server/scm-transfers";
 import { printMutasiSuratJalan, printMutasiInvoice } from "#/lib/server/scm-transfer-print";
 import { openPrintWindow } from "#/lib/print-window";
@@ -101,6 +104,8 @@ export interface TransferInvoiceRow {
   code: string;
   totalAmount: number;
   paidAt: Date | string | null;
+  /** Manual "sudah dicek" marker — the invoice was verified but not paid yet. */
+  checked?: boolean | null;
 }
 
 /** Transfer audit log entry — fields these views render. */
@@ -167,6 +172,7 @@ function useTransferActions(transferId: string) {
   const removeDraftItemMut = useServerFn(removeMutasiTransferDraftItem);
   const printSJ = useServerFn(printMutasiSuratJalan);
   const printInv = useServerFn(printMutasiInvoice);
+  const toggleCheckedMut = useServerFn(toggleMutasiInvoiceChecked);
 
   async function run<T>(fn: () => Promise<T>) {
     setError(null);
@@ -207,6 +213,9 @@ function useTransferActions(transferId: string) {
           }),
         ),
       markPaid: () => run(() => markPaidMut({ data: { transferId } })),
+      /** Mark / unmark the invoice as "sudah dicek" (bookkeeping only). */
+      toggleInvoiceChecked: (checked: boolean) =>
+        run(() => toggleCheckedMut({ data: { transferId, checked } })),
       cancel: (reason: string) => run(() => cancelMut({ data: { transferId, reason } })),
       /**
        * Edit draft line quantities. Re-throws on failure so the caller can tell
@@ -537,17 +546,32 @@ export function CancelledView(props: TransferViewProps) {
 function InvoiceCard({
   invoice,
   showPrices,
+  onToggleChecked,
 }: {
   invoice: TransferInvoiceRow;
   showPrices?: boolean;
+  /** Provided when the invoice can still be marked as "sudah dicek". */
+  onToggleChecked?: (checked: boolean) => void;
 }) {
+  const paid = !!invoice.paidAt;
+  const checked = !!invoice.checked;
+
   return (
     <div className="rounded-md border">
       <div className="flex items-center justify-between border-b p-4">
         <h3 className="text-sm font-medium">Invoice</h3>
-        <Badge variant={invoice.paidAt ? "success" : "warning"}>
-          {invoice.paidAt ? "Lunas" : "Belum Dibayar"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {checked && (
+            <Badge
+              variant="outline"
+              className="border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300"
+            >
+              <BadgeCheck className="mr-1 h-3 w-3" />
+              Sudah dicek
+            </Badge>
+          )}
+          <Badge variant={paid ? "success" : "warning"}>{paid ? "Lunas" : "Belum Dibayar"}</Badge>
+        </div>
       </div>
       <div className="p-4">
         <p className="text-sm">Kode: {String(invoice.code)}</p>
@@ -562,6 +586,19 @@ function InvoiceCard({
             {new Date(invoice.paidAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}
           </p>
         ) : null}
+        {/* The "sudah dicek" mark: the invoice was verified against the
+            receiver's review but the money has not moved yet. A paid invoice
+            needs no mark, so the box is gone by then. */}
+        {!paid && onToggleChecked && (
+          <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={checked}
+              onCheckedChange={(value) => onToggleChecked(value === true)}
+              aria-label="Tandai invoice sudah dicek"
+            />
+            <span className="text-muted-foreground">Invoice sudah dicek (belum dibayar)</span>
+          </label>
+        )}
       </div>
     </div>
   );
@@ -1765,7 +1802,15 @@ export function WaitingInvoice(props: TransferViewProps) {
       {invoice && (
         <>
           <SectionDivider />
-          <InvoiceCard invoice={invoice} />
+          <InvoiceCard
+            invoice={invoice}
+            onToggleChecked={(checked) => {
+              void actions.toggleInvoiceChecked(checked);
+              toast.success(
+                checked ? "Invoice ditandai sudah dicek" : "Tanda 'sudah dicek' dilepas",
+              );
+            }}
+          />
         </>
       )}
 

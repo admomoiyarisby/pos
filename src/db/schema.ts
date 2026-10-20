@@ -1577,6 +1577,13 @@ export const scmTransferInvoices = pgTable(
     paidAt: timestamp("paid_at", { mode: "date" }),
     paidById: uuid("paid_by_id").references(() => users.id),
     cancelledAt: timestamp("cancelled_at", { mode: "date" }),
+    // Manual "sudah dicek" marker: someone verified the invoice against the
+    // receiver's review, but the money has not moved yet. Purely
+    // informational — it does NOT change the FSM state (ADR 0006). Mirrors
+    // `orders.verified` in Data Penjualan.
+    checked: boolean("checked").notNull().default(false),
+    checkedAt: timestamp("checked_at", { mode: "date" }),
+    checkedById: uuid("checked_by_id").references(() => users.id),
   },
   (t) => [index("stxinv_transfer_idx").on(t.scmTransferId)],
 );
@@ -2897,6 +2904,11 @@ export const scmTransferInvoicesRelations = relations(scmTransferInvoices, ({ on
     fields: [scmTransferInvoices.paidById],
     references: [users.id],
     relationName: "scmTransferInvoicePaidBy",
+  }),
+  checkedBy: one(users, {
+    fields: [scmTransferInvoices.checkedById],
+    references: [users.id],
+    relationName: "scmTransferInvoiceCheckedBy",
   }),
 }));
 

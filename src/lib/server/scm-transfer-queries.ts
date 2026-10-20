@@ -111,6 +111,12 @@ export interface TransferListRow {
   createdAt: Date;
   requestedById: string;
   availableEvents: ScmTransferEvent[];
+  /** The transfer's invoice, when one exists (from `finish-receive` onwards). */
+  invoiceId: string | null;
+  /** The manual "sudah dicek" flag on that invoice. */
+  invoiceChecked: boolean;
+  /** When the invoice was paid — a paid invoice no longer needs checking. */
+  invoicePaidAt: Date | null;
 }
 
 /**
@@ -166,8 +172,15 @@ export async function listTransfersForUser(user: {
       status: scmTransfers.status,
       createdAt: scmTransfers.createdAt,
       requestedById: scmTransfers.requestedById,
+      // The invoice (and its "sudah dicek" flag) is joined in rather than
+      // fetched per row: the list needs the checkbox state for every row, and
+      // a per-row query would be N+1 over the whole history.
+      invoiceId: scmTransferInvoices.id,
+      invoiceChecked: sql<boolean>`coalesce(${scmTransferInvoices.checked}, false)`,
+      invoicePaidAt: scmTransferInvoices.paidAt,
     })
     .from(scmTransfers)
+    .leftJoin(scmTransferInvoices, eq(scmTransferInvoices.scmTransferId, scmTransfers.id))
     .orderBy(desc(scmTransfers.createdAt));
 
   const rows = whereClause ? await query.where(whereClause) : await query;

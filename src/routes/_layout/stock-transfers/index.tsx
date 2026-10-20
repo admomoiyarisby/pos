@@ -344,6 +344,7 @@ function TransferPage() {
                 ...prev,
                 status: undefined,
                 search: undefined,
+                checked: undefined,
                 page: prev.page,
                 sortKey: prev.sortKey,
                 sortDir: prev.sortDir,

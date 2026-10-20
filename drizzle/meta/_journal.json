@@ -456,6 +456,13 @@
       "when": 1791800000000,
       "tag": "0061_order_item_ingredients",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1792454400000,
+      "tag": "0062_scm_transfer_invoice_checked_flag",
+      "breakpoints": true
     }
   ]
 }

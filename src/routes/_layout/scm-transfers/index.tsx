@@ -23,13 +23,19 @@ import {
   Building2,
   CalendarDays,
   Trash2,
+  BadgeCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getMutasiTransfers, softDeleteMutasiTransfer } from "#/lib/server/scm-transfers";
+import {
+  getMutasiTransfers,
+  softDeleteMutasiTransfer,
+  toggleMutasiInvoiceChecked,
+} from "#/lib/server/scm-transfers";
 import { canAmAct } from "#/lib/server/scm-transfer-queries";
 import { SCM_TRANSFER_STATUS_VALUES, type ScmTransferStatus } from "#/lib/server/scm-transfer-fsm";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { getBranches } from "#/lib/server/branches";
+import { Checkbox } from "#/components/ui/checkbox";
 
 export const Route = createFileRoute("/_layout/scm-transfers/")({
   component: TransfersListPage,
@@ -40,6 +46,8 @@ export const Route = createFileRoute("/_layout/scm-transfers/")({
     page: z.coerce.number().int().min(1).optional().catch(undefined).parse(search.page),
     sortKey: z.string().optional().catch(undefined).parse(search.sortKey),
     sortDir: z.enum(["asc", "desc"]).optional().catch(undefined).parse(search.sortDir),
+    // "unchecked" narrows the list to invoices that still need to be checked.
+    checked: z.enum(["unchecked"]).optional().catch(undefined).parse(search.checked),
   }),
   loaderDeps: ({ search: { status } }) => ({ status }),
   loader: async ({ deps: { status } }) => {
@@ -62,6 +70,12 @@ interface TransferRow {
   createdAt: Date | string;
   requestedById: string;
   availableEvents?: string[];
+  /** The transfer's invoice, when one exists (from `finish-receive` onwards). */
+  invoiceId?: string | null;
+  /** Manual "sudah dicek" marker on that invoice. */
+  invoiceChecked?: boolean;
+  /** When the invoice was paid — a paid invoice no longer needs checking. */
+  invoicePaidAt?: Date | string | null;
 }
 
 const statusLabels = {
@@ -142,11 +156,51 @@ const FILTER_TABS: { accessorKey: FilterKey; label: string; annotation?: string 
   { accessorKey: "Cancelled", label: "Dibatalkan", annotation: "batal" },
 ];
 
+/**
+ * The "sudah dicek" checkbox for a transfer's invoice.
+ *
+ * Enabled only when there is an invoice to check and it is still unpaid — a
+ * paid invoice needs no check mark, and a transfer that has not reached
+ * `finish-receive` has no invoice at all.
+ */
+function InvoiceCheckedCell({
+  row,
+  disabled,
+  onToggle,
+}: {
+  row: TransferRow;
+  disabled?: boolean;
+  onToggle: (checked: boolean) => void;
+}) {
+  const hasInvoice = !!row.invoiceId;
+  const paid = !!row.invoicePaidAt;
+  const locked = !hasInvoice || paid;
+  const title = !hasInvoice
+    ? "Invoice belum dibuat — mutasi belum selesai diterima"
+    : paid
+      ? "Invoice sudah lunas"
+      : row.invoiceChecked
+        ? "Lepas tanda 'sudah dicek'"
+        : "Tandai invoice sudah dicek (belum dibayar)";
+
+  return (
+    <span className="inline-flex items-center justify-center">
+      <Checkbox
+        checked={!!row.invoiceChecked}
+        disabled={locked || disabled}
+        onCheckedChange={(value) => onToggle(value === true)}
+        aria-label={title}
+        title={title}
+      />
+    </span>
+  );
+}
+
 function TransfersListPage() {
   const [search, setSearch] = useTableSearch();
   const { page, setPage, sort, setSort } = useTableUrlState();
   const { user } = useAuth();
-  const { status: statusFilter } = Route.useSearch();
+  const { status: statusFilter, checked: checkedFilter } = Route.useSearch();
   const { initialRows, initialAllRows, initialBranches } = Route.useLoaderData();
   const navigate = useNavigate({ from: Route.fullPath });
 
@@ -186,7 +240,30 @@ function TransfersListPage() {
     });
   };
 
+  const setCheckedFilter = (next: boolean) => {
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        checked: next ? "unchecked" : undefined,
+        page: undefined,
+      }),
+      replace: true,
+    });
+  };
+
   const activeTab: FilterKey = statusFilter ?? "all";
+
+  // ── "Sudah dicek" marker ──────────────────────────────────────────────
+  // An invoice can be marked as checked once it exists (from
+  // `finish-receive` onwards) and has not been paid yet. The flag is
+  // bookkeeping only — it never moves the FSM state.
+  const showUncheckedOnly = checkedFilter === "unchecked";
+
+  /** An invoice that exists, is not marked as checked, and is still unpaid. */
+  const isPendingCheck = (r: TransferRow) => !!r.invoiceId && !r.invoiceChecked && !r.invoicePaidAt;
+
+  // How many invoices in the current status tab still need checking.
+  const uncheckedCount = useMemo(() => rows.filter(isPendingCheck).length, [rows]);
 
   // Compute per-status actionable counts from ALL rows (unfiltered).
   // Each row includes `availableEvents` from the server (filtered by role +
@@ -210,23 +287,25 @@ function TransfersListPage() {
   }, [allRows, rows]);
 
   const displayRows = useMemo(() => {
-    if (!search.trim()) return rows;
+    let list = rows;
+    if (showUncheckedOnly) list = list.filter(isPendingCheck);
+    if (!search.trim()) return list;
     const q = search.toLowerCase();
-    return rows.filter(
+    return list.filter(
       (r) =>
         r.code.toLowerCase().includes(q) ||
         (branchById.get(r.fromBranchId)?.name ?? "").toLowerCase().includes(q) ||
         (branchById.get(r.toBranchId)?.name ?? "").toLowerCase().includes(q) ||
         (lookupLabel(statusLabels, r.status) ?? r.status).toLowerCase().includes(q),
     );
-  }, [rows, search, branchById]);
+  }, [rows, search, branchById, showUncheckedOnly]);
 
   const totalPages = Math.ceil(displayRows.length / 15) || 1;
   const pagedRows = useMemo(
     () => displayRows.slice(page * 15, (page + 1) * 15),
     [displayRows, page],
   );
-  const hasActiveFilters = !!(statusFilter || search.trim());
+  const hasActiveFilters = !!(statusFilter || search.trim() || showUncheckedOnly);
 
   const canCreate = user?.role === "branch_admin" || user?.role === "super_admin";
 
@@ -245,6 +324,31 @@ function TransfersListPage() {
     },
   });
   const canDelete = user?.role === "super_admin";
+
+  // Mark an invoice as "sudah dicek" (or release the mark). The row is
+  // patched optimistically so the checkbox reacts on the click, then the
+  // list is refetched to settle the truth.
+  const checkMutation = useMutation({
+    mutationFn: (vars: { transferId: string; checked: boolean }) =>
+      toggleMutasiInvoiceChecked({ data: vars }),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ["scm-transfers"] });
+      queryClient.setQueriesData({ queryKey: ["scm-transfers"] }, (old) =>
+        Array.isArray(old)
+          ? old.map((r) => (r.id === vars.transferId ? { ...r, invoiceChecked: vars.checked } : r))
+          : old,
+      );
+    },
+    onSuccess: (res) => {
+      toast.success(res.checked ? "Invoice ditandai sudah dicek" : "Tanda 'sudah dicek' dilepas");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menandai invoice", { description: error.message });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
+    },
+  });
 
   usePageTitle("Mutasi Stok", "Surat Jalan antar cabang");
 
@@ -282,6 +386,23 @@ function TransfersListPage() {
       enableSorting: true,
       cell: ({ row }) =>
         new Date(row.original.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" }),
+    },
+    {
+      accessorKey: "invoiceChecked",
+      header: "Dicek",
+      width: "w-20",
+      align: "center",
+      cell: ({ row }) => (
+        <InvoiceCheckedCell
+          row={row.original}
+          // Only the row being saved is locked — a slow round-trip must not
+          // freeze every other checkbox on the page.
+          disabled={
+            checkMutation.isPending && checkMutation.variables?.transferId === row.original.id
+          }
+          onToggle={(checked) => checkMutation.mutate({ transferId: row.original.id, checked })}
+        />
+      ),
     },
     {
       accessorKey: "id",
@@ -409,7 +530,7 @@ function TransfersListPage() {
               );
             })}
           </div>
-          <div className="flex items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="hidden sm:inline text-muted-foreground">
               {FILTER_TABS.find((t) => t.accessorKey === activeTab)?.annotation ?? "—"} •{" "}
               {displayRows.length} dokumen
@@ -417,27 +538,47 @@ function TransfersListPage() {
             <span className="sm:hidden text-muted-foreground tabular-nums">
               {displayRows.length} mutasi • Hal {page + 1}/{totalPages}
             </span>
-            {hasActiveFilters && (
+            <div className="flex items-center gap-2 shrink-0">
               <button
-                onClick={() => {
-                  void navigate({
-                    search: () => ({
-                      status: undefined,
-                      search: undefined,
-                      page: undefined,
-                      sortKey: undefined,
-                      sortDir: undefined,
-                    }),
-                    replace: true,
-                  });
-                  setSearch("");
-                  setPage(0);
-                }}
-                className="font-medium text-primary hover:underline underline-offset-4 shrink-0"
+                type="button"
+                onClick={() => setCheckedFilter(!showUncheckedOnly)}
+                aria-pressed={showUncheckedOnly}
+                title="Tampilkan hanya invoice yang belum ditandai sudah dicek"
+                className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium border transition-colors ${
+                  showUncheckedOnly
+                    ? "bg-foreground text-background border-foreground"
+                    : "bg-background border-border hover:bg-muted text-foreground"
+                }`}
               >
-                Reset filter
+                <BadgeCheck className="h-3.5 w-3.5" />
+                Belum dicek
+                {uncheckedCount > 0 ? (
+                  <span className="tabular-nums opacity-70">({uncheckedCount})</span>
+                ) : null}
               </button>
-            )}
+              {hasActiveFilters && (
+                <button
+                  onClick={() => {
+                    void navigate({
+                      search: () => ({
+                        status: undefined,
+                        search: undefined,
+                        checked: undefined,
+                        page: undefined,
+                        sortKey: undefined,
+                        sortDir: undefined,
+                      }),
+                      replace: true,
+                    });
+                    setSearch("");
+                    setPage(0);
+                  }}
+                  className="font-medium text-primary hover:underline underline-offset-4 shrink-0"
+                >
+                  Reset filter
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -447,14 +588,16 @@ function TransfersListPage() {
               <ArrowUpRight className="h-5 w-5 text-muted-foreground" />
             </div>
             <p className="mt-3 text-sm font-medium">
-              {statusFilter || search ? "Tidak ada hasil" : "Belum ada mutasi"}
+              {statusFilter || search || showUncheckedOnly ? "Tidak ada hasil" : "Belum ada mutasi"}
             </p>
             <p className="text-sm text-muted-foreground mt-1 max-w-[32ch]">
-              {statusFilter
-                ? "Tidak ada mutasi dengan status ini. Coba status lain atau reset filter."
-                : search
-                  ? `Tidak ada mutasi untuk "${search}".`
-                  : "Buat mutasi pertama antar cabang untuk memulai."}
+              {showUncheckedOnly
+                ? "Semua invoice pada filter ini sudah ditandai sudah dicek."
+                : statusFilter
+                  ? "Tidak ada mutasi dengan status ini. Coba status lain atau reset filter."
+                  : search
+                    ? `Tidak ada mutasi untuk "${search}".`
+                    : "Buat mutasi pertama antar cabang untuk memulai."}
             </p>
             <div className="mt-4 flex gap-2">
               {hasActiveFilters && (
@@ -466,6 +609,7 @@ function TransfersListPage() {
                       search: () => ({
                         status: undefined,
                         search: undefined,
+                        checked: undefined,
                         page: undefined,
                         sortKey: undefined,
                         sortDir: undefined,
@@ -522,6 +666,15 @@ function TransfersListPage() {
                           >
                             {lookupLabel(statusLabels, row.status) ?? row.status}
                           </Badge>
+                          {row.invoiceChecked && (
+                            <Badge
+                              variant="outline"
+                              className="text-[11px] px-1.5 py-0 h-5 border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300"
+                            >
+                              <BadgeCheck className="h-3 w-3 mr-1" />
+                              Sudah dicek
+                            </Badge>
+                          )}
                           {hasAction && (
                             <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold text-destructive-foreground">
                               !
@@ -535,7 +688,26 @@ function TransfersListPage() {
                           )}
                         </div>
                       </div>
-                      <div className="shrink-0 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <div className="shrink-0 inline-flex items-center gap-2 text-xs text-muted-foreground">
+                        <span
+                          // The whole card is a link — the checkbox must not
+                          // navigate to the detail page.
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        >
+                          <InvoiceCheckedCell
+                            row={row}
+                            disabled={
+                              checkMutation.isPending &&
+                              checkMutation.variables?.transferId === row.id
+                            }
+                            onToggle={(checked) =>
+                              checkMutation.mutate({ transferId: row.id, checked })
+                            }
+                          />
+                        </span>
                         <CalendarDays className="h-3.5 w-3.5" />
                         {new Date(row.createdAt).toLocaleDateString("id-ID", {
                           timeZone: "Asia/Jakarta",
@@ -596,6 +768,9 @@ function TransfersListPage() {
                 onPageChange={setPage}
                 sort={sort}
                 onSortChange={setSort}
+                rowClassName={(r) =>
+                  r.invoiceChecked ? "bg-emerald-50/70 dark:bg-emerald-950/20" : ""
+                }
               />
             </div>
           </>

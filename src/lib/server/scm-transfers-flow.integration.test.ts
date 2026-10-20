@@ -26,6 +26,7 @@ import { getTestDatabaseUrl } from "./test-database";
 import type { TestDb } from "./integration-test-harness";
 import { setupFlowHarness } from "./integration-test-harness";
 import type { MutasiActorUser } from "./scm-transfers";
+import { listTransfersForUser } from "./scm-transfer-queries";
 import type { UserRole } from "./auth";
 
 const testDatabaseUrl = getTestDatabaseUrl();
@@ -1848,4 +1849,167 @@ describe("Mutasi Stok — receiver branch catalog warning (ADR 0023)", () => {
       expect(result.catalogWarnings).toEqual([]);
     },
   );
+});
+
+// =============================================================================
+// The "sudah dicek" flag on a Mutasi invoice.
+//
+// The client needs to record that an invoice was verified against the
+// receiver's review while the money has not moved yet. It is bookkeeping
+// only: it never moves the FSM state, never touches stock, and is refused
+// once the invoice is paid.
+// =============================================================================
+
+describe("Mutasi Stok — invoice 'sudah dicek' flag", () => {
+  /** Walk a transfer to WaitingForPayment (where the invoice exists). */
+  async function transferWaitingForPayment(prefix: string) {
+    const fromBranch = await seedBranch(uniq(`${prefix}-A`));
+    const toBranch = await seedBranch(uniq(`${prefix}-B`));
+    const ingredient = await seedIngredient(uniq(`${prefix}-ING`));
+    await seedInventory(fromBranch, ingredient, 10);
+
+    const sender = await seedUser("branch_admin", fromBranch);
+    const receiver = await seedUser("branch_admin", toBranch);
+    const manager = await seedUser("area_manager", undefined, [fromBranch, toBranch]);
+
+    const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+    await scm.submitMutasiTransferCore(sender, { transferId: transfer.id });
+    await scm.approveMutasiTransferCore(manager, { transferId: transfer.id });
+    await scm.shipMutasiTransferCore(sender, { transferId: transfer.id });
+    await scm.markDeliveredMutasiTransferCore(receiver, { transferId: transfer.id });
+    await scm.openReceiveMutasiTransferCore(receiver, { transferId: transfer.id });
+    const [item] = await db
+      .select()
+      .from(schema.scmTransferItems)
+      .where(eq(schema.scmTransferItems.scmTransferId, transfer.id))
+      .limit(1);
+    await scm.finishReceiveMutasiTransferCore(receiver, {
+      transferId: transfer.id,
+      items: [{ id: item.id, receivedQuantity: 5, rejectedQuantity: 0 }],
+    });
+
+    return { transfer, sender, receiver, manager };
+  }
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "marks an unpaid invoice as checked and records who did it",
+    async () => {
+      const { transfer, receiver } = await transferWaitingForPayment("MT-CHK");
+
+      await expect(
+        scm.toggleMutasiInvoiceCheckedCore(receiver, {
+          transferId: transfer.id,
+          checked: true,
+        }),
+      ).resolves.toMatchObject({ success: true, checked: true });
+
+      const [invoice] = await db
+        .select()
+        .from(schema.scmTransferInvoices)
+        .where(eq(schema.scmTransferInvoices.scmTransferId, transfer.id));
+      expect(invoice.checked).toBe(true);
+      expect(invoice.checkedAt).toBeTruthy();
+      expect(invoice.checkedById).toBe(receiver.id);
+
+      // The flag is bookkeeping: the transfer stays in WaitingForPayment and
+      // the invoice is still unpaid.
+      expect((await transferStatus(transfer.id)).status).toBe("WaitingForPayment");
+      expect(invoice.paidAt).toBeNull();
+
+      // The timeline records the mark.
+      const audit = await db
+        .select({ event: schema.scmTransferAuditLog.event })
+        .from(schema.scmTransferAuditLog)
+        .where(eq(schema.scmTransferAuditLog.scmTransferId, transfer.id));
+      expect(audit.map((a) => a.event)).toContain("invoice-checked");
+
+      // Releasing the mark clears the audit context.
+      await expect(
+        scm.toggleMutasiInvoiceCheckedCore(receiver, {
+          transferId: transfer.id,
+          checked: false,
+        }),
+      ).resolves.toMatchObject({ success: true, checked: false });
+      const [released] = await db
+        .select()
+        .from(schema.scmTransferInvoices)
+        .where(eq(schema.scmTransferInvoices.scmTransferId, transfer.id));
+      expect(released.checked).toBe(false);
+      expect(released.checkedAt).toBeNull();
+      expect(released.checkedById).toBeNull();
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "the list query carries the flag so the list can render the checkbox",
+    async () => {
+      const { transfer, receiver } = await transferWaitingForPayment("MT-CHKL");
+
+      const before = await listTransfersForUser({
+        id: receiver.id,
+        role: "branch_admin",
+        branchId: receiver.branchId,
+      });
+      const rowBefore = before.find((r) => r.id === transfer.id);
+      expect(rowBefore?.invoiceId).toBeTruthy();
+      expect(rowBefore?.invoiceChecked).toBe(false);
+      expect(rowBefore?.invoicePaidAt).toBeNull();
+
+      await scm.toggleMutasiInvoiceCheckedCore(receiver, {
+        transferId: transfer.id,
+        checked: true,
+      });
+
+      const after = await listTransfersForUser({
+        id: receiver.id,
+        role: "branch_admin",
+        branchId: receiver.branchId,
+      });
+      const rowAfter = after.find((r) => r.id === transfer.id);
+      expect(rowAfter?.invoiceChecked).toBe(true);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "refuses to check an invoice that does not exist yet",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-CHKN-A"));
+      const toBranch = await seedBranch(uniq("MT-CHKN-B"));
+      const ingredient = await seedIngredient(uniq("MT-CHKN-ING"));
+      await seedInventory(fromBranch, ingredient, 10);
+      const sender = await seedUser("branch_admin", fromBranch);
+
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+      await expect(
+        scm.toggleMutasiInvoiceCheckedCore(sender, {
+          transferId: transfer.id,
+          checked: true,
+        }),
+      ).rejects.toThrow(/Invoice belum dibuat/);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)("refuses to check an invoice that is already paid", async () => {
+    const { transfer, sender } = await transferWaitingForPayment("MT-CHKP");
+    await scm.markPaidMutasiTransferCore(sender, { transferId: transfer.id });
+
+    await expect(
+      scm.toggleMutasiInvoiceCheckedCore(sender, {
+        transferId: transfer.id,
+        checked: true,
+      }),
+    ).rejects.toThrow(/sudah lunas/);
+  });
+
+  it.skipIf(!hasTestDatabaseUrl)("rejects an actor who cannot see the transfer", async () => {
+    const { transfer } = await transferWaitingForPayment("MT-CHKX");
+    const stranger = await seedUser("branch_admin", await seedBranch(uniq("MT-CHKX-OTHER")));
+
+    await expect(
+      scm.toggleMutasiInvoiceCheckedCore(stranger, {
+        transferId: transfer.id,
+        checked: true,
+      }),
+    ).rejects.toThrow(/can only access transfers/);
+  });
 });
