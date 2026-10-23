@@ -27,6 +27,7 @@ import { describeDbError } from "./db-errors";
 import { roundQuantity, formatQuantity } from "#/lib/utils";
 import { ensureInventoryRow } from "./sales-data";
 import { branchCatalogClause, heldAtBranchClause, isOutsideBranchCatalog } from "./branch-catalog";
+import { assertAdjustmentBranchScope, STOCK_ADJUSTMENT_ROLES } from "./stock-adjustment-scope";
 
 /**
  * A physical count is a finite, non-negative number of stock units — a fraction
@@ -1692,10 +1693,12 @@ ${outsideCount > 0 ? `<p style="margin-top:6pt;font-size:9pt;color:#b45309;">[di
     return { html: buildPrintHtml(`Stock Opname ${branch?.name ?? ""}`, body, "landscape") };
   });
 
-// Super Admin manual stock adjustment (batch) — adjust stock across one or many
-// branches in one atomic action. Each line is a signed IN/OUT; the whole batch
-// shares a single `reference` (one adjustment event, many ledger rows) and one
-// reason, and is applied to every selected branch.
+// Manual stock adjustment (batch) — adjust stock across one or many branches in
+// one atomic action. Each line is a signed IN/OUT; the whole batch shares a
+// single `reference` (one adjustment event, many ledger rows) and one reason,
+// and is applied to every selected branch.
+// Roles: Super Admin (any branch), Admin Pusat (Central branches only), Area
+// Manager (assigned branches only) — see `assertAdjustmentBranchScope`.
 // Does NOT touch ingredients.averageCost (the global COGS basis). A line for an
 // ingredient the branch has never stocked is auto-created on IN; OUT on a
 // missing line is rejected so stock cannot be fabricated.
@@ -1708,12 +1711,19 @@ export const adjustBranchStockBatch = createServerFn({ method: "POST" })
     }) => data,
   )
   .handler(async ({ data }) => {
-    const user = await requireRole("super_admin");
+    const user = await requireRole(...STOCK_ADJUSTMENT_ROLES);
 
     const branchIds = (data.branchIds ?? []).filter(Boolean);
     if (branchIds.length === 0) {
       throw new Error("Minimal satu cabang harus dipilih");
     }
+    const centralBranchIds =
+      user.role === "admin_pusat"
+        ? (
+            await db.select({ id: branches.id }).from(branches).where(eq(branches.type, "Central"))
+          ).map((b) => b.id)
+        : [];
+    assertAdjustmentBranchScope(user, branchIds, centralBranchIds);
     const reason = (data.reason ?? "").trim();
     if (!reason) {
       throw new Error("Alasan penyesuaian wajib diisi");
@@ -1832,7 +1842,7 @@ export const adjustBranchStockBatch = createServerFn({ method: "POST" })
     await logSystemAction(
       user,
       "Penyesuaian Stok Manual (Batch)",
-      `Super Admin ${user.name} menyesuaikan ${data.items.length} bahan di ${branchIds.length} cabang (ref ${reference}). Alasan: ${reason}`,
+      `${user.name} menyesuaikan ${data.items.length} bahan di ${branchIds.length} cabang (ref ${reference}). Alasan: ${reason}`,
     );
 
     return {

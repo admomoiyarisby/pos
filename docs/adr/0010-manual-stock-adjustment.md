@@ -1,7 +1,7 @@
 # Manual Stock Adjustment (Penyesuaian Stok Manual)
 
-A Super Admin-only tool for directly adjusting a branch's stock outside the
-Stock Opname and Procurement/Mutasi flows. Reached via the “Sesuaikan Stok”
+A tool for directly adjusting a branch's stock outside the Stock Opname and
+Procurement/Mutasi flows. Reached via the “Sesuaikan Stok”
 button on `/inventory` (opens a modal worksheet); it is not a separate route.
 
 ## Context
@@ -39,9 +39,18 @@ Two facts shaped the design:
    the _global_ COGS cost basis that every other branch depends on. If cost-
    bearing receipts are ever needed, that is a separate effort (and would
    require per-branch cost tracking, which does not yet exist).
-4. **Super Admin only.** Both the page (RoleGuard) and the server functions
-   (`requireRole("super_admin")`) restrict write access to `super_admin`, per
-   the request.
+4. **Super Admin, Admin Pusat, and Area Manager.** The page (`RoleGuard`) and the
+   server function (`requireRole(...)`) deny every other role. Branch scope is
+   enforced server-side by `assertAdjustmentBranchScope`:
+   - **Super Admin** — any branch.
+   - **Admin Pusat** — Central-type branches only (the warehouse side).
+   - **Area Manager** — only the branches in `area_manager_branches`; an AM with
+     no assignments cannot adjust anything.
+
+   The modal's branch picker is pre-filtered to the same scope, but that is a
+   convenience — the server rejects out-of-scope branch ids regardless. Scope was
+   originally Super Admin-only; it was widened at the client's request.
+
 5. **CRUD completeness, guarded.** Read = the branch stock table. Create/Update
    = the adjustment worksheet — for each selected branch, an `IN` on an
    ingredient that branch has never stocked **auto-creates the line** (so
@@ -73,8 +82,9 @@ Two facts shaped the design:
 
 ## Consequences
 
-- Super Admin can correct or seed branch stock directly, with every change
-  explainable in `stockLedger` and `auditLogs`.
+- Super Admin, Admin Pusat, and Area Manager can correct or seed branch stock
+  directly (within their branch scope), with every change explainable in
+  `stockLedger` and `auditLogs`.
 - COGS (`ingredients.averageCost`) is insulated from ad-hoc manual entries.
 - The tool is intentionally narrow (no catalog management, no cost entry);
   those remain separate efforts if requested later.

@@ -164,16 +164,41 @@ function InventoryPage() {
   const branchName =
     branches?.find((b) => b.id === effectiveBranchId)?.name ?? (effectiveBranchId || "—");
 
+  // Manual adjustment is no longer Super Admin-only (client request, ADR 0010
+  // revised): Admin Pusat adjusts Central stock, Area Manager adjusts only the
+  // branches assigned to them. Server-side scope is authoritative; this list
+  // just keeps the modal from offering branches the server will reject.
+  const adjustmentBranches = useMemo(() => {
+    const all = branches ?? [];
+    if (user?.role === "area_manager") {
+      const assigned = new Set(user.assignedBranches ?? []);
+      return all.filter((b) => assigned.has(b.id));
+    }
+    if (user?.role === "admin_pusat") {
+      return all.filter((b) => b.type === "Central");
+    }
+    return all;
+  }, [branches, user]);
+
+  const canAdjustStock =
+    user?.role === "super_admin" ||
+    ((user?.role === "admin_pusat" || user?.role === "area_manager") &&
+      adjustmentBranches.length > 0);
+
+  const adjustmentBranchId = adjustmentBranches.some((b) => b.id === effectiveBranchId)
+    ? effectiveBranchId
+    : (adjustmentBranches[0]?.id ?? "");
+
   const { data: ingredients } = useQuery({
     queryKey: ["ingredients", "all"],
     queryFn: () => getIngredients({ data: { excludeNasi: true } }),
   });
 
   const { data: fullInventory } = useQuery({
-    queryKey: ["inventory", "all-for-adjust", effectiveBranchId],
+    queryKey: ["inventory", "all-for-adjust", adjustmentBranchId],
     queryFn: () =>
-      getInventory({ data: { branchId: effectiveBranchId || undefined, limit: 1000 } }),
-    enabled: !!effectiveBranchId,
+      getInventory({ data: { branchId: adjustmentBranchId || undefined, limit: 1000 } }),
+    enabled: !!adjustmentBranchId,
   });
 
   const stockByIngredient = useMemo(() => {
@@ -299,7 +324,7 @@ function InventoryPage() {
             ) : null}
           </div>
 
-          {user?.role === "super_admin" && (
+          {canAdjustStock && (
             <div className="flex gap-2 sm:ml-auto">
               <button
                 onClick={() => setModalOpen(true)}
@@ -307,12 +332,14 @@ function InventoryPage() {
               >
                 Sesuaikan Stok
               </button>
-              <button
-                onClick={() => setCleanSlateOpen(true)}
-                className="inline-flex flex-1 sm:flex-none items-center justify-center h-10 sm:h-9 px-4 rounded-xl sm:rounded-md border border-destructive/30 bg-background text-destructive text-sm font-medium hover:bg-destructive/10 active:scale-[0.98] transition-all whitespace-nowrap"
-              >
-                Clean Slate
-              </button>
+              {user?.role === "super_admin" && (
+                <button
+                  onClick={() => setCleanSlateOpen(true)}
+                  className="inline-flex flex-1 sm:flex-none items-center justify-center h-10 sm:h-9 px-4 rounded-xl sm:rounded-md border border-destructive/30 bg-background text-destructive text-sm font-medium hover:bg-destructive/10 active:scale-[0.98] transition-all whitespace-nowrap"
+                >
+                  Clean Slate
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -470,8 +497,8 @@ function InventoryPage() {
       <StockAdjustmentModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        branches={branches ?? []}
-        defaultBranchId={effectiveBranchId}
+        branches={adjustmentBranches}
+        defaultBranchId={adjustmentBranchId}
         ingredientOptions={ingredientOptions}
         stockByIngredient={stockByIngredient}
       />
