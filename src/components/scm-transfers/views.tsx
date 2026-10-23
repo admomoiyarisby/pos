@@ -1498,13 +1498,17 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
     setReviewError(null);
   };
 
+  const unitLabel = [
+    ...new Set(items.map((it) => ingredientById.get(it.ingredientId)?.stockUnit).filter(Boolean)),
+  ].join(", ");
+
   return (
     <Section>
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
 
       <div className="rounded-md border">
-        <div className="flex items-center justify-between border-b p-4">
-          <div>
+        <div className="flex flex-col gap-2 border-b p-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0">
             <h3 className="text-sm font-medium">Review Penerimaan</h3>
             <p className="text-xs text-muted-foreground">
               Hitung jumlah yang benar-benar tiba untuk setiap item, lalu isi kolom diterima dan
@@ -1512,7 +1516,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
             </p>
           </div>
           {reviewError && (
-            <span className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">
+            <span className="shrink-0 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
               {reviewError}
             </span>
           )}
@@ -1524,7 +1528,12 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
               {untouchedCount()} dari {items.length} item belum dihitung. Kalau barang tidak sempat
               dihitung, gunakan tombol di bawah — pilihan ini akan dicatat di log dokumen.
             </p>
-            <Button variant="outline" size="sm" onClick={fillAllAsPromised}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-11 w-full sm:w-auto lg:h-8"
+              onClick={fillAllAsPromised}
+            >
               Terima semua sesuai janji
             </Button>
           </div>
@@ -1535,21 +1544,25 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
             const edit = editFor(it);
             const sumOk = edit.received + edit.rejected === it.quantity;
             return (
-              <div key={it.id} className="space-y-2 p-4">
-                <div className="flex items-center gap-2">
-                  <p className="flex-1 text-sm font-medium">
+              <div key={it.id} className="space-y-3 p-4">
+                <div className="flex items-baseline gap-2">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium">
                     {ing?.name ?? it.ingredientId.slice(0, 8) + "..."}
                   </p>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground tabular-nums">
                     Janji: {formatQuantity(it.quantity)} {ing?.stockUnit ?? ""}
                   </span>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-1">
-                    <label className="text-xs text-muted-foreground">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:flex sm:flex-wrap sm:items-center sm:gap-x-4">
+                  <div className="min-w-0 sm:flex sm:shrink-0 sm:items-center sm:gap-1">
+                    <label
+                      htmlFor={`received-${it.id}`}
+                      className="mb-1 block whitespace-nowrap text-xs text-muted-foreground sm:mb-0"
+                    >
                       Diterima{ing?.stockUnit ? ` (${ing.stockUnit})` : ""}
                     </label>
                     <input
+                      id={`received-${it.id}`}
                       type="number"
                       min={0}
                       step="any"
@@ -1561,12 +1574,18 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                           [it.id]: { ...edit, received: val },
                         }));
                       }}
-                      className="h-8 w-20 rounded-md border border-input bg-background px-2 text-right text-sm"
+                      className="h-11 w-full rounded-md border border-input bg-background px-2 text-right text-base tabular-nums sm:w-20 lg:h-8 lg:text-sm"
                     />
                   </div>
-                  <div className="flex items-center gap-1">
-                    <label className="text-xs text-muted-foreground">Ditolak</label>
+                  <div className="min-w-0 sm:flex sm:shrink-0 sm:items-center sm:gap-1">
+                    <label
+                      htmlFor={`rejected-${it.id}`}
+                      className="mb-1 block whitespace-nowrap text-xs text-muted-foreground sm:mb-0"
+                    >
+                      Ditolak
+                    </label>
                     <input
+                      id={`rejected-${it.id}`}
                       type="number"
                       min={0}
                       step="any"
@@ -1578,14 +1597,20 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                           [it.id]: { ...edit, rejected: val },
                         }));
                       }}
-                      className="h-8 w-20 rounded-md border border-input bg-background px-2 text-right text-sm"
+                      className="h-11 w-full rounded-md border border-input bg-background px-2 text-right text-base tabular-nums sm:w-20 lg:h-8 lg:text-sm"
                     />
                   </div>
                   {edit.rejected > 0 && (
                     <>
-                      <div className="flex items-center gap-1">
-                        <label className="text-xs text-muted-foreground">Alasan</label>
+                      <div className="col-span-2 min-w-0 sm:flex sm:shrink-0 sm:items-center sm:gap-1">
+                        <label
+                          htmlFor={`reason-${it.id}`}
+                          className="mb-1 block whitespace-nowrap text-xs text-muted-foreground sm:mb-0"
+                        >
+                          Alasan
+                        </label>
                         <input
+                          id={`reason-${it.id}`}
                           value={edit.reason}
                           onChange={(e) =>
                             setReviewEdits((prev) => ({
@@ -1593,13 +1618,19 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                               [it.id]: { ...edit, reason: e.target.value },
                             }))
                           }
-                          placeholder="Wajib"
-                          className="h-8 w-40 rounded-md border border-input bg-background px-2 text-sm"
+                          placeholder="Wajib diisi"
+                          className="h-11 w-full rounded-md border border-input bg-background px-2 text-base sm:w-40 lg:h-8 lg:text-sm"
                         />
                       </div>
-                      <div className="flex items-center gap-1">
-                        <label className="text-xs text-muted-foreground">Barang ditolak</label>
+                      <div className="col-span-2 min-w-0 sm:flex sm:shrink-0 sm:items-center sm:gap-1">
+                        <label
+                          htmlFor={`disposition-${it.id}`}
+                          className="mb-1 block whitespace-nowrap text-xs text-muted-foreground sm:mb-0"
+                        >
+                          Barang ditolak
+                        </label>
                         <select
+                          id={`disposition-${it.id}`}
                           value={edit.disposition}
                           onChange={(e) =>
                             setReviewEdits((prev) => ({
@@ -1607,7 +1638,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                               [it.id]: { ...edit, disposition: toDisposition(e.target.value) },
                             }))
                           }
-                          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                          className="h-11 w-full rounded-md border border-input bg-background px-2 text-base sm:w-auto lg:h-8 lg:text-sm"
                         >
                           {DISPOSITION_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
@@ -1619,7 +1650,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                     </>
                   )}
                   {!sumOk && (
-                    <span className="text-xs text-destructive">
+                    <span className="col-span-2 text-xs text-destructive tabular-nums">
                       {formatQuantity(edit.received + edit.rejected)} ≠{" "}
                       {formatQuantity(it.quantity)}
                     </span>
@@ -1631,22 +1662,24 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
         </div>
         {/* Summary row */}
         <div className="border-t bg-muted/30 p-4">
-          <div className="flex items-center justify-between text-sm">
+          <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
             <span className="text-muted-foreground">Total: {items.length} item</span>
-            <div className="flex items-center gap-4">
-              <span>
-                Janji:{" "}
-                <strong>{formatQuantity(items.reduce((s, it) => s + it.quantity, 0))}</strong>
+            <div className="grid grid-cols-3 gap-3 sm:flex sm:items-center sm:gap-4">
+              <span className="flex flex-col gap-0.5 sm:inline">
+                <span className="text-xs text-muted-foreground sm:text-sm">Janji:</span>
+                <strong className="text-foreground tabular-nums">
+                  {formatQuantity(items.reduce((s, it) => s + it.quantity, 0))}
+                </strong>
               </span>
-              <span>
-                Diterima:{" "}
-                <strong>
+              <span className="flex flex-col gap-0.5 sm:inline">
+                <span className="text-xs text-muted-foreground sm:text-sm">Diterima:</span>
+                <strong className="text-foreground tabular-nums">
                   {formatQuantity(items.reduce((s, it) => s + editFor(it).received, 0))}
                 </strong>
               </span>
-              <span>
-                Ditolak:{" "}
-                <strong>
+              <span className="flex flex-col gap-0.5 sm:inline">
+                <span className="text-xs text-muted-foreground sm:text-sm">Ditolak:</span>
+                <strong className="text-foreground tabular-nums">
                   {formatQuantity(
                     items.reduce((s, it) => {
                       const edit = reviewEdits[it.id];
@@ -1655,25 +1688,22 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                   )}
                 </strong>
               </span>
-              <span className="text-muted-foreground">
-                (
-                {[
-                  ...new Set(
-                    items
-                      .map((it) => ingredientById.get(it.ingredientId)?.stockUnit)
-                      .filter(Boolean),
-                  ),
-                ].join(", ")}
-                )
+              <span className="col-span-3 text-xs text-muted-foreground sm:col-auto sm:text-sm">
+                <span className="sm:hidden">Satuan: </span>({unitLabel})
               </span>
             </div>
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t p-4">
-          <Button variant="outline" onClick={() => setReviewEdits({})}>
+        <div className="flex flex-wrap justify-end gap-2 border-t p-4">
+          <Button
+            variant="outline"
+            className="h-11 flex-1 sm:flex-none lg:h-9"
+            onClick={() => setReviewEdits({})}
+          >
             Batal
           </Button>
           <Button
+            className="h-11 flex-1 sm:flex-none lg:h-9"
             onClick={() => {
               // Jambangan-incident guard: rejecting EVERY line requires an
               // explicit confirmation click before anything is submitted.
