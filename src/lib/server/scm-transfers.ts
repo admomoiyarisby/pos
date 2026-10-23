@@ -428,6 +428,41 @@ async function visibleIngredient(
   return row ?? null;
 }
 
+export async function updateMutasiTransferDraftNotesCore(
+  user: MutasiActorUser,
+  data: { transferId: string; notes: string },
+) {
+  const result = await assertDraftEditable(user, data.transferId);
+
+  const before = result.transfer.notes ?? null;
+  const notes = data.notes.trim() || null;
+  if (before === notes) return { success: true, notes };
+
+  await db.update(scmTransfers).set({ notes }).where(eq(scmTransfers.id, data.transferId));
+
+  // The note travels with the document into every later review, so changing it
+  // is a document edit like a quantity change — it belongs in the trail.
+  await db.insert(scmTransferAuditLog).values({
+    scmTransferId: data.transferId,
+    event: "notes-update",
+    fromState: result.transfer.status,
+    toState: result.transfer.status,
+    itemId: null,
+    actorId: user.id,
+    actorRole: user.role,
+    note: JSON.stringify({ notes: { from: before, to: notes } }),
+  });
+
+  return { success: true, notes };
+}
+
+export const updateMutasiTransferDraftNotes = createServerFn({ method: "POST" })
+  .validator((data: { transferId: string; notes: string }) => {
+    if (data.notes.length > 2000) throw new Error("Catatan maksimal 2000 karakter");
+    return data;
+  })
+  .handler(async ({ data }) => updateMutasiTransferDraftNotesCore(await requireAuth(), data));
+
 export async function updateMutasiTransferDraftItemsCore(
   user: MutasiActorUser,
   data: { transferId: string; items: Array<{ id: string; quantity: number }> },

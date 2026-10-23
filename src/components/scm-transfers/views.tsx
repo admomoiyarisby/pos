@@ -43,6 +43,7 @@ import {
   markPaidMutasiTransfer,
   cancelMutasiTransfer,
   updateMutasiTransferDraftItems,
+  updateMutasiTransferDraftNotes,
   addMutasiTransferDraftItem,
   removeMutasiTransferDraftItem,
   toggleMutasiInvoiceChecked,
@@ -77,6 +78,8 @@ export interface TransferRow {
   status: string;
   /** Sender branch — the draft editor reads its stock for the hard guardrail hint. */
   fromBranchId: string;
+  /** Free-text note typed at creation; travels with the transfer document. */
+  notes?: string | null;
 }
 
 /** Transfer line item as rendered by these views. */
@@ -168,6 +171,7 @@ function useTransferActions(transferId: string) {
   const markPaidMut = useServerFn(markPaidMutasiTransfer);
   const cancelMut = useServerFn(cancelMutasiTransfer);
   const saveDraftItemsMut = useServerFn(updateMutasiTransferDraftItems);
+  const saveDraftNotesMut = useServerFn(updateMutasiTransferDraftNotes);
   const addDraftItemMut = useServerFn(addMutasiTransferDraftItem);
   const removeDraftItemMut = useServerFn(removeMutasiTransferDraftItem);
   const printSJ = useServerFn(printMutasiSuratJalan);
@@ -225,6 +229,18 @@ function useTransferActions(transferId: string) {
         setError(null);
         try {
           await saveDraftItemsMut({ data: { transferId, items } });
+          void queryClient.invalidateQueries({ queryKey: ["scm-transfer", transferId] });
+          void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Aksi gagal");
+          throw err;
+        }
+      },
+      /** Save the draft's free-text note. Re-throws, as `saveDraftItems` does. */
+      saveDraftNotes: async (notes: string) => {
+        setError(null);
+        try {
+          await saveDraftNotesMut({ data: { transferId, notes } });
           void queryClient.invalidateQueries({ queryKey: ["scm-transfer", transferId] });
           void queryClient.invalidateQueries({ queryKey: ["scm-transfers"] });
         } catch (err) {
@@ -389,6 +405,7 @@ const auditEventLabels = {
   "mark-paid": "Ditandai Lunas",
   cancel: "Dibatalkan",
   "item-update": "Item Diperbarui",
+  "notes-update": "Catatan Diperbarui",
 };
 
 /** Render the audit log */
@@ -736,6 +753,11 @@ export function DraftSenderForm(props: TransferViewProps) {
   // In-place quantity edits. Keyed by item id; absent = keep the stored value.
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  // The note is document metadata, not a line edit: it gets its own save so a
+  // half-typed quantity on another row never blocks it (and vice versa).
+  const [notes, setNotes] = useState(transfer.notes ?? "");
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const notesDirty = notes.trim() !== (transfer.notes ?? "").trim();
 
   // The sender's stock, so the form can flag a line that the server's
   // hardStockCheck would refuse before the user hits save.
@@ -828,7 +850,25 @@ export function DraftSenderForm(props: TransferViewProps) {
     }
   };
 
-  const busy = isSaving || isMutating;
+  const busy = isSaving || isMutating || isSavingNotes;
+
+  const saveNotes = async () => {
+    setError(null);
+    if (!notesDirty) return;
+    if (notes.trim().length > 2000) {
+      setError("Catatan maksimal 2000 karakter");
+      return;
+    }
+    setIsSavingNotes(true);
+    try {
+      await actions.saveDraftNotes(notes);
+      toast.success("Catatan mutasi diperbarui.");
+    } catch {
+      // The server message is already in the banner (set by the action).
+    } finally {
+      setIsSavingNotes(false);
+    }
+  };
 
   return (
     <Section>
@@ -945,6 +985,29 @@ export function DraftSenderForm(props: TransferViewProps) {
             </Button>
           </div>
         </div>
+      </div>
+
+      <SectionDivider />
+
+      <div>
+        <SectionHeading>Catatan</SectionHeading>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          maxLength={2000}
+          aria-label="Catatan mutasi"
+          placeholder="Mis. instruksi pengiriman atau permintaan outlet"
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          Catatan ini tersimpan bersama dokumen dan tetap terlihat di semua status.
+        </p>
+        <ActionBar>
+          <Button variant="outline" size="sm" onClick={saveNotes} disabled={busy || !notesDirty}>
+            Simpan Catatan
+          </Button>
+        </ActionBar>
       </div>
 
       <SectionDivider />

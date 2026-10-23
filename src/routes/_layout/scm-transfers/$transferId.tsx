@@ -222,6 +222,19 @@ function TransferDetailPage() {
               {toName}
             </span>
           </div>
+          {/* The note is part of the document, not a draft-only scratchpad:
+              once the transfer leaves Draft it must stay readable here. In
+              Draft, DraftSenderForm owns the editable copy. */}
+          {transfer.notes && transfer.status !== "SuratJalanDraft" && (
+            <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-2">
+              <div className="text-[11px] font-medium tracking-widest uppercase text-muted-foreground">
+                Catatan
+              </div>
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-relaxed">
+                {transfer.notes}
+              </p>
+            </div>
+          )}
           <div className="sm:hidden mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
             <CalendarDays className="h-3 w-3" />
             {new Date(transfer.createdAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}

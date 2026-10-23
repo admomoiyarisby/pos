@@ -1344,6 +1344,92 @@ describe("Mutasi Stok — draft line-quantity edits", () => {
 // Note: `seedIngredient` leaves stock at 0, and `createMutasiTransferCore`'s
 // hard guardrail refuses a draft whose lines it cannot cover — so each test
 // seeds inventory before building the draft.
+
+describe("Mutasi Stok — draft notes", () => {
+  it.skipIf(!hasTestDatabaseUrl)(
+    "the note typed at creation persists, and the sender can correct or clear it while drafting",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-N1"));
+      const toBranch = await seedBranch(uniq("MT-N2"));
+      const ingredient = await seedIngredient(uniq("MT-NING"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+      expect(transfer.notes).toBe("integration flow");
+
+      await expect(
+        scm.updateMutasiTransferDraftNotesCore(sender, {
+          transferId: transfer.id,
+          notes: "  kirim pagi  ",
+        }),
+      ).resolves.toEqual({ success: true, notes: "kirim pagi" });
+
+      const [after] = await db
+        .select({ notes: schema.scmTransfers.notes })
+        .from(schema.scmTransfers)
+        .where(eq(schema.scmTransfers.id, transfer.id));
+      expect(after.notes).toBe("kirim pagi");
+
+      // Whitespace only clears the note rather than storing an empty-looking one.
+      await expect(
+        scm.updateMutasiTransferDraftNotesCore(sender, {
+          transferId: transfer.id,
+          notes: "   ",
+        }),
+      ).resolves.toEqual({ success: true, notes: null });
+
+      const auditRows = await db
+        .select({ event: schema.scmTransferAuditLog.event })
+        .from(schema.scmTransferAuditLog)
+        .where(
+          and(
+            eq(schema.scmTransferAuditLog.scmTransferId, transfer.id),
+            eq(schema.scmTransferAuditLog.event, "notes-update"),
+          ),
+        );
+      expect(auditRows).toHaveLength(2);
+
+      // Once submitted, the promise is frozen until it is withdrawn.
+      await scm.submitMutasiTransferCore(sender, { transferId: transfer.id });
+      await expect(
+        scm.updateMutasiTransferDraftNotesCore(sender, {
+          transferId: transfer.id,
+          notes: "late edit",
+        }),
+      ).rejects.toThrow("Items can only be edited while in SuratJalanDraft");
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "only the sender may edit the note (super_admin overrides; receiver and AM do not)",
+    async () => {
+      const fromBranch = await seedBranch(uniq("MT-N3"));
+      const toBranch = await seedBranch(uniq("MT-N4"));
+      const ingredient = await seedIngredient(uniq("MT-NING2"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const sender = await seedUser("branch_admin", fromBranch);
+      const receiver = await seedUser("branch_admin", toBranch);
+      const manager = await seedUser("area_manager", undefined, [fromBranch, toBranch]);
+      const superAdmin = await seedUser("super_admin");
+      const { transfer } = await createDraft(sender, fromBranch, toBranch, ingredient);
+
+      const patch = { transferId: transfer.id, notes: "catatan baru" };
+      await expect(scm.updateMutasiTransferDraftNotesCore(receiver, patch)).rejects.toThrow(
+        "Only the sender branch can edit the draft",
+      );
+      await expect(scm.updateMutasiTransferDraftNotesCore(manager, patch)).rejects.toThrow(
+        "Only the sender branch can edit the draft",
+      );
+      await expect(scm.updateMutasiTransferDraftNotesCore(superAdmin, patch)).resolves.toEqual({
+        success: true,
+        notes: "catatan baru",
+      });
+    },
+  );
+});
+
 describe("Mutasi Stok — adding a line to a draft", () => {
   it.skipIf(!hasTestDatabaseUrl)(
     "the sender can add a line, and it is appended last with the same price snapshot source",
