@@ -117,8 +117,8 @@ docker compose ps
 ### Migrations and the first schema
 
 The runtime image has no `drizzle-kit`. Run migrations from your workstation
-through an SSH tunnel (CI does the same automatically once
-`VPS_DB_PASSWORD` is set):
+through an SSH tunnel (CI does the same automatically once `VPS_DB_PASSWORD` is
+set; it starts the `db` service and waits for its healthcheck first):
 
 ```bash
 ssh -N -L 55432:127.0.0.1:5432 deploy@your-vps

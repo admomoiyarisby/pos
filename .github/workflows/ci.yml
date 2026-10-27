@@ -147,6 +147,32 @@ jobs:
           source: "deploy/compose.yaml,deploy/Caddyfile,deploy/backup.sh,deploy/backup.env.example,deploy/restore-drill.sh,deploy/systemd/omoiyari-backup.service,deploy/systemd/omoiyari-backup.timer"
           target: ${{ secrets.VPS_APP_DIR }}
 
+      # Migrations connect through the loopback port, so the `db` container has
+      # to exist before they run. On the very first deploy of this compose file
+      # nothing has started it yet; the deploy step below runs too late.
+      - name: Ensure the database is running
+        if: env.HAS_DB_PASSWORD == 'true'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd "${{ secrets.VPS_APP_DIR }}/deploy"
+            docker compose up -d db
+            for _ in $(seq 1 30); do
+              id=$(docker compose ps -q db)
+              if [ -n "$id" ] && [ "$(docker inspect -f '{{.State.Health.Status}}' "$id")" = "healthy" ]; then
+                echo "db is healthy"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "::error::db did not become healthy"
+            docker compose logs --tail=50 db
+            exit 1
+
       # Apply Drizzle migrations BEFORE the new image starts. The runner has
       # the repo + drizzle-kit; the runtime image deliberately does not.
       - name: Set up Node tooling for migrations
