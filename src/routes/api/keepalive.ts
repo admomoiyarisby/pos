@@ -3,14 +3,15 @@ import { sql } from "drizzle-orm";
 import { db } from "#/lib/server/db";
 
 /**
- * Lightweight endpoint hit by the Vercel Cron job (see vercel.json) to keep
- * the Supabase database from being paused for inactivity. It just opens a
- * connection and runs `select 1` — no data is read or written.
+ * Lightweight database probe. Originally hit by a Vercel Cron job to keep the
+ * Supabase free project from pausing for inactivity; with the native Postgres
+ * on the VPS that job is obsolete, but the endpoint stays as a cheap liveness
+ * check. It opens a connection and runs `select 1` — no data is read or
+ * written.
  *
- * If a CRON_SECRET env var is set on Vercel, the request must carry
- * `Authorization: Bearer <CRON_SECRET>` (Vercel sends this automatically for
- * cron jobs). When the secret is unset the endpoint stays open, which keeps
- * it working in local/dev and before the secret is configured.
+ * If a CRON_SECRET env var is set, the request must carry
+ * `Authorization: Bearer <CRON_SECRET>`. When the secret is unset the endpoint
+ * stays open, which keeps it working in local/dev.
  */
 export const Route = createFileRoute("/api/keepalive")({
   server: {

@@ -1,0 +1,16 @@
+[Unit]
+Description=Omoiyari POS database + media backup
+Documentation=file:///srv/omoiyari-pos/deploy/README.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/omoiyari-backup
+User=root
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# restic can take longer than the default 90s on a slow link.
+TimeoutStartSec=1h

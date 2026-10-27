@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly Omoiyari POS backup
+
+[Timer]
+OnCalendar=*-*-* 18:30:00 UTC
+# If the VPS was off at 18:30, run once on the next boot.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

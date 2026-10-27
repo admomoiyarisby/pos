@@ -6,12 +6,18 @@ import { z } from "zod";
 import { requireRole, type AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { lookupLabel } from "#/lib/label-lookup";
-import { getSupabaseServerClient, RECIPE_IMAGES_BUCKET } from "./supabase";
+import {
+  deleteRecipeImage as deleteRecipeImageFile,
+  recipeImageAbsolutePath,
+  recipeImageUrl,
+  writeRecipeImage,
+} from "./media";
 
 /**
- * Recipe image storage. Each recipe has at most one image, stored in the
- * public `recipe-images` bucket at `recipes/{recipeId}/{uuid}.{ext}`. The
- * public object URL lives in `recipes.image_url`. See wayfinder map #64.
+ * Recipe image storage. Each recipe has at most one image, stored on local
+ * disk at `$MEDIA_ROOT/recipe-images/recipes/{recipeId}/{uuid}.{ext}` and
+ * served from `/media/recipe-images/...`. The absolute URL lives in
+ * `recipes.image_url`. See wayfinder map #64.
  */
 
 const ALLOWED_MIME = {
@@ -23,18 +29,21 @@ const ALLOWED_MIME = {
 const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 
 /**
- * Extract the object path *inside* the bucket from a public Storage URL.
- * Returns null for URLs we didn't create (so we never delete foreign objects).
+ * Extract the file path *inside* `recipe-images/` from a public media URL.
+ * Returns null for URLs we didn't create (so we never delete foreign files)
+ * and for paths that would escape the media directory.
  */
 export function objectPathFromPublicUrl(url: string | null): string | null {
   if (!url) return null;
-  const match = url.match(/\/object\/public\/recipe-images\/(.+)$/);
-  return match ? match[1] : null;
+  const match = url.match(/\/media\/recipe-images\/(.+)$/);
+  if (!match) return null;
+  const relativePath = match[1];
+  return recipeImageAbsolutePath(relativePath) ? relativePath : null;
 }
 
 /**
- * Upload (or replace) a recipe's image. Deletes the previously stored object
- * to avoid orphans. Pure logic — the `createServerFn` wrapper below applies the
+ * Upload (or replace) a recipe's image. Deletes the previously stored file to
+ * avoid orphans. Pure logic — the `createServerFn` wrapper below applies the
  * role gate and audit trail.
  */
 export async function uploadRecipeImageToStorage(
@@ -59,26 +68,17 @@ export async function uploadRecipeImageToStorage(
   if (!recipe) throw new Error("Recipe not found");
 
   const oldUrl = recipe.imageUrl ?? null;
-  const path = `recipes/${recipeId}/${crypto.randomUUID()}.${ext}`;
+  const relativePath = `recipes/${recipeId}/${crypto.randomUUID()}.${ext}`;
+  const imageUrl = recipeImageUrl(relativePath);
 
-  const client = getSupabaseServerClient();
-  const buffer = await file.arrayBuffer();
-  const { error } = await client.storage
-    .from(RECIPE_IMAGES_BUCKET)
-    .upload(path, buffer, { contentType: file.type, upsert: false });
-  if (error) throw new Error(`Storage upload failed: ${error.message}`);
+  await writeRecipeImage(relativePath, new Uint8Array(await file.arrayBuffer()));
 
-  const publicUrl = client.storage.from(RECIPE_IMAGES_BUCKET).getPublicUrl(path).data.publicUrl;
+  await db.update(recipes).set({ imageUrl, updatedAt: new Date() }).where(eq(recipes.id, recipeId));
 
-  await db
-    .update(recipes)
-    .set({ imageUrl: publicUrl, updatedAt: new Date() })
-    .where(eq(recipes.id, recipeId));
-
-  // Reclaim the previous object (only if it was one we created).
+  // Reclaim the previous file (only if it was one we created).
   const oldPath = objectPathFromPublicUrl(oldUrl);
-  if (oldPath && oldPath !== path) {
-    await client.storage.from(RECIPE_IMAGES_BUCKET).remove([oldPath]);
+  if (oldPath && oldPath !== relativePath) {
+    await deleteRecipeImageFile(oldPath);
   }
 
   await logSystemAction(
@@ -94,15 +94,15 @@ export async function uploadRecipeImageToStorage(
     { ...recipe, imageUrl: oldUrl },
     {
       ...recipe,
-      imageUrl: publicUrl,
+      imageUrl,
     },
   );
 
-  return { imageUrl: publicUrl };
+  return { imageUrl };
 }
 
 /**
- * Remove a recipe's image (object + `image_url` column). Pure logic — the
+ * Remove a recipe's image (file + `image_url` column). Pure logic — the
  * `createServerFn` wrapper below applies the role gate and audit trail.
  */
 export async function deleteRecipeImageFromStorage(
@@ -115,10 +115,8 @@ export async function deleteRecipeImageFromStorage(
   const oldUrl = recipe.imageUrl ?? null;
   const oldPath = objectPathFromPublicUrl(oldUrl);
 
-  const client = getSupabaseServerClient();
   if (oldPath) {
-    const { error } = await client.storage.from(RECIPE_IMAGES_BUCKET).remove([oldPath]);
-    if (error) throw new Error(`Storage delete failed: ${error.message}`);
+    await deleteRecipeImageFile(oldPath);
   }
 
   await db

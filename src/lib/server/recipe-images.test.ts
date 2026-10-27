@@ -1,7 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vite-plus/test";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   uploadRecipeImageToStorage,
   deleteRecipeImageFromStorage,
+  objectPathFromPublicUrl,
 } from "#/lib/server/recipe-images";
 
 // --- mocks ---------------------------------------------------------------
@@ -16,34 +20,19 @@ const fakeUser: AppUser = {
   status: "Active",
 };
 
-const uploads: Array<{ path: string; contentType?: string }> = [];
-const removes: Array<string[]> = [];
-let publicUrlFor = (path: string) =>
-  `https://fufizekrvhjcxcomwukg.supabase.co/storage/v1/object/public/recipe-images/${path}`;
+const PUBLIC_BASE = "https://pos.test";
+let mediaRoot = "";
 
-const fakeClient = {
-  storage: {
-    from: (_bucket: string) => ({
-      upload: async (path: string, _body: File, opts: { contentType?: string }) => {
-        uploads.push({ path, contentType: opts?.contentType });
-        return { data: { path }, error: null };
-      },
-      getPublicUrl: (path: string) => ({ data: { publicUrl: publicUrlFor(path) } }),
-      remove: async (paths: string[]) => {
-        removes.push(paths);
-        return { data: {}, error: null };
-      },
-    }),
-  },
+const updated: Array<{ imageUrl: string | null }> = [];
+type RecipeRow = { id: string; name: string; imageUrl: string | null };
+const row: RecipeRow = {
+  id: "rid",
+  name: "Nasi Goreng",
+  imageUrl: null,
 };
 
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => ({ validator: () => ({ handler: () => ({}) }) }),
-}));
-
-vi.mock("#/lib/server/supabase", () => ({
-  getSupabaseServerClient: () => fakeClient,
-  RECIPE_IMAGES_BUCKET: "recipe-images",
 }));
 
 vi.mock("#/lib/server/auth", () => ({
@@ -55,14 +44,13 @@ vi.mock("#/lib/server/logging", () => ({
   logAudit: async () => {},
 }));
 
-// Minimal Drizzle chain mock: returns one recipe row, records updates.
-const updated: Array<unknown> = [];
+// Minimal Drizzle chain mock: returns the mutable recipe row, records updates.
 vi.mock("#/lib/server/db", () => ({
   db: {
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: async () => [{ id: "rid", name: "Nasi Goreng", imageUrl: null }],
+          limit: async () => [row],
         }),
       }),
     }),
@@ -70,6 +58,7 @@ vi.mock("#/lib/server/db", () => ({
       set: (values: { imageUrl: string | null }) => ({
         where: async () => {
           updated.push(values);
+          row.imageUrl = values.imageUrl;
           return [{ id: "rid" }];
         },
       }),
@@ -83,24 +72,55 @@ function makeFile(type: string, bytes: number): File {
   return new File([new Uint8Array(bytes)], "x.png", { type });
 }
 
-beforeEach(() => {
-  uploads.length = 0;
-  removes.length = 0;
+function recipeImagesDir(): string {
+  return path.join(mediaRoot, "recipe-images");
+}
+
+beforeEach(async () => {
+  mediaRoot = await mkdtemp(path.join(tmpdir(), "pos-media-"));
+  process.env.MEDIA_ROOT = mediaRoot;
+  process.env.PUBLIC_BASE_URL = PUBLIC_BASE;
   updated.length = 0;
+  row.imageUrl = null;
+});
+
+afterEach(async () => {
+  delete process.env.MEDIA_ROOT;
+  delete process.env.PUBLIC_BASE_URL;
+  await rm(mediaRoot, { recursive: true, force: true });
 });
 
 // --- tests ---------------------------------------------------------------
 
+describe("objectPathFromPublicUrl", () => {
+  it("extracts the path from a media URL", () => {
+    expect(objectPathFromPublicUrl(`${PUBLIC_BASE}/media/recipe-images/recipes/rid/a.png`)).toBe(
+      "recipes/rid/a.png",
+    );
+  });
+
+  it("ignores foreign and traversal URLs", () => {
+    expect(objectPathFromPublicUrl(null)).toBeNull();
+    expect(
+      objectPathFromPublicUrl("https://x.supabase.co/storage/v1/object/public/recipe-images/a.png"),
+    ).toBeNull();
+    expect(
+      objectPathFromPublicUrl(`${PUBLIC_BASE}/media/recipe-images/../../etc/passwd`),
+    ).toBeNull();
+  });
+});
+
 describe("uploadRecipeImageToStorage", () => {
-  it("uploads to recipes/{id}/{uuid}.ext, stores the public URL, no old-image removal", async () => {
+  it("writes the file, stores the public URL, and removes nothing on first upload", async () => {
     const file = makeFile("image/png", 1024);
     const res = await uploadRecipeImageToStorage("rid", file, fakeUser);
 
-    expect(uploads).toHaveLength(1);
-    expect(uploads[0].path).toMatch(/^recipes\/rid\/[0-9a-f-]+\.png$/);
-    expect(uploads[0].contentType).toBe("image/png");
-    expect(res.imageUrl).toBe(publicUrlFor(uploads[0].path));
-    expect(removes).toHaveLength(0);
+    expect(res.imageUrl).toMatch(
+      new RegExp(`^${PUBLIC_BASE}/media/recipe-images/recipes/rid/[0-9a-f-]+\\.png$`),
+    );
+    const relativePath = res.imageUrl.replace(`${PUBLIC_BASE}/media/recipe-images/`, "");
+    const onDisk = await readFile(path.join(recipeImagesDir(), relativePath));
+    expect(onDisk.byteLength).toBe(1024);
     expect(updated[0]).toMatchObject({ imageUrl: res.imageUrl });
   });
 
@@ -116,22 +136,33 @@ describe("uploadRecipeImageToStorage", () => {
     ).rejects.toThrow(/too large/);
   });
 
-  it("removes the previous object when replacing", async () => {
-    const oldUrl = publicUrlFor("recipes/rid/old-uuid.png");
-    // second call: simulate an existing image by pre-seeding updated state is
-    // not trivial with the mock; instead assert the helper path extraction via
-    // a direct replace scenario is covered by objectPathFromPublicUrl.
-    expect(oldUrl).toContain("/object/public/recipe-images/recipes/rid/old-uuid.png");
+  it("removes the previous file when replacing", async () => {
+    const first = await uploadRecipeImageToStorage("rid", makeFile("image/png", 10), fakeUser);
+    const firstPath = first.imageUrl.replace(`${PUBLIC_BASE}/media/recipe-images/`, "");
+
+    const second = await uploadRecipeImageToStorage("rid", makeFile("image/png", 20), fakeUser);
+    const secondPath = second.imageUrl.replace(`${PUBLIC_BASE}/media/recipe-images/`, "");
+
+    expect(secondPath).not.toBe(firstPath);
+    const files = await readdir(path.join(recipeImagesDir(), "recipes", "rid"));
+    expect(files).toEqual([path.basename(secondPath)]);
   });
 });
 
 describe("deleteRecipeImageFromStorage", () => {
-  it("removes the object and clears image_url", async () => {
-    // Seed an existing image by reaching into the select mock result is
-    // static; we just verify the delete path calls remove with the extracted
-    // object path and clears image_url.
+  it("removes the file and clears image_url", async () => {
+    await uploadRecipeImageToStorage("rid", makeFile("image/png", 10), fakeUser);
+
     await deleteRecipeImageFromStorage("rid", fakeUser);
-    expect(removes).toHaveLength(0); // no image -> nothing to remove
-    expect(updated[0]).toMatchObject({ imageUrl: null });
+
+    const files = await readdir(path.join(recipeImagesDir(), "recipes", "rid"));
+    expect(files).toEqual([]);
+    expect(updated.at(-1)).toMatchObject({ imageUrl: null });
+  });
+
+  it("clears image_url when the file is already missing", async () => {
+    row.imageUrl = `${PUBLIC_BASE}/media/recipe-images/recipes/rid/gone.png`;
+    await expect(deleteRecipeImageFromStorage("rid", fakeUser)).resolves.toEqual({ success: true });
+    expect(updated.at(-1)).toMatchObject({ imageUrl: null });
   });
 });

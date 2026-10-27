@@ -22,3 +22,9 @@ todos.json
 # Playwright verify-script output (scripts/verify-*.mjs screenshots)
 screenshots/
 .vercel
+
+# Local recipe images (MEDIA_ROOT default in development)
+.media/
+
+# Rehearsal smoke-test output
+smoke-artifacts/

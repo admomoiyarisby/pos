@@ -44,9 +44,6 @@ jobs:
       - run: vp install
 
       - name: Run tests
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: vp test run
 
   # Schema-drift tripwire (Data Penjualan outage, 2026-10-01): a migration
@@ -109,6 +106,11 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      # Migrations run from the runner through an SSH tunnel. Until the VPS
+      # database exists (and VPS_DB_PASSWORD is set) these steps are skipped,
+      # so the Supabase-era deploy keeps working.
+      HAS_DB_PASSWORD: ${{ secrets.VPS_DB_PASSWORD != '' }}
     steps:
       # The deploy job runs on its own fresh runner — without this, the
       # workspace is empty and scp has nothing to archive.
@@ -142,8 +144,46 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "deploy/compose.yaml,deploy/Caddyfile"
+          source: "deploy/compose.yaml,deploy/Caddyfile,deploy/backup.sh,deploy/backup.env.example,deploy/restore-drill.sh,deploy/systemd/omoiyari-backup.service,deploy/systemd/omoiyari-backup.timer"
           target: ${{ secrets.VPS_APP_DIR }}
+
+      # Apply Drizzle migrations BEFORE the new image starts. The runner has
+      # the repo + drizzle-kit; the runtime image deliberately does not.
+      - name: Set up Node tooling for migrations
+        if: env.HAS_DB_PASSWORD == 'true'
+        uses: voidzero-dev/setup-vp@v1.17.0
+        with:
+          node-version: "24"
+          cache: true
+
+      - name: Install migration dependencies
+        if: env.HAS_DB_PASSWORD == 'true'
+        run: vp install
+
+      - name: Open tunnel for migrations
+        if: env.HAS_DB_PASSWORD == 'true'
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+        run: |
+          install -m 600 /dev/null "$RUNNER_TEMP/deploy_key"
+          printf '%s\n' "$KEY" > "$RUNNER_TEMP/deploy_key"
+          ssh -f -N -i "$RUNNER_TEMP/deploy_key" \
+            -o StrictHostKeyChecking=accept-new \
+            -o ExitOnForwardFailure=yes \
+            -L 127.0.0.1:55432:127.0.0.1:5432 \
+            "${USER}@${HOST}"
+
+      - name: Apply database migrations
+        if: env.HAS_DB_PASSWORD == 'true'
+        env:
+          DATABASE_URL: postgresql://omoiyari:${{ secrets.VPS_DB_PASSWORD }}@127.0.0.1:55432/omoiyari
+        run: vp run db:migrate
+
+      - name: Close migration tunnel
+        if: always() && env.HAS_DB_PASSWORD == 'true'
+        run: pkill -f "ssh -f -N" || true
 
       - uses: appleboy/ssh-action@v1
         with:

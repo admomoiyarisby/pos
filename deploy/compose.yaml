@@ -1,6 +1,43 @@
 name: omoiyari-pos
 
 services:
+  db:
+    # Native Postgres. The app and the database share this compose project, so
+    # the app reaches the DB at `db:5432` and nothing else can: the port is
+    # published on loopback only, for backups, migrations, and SSH tunnels.
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-omoiyari}
+      POSTGRES_USER: ${POSTGRES_USER:-omoiyari}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      # Match the Supabase source (UTF8, en_US.UTF-8) so restored text and
+      # indexes behave identically. Only used on first initdb.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.utf8"
+      TZ: UTC
+      PGTZ: UTC
+    command:
+      - postgres
+      - -c
+      - timezone=UTC
+      - -c
+      - log_timezone=UTC
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=100
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   app:
     # Built by GitHub Actions (.github/workflows/ci.yml) and pushed to
     # GHCR. The VPS only pulls it — it never builds.
@@ -16,9 +53,20 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HOST: 0.0.0.0
+      MEDIA_ROOT: /app/media
+      # The database lives in this compose project. deploy/.env must NOT set
+      # DATABASE_URL — this value wins and keeps credentials in one place.
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-omoiyari}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-omoiyari}"
+    volumes:
+      # Recipe images live on the host so `restic` can back them up directly.
+      # The app runs as uid 1000 (`node`); the directory must be owned by it.
+      - ${MEDIA_DIR:-../media}:/app/media
     restart: unless-stopped
     expose:
       - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
     healthcheck:
       # /login returns 200 once SSR is up. Swap for /api/keepalive if you
       # also want the probe to touch the database.
@@ -48,5 +96,6 @@ services:
         condition: service_healthy
 
 volumes:
+  db_data:
   caddy_data:
   caddy_config:

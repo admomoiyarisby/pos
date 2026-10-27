@@ -30,6 +30,7 @@ import { Route as ApiSeedDataRouteImport } from './routes/api/seed-data'
 import { Route as ApiSetupRouteImport } from './routes/api/setup'
 import { Route as DemoBetterAuthRouteImport } from './routes/demo/better-auth'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
+import { Route as MediaSplatRouteImport } from './routes/media/$'
 import { Route as LayoutAdminIndexRouteImport } from './routes/_layout/admin/index'
 import { Route as LayoutAdminAuditLogsRouteImport } from './routes/_layout/admin/audit-logs'
 import { Route as LayoutAdminBranchesRouteImport } from './routes/_layout/admin/branches'
@@ -193,6 +194,11 @@ const DemoBetterAuthRoute = DemoBetterAuthRouteImport.update({
 const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
   id: '/demo/tanstack-query',
   path: '/demo/tanstack-query',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MediaSplatRoute = MediaSplatRouteImport.update({
+  id: '/media/$',
+  path: '/media/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LayoutAdminIndexRoute = LayoutAdminIndexRouteImport.update({
@@ -539,6 +545,7 @@ export interface FileRoutesByFullPath {
   '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/media/$': typeof MediaSplatRoute
   '/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
   '/admin/branches': typeof LayoutAdminBranchesRoute
   '/admin/brands': typeof LayoutAdminBrandsRoute
@@ -620,6 +627,7 @@ export interface FileRoutesByTo {
   '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/media/$': typeof MediaSplatRoute
   '/': typeof LayoutIndexRoute
   '/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
   '/admin/branches': typeof LayoutAdminBranchesRoute
@@ -704,6 +712,7 @@ export interface FileRoutesById {
   '/api/setup': typeof ApiSetupRoute
   '/demo/better-auth': typeof DemoBetterAuthRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/media/$': typeof MediaSplatRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
   '/_layout/admin/branches': typeof LayoutAdminBranchesRoute
@@ -789,6 +798,7 @@ export interface FileRouteTypes {
     | '/api/setup'
     | '/demo/better-auth'
     | '/demo/tanstack-query'
+    | '/media/$'
     | '/admin/audit-logs'
     | '/admin/branches'
     | '/admin/brands'
@@ -870,6 +880,7 @@ export interface FileRouteTypes {
     | '/api/setup'
     | '/demo/better-auth'
     | '/demo/tanstack-query'
+    | '/media/$'
     | '/'
     | '/admin/audit-logs'
     | '/admin/branches'
@@ -953,6 +964,7 @@ export interface FileRouteTypes {
     | '/api/setup'
     | '/demo/better-auth'
     | '/demo/tanstack-query'
+    | '/media/$'
     | '/_layout/'
     | '/_layout/admin/audit-logs'
     | '/_layout/admin/branches'
@@ -1026,6 +1038,7 @@ export interface RootRouteChildren {
   ApiSetupRoute: typeof ApiSetupRoute
   DemoBetterAuthRoute: typeof DemoBetterAuthRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
+  MediaSplatRoute: typeof MediaSplatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   DemoFormAddressRoute: typeof DemoFormAddressRoute
   DemoFormSimpleRoute: typeof DemoFormSimpleRoute
@@ -1178,6 +1191,13 @@ declare module '@tanstack/react-router' {
       path: '/demo/tanstack-query'
       fullPath: '/demo/tanstack-query'
       preLoaderRoute: typeof DemoTanstackQueryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/media/$': {
+      id: '/media/$'
+      path: '/media/$'
+      fullPath: '/media/$'
+      preLoaderRoute: typeof MediaSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_layout/admin/': {
@@ -1761,6 +1781,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSetupRoute: ApiSetupRoute,
   DemoBetterAuthRoute: DemoBetterAuthRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
+  MediaSplatRoute: MediaSplatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   DemoFormAddressRoute: DemoFormAddressRoute,
   DemoFormSimpleRoute: DemoFormSimpleRoute,
