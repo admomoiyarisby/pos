@@ -558,6 +558,127 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
       expect(row?.sources).toEqual([{ source: "POS", quantity: 10 }]);
     },
   );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "drops a cancelled waste entry's OUT rows instead of counting returned stock",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      const ingredientId = await seedIngredient(branchId);
+
+      const [cancelled] = await db
+        .insert(schema.wasteEntries)
+        .values({
+          branchId,
+          ingredientId,
+          quantity: 5,
+          category: "Spoiled",
+          submittedBy: admin.id,
+          status: "Cancelled",
+          cancelReason: "Salah Input",
+        })
+        .returning({ id: schema.wasteEntries.id });
+      const [active] = await db
+        .insert(schema.wasteEntries)
+        .values({ branchId, ingredientId, quantity: 3, category: "Spoiled", submittedBy: admin.id })
+        .returning({ id: schema.wasteEntries.id });
+
+      // Same pattern as a void: the original OUT stays, the cancel writes IN on
+      // the same waste-entry reference.
+      await db.insert(schema.stockLedger).values([
+        {
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: 5,
+          balance: 95,
+          reference: cancelled.id,
+          notes: `Waste: Beban Makan -Salah Input`,
+        },
+        {
+          branchId,
+          ingredientId,
+          type: "IN",
+          quantity: 5,
+          balance: 100,
+          reference: cancelled.id,
+          notes: `Waste dibatalkan ${cancelled.id.slice(0, 8)}`,
+        },
+        {
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: 3,
+          balance: 97,
+          reference: active.id,
+          notes: `Waste: Beban Makan -rusak`,
+        },
+      ]);
+
+      const rows = await financeApi.getDailyIngredientUsageCore(admin, { branchId });
+      const row = rows.find((r) => r.ingredientId === ingredientId);
+      expect(row?.quantity).toBe(3);
+      expect(row?.sources).toEqual([{ source: "Waste", quantity: 3 }]);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "drops a cancelled production's OUT rows under its YIELD- reference",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      const ingredientId = await seedIngredient(branchId);
+
+      const [cancelled] = await db
+        .insert(schema.yieldConversions)
+        .values({
+          branchId,
+          processedBy: admin.id,
+          status: "Cancelled",
+          cancelReason: "Salah Input",
+        })
+        .returning({ id: schema.yieldConversions.id });
+      const [active] = await db
+        .insert(schema.yieldConversions)
+        .values({ branchId, processedBy: admin.id })
+        .returning({ id: schema.yieldConversions.id });
+
+      await db.insert(schema.stockLedger).values([
+        {
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: 8,
+          balance: 92,
+          reference: `YIELD-${cancelled.id}`,
+          notes: `Produksi ${cancelled.id.slice(0, 8)}`,
+        },
+        {
+          branchId,
+          ingredientId,
+          type: "IN",
+          quantity: 8,
+          balance: 100,
+          reference: `YIELD-${cancelled.id}`,
+          notes: `Produksi dibatalkan ${cancelled.id.slice(0, 8)}`,
+        },
+        {
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: 2,
+          balance: 98,
+          reference: `YIELD-${active.id}`,
+          notes: `Produksi ${active.id.slice(0, 8)}`,
+        },
+      ]);
+
+      const rows = await financeApi.getDailyIngredientUsageCore(admin, { branchId });
+      const row = rows.find((r) => r.ingredientId === ingredientId);
+      expect(row?.quantity).toBe(2);
+      expect(row?.sources).toEqual([{ source: "Produksi", quantity: 2 }]);
+    },
+  );
 });
 
 describe("Finance — channel P&L Omzet Real comes from Input Revenue", () => {

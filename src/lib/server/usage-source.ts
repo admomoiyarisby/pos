@@ -6,7 +6,8 @@ import type { SQL, SQLWrapper } from "drizzle-orm";
  * "Rincian Stok Keluar" on the finance page.
  *
  * That panel sums *every* `stock_ledger` OUT row in the period except those
- * belonging to a voided order (whose stock was returned), so a total can still
+ * belonging to a cancelled document — a voided order, a cancelled waste entry
+ * or a cancelled production — whose stock was returned. A total can still
  * legitimately exceed what sales consumed: production, waste, transfers and
  * manual adjustments all draw raw ingredients without a sale. Comparing the
  * total to a sales report compares two different things, which is exactly the

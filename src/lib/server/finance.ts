@@ -1064,17 +1064,33 @@ export interface DailyUsageRow {
 // (ingredientId terisi) — resep jadi (recipeId) dikeluarkan agar tidak
 // dobel hitung dengan BOM bahan mentahnya.
 //
-// A voided order is the exception: creating it wrote OUT rows, voiding it wrote
-// compensating IN rows and flipped `orders.status` to 'Void'. This report only
-// ever reads OUT rows, so without the filter below the voided order would keep
-// counting as consumption even though its stock went straight back (the Pucang
-// bug). Filtering on status — instead of subtracting the restore rows — keeps
-// the correction in the period the sale belonged to even when the void happens
-// later, and also drops older voids whose restore rows are missing.
+// Cancelled documents are the exception. Voiding an order, cancelling a waste
+// entry and cancelling a production each write compensating IN rows and flip the
+// document's status, while the original OUT rows stay in the ledger for audit.
+// This report only ever reads OUT rows, so without these filters a cancelled
+// document would keep counting as consumption even though its stock went
+// straight back (the Pucang bug). Filtering on status — instead of subtracting
+// the reversal rows — keeps the correction in the period the consumption
+// belonged to even when the cancellation happens later, and also drops older
+// cancellations whose reversal rows are missing.
 const notVoidedOrderSql = sql`NOT EXISTS (
   SELECT 1 FROM orders
   WHERE orders.id::text = ${stockLedger.reference}
     AND orders.status = 'Void'
+)`;
+
+const notCancelledWasteSql = sql`NOT EXISTS (
+  SELECT 1 FROM waste_entries
+  WHERE waste_entries.id::text = ${stockLedger.reference}
+    AND waste_entries.status = 'Cancelled'
+)`;
+
+// Production writes both effects (inputs OUT, outputs IN) under a shared
+// `YIELD-<id>` reference, so the id has to be read back out of the reference.
+const notCancelledProductionSql = sql`NOT EXISTS (
+  SELECT 1 FROM yield_conversions
+  WHERE ${stockLedger.reference} = 'YIELD-' || yield_conversions.id::text
+    AND yield_conversions.status = 'Cancelled'
 )`;
 export const getDailyIngredientUsage = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
@@ -1119,6 +1135,8 @@ export async function getDailyIngredientUsageCore(
     eq(stockLedger.type, "OUT"),
     isNull(stockLedger.recipeId),
     notVoidedOrderSql,
+    notCancelledWasteSql,
+    notCancelledProductionSql,
     effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
     data.dateFrom
       ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
