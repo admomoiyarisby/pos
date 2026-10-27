@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
-import { formText } from "#/lib/utils";
+import { formText, toDateInputValue } from "#/lib/utils";
+import { wasteCycleRange } from "#/lib/waste-period";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
@@ -87,17 +88,6 @@ const catColors = {
 
 function formatRupiah(value: number): string {
   return `Rp${value.toLocaleString("id-ID")}`;
-}
-
-/**
- * Format a date as YYYY-MM-DD using local time (not UTC).
- * Avoids the timezone shift caused by toISOString().
- */
-function formatLocalDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 interface BomSelection {
@@ -324,22 +314,10 @@ function WastePage() {
   const [cancelReasonText, setCancelReasonText] = useState("");
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  // Default date range (26th prev month to 25th current month) used when the
-  // URL carries no explicit dateFrom/dateTo.
-  const defaultRange = useMemo(() => {
-    const now = new Date();
-    const currentDay = now.getDate();
-    if (currentDay < 26) {
-      return {
-        from: formatLocalDate(new Date(now.getFullYear(), now.getMonth() - 1, 26)),
-        to: formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 25)),
-      };
-    }
-    return {
-      from: formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 26)),
-      to: formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 25)),
-    };
-  }, []);
+  // Default cycle: the 26th of a month through the 25th of the next, in
+  // Jakarta. Pinning the timezone is what keeps server render and hydration
+  // agreeing — see `wasteCycleRange`.
+  const defaultRange = useMemo(() => wasteCycleRange(), []);
   const effectiveDateFrom = dateFrom ?? defaultRange.from;
   const effectiveDateTo = dateTo ?? defaultRange.to;
 
@@ -515,7 +493,7 @@ function WastePage() {
     setBomSelection({});
   }, [selectedRecipe?.id, selectedBranchId]);
 
-  const { data: entries } = useQuery({
+  const { data: entriesData } = useQuery({
     queryKey: ["waste-entries", category, committedSearch],
     queryFn: () =>
       getWasteEntries({
@@ -525,8 +503,12 @@ function WastePage() {
           search: committedSearch || undefined,
         },
       }),
-    initialData: initial,
+    // The loader only hands us the unfiltered list. Seeding a filtered key
+    // with it would paint rows the filter is about to remove, so only answer
+    // the key whose query the loader actually ran.
+    initialData: !category && !committedSearch ? initial : undefined,
   });
+  const entries = entriesData ?? [];
 
   // Filter and sort entries
   const filteredEntries = useMemo(() => {
@@ -549,15 +531,16 @@ function WastePage() {
     if (status === "Active") result = result.filter((e) => e.status === "Active");
     if (status === "Cancelled") result = result.filter((e) => e.status === "Cancelled");
 
-    // Filter by date range
-    if (effectiveDateFrom && effectiveDateTo) {
-      const from = new Date(effectiveDateFrom);
-      from.setHours(0, 0, 0, 0);
-      const to = new Date(effectiveDateTo);
-      to.setHours(23, 59, 59, 999);
+    // Filter by date range. Compare Jakarta calendar days (the same clock the
+    // "Waktu" column renders in), so a row never falls outside the range it
+    // visibly belongs to and the result does not depend on the device timezone.
+    if (effectiveDateFrom || effectiveDateTo) {
       result = result.filter((e) => {
-        const entryDate = new Date(e.createdAt);
-        return entryDate >= from && entryDate <= to;
+        const day = toDateInputValue(e.createdAt);
+        return (
+          (!effectiveDateFrom || day >= effectiveDateFrom) &&
+          (!effectiveDateTo || day <= effectiveDateTo)
+        );
       });
     }
 
