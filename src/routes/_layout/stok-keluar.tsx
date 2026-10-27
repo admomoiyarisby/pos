@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { IngredientUsageSection } from "#/components/finance/IngredientUsageSection";
@@ -7,43 +7,19 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
 import { getDailyIngredientUsage } from "#/lib/server/finance";
 import { getBranches } from "#/lib/server/branches";
+import {
+  currentDateValue,
+  currentMonthValue,
+  lastDayOfMonth,
+  recentMonths,
+  weeksInMonth,
+} from "#/lib/report-period";
 
 export const Route = createFileRoute("/_layout/stok-keluar")({
   component: StokKeluarPage,
 });
 
 type PeriodType = "bulanan" | "mingguan" | "harian";
-
-// Same week/month helpers as /finance so both pages produce identical ranges.
-// `month` is 1-indexed (as it comes from the "YYYY-MM" selected month), so
-// `new Date(year, month, 0)` is the last day of that same month.
-function getWeeksInMonth(year: number, month: number) {
-  const mm = String(month).padStart(2, "0");
-  const lastDay = new Date(year, month, 0).getDate();
-  return [
-    { label: "Minggu 1 (1-7)", from: `${year}-${mm}-01`, to: `${year}-${mm}-07` },
-    { label: "Minggu 2 (8-14)", from: `${year}-${mm}-08`, to: `${year}-${mm}-14` },
-    { label: "Minggu 3 (15-21)", from: `${year}-${mm}-15`, to: `${year}-${mm}-21` },
-    {
-      label: `Minggu 4 (22-${lastDay})`,
-      from: `${year}-${mm}-22`,
-      to: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
-    },
-  ];
-}
-
-function getMonthsList() {
-  const months = [];
-  const now = new Date();
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({
-      label: d.toLocaleDateString("id-ID", { month: "long", year: "numeric" }),
-      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-    });
-  }
-  return months;
-}
 
 function StokKeluarPage() {
   const { user } = useAuth();
@@ -56,26 +32,11 @@ function StokKeluarPage() {
   const isBranchAdmin = user?.role === "branch_admin";
 
   const [periodType, setPeriodType] = useState<PeriodType>("bulanan");
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  });
-  // Correct the month on the client (server renders in a different TZ).
-  useEffect(() => {
-    const now = new Date();
-    setSelectedMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
-  }, []);
+  // Both defaults come from the Jakarta calendar, so the server-rendered month
+  // and the hydrated one agree (no client-side correction effect needed).
+  const [selectedMonth, setSelectedMonth] = useState(() => currentMonthValue());
   const [selectedWeek, setSelectedWeek] = useState(0);
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  });
-  useEffect(() => {
-    const now = new Date();
-    setSelectedDate(
-      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
-    );
-  }, []);
+  const [selectedDate, setSelectedDate] = useState(() => currentDateValue());
   const [selectedBranchId, setSelectedBranchId] = useState<string>(lockedBranchId);
 
   // Multi-branch viewers (supervisors) get the branch picker; single-branch
@@ -86,16 +47,16 @@ function StokKeluarPage() {
     queryFn: () => getBranches({ data: {} }),
   });
 
-  const months = useMemo(() => getMonthsList(), []);
+  const months = useMemo(() => recentMonths(), []);
   const weeks = useMemo(() => {
     const [year, month] = selectedMonth.split("-").map(Number);
-    return getWeeksInMonth(year, month);
+    return weeksInMonth(year, month);
   }, [selectedMonth]);
 
   const effectiveDateRange = useMemo(() => {
     if (periodType === "bulanan") {
       const [year, month] = selectedMonth.split("-").map(Number);
-      const lastDay = new Date(year, month, 0).getDate();
+      const lastDay = lastDayOfMonth(year, month);
       return {
         from: `${selectedMonth}-01`,
         to: `${selectedMonth}-${String(lastDay).padStart(2, "0")}`,

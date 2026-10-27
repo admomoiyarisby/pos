@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo, useCallback, Fragment, useEffect } from "react";
+import { useState, useMemo, useCallback, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { ShiftCashDetail } from "#/components/pos/ShiftCashDetail";
@@ -40,6 +40,13 @@ import {
 import { z } from "zod";
 import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { formatRp, formText } from "#/lib/utils";
+import {
+  currentDateValue,
+  currentMonthValue,
+  lastDayOfMonth,
+  recentMonths,
+  weeksInMonth,
+} from "#/lib/report-period";
 import { openPrintWindow } from "#/lib/print-window";
 import { toast } from "sonner";
 
@@ -47,9 +54,12 @@ export const Route = createFileRoute("/_layout/finance/")({
   component: FinancePage,
   loader: async () => {
     const branches = await getBranches({ data: {} });
-    const now = new Date();
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    // The default month is a Jakarta calendar fact. The server runs in UTC, so
+    // reading `now.getMonth()` here would seed `initialDaily` with last month's
+    // rows for the first seven hours of every month.
+    const ym = currentMonthValue();
+    const [year, month] = ym.split("-").map(Number);
+    const lastDay = lastDayOfMonth(year, month);
     const daily = await getDailyFinanceSummary({
       data: { dateFrom: `${ym}-01`, dateTo: `${ym}-${String(lastDay).padStart(2, "0")}` },
     });
@@ -68,50 +78,6 @@ const CHANNELS = [
   { label: "TikTok", value: "TikTok" },
   { label: "Perlengkapan", value: "Perlengkapan" },
 ];
-
-// `month` is 1-indexed (as it comes from the "YYYY-MM" selected month), so
-// `new Date(year, month, 0)` is the last day of that same month.
-function getWeeksInMonth(year: number, month: number) {
-  const mm = String(month).padStart(2, "0");
-  const lastDay = new Date(year, month, 0).getDate();
-  return [
-    {
-      label: "Minggu 1 (1-7)",
-      from: `${year}-${mm}-01`,
-      to: `${year}-${mm}-07`,
-    },
-    {
-      label: "Minggu 2 (8-14)",
-      from: `${year}-${mm}-08`,
-      to: `${year}-${mm}-14`,
-    },
-    {
-      label: "Minggu 3 (15-21)",
-      from: `${year}-${mm}-15`,
-      to: `${year}-${mm}-21`,
-    },
-    {
-      label: `Minggu 4 (22-${lastDay})`,
-      from: `${year}-${mm}-22`,
-      to: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
-    },
-  ];
-}
-
-function getMonthsList() {
-  const months = [];
-  const now = new Date();
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({
-      label: d.toLocaleDateString("id-ID", { month: "long", year: "numeric" }),
-      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-      year: d.getFullYear(),
-      month: d.getMonth(),
-    });
-  }
-  return months;
-}
 
 // Inline editable Omzet cell — only active when no channel filter (day-level override).
 // `fullWidth` is used by the mobile day cards (comfortable tap target, no fixed
@@ -879,33 +845,12 @@ function FinancePage() {
   // long scrolling page where everything competes for attention.
   const [subTab, setSubTab] = useState<"ledger" | "channel" | "stok" | "kas">("ledger");
 
-  // Period + filter state
+  // Period + filter state. Defaults are Jakarta-pinned so the server render and
+  // hydration agree; no client-side correction effects needed.
   const [periodType, setPeriodType] = useState<PeriodType>("bulanan");
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    // Default to current month - will be corrected on client side
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  });
-
-  // Update month on client side to handle timezone correctly
-  useEffect(() => {
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    setSelectedMonth(currentMonth);
-  }, []);
+  const [selectedMonth, setSelectedMonth] = useState(() => currentMonthValue());
   const [selectedWeek, setSelectedWeek] = useState(0);
-  const [selectedDate, setSelectedDate] = useState(() => {
-    // Default to today's date - will be corrected on client side
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  });
-
-  // Update date on client side to handle timezone correctly
-  useEffect(() => {
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    setSelectedDate(today);
-  }, []);
+  const [selectedDate, setSelectedDate] = useState(() => currentDateValue());
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [selectedChannel, setSelectedChannel] = useState<string>("");
 
@@ -916,17 +861,17 @@ function FinancePage() {
   // Expandable Selisih Kas detail row (per shift)
   const [expandedCashShift, setExpandedCashShift] = useState<string | null>(null);
 
-  const months = useMemo(() => getMonthsList(), []);
+  const months = useMemo(() => recentMonths(), []);
   const weeks = useMemo(() => {
     const [year, month] = selectedMonth.split("-").map(Number);
-    return getWeeksInMonth(year, month);
+    return weeksInMonth(year, month);
   }, [selectedMonth]);
 
   // Effective date range from period
   const effectiveDateRange = useMemo(() => {
     if (periodType === "bulanan") {
       const [year, month] = selectedMonth.split("-").map(Number);
-      const lastDay = new Date(year, month, 0).getDate();
+      const lastDay = lastDayOfMonth(year, month);
       return {
         from: `${selectedMonth}-01`,
         to: `${selectedMonth}-${String(lastDay).padStart(2, "0")}`,
