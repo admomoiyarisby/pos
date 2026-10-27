@@ -90,7 +90,8 @@ const printedBody = JSON.stringify({ status: "printed", jobId: "job-1" });
 /** What Cleanter was handed, parsed. */
 function postedRequest(): z.infer<typeof printRequestSchema> {
   const call = fetchMock.mock.calls[0];
-  const parsed = printRequestSchema.safeParse(JSON.parse(String(call[1]?.body)));
+  const body = z.string().parse(call[1]?.body);
+  const parsed = printRequestSchema.safeParse(JSON.parse(body));
   if (!parsed.success) {
     throw new Error(`Cleanter received an unreadable print request: ${parsed.error.message}`);
   }

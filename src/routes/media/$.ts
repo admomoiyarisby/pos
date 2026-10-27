@@ -37,7 +37,7 @@ export const Route = createFileRoute("/media/$")({
           return new Response("Not found", { status: 404 });
         }
 
-        return new Response(body, {
+        return new Response(new Uint8Array(body), {
           headers: {
             "Content-Type": contentTypeFor(absolutePath),
             "Content-Length": String(body.byteLength),
