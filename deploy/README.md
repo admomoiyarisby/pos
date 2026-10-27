@@ -355,6 +355,18 @@ still has them while the repo dropped them (ADR-0025).
 It never references the production database name. If a run fails, re-run with
 `keep_database` enabled to inspect the half-restored database.
 
+## Cutover workflow
+
+`.github/workflows/cutover.yml` is `workflow_dispatch` only. It performs the
+whole runbook: stop the app, dump Supabase, rebuild `omoiyari`, run
+`db:migrate`, restore, move the recipe images to the VPS, verify all 79 table
+counts, then point `DATABASE_URL` at the native database and restart the app.
+Type `CUTOVER` to confirm.
+
+The flip is the **last** step. If anything fails before it, `deploy/.env` still
+points at Supabase and the job restarts the app there. After a successful run,
+the manual write check below is still required.
+
 ## Rollback
 
 Every deploy also tags the exact commit. On the VPS:

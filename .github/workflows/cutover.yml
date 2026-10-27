@@ -1,0 +1,241 @@
+name: Cutover (Supabase → native Postgres)
+
+# Manual only. Drops and rebuilds the production `omoiyari` database from the
+# live Supabase data, moves the recipe images to the VPS disk, verifies the
+# row counts, and only then points the app at the native database.
+#
+# The flip is the LAST step. If anything fails before it, `deploy/.env` still
+# holds the Supabase URL and the job restarts the app on Supabase.
+#
+# Required repository secrets (same as the rehearsal):
+#   SUPABASE_DB_URL     session-mode URL (port 5432), password URL-encoded
+#   VPS_HOST / VPS_USER / VPS_SSH_KEY / VPS_APP_DIR
+#   VPS_DB_PASSWORD     password of the `omoiyari` Postgres role
+#
+# The VPS must already run the `db` service from deploy/compose.yaml, and
+# deploy/.env must contain a non-empty DATABASE_URL (the Supabase one).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type CUTOVER to confirm: this drops and rebuilds the production database"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cutover
+  cancel-in-progress: false
+
+env:
+  PUBLIC_BASE_URL: https://omoiyaripos.riceai.net
+  TUNNEL_PORT: "55432"
+  TARGET_DB: omoiyari
+
+jobs:
+  cutover:
+    name: rebuild + verify + flip
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Confirm
+        if: inputs.confirm != 'CUTOVER'
+        run: |
+          echo "::error::Type CUTOVER in the confirm input."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1.17.0
+        with:
+          node-version: "24"
+          cache: true
+
+      - run: vp install
+
+      # Supabase's pg_dump 17.11 emits `\restrict`; the stock client is older.
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          echo "PATH=/usr/lib/postgresql/17/bin:$PATH" >> "$GITHUB_ENV"
+          psql --version
+
+      - name: Open SSH tunnel to the VPS database
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+        run: |
+          install -m 600 /dev/null "$RUNNER_TEMP/deploy_key"
+          printf '%s\n' "$KEY" > "$RUNNER_TEMP/deploy_key"
+          ssh -f -N \
+            -i "$RUNNER_TEMP/deploy_key" \
+            -o StrictHostKeyChecking=accept-new \
+            -o ExitOnForwardFailure=yes \
+            -o ServerAliveInterval=30 \
+            -L "127.0.0.1:${TUNNEL_PORT}:127.0.0.1:5432" \
+            "${USER}@${HOST}"
+          echo "tunnel open on 127.0.0.1:${TUNNEL_PORT}"
+
+      # The POS must be quiet before the dump, otherwise orders placed between
+      # the dump and the flip would only exist in Supabase.
+      - name: Stop the app
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd "${{ secrets.VPS_APP_DIR }}/deploy"
+            [ -f .env.pre-cutover ] || cp .env .env.pre-cutover
+            docker compose stop app
+
+      - name: Dump the live Supabase data
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          vp dlx supabase db dump --data-only -s public \
+            --db-url "$SUPABASE_DB_URL" -f "$RUNNER_TEMP/cutover-data.sql"
+          du -h "$RUNNER_TEMP/cutover-data.sql"
+
+      # The app is stopped, so nothing else is connected to `omoiyari`.
+      - name: Rebuild the production database
+        env:
+          ADMIN_URL: postgresql://omoiyari:${{ secrets.VPS_DB_PASSWORD }}@127.0.0.1:55432/postgres
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 \
+            -c 'drop database if exists omoiyari with (force)' \
+            -c 'create database omoiyari template template0'
+
+      - name: Apply Drizzle migrations
+        env:
+          DATABASE_URL: postgresql://omoiyari:${{ secrets.VPS_DB_PASSWORD }}@127.0.0.1:55432/omoiyari
+        run: vp run db:migrate
+
+      - name: Bridge the source-only columns and clear seed rows
+        env:
+          PGPASSWORD: ${{ secrets.VPS_DB_PASSWORD }}
+        run: |
+          psql -h 127.0.0.1 -p "${TUNNEL_PORT}" -U omoiyari -d "${TARGET_DB}" \
+            -v ON_ERROR_STOP=1 -f scripts/sql/rehearsal-before-restore.sql
+
+      - name: Restore the dump
+        env:
+          PGPASSWORD: ${{ secrets.VPS_DB_PASSWORD }}
+        run: |
+          time psql -h 127.0.0.1 -p "${TUNNEL_PORT}" -U omoiyari -d "${TARGET_DB}" \
+            -v ON_ERROR_STOP=1 -q -f "$RUNNER_TEMP/cutover-data.sql"
+
+      - name: Drop the bridge columns
+        env:
+          PGPASSWORD: ${{ secrets.VPS_DB_PASSWORD }}
+        run: |
+          psql -h 127.0.0.1 -p "${TUNNEL_PORT}" -U omoiyari -d "${TARGET_DB}" \
+            -v ON_ERROR_STOP=1 -f scripts/sql/rehearsal-after-restore.sql
+
+      - name: Move recipe images to local disk
+        env:
+          SOURCE_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          TARGET_DATABASE_URL: postgresql://omoiyari:${{ secrets.VPS_DB_PASSWORD }}@127.0.0.1:55432/omoiyari
+          MEDIA_ROOT: ${{ runner.temp }}/media
+        run: node scripts/migrate-recipe-images.mjs
+
+      - name: Copy images to the VPS
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+          DIR: ${{ secrets.VPS_APP_DIR }}
+        run: |
+          rsync -az \
+            -e "ssh -i $RUNNER_TEMP/deploy_key -o StrictHostKeyChecking=accept-new" \
+            "$RUNNER_TEMP/media/" "${USER}@${HOST}:${DIR}/media/"
+          # Docker is root-equivalent, so this needs no sudo on the VPS.
+          ssh -i "$RUNNER_TEMP/deploy_key" "${USER}@${HOST}" \
+            "docker run --rm -v ${DIR}/media:/media alpine:3 chown -R 1000:1000 /media"
+
+      - name: Verify row counts and images
+        env:
+          SOURCE_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          TARGET_DATABASE_URL: postgresql://omoiyari:${{ secrets.VPS_DB_PASSWORD }}@127.0.0.1:55432/omoiyari
+        run: node scripts/verify-restored-db.mjs | tee "$RUNNER_TEMP/verify.json"
+
+      - name: Upload the verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cutover-report
+          path: ${{ runner.temp }}/verify.json
+          if-no-files-found: ignore
+
+      # Last step that can leave the app unusable. Everything above still has
+      # deploy/.env pointing at Supabase.
+      - name: Point the app at the native database
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd "${{ secrets.VPS_APP_DIR }}/deploy"
+            sed -i 's|^DATABASE_URL=.*|DATABASE_URL="postgresql://omoiyari:${{ secrets.VPS_DB_PASSWORD }}@db:5432/omoiyari"|' .env
+            grep -q '^DATABASE_URL="postgresql://omoiyari:' .env
+            docker compose up -d app
+            docker compose ps
+
+      - name: Wait for the app
+        run: |
+          for _ in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "${PUBLIC_BASE_URL}/login" || true)
+            if [ "$code" = "200" ]; then
+              echo "app is up"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::${PUBLIC_BASE_URL}/login did not return 200"
+          exit 1
+
+      - name: Check one recipe image
+        env:
+          PGPASSWORD: ${{ secrets.VPS_DB_PASSWORD }}
+        run: |
+          url=$(psql -h 127.0.0.1 -p "${TUNNEL_PORT}" -U omoiyari -d "${TARGET_DB}" -tAc \
+            "select image_url from recipes where image_url like '%/media/recipe-images/%' limit 1")
+          [ -n "$url" ] || { echo "::error::no recipe image URL found"; exit 1; }
+          curl -fsS -o /dev/null "$url"
+          echo "image ok: $url"
+
+      # Only restart automatically when the flip never happened. After the
+      # flip, a failed check needs a human decision (see the log).
+      - name: Restart on Supabase if the flip never happened
+        if: failure() && inputs.confirm == 'CUTOVER'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd "${{ secrets.VPS_APP_DIR }}/deploy"
+            if grep -q 'supabase' .env; then
+              echo "DATABASE_URL still points at Supabase — restarting the app"
+              docker compose up -d app
+            else
+              echo "DATABASE_URL was changed. To roll back:"
+              echo "  cp .env.pre-cutover .env && docker compose up -d app"
+            fi
+
+      - name: Close the tunnel
+        if: always()
+        run: pkill -f "ssh -f -N" || true
