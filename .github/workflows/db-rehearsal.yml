@@ -57,7 +57,7 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
-          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_ENV"
+          echo "PATH=/usr/lib/postgresql/17/bin:$PATH" >> "$GITHUB_ENV"
           psql --version
 
       - name: Install Chromium for the smoke test
