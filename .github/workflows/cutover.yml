@@ -157,13 +157,17 @@ jobs:
           USER: ${{ secrets.VPS_USER }}
           DIR: ${{ secrets.VPS_APP_DIR }}
         run: |
-          # The VPS has no rsync; tar is always present.
+          # The deploy user does not own the media directory (uid 1000 does),
+          # and the VPS has no rsync. Extract as root inside a container, then
+          # hand the files to the app's uid.
           tar -C "$RUNNER_TEMP/media" -czf - . \
             | ssh -i "$RUNNER_TEMP/deploy_key" -o StrictHostKeyChecking=accept-new \
-                "${USER}@${HOST}" "tar -xzf - -C ${DIR}/media"
-          # Docker is root-equivalent, so this needs no sudo on the VPS.
+                "${USER}@${HOST}" \
+                "docker run --rm -i -v ${DIR}/media:/media alpine:3 sh -c 'mkdir -p /media && tar -xzf - -C /media'"
           ssh -i "$RUNNER_TEMP/deploy_key" "${USER}@${HOST}" \
             "docker run --rm -v ${DIR}/media:/media alpine:3 chown -R 1000:1000 /media"
+          ssh -i "$RUNNER_TEMP/deploy_key" "${USER}@${HOST}" \
+            "docker run --rm -v ${DIR}/media:/media alpine:3 sh -c 'find /media -type f | wc -l'"
 
       - name: Verify row counts and images
         env:
