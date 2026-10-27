@@ -1,0 +1,53 @@
+name: Database backup (VPS)
+
+# Manual or nightly backup of the native database. Uses `docker compose exec`,
+# so it needs no sudo and no host Postgres client.
+#
+# This is a stopgap until deploy/backup.sh is installed as a systemd timer
+# (that install needs sudo). It keeps 7 days of local dumps, matching the
+# script. Off-site copies are still `deploy/pull-backup.sh` or restic.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 01:30 WIB, after closing. GitHub cron is UTC and may run late.
+    - cron: "30 18 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: pg_dump + globals
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.VPS_APP_DIR }}/deploy"
+            stamp=$(date -u +%Y%m%dT%H%M%SZ)
+            mkdir -p ../backups/db
+
+            docker compose exec -T db pg_dump -U omoiyari -d omoiyari \
+              --format=custom --compress=9 --no-owner --no-privileges \
+              > "../backups/db/omoiyari-$stamp.dump"
+            docker compose exec -T db pg_dumpall -U omoiyari --globals-only \
+              > "../backups/db/globals-$stamp.sql"
+
+            # A truncated dump is worse than none.
+            docker run --rm -i postgres:17 pg_restore --list \
+              < "../backups/db/omoiyari-$stamp.dump" > /dev/null
+
+            find ../backups/db -type f \( -name '*.dump' -o -name '*.sql' \) \
+              -mtime +7 -delete
+            ls -lh ../backups/db
