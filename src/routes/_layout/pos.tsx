@@ -274,11 +274,13 @@ function PosPage() {
     pb1Rate = activeBranch.pb1Rate;
   }
 
-  // Recent orders are bounded by the user's role scope: branch admins see only
-  // their own branch; super_admin / admin_pusat see every branch's transactions
-  // and area managers see all branches under their supervision. The server
-  // enforces the same bound regardless of what the client sends.
-  let isBranchScopedUser = user?.role === "branch_admin";
+  // History follows the branch picker, for every role. Passing the active
+  // branch is what makes "choose Omoiyari Jambangan" actually show Jambangan's
+  // orders: the server only applies privilege scoping (branch admins pinned to
+  // their own branch, area managers to their assignments) on top of the
+  // requested branch, so a central user with no branchId got every branch's
+  // rows and the selector looked broken. The server bound still wins where the
+  // requested branch is not allowed.
   let hasHistoryDateFilter = !!orderDateFrom || !!orderDateTo;
   let ordersResult = useQuery({
     queryKey: [
@@ -293,7 +295,7 @@ function PosPage() {
     queryFn: function () {
       return getOrders({
         data: {
-          branchId: isBranchScopedUser ? activeBranchId : undefined,
+          branchId: activeBranchId || undefined,
           dateFrom: orderDateFrom || undefined,
           dateTo: orderDateTo || undefined,
           channel: orderChannelFilter || undefined,
@@ -302,7 +304,7 @@ function PosPage() {
         },
       });
     },
-    enabled: isBranchScopedUser ? !!activeBranchId : true,
+    enabled: !!activeBranchId,
     retry: 1,
   });
   let recentOrders = ordersResult.data || [];
@@ -323,14 +325,14 @@ function PosPage() {
     queryFn: function () {
       return countOrders({
         data: {
-          branchId: isBranchScopedUser ? activeBranchId : undefined,
+          branchId: activeBranchId || undefined,
           dateFrom: orderDateFrom || undefined,
           dateTo: orderDateTo || undefined,
           channel: orderChannelFilter || undefined,
         },
       });
     },
-    enabled: isBranchScopedUser ? !!activeBranchId : true,
+    enabled: !!activeBranchId,
     retry: 1,
   });
   // Null while loading or on error: callers fall back to page-derived wording
