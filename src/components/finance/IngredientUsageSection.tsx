@@ -7,8 +7,8 @@ import type { DailyUsageRow } from "#/lib/server/finance";
 /**
  * "Rincian Stok Keluar" — total physical ingredient usage (OUT) per bahan for
  * the selected period, aggregated from every ledger OUT source (POS, waste,
- * produksi, penyesuaian). Shared by the /finance Stok Keluar sub-tab and the
- * branch-scoped /stok-keluar page so both stay in sync.
+ * produksi, mutasi, pengadaan, penyesuaian). Shared by the /finance Stok Keluar
+ * sub-tab and the branch-scoped /stok-keluar page so both stay in sync.
  *
  * Each row carries a per-source split, because the total is NOT a sales figure:
  * production, waste and manual adjustments all draw raw ingredients with no sale
@@ -50,7 +50,8 @@ export function IngredientUsageSection({
           <span className="block text-sm font-semibold">Rincian Stok Keluar</span>
           <span className="mt-0.5 block text-xs text-muted-foreground">
             Jumlah fisik bahan keluar per periode (ml/pack) — semua sumber OUT: POS, Data Penjualan,
-            waste, produksi, Stock Opname. Bukan nilai HPP; lihat Ledger Harian untuk HPP per bahan.
+            waste, produksi, Stock Opname, mutasi, pengadaan, penyesuaian. Bukan nilai HPP; lihat
+            Ledger Harian untuk HPP per bahan.
           </span>
         </span>
         <span className="shrink-0 text-right">
@@ -105,7 +106,9 @@ export function IngredientUsageSection({
                       {r.sources
                         .map(
                           (s) =>
-                            `${USAGE_SOURCE_LABELS[s.source]} ${s.quantity.toLocaleString("id-ID")}`,
+                            `${USAGE_SOURCE_LABELS[s.source]} ${s.quantity.toLocaleString("id-ID")}${
+                              r.unit ? ` ${r.unit}` : ""
+                            }`,
                         )
                         .join(" · ")}
                     </p>
@@ -121,9 +124,11 @@ export function IngredientUsageSection({
             )}
             <p className="mt-2 text-xs text-muted-foreground">
               Total mencakup semua sumber, bukan hanya penjualan — bahan bisa habis karena produksi,
-              waste, atau Stock Opname. Baris dengan lebih dari satu sumber dipecah per sumber.
+              waste, Stock Opname, mutasi/pengadaan, atau penyesuaian. Baris dengan lebih dari satu
+              sumber dipecah per sumber; angka tiap sumber adalah jumlah fisik dalam satuan bahan,
+              bukan rupiah. "Lainnya" berarti catatan gerakan tidak dikenali (mis. data lama).{" "}
               {!hideCurrency &&
-                " Nilai ≈ estimasi dari harga rata-rata bahan saat ini, bukan HPP resmi."}{" "}
+                "Nilai ≈ estimasi dari harga rata-rata bahan saat ini, bukan HPP resmi."}{" "}
               Detail per gerakan ada di Kartu Stok.
             </p>
           </div>

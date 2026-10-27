@@ -412,8 +412,9 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
 
       // One OUT row per notes tag the writers actually use.
       // notes is nullable on the table, so a NULL tag is a real case, not a cast.
-      const movements: { notes: string | null; quantity: number }[] = [
+      const movements: { notes: string | null; quantity: number; reference?: string }[] = [
         { notes: "POS Order abcd1234", quantity: 10 },
+        { notes: "Void re-deduct exclusion: abcd1234", quantity: 2 },
         { notes: "Data Penjualan ef567890", quantity: 20 },
         { notes: "Waste: Beban Makan -kurang bahan", quantity: 5 },
         { notes: "Waste BOM Matcha Base", quantity: 3 },
@@ -421,6 +422,11 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
         { notes: "Produksi 11223344", quantity: 8 },
         { notes: "SO Adjustment: kurang", quantity: 1 },
         { notes: "SO Realization: Nasi 3 porsi", quantity: 1 },
+        { notes: "Mutasi TR-0001 dikirim", quantity: 7 },
+        { notes: "Pengadaan PR-0001 dikirim", quantity: 9 },
+        // Manual adjustments write the user's free-text reason as the note, so
+        // only the ADJ-* reference identifies them.
+        { notes: "stok rusak di gudang", reference: "ADJ-ABC123", quantity: 11 },
         { notes: "something-unrecognised", quantity: 4 },
         { notes: null, quantity: 6 },
       ];
@@ -432,7 +438,7 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
           type: "OUT",
           quantity: m.quantity,
           balance: 0,
-          reference: uniq("REF"),
+          reference: m.reference ?? uniq("REF"),
           notes: m.notes,
         });
       }
@@ -442,13 +448,19 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
       expect(row).toBeDefined();
 
       const asMap = new Map(row!.sources.map((s) => [s.source, s.quantity]));
-      expect(asMap.get("POS")).toBe(10);
+      // A void's re-deduct is still a POS movement, not "other".
+      expect(asMap.get("POS")).toBe(10 + 2);
       expect(asMap.get("Data Penjualan")).toBe(20);
       // All three waste tags are waste, whatever the mode or cancellation.
       expect(asMap.get("Waste")).toBe(5 + 3 + 2);
       expect(asMap.get("Produksi")).toBe(8);
       // Both SO tags are Stock Opname.
       expect(asMap.get("Stock Opname")).toBe(1 + 1);
+      // Branch-to-branch transfers and procurement dispatch.
+      expect(asMap.get("Mutasi")).toBe(7);
+      expect(asMap.get("Pengadaan")).toBe(9);
+      // Manual adjustment, recognised by its ADJ-* reference.
+      expect(asMap.get("Penyesuaian")).toBe(11);
       // Unrecognised and NULL notes are reported honestly as Lainnya, not
       // silently folded into a real source.
       expect(asMap.get("Lainnya")).toBe(4 + 6);
@@ -457,7 +469,7 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
       // add up to the headline figure.
       const sum = row!.sources.reduce((acc, s) => acc + s.quantity, 0);
       expect(sum).toBe(row!.quantity);
-      expect(row!.quantity).toBe(60);
+      expect(row!.quantity).toBe(89);
     },
   );
 

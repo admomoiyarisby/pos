@@ -1139,13 +1139,13 @@ export async function getDailyIngredientUsageCore(
   const sourceRows = await db
     .select({
       ingredientId: stockLedger.ingredientId,
-      source: usageSourceSql(stockLedger.notes),
+      source: usageSourceSql(stockLedger.notes, stockLedger.reference),
       quantity: sql<number>`COALESCE(SUM(${stockLedger.quantity}), 0)`,
     })
     .from(stockLedger)
     .leftJoin(ingredients, eq(stockLedger.ingredientId, ingredients.id))
     .where(and(...conditions))
-    .groupBy(stockLedger.ingredientId, usageSourceSql(stockLedger.notes));
+    .groupBy(stockLedger.ingredientId, usageSourceSql(stockLedger.notes, stockLedger.reference));
 
   const byIngredient = new Map<string, Map<UsageSource, number>>();
   for (const r of sourceRows) {
