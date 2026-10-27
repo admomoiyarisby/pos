@@ -54,9 +54,10 @@ services:
       PORT: "3000"
       HOST: 0.0.0.0
       MEDIA_ROOT: /app/media
-      # The database lives in this compose project. deploy/.env must NOT set
-      # DATABASE_URL — this value wins and keeps credentials in one place.
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-omoiyari}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-omoiyari}"
+      # DATABASE_URL comes from deploy/.env, not from this file. That is
+      # deliberate: during the Supabase → native cutover the VPS keeps pointing
+      # at Supabase until the operator changes it, so a normal deploy cannot
+      # switch the app to an empty database.
     volumes:
       # Recipe images live on the host so `restic` can back them up directly.
       # The app runs as uid 1000 (`node`); the directory must be owned by it.

@@ -27,6 +27,22 @@ VPS can reach it; backups, migrations, and the CI rehearsal use an SSH tunnel.
 
 The VPS **never builds** — it only pulls. Workflow: `.github/workflows/ci.yml`.
 
+### First push that introduces the native database
+
+A push runs CI and the deploy only; it never runs the rehearsal. Safe order:
+
+1. On the VPS, append `POSTGRES_PASSWORD` to `deploy/.env` and keep
+   `DATABASE_URL` pointing at Supabase (see One-time VPS setup).
+2. Push. The deploy starts an empty `db` service and restarts the app against
+   Supabase — the native database is not used yet.
+3. Add the `VPS_DB_PASSWORD` (= `POSTGRES_PASSWORD`) and `SUPABASE_DB_URL`
+   secrets.
+4. Run the **Rehearsal workflow** manually (Actions → db-rehearsal → Run
+   workflow) and confirm it passes on the current data.
+5. Follow the cutover runbook: restore the production data, move the images,
+   then change `DATABASE_URL` to the native URL. Later deploys apply
+   migrations automatically.
+
 ## Prerequisites
 
 - A VPS with Docker Engine + the Compose plugin.
@@ -34,7 +50,8 @@ The VPS **never builds** — it only pulls. Workflow: `.github/workflows/ci.yml`
   Cloudflare, start with the record **DNS-only (grey cloud)** so Caddy can
   obtain its certificate, then enable the orange cloud.
 - Ports 80 and 443 reachable.
-- A Cloudflare R2 bucket + API token for off-site backups (below).
+- A Cloudflare R2 bucket + API token for off-site backups (**optional**; the
+  no-card path is pulling backups to your own machine, see Backups).
 
 ## One-time VPS setup
 
@@ -55,11 +72,16 @@ Create `/srv/omoiyari-pos/deploy/.env` **in place** (CI never overwrites it):
 
 ```bash
 cat > /srv/omoiyari-pos/deploy/.env <<'EOF'
-# Postgres. POSTGRES_PASSWORD must be URL-safe (letters, digits, - _) because
-# compose interpolates it into the app's DATABASE_URL.
+# Postgres. Keep POSTGRES_PASSWORD URL-safe (letters, digits, - _) so it can be
+# pasted into DATABASE_URL without percent-encoding.
 POSTGRES_DB="omoiyari"
 POSTGRES_USER="omoiyari"
 POSTGRES_PASSWORD="<openssl rand -hex 24>"
+
+# Until cutover this is the Supabase connection string (session mode, port
+# 5432). At cutover change it to:
+#   postgresql://omoiyari:<POSTGRES_PASSWORD>@db:5432/omoiyari
+DATABASE_URL="<current Supabase URL>"
 
 BETTER_AUTH_URL="https://your-real-domain"
 BETTER_AUTH_SECRET="<openssl rand -hex 32>"
@@ -68,9 +90,16 @@ EOF
 chmod 600 /srv/omoiyari-pos/deploy/.env
 ```
 
-Do **not** put `DATABASE_URL` in this file. Compose builds it from the
-`POSTGRES_*` values and points it at the `db` service, so the credentials live
-in one place.
+`DATABASE_URL` is deliberately **not** set by `compose.yaml`. Compose reads it
+from this file only, so a normal deploy cannot switch the app to the empty
+native database before the data has been restored. Keep it pointing at Supabase
+until the cutover steps below tell you to change it.
+
+**Already deployed before this change?** Append both `POSTGRES_PASSWORD` and
+`DATABASE_URL` (the current Supabase URL) to the existing `.env` **before**
+pushing. Without `DATABASE_URL` the new app container has no database
+connection; without `POSTGRES_PASSWORD` compose refuses to start at all and the
+deploy stops before replacing the running container.
 
 `BETTER_AUTH_URL` must be the public HTTPS origin. The **Caddyfile is the
 opposite**: CI copies it from the repo on every deploy, so set your domain in
@@ -116,11 +145,12 @@ Settings → Secrets and variables → Actions → New repository secret:
 | `SUPABASE_DB_URL` | _(rehearsal only)_ session-mode URL, port **5432**, password URL-encoded      |
 | `GHCR_TOKEN`      | _(optional)_ a PAT with `read:packages`, only if the GHCR package is private  |
 
-`VPS_DB_PASSWORD` enables the pre-deploy migration step. Leave it unset and
-migrations are skipped (the Supabase-era behaviour). **Set it only after the
-VPS `db` service exists and the production database has been restored** —
-otherwise the first deploy after adding it tries to migrate an empty database
-before the data move is done. `SUPABASE_DB_URL` is only read by the rehearsal
+`VPS_DB_PASSWORD` does two things: it enables the pre-deploy migration step,
+and the rehearsal workflow uses it to reach the VPS database. Set it once the
+VPS `db` service exists (after the first deploy that ships this compose file),
+before running the rehearsal. Until the production data is restored, a deploy
+will migrate an empty `omoiyari` database — harmless, because the cutover drops
+and recreates that database. `SUPABASE_DB_URL` is only read by the rehearsal
 workflow.
 
 Generate a key:
@@ -136,11 +166,69 @@ Change visibility → Public) to skip `GHCR_TOKEN` entirely.
 
 ## Backups
 
-A backup on the same VPS is not a backup. `deploy/backup.sh` writes a nightly
-`pg_dump` + globals dump, then copies those **and** the media directory
-off-site with `restic`.
+A backup on the same VPS is not a backup. There are two layers:
 
-### 1. Create the R2 bucket and token
+1. **Local nightly dumps** on the VPS — fast rollback for a bad migration or
+   an accidental delete. Always on.
+2. **An off-site copy** — either `restic` to Cloudflare R2, or a weekly pull to
+   your own machine. R2 needs a payment method even on the free tier, so the
+   pull path is the no-card option.
+
+Until either off-site copy exists, **keep the Supabase project** as the remote
+fallback. Do not delete it after cutover.
+
+### 1. Install the nightly local backup (no card needed)
+
+```bash
+sudo install -m 0755 deploy/backup.sh /usr/local/bin/omoiyari-backup
+sudo install -m 0644 deploy/systemd/omoiyari-backup.service /etc/systemd/system/
+sudo install -m 0644 deploy/systemd/omoiyari-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now omoiyari-backup.timer
+```
+
+Do **not** create `/etc/omoiyari-backup.env` yet. Without `RESTIC_REPOSITORY`
+the script writes local dumps and skips restic.
+
+The timer runs at **18:30 UTC** (01:30 WIB), after closing. Run it by hand once:
+
+```bash
+sudo omoiyari-backup
+ls -lh /srv/omoiyari-pos/backups/db
+sudo systemctl list-timers omoiyari-backup.timer
+```
+
+It keeps **7 days** of `omoiyari-<stamp>.dump` and `globals-<stamp>.sql` in
+`/srv/omoiyari-pos/backups/db`.
+
+### 2. Off-site without R2: pull to your machine
+
+Run this **on your laptop**, not the VPS:
+
+```bash
+chmod +x deploy/pull-backup.sh
+VPS=deploy@your-vps ./deploy/pull-backup.sh
+```
+
+Defaults:
+
+| Variable     | Default              |
+| ------------ | -------------------- |
+| `VPS`        | `deploy@your-vps`    |
+| `REMOTE_DIR` | `/srv/omoiyari-pos`  |
+| `DEST`       | `~/omoiyari-backups` |
+| `KEEP_DAYS`  | `30`                 |
+
+It copies `backups/db/` and `media/` with `rsync`, verifies the newest dump
+with `pg_restore --list` when available, and deletes local dumps older than
+`KEEP_DAYS`. It never uses `--delete`, so a missing file on the VPS cannot
+erase your copy.
+
+Run it weekly (a calendar reminder is enough), and keep `DEST` on the laptop
+**and** on an external drive. `--dry-run` shows what would transfer;
+`--no-media` skips the images.
+
+### 3. Add Cloudflare R2 later (optional)
 
 1. Create a free Cloudflare account → **R2** → **Create bucket**
    (`omoiyari-backups`). R2's free tier covers 10 GB; your data is well under
@@ -149,8 +237,7 @@ off-site with `restic`.
    **Object Read & Write**, scoped to that bucket. Copy the access key id and
    secret (shown once).
 3. Note your **Account ID** from the R2 overview page.
-
-### 2. Install restic and configure it
+4. On the VPS:
 
 ```bash
 sudo apt-get update && sudo apt-get install -y restic
@@ -170,28 +257,9 @@ set -a; source /etc/omoiyari-backup.env; set +a
 restic init
 ```
 
-### 3. Install the nightly timer
-
-```bash
-sudo install -m 0755 deploy/backup.sh /usr/local/bin/omoiyari-backup
-sudo install -m 0644 deploy/systemd/omoiyari-backup.service /etc/systemd/system/
-sudo install -m 0644 deploy/systemd/omoiyari-backup.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now omoiyari-backup.timer
-```
-
-The timer runs at **18:30 UTC** (01:30 WIB), after closing. Run it by hand
-once to prove the credentials:
-
-```bash
-sudo omoiyari-backup
-sudo systemctl list-timers omoiyari-backup.timer
-```
-
-What it keeps:
-
-- **Local**: 7 days of dumps in `/srv/omoiyari-pos/backups/db`.
-- **Off-site**: 14 daily, 8 weekly, 12 monthly snapshots (restic `forget`).
+The next timer run uploads a full snapshot; later runs are incremental and
+deduplicated. Keep 14 daily, 8 weekly, and 12 monthly snapshots (restic
+`forget --prune` in `backup.sh`).
 
 ### 4. Restore drill (monthly)
 
@@ -212,11 +280,23 @@ restic restore latest --target /tmp/restic-restore
 sudo /srv/omoiyari-pos/deploy/restore-drill.sh /tmp/restic-restore/srv/omoiyari-pos/backups/db/<file>.dump
 ```
 
+If you use the pull path, restore from the laptop copy instead:
+
+```bash
+scp ~/omoiyari-backups/db/<file>.dump deploy@your-vps:/tmp/
+ssh deploy@your-vps 'sudo /srv/omoiyari-pos/deploy/restore-drill.sh /tmp/<file>.dump'
+```
+
 ### Images
 
-The media directory is in the same restic snapshot as the database dump, so a
-restore returns both. `restic restore` recreates `/srv/omoiyari-pos/media`
-with the exact paths the database expects.
+The media directory is included in both off-site paths:
+
+- **restic**: the same snapshot as the database dump, restored to the exact
+  paths the database expects.
+- **pull**: `pull-backup.sh` copies `media/` alongside `backups/db/`.
+
+A database restore without the matching media directory leaves
+`recipes.image_url` pointing at files that do not exist.
 
 ## Moving the data from Supabase (cutover runbook)
 
@@ -239,14 +319,18 @@ short version:
    `PUBLIC_BASE_URL=https://your-domain` and `MEDIA_ROOT=/srv/omoiyari-pos/media`.
    Then `sudo chown -R 1000:1000 /srv/omoiyari-pos/media` so the app (uid 1000)
    can replace images in the directories the root-run migration created.
-6. `docker compose up -d app`.
+6. Point the app at the native database: edit `deploy/.env` and change
+   `DATABASE_URL` to
+   `postgresql://omoiyari:<POSTGRES_PASSWORD>@db:5432/omoiyari`, then
+   `docker compose up -d app` (recreates the container with the new env).
 7. Manual write check (the smoke test is read-only):
    - log in with a real account
    - create one POS order, confirm it appears in Data Penjualan
    - record one stock movement (waste or transfer), confirm Kartu Stok
    - open `/finance` and confirm the day's totals
 8. Keep Supabase untouched for at least a week. Rollback is pointing
-   `DATABASE_URL` back at Supabase and restarting the old image.
+   `DATABASE_URL` in `deploy/.env` back at Supabase, `docker compose up -d app`,
+   and running the pre-cutover image if needed.
 
 The source-only columns (`include_in_pnl`) are bridged by
 `scripts/sql/rehearsal-before-restore.sql` because the live Supabase schema
@@ -283,8 +367,9 @@ POS_IMAGE=ghcr.io/admomoiyarisby/pos:<git-sha> docker compose up -d
 `git log` / the Actions run gives you the sha.
 
 Database rollback after cutover: stop the app, restore the pre-cutover dump
-into a fresh database (or switch `DATABASE_URL` back to Supabase), start the
-app.
+into a fresh database (or set `DATABASE_URL` in `deploy/.env` back to the
+Supabase URL), `docker compose up -d app`, and restart the old image if the
+schema moved.
 
 ## Keepalive cron
 
@@ -293,6 +378,17 @@ no longer needed. Leave the route in place (harmless) or remove it.
 
 ## Gotchas
 
+- **A deploy needs `POSTGRES_PASSWORD` even before cutover.** `compose.yaml`
+  declares the `db` service, and compose refuses to interpolate the file when
+  the password is unset. The deploy fails before touching the running
+  container, so add `POSTGRES_PASSWORD` to `deploy/.env` **before** the first
+  push that includes the native database.
+- **A deploy also refuses to run without `DATABASE_URL`.** The deploy script
+  checks `deploy/.env` before `docker compose up`; without the line the app
+  would start with no database and crash-loop.
+- **Keep `DATABASE_URL` on Supabase until the data is restored.** A deploy
+  restarts the app with whatever `deploy/.env` says; changing it early points
+  production at an empty database.
 - **Passkeys break on a new hostname.** The passkey plugin is configured with
   `passkey()` and no options (`src/lib/auth.ts`), so its WebAuthn RP ID is
   derived from `BETTER_AUTH_URL`. Moving from `*.vercel.app` to your own domain

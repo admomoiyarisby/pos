@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Nightly database + media backup for the Omoiyari POS VPS.
 #
-# Writes a custom-format pg_dump and a globals-only dump, then copies both and
-# the recipe-image directory off-site with restic. `flock` makes overlapping
-# runs impossible; a failed pg_dump aborts before restic runs.
+# Writes a custom-format pg_dump and a globals-only dump. When
+# RESTIC_REPOSITORY is set, it also copies those dumps and the recipe-image
+# directory off-site with restic (Cloudflare R2). Without it the script keeps
+# local dumps only — `deploy/pull-backup.sh` pulls those to your laptop.
+# `flock` makes overlapping runs impossible; a failed pg_dump aborts before
+# restic runs.
 #
 # Install:
 #   sudo install -m 0755 deploy/backup.sh /usr/local/bin/omoiyari-backup

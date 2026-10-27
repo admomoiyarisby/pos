@@ -194,6 +194,15 @@ jobs:
             set -e
             cd "${{ secrets.VPS_APP_DIR }}/deploy"
 
+            # A missing or empty DATABASE_URL would start the app with no
+            # database and crash-loop it. Refuse before touching the running
+            # container.
+            DB_URL=$(sed -n 's/^DATABASE_URL=//p' .env | head -1 | tr -d '"'\''')
+            if [ -z "$DB_URL" ]; then
+              echo "::error::deploy/.env has no DATABASE_URL — add it (Supabase URL until cutover) and re-run."
+              exit 1
+            fi
+
             # Only needed if the GHCR package is private. Leave GHCR_TOKEN unset
             # when the package is public and this is skipped.
             if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
