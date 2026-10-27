@@ -7,8 +7,10 @@ import type { DailyUsageRow } from "#/lib/server/finance";
 /**
  * "Rincian Stok Keluar" — total physical ingredient usage (OUT) per bahan for
  * the selected period, aggregated from every ledger OUT source (POS, waste,
- * produksi, mutasi, pengadaan, penyesuaian). Shared by the /finance Stok Keluar
- * sub-tab and the branch-scoped /stok-keluar page so both stay in sync.
+ * produksi, mutasi, pengadaan, penyesuaian). Voided orders are excluded: their
+ * stock was returned, so counting the original OUT would overstate usage.
+ * Shared by the /finance Stok Keluar sub-tab and the branch-scoped /stok-keluar
+ * page so both stay in sync.
  *
  * Each row carries a per-source split, because the total is NOT a sales figure:
  * production, waste and manual adjustments all draw raw ingredients with no sale

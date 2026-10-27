@@ -1063,6 +1063,19 @@ export interface DailyUsageRow {
 // tetap jadi tempat audit detail per referensi. Hanya bahan mentah
 // (ingredientId terisi) — resep jadi (recipeId) dikeluarkan agar tidak
 // dobel hitung dengan BOM bahan mentahnya.
+//
+// A voided order is the exception: creating it wrote OUT rows, voiding it wrote
+// compensating IN rows and flipped `orders.status` to 'Void'. This report only
+// ever reads OUT rows, so without the filter below the voided order would keep
+// counting as consumption even though its stock went straight back (the Pucang
+// bug). Filtering on status — instead of subtracting the restore rows — keeps
+// the correction in the period the sale belonged to even when the void happens
+// later, and also drops older voids whose restore rows are missing.
+const notVoidedOrderSql = sql`NOT EXISTS (
+  SELECT 1 FROM orders
+  WHERE orders.id::text = ${stockLedger.reference}
+    AND orders.status = 'Void'
+)`;
 export const getDailyIngredientUsage = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
   .handler(async ({ data }): Promise<DailyUsageRow[]> => {
@@ -1105,6 +1118,7 @@ export async function getDailyIngredientUsageCore(
   const conditions = [
     eq(stockLedger.type, "OUT"),
     isNull(stockLedger.recipeId),
+    notVoidedOrderSql,
     effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
     data.dateFrom
       ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`

@@ -495,6 +495,69 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
       expect(row?.sources).toEqual([{ source: "POS", quantity: 7 }]);
     },
   );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "drops a voided order's OUT rows instead of counting stock that was returned",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      const ingredientId = await seedIngredient(branchId);
+
+      const [live] = await db
+        .insert(schema.orders)
+        .values({ branchId, channel: "Dine-in", subtotal: 50000, totalAmount: 50000 })
+        .returning({ id: schema.orders.id });
+      const [voided] = await db
+        .insert(schema.orders)
+        .values({
+          branchId,
+          channel: "Dine-in",
+          subtotal: 20000,
+          totalAmount: 20000,
+          status: "Void",
+          voidReason: "Salah Input",
+        })
+        .returning({ id: schema.orders.id });
+
+      // The ledger keeps the original OUT rows after a void; the restore is a
+      // separate IN row. This report reads only OUT, so without the status
+      // filter the voided order's 4 units would still be counted.
+      await db.insert(schema.stockLedger).values([
+        {
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: 10,
+          balance: 90,
+          reference: live.id,
+          notes: `POS Order ${live.id.slice(0, 8)}`,
+        },
+        {
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: 4,
+          balance: 86,
+          reference: voided.id,
+          notes: `POS Order ${voided.id.slice(0, 8)}`,
+        },
+        {
+          branchId,
+          ingredientId,
+          type: "IN",
+          quantity: 4,
+          balance: 90,
+          reference: voided.id,
+          notes: `Void Order ${voided.id.slice(0, 8)}: Salah Input`,
+        },
+      ]);
+
+      const rows = await financeApi.getDailyIngredientUsageCore(admin, { branchId });
+      const row = rows.find((r) => r.ingredientId === ingredientId);
+      expect(row?.quantity).toBe(10);
+      expect(row?.sources).toEqual([{ source: "POS", quantity: 10 }]);
+    },
+  );
 });
 
 describe("Finance — channel P&L Omzet Real comes from Input Revenue", () => {
