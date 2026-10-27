@@ -157,9 +157,10 @@ jobs:
           USER: ${{ secrets.VPS_USER }}
           DIR: ${{ secrets.VPS_APP_DIR }}
         run: |
-          rsync -az \
-            -e "ssh -i $RUNNER_TEMP/deploy_key -o StrictHostKeyChecking=accept-new" \
-            "$RUNNER_TEMP/media/" "${USER}@${HOST}:${DIR}/media/"
+          # The VPS has no rsync; tar is always present.
+          tar -C "$RUNNER_TEMP/media" -czf - . \
+            | ssh -i "$RUNNER_TEMP/deploy_key" -o StrictHostKeyChecking=accept-new \
+                "${USER}@${HOST}" "tar -xzf - -C ${DIR}/media"
           # Docker is root-equivalent, so this needs no sudo on the VPS.
           ssh -i "$RUNNER_TEMP/deploy_key" "${USER}@${HOST}" \
             "docker run --rm -v ${DIR}/media:/media alpine:3 chown -R 1000:1000 /media"
