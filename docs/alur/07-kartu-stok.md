@@ -46,15 +46,15 @@ Waktu          Bahan           Tipe   Qty    Saldo   Referensi      Keterangan
 
 ## Sumber Pergerakan Stok
 
-| Sumber                | Tipe   | Contoh Keterangan                                                     |
-| --------------------- | ------ | --------------------------------------------------------------------- |
-| **Supplier Delivery** | IN     | `Supplier Delivery: PT Ayam Segar`                                    |
-| **Yield/Produksi**    | IN/OUT | `Yield: Ayam Mentah → produksi`                                       |
-| **Pengadaan**         | OUT    | `Procurement: Transfer ke Cabang Surabaya`                            |
-| **Mutasi Stok**       | IN/OUT | `Mutasi dari Cabang Malang`                                           |
-| **POS (Penjualan)**   | OUT    | `POS-12345: Nasi Goreng Spesial (Beras)`                              |
-| **Stock Opname**      | IN/OUT | `SO Realization: Adjusted from 50 to 48` (realize, opname tanggal 25) |
-| **Void/Pembatalan**   | IN     | `Void POS-12345: Restorasi stok`                                      |
+| Sumber                | Tipe   | Contoh Keterangan                                                 |
+| --------------------- | ------ | ----------------------------------------------------------------- |
+| **Supplier Delivery** | IN     | `Supplier Delivery: PT Ayam Segar`                                |
+| **Yield/Produksi**    | IN/OUT | `Yield: Ayam Mentah → produksi`                                   |
+| **Pengadaan**         | OUT    | `Procurement: Transfer ke Cabang Surabaya`                        |
+| **Mutasi Stok**       | IN/OUT | `Mutasi dari Cabang Malang`                                       |
+| **POS (Penjualan)**   | OUT    | `POS-12345: Nasi Goreng Spesial (Beras)`                          |
+| **Stock Opname**      | IN/OUT | `SO Realization: selisih -2 (sistem 50 → fisik 48), stok 50 → 48` |
+| **Void/Pembatalan**   | IN     | `Void POS-12345: Restorasi stok`                                  |
 
 ## Filter dan Pencarian
 
@@ -146,4 +146,8 @@ periksa dulu umur order-nya.
   sebagai catatan resmi. Tidak ada baris ledger dari approve.
 - **Realize** adalah satu-satunya langkah yang menyesuaikan stok, dan hanya untuk
   opname yang **tanggalnya 25**. Baris ledger-nya berjudul `SO Realization`.
+- Realize menerapkan **selisih** hasil hitungan (fisik − stok sistem saat
+  opname) ke stok saat ini, bukan menyetel stok ke angka fisik. Penjualan atau
+  pemakaian yang tercatat setelah tanggal opname tetap berlaku — realize di
+  tanggal 28/29 tidak menimpa stock out tanggal 26–29 (ADR 0026).
 - Opname di tanggal lain = catatan/audit murni. Sistem akan menolak realize-nya.

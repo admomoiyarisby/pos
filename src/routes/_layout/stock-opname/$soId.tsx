@@ -127,7 +127,7 @@ function StockOpnameDetailPage() {
       });
       if (result.drift.length > 0) {
         toast.warning("Stok bergerak sejak SO dibuat", {
-          description: `${result.drift.length} item memiliki stok berbeda dari snapshot SO — penyesuaian dihitung dari stok aktual, bukan snapshot.`,
+          description: `${result.drift.length} item memiliki stok berbeda dari snapshot SO — penyesuaian memakai selisih snapshot (fisik − sistem) dan diterapkan ke stok aktual, jadi pemakaian setelah opname tetap berlaku.`,
         });
       }
     },
@@ -710,7 +710,7 @@ function StockOpnameDetailPage() {
             <p className="text-sm font-medium mb-2">Konversi Nasi Putih → Bahan Baku</p>
             <p className="text-xs text-muted-foreground mb-3">
               {soIs25th
-                ? "Stok fisik Nasi akan dikonversi ke bahan baku saat Realize SO."
+                ? "Selisih lebih stok fisik Nasi terhadap snapshot dikonversi ke bahan baku saat Realize SO."
                 : "Konversi Nasi hanya berlaku saat Realize — opname di luar tanggal 25 hanya catatan, jadi tidak ada pengurangan bahan baku."}
             </p>
             {detail.items
@@ -718,11 +718,12 @@ function StockOpnameDetailPage() {
               .map((item: any) => {
                 const portions = physicalInputs[item.id] ?? String(item.physicalStock);
                 const numPortions = parseQuantityInput(portions) ?? 0;
-                const conversions = calculateNasiConversion(numPortions);
+                const variance = Math.max(0, numPortions - item.systemStock);
+                const conversions = calculateNasiConversion(variance);
                 return (
                   <div key={item.id} className="space-y-2">
                     <div className="text-sm font-medium">
-                      {formatQuantity(numPortions)} porsi Nasi Putih
+                      {formatQuantity(variance)} porsi Nasi Putih (selisih dari snapshot)
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                       {conversions.map((conv) => (
@@ -847,8 +848,9 @@ function StockOpnameDetailPage() {
                 Stok bergerak sejak SO dibuat ({detail.drift.length} item)
               </p>
               <p className="mt-1 text-xs">
-                Stok sistem di bawah adalah snapshot saat SO dibuat. Penyesuaian dihitung dari stok
-                aktual saat ini, bukan snapshot tersebut.
+                Stok sistem di bawah adalah snapshot saat SO dibuat. Realize menerapkan selisih
+                snapshot (fisik − sistem) ke stok saat ini, sehingga penjualan/pemakaian yang
+                terjadi setelah opname tetap terhitung.
               </p>
               <ul className="mt-2 space-y-1">
                 {detail.drift.map((row, idx: number) => (
@@ -942,7 +944,9 @@ function StockOpnameDetailPage() {
           <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
             <p className="font-medium">Konfirmasi Realisasi</p>
             <p className="mt-1">
-              Stok fisik akan disetel sebagai stok baru. Selisih akan dibuatkan jurnal ledger.
+              Selisih hasil hitungan (fisik − stok sistem saat opname) diterapkan ke stok saat ini.
+              Penjualan dan pemakaian yang terjadi setelah tanggal opname tetap berlaku — tidak
+              ditimpa. Selisihnya dicatat sebagai jurnal ledger.
             </p>
           </div>
           <div className="text-sm text-muted-foreground">

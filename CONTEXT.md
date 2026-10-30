@@ -76,15 +76,15 @@ A physical location where orders are taken and inventory is stored. Branches can
 _Avoid_: Store, location, outlet (when referring to the general concept)
 
 **Stock Opname (SO)**:
-A physical inventory verification process where actual stock is counted and compared against system records. The SO is "triggered" by a supervisor (Area Manager or Admin Pusat), then "submitted" by the counter with physical counts. Counting is **partial**: only fields the counter actually fills are counted (`stockOpnameItems.countedAt` distinguishes an explicit 0 from never-filled); on approval, uncounted items keep their stock exactly as-is, and the detail page shows a persistent "Ringkasan Perubahan" summarizing what changed. SO can be "Blind" (counter cannot see system stock) or "See-Through" (counter can see system stock and variance).
+A physical inventory verification process where actual stock is counted and compared against system records. The SO is "triggered" by a supervisor (Area Manager or Admin Pusat), then "submitted" by the counter with physical counts. Counting is **partial**: only fields the counter actually fills are counted (`stockOpnameItems.countedAt` distinguishes an explicit 0 from never-filled); on approval, uncounted items keep their stock exactly as-is, and the detail page shows a persistent "Ringkasan Perubahan" summarizing what changed. Realize applies the counted variance to the live balance (ADR 0026), so sales recorded after the count are not overwritten. SO can be "Blind" (counter cannot see system stock) or "See-Through" (counter can see system stock and variance).
 _Avoid_: Stock audit, physical count, inventory check
 
 **Variance**:
-The difference between physical stock (what was actually counted) and system stock (what the system believes is on hand). Calculated as `physicalStock - systemStock`. Positive means surplus, negative means shortage.
+The difference between physical stock (what was actually counted) and system stock (what the system believed at trigger time). Calculated as `physicalStock - systemStock`, and the signed amount realize applies to current inventory. Positive means surplus, negative means shortage.
 _Avoid_: Discrepancy, difference, selisih (when used as a technical term)
 
 **System Stock (SO context)**:
-The quantity the system believed was on hand at the moment the SO was triggered. Frozen at trigger time, used only for display/investigation purposes. NOT used for inventory adjustment calculations — physical stock is the source of truth upon approval.
+The quantity the system believed was on hand at the moment the SO was triggered. Frozen at trigger time; used for the variance (`physicalStock - systemStock`) that realize applies to the live balance (ADR 0026), and for display/investigation. It is not the balance itself — realize never replaces current stock with this or with the physical count.
 _Avoid_: Expected stock, digital stock
 
 **Procurement (Pengadaan)**:

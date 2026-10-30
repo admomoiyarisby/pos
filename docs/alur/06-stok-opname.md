@@ -74,11 +74,11 @@ Hanya opname yang **tanggalnya 25** yang bisa di-realize:
 
 1. Hanya bisa dilakukan oleh Super Admin atau Admin Pusat
 2. Bisa dilakukan **di hari mana pun dalam bulan itu** — cabang boleh menghitung terus-menerus dan realize opname tanggal 25 kapan saja dalam bulan tersebut. Opname untuk bulan yang belum mulai akan ditolak.
-3. Sistem menyesuaikan stok sistem sesuai stok fisik untuk setiap item yang dihitung
+3. Sistem menerapkan **selisih** hasil hitungan (fisik − stok sistem saat opname) ke stok sistem saat ini — penjualan/pemakaian yang terjadi setelah tanggal opname tetap berlaku dan tidak ditimpa
 4. Kartu Stok mencatat penyesuaian sebagai **`SO Realization`**
 5. Opname di luar tanggal 25 akan ditolak: "hanya catatan"
 
-**Penting**: Setelah realize, stok sistem = stok fisik. Nilai inilah yang menjadi **baseline** stok bulan berikutnya. Item yang tidak dihitung tidak berubah.
+**Penting**: Setelah realize, selisih yang ditemukan saat hitung sudah diterapkan ke stok berjalan. Kalau tidak ada pergerakan stok antara tanggal 25 dan hari realize, hasilnya sama dengan angka fisik; kalau ada penjualan/pemakaian setelahnya, angka itu tetap terhitung. Item yang tidak dihitung tidak berubah.
 
 ## Contoh Kasus
 
@@ -103,6 +103,7 @@ Hanya opname yang **tanggalnya 25** yang bisa di-realize:
    - Ayam Mentah: 50 → 48
    - Minyak Goreng: 30 → 31
      (Keduanya tercatat di Kartu Stok sebagai `SO Realization`)
+   - Kalau antara tanggal 25 dan hari realize masih ada penjualan/pemakaian, angka itu tetap berlaku — realize hanya menerapkan selisihnya, bukan mengembalikan stok ke angka fisik.
 
 ## Status Stock Opname
 
@@ -123,6 +124,9 @@ A: Untuk mencegah counter "mengikuti" angka sistem. Penghitungan harus berdasark
 
 **Q: Apa yang terjadi dengan selisih stok?**
 A: Selisih baru masuk ke stok setelah opname **tanggal 25 di-realize**, dan tercatat di Kartu Stok sebagai `SO Realization`. Approval saja tidak mengubah stok.
+
+**Q: Kalau opname tanggal 25 baru di-realize tanggal 28 atau 29, apakah penjualan tanggal 28–29 tertimpa?**
+A: Tidak. Realize menerapkan **selisih** hasil hitungan (fisik − stok sistem saat opname) ke stok saat ini, bukan menyetel stok kembali ke angka fisik. Semua penjualan/pemakaian yang sudah tercatat setelah tanggal 25 tetap berlaku. Contoh: sistem 10, fisik 7 (selisih -3), lalu 5 terjual → stok 5; realize menghasilkan 5 − 3 = 2, bukan 7.
 
 **Q: Kalau opname di luar tanggal 25, apakah selisihnya hilang?**
 A: Tidak hilang — opname luar tanggal 25 adalah **catatan/audit**. Hasil hitungannya tetap tersimpan dan terlihat di halaman SO, tapi tidak mengubah stok sistem.

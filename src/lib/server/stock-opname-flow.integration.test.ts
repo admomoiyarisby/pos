@@ -293,7 +293,7 @@ describe("Stock opname — full lifecycle via the real server-function cores", (
           type: "OUT",
           quantity: 2,
           balance: 8,
-          notes: "SO Realization: Adjusted from 10 to 8",
+          notes: "SO Realization: selisih -2 (sistem 10 → fisik 8), stok 10 → 8",
         }),
       );
 
@@ -572,7 +572,7 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
           type: "OUT",
           quantity: 3,
           balance: 7,
-          notes: "SO Realization: Adjusted from 10 to 7",
+          notes: "SO Realization: selisih -3 (sistem 10 → fisik 7), stok 10 → 7",
         }),
       );
     },
@@ -743,7 +743,7 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
   it.skipIf(!hasTestDatabaseUrl)(
     "approve reports snapshot drift when inventory moved since trigger",
     async () => {
-      const { so, items, ba, am, branch, ingA, ingB } = await seededPairSo();
+      const { so, items, ba, am, superAdmin, branch, ingA, ingB } = await seededPairSo();
       const itemA = items.find((i) => i.ingredientId === ingA)!;
       const itemB = items.find((i) => i.ingredientId === ingB)!;
       await inv.submitStockOpnameCore(ba, {
@@ -752,8 +752,8 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
       });
 
       // Stock moves after trigger: A loses 3 to sales (10 → 7), B untouched.
-      // Approve still previews physical 7 measured from current stock — and,
-      // per ADR 0021, applies nothing at all.
+      // Approve previews the count's variance (-3) applied to the current
+      // balance — and, per ADR 0021, applies nothing at all.
       await db
         .update(schema.inventory)
         .set({ quantity: 7 })
@@ -770,15 +770,22 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
           currentQuantity: 7,
         }),
       );
-      // The preview is measured against current stock: 7 → 7, no change
+      // Preview: the -3 variance (physical 7 vs snapshot 10) applied to the
+      // current 7 → 4. The sales are not silently reverted to the count.
       expect(result.changes[0]).toEqual(
-        expect.objectContaining({ oldQuantity: 7, newQuantity: 7, delta: 0 }),
+        expect.objectContaining({ oldQuantity: 7, newQuantity: 4, delta: -3 }),
       );
       // Note-only approval: no stock movement, no ledger row.
       expect(await getStock(branch, ingA)).toBe(7);
       expect(
         await db.select().from(schema.stockLedger).where(eq(schema.stockLedger.reference, so.id)),
       ).toHaveLength(0);
+
+      // Realize on a later day must keep those 3 sales: 7 + (7 − 10) = 4. The
+      // old absolute-count rule would have reset the balance to 7 and erased
+      // three days of stock-out (the client-reported overwrite).
+      await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
+      expect(await getStock(branch, ingA)).toBe(4);
 
       // Count matches current stock exactly (no movement since trigger) → no
       // drift; the change is a plain snapshot variance.
@@ -794,6 +801,52 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
         expect.objectContaining({ oldQuantity: 10, newQuantity: 7, delta: -3 }),
       );
       void itemB;
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "realize days after the count keeps the sales recorded in between",
+    async () => {
+      const { so, items, ba, am, superAdmin, branch, ingA, ingB } = await seededPairSo();
+      const itemA = items.find((i) => i.ingredientId === ingA)!;
+
+      // Count on the 25th: system 10, physical 8 → variance -2.
+      await inv.submitStockOpnameCore(ba, {
+        soId: so.id,
+        items: [{ itemId: itemA.id, physicalStock: 8 }],
+      });
+      await inv.approveStockOpnameCore(am, { soId: so.id });
+
+      // Five units sell between the count and a realize two days later. The
+      // system never learned about the -2, so it sits at 10 - 5 = 5 while the
+      // true remaining stock is 8 - 5 = 3.
+      await db
+        .update(schema.inventory)
+        .set({ quantity: 5 })
+        .where(and(eq(schema.inventory.branchId, branch), eq(schema.inventory.ingredientId, ingA)));
+
+      const realized = await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
+      expect(realized.itemsAdjusted).toBe(1);
+
+      // 5 + (8 - 10) = 3: the correction lands, the five sales survive.
+      expect(await getStock(branch, ingA)).toBe(3);
+      // Uncounted item keeps its stock untouched.
+      expect(await getStock(branch, ingB)).toBe(20);
+
+      const [row] = await db
+        .select()
+        .from(schema.stockLedger)
+        .where(eq(schema.stockLedger.reference, `SO:${so.id}`));
+      expect(row).toEqual(
+        expect.objectContaining({
+          ingredientId: ingA,
+          type: "OUT",
+          quantity: 2,
+          balance: 3,
+        }),
+      );
+      expect(row?.notes).toContain("selisih -2");
+      expect(row?.notes).toContain("stok 5 → 3");
     },
   );
 });

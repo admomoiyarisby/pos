@@ -833,19 +833,11 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
   // For blind roles, strip system stock
   const isBlind = user.role === "branch_admin" || user.role === "admin_pusat";
 
-  // Snapshot drift: counted items whose current inventory no longer matches
-  // the systemStock snapshot taken at trigger time. Stock can move during the
-  // opname window (sales, waste, transfers), and realize adjusts from the
-  // *current* quantity, not the stale snapshot — surface the difference so
-  // the approver is not surprised by a delta measured against 88 when the
-  // table showed 97. Approvers only: for blind roles this would leak system
-  // stock, and they cannot approve anyway.
-  type DriftRow = {
-    ingredientName: string;
-    systemStock: number;
-    currentQuantity: number;
-  };
-  let drift: DriftRow[] = [];
+  // Current inventory for the counted lines. Needed twice below: the drift
+  // report and the pre-realize change preview. Both mirror realize's rule
+  // ("snapshot variance applied to the live balance"), so they must read the
+  // same quantity — the snapshot alone goes stale as soon as stock moves.
+  const currentByIngredient = new Map<string, number>();
   if (!isBlind && so.status !== "Approved") {
     const countedIds = lines.filter((i) => i.countedAt !== null).map((i) => i.ingredientId);
     if (countedIds.length > 0) {
@@ -858,19 +850,33 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
         .where(
           and(eq(inventory.branchId, so.branchId), inArray(inventory.ingredientId, countedIds)),
         );
-      const qtyByIngredient = new Map(currentInv.map((r) => [r.ingredientId, r.quantity]));
-      drift = lines
-        .filter((i) => {
-          if (i.countedAt === null) return false;
-          const current = qtyByIngredient.get(i.ingredientId);
-          return current !== undefined && current !== i.systemStock;
-        })
-        .map((i) => ({
-          ingredientName: i.ingredientName ?? i.ingredientId,
-          systemStock: i.systemStock,
-          currentQuantity: qtyByIngredient.get(i.ingredientId) ?? 0,
-        }));
+      for (const r of currentInv) currentByIngredient.set(r.ingredientId, r.quantity);
     }
+  }
+
+  // Snapshot drift: counted items whose current inventory no longer matches
+  // the systemStock snapshot taken at trigger time. Realize applies the
+  // snapshot VARIANCE to the current quantity, so the drift report tells the
+  // approver how far the live books have moved since the count. Approvers only:
+  // for blind roles this would leak system stock, and they cannot approve anyway.
+  type DriftRow = {
+    ingredientName: string;
+    systemStock: number;
+    currentQuantity: number;
+  };
+  let drift: DriftRow[] = [];
+  if (currentByIngredient.size > 0) {
+    drift = lines
+      .filter((i) => {
+        if (i.countedAt === null) return false;
+        const current = currentByIngredient.get(i.ingredientId);
+        return current !== undefined && current !== i.systemStock;
+      })
+      .map((i) => ({
+        ingredientName: i.ingredientName ?? i.ingredientId,
+        systemStock: i.systemStock,
+        currentQuantity: currentByIngredient.get(i.ingredientId) ?? 0,
+      }));
   }
 
   // Change summary ("Ringkasan Perubahan"). Before realize it previews what
@@ -916,15 +922,23 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
         };
       });
     } else {
+      // Preview = what realize will apply: the count's variance added to the
+      // live balance (clamped at 0), not the absolute counted value. Showing
+      // snapshot → physical here would promise a "new quantity" that realize
+      // deliberately does not set once stock has moved.
       summary = lines
         .filter((i) => i.countedAt !== null && i.variance !== 0)
-        .map((i) => ({
-          ingredientName: i.ingredientName ?? i.ingredientId,
-          oldQuantity: i.systemStock,
-          newQuantity: i.physicalStock,
-          delta: i.variance,
-          applied: false,
-        }));
+        .map((i) => {
+          const oldQuantity = currentByIngredient.get(i.ingredientId) ?? i.systemStock;
+          const newQuantity = Math.max(0, oldQuantity + i.variance);
+          return {
+            ingredientName: i.ingredientName ?? i.ingredientId,
+            oldQuantity,
+            newQuantity,
+            delta: newQuantity - oldQuantity,
+            applied: false,
+          };
+        });
     }
   }
 
@@ -1195,20 +1209,23 @@ export async function approveStockOpnameCore(
   // ADR 0021: approve is a REVIEW step only. It writes no inventory change and
   // no ledger row — realize is the only step that moves stock, and only for an
   // SO dated the 25th. The loop below stays as the preview the approver signs
-  // off on: measured against the CURRENT inventory (ADR 0001's rule), i.e.
-  // exactly what realize will apply on the 25th. Rows are not created here —
-  // a preview must not have side effects.
+  // off on, mirroring exactly what realize will apply: the variance the count
+  // found (`physicalStock - systemStock`) added to the CURRENT balance, so
+  // movements recorded after the count are not reverted. Rows are not created
+  // here — a preview must not have side effects.
   for (const item of countedItems) {
     const invRow = inventoryByIngredient.get(item.ingredientId);
     const oldQuantity = invRow?.quantity ?? 0;
+    const variance = item.physicalStock - item.systemStock;
+    const newQuantity = Math.max(0, oldQuantity + variance);
 
     changes.push({
       ingredientId: item.ingredientId,
       ingredientName: "",
       systemStock: item.systemStock,
       oldQuantity,
-      newQuantity: item.physicalStock,
-      delta: item.physicalStock - oldQuantity,
+      newQuantity,
+      delta: newQuantity - oldQuantity,
     });
   }
 
@@ -1467,12 +1484,30 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
   const { calculateNasiConversion } = await import("./nasi-conversion");
   const { ingredients: ingredientsTable } = await import("#/db/schema");
 
-  // 4. For each item, adjust inventory to match physical stock
+  // 4. For each counted item, apply the VARIANCE the count found — not the
+  // counted absolute. `systemStock` is the trigger-time snapshot, so
+  // `physicalStock - systemStock` is the discrepancy the count discovered.
+  // Adding that variance to the CURRENT quantity preserves everything recorded
+  // after the count (sales, waste, deliveries), so realizing a 25th-dated
+  // opname on the 28th no longer rewinds the books to the 25th and silently
+  // erases three days of stock-out. The result is clamped at zero: a variance
+  // larger than the remaining stock must not push inventory negative.
+  //
+  // `quantity` is a float32 column, so a stored count can read back as
+  // 0.30000001192092896; ledger notes are for humans, so trim the noise.
+  const forNote = (n: number) => Number(n.toFixed(4));
   for (const item of items) {
-    // Special handling for Nasi: convert to raw ingredients
+    const variance = item.physicalStock - item.systemStock;
+
+    // Special handling for Nasi: convert to raw ingredients. Nasi has no
+    // inventory row of its own, so only a POSITIVE variance (more nasi on hand
+    // than the snapshot expected) has an effect: those extra portions consumed
+    // raw ingredients that were never recorded as production. A negative
+    // variance is nasi already accounted for as consumed, so no raw stock is
+    // returned.
     if (item.isNasi) {
-      const nasiPortions = item.physicalStock; // Physical stock = portions of Nasi
-      const conversions = calculateNasiConversion(nasiPortions);
+      if (variance <= 0) continue;
+      const conversions = calculateNasiConversion(variance);
 
       for (const conv of conversions) {
         // Find the raw ingredient by name
@@ -1508,7 +1543,7 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
             quantity: applied,
             balance: newQty,
             reference: `SO:${data.soId}`,
-            notes: `SO Realization: Nasi ${nasiPortions} porsi → ${conv.ingredientName} -${applied}${conv.unit}`,
+            notes: `SO Realization: Nasi +${forNote(variance)} porsi → ${conv.ingredientName} -${forNote(applied)}${conv.unit}`,
           });
         }
       }
@@ -1516,11 +1551,11 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
       continue;
     }
 
-    // Normal items: adjust inventory to match physical stock
+    // Normal items: apply the snapshot variance to the live balance.
     // (row created at 0 when missing — never skip the correction silently)
     const inv = await ensureInventoryRow(db, so.branchId, item.ingredientId);
     const oldQty = inv.quantity;
-    const newQty = item.physicalStock;
+    const newQty = Math.max(0, oldQty + variance);
     const delta = newQty - oldQty;
 
     // Update inventory
@@ -1541,7 +1576,7 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
         quantity: Math.abs(delta),
         balance: newQty,
         reference: `SO:${data.soId}`,
-        notes: `SO Realization: Adjusted from ${oldQty} to ${newQty}`,
+        notes: `SO Realization: selisih ${forNote(variance)} (sistem ${forNote(item.systemStock)} → fisik ${forNote(item.physicalStock)}), stok ${forNote(oldQty)} → ${forNote(newQty)}`,
       });
     }
   }

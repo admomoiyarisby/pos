@@ -30,9 +30,9 @@ for an opname dated the 25th.**
 
 1. `approveStockOpnameCore` writes no inventory change, no ledger row, and no
    negative-stock alert. It keeps the status transition, the blank-submit
-   guard, the drift report, and the change **preview** (measured against current
-   inventory, exactly what realize will apply — ADR 0001's measurement rule).
-   The approval notification now says the stock has not changed yet.
+   guard, the drift report, and the change **preview** (the variance applied to
+   current inventory — ADR 0026, exactly what realize will apply). The approval
+   notification now says the stock has not changed yet.
 2. `realizeStockOpnameCore` loads the opname and guards on its **own** date:
    `day-of-month === 25`, plus a **cycle** guard — the opname's `YYYY-MM` must
    not be in the future, since realizing next month's opname today would apply
@@ -58,12 +58,11 @@ for an opname dated the 25th.**
   as `SO Realization` rows on Kartu Stok.
 - Approve no longer produces ledger rows, so `SO Adjustment` is a legacy note
   text from historical rows only.
-- Known residual (unchanged, flagged): realize still applies the counted value
-  against the _live_ books (ADR 0001). If stock legitimately moves between the
-  25th count and a later realize day, those movements are absorbed into the
-  `SO Realization` row — the same "point-in-time value applied to later books"
-  pattern as the drift discussion. The drift report at approve surfaces it; a
-  realize-time drift guard is the natural follow-up.
+- Known residual at the time: realize applied the counted value against the
+  _live_ books (ADR 0001), so movements between the 25th count and a later
+  realize day were absorbed into the `SO Realization` row. **ADR 0026 resolves
+  it** by applying the snapshot variance (`physicalStock - systemStock`) to the
+  live balance, which keeps those movements applied.
 - Revision (Oct 10): the first cut refused any opname dated later than
   _today_, which blocked the real workflow of realizing the month's 25th
   opname before the 25th arrives. The guard is now by **cycle**: any day
