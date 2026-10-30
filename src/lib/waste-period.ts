@@ -22,15 +22,23 @@ export function wasteCycleRange(now: Date = new Date()) {
 
   if (day < 26) {
     // Still inside the cycle that opened on the 26th of the previous month.
-    return {
-      from: `${monthKey(year, monthIndex - 1)}-26`,
-      to: `${monthKey(year, monthIndex)}-25`,
-    };
+    return wasteCycleForMonth(monthKey(year, monthIndex));
   }
 
+  // The cycle that opened today, closing on the 25th of next month.
+  return wasteCycleForMonth(monthKey(year, monthIndex + 1));
+}
+
+/**
+ * The 26→25 cycle that **closes** on the 25th of `monthValue` (`YYYY-MM`).
+ * October's books, for example, run 26 September → 25 October.
+ */
+export function wasteCycleForMonth(monthValue: string) {
+  const [year, month] = monthValue.split("-").map(Number);
+  const monthIndex = month - 1;
   return {
-    from: `${monthKey(year, monthIndex)}-26`,
-    to: `${monthKey(year, monthIndex + 1)}-25`,
+    from: `${monthKey(year, monthIndex - 1)}-26`,
+    to: `${monthKey(year, monthIndex)}-25`,
   };
 }
 

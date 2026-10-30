@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { wasteCycleRange } from "./waste-period";
+import { wasteCycleForMonth, wasteCycleRange } from "./waste-period";
 
 describe("wasteCycleRange", () => {
   it("uses the cycle that is still open on the 25th", () => {
@@ -42,5 +42,31 @@ describe("wasteCycleRange", () => {
       from: "2026-12-26",
       to: "2027-01-25",
     });
+  });
+});
+
+describe("wasteCycleForMonth", () => {
+  it("returns the cycle that closes on the 25th of the given month", () => {
+    expect(wasteCycleForMonth("2026-10")).toEqual({
+      from: "2026-09-26",
+      to: "2026-10-25",
+    });
+  });
+
+  it("wraps the year at January and December", () => {
+    expect(wasteCycleForMonth("2027-01")).toEqual({
+      from: "2026-12-26",
+      to: "2027-01-25",
+    });
+    expect(wasteCycleForMonth("2026-12")).toEqual({
+      from: "2026-11-26",
+      to: "2026-12-25",
+    });
+  });
+
+  it("agrees with wasteCycleRange for the cycle containing today", () => {
+    // 29 Oct 2026 is inside the cycle that closes 25 Nov (opened 26 Oct).
+    const cycle = wasteCycleForMonth("2026-11");
+    expect(cycle).toEqual(wasteCycleRange(new Date("2026-10-29T03:00:00.000Z")));
   });
 });
