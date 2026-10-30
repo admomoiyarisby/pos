@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
@@ -19,6 +19,11 @@ import {
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import { createProcurement, transitionProcurement } from "#/lib/server/scm-queries";
 import { getIngredients } from "#/lib/server/ingredients";
+import { getStockRecommendations } from "#/lib/server/stock-recommendation";
+import type { StockRecommendation } from "#/lib/server/stock-recommendation";
+import { StockStatusBadge } from "#/components/inventory/StockStatusBadge";
+import { formatDaysCover } from "#/lib/stock-recommendation";
+import { formatQuantity } from "#/lib/utils";
 import { useUnsavedDraft } from "#/hooks/useUnsavedDraft";
 import { RestoreDraftBanner } from "#/components/draft/RestoreDraftBanner";
 import { toast } from "sonner";
@@ -54,11 +59,30 @@ function NewProcurementPage() {
     queryFn: () => getIngredients({ data: { excludeNasi: true } }),
   });
 
+  // Safety-stock reference for the branch this request belongs to (the same
+  // branch `createDraftM` submits). Super Admin without a branch cannot save,
+  // so there is nothing to recommend against either.
+  const { data: recommendations = [] } = useQuery({
+    queryKey: ["stock-recommendations", "procurement", user?.branchId ?? "none"],
+    queryFn: () => getStockRecommendations({ data: { branchId: user?.branchId } }),
+    enabled: !!user?.branchId,
+  });
+  const recommendationByIngredient = useMemo(() => {
+    const map = new Map<string, StockRecommendation>();
+    for (const rec of recommendations) {
+      if (rec.branchId === user?.branchId) map.set(rec.ingredientId, rec);
+    }
+    return map;
+  }, [recommendations, user?.branchId]);
+
   // Local draft state. Persisted to the server on "Simpan sebagai Draft"
   // (which creates a Draft procurement and navigates to the detail page);
   // subsequent edits happen on the detail page's DraftForm. (ADR 0004 §3)
   const [selectedIngredient, setSelectedIngredient] = useState("");
   const [quantity, setQuantity] = useState(1);
+  const selectedRecommendation = selectedIngredient
+    ? recommendationByIngredient.get(selectedIngredient)
+    : undefined;
 
   // ADR 0011: persist the in-progress draft so a crash / tab-close doesn't lose it.
   // Creation form -> prompt-restore (never silently re-apply a stale draft).
@@ -269,6 +293,50 @@ function NewProcurementPage() {
                   Tambah Bahan
                 </Button>
               </div>
+
+              {selectedIngredient ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  <StockStatusBadge status={selectedRecommendation?.status ?? "no-data"} />
+                  {selectedRecommendation && selectedRecommendation.status !== "no-data" ? (
+                    <>
+                      <span>
+                        Stok:{" "}
+                        <span className="font-medium">
+                          {formatQuantity(selectedRecommendation.currentStock)}{" "}
+                          {selectedRecommendation.stockUnit}
+                        </span>
+                      </span>
+                      <span className="text-muted-foreground">
+                        Acuan 5 hari: {formatQuantity(selectedRecommendation.targetStock)}{" "}
+                        {selectedRecommendation.stockUnit}
+                      </span>
+                      <span className="text-muted-foreground">
+                        Cover: {formatDaysCover(selectedRecommendation.daysCover)}
+                      </span>
+                      {selectedRecommendation.recommendedOrder > 0 ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="sm:ml-auto"
+                          onClick={() => setQuantity(selectedRecommendation.recommendedOrder)}
+                        >
+                          Isi rekomendasi: +
+                          {formatQuantity(selectedRecommendation.recommendedOrder)}{" "}
+                          {selectedRecommendation.stockUnit}
+                        </Button>
+                      ) : (
+                        <span className="text-muted-foreground sm:ml-auto">
+                          Stok sudah di atas acuan
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      Belum ada pemakaian 3 hari terakhir — rekomendasi belum tersedia.
+                    </span>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             {items.length > 0 ? (

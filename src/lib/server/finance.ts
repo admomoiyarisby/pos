@@ -1073,13 +1073,13 @@ export interface DailyUsageRow {
 // the reversal rows — keeps the correction in the period the consumption
 // belonged to even when the cancellation happens later, and also drops older
 // cancellations whose reversal rows are missing.
-const notVoidedOrderSql = sql`NOT EXISTS (
+export const notVoidedOrderSql = sql`NOT EXISTS (
   SELECT 1 FROM orders
   WHERE orders.id::text = ${stockLedger.reference}
     AND orders.status = 'Void'
 )`;
 
-const notCancelledWasteSql = sql`NOT EXISTS (
+export const notCancelledWasteSql = sql`NOT EXISTS (
   SELECT 1 FROM waste_entries
   WHERE waste_entries.id::text = ${stockLedger.reference}
     AND waste_entries.status = 'Cancelled'
@@ -1087,7 +1087,7 @@ const notCancelledWasteSql = sql`NOT EXISTS (
 
 // Production writes both effects (inputs OUT, outputs IN) under a shared
 // `YIELD-<id>` reference, so the id has to be read back out of the reference.
-const notCancelledProductionSql = sql`NOT EXISTS (
+export const notCancelledProductionSql = sql`NOT EXISTS (
   SELECT 1 FROM yield_conversions
   WHERE ${stockLedger.reference} = 'YIELD-' || yield_conversions.id::text
     AND yield_conversions.status = 'Cancelled'

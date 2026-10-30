@@ -18,6 +18,15 @@ import CleanSlateModal from "#/components/inventory/CleanSlateModal";
 import type { IngredientOption } from "#/components/inventory/StockAdjustmentModal";
 import { useAuth } from "#/lib/auth-context";
 import { Badge } from "#/components/ui/badge";
+import { getStockRecommendations } from "#/lib/server/stock-recommendation";
+import type { StockRecommendation } from "#/lib/server/stock-recommendation";
+import { StockStatusBadge } from "#/components/inventory/StockStatusBadge";
+import {
+  STOCK_STATUS_HINT,
+  formatDaysCover,
+  stockRecommendationKey,
+} from "#/lib/stock-recommendation";
+import { formatQuantity } from "#/lib/utils";
 
 interface InvRow {
   id: string;
@@ -40,6 +49,15 @@ const catColors = {
 } satisfies Record<string, "default" | "destructive" | "secondary">;
 
 const skuLabels = { RM: "RM", SFG: "SFG", FG: "FG" } satisfies Record<string, string>;
+
+/** The numbers behind a badge, so the colour is not the only signal. */
+function recommendationTitle(rec: StockRecommendation) {
+  return [
+    `Rata-rata ${formatQuantity(rec.avgDailyUsage)} ${rec.stockUnit}/hari`,
+    `Acuan 5 hari ${formatQuantity(rec.targetStock)} ${rec.stockUnit}`,
+    `Cover ${formatDaysCover(rec.daysCover)}`,
+  ].join(" · ");
+}
 
 export const Route = createFileRoute("/_layout/inventory/")({
   component: InventoryPage,
@@ -157,6 +175,22 @@ function InventoryPage() {
   const inventory = result?.data ?? [];
   const total = result?.total ?? 0;
 
+  // Safety-stock marker: 3-day average stock-out × 5-day lead time. Fetched per
+  // branch filter (all branches for a supervisor who has not picked one) and
+  // joined to the visible rows by (branch, ingredient).
+  const { data: recommendations } = useQuery({
+    queryKey: ["stock-recommendations", branchId ?? "all"],
+    queryFn: () => getStockRecommendations({ data: { branchId: branchId || undefined } }),
+  });
+
+  const recommendationByKey = useMemo(() => {
+    const map = new Map<string, StockRecommendation>();
+    for (const rec of recommendations ?? []) {
+      map.set(stockRecommendationKey(rec.branchId, rec.ingredientId), rec);
+    }
+    return map;
+  }, [recommendations]);
+
   // Stock-adjustment support: the "Sesuaikan Stok" modal operates on the
   // currently-selected (or first) branch and needs the full branch stock map
   // plus the master ingredient list.
@@ -273,6 +307,44 @@ function InventoryPage() {
       enableSorting: true,
       cell: ({ row }) =>
         `${row.original.quantity.toLocaleString("id-ID")} ${row.original.stockUnit ?? ""}`,
+    },
+    {
+      id: "stockStatus",
+      header: "Status",
+      width: "w-28",
+      cell: ({ row }) => {
+        const rec = recommendationByKey.get(
+          stockRecommendationKey(row.original.branchId, row.original.ingredientId),
+        );
+        const status = rec?.status ?? "no-data";
+        return (
+          <span title={rec ? recommendationTitle(rec) : STOCK_STATUS_HINT[status]}>
+            <StockStatusBadge status={status} />
+          </span>
+        );
+      },
+    },
+    {
+      id: "stockRecommendation",
+      header: "Rekomendasi",
+      align: "right",
+      width: "w-32",
+      cell: ({ row }) => {
+        const rec = recommendationByKey.get(
+          stockRecommendationKey(row.original.branchId, row.original.ingredientId),
+        );
+        if (!rec || rec.status === "no-data" || rec.recommendedOrder <= 0) {
+          return <span className="text-muted-foreground">—</span>;
+        }
+        return (
+          <span
+            title={recommendationTitle(rec)}
+            className={rec.status === "low" ? "font-medium text-destructive" : "font-medium"}
+          >
+            +{formatQuantity(rec.recommendedOrder)} {rec.stockUnit}
+          </span>
+        );
+      },
     },
   ];
 

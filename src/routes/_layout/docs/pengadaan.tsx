@@ -47,6 +47,15 @@ const markdownContent = `
 >
 > **Hasil:** Stok Gudang Pusat -50, Stok Cabang Mulyorejo +50
 
+## Rekomendasi Stok (Safety Stock)
+
+Saat memilih bahan di form pengadaan, sistem menampilkan acuan stok:
+
+- **Rata-rata pemakaian** — total stok keluar 3 hari lengkap terakhir (hari ini tidak dihitung) dibagi 3
+- **Acuan 5 hari** — rata-rata pemakaian × 5 hari (lead time)
+- **Status** — merah: stok kurang dari 5 hari; kuning: 5–7 hari; hijau: lebih dari 7 hari
+- **Rekomendasi** — kekurangan stok terhadap acuan 5 hari. Tombol **Isi rekomendasi** mengisi jumlahnya, dan angkanya tetap bisa disesuaikan.
+
 ## Pertanyaan Umum
 
 **Bisa minta barang dari cabang lain (bukan Gudang Pusat)?**
@@ -56,6 +65,10 @@ Itu namanya **Mutasi Stok**, bukan Pengadaan. Lihat panduan Mutasi Stok.
 **Kenapa harga di invoice bisa berbeda dari harga terakhir?**
 
 Harga diinvoice adalah harga saat permintaan dibuat, bukan harga terkini.
+
+**Kenapa rekomendasi stok untuk suatu bahan kosong ("Belum ada data")?**
+
+Belum ada stok keluar untuk bahan itu dalam 3 hari lengkap terakhir, jadi sistem tidak punya dasar untuk menghitung acuan. Rekomendasi muncul setelah ada pemakaian yang tercatat.
 `;
 
 function PengadaanPage() {
