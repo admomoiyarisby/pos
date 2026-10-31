@@ -1182,6 +1182,17 @@ export const notCancelledProductionSql = sql`NOT EXISTS (
   WHERE ${stockLedger.reference} = 'YIELD-' || yield_conversions.id::text
     AND yield_conversions.status = 'Cancelled'
 )`;
+
+// Editing or deleting a supplier delivery writes a reversal OUT
+// ("Revert Supplier Delivery …" / "Delete Supplier Delivery …"); an edit also
+// re-applies the new quantity as an IN ("Supplier Delivery Update …"). Those
+// rows cancel the delivery's own booking — they are procurement corrections,
+// not physical usage. Counting them put a 312,500-pack "Revert" (a quantity
+// field that had been filled with the price) at the top of Stok Keluar.
+// Kartu Stok keeps the full trail; only this usage report ignores them.
+export const notSupplierDeliveryCorrectionSql = sql`COALESCE(${stockLedger.notes}, '') NOT LIKE 'Revert Supplier Delivery%'
+  AND COALESCE(${stockLedger.notes}, '') NOT LIKE 'Supplier Delivery Update%'
+  AND COALESCE(${stockLedger.notes}, '') NOT LIKE 'Delete Supplier Delivery%'`;
 export const getDailyIngredientUsage = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
   .handler(async ({ data }): Promise<DailyUsageRow[]> => {
@@ -1227,6 +1238,7 @@ export async function getDailyIngredientUsageCore(
     notVoidedOrderSql,
     notCancelledWasteSql,
     notCancelledProductionSql,
+    notSupplierDeliveryCorrectionSql,
     effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
     data.dateFrom
       ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`

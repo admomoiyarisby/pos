@@ -474,6 +474,60 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
+    "ignores supplier-delivery correction rows instead of counting them as usage",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      const ingredientId = await seedIngredient(branchId);
+
+      await db.insert(schema.stockLedger).values([
+        {
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: 7,
+          balance: 0,
+          reference: "REF-normal",
+          notes: "POS Order abcd1234",
+        },
+        {
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: 312_500,
+          balance: 0,
+          reference: "REF-revert",
+          notes: "Revert Supplier Delivery: Plastik Wiyung",
+        },
+        {
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: 50,
+          balance: 0,
+          reference: "REF-delete",
+          notes: "Delete Supplier Delivery: PT Beras",
+        },
+        {
+          branchId,
+          ingredientId,
+          type: "OUT",
+          quantity: 25,
+          balance: 0,
+          reference: "REF-update",
+          notes: "Supplier Delivery Update: PT A",
+        },
+      ]);
+
+      const rows = await financeApi.getDailyIngredientUsageCore(admin, { branchId });
+      const row = rows.find((r) => r.ingredientId === ingredientId);
+      expect(row).toBeDefined();
+      expect(row!.quantity).toBe(7);
+      expect(row!.sources).toEqual([{ source: "POS", quantity: 7 }]);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
     "a single-source ingredient reports one source, so the UI can stay quiet",
     async () => {
       const admin = await seedUser("super_admin");

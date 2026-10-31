@@ -24,6 +24,8 @@ import type { SQL, SQLWrapper } from "drizzle-orm";
  *   - inventory.ts           "SO Adjustment…" / "SO Realization: …"
  *   - scm-transfer-effects.ts "Mutasi … dikirim" / "Mutasi Reject …" / "Mutasi … dibatalkan …"
  *   - scm-effects.ts         "Pengadaan … dikirim" / "Pengadaan Reject …" / "Pengadaan dibatalkan …"
+ *   - supplier-deliveries.ts "Supplier Delivery …" / "Supplier Delivery Update …" /
+ *                            "Revert Supplier Delivery …" / "Delete Supplier Delivery …"
  *
  * Manual stock adjustments have no tagged note — the user's free-text reason is
  * written verbatim — so they are recognised by their `ADJ-*` reference instead.
@@ -89,6 +91,9 @@ export function usageSourceSql(notes: SQLWrapper, reference: SQLWrapper): SQL<Us
     WHEN ${notes} LIKE 'SO %' THEN 'Stock Opname'
     WHEN ${notes} LIKE 'Mutasi%' THEN 'Mutasi'
     WHEN ${notes} LIKE 'Pengadaan%' THEN 'Pengadaan'
+    WHEN ${notes} LIKE 'Supplier Delivery Update%' THEN 'Pengadaan'
+    WHEN ${notes} LIKE 'Revert Supplier Delivery%' THEN 'Pengadaan'
+    WHEN ${notes} LIKE 'Delete Supplier Delivery%' THEN 'Pengadaan'
     ELSE 'Lainnya'
   END`;
 }
