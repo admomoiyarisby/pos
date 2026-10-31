@@ -991,6 +991,8 @@ function FinancePage() {
   const [selectedMonth, setSelectedMonth] = useState(() => currentMonthValue());
   const [selectedWeek, setSelectedWeek] = useState(0);
   const [selectedDate, setSelectedDate] = useState(() => currentDateValue());
+  const [harianDateFrom, setHarianDateFrom] = useState(() => currentDateValue());
+  const [harianDateTo, setHarianDateTo] = useState(() => currentDateValue());
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [selectedChannel, setSelectedChannel] = useState<string>("");
 
@@ -1020,8 +1022,11 @@ function FinancePage() {
     if (periodType === "mingguan") {
       return { from: weeks[selectedWeek].from, to: weeks[selectedWeek].to };
     }
-    return { from: selectedDate, to: selectedDate };
-  }, [periodType, selectedMonth, selectedWeek, selectedDate, weeks]);
+    return {
+      from: harianDateFrom || selectedDate,
+      to: harianDateTo || harianDateFrom || selectedDate,
+    };
+  }, [periodType, selectedMonth, selectedWeek, selectedDate, harianDateFrom, harianDateTo, weeks]);
 
   const branchId = selectedBranchId || undefined;
   const channel = selectedChannel || undefined;
@@ -1416,15 +1421,33 @@ function FinancePage() {
           </div>
         )}
         {periodType === "harian" && (
-          <div className="w-full space-y-1 sm:w-auto">
-            <label className="text-xs text-muted-foreground">Tanggal</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              aria-label="Tanggal"
-              className="block h-10 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:w-auto sm:text-sm"
-            />
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end sm:gap-3">
+            <div className="w-full space-y-1 sm:w-auto">
+              <label className="text-xs text-muted-foreground">Dari</label>
+              <input
+                type="date"
+                value={harianDateFrom}
+                onChange={(e) => {
+                  setHarianDateFrom(e.target.value);
+                  if (harianDateTo && e.target.value > harianDateTo) {
+                    setHarianDateTo(e.target.value);
+                  }
+                }}
+                aria-label="Tanggal awal"
+                className="block h-10 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:w-auto sm:text-sm"
+              />
+            </div>
+            <div className="w-full space-y-1 sm:w-auto">
+              <label className="text-xs text-muted-foreground">Sampai</label>
+              <input
+                type="date"
+                value={harianDateTo}
+                onChange={(e) => setHarianDateTo(e.target.value)}
+                min={harianDateFrom || undefined}
+                aria-label="Tanggal akhir"
+                className="block h-10 w-full rounded-md border border-input bg-background px-3 text-base sm:h-9 sm:w-auto sm:text-sm"
+              />
+            </div>
           </div>
         )}
 
