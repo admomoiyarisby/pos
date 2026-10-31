@@ -37,6 +37,7 @@ import type { AppUser } from "./auth";
 import { resolvePersistedItemIngredients } from "./ingredient-resolver";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, formatRupiah } from "./html-utils";
+import { buildDailyPnl, summarizePnl, type DailyPnl, type OrderAggregate } from "#/lib/finance-pnl";
 
 /**
  * Validate a `dateFrom`/`dateTo` pair of Jakarta-local ("YYYY-MM-DD") dates and
@@ -83,13 +84,14 @@ function validateDateRange(dateFrom: string, dateTo: string, maxDays: number): V
 }
 
 /**
- * Period-level P&L summary (ADR 0017 canonical definitions).
+ * Period-level P&L summary (ADR 0017 definitions, ADR 0028 omzet basis).
  *
- * All order aggregates exclude Void (and soft-deleted) orders. Omzet is NET:
- * Σ orders.netSales (after merchant discount + MDR). Manual revenue/expense
- * entries are memo-only notes (ADR 0017) — they never enter omzet or Gross
- * Profit. Gross Profit = omzet − HPP; Operating Profit = Gross − opex (all
- * operationalExpenses, waste-derived included).
+ * All order aggregates exclude Void (and soft-deleted) orders. Omzet is
+ * payout-based: per channel/day it is the `channel_revenues` input when one
+ * exists, otherwise Σ orders.netSales for that channel; channel-less legacy
+ * adjustments are added on top. Manual revenue/expense entries stay memo-only
+ * (ADR 0017) — they never enter omzet or Gross Profit. Gross Profit =
+ * omzet − HPP; Operating Profit = Gross − opex.
  */
 export interface FinanceSummary {
   /** Σ orders.totalAmount, non-void — the gross figure before discounts. */
@@ -97,9 +99,15 @@ export interface FinanceSummary {
   totalMerchantDiscount: number;
   totalCogs: number;
   totalMdr: number;
-  /** Σ orders.netSales, non-void — omzet. */
+  /** Σ orders.netSales, non-void — modelled POS net, kept for audit. */
   netSales: number;
-  /** Σ manual/channel revenue — memo only, never in omzet (ADR 0017). */
+  /** Reporting omzet (ADR 0028): Σ payout where input, else POS net. */
+  omzet: number;
+  /** Σ channel payout inputs in the period. */
+  payout: number;
+  /** Net signed day adjustments carried from legacy omzet overrides. */
+  adjustment: number;
+  /** Σ manual_revenues (no channel) — memo only, never in omzet (ADR 0017). */
   manualRevenue: number;
   orderCount: number;
   voidCount: number;
@@ -112,12 +120,19 @@ export interface FinanceSummary {
 }
 
 export const getFinanceSummary = createServerFn({ method: "GET" })
-  .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
+  .validator(
+    (data: { branchId?: string; dateFrom?: string; dateTo?: string; channel?: string }) => ({
+      ...data,
+      channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+    }),
+  )
   .handler(async ({ data }): Promise<FinanceSummary> => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat");
 
     const conditions = [];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
+    if (data.channel) conditions.push(eq(orders.channel, data.channel));
+
     if (data.dateFrom)
       conditions.push(
         sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
@@ -151,32 +166,22 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
       .where(and(...conditions, eq(orders.status, "Void"), isNull(orders.deletedAt)));
 
     // Manual revenue is memo-only (ADR 0017) — reported for reference, never
-    // part of omzet or profit.
-    const manualRev = await db
-      .select({
-        total: sql<number>`COALESCE(SUM(${manualRevenues.amount}), 0)`,
-      })
-      .from(manualRevenues)
-      .where(
-        and(
-          data.branchId ? eq(manualRevenues.branchId, data.branchId) : undefined,
-          data.dateFrom ? gte(manualRevenues.date, data.dateFrom) : undefined,
-          data.dateTo ? lte(manualRevenues.date, data.dateTo) : undefined,
-        ),
-      );
-
-    const channelRev = await db
-      .select({
-        total: sql<number>`COALESCE(SUM(${channelRevenues.amount}), 0)`,
-      })
-      .from(channelRevenues)
-      .where(
-        and(
-          data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
-          data.dateFrom ? gte(channelRevenues.date, data.dateFrom) : undefined,
-          data.dateTo ? lte(channelRevenues.date, data.dateTo) : undefined,
-        ),
-      );
+    // part of omzet or profit. Channel-filtered reports omit the no-channel
+    // manual store, mirroring the ledger and the omzet breakdown.
+    const manualRev = data.channel
+      ? [{ total: 0 }]
+      : await db
+          .select({
+            total: sql<number>`COALESCE(SUM(${manualRevenues.amount}), 0)`,
+          })
+          .from(manualRevenues)
+          .where(
+            and(
+              data.branchId ? eq(manualRevenues.branchId, data.branchId) : undefined,
+              data.dateFrom ? gte(manualRevenues.date, data.dateFrom) : undefined,
+              data.dateTo ? lte(manualRevenues.date, data.dateTo) : undefined,
+            ),
+          );
 
     const manualExp = await db
       .select({
@@ -197,17 +202,29 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
     const totalCogs = toNum(orderData[0]?.totalCogs);
     const totalMdr = toNum(orderData[0]?.totalMdr);
     const netSales = toNum(orderData[0]?.netSales);
-    const manualRevenueTotal = toNum(manualRev[0]?.total) + toNum(channelRev[0]?.total);
+    const manualRevenueTotal = toNum(manualRev[0]?.total);
     const manualExpensesTotal = toNum(manualExp[0]?.total);
-    // ADR 0017: omzet = net order sales only; manual entries are memo notes.
-    const omzet = netSales;
-    const grossProfit = omzet - totalCogs;
+    // ADR 0028: omzet is payout-based (POS net only where a channel has no
+    // input), plus the channel-less legacy adjustment.
+    const pnl = summarizePnl(
+      await getDailyPnlCore(user, {
+        branchId: data.branchId,
+        dateFrom: data.dateFrom,
+        dateTo: data.dateTo,
+        channel: data.channel,
+      }),
+    );
+    const omzet = pnl.omzet;
+    const grossProfit = pnl.grossProfit;
     return {
       totalSales,
       totalMerchantDiscount,
       totalCogs,
       totalMdr,
       netSales,
+      omzet,
+      payout: pnl.payout,
+      adjustment: pnl.adjustment,
       manualRevenue: manualRevenueTotal,
       orderCount: toNum(orderData[0]?.count),
       voidCount: toNum(voidData[0]?.count),
@@ -218,17 +235,7 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
     };
   });
 
-export interface DailyFinanceRow {
-  tanggal: string;
-  hpp: number;
-  /** Net omzet (ADR 0017): Σ orders.netSales (non-void), or override. */
-  omzet: number;
-  /** Order-derived net component before any override (for the breakdown). */
-  computedOmzet: number;
-  grossProfit: number;
-  margin: number;
-  hasOmzetOverride: boolean;
-}
+type OrderChannel = (typeof ORDER_CHANNEL_VALUES)[number];
 
 export interface HppBreakdownRow {
   ingredientId: string;
@@ -250,77 +257,118 @@ export interface HppBreakdownRow {
 // (cogsAtTransaction × quantity). The breakdown therefore always adds up to
 // the HPP column, up to rounding (spread over the largest-cost ingredient).
 
-export const getDailyFinanceSummary = createServerFn({ method: "GET" })
+/**
+ * `daily_overrides.field` that stores a signed, channel-less omzet correction
+ * (ADR 0028). Legacy day-level `omzet` overrides are migrated to this field.
+ */
+export const OMZET_ADJUSTMENT_FIELD = "omzet_adjustment";
+
+// Per-day, per-channel P&L for the ledger (ADR 0028). Omzet per channel/day is
+// the payout typed into Input Revenue when present, else Σ netSales for that
+// channel; HPP stays Σ totalCogs. Legacy day-level overrides are read back as a
+// channel-less `omzet_adjustment`. Void and soft-deleted orders are excluded
+// (ADR 0017 #3); the per-channel arithmetic lives in `#/lib/finance-pnl`.
+export const getDailyPnl = createServerFn({ method: "GET" })
   .validator(
     (data: { branchId?: string; dateFrom?: string; dateTo?: string; channel?: string }) => ({
       ...data,
       channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
     }),
   )
-  .handler(async ({ data }): Promise<DailyFinanceRow[]> => {
-    await requireRole("super_admin", "admin_pusat");
-
-    const conditions = [];
-    if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
-    if (data.dateFrom)
-      conditions.push(
-        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
-      );
-    if (data.dateTo)
-      conditions.push(
-        sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
-      );
-    if (data.channel) conditions.push(eq(orders.channel, data.channel));
-
-    // ADR 0017: Void and soft-deleted orders never enter the ledger.
-    const orderConditions = [...conditions, ne(orders.status, "Void"), isNull(orders.deletedAt)];
-
-    const result = await db
-      .select({
-        tanggal: sql<string>`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`,
-        hpp: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
-        omzet: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
-      })
-      .from(orders)
-      .where(and(...orderConditions))
-      .groupBy(sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`)
-      .orderBy(sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`);
-
-    const overrideConditions = [];
-    if (data.branchId) overrideConditions.push(eq(dailyOverrides.branchId, data.branchId));
-    if (data.dateFrom) overrideConditions.push(gte(dailyOverrides.date, data.dateFrom));
-    if (data.dateTo) overrideConditions.push(lte(dailyOverrides.date, data.dateTo));
-
-    const overrides = await db
-      .select()
-      .from(dailyOverrides)
-      .where(overrideConditions.length > 0 ? and(...overrideConditions) : undefined);
-
-    // Build override map: date -> { field -> value }
-    const overrideMap = new Map<string, Record<string, number>>();
-    for (const o of overrides) {
-      if (!overrideMap.has(o.date)) overrideMap.set(o.date, {});
-      overrideMap.get(o.date)![o.field] = o.value;
-    }
-
-    return result.map((r) => {
-      const dayOverrides = overrideMap.get(r.tanggal) ?? {};
-      const computedOmzet = Number(r.omzet);
-      const omzet = dayOverrides.omzet ?? computedOmzet;
-      const hpp = Number(r.hpp);
-      const grossProfit = omzet - hpp;
-      const margin = omzet > 0 ? grossProfit / omzet : 0;
-      return {
-        tanggal: r.tanggal,
-        hpp,
-        omzet,
-        computedOmzet,
-        grossProfit,
-        margin,
-        hasOmzetOverride: dayOverrides.omzet !== undefined,
-      };
-    });
+  .handler(async ({ data }): Promise<DailyPnl[]> => {
+    const user = await requireRole("super_admin", "admin_pusat");
+    return getDailyPnlCore(user, data);
   });
+
+/** `getDailyPnl` minus the session lookup — the ADR 0015 core seam. */
+export async function getDailyPnlCore(
+  user: AppUser,
+  data: { branchId?: string; dateFrom?: string; dateTo?: string; channel?: OrderChannel },
+): Promise<DailyPnl[]> {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+  if (data.dateFrom && data.dateTo) validateDateRange(data.dateFrom, data.dateTo, 366);
+
+  const posDay = sql<string>`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`;
+
+  const orderRows = await db
+    .select({
+      date: posDay,
+      channel: orders.channel,
+      orderCount: sql<number>`COUNT(*)`,
+      grossSales: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+      netSales: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
+      hpp: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
+    })
+    .from(orders)
+    .where(
+      and(
+        ne(orders.status, "Void"),
+        isNull(orders.deletedAt),
+        data.branchId ? eq(orders.branchId, data.branchId) : undefined,
+        data.channel ? eq(orders.channel, data.channel) : undefined,
+        data.dateFrom ? sql`${posDay} >= ${data.dateFrom}` : undefined,
+        data.dateTo ? sql`${posDay} <= ${data.dateTo}` : undefined,
+      ),
+    )
+    .groupBy(posDay, orders.channel)
+    .orderBy(posDay, orders.channel);
+
+  const payoutRows = await db
+    .select({
+      date: channelRevenues.date,
+      channel: channelRevenues.channel,
+      amount: sql<number>`COALESCE(SUM(${channelRevenues.amount}), 0)`,
+    })
+    .from(channelRevenues)
+    .where(
+      and(
+        data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
+        data.channel ? eq(channelRevenues.channel, data.channel) : undefined,
+        data.dateFrom ? gte(channelRevenues.date, data.dateFrom) : undefined,
+        data.dateTo ? lte(channelRevenues.date, data.dateTo) : undefined,
+      ),
+    )
+    .groupBy(channelRevenues.date, channelRevenues.channel);
+
+  // A channel filter cannot own a channel-less day adjustment: including it
+  // would attribute money that belongs to no channel to the filtered one.
+  const adjustmentRows = data.channel
+    ? []
+    : await db
+        .select({ date: dailyOverrides.date, amount: dailyOverrides.value })
+        .from(dailyOverrides)
+        .where(
+          and(
+            eq(dailyOverrides.field, OMZET_ADJUSTMENT_FIELD),
+            data.branchId ? eq(dailyOverrides.branchId, data.branchId) : undefined,
+            data.dateFrom ? gte(dailyOverrides.date, data.dateFrom) : undefined,
+            data.dateTo ? lte(dailyOverrides.date, data.dateTo) : undefined,
+          ),
+        );
+
+  const orderAggregates: OrderAggregate[] = orderRows.map((r) => ({
+    date: r.date,
+    channel: r.channel,
+    orderCount: Number(r.orderCount),
+    grossSales: Number(r.grossSales),
+    netSales: Number(r.netSales),
+    hpp: Number(r.hpp),
+  }));
+
+  return buildDailyPnl(
+    orderAggregates,
+    payoutRows.map((r) => ({
+      date: r.date,
+      channel: r.channel,
+      amount: Number(r.amount),
+    })),
+    adjustmentRows.map((r) => ({ date: r.date, amount: Number(r.amount) })),
+  );
+}
 
 export interface ShiftCashVarianceRow {
   /** Shift close date (Asia/Jakarta). */
@@ -731,7 +779,15 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
 export interface OmzetChannelRow {
   channel: string;
   orderCount: number;
-  totalAmount: number;
+  /** Σ totalAmount — gross before discounts. */
+  grossSales: number;
+  /** Σ netSales — POS net, the audit column and the fallback omzet. */
+  posNet: number;
+  /** Payout input for this day+channel, null when none was typed. */
+  payout: number | null;
+  /** payout ?? posNet — the omzet the ledger reports. */
+  omzet: number;
+  source: "payout" | "pos";
 }
 
 export interface OmzetBreakdown {
@@ -741,15 +797,15 @@ export interface OmzetBreakdown {
   merchantDiscount: number;
   /** Σ mdrFee, non-void. */
   mdrFee: number;
-  /** Net order sales (Σ netSales), non-void — omzet. */
+  /** Σ netSales, non-void — the modelled POS net. */
   orderNetSales: number;
   /** Manual revenue for the day — memo only, never in omzet (ADR 0017). */
   manualRevenue: number;
-  /** computedOmzet = orderNetSales. */
-  computedOmzet: number;
-  /** Day-level manual override, if any — this is what the Omzet column shows. */
-  override: number | null;
-  /** The value the Omzet column displays. */
+  /** Σ channel payouts for the day. */
+  payout: number;
+  /** Channel-less legacy omzet adjustment (0 when a channel filter is active). */
+  adjustment: number;
+  /** Σ per-channel omzet + adjustment — the day row's Omzet. */
   effectiveOmzet: number;
   orderCount: number;
   /** Void orders excluded from omzet (ADR 0017 #3) — shown for auditability. */
@@ -759,10 +815,11 @@ export interface OmzetBreakdown {
 }
 
 // Per-day Omzet detail so the user can verify the ledger: the gross → net
-// derivation (discount, MDR), the includeInPnl manual revenue, the manual
-// override (if any), and the per-channel order totals behind the sum. Void
-// orders are excluded (ADR 0017) but reported so the gap vs the POS journal
-// stays explainable.
+// derivation (discount, MDR), the memo-only manual revenue, and the payout/POS
+// basis behind every channel row (ADR 0028). The per-channel arithmetic is the
+// same `buildDailyPnl` the ledger uses, so the expansion can never disagree
+// with the row it expands. Void orders are excluded (ADR 0017) but reported so
+// the gap vs the POS journal stays explainable.
 export const getOmzetBreakdown = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; date: string; channel?: string }) => ({
     ...data,
@@ -799,16 +856,17 @@ export const getOmzetBreakdown = createServerFn({ method: "GET" })
       .from(orders)
       .where(and(...voidOnly));
 
-    const perChannelRows = await db
+    const perChannelOrders = await db
       .select({
         channel: orders.channel,
         orderCount: sql<number>`COUNT(*)`,
-        totalAmount: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
+        grossSales: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        netSales: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
+        hpp: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
       })
       .from(orders)
       .where(and(...nonVoid))
-      .groupBy(orders.channel)
-      .orderBy(sql`COALESCE(SUM(${orders.netSales}), 0) DESC`);
+      .groupBy(orders.channel);
 
     // Manual revenue is memo-only (ADR 0017): shown for reference in the
     // breakdown, never added into omzet. No-channel manual revenue is omitted
@@ -831,44 +889,67 @@ export const getOmzetBreakdown = createServerFn({ method: "GET" })
       data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
       data.channel ? eq(channelRevenues.channel, data.channel) : undefined,
     ];
-    const [channelRevRow] = await db
+    const channelRevRows = await db
       .select({
+        channel: channelRevenues.channel,
         total: sql<number>`COALESCE(SUM(${channelRevenues.amount}), 0)`,
       })
       .from(channelRevenues)
-      .where(and(...channelRevConditions));
+      .where(and(...channelRevConditions))
+      .groupBy(channelRevenues.channel);
 
-    const manualRevenue = Number(manualRevRow?.total ?? 0) + Number(channelRevRow?.total ?? 0);
+    const [adjustmentRow] = data.channel
+      ? [undefined]
+      : await db
+          .select({ value: sql<number>`COALESCE(SUM(${dailyOverrides.value}), 0)` })
+          .from(dailyOverrides)
+          .where(
+            and(
+              eq(dailyOverrides.date, data.date),
+              eq(dailyOverrides.field, OMZET_ADJUSTMENT_FIELD),
+              data.branchId ? eq(dailyOverrides.branchId, data.branchId) : undefined,
+            ),
+          );
 
-    const overrideConditions = [
-      eq(dailyOverrides.date, data.date),
-      eq(dailyOverrides.field, "omzet"),
-      data.branchId ? eq(dailyOverrides.branchId, data.branchId) : undefined,
-    ];
-    const [overrideRow] = await db
-      .select({ value: dailyOverrides.value })
-      .from(dailyOverrides)
-      .where(and(...overrideConditions))
-      .limit(1);
+    // Same aggregation as the ledger row (ADR 0028) over a single day.
+    const [day] = buildDailyPnl(
+      perChannelOrders.map((r) => ({
+        date: data.date,
+        channel: r.channel,
+        orderCount: Number(r.orderCount),
+        grossSales: Number(r.grossSales),
+        netSales: Number(r.netSales),
+        hpp: Number(r.hpp),
+      })),
+      channelRevRows.map((r) => ({
+        date: data.date,
+        channel: r.channel,
+        amount: Number(r.total),
+      })),
+      adjustmentRow ? [{ date: data.date, amount: Number(adjustmentRow.value) }] : [],
+    );
 
-    const computedOmzet = Number(totalsRow?.netSales ?? 0);
-    const override = overrideRow ? Number(overrideRow.value) : null;
+    const channelRevTotal = channelRevRows.reduce((s, r) => s + Number(r.total), 0);
     return {
       grossSales: Number(totalsRow?.grossSales ?? 0),
       merchantDiscount: Number(totalsRow?.merchantDiscount ?? 0),
       mdrFee: Number(totalsRow?.mdrFee ?? 0),
       orderNetSales: Number(totalsRow?.netSales ?? 0),
-      manualRevenue,
-      computedOmzet,
-      override,
-      effectiveOmzet: override ?? computedOmzet,
+      manualRevenue: Number(manualRevRow?.total ?? 0) + channelRevTotal,
+      payout: day?.payout ?? 0,
+      adjustment: day?.adjustment ?? 0,
+      effectiveOmzet: day?.omzet ?? 0,
       orderCount: Number(totalsRow?.orderCount ?? 0),
       voidCount: Number(voidRow?.count ?? 0),
       voidAmount: Number(voidRow?.amount ?? 0),
-      perChannel: perChannelRows.map((r) => ({
-        channel: r.channel,
-        orderCount: Number(r.orderCount),
-        totalAmount: Number(r.totalAmount),
+      perChannel: (day?.channels ?? []).map((c) => ({
+        channel: c.channel,
+        orderCount: c.orderCount,
+        grossSales: c.grossSales,
+        posNet: c.netSales,
+        payout: c.payout,
+        omzet: c.omzet,
+        source: c.source,
       })),
     };
   });
@@ -895,6 +976,15 @@ export async function upsertDailyOverrideCore(
       ),
     )
     .limit(1);
+
+  // Zero means "no adjustment" (ADR 0028): clearing the cell deletes the row
+  // instead of leaving a value that would keep the ledger flagged as adjusted.
+  if (data.value === 0) {
+    if (existing.length > 0) {
+      await db.delete(dailyOverrides).where(eq(dailyOverrides.id, existing[0].id));
+    }
+    return { success: true };
+  }
 
   if (existing.length > 0) {
     await db
@@ -1954,7 +2044,7 @@ export const printFinancePage = createServerFn({ method: "GET" })
     }),
   )
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
     const summary = await getFinanceSummary({ data });
 
     // Fetch branch name if branchId provided
@@ -1968,40 +2058,60 @@ export const printFinancePage = createServerFn({ method: "GET" })
       branchName = branch?.name ?? "-";
     }
 
-    // Build conditions for channel breakdown
-    const conds: ReturnType<typeof and> = and(
-      data.dateFrom
-        ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
-        : undefined,
-      data.dateTo
-        ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
-        : undefined,
-      data.branchId ? eq(orders.branchId, data.branchId) : undefined,
-      data.channel ? eq(orders.channel, data.channel) : undefined,
-    );
+    // Per-channel period roll-up on the payout basis (ADR 0028) — the same
+    // aggregation the ledger and the on-screen Per Channel table use.
+    const pnlDays = await getDailyPnlCore(user, {
+      branchId: data.branchId,
+      dateFrom: data.dateFrom,
+      dateTo: data.dateTo,
+      channel: data.channel,
+    });
+    const byChannel = new Map<string, { orderCount: number; omzet: number; hpp: number }>();
+    for (const day of pnlDays) {
+      for (const line of day.channels) {
+        const entry = byChannel.get(line.channel) ?? { orderCount: 0, omzet: 0, hpp: 0 };
+        entry.orderCount += line.orderCount;
+        entry.omzet += line.omzet;
+        entry.hpp += line.hpp;
+        byChannel.set(line.channel, entry);
+      }
+    }
+    const adjustment = pnlDays.reduce((s, d) => s + d.adjustment, 0);
 
-    const channelBreakdown = await db
-      .select({
-        channel: orders.channel,
-        totalAmount: sql<number>`COALESCE(SUM(${orders.netSales}), 0)`,
-        count: sql<number>`COUNT(*)`,
+    const channelRows = [...byChannel.entries()]
+      .map(([channel, ch]) => {
+        const gross = ch.omzet - ch.hpp;
+        const margin =
+          ch.orderCount > 0 && ch.omzet > 0 ? `${((gross / ch.omzet) * 100).toFixed(1)}%` : "—";
+        return {
+          channel,
+          orderCount: ch.orderCount,
+          omzet: ch.omzet,
+          hpp: ch.hpp,
+          gross,
+          margin,
+        };
       })
-      .from(orders)
-      .where(and(conds, ne(orders.status, "Void"), isNull(orders.deletedAt)))
-      .groupBy(orders.channel)
-      .orderBy(orders.channel);
+      .sort((a, b) => b.omzet - a.omzet);
 
-    const channelRows = channelBreakdown
+    const channelTableRows = channelRows
       .map(
         (ch) =>
           `<tr>
           <td>${escapeHtml(ch.channel)}</td>
-          <td style="text-align:right;">${ch.count}</td>
-          <td style="text-align:right;">${formatRupiah(ch.totalAmount)}</td>
-          <td style="text-align:right;">${summary.totalSales > 0 ? ((ch.totalAmount / summary.totalSales) * 100).toFixed(1) : "0.0"}%</td>
+          <td style="text-align:right;">${ch.orderCount}</td>
+          <td style="text-align:right;">${formatRupiah(ch.omzet)}</td>
+          <td style="text-align:right;">${formatRupiah(ch.hpp)}</td>
+          <td style="text-align:right;">${formatRupiah(ch.gross)}</td>
+          <td style="text-align:right;">${ch.margin}</td>
         </tr>`,
       )
       .join("\n");
+
+    const totalChannelMargin =
+      summary.orderCount > 0 && summary.omzet !== 0
+        ? `${((summary.grossProfit / summary.omzet) * 100).toFixed(1)}%`
+        : "—";
 
     const periodLabel =
       data.dateFrom || data.dateTo
@@ -2059,8 +2169,8 @@ export const printFinancePage = createServerFn({ method: "GET" })
     <div class="card-value red">${formatRupiah(summary.totalCogs)}</div>
   </div>
   <div class="card">
-    <div class="card-label">Omzet (Net)</div>
-    <div class="card-value green">${formatRupiah(summary.netSales)}</div>
+    <div class="card-label">Omzet</div>
+    <div class="card-value green">${formatRupiah(summary.omzet)}</div>
   </div>
   <div class="card">
     <div class="card-label">Gross Profit</div>
@@ -2078,18 +2188,34 @@ export const printFinancePage = createServerFn({ method: "GET" })
 <table>
 <thead><tr>
   <th>Channel</th>
-  <th style="text-align:right;width:80pt;">Pesanan</th>
-  <th style="text-align:right;width:100pt;">Total</th>
-  <th style="text-align:right;width:60pt;">%</th>
+  <th style="text-align:right;width:60pt;">Pesanan</th>
+  <th style="text-align:right;width:90pt;">Omzet</th>
+  <th style="text-align:right;width:90pt;">HPP</th>
+  <th style="text-align:right;width:90pt;">Gross Profit</th>
+  <th style="text-align:right;width:50pt;">Margin</th>
 </tr></thead>
-<tbody>${channelRows}</tbody>
+<tbody>
+${channelTableRows}
+${adjustment !== 0 ? `<tr><td>Penyesuaian harian</td><td style="text-align:right;">—</td><td style="text-align:right;">${formatRupiah(adjustment)}</td><td style="text-align:right;">—</td><td style="text-align:right;">${formatRupiah(adjustment)}</td><td style="text-align:right;">—</td></tr>` : ""}
+<tr style="font-weight:bold;background:#f7f7f7;">
+  <td>Total</td>
+  <td style="text-align:right;">${summary.orderCount}</td>
+  <td style="text-align:right;">${formatRupiah(summary.omzet)}</td>
+  <td style="text-align:right;">${formatRupiah(summary.totalCogs)}</td>
+  <td style="text-align:right;">${formatRupiah(summary.grossProfit)}</td>
+  <td style="text-align:right;">${totalChannelMargin}</td>
+</tr>
+</tbody>
 </table>
+<p style="font-size:8pt;color:#666;">Omzet per channel = nominal payout yang diinput (Input Revenue); bila belum diinput, dipakai net penjualan POS. HPP = COGS POS per channel.</p>
 
 <table class="summary-table">
   <tr><td class="label">Total Penjualan (Gross)</td><td class="value">${formatRupiah(summary.totalSales)}</td></tr>
   <tr><td class="label">Diskon Merchant</td><td class="value">-${formatRupiah(summary.totalMerchantDiscount)}</td></tr>
-  <tr><td class="label">MDR</td><td class="value">-${formatRupiah(summary.totalMdr)}</td></tr>
-  <tr><td class="label">Net Sales (Omzet)</td><td class="value">${formatRupiah(summary.netSales)}</td></tr>
+  <tr><td class="label">MDR (model)</td><td class="value">-${formatRupiah(summary.totalMdr)}</td></tr>
+  <tr><td class="label">Net Sales POS (model, audit)</td><td class="value">${formatRupiah(summary.netSales)}</td></tr>
+  <tr><td class="label">Omzet (basis payout)</td><td class="value">${formatRupiah(summary.omzet)}</td></tr>
+  ${summary.adjustment !== 0 ? `<tr><td class="label">Penyesuaian harian</td><td class="value">${formatRupiah(summary.adjustment)}</td></tr>` : ""}
   ${summary.manualRevenue > 0 ? `<tr><td class="label">Pendapatan Manual (memo, tidak masuk omzet)</td><td class="value">${formatRupiah(summary.manualRevenue)}</td></tr>` : ""}
   <tr><td class="label">HPP</td><td class="value">-${formatRupiah(summary.totalCogs)}</td></tr>
   <tr><td class="label" style="color: ${gpClass};">Gross Profit</td><td class="value" style="color: ${gpClass};">${gpSign}${formatRupiah(Math.abs(summary.grossProfit))}</td></tr>

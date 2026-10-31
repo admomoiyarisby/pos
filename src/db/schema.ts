@@ -1791,7 +1791,7 @@ export const dailyOverrides = pgTable(
       .notNull()
       .references(() => branches.id),
     date: text("date").notNull(),
-    field: text("field").notNull(), // "omzet", "hpp", etc.
+    field: text("field").notNull(), // "omzet_adjustment", "hpp", etc.
     value: integer("value").notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),

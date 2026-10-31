@@ -256,13 +256,13 @@ describe("Finance — manual entries via the real server-function cores", () => 
       await financeApi.upsertDailyOverrideCore(superAdmin, {
         branchId,
         date: "2026-07-01",
-        field: "omzet",
+        field: "omzet_adjustment",
         value: 900000,
       });
       await financeApi.upsertDailyOverrideCore(superAdmin, {
         branchId,
         date: "2026-07-01",
-        field: "omzet",
+        field: "omzet_adjustment",
         value: 950000,
       });
       const [override] = await db
@@ -333,7 +333,7 @@ describe("Finance — wrong-role negatives", () => {
           financeApi.upsertDailyOverrideCore(wrong, {
             branchId,
             date: "2026-07-01",
-            field: "omzet",
+            field: "omzet_adjustment",
             value: 1,
           }),
         ).rejects.toThrow("Forbidden: insufficient role");
@@ -356,7 +356,7 @@ describe("Finance — wrong-role negatives", () => {
       const override = await financeApi.upsertDailyOverrideCore(adminPusat, {
         branchId,
         date: "2026-07-01",
-        field: "omzet",
+        field: "omzet_adjustment",
         value: 1,
       });
       expect(override.success).toBe(true);
@@ -850,4 +850,144 @@ describe("Finance — channel P&L Omzet Real comes from Input Revenue", () => {
       }),
     ).rejects.toThrow("non-negatif");
   });
+});
+
+describe("Finance — payout-based daily P&L (ADR 0028)", () => {
+  const day = new Date(Date.UTC(2026, 9, 14, 12, 0, 0));
+  const tanggal = "2026-10-14";
+
+  async function seedOrder(
+    branchId: string,
+    channel: "ShopeeFood" | "Gofood",
+    totalAmount: number,
+    totalCogs: number,
+    netSales: number,
+  ) {
+    await db.insert(schema.orders).values({
+      branchId,
+      channel,
+      subtotal: totalAmount,
+      totalAmount,
+      totalCogs,
+      netSales,
+      createdAt: day,
+    });
+  }
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "uses the payout where input, falls back to POS net, and adds the adjustment",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      await seedOrder(branchId, "ShopeeFood", 1_000_000, 400_000, 864_160);
+      await seedOrder(branchId, "Gofood", 300_000, 200_000, 280_320);
+      await db.insert(schema.channelRevenues).values({
+        branchId,
+        date: tanggal,
+        channel: "ShopeeFood",
+        amount: 512_509,
+        submittedBy: admin.id,
+      });
+      await db.insert(schema.dailyOverrides).values({
+        branchId,
+        date: tanggal,
+        field: "omzet_adjustment",
+        value: -1_000,
+      });
+
+      const rows = await financeApi.getDailyPnlCore(admin, {
+        branchId,
+        dateFrom: tanggal,
+        dateTo: tanggal,
+      });
+
+      expect(rows).toHaveLength(1);
+      const [row] = rows;
+      expect(row.date).toBe(tanggal);
+      expect(row.channels.map((c) => c.channel)).toEqual(["Gofood", "ShopeeFood"]);
+
+      const gojek = row.channels[0];
+      expect(gojek.source).toBe("pos");
+      expect(gojek.payout).toBeNull();
+      expect(gojek.omzet).toBe(280_320);
+
+      const shopee = row.channels[1];
+      expect(shopee.source).toBe("payout");
+      expect(shopee.omzet).toBe(512_509);
+      expect(shopee.gap).toBe(512_509 - 864_160);
+      expect(shopee.margin).toBeCloseTo((512_509 - 400_000) / 512_509, 10);
+
+      expect(row.hpp).toBe(600_000);
+      expect(row.adjustment).toBe(-1_000);
+      expect(row.omzet).toBe(512_509 + 280_320 - 1_000);
+      expect(row.grossProfit).toBe(row.omzet - 600_000);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "excludes the channel-less adjustment when a channel is filtered",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      await seedOrder(branchId, "ShopeeFood", 1_000_000, 400_000, 864_160);
+      await seedOrder(branchId, "Gofood", 300_000, 200_000, 280_320);
+      await db.insert(schema.dailyOverrides).values({
+        branchId,
+        date: tanggal,
+        field: "omzet_adjustment",
+        value: -1_000,
+      });
+
+      const rows = await financeApi.getDailyPnlCore(admin, {
+        branchId,
+        dateFrom: tanggal,
+        dateTo: tanggal,
+        channel: "Gofood",
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].channels.map((c) => c.channel)).toEqual(["Gofood"]);
+      expect(rows[0].adjustment).toBe(0);
+      expect(rows[0].omzet).toBe(280_320);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a zero adjustment deletes the row instead of storing a no-op",
+    async () => {
+      const admin = await seedUser("super_admin");
+      const branchId = await seedBranch();
+      await db.insert(schema.dailyOverrides).values({
+        branchId,
+        date: tanggal,
+        field: "omzet_adjustment",
+        value: -1_000,
+      });
+
+      await financeApi.upsertDailyOverrideCore(admin, {
+        branchId,
+        date: tanggal,
+        field: "omzet_adjustment",
+        value: 0,
+      });
+
+      const stored = await db
+        .select()
+        .from(schema.dailyOverrides)
+        .where(
+          and(
+            eq(schema.dailyOverrides.branchId, branchId),
+            eq(schema.dailyOverrides.date, tanggal),
+            eq(schema.dailyOverrides.field, "omzet_adjustment"),
+          ),
+        );
+      expect(stored).toHaveLength(0);
+
+      const rows = await financeApi.getDailyPnlCore(admin, {
+        branchId,
+        dateFrom: tanggal,
+        dateTo: tanggal,
+      });
+      expect(rows).toEqual([]);
+    },
+  );
 });

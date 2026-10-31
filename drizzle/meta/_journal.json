@@ -470,6 +470,13 @@
       "when": 1793548800000,
       "tag": "0063_drop_reverted_include_in_pnl",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1794000000000,
+      "tag": "0064_omzet_override_to_adjustment",
+      "breakpoints": true
     }
   ]
 }

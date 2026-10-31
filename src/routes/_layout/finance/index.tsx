@@ -8,7 +8,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import Modal from "#/components/ui/Modal";
 import MoneyInput from "#/components/MoneyInput";
 import {
-  getDailyFinanceSummary,
+  getDailyPnl,
   getDailyHppBreakdown,
   getManualFinanceEntries,
   type ManualFinanceEntry,
@@ -24,13 +24,12 @@ import {
   createManualExpense,
   printFinancePage,
 } from "#/lib/server/finance";
+import { summarizePnl, type ChannelPnlLine, type DailyPnl } from "#/lib/finance-pnl";
 import { getBrokenStock } from "#/lib/server/waste";
 import { getBranches } from "#/lib/server/branches";
 import {
   ChevronRight,
   Check,
-  Lock,
-  Pencil,
   Printer,
   Package,
   CalendarDays,
@@ -60,7 +59,7 @@ export const Route = createFileRoute("/_layout/finance/")({
     const ym = currentMonthValue();
     const [year, month] = ym.split("-").map(Number);
     const lastDay = lastDayOfMonth(year, month);
-    const daily = await getDailyFinanceSummary({
+    const daily = await getDailyPnl({
       data: { dateFrom: `${ym}-01`, dateTo: `${ym}-${String(lastDay).padStart(2, "0")}` },
     });
     return { branches, daily };
@@ -78,80 +77,6 @@ const CHANNELS = [
   { label: "TikTok", value: "TikTok" },
   { label: "Perlengkapan", value: "Perlengkapan" },
 ];
-
-// Inline editable Omzet cell — only active when no channel filter (day-level override).
-// `fullWidth` is used by the mobile day cards (comfortable tap target, no fixed
-// 144px column); the desktop table keeps the fixed-width cell.
-function EditableOmzetCell({
-  value,
-  hasOverride,
-  disabled,
-  fullWidth = false,
-  onSave,
-}: {
-  value: number;
-  hasOverride: boolean;
-  disabled: boolean;
-  fullWidth?: boolean;
-  onSave: (newValue: number) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [editValue, setEditValue] = useState(value);
-  const cellSize = fullWidth ? "w-full h-10" : "w-36 h-8";
-
-  const handleSave = useCallback(() => {
-    if (editValue !== value) onSave(editValue);
-    setEditing(false);
-  }, [editValue, value, onSave]);
-
-  if (editing) {
-    return (
-      <MoneyInput
-        value={editValue}
-        onChange={(raw) => setEditValue(raw ?? 0)}
-        onBlur={handleSave}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") handleSave();
-          if (e.key === "Escape") setEditing(false);
-        }}
-        className={`${cellSize} rounded border border-primary bg-background px-2 text-sm text-right font-medium tabular-nums`}
-        autoFocus
-      />
-    );
-  }
-
-  if (disabled) {
-    return (
-      <span
-        className={`inline-flex items-center gap-1.5 ${cellSize} px-2 rounded border border-dashed border-muted-foreground/30 bg-muted/30 text-sm text-right text-muted-foreground tabular-nums cursor-not-allowed`}
-        title="Filter channel aktif — omzet hanya diedit per hari"
-      >
-        {formatRp(value)}
-        <Lock className="h-3 w-3 shrink-0" />
-      </span>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        setEditValue(value);
-        setEditing(true);
-      }}
-      className={`inline-flex items-center gap-1.5 ${cellSize} px-2 rounded border text-sm text-right font-medium tabular-nums transition-colors ${
-        hasOverride
-          ? "border-blue-300 bg-blue-50 hover:bg-blue-100"
-          : "border-input bg-background hover:bg-muted/60"
-      }`}
-      title={hasOverride ? "Override manual — klik untuk edit" : "Klik untuk edit omzet harian"}
-    >
-      {formatRp(value)}
-      <Pencil className="h-3 w-3 shrink-0 text-muted-foreground" />
-    </button>
-  );
-}
 
 // HPP-per-bahan breakdown for a single day. The content is shared by the
 // desktop table row and the mobile day card, so both stay in sync.
@@ -257,12 +182,16 @@ function RealInputCell({
   current: number | null;
 }) {
   const queryClient = useQueryClient();
-  // Empty/reset state is 0, not blank: an untouched cell reads "Rp 0".
-  const [amount, setAmount] = useState<number | null>(current ?? 0);
+  // Untouched cells start null (nothing to save) even though the input shows
+  // "Rp 0": with the POS fallback (ADR 0028) an accidental save of 0 would
+  // otherwise mean "this channel earned nothing" and wipe the fallback omzet.
+  const [amount, setAmount] = useState<number | null>(current);
   const saveMutation = useMutation({
     mutationFn: upsertChannelRevenue,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["channel-pnl"] });
+      void queryClient.invalidateQueries({ queryKey: ["daily-pnl"] });
+      void queryClient.invalidateQueries({ queryKey: ["omzet-breakdown"] });
       void queryClient.invalidateQueries({ queryKey: ["manual-finance-entries"] });
       toast.success("Omzet Real tersimpan");
     },
@@ -304,6 +233,261 @@ function RealInputCell({
         <Check className="h-4 w-4" />
       </button>
     </div>
+  );
+}
+
+// Signed day-level omzet adjustment (ADR 0028). Unlike the channel payouts this
+// has no channel, so it is edited only when the ledger is not channel-filtered.
+// MoneyInput is unsigned by design; a negative adjustment has to survive, so the
+// field accepts a leading minus and parses the rest as Rupiah digits.
+function SignedAmountInput({
+  defaultValue,
+  onChange,
+  ariaLabel,
+  className,
+}: {
+  defaultValue: number;
+  onChange: (value: number | null) => void;
+  ariaLabel: string;
+  className?: string;
+}) {
+  const [text, setText] = useState(String(defaultValue));
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={text}
+      aria-label={ariaLabel}
+      onChange={(e) => {
+        const cleaned = e.target.value.replace(/[^\d-]/g, "").replace(/(?!^)-/g, "");
+        setText(cleaned);
+        onChange(cleaned === "" || cleaned === "-" ? null : Number(cleaned));
+      }}
+      className={className}
+    />
+  );
+}
+
+function AdjustmentCell({
+  branchId,
+  tanggal,
+  current,
+}: {
+  branchId: string | undefined;
+  tanggal: string;
+  current: number;
+}) {
+  const queryClient = useQueryClient();
+  const [amount, setAmount] = useState<number | null>(current);
+  const saveMutation = useMutation({
+    mutationFn: upsertDailyOverride,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["daily-pnl"] });
+      void queryClient.invalidateQueries({ queryKey: ["omzet-breakdown"] });
+      toast.success("Penyesuaian tersimpan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menyimpan penyesuaian", { description: error.message });
+    },
+  });
+
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <SignedAmountInput
+        defaultValue={current}
+        onChange={setAmount}
+        ariaLabel={`Penyesuaian omzet ${tanggal}`}
+        className="h-8 w-32 rounded-md border border-input bg-background px-2 text-right text-xs tabular-nums"
+      />
+      <button
+        type="button"
+        disabled={saveMutation.isPending || amount === null || amount === current}
+        onClick={() => {
+          if (!branchId) {
+            toast.error("Pilih cabang terlebih dahulu untuk mengubah penyesuaian");
+            return;
+          }
+          if (amount === null) return;
+          void saveMutation.mutateAsync({
+            data: { branchId, date: tanggal, field: "omzet_adjustment", value: amount },
+          });
+        }}
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-40"
+        title="Simpan penyesuaian harian"
+        aria-label={`Simpan penyesuaian omzet ${tanggal}`}
+      >
+        <Check className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+const marginClass = (margin: number | null) =>
+  margin === null ? "text-muted-foreground" : margin >= 0 ? "text-emerald-600" : "text-destructive";
+
+const formatMargin = (margin: number | null) =>
+  margin === null ? "—" : `${(margin * 100).toFixed(1)}%`;
+
+const formatSignedRp = (value: number) =>
+  value < 0 ? `−${formatRp(Math.abs(value))}` : `${value > 0 ? "+" : ""}${formatRp(value)}`;
+
+// Per-channel P&L for one ledger day (ADR 0028). Each row pairs the POS figure
+// with the typed payout; omzet is the payout where present, POS net otherwise.
+// The payout cell is the same RealInputCell as the Per Channel sub-tab, so both
+// views write through one store. Shared by the desktop row expansion and the
+// mobile day card.
+function ChannelDayTable({
+  day,
+  branchId,
+  channelFiltered,
+}: {
+  day: DailyPnl;
+  branchId: string | undefined;
+  channelFiltered: boolean;
+}) {
+  if (day.channels.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">Belum ada penjualan per channel hari ini.</p>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-2 text-xs font-medium text-muted-foreground">
+        Omzet per Channel — payout yang diinput, net POS bila belum diinput
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead>
+            <tr className="border-b text-xs text-muted-foreground">
+              <th className="py-1.5 pr-2 text-left font-medium">Channel</th>
+              <th className="py-1.5 px-2 text-right font-medium w-16">Order</th>
+              <th
+                className="py-1.5 px-2 text-right font-medium w-32"
+                title="Net POS: setelah diskon merchant + MDR model"
+              >
+                Omzet POS
+              </th>
+              <th className="py-1.5 px-2 text-right font-medium w-44">Payout (Omzet)</th>
+              <th className="py-1.5 px-2 text-right font-medium w-32">HPP</th>
+              <th className="py-1.5 px-2 text-right font-medium w-32">Gross Profit</th>
+              <th className="py-1.5 px-2 text-right font-medium w-20">Margin</th>
+              <th className="py-1.5 pl-2 text-right font-medium w-32">Selisih</th>
+            </tr>
+          </thead>
+          <tbody>
+            {day.channels.map((line: ChannelPnlLine) => (
+              <tr key={line.channel} className="border-b border-border/50">
+                <td className="py-1.5 pr-2 font-medium">
+                  {channelLabelOf(line.channel)}
+                  {line.source === "pos" && (
+                    <span
+                      className="ml-1.5 rounded bg-muted px-1 py-0.5 text-[10px] font-normal text-muted-foreground"
+                      title="Belum ada input payout — omzet memakai net POS"
+                    >
+                      POS
+                    </span>
+                  )}
+                </td>
+                <td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground">
+                  {line.orderCount}
+                </td>
+                <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(line.netSales)}</td>
+                <td className="py-1.5 px-2">
+                  <RealInputCell
+                    key={`${line.date}-${line.channel}-${line.payout ?? "empty"}`}
+                    branchId={branchId}
+                    tanggal={line.date}
+                    channel={line.channel}
+                    current={line.payout}
+                  />
+                </td>
+                <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(line.hpp)}</td>
+                <td className="py-1.5 px-2 text-right tabular-nums">
+                  {formatRp(line.grossProfit)}
+                </td>
+                <td className={`py-1.5 px-2 text-right tabular-nums ${marginClass(line.margin)}`}>
+                  {formatMargin(line.margin)}
+                </td>
+                <td
+                  className={`py-1.5 pl-2 text-right tabular-nums ${
+                    line.gap === null
+                      ? "text-muted-foreground"
+                      : line.gap > 0
+                        ? "text-amber-600"
+                        : ""
+                  }`}
+                  title="Payout − net POS. Negatif = potongan platform yang tidak termodelkan; positif = payout di atas net POS (perlu dicek)."
+                >
+                  {line.gap === null ? "—" : formatSignedRp(line.gap)}
+                </td>
+              </tr>
+            ))}
+            {day.adjustment !== 0 && (
+              <tr className="border-b border-border/50">
+                <td className="py-1.5 pr-2 font-medium">Penyesuaian harian</td>
+                <td className="py-1.5 px-2 text-right text-muted-foreground">—</td>
+                <td className="py-1.5 px-2 text-right text-muted-foreground">—</td>
+                <td className="py-1.5 px-2 text-right tabular-nums text-muted-foreground">—</td>
+                <td className="py-1.5 px-2 text-right text-muted-foreground">—</td>
+                <td className="py-1.5 px-2 text-right tabular-nums">
+                  {formatSignedRp(day.adjustment)}
+                </td>
+                <td className="py-1.5 px-2 text-right text-muted-foreground">—</td>
+                <td className="py-1.5 pl-2 text-right text-muted-foreground">—</td>
+              </tr>
+            )}
+            <tr className="font-semibold">
+              <td className="py-1.5 pr-2">Total</td>
+              <td className="py-1.5 px-2 text-right tabular-nums">{day.orderCount}</td>
+              <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(day.posNet)}</td>
+              <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(day.payout)}</td>
+              <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(day.hpp)}</td>
+              <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(day.grossProfit)}</td>
+              <td className={`py-1.5 px-2 text-right tabular-nums ${marginClass(day.margin)}`}>
+                {formatMargin(day.margin)}
+              </td>
+              <td className="py-1.5 pl-2 text-right text-muted-foreground">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span>
+          Omzet dipakai: <span className="font-medium text-foreground">{formatRp(day.omzet)}</span>
+          {day.adjustment !== 0 && <> (termasuk penyesuaian {formatSignedRp(day.adjustment)})</>}
+        </span>
+        {!channelFiltered && (
+          <span className="flex items-center gap-2">
+            <span>Penyesuaian harian</span>
+            <AdjustmentCell
+              key={`${day.date}-${day.adjustment}`}
+              branchId={branchId}
+              tanggal={day.date}
+              current={day.adjustment}
+            />
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChannelDayRow({
+  day,
+  branchId,
+  channelFiltered,
+}: {
+  day: DailyPnl;
+  branchId: string | undefined;
+  channelFiltered: boolean;
+}) {
+  return (
+    <tr className="bg-muted/30">
+      <td colSpan={7} className="px-4 py-3">
+        <ChannelDayTable day={day} branchId={branchId} channelFiltered={channelFiltered} />
+      </td>
+    </tr>
   );
 }
 
@@ -387,7 +571,7 @@ function ChannelPnlSection({
                 <th className="text-left py-2.5 px-3 font-medium">Channel</th>
                 <th className="text-right py-2.5 px-3 font-medium w-20">Order</th>
                 <th className="text-right py-2.5 px-3 font-medium w-32">HPP</th>
-                <th className="text-right py-2.5 px-3 font-medium w-32">Omzet POS</th>
+                <th className="text-right py-2.5 px-3 font-medium w-32">Penjualan POS</th>
                 <th className="text-right py-2.5 px-3 font-medium w-44">Omzet Real</th>
                 <th className="text-right py-2.5 px-3 font-medium w-24">Margin %</th>
               </tr>
@@ -540,7 +724,7 @@ function ChannelPnlSection({
                         <div className="tabular-nums">{formatRp(r.hpp)}</div>
                       </div>
                       <div>
-                        <div className="text-muted-foreground">Omzet POS</div>
+                        <div className="text-muted-foreground">Penjualan POS</div>
                         <div className="tabular-nums">{formatRp(r.grossSales)}</div>
                       </div>
                       <div>
@@ -565,8 +749,9 @@ function ChannelPnlSection({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Omzet Real = nilai yang diinput via Input Revenue (Per Channel). Kosong bila belum diinput;
-        Margin dihitung dari Omzet Real.
+        Penjualan POS = Σ totalAmount (kotor, sebelum diskon/MDR). Omzet Real = payout yang diinput
+        via Input Revenue (Per Channel); kosong bila belum diinput, dan Margin dihitung dari Omzet
+        Real. Ledger Harian memakai payout dengan fallback net POS.
       </p>
     </div>
   );
@@ -575,10 +760,10 @@ function ChannelPnlSection({
 // ── Rincian Stok Keluar moved to #/components/finance/IngredientUsageSection —
 // shared with the branch-visible /stok-keluar page so the two stay in sync.
 
-// Omzet detail for one day: the Gross → Net derivation, void visibility and
-// any manual override. Per-channel numbers are available behind the
-// "Rincian per channel" toggle — collapsed by default so the day expansion
-// doesn't duplicate the Per Channel sub-tab.
+// Omzet derivation for one day: gross → merchant discount → MDR → POS net,
+// plus void visibility. The reporting omzet (payout per channel, POS net
+// fallback) is the ChannelDayTable directly above; this section only explains
+// how the POS side was modelled (ADR 0017 #1).
 // Shared by the desktop table row and the mobile day card.
 function OmzetBreakdownContent({
   branchId,
@@ -642,63 +827,19 @@ function OmzetBreakdownContent({
           <span className="text-muted-foreground">Net Sales (Order)</span>
           <span className="tabular-nums">{formatRp(data.orderNetSales)}</span>
         </div>
-        <OmzetPerChannelList perChannel={data.perChannel} />
       </div>
       <div className="flex flex-wrap justify-end gap-x-4 gap-y-1 mt-2 pt-2 border-t text-sm">
-        {data.override !== null && (
+        {data.adjustment !== 0 && (
           <span className="text-blue-600">
-            Override manual:{" "}
-            <span className="tabular-nums font-medium">{formatRp(data.override)}</span>
+            Penyesuaian harian:{" "}
+            <span className="tabular-nums font-medium">{formatSignedRp(data.adjustment)}</span>
           </span>
         )}
         <span className="font-semibold">
-          Total Omzet: <span className="tabular-nums">{formatRp(data.effectiveOmzet)}</span>
+          Omzet dipakai: <span className="tabular-nums">{formatRp(data.effectiveOmzet)}</span>
         </span>
       </div>
     </>
-  );
-}
-
-// Per-channel list for one day's omzet — opt-in via toggle so the day
-// expansion doesn't duplicate the Per Channel sub-tab by default.
-function OmzetPerChannelList({
-  perChannel,
-}: {
-  perChannel: { channel: string; orderCount: number; totalAmount: number }[];
-}) {
-  const [open, setOpen] = useState(false);
-  const channelLabel = (ch: string) => CHANNELS.find((c) => c.value === ch)?.label ?? ch;
-
-  if (perChannel.length === 0) return null;
-
-  return (
-    <div className="mt-2">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ChevronRight className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
-        Rincian per channel ({perChannel.length})
-      </button>
-      {open && (
-        <div className="mt-1.5 grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
-          {perChannel.map((ch) => (
-            <div
-              key={ch.channel}
-              className="flex items-center justify-between text-sm py-1 border-b border-border/40"
-            >
-              <span className="truncate pr-2">
-                {channelLabel(ch.channel)}
-                <span className="ml-1.5 text-xs text-muted-foreground">({ch.orderCount})</span>
-              </span>
-              <span className="tabular-nums font-medium shrink-0">{formatRp(ch.totalAmount)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -835,7 +976,6 @@ function VarianceBadge({ variance }: { variance: number }) {
 
 function FinancePage() {
   const { branches, daily: initialDaily } = Route.useLoaderData();
-  const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [revenueType, setRevenueType] = useState<"manual" | "channel">("manual");
@@ -915,9 +1055,9 @@ function FinancePage() {
   });
 
   const { data: dailyRows } = useQuery({
-    queryKey: ["daily-finance", effectiveDateRange.from, effectiveDateRange.to, branchId, channel],
+    queryKey: ["daily-pnl", effectiveDateRange.from, effectiveDateRange.to, branchId, channel],
     queryFn: () =>
-      getDailyFinanceSummary({
+      getDailyPnl({
         data: {
           dateFrom: effectiveDateRange.from || undefined,
           dateTo: effectiveDateRange.to || undefined,
@@ -1021,30 +1161,6 @@ function FinancePage() {
     return filteredBrokenStock.reduce((sum, e) => sum + (e.valuation ?? 0), 0);
   }, [filteredBrokenStock]);
 
-  const upsertOverrideMutation = useMutation({
-    mutationFn: upsertDailyOverride,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["daily-finance"] });
-      toast.success("Omzet diperbarui");
-    },
-    onError: (err) => toast.error("Gagal memperbarui omzet", { description: err.message }),
-  });
-
-  // Omzet edits need a branch to attach the day-level override to; shared by
-  // the desktop cell and the mobile day card so both behave identically.
-  const saveOmzet = useCallback(
-    (date: string, newValue: number) => {
-      if (!branchId) {
-        toast.error("Pilih cabang terlebih dahulu untuk mengedit Omzet");
-        return;
-      }
-      void upsertOverrideMutation.mutateAsync({
-        data: { branchId, date, field: "omzet", value: newValue },
-      });
-    },
-    [branchId, upsertOverrideMutation],
-  );
-
   const createManualMutation = useMutation({
     mutationFn: createManualRevenue,
     onSuccess: () => {
@@ -1111,11 +1227,9 @@ function FinancePage() {
 
   const totals = useMemo(() => {
     const rows = dailyRows ?? [];
-    const hpp = rows.reduce((s, r) => s + r.hpp, 0);
-    const omzet = rows.reduce((s, r) => s + r.omzet, 0);
-    const gross = rows.reduce((s, r) => s + r.grossProfit, 0);
-    const manualNet = rows.reduce((s, r) => s + manualNetFor(r.tanggal), 0);
-    return { hpp, omzet, gross, manualNet, margin: omzet > 0 ? gross / omzet : 0 };
+    const pnl = summarizePnl(rows);
+    const manualNet = rows.reduce((s, r) => s + manualNetFor(r.date), 0);
+    return { ...pnl, manualNet };
   }, [dailyRows, manualNetFor]);
 
   usePageTitle("Keuangan", "Laporan P&L harian, mingguan, bulanan");
@@ -1360,30 +1474,30 @@ function FinancePage() {
             {dailyRows && dailyRows.length > 0 ? (
               <>
                 {dailyRows.map((row) => {
-                  const isOpen = expandedDay === row.tanggal;
+                  const isOpen = expandedDay === row.date;
                   return (
                     <div
-                      key={row.tanggal}
+                      key={row.date}
                       className={`overflow-hidden rounded-xl border bg-card shadow-xs ${
                         isOpen ? "border-foreground/20" : ""
                       }`}
                     >
                       <button
                         type="button"
-                        onClick={() => setExpandedDay(isOpen ? null : row.tanggal)}
+                        onClick={() => setExpandedDay(isOpen ? null : row.date)}
                         aria-expanded={isOpen}
                         className="flex w-full items-center justify-between gap-3 p-3.5 text-left transition-colors active:bg-muted/40"
                       >
                         <span className="min-w-0">
                           <span className="block text-sm font-semibold">
-                            {new Date(row.tanggal + "T00:00:00").toLocaleDateString("id-ID", {
+                            {new Date(row.date + "T00:00:00").toLocaleDateString("id-ID", {
                               weekday: "long",
                               day: "numeric",
                               month: "short",
                             })}
                           </span>
                           <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                            Rincian HPP per bahan
+                            Rincian omzet per channel
                             <ChevronRight
                               className={`h-3.5 w-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
                             />
@@ -1408,50 +1522,54 @@ function FinancePage() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-xs text-muted-foreground">Margin</div>
-                          <div className="text-sm font-medium tabular-nums">
-                            {(row.margin * 100).toFixed(1)}%
+                          <div className="text-xs text-muted-foreground">Margin (total)</div>
+                          <div
+                            className={`text-sm font-medium tabular-nums ${marginClass(row.margin)}`}
+                          >
+                            {formatMargin(row.margin)}
                           </div>
                         </div>
                         <div className="col-span-2">
                           <div className="mb-1 text-xs text-muted-foreground">Omzet</div>
-                          <EditableOmzetCell
-                            fullWidth
-                            value={row.omzet}
-                            hasOverride={row.hasOmzetOverride}
-                            disabled={!!channel}
-                            onSave={(newValue) => saveOmzet(row.tanggal, newValue)}
-                          />
+                          <div
+                            className="text-sm font-semibold tabular-nums"
+                            title="Payout per channel; net POS untuk channel tanpa input"
+                          >
+                            {formatRp(row.omzet)}
+                          </div>
                         </div>
                         <div className="col-span-2">
-                          <div className="mb-1 text-xs text-muted-foreground">Manual</div>
+                          <div className="mb-1 text-xs text-muted-foreground">Manual (memo)</div>
                           <div
                             className={`text-sm font-semibold tabular-nums ${
-                              manualNetFor(row.tanggal) >= 0
-                                ? "text-emerald-600"
-                                : "text-destructive"
+                              manualNetFor(row.date) >= 0 ? "text-emerald-600" : "text-destructive"
                             }`}
                           >
-                            {manualNetFor(row.tanggal) > 0 ? "+" : ""}
-                            {formatRp(manualNetFor(row.tanggal))}
+                            {manualNetFor(row.date) > 0 ? "+" : ""}
+                            {formatRp(manualNetFor(row.date))}
                           </div>
                         </div>
                       </div>
                       {isOpen && (
-                        <div className="border-t bg-muted/30 px-3.5 py-3 space-y-3">
+                        <div className="border-t bg-muted/30 px-3.5 py-3 space-y-4">
+                          <ChannelDayTable
+                            day={row}
+                            branchId={branchId}
+                            channelFiltered={!!channel}
+                          />
                           <OmzetBreakdownContent
                             branchId={selectedBranchId}
-                            date={row.tanggal}
+                            date={row.date}
                             channel={selectedChannel}
                           />
-                          <ManualBreakdownContent entries={manualByDate.get(row.tanggal) ?? []} />
+                          <ManualBreakdownContent entries={manualByDate.get(row.date) ?? []} />
                           <div>
                             <div className="text-xs font-medium text-muted-foreground mb-2">
                               Rincian HPP per Bahan
                             </div>
                             <HppBreakdownContent
                               branchId={selectedBranchId}
-                              date={row.tanggal}
+                              date={row.date}
                               channel={selectedChannel}
                             />
                           </div>
@@ -1475,7 +1593,7 @@ function FinancePage() {
                     <div className="text-right">
                       <div className="text-xs text-muted-foreground">Gross Profit</div>
                       <div className="text-sm font-semibold tabular-nums">
-                        {formatRp(totals.gross)}
+                        {formatRp(totals.grossProfit)}
                       </div>
                     </div>
                     <div>
@@ -1485,11 +1603,9 @@ function FinancePage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-xs text-muted-foreground">Margin</div>
+                      <div className="text-xs text-muted-foreground">Margin (total)</div>
                       <div className="text-sm font-semibold tabular-nums">
-                        {totals.omzet > 0
-                          ? `${((totals.gross / totals.omzet) * 100).toFixed(1)}%`
-                          : "-"}
+                        {formatMargin(totals.margin)}
                       </div>
                     </div>
                   </div>
@@ -1517,7 +1633,12 @@ function FinancePage() {
                     <th className="text-left py-2.5 px-3 font-medium w-10"></th>
                     <th className="text-left py-2.5 px-3 font-medium">Tanggal</th>
                     <th className="text-right py-2.5 px-3 font-medium w-36">HPP</th>
-                    <th className="text-right py-2.5 px-3 font-medium w-36">Manual</th>
+                    <th
+                      className="text-right py-2.5 px-3 font-medium w-36"
+                      title="Entri manual: revenue (termasuk payout channel) − pengeluaran. Memo, tidak ditambahkan ke Omzet."
+                    >
+                      Manual
+                    </th>
                     <th className="text-right py-2.5 px-3 font-medium w-44">Omzet</th>
                     <th className="text-right py-2.5 px-3 font-medium w-36">Gross Profit</th>
                     <th className="text-right py-2.5 px-3 font-medium w-20">Margin</th>
@@ -1526,18 +1647,18 @@ function FinancePage() {
                 <tbody>
                   {dailyRows && dailyRows.length > 0 ? (
                     dailyRows.map((row) => {
-                      const isOpen = expandedDay === row.tanggal;
+                      const isOpen = expandedDay === row.date;
                       return (
-                        <Fragment key={row.tanggal}>
+                        <Fragment key={row.date}>
                           <tr
                             className={`border-b ${isOpen ? "bg-muted/20" : "hover:bg-muted/40"} transition-colors`}
                           >
                             <td className="py-2 px-3">
                               <button
                                 type="button"
-                                onClick={() => setExpandedDay(isOpen ? null : row.tanggal)}
+                                onClick={() => setExpandedDay(isOpen ? null : row.date)}
                                 className="h-7 w-7 rounded flex items-center justify-center hover:bg-muted transition-colors"
-                                title="Lihat rincian HPP per bahan"
+                                title="Lihat rincian omzet per channel"
                               >
                                 <ChevronRight
                                   className={`h-4 w-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
@@ -1545,7 +1666,7 @@ function FinancePage() {
                               </button>
                             </td>
                             <td className="py-2 px-3">
-                              {new Date(row.tanggal + "T00:00:00").toLocaleDateString("id-ID", {
+                              {new Date(row.date + "T00:00:00").toLocaleDateString("id-ID", {
                                 weekday: "short",
                                 day: "numeric",
                                 month: "short",
@@ -1556,42 +1677,47 @@ function FinancePage() {
                             </td>
                             <td
                               className={`py-2 px-3 text-right tabular-nums font-medium ${
-                                manualNetFor(row.tanggal) >= 0
+                                manualNetFor(row.date) >= 0
                                   ? "text-emerald-600"
                                   : "text-destructive"
                               }`}
                             >
-                              {manualNetFor(row.tanggal) > 0 ? "+" : ""}
-                              {formatRp(manualNetFor(row.tanggal))}
+                              {manualNetFor(row.date) > 0 ? "+" : ""}
+                              {formatRp(manualNetFor(row.date))}
                             </td>
-                            <td className="py-2 px-3 text-right">
-                              <EditableOmzetCell
-                                value={row.omzet}
-                                hasOverride={row.hasOmzetOverride}
-                                disabled={!!channel}
-                                onSave={(newValue) => saveOmzet(row.tanggal, newValue)}
-                              />
+                            <td
+                              className="py-2 px-3 text-right tabular-nums font-medium"
+                              title="Payout per channel; net POS untuk channel tanpa input"
+                            >
+                              {formatRp(row.omzet)}
                             </td>
                             <td
                               className={`py-2 px-3 text-right tabular-nums font-medium ${row.grossProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}
                             >
                               {formatRp(row.grossProfit)}
                             </td>
-                            <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
-                              {(row.margin * 100).toFixed(1)}%
+                            <td
+                              className={`py-2 px-3 text-right tabular-nums ${marginClass(row.margin)}`}
+                            >
+                              {formatMargin(row.margin)}
                             </td>
                           </tr>
                           {isOpen && (
                             <>
+                              <ChannelDayRow
+                                day={row}
+                                branchId={branchId}
+                                channelFiltered={!!channel}
+                              />
                               <OmzetBreakdownRow
                                 branchId={selectedBranchId}
-                                date={row.tanggal}
+                                date={row.date}
                                 channel={selectedChannel}
                               />
-                              <ManualBreakdownRow entries={manualByDate.get(row.tanggal) ?? []} />
+                              <ManualBreakdownRow entries={manualByDate.get(row.date) ?? []} />
                               <HppBreakdownRow
                                 branchId={selectedBranchId}
-                                date={row.tanggal}
+                                date={row.date}
                                 channel={selectedChannel}
                               />
                             </>
@@ -1627,12 +1753,12 @@ function FinancePage() {
                         {formatRp(totals.omzet)}
                       </td>
                       <td className="py-2.5 px-3 text-right tabular-nums">
-                        {formatRp(totals.gross)}
+                        {formatRp(totals.grossProfit)}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums">
-                        {totals.omzet > 0
-                          ? `${((totals.gross / totals.omzet) * 100).toFixed(1)}%`
-                          : "-"}
+                      <td
+                        className={`py-2.5 px-3 text-right tabular-nums ${marginClass(totals.margin)}`}
+                      >
+                        {formatMargin(totals.margin)}
                       </td>
                     </tr>
                   </tfoot>
@@ -1640,6 +1766,12 @@ function FinancePage() {
               </table>
             </div>
           </div>
+
+          <p className="mt-2 text-xs text-muted-foreground">
+            Omzet = payout yang diinput per channel (Input Revenue). Bila belum ada input, dipakai
+            net penjualan POS. Klik tanggal untuk HPP, omzet, dan margin per channel; margin pada
+            baris total adalah gabungan seluruh channel, bukan margin satu channel.
+          </p>
         </>
       )}
 
