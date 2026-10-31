@@ -35,9 +35,20 @@ interface PrintReceiptParams {
   branchPhone?: string | null;
 }
 
-// Thermal receipt paper is 57mm wide; keep ~2mm padding each side so the
-// printable content is ~53mm.
-const RECEIPT_WIDTH_MM = 57;
+/**
+ * The roll, the print head, and the page the browser fallback draws.
+ *
+ * A "58mm" roll carries 48mm of head: 32 characters at 12 dots, 203dpi. The
+ * millimetre or two at each edge is paper the head never reaches. The browser
+ * documents used to be built at the width of the roll instead — 57mm of body
+ * plus 2mm of padding each side — so everything anchored right printed past
+ * the edge: the price column vanished, "Rp 35.000" arrived as "Rp 3", and
+ * "Online Food" as "Online F". The page stays at the roll width, because that
+ * is what the print service is told the paper is; the body is built to the
+ * head, so no glyph is drawn where the head cannot go.
+ */
+const RECEIPT_WIDTH_MM = 58;
+const RECEIPT_PRINT_WIDTH_MM = 48;
 
 /**
  * Receipt item layout: Jumlah | Nama menu | Harga, with add-ons (modifiers)
@@ -62,17 +73,17 @@ function buildReceiptItemsHtml(cartItems: CartItem[], showPrice = true): string 
       // Full size, not bold — the same weight the item itself is set at, so
       // the only thing separating an add-on from its item is the indent and the
       // missing bold. See `thermalItemLines` for the thermal-side reasoning.
-      addonLines = '<div style="color: #444; padding-left: 8mm;">' + parts.join("<br>") + "</div>";
+      addonLines = '<div style="color: #444; padding-left: 6mm;">' + parts.join("<br>") + "</div>";
     }
     let noteLine = item.notes
-      ? '<div style="font-style: italic; color: #666; padding-left: 8mm;">Note: ' +
+      ? '<div style="font-style: italic; color: #666; padding-left: 6mm;">Note: ' +
         item.notes +
         "</div>"
       : "";
     itemsHtml +=
       '<div style="margin-bottom: 2mm;">' +
       '<div style="display: flex; font-size: 11px; font-weight: bold;">' +
-      '<div style="width: 8mm; text-align: left;">' +
+      '<div style="width: 6mm; flex: none; text-align: left;">' +
       item.quantity +
       "</div>" +
       '<div style="flex: 1; min-width: 0; overflow-wrap: break-word;">' +
@@ -326,6 +337,31 @@ function reportPrintFailure(message: string): void {
 }
 
 /**
+ * The browser dialog is a fallback, and a silent one. A tablet that cannot
+ * reach the bridge prints a millimetre page instead of an ESC/POS document,
+ * and a page cannot reach the edge of a print head — so a receipt that comes
+ * out clipped is a transport problem, not a layout one. Say which path ran:
+ * otherwise a branch prints slightly wrong receipts for weeks with no clue.
+ */
+function reportBrowserFallback(): void {
+  toast.warning("Cleanter tidak terjangkau", {
+    description:
+      "Mencetak lewat dialog browser. Kalau hasilnya terpotong, cek apakah aplikasi Cleanter menyala dan printer sudah terpasang di tablet ini.",
+  });
+}
+
+/** A blocked popup is a print that never happens — and looks like nothing at all. */
+function openPrintWindow(): Window | null {
+  let printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    toast.error("Jendela cetak diblokir", {
+      description: "Izinkan pop-up untuk situs ini, lalu cetak ulang.",
+    });
+  }
+  return printWindow;
+}
+
+/**
  * Receipt for the customer: same content as the browser document, laid out
  * as blocks for a 58mm roll.
  */
@@ -399,6 +435,7 @@ export async function printReceipt(params: PrintReceiptParams): Promise<void> {
   });
   if (result.kind === "printed") return;
   if (result.kind === "unavailable") {
+    reportBrowserFallback();
     printReceiptInBrowser(params);
     return;
   }
@@ -412,7 +449,7 @@ function printReceiptInBrowser({
   branchAddress,
   branchPhone,
 }: PrintReceiptParams) {
-  let printWindow = window.open("", "_blank");
+  let printWindow = openPrintWindow();
   if (!printWindow) return;
 
   let itemsHtml = buildReceiptItemsHtml(cartItems);
@@ -424,8 +461,8 @@ function printReceiptInBrowser({
     "<style>",
     "@page { margin: 0; size: " + RECEIPT_WIDTH_MM + "mm auto; }",
     "body { font-family: 'Courier New', monospace; width: " +
-      RECEIPT_WIDTH_MM +
-      "mm; margin: 0; padding: 2mm; font-size: 11px; position: relative; overflow-wrap: break-word; }",
+      RECEIPT_PRINT_WIDTH_MM +
+      "mm; box-sizing: border-box; margin: 0; padding: 2mm; font-size: 11px; position: relative; overflow-wrap: break-word; }",
     ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
     ".wm-wrap img { max-width: 45mm; opacity: 0.06; }",
     ".content { position: relative; z-index: 1; }",
@@ -434,8 +471,11 @@ function printReceiptInBrowser({
     ".header { font-size: 14px; font-weight: bold; margin-bottom: 1mm; }",
     ".subheader { font-size: 10px; color: #444; margin-bottom: 1mm; }",
     ".divider { border-top: 1px dashed #000; margin: 2mm 0; }",
-    ".colhead { display: flex; font-size: 10px; color: #444; margin-bottom: 1mm; }",
-    ".colhead .qty { width: 8mm; }",
+    ".colhead { display: flex; justify-content: space-between; font-size: 10px; color: #444; margin-bottom: 1mm; }",
+    ".colhead .qty { width: 6mm; flex: none; }",
+    // The name column takes the slack; without it "Harga" is drawn straight
+    // after "Nama Menu" and the two read as one word.
+    ".colhead span:nth-child(2) { flex: 1; }",
     ".row { display: flex; justify-content: space-between; }",
     ".total { font-size: 13px; font-weight: bold; margin-top: 2mm; }",
     ".footer { margin-top: 4mm; font-size: 11px; color: #444; text-align: center; }",
@@ -580,6 +620,7 @@ export async function printBill(params: PrintBillParams): Promise<void> {
   });
   if (result.kind === "printed") return;
   if (result.kind === "unavailable") {
+    reportBrowserFallback();
     printBillInBrowser(params);
     return;
   }
@@ -598,7 +639,7 @@ function printBillInBrowser({
   customerName,
   orderCode,
 }: PrintBillParams) {
-  let printWindow = window.open("", "_blank");
+  let printWindow = openPrintWindow();
   if (!printWindow) return;
 
   let itemsHtml = buildReceiptItemsHtml(cartItems);
@@ -609,8 +650,8 @@ function printBillInBrowser({
     "<style>",
     "@page { margin: 0; size: " + RECEIPT_WIDTH_MM + "mm auto; }",
     "body { font-family: 'Courier New', monospace; width: " +
-      RECEIPT_WIDTH_MM +
-      "mm; margin: 0; padding: 2mm; font-size: 11px; position: relative; overflow-wrap: break-word; }",
+      RECEIPT_PRINT_WIDTH_MM +
+      "mm; box-sizing: border-box; margin: 0; padding: 2mm; font-size: 11px; position: relative; overflow-wrap: break-word; }",
     ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
     ".wm-wrap img { max-width: 45mm; opacity: 0.06; }",
     ".content { position: relative; z-index: 1; }",
@@ -619,8 +660,11 @@ function printBillInBrowser({
     ".header { font-size: 14px; font-weight: bold; margin-bottom: 1mm; }",
     ".subheader { font-size: 10px; color: #444; margin-bottom: 1mm; }",
     ".divider { border-top: 1px dashed #000; margin: 2mm 0; }",
-    ".colhead { display: flex; font-size: 10px; color: #444; margin-bottom: 1mm; }",
-    ".colhead .qty { width: 8mm; }",
+    ".colhead { display: flex; justify-content: space-between; font-size: 10px; color: #444; margin-bottom: 1mm; }",
+    ".colhead .qty { width: 6mm; flex: none; }",
+    // The name column takes the slack; without it "Harga" is drawn straight
+    // after "Nama Menu" and the two read as one word.
+    ".colhead span:nth-child(2) { flex: 1; }",
     ".row { display: flex; justify-content: space-between; }",
     ".total { font-size: 13px; font-weight: bold; margin-top: 2mm; }",
     ".footer { margin-top: 4mm; font-size: 11px; color: #444; text-align: center; }",
@@ -763,6 +807,7 @@ export async function printChecker(params: PrintCheckerParams): Promise<void> {
   });
   if (result.kind === "printed") return;
   if (result.kind === "unavailable") {
+    reportBrowserFallback();
     printCheckerInBrowser(params);
     return;
   }
@@ -777,7 +822,7 @@ function printCheckerInBrowser({
   customerName,
   orderCode,
 }: PrintCheckerParams) {
-  let printWindow = window.open("", "_blank");
+  let printWindow = openPrintWindow();
   if (!printWindow) return;
 
   let itemsHtml = buildReceiptItemsHtml(cartItems, false);
@@ -788,8 +833,8 @@ function printCheckerInBrowser({
     "<style>",
     "@page { margin: 0; size: " + RECEIPT_WIDTH_MM + "mm auto; }",
     "body { font-family: 'Courier New', monospace; width: " +
-      RECEIPT_WIDTH_MM +
-      "mm; margin: 0; padding: 2mm; font-size: 11px; position: relative; overflow-wrap: break-word; }",
+      RECEIPT_PRINT_WIDTH_MM +
+      "mm; box-sizing: border-box; margin: 0; padding: 2mm; font-size: 11px; position: relative; overflow-wrap: break-word; }",
     ".wm-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 0; }",
     ".wm-wrap img { max-width: 45mm; opacity: 0.06; }",
     ".content { position: relative; z-index: 1; }",
@@ -799,6 +844,8 @@ function printCheckerInBrowser({
     ".subheader { font-size: 10px; color: #444; margin-bottom: 1mm; }",
     ".divider { border-top: 1px dashed #000; margin: 2mm 0; }",
     ".row { display: flex; justify-content: space-between; }",
+    ".colhead { display: flex; font-size: 10px; color: #444; margin-bottom: 1mm; }",
+    ".colhead .qty { width: 6mm; flex: none; }",
     ".watermark { text-align: center; border: 2px dashed #999; padding: 2mm; margin: 3mm 0; color: #999; font-weight: bold; font-size: 13px; }",
     "</style></head><body>",
     '<div class="wm-wrap"><img src="/logo-for-light-mode.png" alt="" /></div>',
@@ -924,7 +971,7 @@ export function printSuratJalan(dn: {
     "</body></html>",
   );
 
-  const pw = window.open("", "_blank");
+  const pw = openPrintWindow();
   if (!pw) return;
   pw.document.write(lines.join("\n"));
   pw.document.close();
@@ -1009,6 +1056,7 @@ export async function printSCMInvoice(
   });
   if (result.kind === "printed") return;
   if (result.kind === "unavailable") {
+    reportBrowserFallback();
     printSCMInvoiceInBrowser(inv, showUnitPrice);
     return;
   }
@@ -1077,7 +1125,7 @@ function printSCMInvoiceInBrowser(inv: SCMInvoiceParams, showUnitPrice: boolean)
     "</body></html>",
   );
 
-  const pw = window.open("", "_blank");
+  const pw = openPrintWindow();
   if (!pw) return;
   pw.document.write(lines.join("\n"));
   pw.document.close();

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { toast } from "sonner";
 import { z } from "zod";
 
 import { printBill, printChecker, printReceipt, printSCMInvoice } from "#/lib/pos-print";
@@ -427,6 +428,15 @@ describe("fallback behaviour", () => {
     expect(window.open).toHaveBeenCalledWith("", "_blank");
   });
 
+  it("says on screen that it fell back, so a clipped receipt has a cause", async () => {
+    let warning = vi.spyOn(toast, "warning");
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await printReceipt({ order: order, cartItems: [cartItem], branchName: "Omoiyari Sudirman" });
+
+    expect(warning).toHaveBeenCalledWith("Cleanter tidak terjangkau", expect.anything());
+  });
+
   it("stays on the bridge when the printer itself failed, so nothing prints twice", async () => {
     fetchMock.mockResolvedValue(
       bridgeResponse(
@@ -442,5 +452,50 @@ describe("fallback behaviour", () => {
     await printReceipt({ order: order, cartItems: [cartItem], branchName: "Omoiyari Sudirman" });
 
     expect(window.open).not.toHaveBeenCalled();
+  });
+});
+
+describe("browser fallback layout", () => {
+  /** Capture what the fallback hands to the print dialog. */
+  function capturePrintHtml() {
+    let write = vi.spyOn(document, "write");
+    // The fallback only writes into the window it opened, so an object that
+    // inherits the real window (and with it the real document) is enough —
+    // no Window stub has to be faked.
+    vi.spyOn(window, "open").mockReturnValue(Object.create(window));
+    return () => write.mock.calls.map((call) => call[0]).join("\n");
+  }
+
+  it("draws the page to the print head, not to the width of the roll", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    let html = capturePrintHtml();
+
+    await printReceipt({ order: order, cartItems: [cartItem], branchName: "Omoiyari Rungkut" });
+
+    // A 58mm roll is 48mm of head. Anything drawn past 48mm never reaches
+    // paper, which is how a price column used to disappear and "Rp 35.000"
+    // arrive as "Rp 3".
+    expect(html()).toContain("size: 58mm auto");
+    expect(html()).toContain("width: 48mm; box-sizing: border-box");
+    expect(html()).not.toContain("width: 57mm");
+  });
+
+  it("pushes the column header apart instead of printing Nama MenuHarga", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    let html = capturePrintHtml();
+
+    await printReceipt({ order: order, cartItems: [cartItem], branchName: "Omoiyari Rungkut" });
+
+    expect(html()).toContain(".colhead { display: flex; justify-content: space-between");
+    expect(html()).toContain(".colhead span:nth-child(2) { flex: 1; }");
+  });
+
+  it("gives the checker the column header it used to render as one word", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    let html = capturePrintHtml();
+
+    await printChecker({ cartItems: [cartItem], branchName: "Omoiyari Rungkut" });
+
+    expect(html()).toContain(".colhead { display: flex;");
   });
 });

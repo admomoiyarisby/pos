@@ -92,6 +92,15 @@ behaviour.
 - iPadOS is not covered. It has no Bluetooth Classic API for the browser and no
   equivalent bridge app; if a client shows up with an iPad, it needs a
   networked printer or a different transport.
+- The fallback draws to the **print head**, not to the roll. A 58mm roll is
+  48mm of head, so the HTML documents are 48mm wide with
+  `box-sizing: border-box`. Built at the roll's 57mm they printed their
+  right-hand column off the edge of the paper: the price column vanished and
+  "Rp 35.000" arrived as "Rp 3". Because that page is a whole document, it is
+  also the only path that prints the logo — which makes a receipt on the
+  counter a reliable tell of which transport ran. The app now says so as well
+  (`reportBrowserFallback`), so a branch stuck on the fallback is visible
+  instead of quietly printing narrower receipts.
 - Not yet done: the logo is dropped on thermal prints. Embedding it would mean
   rasterising a PNG into the payload and a thermal head renders transparency as
   a black block unless the image is pre-flattened and dithered — worth doing
