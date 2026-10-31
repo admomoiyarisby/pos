@@ -37,6 +37,11 @@ import {
   PackageX,
 } from "lucide-react";
 import { z } from "zod";
+import { barX, defineChart } from "@tanstack/charts";
+import { scaleBand } from "@tanstack/charts/scales/band";
+import { scaleLinear } from "@tanstack/charts/scales/linear";
+import { tooltip } from "@tanstack/charts/tooltip";
+import { Chart } from "@tanstack/charts/react";
 import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { formatRp, formText } from "#/lib/utils";
 import {
@@ -84,187 +89,6 @@ function HppBreakdownContent({
   branchId,
   date,
   channel,
-  dayChannels,
-}: {
-  branchId: string;
-  date: string;
-  channel: string;
-  dayChannels?: { channel: string }[];
-}) {
-  const dateStr = new Date(date + "T00:00:00").toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "long",
-  });
-
-  // If a specific channel is selected, show breakdown for that channel only
-  if (channel) {
-    const { data, isLoading } = useQuery({
-      queryKey: ["daily-hpp-breakdown", date, branchId, channel],
-      queryFn: () =>
-        getDailyHppBreakdown({
-          data: { branchId: branchId || undefined, date, channel },
-        }),
-    });
-
-    if (isLoading) {
-      return (
-        <p className="text-sm text-muted-foreground">Memuat rincian HPP per bahan per channel…</p>
-      );
-    }
-
-    if (!data || data.length === 0) {
-      return (
-        <p className="text-sm text-muted-foreground">
-          Tidak ada rincian bahan untuk {channelLabelOf(channel)} hari ini.
-        </p>
-      );
-    }
-
-    const total = data.reduce((s, d) => s + d.cost, 0);
-
-    return (
-      <>
-        <details className="mb-2 group">
-          <summary className="text-xs font-medium text-muted-foreground cursor-pointer flex items-center gap-1.5 hover:text-foreground">
-            <span>Rincian HPP per Bahan per Channel — {dateStr}</span>
-            <span className="ml-1">({channelLabelOf(channel)})</span>
-            <span className="normal-case">(nilai biaya, bukan jumlah fisik)</span>
-            <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-          </summary>
-          <div className="mt-2 p-2 bg-muted/20 rounded-lg overflow-x-auto">
-            <pre className="text-[10px] leading-tight">
-              {`flowchart TD
-  A[orders.totalCogs per channel/date/branch] --> B[Filter: non-void, non-deleted]
-  B --> C[orderItems]
-  C --> D[resolvePersistedItemIngredients - BOM+modifiers/exclusions, BOGO-aware]
-  D --> E[Ingredient costs from sale-time composition]
-  E --> F[Scale to SUM orders.totalCogs]
-  F --> G[Round + remainder to largest ingredient]
-  G --> H[HPP per bahan per channel reconciled to ledger]`}
-            </pre>
-          </div>
-        </details>
-        <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
-          {data.map((d) => (
-            <div
-              key={d.ingredientId}
-              className="flex items-center justify-between text-sm py-1 border-b border-border/40"
-            >
-              <span className="truncate pr-2">{d.name}</span>
-              <span className="tabular-nums font-medium shrink-0">{formatRp(d.cost)}</span>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-end mt-2 pt-2 border-t text-sm font-semibold">
-          Total HPP {channelLabelOf(channel)}:{" "}
-          <span className="tabular-nums ml-2">{formatRp(total)}</span>
-        </div>
-      </>
-    );
-  }
-
-  // Show breakdown per channel when viewing all channels
-  const channelsToShow =
-    dayChannels && dayChannels.length > 0 ? dayChannels.map((c) => c.channel) : [];
-
-  if (channelsToShow.length === 0) {
-    const { data, isLoading } = useQuery({
-      queryKey: ["daily-hpp-breakdown", date, branchId, ""],
-      queryFn: () =>
-        getDailyHppBreakdown({
-          data: { branchId: branchId || undefined, date, channel: undefined },
-        }),
-    });
-
-    if (isLoading) {
-      return (
-        <p className="text-sm text-muted-foreground">Memuat rincian HPP per bahan per channel…</p>
-      );
-    }
-
-    if (!data || data.length === 0) {
-      return (
-        <p className="text-sm text-muted-foreground">Tidak ada rincian bahan untuk hari ini.</p>
-      );
-    }
-
-    const total = data.reduce((s, d) => s + d.cost, 0);
-
-    return (
-      <>
-        <details className="mb-2 group">
-          <summary className="text-xs font-medium text-muted-foreground cursor-pointer flex items-center gap-1.5 hover:text-foreground">
-            <span>Rincian HPP per Bahan per Channel — {dateStr}</span>
-            <span className="ml-1">(Semua Channel)</span>
-            <span className="normal-case">(nilai biaya, bukan jumlah fisik)</span>
-            <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-          </summary>
-          <div className="mt-2 p-2 bg-muted/20 rounded-lg overflow-x-auto">
-            <pre className="text-[10px] leading-tight">
-              {`flowchart TD
-  A[orders.totalCogs per channel/date/branch] --> B[Filter: non-void, non-deleted]
-  B --> C[orderItems]
-  C --> D[resolvePersistedItemIngredients - BOM+modifiers/exclusions, BOGO-aware]
-  D --> E[Ingredient costs from sale-time composition]
-  E --> F[Scale to SUM orders.totalCogs]
-  F --> G[Round + remainder to largest ingredient]
-  G --> H[HPP per bahan per channel reconciled to ledger]`}
-            </pre>
-          </div>
-        </details>
-        <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
-          {data.map((d) => (
-            <div
-              key={d.ingredientId}
-              className="flex items-center justify-between text-sm py-1 border-b border-border/40"
-            >
-              <span className="truncate pr-2">{d.name}</span>
-              <span className="tabular-nums font-medium shrink-0">{formatRp(d.cost)}</span>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-end mt-2 pt-2 border-t text-sm font-semibold">
-          Total HPP: <span className="tabular-nums ml-2">{formatRp(total)}</span>
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <details className="mb-2 group">
-        <summary className="text-xs font-medium text-muted-foreground cursor-pointer flex items-center gap-1.5 hover:text-foreground">
-          <span>Rincian HPP per Bahan per Channel — {dateStr}</span>
-          <span className="ml-1">(Semua Channel)</span>
-          <span className="normal-case">(nilai biaya, bukan jumlah fisik)</span>
-          <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-        </summary>
-        <div className="mt-2 p-2 bg-muted/20 rounded-lg overflow-x-auto">
-          <pre className="text-[10px] leading-tight">
-            {`flowchart TD
-  A[orders.totalCogs per channel/date/branch] --> B[Filter: non-void, non-deleted]
-  B --> C[orderItems]
-  C --> D[resolvePersistedItemIngredients - BOM+modifiers/exclusions, BOGO-aware]
-  D --> E[Ingredient costs from sale-time composition]
-  E --> F[Scale to SUM orders.totalCogs]
-  F --> G[Round + remainder to largest ingredient]
-  G --> H[HPP per bahan per channel reconciled to ledger]`}
-          </pre>
-        </div>
-      </details>
-      <div className="space-y-4">
-        {channelsToShow.map((ch) => (
-          <HppBreakdownChannelSection key={ch} branchId={branchId} date={date} channel={ch} />
-        ))}
-      </div>
-    </>
-  );
-}
-
-function HppBreakdownChannelSection({
-  branchId,
-  date,
-  channel,
 }: {
   branchId: string;
   date: string;
@@ -274,56 +98,45 @@ function HppBreakdownChannelSection({
     queryKey: ["daily-hpp-breakdown", date, branchId, channel],
     queryFn: () =>
       getDailyHppBreakdown({
-        data: { branchId: branchId || undefined, date, channel },
+        data: { branchId: branchId || undefined, date, channel: channel || undefined },
       }),
   });
 
   if (isLoading) {
-    return (
-      <div className="rounded-lg border p-3">
-        <div className="text-xs font-medium mb-2 flex items-center gap-2">
-          <span>{channelLabelOf(channel)}</span>
-          <span className="text-muted-foreground">— Memuat rincian HPP per bahan…</span>
-        </div>
-      </div>
-    );
+    return <p className="text-sm text-muted-foreground">Memuat rincian HPP per bahan…</p>;
   }
 
   if (!data || data.length === 0) {
-    return (
-      <div className="rounded-lg border p-3">
-        <div className="text-xs font-medium mb-2">{channelLabelOf(channel)}</div>
-        <p className="text-sm text-muted-foreground">Tidak ada rincian bahan untuk channel ini.</p>
-      </div>
-    );
+    return <p className="text-sm text-muted-foreground">Tidak ada rincian bahan untuk hari ini.</p>;
   }
 
   const total = data.reduce((s, d) => s + d.cost, 0);
+  const dateStr = new Date(date + "T00:00:00").toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+  });
 
   return (
-    <div className="rounded-lg border overflow-hidden">
-      <div className="bg-muted/40 px-3 py-1.5 text-xs font-medium flex items-center justify-between">
-        <span>HPP per Bahan — {channelLabelOf(channel)}</span>
-        <span className="tabular-nums">{formatRp(total)}</span>
+    <>
+      <div className="text-xs font-medium text-muted-foreground mb-2">
+        Rincian HPP per Bahan — {dateStr}
+        <span className="ml-2 normal-case">(nilai biaya, bukan jumlah fisik)</span>
       </div>
-      <div className="p-3">
-        <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
-          {data.map((d) => (
-            <div
-              key={d.ingredientId}
-              className="flex items-center justify-between text-sm py-1 border-b border-border/40"
-            >
-              <span className="truncate pr-2">{d.name}</span>
-              <span className="tabular-nums font-medium shrink-0">{formatRp(d.cost)}</span>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-end mt-2 pt-2 border-t text-sm font-semibold">
-          Total HPP {channelLabelOf(channel)}:{" "}
-          <span className="tabular-nums ml-2">{formatRp(total)}</span>
-        </div>
+      <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
+        {data.map((d) => (
+          <div
+            key={d.ingredientId}
+            className="flex items-center justify-between text-sm py-1 border-b border-border/40"
+          >
+            <span className="truncate pr-2">{d.name}</span>
+            <span className="tabular-nums font-medium shrink-0">{formatRp(d.cost)}</span>
+          </div>
+        ))}
       </div>
-    </div>
+      <div className="flex justify-end mt-2 pt-2 border-t text-sm font-semibold">
+        Total HPP: <span className="tabular-nums ml-2">{formatRp(total)}</span>
+      </div>
+    </>
   );
 }
 
@@ -331,24 +144,179 @@ function HppBreakdownRow({
   branchId,
   date,
   channel,
-  dayChannels,
 }: {
   branchId: string;
   date: string;
   channel: string;
-  dayChannels?: { channel: string }[];
 }) {
   return (
     <tr className="bg-muted/30">
       <td colSpan={7} className="px-4 py-3">
-        <HppBreakdownContent
-          branchId={branchId}
-          date={date}
-          channel={channel}
-          dayChannels={dayChannels}
-        />
+        <HppBreakdownContent branchId={branchId} date={date} channel={channel} />
       </td>
     </tr>
+  );
+}
+
+// Ranked horizontal bar of ingredient cost contributions for one day (and
+// optionally one channel). Horizontal because ingredient names are long and
+// the costs span orders of magnitude — a ranked bar makes the biggest drivers
+// readable at a glance, where a pie/donut would collapse into slivers.
+const HPP_CHART_TOP_N = 12;
+
+function HppCompositionChart({ data }: { data: { name: string; cost: number }[] }) {
+  const chartData = useMemo(() => data.slice(0, HPP_CHART_TOP_N), [data]);
+  const height = Math.max(200, chartData.length * 30 + 48);
+
+  const definition = useMemo(
+    () =>
+      defineChart({
+        marks: [
+          barX(chartData, {
+            x: "cost",
+            y: "name",
+            fill: "var(--color-chart-1)",
+            radius: 4,
+            inset: 2,
+            key: "name",
+          }),
+        ],
+        scales: {
+          x: {
+            scale: scaleLinear,
+            nice: true,
+            grid: true,
+            axis: {
+              line: false,
+              ticks: { size: 0, format: (value) => formatRp(Number(value)) },
+              tickLabels: { fontSize: 10 },
+            },
+          },
+          y: {
+            scale: () => scaleBand<string>().padding(0.28),
+            axis: { line: false, ticks: { size: 0 }, tickLabels: { fontSize: 11 } },
+          },
+        },
+        theme: {
+          grid: "var(--color-border)",
+          muted: "var(--color-muted-foreground)",
+        },
+        tooltip: {
+          use: tooltip,
+          items: [{ id: "cost", label: "HPP", text: (point) => formatRp(Number(point.xValue)) }],
+        },
+      }),
+    [chartData],
+  );
+
+  return (
+    <div style={{ width: "100%", height }} className="min-w-0">
+      <Chart definition={definition} height={height} ariaLabel="Kontribusi HPP per bahan" />
+    </div>
+  );
+}
+
+// HPP drill-down. The ledger's HPP number is Σ orders.totalCogs, persisted at
+// sale time — it cannot be recomputed from today's BOM because discounts,
+// modifiers, exclusions and BOGO all shaped it. The server re-resolves each
+// order item's persisted composition and scales the shares so they add up to
+// that exact total; this modal ranks the ingredients so the biggest cost
+// drivers are obvious.
+function HppDetailModal({
+  open,
+  onClose,
+  branchId,
+  date,
+  channel,
+}: {
+  open: boolean;
+  onClose: () => void;
+  branchId: string;
+  date: string;
+  channel: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["daily-hpp-breakdown", date, branchId, channel],
+    queryFn: () =>
+      getDailyHppBreakdown({
+        data: { branchId: branchId || undefined, date, channel: channel || undefined },
+      }),
+    enabled: open,
+  });
+
+  const total = (data ?? []).reduce((s, d) => s + d.cost, 0);
+  const dateStr = date
+    ? new Date(date + "T00:00:00").toLocaleDateString("id-ID", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : "";
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Rincian HPP — ${channel ? channelLabelOf(channel) : "Semua Channel"}`}
+      size="3xl"
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-sm text-muted-foreground">{dateStr}</p>
+          <p className="text-sm">
+            Total HPP <span className="font-semibold tabular-nums">{formatRp(total)}</span>
+          </p>
+        </div>
+
+        {isLoading ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Memuat rincian HPP per bahan…
+          </p>
+        ) : !data || data.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Tidak ada rincian bahan untuk periode ini.
+          </p>
+        ) : (
+          <>
+            <HppCompositionChart data={data} />
+
+            <div className="rounded-lg border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
+                    <th className="py-2 px-3 text-left font-medium">Bahan</th>
+                    <th className="py-2 px-3 text-left font-medium w-28">Kategori</th>
+                    <th className="py-2 px-3 text-right font-medium w-32">HPP</th>
+                    <th className="py-2 px-3 text-right font-medium w-20">Porsi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((d) => (
+                    <tr key={d.ingredientId} className="border-b last:border-0">
+                      <td className="py-1.5 px-3">{d.name}</td>
+                      <td className="py-1.5 px-3 text-muted-foreground">{d.category || "—"}</td>
+                      <td className="py-1.5 px-3 text-right tabular-nums">{formatRp(d.cost)}</td>
+                      <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">
+                        {total > 0 ? `${((d.cost / total) * 100).toFixed(1)}%` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              HPP diambil dari totalCogs yang tersimpan di tiap order (bukan hitungan ulang dari BOM
+              saat ini), lalu porsi tiap bahan diskalakan agar jumlahnya tepat sama dengan kolom
+              HPP.
+              {data.length > HPP_CHART_TOP_N &&
+                ` Grafik menampilkan ${HPP_CHART_TOP_N} bahan terbesar; tabel memuat semuanya.`}
+            </p>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -539,10 +507,12 @@ function ChannelDayTable({
   day,
   branchId,
   channelFiltered,
+  onShowHpp,
 }: {
   day: DailyPnl;
   branchId: string | undefined;
   channelFiltered: boolean;
+  onShowHpp?: (channel: string) => void;
 }) {
   if (day.channels.length === 0) {
     return (
@@ -601,7 +571,20 @@ function ChannelDayTable({
                     current={line.payout}
                   />
                 </td>
-                <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(line.hpp)}</td>
+                <td className="py-1.5 px-2 text-right tabular-nums">
+                  {onShowHpp ? (
+                    <button
+                      type="button"
+                      onClick={() => onShowHpp(line.channel)}
+                      className="rounded underline decoration-dotted decoration-muted-foreground/60 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary"
+                      title="Lihat rincian HPP per bahan channel ini"
+                    >
+                      {formatRp(line.hpp)}
+                    </button>
+                  ) : (
+                    formatRp(line.hpp)
+                  )}
+                </td>
                 <td className="py-1.5 px-2 text-right tabular-nums">
                   {formatRp(line.grossProfit)}
                 </td>
@@ -641,7 +624,22 @@ function ChannelDayTable({
               <td className="py-1.5 px-2 text-right tabular-nums">{day.orderCount}</td>
               <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(day.posNet)}</td>
               <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(day.payout)}</td>
-              <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(day.hpp)}</td>
+              <td className="py-1.5 px-2 text-right tabular-nums">
+                {onShowHpp ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onShowHpp(day.channels.length === 1 ? day.channels[0].channel : "")
+                    }
+                    className="rounded underline decoration-dotted decoration-muted-foreground/60 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary"
+                    title="Lihat rincian HPP per bahan"
+                  >
+                    {formatRp(day.hpp)}
+                  </button>
+                ) : (
+                  formatRp(day.hpp)
+                )}
+              </td>
               <td className="py-1.5 px-2 text-right tabular-nums">{formatRp(day.grossProfit)}</td>
               <td className={`py-1.5 px-2 text-right tabular-nums ${marginClass(day.margin)}`}>
                 {formatMargin(day.margin)}
@@ -676,15 +674,22 @@ function ChannelDayRow({
   day,
   branchId,
   channelFiltered,
+  onShowHpp,
 }: {
   day: DailyPnl;
   branchId: string | undefined;
   channelFiltered: boolean;
+  onShowHpp?: (channel: string) => void;
 }) {
   return (
     <tr className="bg-muted/30">
       <td colSpan={7} className="px-4 py-3">
-        <ChannelDayTable day={day} branchId={branchId} channelFiltered={channelFiltered} />
+        <ChannelDayTable
+          day={day}
+          branchId={branchId}
+          channelFiltered={channelFiltered}
+          onShowHpp={onShowHpp}
+        />
       </td>
     </tr>
   );
@@ -700,9 +705,11 @@ function ChannelDayRow({
 function ChannelPnlSection({
   rows,
   branchId,
+  onShowHpp,
 }: {
   rows: ChannelPnlRow[];
   branchId: string | undefined;
+  onShowHpp?: (date: string, channel: string) => void;
 }) {
   const byDate = useMemo(() => {
     const map = new Map<string, ChannelPnlRow[]>();
@@ -805,7 +812,20 @@ function ChannelPnlSection({
                         <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
                           {r.orderCount}
                         </td>
-                        <td className="py-2 px-3 text-right tabular-nums">{formatRp(r.hpp)}</td>
+                        <td className="py-2 px-3 text-right tabular-nums">
+                          {onShowHpp ? (
+                            <button
+                              type="button"
+                              onClick={() => onShowHpp(r.tanggal, r.channel)}
+                              className="rounded underline decoration-dotted decoration-muted-foreground/60 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary"
+                              title="Lihat rincian HPP per bahan channel ini"
+                            >
+                              {formatRp(r.hpp)}
+                            </button>
+                          ) : (
+                            formatRp(r.hpp)
+                          )}
+                        </td>
                         <td className="py-2 px-3 text-right tabular-nums">
                           {formatRp(r.grossSales)}
                         </td>
@@ -920,7 +940,18 @@ function ChannelPnlSection({
                     <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
                       <div>
                         <div className="text-muted-foreground">HPP</div>
-                        <div className="tabular-nums">{formatRp(r.hpp)}</div>
+                        {onShowHpp ? (
+                          <button
+                            type="button"
+                            onClick={() => onShowHpp(r.tanggal, r.channel)}
+                            className="tabular-nums underline decoration-dotted decoration-muted-foreground/60 underline-offset-2 transition-colors hover:text-primary"
+                            title="Lihat rincian HPP per bahan channel ini"
+                          >
+                            {formatRp(r.hpp)}
+                          </button>
+                        ) : (
+                          <div className="tabular-nums">{formatRp(r.hpp)}</div>
+                        )}
                       </div>
                       <div>
                         <div className="text-muted-foreground">Penjualan POS</div>
@@ -1189,7 +1220,6 @@ function FinancePage() {
   const [periodType, setPeriodType] = useState<PeriodType>("bulanan");
   const [selectedMonth, setSelectedMonth] = useState(() => currentMonthValue());
   const [selectedWeek, setSelectedWeek] = useState(0);
-  const [selectedDate, setSelectedDate] = useState(() => currentDateValue());
   const [harianDateFrom, setHarianDateFrom] = useState(() => currentDateValue());
   const [harianDateTo, setHarianDateTo] = useState(() => currentDateValue());
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
@@ -1197,6 +1227,8 @@ function FinancePage() {
 
   // Expandable HPP row
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  // HPP drill-down modal: which day + channel the clicked HPP number belongs to.
+  const [hppDetail, setHppDetail] = useState<{ date: string; channel: string } | null>(null);
   // Collapsible Stok Keluar detail — defaults open since it now owns a tab.
   const [usageExpanded, setUsageExpanded] = useState(true);
   // Expandable Selisih Kas detail row (per shift)
@@ -1221,11 +1253,14 @@ function FinancePage() {
     if (periodType === "mingguan") {
       return { from: weeks[selectedWeek].from, to: weeks[selectedWeek].to };
     }
+    // "Harian" is a range too. A cleared date input falls back to the other
+    // bound (and then to today) so the query can never become unbounded.
+    const today = currentDateValue();
     return {
-      from: harianDateFrom || selectedDate,
-      to: harianDateTo || harianDateFrom || selectedDate,
+      from: harianDateFrom || harianDateTo || today,
+      to: harianDateTo || harianDateFrom || today,
     };
-  }, [periodType, selectedMonth, selectedWeek, selectedDate, harianDateFrom, harianDateTo, weeks]);
+  }, [periodType, selectedMonth, selectedWeek, harianDateFrom, harianDateTo, weeks]);
 
   const branchId = selectedBranchId || undefined;
   const channel = selectedChannel || undefined;
@@ -1739,9 +1774,16 @@ function FinancePage() {
                       <div className="grid grid-cols-2 gap-3 border-t px-3.5 py-3">
                         <div>
                           <div className="text-xs text-muted-foreground">HPP</div>
-                          <div className="text-sm font-medium tabular-nums">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setHppDetail({ date: row.date, channel: selectedChannel })
+                            }
+                            className="text-sm font-medium tabular-nums underline decoration-dotted decoration-muted-foreground/60 underline-offset-2 transition-colors hover:text-primary"
+                            title="Lihat rincian HPP per bahan"
+                          >
                             {formatRp(row.hpp)}
-                          </div>
+                          </button>
                         </div>
                         <div className="text-right">
                           <div className="text-xs text-muted-foreground">Margin (total)</div>
@@ -1778,6 +1820,7 @@ function FinancePage() {
                             day={row}
                             branchId={branchId}
                             channelFiltered={!!channel}
+                            onShowHpp={(ch) => setHppDetail({ date: row.date, channel: ch })}
                           />
                           <OmzetBreakdownContent
                             branchId={selectedBranchId}
@@ -1790,7 +1833,6 @@ function FinancePage() {
                               branchId={selectedBranchId}
                               date={row.date}
                               channel={selectedChannel}
-                              dayChannels={row.channels}
                             />
                           </div>
                         </div>
@@ -1893,7 +1935,16 @@ function FinancePage() {
                               })}
                             </td>
                             <td className="py-2 px-3 text-right tabular-nums">
-                              {formatRp(row.hpp)}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setHppDetail({ date: row.date, channel: selectedChannel })
+                                }
+                                className="rounded underline decoration-dotted decoration-muted-foreground/60 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary"
+                                title="Lihat rincian HPP per bahan"
+                              >
+                                {formatRp(row.hpp)}
+                              </button>
                             </td>
                             <td
                               className={`py-2 px-3 text-right tabular-nums font-medium ${
@@ -1928,6 +1979,7 @@ function FinancePage() {
                                 day={row}
                                 branchId={branchId}
                                 channelFiltered={!!channel}
+                                onShowHpp={(ch) => setHppDetail({ date: row.date, channel: ch })}
                               />
                               <OmzetBreakdownRow
                                 branchId={selectedBranchId}
@@ -1939,7 +1991,6 @@ function FinancePage() {
                                 branchId={selectedBranchId}
                                 date={row.date}
                                 channel={selectedChannel}
-                                dayChannels={row.channels}
                               />
                             </>
                           )}
@@ -1998,7 +2049,11 @@ function FinancePage() {
 
       {/* Breakdown per Channel — sub-tab Per Channel */}
       {activeTab === "keuangan" && subTab === "channel" && (
-        <ChannelPnlSection rows={channelPnl ?? []} branchId={branchId} />
+        <ChannelPnlSection
+          rows={channelPnl ?? []}
+          branchId={branchId}
+          onShowHpp={(date, channel) => setHppDetail({ date, channel })}
+        />
       )}
 
       {/* Rincian Stok Keluar — sub-tab Stok Keluar */}
@@ -2405,6 +2460,15 @@ function FinancePage() {
           </div>
         </div>
       )}
+
+      {/* HPP drill-down modal — opened by any HPP number in the ledger. */}
+      <HppDetailModal
+        open={hppDetail !== null}
+        onClose={() => setHppDetail(null)}
+        branchId={selectedBranchId}
+        date={hppDetail?.date ?? ""}
+        channel={hppDetail?.channel ?? ""}
+      />
 
       {/* Revenue Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Input Revenue" size="lg">
