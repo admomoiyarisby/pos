@@ -208,17 +208,19 @@ function PencatatanManualPage() {
         </div>
       </div>
 
-      {/* HPP + Employee Meals side by side on large screens */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
+      {/* HPP + Employee Meals: fixed-width HPP rail, matrix takes the rest.
+          items-start stops the short matrix card from being stretched to the
+          height of the long HPP list. */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] gap-6 mb-8 items-start">
         {/* HPP Table */}
-        <section className="xl:col-span-1">
+        <section className="min-w-0">
           <h2 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
             Harga HPP Makan Pegawai
           </h2>
           <div className="rounded-lg border">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-muted/50">
+                <tr className="border-b bg-muted">
                   <th className="text-left py-2 px-3 font-medium">Menu</th>
                   <th className="text-right py-2 px-3 font-medium w-28">HPP</th>
                 </tr>
@@ -235,25 +237,39 @@ function PencatatanManualPage() {
           </div>
         </section>
 
-        {/* Employee Meals — table on md+, per-staff cards below (the dynamic
-            ingredient columns make the table unusable on a phone). */}
-        <section className="xl:col-span-2">
+        {/* Employee Meals — matrix on lg+ with frozen Nama/Total columns;
+            per-staff cards below lg (the sidebar leaves too little width at
+            md for the dynamic ingredient columns). */}
+        <section className="min-w-0">
           <h2 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
             Beban Makan Pegawai
           </h2>
-          {/* md+: full matrix table */}
-          <div className="hidden md:block rounded-lg border">
-            <div className="overflow-x-auto">
+          {/* lg+: full matrix table */}
+          <div className="hidden lg:block rounded-lg border">
+            <div
+              className="overflow-x-auto overscroll-x-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              tabIndex={0}
+              role="region"
+              aria-label="Beban makan pegawai per bahan"
+            >
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="text-left py-2 px-3 font-medium">Nama</th>
+                  <tr className="border-b bg-muted">
+                    <th className="sticky left-0 z-20 border-r border-border bg-muted py-2 px-3 text-left font-medium whitespace-nowrap">
+                      Nama
+                    </th>
                     {mealColumns.map((col) => (
-                      <th key={col} className="text-right py-2 px-2 font-medium min-w-[60px]">
+                      <th
+                        key={col}
+                        className="py-2 px-2 text-right font-medium whitespace-nowrap"
+                        title={col}
+                      >
                         {col}
                       </th>
                     ))}
-                    <th className="text-right py-2 px-3 font-medium w-28">Total</th>
+                    <th className="sticky right-0 z-20 w-28 border-l border-border bg-muted py-2 px-3 text-right font-medium whitespace-nowrap">
+                      Total
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -270,7 +286,7 @@ function PencatatanManualPage() {
                     <>
                       {mealsByStaff.map((staff) => (
                         <tr key={staff.staffName} className="border-b last:border-b-0">
-                          <td className="py-1.5 px-3 font-medium whitespace-nowrap">
+                          <td className="sticky left-0 z-10 border-r border-border bg-background py-1.5 px-3 font-medium whitespace-nowrap">
                             {staff.staffName}
                           </td>
                           {mealColumns.map((col) => (
@@ -278,13 +294,15 @@ function PencatatanManualPage() {
                               {staff.items.get(col) ?? "-"}
                             </td>
                           ))}
-                          <td className="py-1.5 px-3 text-right tabular-nums font-medium">
+                          <td className="sticky right-0 z-10 border-l border-border bg-background py-1.5 px-3 text-right tabular-nums font-medium">
                             {formatRp(staff.total)}
                           </td>
                         </tr>
                       ))}
                       <tr className="border-t-2 font-semibold bg-muted/30">
-                        <td className="py-2 px-3">Total</td>
+                        <td className="sticky left-0 z-10 border-r border-border bg-muted py-2 px-3">
+                          Total
+                        </td>
                         {mealColumns.map((col) => {
                           const t = mealsByStaff.reduce((s, st) => s + (st.items.get(col) ?? 0), 0);
                           return (
@@ -293,7 +311,7 @@ function PencatatanManualPage() {
                             </td>
                           );
                         })}
-                        <td className="py-2 px-3 text-right tabular-nums">
+                        <td className="sticky right-0 z-10 border-l border-border bg-muted py-2 px-3 text-right tabular-nums">
                           {formatRp(mealsByStaff.reduce((s, st) => s + st.total, 0))}
                         </td>
                       </tr>
@@ -311,10 +329,13 @@ function PencatatanManualPage() {
                 </tbody>
               </table>
             </div>
+            <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+              Geser ke samping untuk melihat semua bahan.
+            </p>
           </div>
-          {/* <md: one card per staff — ingredient counts as wrapped chips,
+          {/* <lg: one card per staff — ingredient counts as wrapped chips,
               so nothing scrolls horizontally. */}
-          <ul className="md:hidden space-y-2" aria-label="Beban makan per pegawai">
+          <ul className="lg:hidden space-y-2" aria-label="Beban makan per pegawai">
             {mealsLoading ? (
               <li className="rounded-xl border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
                 Memuat…
@@ -363,7 +384,7 @@ function PencatatanManualPage() {
         <div className="hidden md:block rounded-lg border">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b bg-muted/50">
+              <tr className="border-b bg-muted">
                 <th className="text-left py-2 px-3 font-medium w-12 whitespace-nowrap">No</th>
                 <th className="text-left py-2 px-3 font-medium">Items</th>
                 <th className="text-left py-2 px-3 font-medium w-28">Tanggal</th>
@@ -440,7 +461,7 @@ function PencatatanManualPage() {
           Rekap Keuangan
         </h2>
         <div className="rounded-lg border overflow-hidden">
-          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x">
+          <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x">
             {/* Left: Cost breakdown */}
             <div className="p-4 space-y-3">
               <div className="text-center mb-2">
