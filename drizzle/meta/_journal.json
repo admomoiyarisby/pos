@@ -477,6 +477,13 @@
       "when": 1794000000000,
       "tag": "0064_omzet_override_to_adjustment",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1795000000000,
+      "tag": "0065_normalize_channel_revenue_dates",
+      "breakpoints": true
     }
   ]
 }
