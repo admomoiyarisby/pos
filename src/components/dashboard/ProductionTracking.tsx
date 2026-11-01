@@ -299,8 +299,55 @@ export function ProductionTrackingSection({
           <h3 className="text-base font-bold text-foreground">Rincian Produksi per Cabang</h3>
           <p className="text-sm text-muted-foreground">Apa saja yang dimasak dan totalnya</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-left">
+        <div className="space-y-2 lg:hidden">
+          {summary.branches.length === 0 ? (
+            <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm italic text-muted-foreground">
+              Belum ada catatan produksi aktif.
+            </p>
+          ) : (
+            summary.branches.map((branch) => (
+              <div key={branch.branchId} className="rounded-md border p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {branch.branchName}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatQuantity(branch.batches)} batch
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Total
+                    </p>
+                    <p className="text-sm font-semibold tabular-nums text-foreground">
+                      {formatQuantity(branch.producedTotal)}
+                    </p>
+                  </div>
+                </div>
+                {branch.produced.length > 0 && (
+                  <div className="mt-2 space-y-1 border-t pt-2">
+                    {branch.produced.map((item) => (
+                      <div
+                        key={item.ingredientId}
+                        className="flex items-baseline justify-between gap-3 text-sm"
+                      >
+                        <span className="min-w-0 truncate">{item.name}</span>
+                        <span className="shrink-0 whitespace-nowrap tabular-nums text-muted-foreground">
+                          {formatQuantity(item.quantity)}
+                          {item.unit ? ` ${item.unit}` : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto lg:block">
+          <table className="w-full min-w-[640px] border-collapse text-left">
             <thead>
               <tr className="border-b">
                 <th className="whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

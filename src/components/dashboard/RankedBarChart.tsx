@@ -42,7 +42,7 @@ export function RankedBarChart({
     [data],
   );
 
-  const height = Math.max(180, chartData.length * 32 + 24);
+  const height = Math.max(140, chartData.length * 32 + 24);
 
   const definition = useMemo(
     () =>
@@ -101,7 +101,7 @@ export function RankedBarChart({
 
   if (chartData.length === 0) {
     return (
-      <div className="flex h-44 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
+      <div className="flex h-28 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
         Belum ada data
       </div>
     );

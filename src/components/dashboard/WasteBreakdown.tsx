@@ -245,29 +245,42 @@ function WasteCategoryCard({ category }: { category: WasteCategorySummary }) {
     value: item.subtotal,
   }));
 
+  const header = (
+    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h3 className="flex items-center gap-2 text-base font-bold text-foreground">
+          <span
+            className="h-2.5 w-2.5 rounded-full"
+            style={{ backgroundColor: category.color }}
+            aria-hidden="true"
+          />
+          {category.label}
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          {formatQuantity(category.entries)} entri · {formatQuantity(category.items.length)} item
+        </p>
+      </div>
+      <div className="text-right">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total</p>
+        <p className="text-lg font-bold tabular-nums text-foreground">{formatRp(category.total)}</p>
+      </div>
+    </div>
+  );
+
+  if (category.items.length === 0) {
+    return (
+      <div className="rounded-lg border bg-card p-3 shadow-sm md:p-4">
+        {header}
+        <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm italic text-muted-foreground">
+          Belum ada data.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border bg-card p-3 shadow-sm md:p-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="flex items-center gap-2 text-base font-bold text-foreground">
-            <span
-              className="h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: category.color }}
-              aria-hidden="true"
-            />
-            {category.label}
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            {formatQuantity(category.entries)} entri · {formatQuantity(category.items.length)} item
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total</p>
-          <p className="text-lg font-bold tabular-nums text-foreground">
-            {formatRp(category.total)}
-          </p>
-        </div>
-      </div>
+      {header}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div>
@@ -287,7 +300,38 @@ function WasteCategoryCard({ category }: { category: WasteCategorySummary }) {
           )}
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="lg:hidden">
+          {category.items.length === 0 ? (
+            <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm italic text-muted-foreground">
+              Belum ada data.
+            </p>
+          ) : (
+            <div className="divide-y">
+              {category.items.map((item) => (
+                <div key={item.id} className="flex items-start justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{item.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatQuantity(item.quantity)}
+                      {item.unit ? ` ${item.unit}` : ""} · {formatQuantity(item.entries)} entri
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                    {formatRp(item.subtotal)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+          {category.items.length > 0 && (
+            <div className="mt-2 flex items-center justify-between border-t-2 pt-2 text-sm font-semibold text-foreground">
+              <span>Total</span>
+              <span className="tabular-nums">{formatRp(category.total)}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto lg:block">
           <table className="w-full min-w-[360px] border-collapse text-left">
             <thead>
               <tr className="border-b">
@@ -376,8 +420,8 @@ export function WasteBreakdownSection({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <div className="rounded-lg border bg-card p-4 shadow-sm">
+      <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-5">
+        <div className="col-span-1 rounded-lg border bg-card p-4 shadow-sm min-[360px]:col-span-2 lg:col-span-1">
           <div className="flex items-center gap-2 text-muted-foreground">
             <AlertTriangle className="h-4 w-4" />
             <span className="text-xs font-medium uppercase tracking-wide">Total Waste</span>

@@ -306,13 +306,15 @@ function DashboardPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <TabsList>
-            <TabsTrigger value="ringkasan">Ringkasan</TabsTrigger>
-            <TabsTrigger value="operasional">Operasional</TabsTrigger>
-            {isSuperAdmin && <TabsTrigger value="produksi-waste">Produksi & Waste</TabsTrigger>}
-            {isSuperAdmin && <TabsTrigger value="keuangan">Keuangan</TabsTrigger>}
-            {isSuperAdmin && <TabsTrigger value="inventaris">Inventaris</TabsTrigger>}
-          </TabsList>
+          <div className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <TabsList className="w-max">
+              <TabsTrigger value="ringkasan">Ringkasan</TabsTrigger>
+              <TabsTrigger value="operasional">Operasional</TabsTrigger>
+              {isSuperAdmin && <TabsTrigger value="produksi-waste">Produksi & Waste</TabsTrigger>}
+              {isSuperAdmin && <TabsTrigger value="keuangan">Keuangan</TabsTrigger>}
+              {isSuperAdmin && <TabsTrigger value="inventaris">Inventaris</TabsTrigger>}
+            </TabsList>
+          </div>
 
           {/* ─── Ringkasan (Overview) ─── */}
           <TabsContent value="ringkasan">
@@ -348,8 +350,8 @@ function DashboardPage() {
             <TabsContent value="produksi-waste">
               <div className="space-y-8">
                 <div className="rounded-lg border bg-card p-3 shadow-sm md:p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-                    <div className="w-full space-y-1 sm:w-44">
+                  <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3">
+                    <div className="space-y-1 sm:w-44">
                       <label
                         htmlFor="produksi-waste-period"
                         className="text-xs font-medium text-muted-foreground"
@@ -370,7 +372,7 @@ function DashboardPage() {
                       </select>
                     </div>
 
-                    <div className="grid flex-1 grid-cols-2 gap-2 sm:flex-none">
+                    <div className="order-3 col-span-2 grid grid-cols-2 gap-2 sm:order-none sm:flex">
                       <div className="space-y-1">
                         <label
                           htmlFor="produksi-waste-from"
@@ -409,7 +411,7 @@ function DashboardPage() {
                       </div>
                     </div>
 
-                    <div className="w-full space-y-1 sm:w-56">
+                    <div className="order-2 space-y-1 sm:order-none sm:w-56">
                       <label
                         htmlFor="produksi-waste-branch"
                         className="text-xs font-medium text-muted-foreground"
@@ -431,7 +433,7 @@ function DashboardPage() {
                       </select>
                     </div>
 
-                    <p className="text-xs text-muted-foreground sm:ml-auto sm:pb-2">
+                    <p className="order-4 col-span-2 text-xs text-muted-foreground sm:order-none sm:ml-auto sm:pb-2">
                       {productionWastePeriod === "semua"
                         ? "Semua waktu"
                         : `${productionWasteRange.from || "…"} — ${productionWasteRange.to || "…"}`}

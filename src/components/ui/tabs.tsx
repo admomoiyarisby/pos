@@ -50,6 +50,21 @@ interface TabsListProps {
 
 function TabsList({ children, className }: TabsListProps) {
   const listRef = React.useRef<HTMLDivElement>(null);
+  const { activeTab } = useTabs();
+
+  React.useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+
+    const scrollActive = () => {
+      const active = list.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
+      active?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+
+    scrollActive();
+    window.addEventListener("resize", scrollActive);
+    return () => window.removeEventListener("resize", scrollActive);
+  }, [activeTab]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
