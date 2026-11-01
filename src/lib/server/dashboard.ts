@@ -17,8 +17,10 @@ import {
   manualRevenueBrandBreakdowns,
   recipeChildRecipes,
   recipeBrands,
+  yieldConversions,
+  yieldConversionItems,
 } from "#/db/schema";
-import { eq, and, desc, inArray, lt, ne } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull, lt, ne } from "drizzle-orm";
 import { requireAuth } from "./auth";
 import type { AppUser } from "./auth";
 
@@ -40,6 +42,7 @@ export async function fetchDashboardData(user: AppUser) {
     allBrands,
     allPlatformFees,
     allStockOpnames,
+    productionData,
     wasteData,
     manualRevData,
   ] = await Promise.all([
@@ -103,16 +106,67 @@ export async function fetchDashboardData(user: AppUser) {
     // Stock opnames
     db.select().from(stockOpnames).orderBy(desc(stockOpnames.createdAt)),
 
-    // Waste entries
+    // Production records — cancelled and tombstoned records never count toward
+    // the production tracker (ADR 0012 / ADR 0019).
     (async () => {
-      const wasteFilter =
-        user.role === "branch_admin" && user.branchId
-          ? eq(wasteEntries.branchId, user.branchId)
-          : undefined;
+      const productionConditions = [
+        eq(yieldConversions.status, "Active"),
+        isNull(yieldConversions.deletedAt),
+      ];
+      if (user.role === "branch_admin" && user.branchId) {
+        productionConditions.push(eq(yieldConversions.branchId, user.branchId));
+      } else if (user.role === "area_manager" && user.assignedBranches?.length) {
+        productionConditions.push(inArray(yieldConversions.branchId, user.assignedBranches));
+      }
       return db
-        .select()
+        .select({
+          id: yieldConversions.id,
+          branchId: yieldConversions.branchId,
+          branchName: branches.name,
+          notes: yieldConversions.notes,
+          productionDate: yieldConversions.productionDate,
+          createdAt: yieldConversions.createdAt,
+          status: yieldConversions.status,
+        })
+        .from(yieldConversions)
+        .leftJoin(branches, eq(yieldConversions.branchId, branches.id))
+        .where(and(...productionConditions))
+        .orderBy(desc(yieldConversions.productionDate));
+    })(),
+
+    // Waste entries — only Active, non-deleted rows count. Cancelled entries
+    // stop counting toward loss totals (CONTEXT: Waste Cancellation) and
+    // tombstoned rows never appear in lists.
+    (async () => {
+      const wasteConditions = [isNull(wasteEntries.deletedAt), eq(wasteEntries.status, "Active")];
+      if (user.role === "branch_admin" && user.branchId) {
+        wasteConditions.push(eq(wasteEntries.branchId, user.branchId));
+      } else if (user.role === "area_manager" && user.assignedBranches?.length) {
+        wasteConditions.push(inArray(wasteEntries.branchId, user.assignedBranches));
+      }
+      return db
+        .select({
+          id: wasteEntries.id,
+          branchId: wasteEntries.branchId,
+          branchName: branches.name,
+          ingredientId: wasteEntries.ingredientId,
+          ingredientName: ingredients.name,
+          ingredientUnit: ingredients.stockUnit,
+          recipeId: wasteEntries.recipeId,
+          recipeName: recipes.name,
+          quantity: wasteEntries.quantity,
+          category: wasteEntries.category,
+          staffName: wasteEntries.staffName,
+          notes: wasteEntries.notes,
+          valuation: wasteEntries.valuation,
+          createdAt: wasteEntries.createdAt,
+          status: wasteEntries.status,
+        })
         .from(wasteEntries)
-        .where(wasteFilter ? and(wasteFilter) : undefined)
+        .leftJoin(ingredients, eq(wasteEntries.ingredientId, ingredients.id))
+        .leftJoin(recipes, eq(wasteEntries.recipeId, recipes.id))
+        .leftJoin(branches, eq(wasteEntries.branchId, branches.id))
+        .where(and(...wasteConditions))
         .orderBy(desc(wasteEntries.createdAt));
     })(),
 
@@ -127,6 +181,7 @@ export async function fetchDashboardData(user: AppUser) {
   const recipeIdList = allRecipes.map((r) => r.id);
   const soIdList = allStockOpnames.map((s) => s.id);
   const mrIdList = manualRevData.map((m) => m.id);
+  const productionIdList = productionData.map((p) => p.id);
 
   const [
     orderItemsData,
@@ -135,6 +190,7 @@ export async function fetchDashboardData(user: AppUser) {
     recipeBrandsData,
     soItems,
     mrBrandBreakdowns,
+    productionItemsData,
   ] = await Promise.all([
     orderIdList.length > 0
       ? db
@@ -175,6 +231,21 @@ export async function fetchDashboardData(user: AppUser) {
           .from(manualRevenueBrandBreakdowns)
           .where(inArray(manualRevenueBrandBreakdowns.manualRevenueId, mrIdList))
       : Promise.resolve([]),
+
+    productionIdList.length > 0
+      ? db
+          .select({
+            conversionId: yieldConversionItems.conversionId,
+            ingredientId: yieldConversionItems.ingredientId,
+            ingredientName: ingredients.name,
+            stockUnit: ingredients.stockUnit,
+            quantity: yieldConversionItems.quantity,
+            direction: yieldConversionItems.direction,
+          })
+          .from(yieldConversionItems)
+          .leftJoin(ingredients, eq(yieldConversionItems.ingredientId, ingredients.id))
+          .where(inArray(yieldConversionItems.conversionId, productionIdList))
+      : Promise.resolve([]),
   ]);
 
   return {
@@ -202,6 +273,28 @@ export async function fetchDashboardData(user: AppUser) {
       ...so,
       items: soItems.filter((si) => si.stockOpnameId === so.id),
     })),
+    production: productionData.map((record) => {
+      const recordItems = productionItemsData.filter((item) => item.conversionId === record.id);
+      return {
+        ...record,
+        out: recordItems
+          .filter((item) => item.direction === "OUT")
+          .map((item) => ({
+            ingredientId: item.ingredientId,
+            ingredientName: item.ingredientName,
+            stockUnit: item.stockUnit,
+            quantity: item.quantity,
+          })),
+        produced: recordItems
+          .filter((item) => item.direction === "PRODUCED")
+          .map((item) => ({
+            ingredientId: item.ingredientId,
+            ingredientName: item.ingredientName,
+            stockUnit: item.stockUnit,
+            quantity: item.quantity,
+          })),
+      };
+    }),
     wasteEntries: wasteData,
     manualRevenues: manualRevData.map((mr) => ({
       ...mr,

@@ -4,7 +4,11 @@ import { Pagination } from "#/components/ui/Pagination";
 interface WasteEntry {
   id: string;
   ingredientId: string | null;
+  ingredientName?: string | null;
+  recipeId?: string | null;
+  recipeName?: string | null;
   quantity: number;
+  valuation?: number;
 }
 
 interface Ingredient {
@@ -20,10 +24,15 @@ export function computeWasteLoss(wasteEntries: WasteEntry[], ingredients: Ingred
     .map((w) => {
       const ing = ingredients.find((i) => i.id === w.ingredientId);
       const costPerUnit = ing ? ing.averageCost : 0;
-      const lossAmount = w.quantity * costPerUnit;
+      // Prefer the valuation frozen on the waste row; recomputing from today's
+      // averageCost would disagree with the value the entry was recorded at.
+      const lossAmount = w.valuation ?? w.quantity * costPerUnit;
+      const isRecipe = !!w.recipeId;
       return {
         ...w,
-        ingredientName: ing?.name ?? w.ingredientId ?? "Bahan tidak ditemukan",
+        ingredientName: isRecipe
+          ? (w.recipeName ?? "Menu")
+          : (w.ingredientName ?? ing?.name ?? w.ingredientId ?? "Item tidak ditemukan"),
         lossAmount,
       };
     })
@@ -45,7 +54,7 @@ export function WasteLossTable({
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">Laporan Kerugian Waste (COGS)</h3>
         <p className="text-sm text-muted-foreground">
-          Detail kerugian finansial akibat waste bahan baku
+          Detail kerugian finansial akibat waste bahan baku & menu
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -53,7 +62,7 @@ export function WasteLossTable({
           <thead>
             <tr className="border-b">
               <th className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase text-muted-foreground sticky left-0 bg-background z-10 border-r border-border">
-                Bahan Baku
+                Bahan Baku / Menu
               </th>
               <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-bold uppercase text-muted-foreground">
                 Jumlah Waste
@@ -70,7 +79,8 @@ export function WasteLossTable({
                   colSpan={3}
                   className="sticky left-0 bg-background z-10 border-r border-border whitespace-nowrap py-8 text-center italic text-muted-foreground"
                 >
-                  Belum ada pencatatan waste. Catat waste bahan baku untuk melihat laporan kerugian.
+                  Belum ada pencatatan waste. Catat waste bahan baku atau menu untuk melihat laporan
+                  kerugian.
                 </td>
               </tr>
             ) : (

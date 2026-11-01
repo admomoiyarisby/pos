@@ -5,6 +5,9 @@ import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
 import { getDashboardData } from "#/lib/server/dashboard";
+import type { DashboardFilter } from "#/lib/dashboard-filter";
+import { currentDateValue, currentMonthValue, lastDayOfMonth } from "#/lib/report-period";
+import { toDateInputValue } from "#/lib/utils";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "#/components/ui/tabs";
 import { StatsCards } from "#/components/dashboard/StatsCards";
 import { AnomalyAlerts, type Anomaly } from "#/components/dashboard/AnomalyAlerts";
@@ -24,10 +27,63 @@ import { HppAlertCards, computeHppAlerts } from "#/components/dashboard/HppAlert
 import { DiscrepancyTable, computeDiscrepancies } from "#/components/dashboard/DiscrepancyTable";
 import { WasteLossTable, computeWasteLoss } from "#/components/dashboard/WasteLossTable";
 import { OrderHistoryTable } from "#/components/dashboard/OrderHistoryTable";
+import { ProductionTrackingSection } from "#/components/dashboard/ProductionTracking";
+import { WasteBreakdownSection } from "#/components/dashboard/WasteBreakdown";
 
 export const Route = createFileRoute("/_layout/dashboard")({
   component: DashboardPage,
 });
+
+type DashboardPeriod = "bulan-ini" | "bulan-lalu" | "30-hari" | "semua" | "custom";
+
+interface DateRange {
+  from: string;
+  to: string;
+}
+
+const PERIOD_OPTIONS: { value: DashboardPeriod; label: string }[] = [
+  { value: "bulan-ini", label: "Bulan ini" },
+  { value: "bulan-lalu", label: "Bulan lalu" },
+  { value: "30-hari", label: "30 hari terakhir" },
+  { value: "semua", label: "Semua waktu" },
+  { value: "custom", label: "Rentang khusus" },
+];
+
+/** Jakarta calendar month as an inclusive `YYYY-MM-DD` range. */
+function monthRange(monthOffset: number, now = new Date()): DateRange {
+  const [year, month] = currentMonthValue(now).split("-").map(Number);
+  const target = new Date(Date.UTC(year, month - 1 + monthOffset, 1));
+  const targetYear = target.getUTCFullYear();
+  const targetMonth = target.getUTCMonth() + 1;
+  const ym = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
+  const lastDay = lastDayOfMonth(targetYear, targetMonth);
+  return {
+    from: `${ym}-01`,
+    to: `${ym}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+/** Inclusive rolling 30-day window ending today (Jakarta). */
+function thirtyDayRange(now = new Date()): DateRange {
+  return {
+    from: toDateInputValue(new Date(now.getTime() - 29 * 86400000)),
+    to: currentDateValue(now),
+  };
+}
+
+function presetRange(
+  period: Exclude<DashboardPeriod, "custom" | "semua">,
+  now = new Date(),
+): DateRange {
+  switch (period) {
+    case "bulan-ini":
+      return monthRange(0, now);
+    case "bulan-lalu":
+      return monthRange(-1, now);
+    case "30-hari":
+      return thirtyDayRange(now);
+  }
+}
 
 function DashboardPage() {
   const { user } = useAuth();
@@ -47,8 +103,16 @@ function DashboardPage() {
   const [activeTab, setActiveTab] = React.useState(() => {
     try {
       const stored = localStorage.getItem("dashboard-tab");
-      if (stored && ["ringkasan", "operasional", "keuangan", "inventaris"].includes(stored)) {
-        if ((stored === "keuangan" || stored === "inventaris") && !isSuperAdmin) return "ringkasan";
+      if (
+        stored &&
+        ["ringkasan", "operasional", "produksi-waste", "keuangan", "inventaris"].includes(stored)
+      ) {
+        if (
+          (stored === "keuangan" || stored === "inventaris" || stored === "produksi-waste") &&
+          !isSuperAdmin
+        ) {
+          return "ringkasan";
+        }
         return stored;
       }
     } catch {}
@@ -60,6 +124,35 @@ function DashboardPage() {
     try {
       localStorage.setItem("dashboard-tab", value);
     } catch {}
+  };
+
+  const [productionWastePeriod, setProductionWastePeriod] =
+    React.useState<DashboardPeriod>("bulan-ini");
+  const [productionWasteRange, setProductionWasteRange] = React.useState<DateRange>(() =>
+    monthRange(0),
+  );
+  const [productionWasteBranchId, setProductionWasteBranchId] = React.useState("");
+
+  const productionWasteFilter: DashboardFilter = React.useMemo(
+    () => ({
+      from: productionWasteRange.from || undefined,
+      to: productionWasteRange.to || undefined,
+      branchId: productionWasteBranchId || undefined,
+    }),
+    [productionWasteRange, productionWasteBranchId],
+  );
+
+  const handlePeriodChange = (value: string) => {
+    const next = PERIOD_OPTIONS.find((option) => option.value === value)?.value;
+    if (!next) return;
+
+    setProductionWastePeriod(next);
+    if (next === "semua") {
+      setProductionWasteRange({ from: "", to: "" });
+      return;
+    }
+    if (next === "custom") return;
+    setProductionWasteRange(presetRange(next));
   };
 
   if (isLoading) {
@@ -105,6 +198,7 @@ function DashboardPage() {
     stockOpnames,
     wasteEntries,
     manualRevenues,
+    production,
   } = data;
 
   // Hydrate orders with items
@@ -215,6 +309,7 @@ function DashboardPage() {
           <TabsList>
             <TabsTrigger value="ringkasan">Ringkasan</TabsTrigger>
             <TabsTrigger value="operasional">Operasional</TabsTrigger>
+            {isSuperAdmin && <TabsTrigger value="produksi-waste">Produksi & Waste</TabsTrigger>}
             {isSuperAdmin && <TabsTrigger value="keuangan">Keuangan</TabsTrigger>}
             {isSuperAdmin && <TabsTrigger value="inventaris">Inventaris</TabsTrigger>}
           </TabsList>
@@ -247,6 +342,108 @@ function DashboardPage() {
               />
             </div>
           </TabsContent>
+
+          {/* ─── Produksi & Waste — super_admin only ─── */}
+          {isSuperAdmin && (
+            <TabsContent value="produksi-waste">
+              <div className="space-y-8">
+                <div className="rounded-lg border bg-card p-3 shadow-sm md:p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                    <div className="w-full space-y-1 sm:w-44">
+                      <label
+                        htmlFor="produksi-waste-period"
+                        className="text-xs font-medium text-muted-foreground"
+                      >
+                        Periode
+                      </label>
+                      <select
+                        id="produksi-waste-period"
+                        value={productionWastePeriod}
+                        onChange={(e) => handlePeriodChange(e.target.value)}
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-9"
+                      >
+                        {PERIOD_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid flex-1 grid-cols-2 gap-2 sm:flex-none">
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="produksi-waste-from"
+                          className="text-xs font-medium text-muted-foreground"
+                        >
+                          Dari
+                        </label>
+                        <input
+                          id="produksi-waste-from"
+                          type="date"
+                          value={productionWasteRange.from}
+                          onChange={(e) => {
+                            setProductionWastePeriod("custom");
+                            setProductionWasteRange((prev) => ({ ...prev, from: e.target.value }));
+                          }}
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-9 sm:w-36"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="produksi-waste-to"
+                          className="text-xs font-medium text-muted-foreground"
+                        >
+                          Sampai
+                        </label>
+                        <input
+                          id="produksi-waste-to"
+                          type="date"
+                          value={productionWasteRange.to}
+                          onChange={(e) => {
+                            setProductionWastePeriod("custom");
+                            setProductionWasteRange((prev) => ({ ...prev, to: e.target.value }));
+                          }}
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-9 sm:w-36"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="w-full space-y-1 sm:w-56">
+                      <label
+                        htmlFor="produksi-waste-branch"
+                        className="text-xs font-medium text-muted-foreground"
+                      >
+                        Cabang
+                      </label>
+                      <select
+                        id="produksi-waste-branch"
+                        value={productionWasteBranchId}
+                        onChange={(e) => setProductionWasteBranchId(e.target.value)}
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-9"
+                      >
+                        <option value="">Semua Cabang</option>
+                        {branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground sm:ml-auto sm:pb-2">
+                      {productionWastePeriod === "semua"
+                        ? "Semua waktu"
+                        : `${productionWasteRange.from || "…"} — ${productionWasteRange.to || "…"}`}
+                    </p>
+                  </div>
+                </div>
+
+                <ProductionTrackingSection records={production} filter={productionWasteFilter} />
+                <WasteBreakdownSection entries={wasteEntries} filter={productionWasteFilter} />
+              </div>
+            </TabsContent>
+          )}
 
           {/* ─── Keuangan (Financials) — super_admin only ─── */}
           {isSuperAdmin && (
