@@ -83,6 +83,12 @@ const CHANNELS = [
   { label: "Perlengkapan", value: "Perlengkapan" },
 ];
 
+// The one line in the breakdown that is not an ingredient: HPP recorded on
+// orders that carry no item composition (manual "Data Penjualan" entries,
+// post-hoc totalCogs edits, items with no usable cost). Shown explicitly so
+// that money is never silently attributed to, say, rice.
+const UNALLOCATED_LABEL = "Tidak teralokasi";
+
 // HPP-per-bahan breakdown for a single day. The content is shared by the
 // desktop table row and the mobile day card, so both stay in sync.
 function HppBreakdownContent({
@@ -106,11 +112,13 @@ function HppBreakdownContent({
     return <p className="text-sm text-muted-foreground">Memuat rincian HPP per bahan…</p>;
   }
 
-  if (!data || data.length === 0) {
+  const rows = data?.rows ?? [];
+  const unallocated = data?.unallocated ?? 0;
+
+  if (rows.length === 0 && unallocated === 0) {
     return <p className="text-sm text-muted-foreground">Tidak ada rincian bahan untuk hari ini.</p>;
   }
 
-  const total = data.reduce((s, d) => s + d.cost, 0);
   const dateStr = new Date(date + "T00:00:00").toLocaleDateString("id-ID", {
     day: "numeric",
     month: "long",
@@ -123,7 +131,7 @@ function HppBreakdownContent({
         <span className="ml-2 normal-case">(nilai biaya, bukan jumlah fisik)</span>
       </div>
       <div className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
-        {data.map((d) => (
+        {rows.map((d) => (
           <div
             key={d.ingredientId}
             className="flex items-center justify-between text-sm py-1 border-b border-border/40"
@@ -132,9 +140,17 @@ function HppBreakdownContent({
             <span className="tabular-nums font-medium shrink-0">{formatRp(d.cost)}</span>
           </div>
         ))}
+        {unallocated !== 0 && (
+          <div className="flex items-center justify-between text-sm py-1 border-b border-border/40">
+            <span className="truncate pr-2 text-amber-600">{UNALLOCATED_LABEL}</span>
+            <span className="tabular-nums font-medium shrink-0 text-amber-600">
+              {formatRp(unallocated)}
+            </span>
+          </div>
+        )}
       </div>
       <div className="flex justify-end mt-2 pt-2 border-t text-sm font-semibold">
-        Total HPP: <span className="tabular-nums ml-2">{formatRp(total)}</span>
+        Total HPP: <span className="tabular-nums ml-2">{formatRp(data?.totalCogs ?? 0)}</span>
       </div>
     </>
   );
@@ -219,9 +235,9 @@ function HppCompositionChart({ data }: { data: { name: string; cost: number }[] 
 // HPP drill-down. The ledger's HPP number is Σ orders.totalCogs, persisted at
 // sale time — it cannot be recomputed from today's BOM because discounts,
 // modifiers, exclusions and BOGO all shaped it. The server re-resolves each
-// order item's persisted composition and scales the shares so they add up to
-// that exact total; this modal ranks the ingredients so the biggest cost
-// drivers are obvious.
+// order item's frozen composition and scales that item's shares to its own
+// recorded COGS, then reports whatever the day total could not attribute as an
+// explicit "Tidak teralokasi" line instead of smearing it over ingredients.
 function HppDetailModal({
   open,
   onClose,
@@ -244,7 +260,12 @@ function HppDetailModal({
     enabled: open,
   });
 
-  const total = (data ?? []).reduce((s, d) => s + d.cost, 0);
+  const rows = data?.rows ?? [];
+  const unallocated = data?.unallocated ?? 0;
+  const totalCogs = data?.totalCogs ?? 0;
+  const porsi = (cost: number) =>
+    totalCogs > 0 ? `${((cost / totalCogs) * 100).toFixed(1)}%` : "—";
+
   const dateStr = date
     ? new Date(date + "T00:00:00").toLocaleDateString("id-ID", {
         weekday: "long",
@@ -253,6 +274,8 @@ function HppDetailModal({
         year: "numeric",
       })
     : "";
+
+  const isEmpty = !isLoading && rows.length === 0 && unallocated === 0;
 
   return (
     <Modal
@@ -265,7 +288,7 @@ function HppDetailModal({
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm text-muted-foreground">{dateStr}</p>
           <p className="text-sm">
-            Total HPP <span className="font-semibold tabular-nums">{formatRp(total)}</span>
+            Total HPP <span className="font-semibold tabular-nums">{formatRp(totalCogs)}</span>
           </p>
         </div>
 
@@ -273,13 +296,13 @@ function HppDetailModal({
           <p className="py-8 text-center text-sm text-muted-foreground">
             Memuat rincian HPP per bahan…
           </p>
-        ) : !data || data.length === 0 ? (
+        ) : isEmpty ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             Tidak ada rincian bahan untuk periode ini.
           </p>
         ) : (
           <>
-            <HppCompositionChart data={data} />
+            {rows.length > 0 && <HppCompositionChart data={rows} />}
 
             <div className="rounded-lg border overflow-hidden">
               <table className="w-full text-sm">
@@ -292,25 +315,50 @@ function HppDetailModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((d) => (
-                    <tr key={d.ingredientId} className="border-b last:border-0">
+                  {rows.map((d) => (
+                    <tr key={d.ingredientId} className="border-b">
                       <td className="py-1.5 px-3">{d.name}</td>
                       <td className="py-1.5 px-3 text-muted-foreground">{d.category || "—"}</td>
                       <td className="py-1.5 px-3 text-right tabular-nums">{formatRp(d.cost)}</td>
                       <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">
-                        {total > 0 ? `${((d.cost / total) * 100).toFixed(1)}%` : "—"}
+                        {porsi(d.cost)}
                       </td>
                     </tr>
                   ))}
+                  {unallocated !== 0 && (
+                    <tr className="bg-amber-500/5">
+                      <td className="py-1.5 px-3 font-medium text-amber-700 dark:text-amber-400">
+                        {UNALLOCATED_LABEL}
+                      </td>
+                      <td className="py-1.5 px-3 text-muted-foreground">—</td>
+                      <td className="py-1.5 px-3 text-right tabular-nums text-amber-700 dark:text-amber-400">
+                        {formatRp(unallocated)}
+                      </td>
+                      <td className="py-1.5 px-3 text-right tabular-nums text-amber-700 dark:text-amber-400">
+                        {porsi(unallocated)}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 font-semibold">
+                    <td className="py-2 px-3" colSpan={2}>
+                      Total HPP
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums">{formatRp(totalCogs)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">100%</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
 
             <p className="text-xs text-muted-foreground">
-              HPP diambil dari totalCogs yang tersimpan di tiap order (bukan hitungan ulang dari BOM
-              saat ini), lalu porsi tiap bahan diskalakan agar jumlahnya tepat sama dengan kolom
-              HPP.
-              {data.length > HPP_CHART_TOP_N &&
+              Tiap item diskalakan ke HPP yang tersimpan di baris ordernya (cogsAtTransaction ×
+              qty), jadi dua transaksi resep yang sama dengan modifier berbeda tetap dihitung
+              terpisah. HPP yang tidak bisa diatribusikan ke bahan — penjualan tanpa rincian item
+              (Data Penjualan) atau total yang diedit setelah transaksi — muncul sebagai &quot;
+              {UNALLOCATED_LABEL}&quot;.
+              {rows.length > HPP_CHART_TOP_N &&
                 ` Grafik menampilkan ${HPP_CHART_TOP_N} bahan terbesar; tabel memuat semuanya.`}
             </p>
           </>

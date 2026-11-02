@@ -38,6 +38,7 @@ import { resolvePersistedItemIngredients } from "./ingredient-resolver";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, formatRupiah } from "./html-utils";
 import { buildDailyPnl, summarizePnl, type DailyPnl, type OrderAggregate } from "#/lib/finance-pnl";
+import { allocateHppShares, type HppItemInput } from "#/lib/finance-hpp";
 
 /**
  * Validate a `dateFrom`/`dateTo` pair of Jakarta-local ("YYYY-MM-DD") dates and
@@ -241,8 +242,20 @@ export interface HppBreakdownRow {
   ingredientId: string;
   name: string;
   category: string;
-  quantity: number;
   cost: number;
+}
+
+export interface HppBreakdown {
+  rows: HppBreakdownRow[];
+  /** Σ orders.totalCogs under the same filters — the ledger's HPP column. */
+  totalCogs: number;
+  /**
+   * HPP no order item could claim: sales recorded without items (the manual
+   * "Data Penjualan" form), `totalCogs` edited after the sale, items whose
+   * stored COGS is 0, and rupiah rounding. `rows` + this always equals
+   * `totalCogs`.
+   */
+  unallocated: number;
 }
 
 // Per-day HPP breakdown, reconciled with the ledger's HPP column.
@@ -251,11 +264,22 @@ export interface HppBreakdownRow {
 // time (BOGO doubling, add-on modifiers, exclusions, and ingredient costs as
 // of the transaction). Recomputing from the current BOM (the previous
 // implementation) ignores all of that, so the parts never summed to the
-// column. Instead, each order item's persisted composition is re-resolved the
-// same way the POS resolved it at sale time, and the resulting ingredient
-// costs are scaled so they sum exactly to the item's recorded COGS
-// (cogsAtTransaction × quantity). The breakdown therefore always adds up to
-// the HPP column, up to rounding (spread over the largest-cost ingredient).
+// column.
+//
+// Two layers keep the parts honest:
+//
+// 1. Per item, the persisted composition (order_item_ingredients, ADR 0020) is
+//    re-resolved at *current* ingredient cost, and those shares are scaled so
+//    they sum to that line's own frozen COGS (`cogsAtTransaction × quantity`).
+//    This is what preserves per-transaction fidelity: two lines of the same
+//    recipe with different modifiers/exclusions, or bought at different
+//    ingredient prices, scale independently instead of sharing one day-wide
+//    factor.
+// 2. Whatever `SUM(orders.totalCogs)` still exceeds the sum of those per-item
+//    targets is reported as `unallocated` rather than smeared over ingredients
+//    — that mass comes from orders with no items at all (createSalesRecord) or
+//    totals edited after the fact (updateSalesRecord), so attributing it to,
+//    say, rice would be a lie.
 
 /**
  * `daily_overrides.field` that stores a signed, channel-less omzet correction
@@ -664,7 +688,7 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
     ...data,
     channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
   }))
-  .handler(async ({ data }): Promise<HppBreakdownRow[]> => {
+  .handler(async ({ data }): Promise<HppBreakdown> => {
     await requireRole("super_admin", "admin_pusat");
 
     const orderConditions = [];
@@ -680,7 +704,6 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
     const itemRows = await db
       .select({
         orderItemId: orderItems.id,
-        recipeId: orderItems.recipeId,
         quantity: orderItems.quantity,
         cogsAtTransaction: orderItems.cogsAtTransaction,
       })
@@ -698,67 +721,41 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
       .where(orderConditions.length > 0 ? and(...orderConditions) : undefined);
     const dayTotalCogs = Number(dayCogsRow?.totalCogs ?? 0);
 
-    if (itemRows.length === 0 || dayTotalCogs === 0) return [];
+    // Orders with no line items (manual "Data Penjualan") have no composition
+    // to split — their whole HPP is unallocated, not zero.
+    if (itemRows.length === 0 || dayTotalCogs === 0) {
+      return { rows: [], totalCogs: dayTotalCogs, unallocated: dayTotalCogs };
+    }
 
     // Re-resolve each item's persisted composition (BOM + modifiers −
-    // exclusions, BOGO-aware) exactly like the POS did at sale time, with
-    // current ingredient costs as the proportional split basis.
-    //
-    // Per-item COGS cannot be used as the scaling target: orders created via
-    // "Data Penjualan" (createSalesRecord) carry a hand-entered totalCogs with
-    // no items at all, and updateSalesRecord can edit totalCogs without
-    // touching items. So the item-level costs only provide the *proportions*;
-    // the whole day's pool is then scaled once to the day's actual
-    // SUM(orders.totalCogs), guaranteeing the parts always sum to the HPP
-    // column regardless of how the orders were created or edited.
-    const ingredientTotals = new Map<string, { name: string; cost: number }>();
-    let resolvedPool = 0;
+    // exclusions, BOGO-aware) exactly like the POS did at sale time, then let
+    // `allocateHppShares` scale THAT line's shares to its own frozen COGS.
+    // Per-item scaling is what keeps two lines of the same recipe — different
+    // modifiers, or sold at different ingredient prices — from sharing one
+    // day-wide factor.
+    const resolvedItems: HppItemInput[] = [];
     for (const item of itemRows) {
       const resolved = await resolvePersistedItemIngredients(item.orderItemId, {
         includeCost: true,
       });
-      for (const ing of resolved.ingredients) {
-        const cost = Math.max(0, ing.cost ?? 0);
-        if (cost === 0) continue;
-        resolvedPool += cost;
-        const existing = ingredientTotals.get(ing.ingredientId);
-        if (existing) {
-          existing.cost += cost;
-        } else {
-          ingredientTotals.set(ing.ingredientId, { name: ing.ingredientName, cost });
-        }
-      }
+      resolvedItems.push({
+        ingredients: resolved.ingredients,
+        cogsAtTransaction: item.cogsAtTransaction,
+        quantity: item.quantity,
+      });
     }
 
-    if (ingredientTotals.size === 0) return [];
+    const allocation = allocateHppShares(resolvedItems);
+    if (allocation.rows.length === 0) {
+      // Items exist but none carried a usable cost (e.g. missing ingredient
+      // prices at sale time). Report the whole HPP as unallocated.
+      return { rows: [], totalCogs: dayTotalCogs, unallocated: dayTotalCogs };
+    }
 
-    // Day-level scale: resolved proportions -> the ledger's actual HPP total.
-    const scale = resolvedPool > 0 ? dayTotalCogs / resolvedPool : 0;
-    const scaled = [...ingredientTotals.entries()]
-      .map(([ingredientId, agg]) => ({
-        ingredientId,
-        name: agg.name,
-        scaled: agg.cost * scale,
-      }))
-      .sort((a, b) => b.scaled - a.scaled);
-
-    // Round every share proportionally, then push the rounding remainder into
-    // the largest-cost ingredient, so the parts sum exactly to the day's HPP
-    // column value. (Computing the largest as "total minus the rest" instead
-    // would discard its own share and double-count the total.)
-    let allocated = 0;
-    const result: HppBreakdownRow[] = scaled.map((entry) => {
-      const cost = Math.round(entry.scaled);
-      allocated += cost;
-      return {
-        ingredientId: entry.ingredientId,
-        name: entry.name,
-        category: "", // filled in below, batched
-        quantity: 0,
-        cost,
-      };
-    });
-    result[0].cost += dayTotalCogs - allocated;
+    const result: HppBreakdownRow[] = allocation.rows.map((row) => ({
+      ...row,
+      category: "", // filled in below, batched
+    }));
 
     // Batch category lookup for the distinct ingredients.
     const ids = result.map((r) => r.ingredientId);
@@ -773,7 +770,11 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
     }
     for (const r of result) r.category = categoryMap.get(r.ingredientId) ?? "";
 
-    return result;
+    return {
+      rows: result,
+      totalCogs: dayTotalCogs,
+      unallocated: dayTotalCogs - allocation.allocated,
+    };
   });
 
 export interface OmzetChannelRow {
