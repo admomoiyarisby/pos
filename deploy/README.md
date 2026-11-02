@@ -198,7 +198,7 @@ ls -lh /srv/omoiyari-pos/backups/db
 sudo systemctl list-timers omoiyari-backup.timer
 ```
 
-It keeps **7 days** of `omoiyari-<stamp>.dump` and `globals-<stamp>.sql` in
+It keeps **14 days** of `omoiyari-<stamp>.dump` and `globals-<stamp>.sql` in
 `/srv/omoiyari-pos/backups/db`.
 
 ### 2. Off-site without R2: pull to your machine
@@ -258,8 +258,44 @@ restic init
 ```
 
 The next timer run uploads a full snapshot; later runs are incremental and
-deduplicated. Keep 14 daily, 8 weekly, and 12 monthly snapshots (restic
-`forget --prune` in `backup.sh`).
+deduplicated. Keep 14 daily snapshots (restic `forget --prune` in `backup.sh`).
+
+### 3b. No-card alternative: Google Drive via rclone
+
+R2 and B2 both ask for a payment method even on their free tiers. Restic has
+no native Google Drive backend, but it can drive any rclone remote, and
+`backup.sh` already supports it:
+
+1. On a machine with a browser, install rclone and create a `drive` remote
+   (`rclone config`; scope `drive.file` is enough for a backup folder). On the
+   VPS, install both tools:
+   `sudo apt-get update && sudo apt-get install -y restic rclone`.
+2. If the VPS has no browser, run `rclone authorize "drive"` on your laptop and
+   paste the token into `rclone config` on the VPS. Copy
+   `~/.config/rclone/rclone.conf` to `/root/.config/rclone/rclone.conf`
+   (`chmod 600`).
+3. In `/etc/omoiyari-backup.env`, use the rclone backend instead of S3:
+
+   ```bash
+   RESTIC_REPOSITORY="rclone:drive:omoiyari-backups"
+   RESTIC_PASSWORD="<long random passphrase>"
+   ```
+
+   `backup.sh` starts and stops rclone itself (`rclone serve restic --stdio`),
+   so no separate service is needed.
+
+4. Initialise once, then check it:
+
+   ```bash
+   set -a; source /etc/omoiyari-backup.env; set +a
+   restic init
+   restic snapshots
+   ```
+
+Free Drive is 15 GB. Restic deduplicates and `--prune`s, so 14 daily snapshots
+of the dumps plus the media directory stay well under that. Drive is a consumer
+service with no SLA and API throttling, so treat it as a convenience off-site
+copy, not as your only one.
 
 ### 4. Restore drill (monthly)
 

@@ -22,7 +22,7 @@ APP_DIR="${APP_DIR:-/srv/omoiyari-pos}"
 BACKUP_DIR="${BACKUP_DIR:-/srv/omoiyari-pos/backups}"
 MEDIA_DIR="${MEDIA_DIR:-/srv/omoiyari-pos/media}"
 ENV_FILE="${ENV_FILE:-/etc/omoiyari-backup.env}"
-KEEP_LOCAL_DAYS="${KEEP_LOCAL_DAYS:-7}"
+KEEP_LOCAL_DAYS="${KEEP_LOCAL_DAYS:-14}"
 
 if [[ -f "$ENV_FILE" ]]; then
   set -a
@@ -77,9 +77,8 @@ if [[ -n "${RESTIC_REPOSITORY:-}" ]]; then
   log "uploading to $RESTIC_REPOSITORY"
   restic backup --tag omoiyari --host omoiyari-pos \
     "$DUMP" "$GLOBALS" "$MEDIA_DIR"
-  # Keep 14 daily, 8 weekly, 12 monthly snapshots. `--prune` reclaims space.
-  restic forget --tag omoiyari \
-    --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune
+  # Keep 14 daily snapshots. `--prune` reclaims space.
+  restic forget --tag omoiyari --keep-daily 14 --prune
 else
   log "RESTIC_REPOSITORY is unset — keeping a local-only backup"
 fi
