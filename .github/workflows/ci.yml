@@ -176,7 +176,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "deploy/compose.yaml,deploy/Caddyfile,deploy/backup.sh,deploy/backup.env.example,deploy/restore-drill.sh,deploy/systemd/omoiyari-backup.service,deploy/systemd/omoiyari-backup.timer"
+          source: "deploy/compose.yaml,deploy/Caddyfile,deploy/backup.sh,deploy/backup.env.example,deploy/restore-drill.sh,deploy/systemd/omoiyari-backup.service,deploy/systemd/omoiyari-backup.timer,deploy/systemd/rclone-restic.service"
           target: ${{ secrets.VPS_APP_DIR }}
 
       # Migrations connect through the loopback port, so the `db` container has

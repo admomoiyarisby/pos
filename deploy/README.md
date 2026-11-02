@@ -263,8 +263,9 @@ deduplicated. Keep 14 daily snapshots (restic `forget --prune` in `backup.sh`).
 ### 3b. No-card alternative: Google Drive via rclone
 
 R2 and B2 both ask for a payment method even on their free tiers. Restic has
-no native Google Drive backend, but it can drive any rclone remote, and
-`backup.sh` already supports it:
+no native Google Drive backend. Upstream restic can spawn rclone directly
+(`rclone:`), but some distro builds omit that backend — Debian's `restic`
+0.18 does. The portable path is rclone's own REST server:
 
 1. On a machine with a browser, install rclone and create a `drive` remote
    (`rclone config`; scope `drive.file` is enough for a backup folder). On the
@@ -273,18 +274,34 @@ no native Google Drive backend, but it can drive any rclone remote, and
 2. If the VPS has no browser, run `rclone authorize "drive"` on your laptop and
    paste the token into `rclone config` on the VPS. Copy
    `~/.config/rclone/rclone.conf` to `/root/.config/rclone/rclone.conf`
-   (`chmod 600`).
-3. In `/etc/omoiyari-backup.env`, use the rclone backend instead of S3:
+   (`chmod 600`). Create the folder **with rclone** so the `drive.file` scope
+   can see it:
 
    ```bash
-   RESTIC_REPOSITORY="rclone:drive:omoiyari-backups"
+   sudo rclone mkdir drive:omoiyari-backups
+   sudo rclone lsd drive:
+   ```
+
+3. Install the loopback bridge and start it:
+
+   ```bash
+   sudo install -m 0644 deploy/systemd/rclone-restic.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now rclone-restic
+   systemctl status rclone-restic --no-pager
+   ```
+
+   It listens on `127.0.0.1:8080` only. If it is down, restic fails loudly
+   rather than writing to the wrong place.
+
+4. In `/etc/omoiyari-backup.env`, point restic at the bridge:
+
+   ```bash
+   RESTIC_REPOSITORY="rest:http://127.0.0.1:8080/"
    RESTIC_PASSWORD="<long random passphrase>"
    ```
 
-   `backup.sh` starts and stops rclone itself (`rclone serve restic --stdio`),
-   so no separate service is needed.
-
-4. Initialise once, then check it:
+5. Initialise once, then check it:
 
    ```bash
    set -a; source /etc/omoiyari-backup.env; set +a

@@ -1,0 +1,17 @@
+[Unit]
+Description=rclone REST server for restic (Google Drive)
+Documentation=https://rclone.org/commands/rclone_serve_restic/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Serves the rclone remote over restic's REST API on loopback only. The
+# repository is the remote path; RESTIC_REPOSITORY=rest:http://127.0.0.1:8080/
+ExecStart=/usr/bin/rclone serve restic drive:omoiyari-backups --addr 127.0.0.1:8080
+Restart=on-failure
+RestartSec=10s
+User=root
+
+[Install]
+WantedBy=multi-user.target
