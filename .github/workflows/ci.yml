@@ -33,6 +33,32 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    # Integration tests (every *-integration.test.ts) are `skipIf`-guarded on
+    # TEST_DATABASE_URL. Without a database they are silently skipped, so CI
+    # could stay green while a migration was never applied anywhere — the
+    # Data Penjualan outage (2026-10-01) started exactly that way. The service
+    # below + the migrate step make the DB-backed suite (and the SQL-drift
+    # check inside migrations.integration.test.ts) actually run.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: omoiyari_test
+          POSTGRES_PASSWORD: omoiyari_test
+          POSTGRES_DB: omoiyari_pos_test
+        # 5433 matches scripts/test-db.sh and LOCAL_TEST_DATABASE_URL.
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U omoiyari_test -d omoiyari_pos_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://omoiyari_test:omoiyari_test@localhost:5433/omoiyari_pos_test
+      # Keep dotenv in drizzle.config.ts from pointing migrations at anything
+      # else if a .env is ever committed.
+      DATABASE_URL: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -43,15 +69,21 @@ jobs:
 
       - run: vp install
 
+      # Apply the committed migrations to the fresh service database BEFORE the
+      # suite runs. Most flow tests assume the schema already exists; letting
+      # migrations.integration.test.ts create it instead would race them.
+      - name: Apply database migrations
+        run: vp run db:migrate
+
       - name: Run tests
         run: vp test run
 
   # Schema-drift tripwire (Data Penjualan outage, 2026-10-01): a migration
   # committed but never applied to the target DB ships code that SELECTs a
   # column the database doesn't have. The SQL-drift check runs in the `test`
-  # job (migrations.integration.test.ts against the local test DB); this job
-  # pins the journal itself: every _journal.json entry must have its SQL file
-  # present, and every SQL file must be referenced by the journal.
+  # job above (migrations.integration.test.ts against the service database);
+  # this job pins the journal itself: every _journal.json entry must have its
+  # SQL file present, and every SQL file must be referenced by the journal.
   drift:
     name: migration journal consistency
     runs-on: ubuntu-latest
