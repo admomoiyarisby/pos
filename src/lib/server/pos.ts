@@ -1019,6 +1019,9 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
           orderItemId: orderItem.id,
           ingredientId: ing.ingredientId,
           quantity: ing.quantity,
+          // ADR 0031: freeze the rupiah cost too, so the HPP breakdown never
+          // has to re-price this line at today's average cost.
+          costAtTransaction: ing.cost ?? null,
         }));
       if (snapshotRows.length > 0) {
         await tx.insert(orderItemIngredients).values(snapshotRows);

@@ -1,5 +1,10 @@
 # 0030 — HPP Breakdown Scales Per Order Line and Keeps the Residual Explicit
 
+> **Superseded in part by ADR 0031.** Cost is now frozen per ingredient row at
+> sale time, the residual is reconciled per order, and `unallocated` is limited
+> to orders with no line items. The per-line (never per-day) scaling principle
+> and the explicit residual line remain in force.
+
 ## Context
 
 The finance page shows HPP as `Σ orders.totalCogs` (ADR 0017 #1, ADR 0028 #2). The
@@ -44,7 +49,7 @@ entry could inflate "Rice" on an unrelated order.
 4. **Lines with no pool or no target contribute nothing.** Their COGS stays in
    `unallocated`; the breakdown never invents a composition.
 
-The arithmetic lives in `src/lib/finance-hpp.ts` (`allocateHppShares`) so it is
+The arithmetic lives in `src/lib/finance-hpp.ts` (`allocateHpp`) so it is
 unit-testable without a database; the server function only resolves items,
 looks up categories, and computes the residual.
 

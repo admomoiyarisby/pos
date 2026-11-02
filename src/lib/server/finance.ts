@@ -34,11 +34,11 @@ import { requireAuth, requireRole } from "./auth";
 import { USAGE_SOURCE_ORDER, usageSourceSql } from "./usage-source";
 import type { UsageSource } from "./usage-source";
 import type { AppUser } from "./auth";
-import { resolvePersistedItemIngredients } from "./ingredient-resolver";
+import { resolvePersistedItemsIngredients } from "./ingredient-resolver";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, formatRupiah } from "./html-utils";
 import { buildDailyPnl, summarizePnl, type DailyPnl, type OrderAggregate } from "#/lib/finance-pnl";
-import { allocateHppShares, type HppItemInput } from "#/lib/finance-hpp";
+import { allocateHpp, type HppItemInput } from "#/lib/finance-hpp";
 
 /**
  * Validate a `dateFrom`/`dateTo` pair of Jakarta-local ("YYYY-MM-DD") dates and
@@ -250,10 +250,9 @@ export interface HppBreakdown {
   /** Σ orders.totalCogs under the same filters — the ledger's HPP column. */
   totalCogs: number;
   /**
-   * HPP no order item could claim: sales recorded without items (the manual
-   * "Data Penjualan" form), `totalCogs` edited after the sale, items whose
-   * stored COGS is 0, and rupiah rounding. `rows` + this always equals
-   * `totalCogs`.
+   * HPP no order line could claim: sales recorded without items (the manual
+   * "Data Penjualan" form), plus lines whose composition carries no usable
+   * cost. `rows` + this always equals `totalCogs`.
    */
   unallocated: number;
 }
@@ -266,20 +265,21 @@ export interface HppBreakdown {
 // implementation) ignores all of that, so the parts never summed to the
 // column.
 //
-// Two layers keep the parts honest:
+// Three layers keep the parts honest:
 //
-// 1. Per item, the persisted composition (order_item_ingredients, ADR 0020) is
-//    re-resolved at *current* ingredient cost, and those shares are scaled so
-//    they sum to that line's own frozen COGS (`cogsAtTransaction × quantity`).
-//    This is what preserves per-transaction fidelity: two lines of the same
-//    recipe with different modifiers/exclusions, or bought at different
-//    ingredient prices, scale independently instead of sharing one day-wide
-//    factor.
-// 2. Whatever `SUM(orders.totalCogs)` still exceeds the sum of those per-item
-//    targets is reported as `unallocated` rather than smeared over ingredients
-//    — that mass comes from orders with no items at all (createSalesRecord) or
-//    totals edited after the fact (updateSalesRecord), so attributing it to,
-//    say, rice would be a lie.
+// 1. Cost is frozen per row (ADR 0031): `order_item_ingredients
+//    .cost_at_transaction` holds what the line actually paid, so new sales
+//    need no re-pricing at all.
+// 2. Legacy rows (written before that column) are re-priced at today's
+//    average cost and rescaled to their own `cogsAtTransaction × quantity`.
+//    Scaling per item — never per day — is what keeps two lines of the same
+//    recipe, with different modifiers or bought at different prices, from
+//    sharing one factor.
+// 3. Whatever an **order** still exceeds its item targets (per-unit rounding,
+//    an edited `totalCogs`) is absorbed into that order's own shares. Only
+//    orders with no line items (createSalesRecord) and lines with no usable
+//    cost become `unallocated`, instead of being smeared over real
+//    ingredients.
 
 /**
  * `daily_overrides.field` that stores a signed, channel-less omzet correction
@@ -689,93 +689,109 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
     channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
   }))
   .handler(async ({ data }): Promise<HppBreakdown> => {
-    await requireRole("super_admin", "admin_pusat");
-
-    const orderConditions = [];
-    if (data.branchId) orderConditions.push(eq(orders.branchId, data.branchId));
-    if (data.channel) orderConditions.push(eq(orders.channel, data.channel));
-    orderConditions.push(
-      sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') = ${data.date}`,
-    );
-
-    // All order items for the day — deliberately including Void orders, to
-    // match the ledger's HPP column: voiding flips status and restores
-    // inventory but does not reset orders.totalCogs, which the column sums.
-    const itemRows = await db
-      .select({
-        orderItemId: orderItems.id,
-        quantity: orderItems.quantity,
-        cogsAtTransaction: orderItems.cogsAtTransaction,
-      })
-      .from(orderItems)
-      .innerJoin(orders, eq(orderItems.orderId, orders.id))
-      .where(orderConditions.length > 0 ? and(...orderConditions) : undefined);
-
-    // The number the breakdown must reconcile against: the exact aggregate the
-    // ledger's HPP column shows for the same filters.
-    const [dayCogsRow] = await db
-      .select({
-        totalCogs: sql<number>`COALESCE(SUM(${orders.totalCogs}), 0)`,
-      })
-      .from(orders)
-      .where(orderConditions.length > 0 ? and(...orderConditions) : undefined);
-    const dayTotalCogs = Number(dayCogsRow?.totalCogs ?? 0);
-
-    // Orders with no line items (manual "Data Penjualan") have no composition
-    // to split — their whole HPP is unallocated, not zero.
-    if (itemRows.length === 0 || dayTotalCogs === 0) {
-      return { rows: [], totalCogs: dayTotalCogs, unallocated: dayTotalCogs };
-    }
-
-    // Re-resolve each item's persisted composition (BOM + modifiers −
-    // exclusions, BOGO-aware) exactly like the POS did at sale time, then let
-    // `allocateHppShares` scale THAT line's shares to its own frozen COGS.
-    // Per-item scaling is what keeps two lines of the same recipe — different
-    // modifiers, or sold at different ingredient prices — from sharing one
-    // day-wide factor.
-    const resolvedItems: HppItemInput[] = [];
-    for (const item of itemRows) {
-      const resolved = await resolvePersistedItemIngredients(item.orderItemId, {
-        includeCost: true,
-      });
-      resolvedItems.push({
-        ingredients: resolved.ingredients,
-        cogsAtTransaction: item.cogsAtTransaction,
-        quantity: item.quantity,
-      });
-    }
-
-    const allocation = allocateHppShares(resolvedItems);
-    if (allocation.rows.length === 0) {
-      // Items exist but none carried a usable cost (e.g. missing ingredient
-      // prices at sale time). Report the whole HPP as unallocated.
-      return { rows: [], totalCogs: dayTotalCogs, unallocated: dayTotalCogs };
-    }
-
-    const result: HppBreakdownRow[] = allocation.rows.map((row) => ({
-      ...row,
-      category: "", // filled in below, batched
-    }));
-
-    // Batch category lookup for the distinct ingredients.
-    const ids = result.map((r) => r.ingredientId);
-    const categoryMap = new Map<string, string>();
-    for (let i = 0; i < ids.length; i += 500) {
-      const chunk = ids.slice(i, i + 500);
-      const rows = await db
-        .select({ id: ingredients.id, category: ingredients.category })
-        .from(ingredients)
-        .where(inArray(ingredients.id, chunk));
-      for (const r of rows) categoryMap.set(r.id, r.category);
-    }
-    for (const r of result) r.category = categoryMap.get(r.ingredientId) ?? "";
-
-    return {
-      rows: result,
-      totalCogs: dayTotalCogs,
-      unallocated: dayTotalCogs - allocation.allocated,
-    };
+    const user = await requireRole("super_admin", "admin_pusat");
+    return getDailyHppBreakdownCore(user, data);
   });
+
+/** `getDailyHppBreakdown` minus the session lookup — the ADR 0015 core seam. */
+export async function getDailyHppBreakdownCore(
+  user: AppUser,
+  data: { branchId?: string; date: string; channel?: OrderChannel },
+): Promise<HppBreakdown> {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+    );
+  }
+
+  const orderConditions = [];
+  if (data.branchId) orderConditions.push(eq(orders.branchId, data.branchId));
+  if (data.channel) orderConditions.push(eq(orders.channel, data.channel));
+  orderConditions.push(
+    sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') = ${data.date}`,
+  );
+
+  // Every order for the day — deliberately including Void orders, to match
+  // the ledger's HPP column: voiding flips status and restores inventory but
+  // does not reset orders.totalCogs, which the column sums. Per-order rows
+  // (not one SUM) are needed because the breakdown reconciles order by order.
+  const orderRows = await db
+    .select({ id: orders.id, totalCogs: orders.totalCogs })
+    .from(orders)
+    .where(orderConditions.length > 0 ? and(...orderConditions) : undefined);
+  const dayTotalCogs = orderRows.reduce((s, r) => s + Number(r.totalCogs), 0);
+
+  // Line items of those orders, grouped by order. Orders absent here are the
+  // manual "Data Penjualan" entries (no items): their HPP has no composition
+  // and stays unallocated rather than being smeared over other ingredients.
+  const itemRows = await db
+    .select({
+      orderId: orders.id,
+      orderItemId: orderItems.id,
+      quantity: orderItems.quantity,
+      cogsAtTransaction: orderItems.cogsAtTransaction,
+    })
+    .from(orderItems)
+    .innerJoin(orders, eq(orderItems.orderId, orders.id))
+    .where(orderConditions.length > 0 ? and(...orderConditions) : undefined);
+
+  if (orderRows.length === 0 || dayTotalCogs === 0) {
+    return { rows: [], totalCogs: dayTotalCogs, unallocated: dayTotalCogs };
+  }
+
+  // One batched resolver call for the whole day (ADR 0031 also gives each
+  // row its sale-time cost, so new sales need no rescaling at all).
+  const resolved = await resolvePersistedItemsIngredients(
+    itemRows.map((r) => r.orderItemId),
+    { includeCost: true },
+  );
+
+  const itemsByOrder = new Map<string, HppItemInput[]>();
+  for (const row of itemRows) {
+    const item = resolved.get(row.orderItemId);
+    if (!item) continue;
+    const list = itemsByOrder.get(row.orderId) ?? [];
+    list.push({
+      ingredients: item.ingredients,
+      cogsAtTransaction: row.cogsAtTransaction,
+      quantity: row.quantity,
+      costSource: item.costSource,
+    });
+    itemsByOrder.set(row.orderId, list);
+  }
+
+  const allocation = allocateHpp(
+    orderRows.map((order) => ({
+      totalCogs: Number(order.totalCogs),
+      items: itemsByOrder.get(order.id) ?? [],
+    })),
+    dayTotalCogs,
+  );
+
+  const result: HppBreakdownRow[] = allocation.rows.map((row) => ({
+    ...row,
+    category: "", // filled in below, batched
+  }));
+
+  // Batch category lookup for the distinct ingredients.
+  const ids = result.map((r) => r.ingredientId);
+  const categoryMap = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    const rows = await db
+      .select({ id: ingredients.id, category: ingredients.category })
+      .from(ingredients)
+      .where(inArray(ingredients.id, chunk));
+    for (const r of rows) categoryMap.set(r.id, r.category);
+  }
+  for (const r of result) r.category = categoryMap.get(r.ingredientId) ?? "";
+
+  return {
+    rows: result,
+    totalCogs: dayTotalCogs,
+    unallocated: allocation.unallocated,
+  };
+}
 
 export interface OmzetChannelRow {
   channel: string;

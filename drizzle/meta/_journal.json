@@ -484,6 +484,13 @@
       "when": 1795000000000,
       "tag": "0065_normalize_channel_revenue_dates",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1796000000000,
+      "tag": "0066_order_item_ingredient_cost",
+      "breakpoints": true
     }
   ]
 }

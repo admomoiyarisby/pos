@@ -353,11 +353,11 @@ function HppDetailModal({
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Tiap item diskalakan ke HPP yang tersimpan di baris ordernya (cogsAtTransaction ×
-              qty), jadi dua transaksi resep yang sama dengan modifier berbeda tetap dihitung
-              terpisah. HPP yang tidak bisa diatribusikan ke bahan — penjualan tanpa rincian item
-              (Data Penjualan) atau total yang diedit setelah transaksi — muncul sebagai &quot;
-              {UNALLOCATED_LABEL}&quot;.
+              HPP tiap bahan diambil dari biaya yang dibekukan saat transaksi (per baris order),
+              bukan dari harga bahan hari ini. Baris lama yang belum punya biaya tersimpan
+              diskalakan ke HPP ordernya. HPP yang tidak bisa diatribusikan ke bahan — penjualan
+              tanpa rincian item (Data Penjualan) — muncul sebagai &quot;{UNALLOCATED_LABEL}
+              &quot;.
               {rows.length > HPP_CHART_TOP_N &&
                 ` Grafik menampilkan ${HPP_CHART_TOP_N} bahan terbesar; tabel memuat semuanya.`}
             </p>

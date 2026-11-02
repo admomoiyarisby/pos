@@ -114,23 +114,32 @@ async function applyIngredientDelta(
 /**
  * Freeze an order item's resolved consumption into `order_item_ingredients`
  * (ADR 0020) so every later restore replays the transaction-time quantities
- * instead of re-resolving the (possibly edited) recipe BOM.
+ * instead of re-resolving the (possibly edited) recipe BOM. ADR 0031 also
+ * freezes each row's rupiah cost, so reports never re-price history.
  */
 async function writeOrderItemIngredientSnapshot(
   tx: DbTx,
   orderItemId: string,
-  ingredients: Array<{ ingredientId: string; quantity: number }>,
+  ingredients: Array<{ ingredientId: string; quantity: number; cost?: number }>,
 ): Promise<void> {
   const rows = ingredients
     .filter((ing) => ing.quantity !== 0)
-    .map((ing) => ({ orderItemId, ingredientId: ing.ingredientId, quantity: ing.quantity }));
+    .map((ing) => ({
+      orderItemId,
+      ingredientId: ing.ingredientId,
+      quantity: ing.quantity,
+      costAtTransaction: ing.cost ?? null,
+    }));
   if (rows.length === 0) return;
   await tx
     .insert(orderItemIngredients)
     .values(rows)
     .onConflictDoUpdate({
       target: [orderItemIngredients.orderItemId, orderItemIngredients.ingredientId],
-      set: { quantity: sql`excluded.quantity` },
+      set: {
+        quantity: sql`excluded.quantity`,
+        costAtTransaction: sql`excluded.cost_at_transaction`,
+      },
     });
 }
 
@@ -395,7 +404,9 @@ export async function createSalesOrderCore(
   // and the stock delta — the ADR 0020 frozen quantities every later restore
   // will replay.
   const resolvedPerItem = await Promise.all(
-    data.items.map((item) => resolveNewItemIngredients(item.recipeId, item.quantity)),
+    data.items.map((item) =>
+      resolveNewItemIngredients(item.recipeId, item.quantity, undefined, { includeCost: true }),
+    ),
   );
   const delta = sumDeltas(...resolvedPerItem.map((r) => r.ingredients));
 
@@ -538,7 +549,9 @@ export async function updateSalesOrderCore(
   // Resolve the new items' consumption once; the snapshot and the re-deduction
   // must agree, so they share this resolution (ADR 0020).
   const resolvedPerItem = await Promise.all(
-    data.items.map((item) => resolveNewItemIngredients(item.recipeId, item.quantity)),
+    data.items.map((item) =>
+      resolveNewItemIngredients(item.recipeId, item.quantity, undefined, { includeCost: true }),
+    ),
   );
   const newDelta = sumDeltas(...resolvedPerItem.map((r) => r.ingredients));
 

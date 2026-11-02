@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocateHppShares, type HppItemInput } from "./finance-hpp";
-
-const item = (
-  ingredients: HppItemInput["ingredients"],
-  cogsAtTransaction: number,
-  quantity = 1,
-): HppItemInput => ({ ingredients, cogsAtTransaction, quantity });
+import { allocateHpp, type HppItemInput, type HppOrderInput } from "./finance-hpp";
 
 const ing = (ingredientId: string, cost: number) => ({
   ingredientId,
@@ -13,79 +7,147 @@ const ing = (ingredientId: string, cost: number) => ({
   cost,
 });
 
-const total = (rows: { cost: number }[]) => rows.reduce((s, r) => s + r.cost, 0);
+/** Legacy line: costs re-priced at today's average cost. */
+const current = (
+  ingredients: HppItemInput["ingredients"],
+  cogsAtTransaction: number,
+  quantity = 1,
+): HppItemInput => ({ ingredients, cogsAtTransaction, quantity, costSource: "current" });
 
-describe("allocateHppShares", () => {
-  it("scales each line to its own frozen COGS", () => {
-    // Current prices doubled since the sale, so both lines halve.
-    const { rows, allocated } = allocateHppShares([item([ing("rice", 600), ing("egg", 400)], 500)]);
+/** ADR 0031 line: costs are already the sale-time values. */
+const frozen = (
+  ingredients: HppItemInput["ingredients"],
+  cogsAtTransaction: number,
+  quantity = 1,
+): HppItemInput => ({ ingredients, cogsAtTransaction, quantity, costSource: "frozen" });
+
+const order = (totalCogs: number, items: HppItemInput[]): HppOrderInput => ({ totalCogs, items });
+
+const sum = (rows: { cost: number }[]) => rows.reduce((s, r) => s + r.cost, 0);
+
+describe("allocateHpp", () => {
+  it("uses frozen sale-time costs verbatim", () => {
+    // Average cost has since doubled, but the snapshot says what was paid.
+    const { rows, allocated, unallocated } = allocateHpp(
+      [order(500, [frozen([ing("rice", 300), ing("egg", 200)], 500)])],
+      500,
+    );
+
+    expect(allocated).toBe(500);
+    expect(unallocated).toBe(0);
+    expect(rows.find((r) => r.ingredientId === "rice")?.cost).toBe(300);
+    expect(rows.find((r) => r.ingredientId === "egg")?.cost).toBe(200);
+  });
+
+  it("rescales legacy lines to their own frozen COGS", () => {
+    // Current prices doubled since the sale, so the legacy line halves.
+    const { rows, allocated } = allocateHpp(
+      [order(500, [current([ing("rice", 600), ing("egg", 400)], 500)])],
+      500,
+    );
+
     expect(allocated).toBe(500);
     expect(rows.find((r) => r.ingredientId === "rice")?.cost).toBe(300);
     expect(rows.find((r) => r.ingredientId === "egg")?.cost).toBe(200);
-    expect(total(rows)).toBe(500);
   });
 
-  it("keeps lines with different modifiers independent", () => {
-    // Same base recipe, different add-on. A single day-wide scale would apply
-    // the same drift factor to both lines; per-line scaling must not.
-    const plain = item([ing("rice", 1000), ing("egg", 1000)], 1500); // drifted 2x? no: target < pool
-    const withCheese = item([ing("rice", 1000), ing("egg", 1000), ing("cheese", 2000)], 2000);
+  it("keeps lines of the same recipe with different modifiers independent", () => {
+    // A single day-wide scale would apply one drift factor to both lines.
+    const plain = current([ing("rice", 1000), ing("egg", 1000)], 1500);
+    const withCheese = current([ing("rice", 1000), ing("egg", 1000), ing("cheese", 2000)], 2000);
 
-    const { rows, allocated } = allocateHppShares([plain, withCheese]);
+    const { rows, allocated } = allocateHpp([order(3500, [plain, withCheese])], 3500);
 
     expect(allocated).toBe(3500);
-    expect(total(rows)).toBe(3500);
-    // plain: 1000/2000 of 1500 = 750; withCheese: 1000/4000 of 2000 = 500
+    // rice: 1000/2000 × 1500 + 1000/4000 × 2000 = 750 + 500
     expect(rows.find((r) => r.ingredientId === "rice")?.cost).toBe(1250);
-    // plain: 1000/2000 of 1500 = 750; withCheese: 1000/4000 of 2000 = 500
     expect(rows.find((r) => r.ingredientId === "egg")?.cost).toBe(1250);
-    // withCheese: 2000/4000 of 2000 = 1000
+    // cheese: 2000/4000 × 2000 = 1000
     expect(rows.find((r) => r.ingredientId === "cheese")?.cost).toBe(1000);
   });
 
-  it("sums to the rounded target total after largest-remainder rounding", () => {
-    const { rows, allocated } = allocateHppShares([
-      item([ing("a", 1), ing("b", 1), ing("c", 1)], 100),
-    ]);
+  it("absorbs per-order rounding into that order instead of unallocated", () => {
+    // POS stores cogsAtTransaction per unit, rounded: 1001 / 3 -> 334.
+    // target = 334 × 3 = 1002, order total = 1001. The 1-rupiah gap belongs
+    // to this order, not to "unallocated".
+    const { allocated, unallocated } = allocateHpp(
+      [order(1001, [frozen([ing("a", 400), ing("b", 300), ing("c", 301)], 334, 3)])],
+      1001,
+    );
+
+    expect(allocated).toBe(1001);
+    expect(unallocated).toBe(0);
+  });
+
+  it("leaves orders with no items unallocated", () => {
+    const { rows, allocated, unallocated } = allocateHpp(
+      [
+        order(500, [frozen([ing("rice", 500)], 500)]),
+        order(300, []), // manual "Data Penjualan" entry
+      ],
+      800,
+    );
+
+    expect(allocated).toBe(500);
+    expect(unallocated).toBe(300);
+    expect(rows).toHaveLength(1);
+    expect(sum(rows)).toBe(500);
+  });
+
+  it("nets signed exclusion costs instead of clamping them", () => {
+    // Rice is largely excluded: +1000 from the BOM, -800 restored. Net 200.
+    // Clamping the negative would leave 1000 and inflate rice's share.
+    const { rows, allocated } = allocateHpp(
+      [order(1200, [frozen([ing("rice", 1000), ing("rice", -800), ing("egg", 1000)], 1200)])],
+      1200,
+    );
+
+    expect(allocated).toBe(1200);
+    expect(rows.find((r) => r.ingredientId === "rice")?.cost).toBe(200);
+    expect(rows.find((r) => r.ingredientId === "egg")?.cost).toBe(1000);
+  });
+
+  it("rounds with largest remainder", () => {
+    const { rows, allocated } = allocateHpp(
+      [order(100, [frozen([ing("a", 34), ing("b", 33), ing("c", 33)], 100)])],
+      100,
+    );
+
     expect(allocated).toBe(100);
-    expect(total(rows)).toBe(100);
-    // 100/3 each -> 33.33; leftover 1 goes to one row, never negative.
+    expect(sum(rows)).toBe(100);
     expect(rows.every((r) => r.cost >= 0)).toBe(true);
-    expect(rows.map((r) => r.cost).sort((x, y) => y - x)).toEqual([34, 33, 33]);
   });
 
   it("never produces negative rows when a scale deflates many tiny shares", () => {
     const ingredients = Array.from({ length: 100 }, (_, i) => ing(`i${i}`, 1));
-    // Target far below the pool (e.g. totalCogs edited down): 0.01 per share.
-    const { rows, allocated } = allocateHppShares([item(ingredients, 1)]);
+    const { rows, allocated } = allocateHpp([order(1, [current(ingredients, 1)])], 1);
+
     expect(allocated).toBe(1);
     expect(rows.every((r) => r.cost >= 0)).toBe(true);
-    expect(total(rows)).toBe(1);
+    expect(sum(rows)).toBe(1);
   });
 
-  it("leaves lines without a usable pool unallocated", () => {
-    const { rows, allocated } = allocateHppShares([
-      item([ing("rice", 0)], 500), // zero cost -> no share
-      item([], 300), // no composition at all
-      item([ing("egg", 100)], 0), // zero target
-    ]);
+  it("keeps rows + unallocated equal to the day total", () => {
+    const { rows, unallocated } = allocateHpp(
+      [order(1001, [frozen([ing("a", 400), ing("b", 601)], 334, 3)]), order(2500, [])],
+      3501,
+    );
+
+    expect(sum(rows) + unallocated).toBe(3501);
+  });
+
+  it("treats orders with no usable cost as unallocated", () => {
+    const { rows, allocated, unallocated } = allocateHpp(
+      [order(500, [frozen([ing("rice", 0)], 500)]), order(300, [current([], 300)])],
+      800,
+    );
+
     expect(rows).toEqual([]);
     expect(allocated).toBe(0);
-  });
-
-  it("ignores zero-cost ingredients inside an otherwise usable line", () => {
-    const { rows, allocated } = allocateHppShares([item([ing("rice", 500), ing("free", 0)], 500)]);
-    expect(allocated).toBe(500);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ ingredientId: "rice", cost: 500 });
-  });
-
-  it("multiplies the per-unit COGS by the ordered quantity", () => {
-    const { allocated } = allocateHppShares([item([ing("rice", 1200)], 600, 2)]);
-    expect(allocated).toBe(1200);
+    expect(unallocated).toBe(800);
   });
 
   it("is empty when there is nothing to allocate", () => {
-    expect(allocateHppShares([])).toEqual({ rows: [], allocated: 0 });
+    expect(allocateHpp([], 0)).toEqual({ rows: [], allocated: 0, unallocated: 0 });
   });
 });

@@ -729,6 +729,16 @@ export const orderItemIngredients = pgTable(
       .notNull()
       .references(() => ingredients.id),
     quantity: real("quantity").notNull(),
+    /**
+     * Rupiah cost of this row, frozen at sale time (ADR 0031).
+     *
+     * ADR 0020 froze *quantities* but left cost on the live
+     * `ingredients.average_cost`, so a later report could not reconstruct what
+     * the sale actually cost. Null means "written before ADR 0031": readers
+     * fall back to current-cost x quantity (and the finance breakdown rescales
+     * that line to its `order_items.cogs_at_transaction`).
+     */
+    costAtTransaction: integer("cost_at_transaction"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (t) => [
