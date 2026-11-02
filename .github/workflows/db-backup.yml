@@ -1,17 +1,13 @@
 name: Database backup (VPS)
 
-# Manual or nightly backup of the native database. Uses `docker compose exec`,
-# so it needs no sudo and no host Postgres client.
-#
-# This is a stopgap until deploy/backup.sh is installed as a systemd timer
-# (that install needs sudo). It keeps 14 days of local dumps, matching the
-# script. Off-site copies are still `deploy/pull-backup.sh` or restic.
+# Manual fallback for the native database. The nightly run is the systemd
+# timer (`deploy/backup.sh`); this workflow stays for the case where the timer
+# is unavailable or was not installed. Uses `docker compose exec`, so it needs
+# no sudo and no host Postgres client. It keeps 14 days of local dumps, matching
+# the script. Off-site copies are still `deploy/pull-backup.sh` or restic.
 
 on:
   workflow_dispatch:
-  schedule:
-    # 01:30 WIB, after closing. GitHub cron is UTC and may run late.
-    - cron: "30 18 * * *"
 
 permissions:
   contents: read
