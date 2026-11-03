@@ -247,7 +247,11 @@ export interface HppBreakdownRow {
 
 export interface HppBreakdown {
   rows: HppBreakdownRow[];
-  /** Σ orders.totalCogs under the same filters — the ledger's HPP column. */
+  /**
+   * Σ orders.totalCogs for the day under the ledger's filter (ADR 0017: void
+   * and soft-deleted orders excluded). This is the exact number shown in the
+   * ledger's HPP cell.
+   */
   totalCogs: number;
   /**
    * HPP no order line could claim: sales recorded without items (the manual
@@ -261,9 +265,11 @@ export interface HppBreakdown {
 //
 // The ledger's HPP column reads orders.totalCogs — the COGS recorded at sale
 // time (BOGO doubling, add-on modifiers, exclusions, and ingredient costs as
-// of the transaction). Recomputing from the current BOM (the previous
-// implementation) ignores all of that, so the parts never summed to the
-// column.
+// of the transaction) — over non-void, non-deleted orders (ADR 0017). This
+// function must apply that same filter: it is opened by clicking that cell, so
+// any extra row here is a number the user did not ask for. Recomputing from
+// the current BOM (the previous implementation) ignores all of that, so the
+// parts never summed to the column.
 //
 // Three layers keep the parts honest:
 //
@@ -704,17 +710,22 @@ export async function getDailyHppBreakdownCore(
     );
   }
 
-  const orderConditions = [];
+  // ADR 0017: void orders are excluded from every aggregate and reported
+  // separately. This drill-down opens from the ledger's HPP cell, so it must
+  // use the ledger's own filter — a voided sale still carries its original
+  // `totalCogs` (voiding restores inventory, it does not zero the cost), so
+  // counting it charged HPP for food that was never sold and made the modal
+  // total disagree with the cell it was opened from. Soft-deleted orders are
+  // excluded for the same reason.
+  const orderConditions = [ne(orders.status, "Void"), isNull(orders.deletedAt)];
   if (data.branchId) orderConditions.push(eq(orders.branchId, data.branchId));
   if (data.channel) orderConditions.push(eq(orders.channel, data.channel));
   orderConditions.push(
     sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') = ${data.date}`,
   );
 
-  // Every order for the day — deliberately including Void orders, to match
-  // the ledger's HPP column: voiding flips status and restores inventory but
-  // does not reset orders.totalCogs, which the column sums. Per-order rows
-  // (not one SUM) are needed because the breakdown reconciles order by order.
+  // Every (non-void) order for the day. Per-order rows, not one SUM, because
+  // the breakdown reconciles order by order.
   const orderRows = await db
     .select({ id: orders.id, totalCogs: orders.totalCogs })
     .from(orders)

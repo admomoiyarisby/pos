@@ -179,6 +179,44 @@ describe("HPP breakdown — sale-time cost and per-order reconciliation", () => 
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
+    "excludes void orders so the total matches the ledger's HPP cell",
+    async () => {
+      const s = await seedIngredients(1000);
+      const kept = await posApi.createOrderCore(s.admin, {
+        branchId: s.branchId,
+        channel: "Dine-in",
+        customerName: "Pelanggan Uji",
+        items: [{ recipeId: s.recipeId, quantity: 3, price: 10000 }],
+        paymentMethod: "cash",
+      });
+      const voided = await posApi.createOrderCore(s.admin, {
+        branchId: s.branchId,
+        channel: "Dine-in",
+        customerName: "Pelanggan Batal",
+        items: [{ recipeId: s.recipeId, quantity: 3, price: 10000 }],
+        paymentMethod: "cash",
+      });
+      expect(kept.totalCogs).toBe(6000);
+      expect(voided.totalCogs).toBe(6000);
+
+      await posApi.voidOrderCore(s.admin, { orderId: voided.id, reason: "Uji void" });
+
+      const breakdown = await financeApi.getDailyHppBreakdownCore(s.admin, {
+        branchId: s.branchId,
+        date: jakartaToday(),
+      });
+
+      // Voiding restores stock but leaves `totalCogs` on the row (ADR 0017
+      // reports voids separately). Counting it here made the modal 2x the
+      // ledger's HPP cell.
+      expect(breakdown.totalCogs).toBe(6000);
+      expect(breakdown.rows).toHaveLength(1);
+      expect(breakdown.rows[0]?.cost).toBe(6000);
+      expect(breakdown.unallocated).toBe(0);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
     "keeps the frozen cost after the ingredient price changes",
     async () => {
       const s = await seedIngredients(1000);
