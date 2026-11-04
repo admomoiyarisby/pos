@@ -93,6 +93,10 @@ import { Route as ApiPrintFinanceRouteImport } from './routes/api/print/finance'
 import { Route as ApiPrintStockOpnameRouteImport } from './routes/api/print/stock-opname'
 import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
 import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
+import { Route as ApiPrintProcurementInvoiceRouteImport } from './routes/api/print/procurement/invoice'
+import { Route as ApiPrintProcurementSuratJalanRouteImport } from './routes/api/print/procurement/surat-jalan'
+import { Route as ApiPrintTransferInvoiceRouteImport } from './routes/api/print/transfer/invoice'
+import { Route as ApiPrintTransferSuratJalanRouteImport } from './routes/api/print/transfer/surat-jalan'
 
 const LayoutRoute = LayoutRouteImport.update({
   id: '/_layout',
@@ -535,6 +539,29 @@ const DemoFormSimpleRoute = DemoFormSimpleRouteImport.update({
   path: '/demo/form/simple',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPrintProcurementInvoiceRoute =
+  ApiPrintProcurementInvoiceRouteImport.update({
+    id: '/api/print/procurement/invoice',
+    path: '/api/print/procurement/invoice',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPrintProcurementSuratJalanRoute =
+  ApiPrintProcurementSuratJalanRouteImport.update({
+    id: '/api/print/procurement/surat-jalan',
+    path: '/api/print/procurement/surat-jalan',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPrintTransferInvoiceRoute = ApiPrintTransferInvoiceRouteImport.update({
+  id: '/api/print/transfer/invoice',
+  path: '/api/print/transfer/invoice',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPrintTransferSuratJalanRoute =
+  ApiPrintTransferSuratJalanRouteImport.update({
+    id: '/api/print/transfer/surat-jalan',
+    path: '/api/print/transfer/surat-jalan',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
@@ -620,6 +647,10 @@ export interface FileRoutesByFullPath {
   '/stock-transfers/': typeof LayoutStockTransfersIndexRoute
   '/supplier-deliveries/': typeof LayoutSupplierDeliveriesIndexRoute
   '/waste/': typeof LayoutWasteIndexRoute
+  '/api/print/procurement/invoice': typeof ApiPrintProcurementInvoiceRoute
+  '/api/print/procurement/surat-jalan': typeof ApiPrintProcurementSuratJalanRoute
+  '/api/print/transfer/invoice': typeof ApiPrintTransferInvoiceRoute
+  '/api/print/transfer/surat-jalan': typeof ApiPrintTransferSuratJalanRoute
 }
 export interface FileRoutesByTo {
   '/about': typeof AboutRoute
@@ -705,6 +736,10 @@ export interface FileRoutesByTo {
   '/stock-transfers': typeof LayoutStockTransfersIndexRoute
   '/supplier-deliveries': typeof LayoutSupplierDeliveriesIndexRoute
   '/waste': typeof LayoutWasteIndexRoute
+  '/api/print/procurement/invoice': typeof ApiPrintProcurementInvoiceRoute
+  '/api/print/procurement/surat-jalan': typeof ApiPrintProcurementSuratJalanRoute
+  '/api/print/transfer/invoice': typeof ApiPrintTransferInvoiceRoute
+  '/api/print/transfer/surat-jalan': typeof ApiPrintTransferSuratJalanRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -792,6 +827,10 @@ export interface FileRoutesById {
   '/_layout/stock-transfers/': typeof LayoutStockTransfersIndexRoute
   '/_layout/supplier-deliveries/': typeof LayoutSupplierDeliveriesIndexRoute
   '/_layout/waste/': typeof LayoutWasteIndexRoute
+  '/api/print/procurement/invoice': typeof ApiPrintProcurementInvoiceRoute
+  '/api/print/procurement/surat-jalan': typeof ApiPrintProcurementSuratJalanRoute
+  '/api/print/transfer/invoice': typeof ApiPrintTransferInvoiceRoute
+  '/api/print/transfer/surat-jalan': typeof ApiPrintTransferSuratJalanRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -879,6 +918,10 @@ export interface FileRouteTypes {
     | '/stock-transfers/'
     | '/supplier-deliveries/'
     | '/waste/'
+    | '/api/print/procurement/invoice'
+    | '/api/print/procurement/surat-jalan'
+    | '/api/print/transfer/invoice'
+    | '/api/print/transfer/surat-jalan'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/about'
@@ -964,6 +1007,10 @@ export interface FileRouteTypes {
     | '/stock-transfers'
     | '/supplier-deliveries'
     | '/waste'
+    | '/api/print/procurement/invoice'
+    | '/api/print/procurement/surat-jalan'
+    | '/api/print/transfer/invoice'
+    | '/api/print/transfer/surat-jalan'
   id:
     | '__root__'
     | '/_layout'
@@ -1050,6 +1097,10 @@ export interface FileRouteTypes {
     | '/_layout/stock-transfers/'
     | '/_layout/supplier-deliveries/'
     | '/_layout/waste/'
+    | '/api/print/procurement/invoice'
+    | '/api/print/procurement/surat-jalan'
+    | '/api/print/transfer/invoice'
+    | '/api/print/transfer/surat-jalan'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1068,6 +1119,10 @@ export interface RootRouteChildren {
   ApiPrintStockOpnameRoute: typeof ApiPrintStockOpnameRoute
   DemoFormAddressRoute: typeof DemoFormAddressRoute
   DemoFormSimpleRoute: typeof DemoFormSimpleRoute
+  ApiPrintProcurementInvoiceRoute: typeof ApiPrintProcurementInvoiceRoute
+  ApiPrintProcurementSuratJalanRoute: typeof ApiPrintProcurementSuratJalanRoute
+  ApiPrintTransferInvoiceRoute: typeof ApiPrintTransferInvoiceRoute
+  ApiPrintTransferSuratJalanRoute: typeof ApiPrintTransferSuratJalanRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1660,6 +1715,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoFormSimpleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/print/procurement/invoice': {
+      id: '/api/print/procurement/invoice'
+      path: '/api/print/procurement/invoice'
+      fullPath: '/api/print/procurement/invoice'
+      preLoaderRoute: typeof ApiPrintProcurementInvoiceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/print/procurement/surat-jalan': {
+      id: '/api/print/procurement/surat-jalan'
+      path: '/api/print/procurement/surat-jalan'
+      fullPath: '/api/print/procurement/surat-jalan'
+      preLoaderRoute: typeof ApiPrintProcurementSuratJalanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/print/transfer/invoice': {
+      id: '/api/print/transfer/invoice'
+      path: '/api/print/transfer/invoice'
+      fullPath: '/api/print/transfer/invoice'
+      preLoaderRoute: typeof ApiPrintTransferInvoiceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/print/transfer/surat-jalan': {
+      id: '/api/print/transfer/surat-jalan'
+      path: '/api/print/transfer/surat-jalan'
+      fullPath: '/api/print/transfer/surat-jalan'
+      preLoaderRoute: typeof ApiPrintTransferSuratJalanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -1827,6 +1910,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPrintStockOpnameRoute: ApiPrintStockOpnameRoute,
   DemoFormAddressRoute: DemoFormAddressRoute,
   DemoFormSimpleRoute: DemoFormSimpleRoute,
+  ApiPrintProcurementInvoiceRoute: ApiPrintProcurementInvoiceRoute,
+  ApiPrintProcurementSuratJalanRoute: ApiPrintProcurementSuratJalanRoute,
+  ApiPrintTransferInvoiceRoute: ApiPrintTransferInvoiceRoute,
+  ApiPrintTransferSuratJalanRoute: ApiPrintTransferSuratJalanRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

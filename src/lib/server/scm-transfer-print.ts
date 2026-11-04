@@ -147,43 +147,49 @@ function buildMutasiSuratJalanHtml(d: MutasiSuratJalanData): string {
 </body></html>`;
 }
 
+/**
+ * Printable surat jalan for one branch-to-branch transfer.
+ *
+ * A plain async function rather than a server function so
+ * `/api/print/transfer/surat-jalan` can serve it as a GET document the print
+ * window navigates to — see `buildFinancePrintHtml` in `finance.ts`.
+ */
+export async function buildTransferSuratJalanHtml(transferId: string): Promise<string> {
+  const user = await requireAuth();
+
+  const [tr] = await db.select().from(scmTransfers).where(eq(scmTransfers.id, transferId)).limit(1);
+  if (!tr) throw new Error("Mutasi transfer not found");
+
+  assertTransferAccess(user, tr, "view");
+
+  const items = await db
+    .select({
+      id: scmTransferItems.id,
+      ingredientName: ingredients.name,
+      quantity: scmTransferItems.quantity,
+    })
+    .from(scmTransferItems)
+    .innerJoin(ingredients, eq(ingredients.id, scmTransferItems.ingredientId))
+    .where(eq(scmTransferItems.scmTransferId, transferId));
+
+  const allBranches = await db.select().from(branches);
+  const from = allBranches.find((b) => b.id === tr.fromBranchId);
+  const to = allBranches.find((b) => b.id === tr.toBranchId);
+
+  return buildMutasiSuratJalanHtml({
+    code: tr.code,
+    shippedAt: tr.shippedAt,
+    createdAt: tr.createdAt,
+    items,
+    fromBranchName: from?.name ?? tr.fromBranchId,
+    toBranchName: to?.name ?? tr.toBranchId,
+  });
+}
+
+/** Server-function wrapper kept for tabs loaded before the print document moved. */
 export const printMutasiSuratJalan = createServerFn({ method: "GET" })
   .validator((data: { transferId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-
-    const [tr] = await db
-      .select()
-      .from(scmTransfers)
-      .where(eq(scmTransfers.id, data.transferId))
-      .limit(1);
-    if (!tr) throw new Error("Mutasi transfer not found");
-
-    assertTransferAccess(user, tr, "view");
-
-    const items = await db
-      .select({
-        id: scmTransferItems.id,
-        ingredientName: ingredients.name,
-        quantity: scmTransferItems.quantity,
-      })
-      .from(scmTransferItems)
-      .innerJoin(ingredients, eq(ingredients.id, scmTransferItems.ingredientId))
-      .where(eq(scmTransferItems.scmTransferId, data.transferId));
-
-    const allBranches = await db.select().from(branches);
-    const from = allBranches.find((b) => b.id === tr.fromBranchId);
-    const to = allBranches.find((b) => b.id === tr.toBranchId);
-
-    return buildMutasiSuratJalanHtml({
-      code: tr.code,
-      shippedAt: tr.shippedAt,
-      createdAt: tr.createdAt,
-      items,
-      fromBranchName: from?.name ?? tr.fromBranchId,
-      toBranchName: to?.name ?? tr.toBranchId,
-    });
-  });
+  .handler(async ({ data }) => buildTransferSuratJalanHtml(data.transferId));
 
 // =============================================================================
 // Invoice Mutasi (Branch→Branch B2B bill)
@@ -381,65 +387,68 @@ function buildMutasiInvoiceHtml(d: MutasiInvoiceData): string {
 </body></html>`;
 }
 
+/**
+ * Printable invoice for one branch-to-branch transfer. See
+ * `buildTransferSuratJalanHtml`.
+ */
+export async function buildTransferInvoiceHtml(transferId: string): Promise<string> {
+  const user = await requireAuth();
+
+  const [tr] = await db.select().from(scmTransfers).where(eq(scmTransfers.id, transferId)).limit(1);
+  if (!tr) throw new Error("Mutasi transfer not found");
+
+  assertTransferAccess(user, tr, "view");
+
+  const [invoice] = await db
+    .select()
+    .from(scmTransferInvoices)
+    .where(eq(scmTransferInvoices.scmTransferId, transferId))
+    .limit(1);
+  if (!invoice) throw new Error("No invoice has been generated for this transfer yet");
+
+  const lineItems = z
+    .array(
+      z.object({
+        ingredientName: z.string(),
+        receivedQuantity: z.number(),
+        rejectedQuantity: z.number(),
+        unitPrice: z.number(),
+        lineTotal: z.number(),
+        reason: z.string().nullable(),
+      }),
+    )
+    .catch([])
+    .parse(invoice.lineItems);
+
+  const allBranches = await db.select().from(branches);
+  const from = allBranches.find((b) => b.id === tr.fromBranchId);
+  const to = allBranches.find((b) => b.id === tr.toBranchId);
+
+  return buildMutasiInvoiceHtml({
+    code: invoice.code,
+    transferCode: tr.code,
+    generatedAt: invoice.createdAt,
+    paidAt: invoice.paidAt,
+    totalAmount: invoice.totalAmount,
+    fromBranchName: from?.name ?? tr.fromBranchId,
+    toBranchName: to?.name ?? tr.toBranchId,
+    showUnitPrice: user.role !== "branch_admin",
+    showMoney: user.role !== "branch_admin",
+    lineItems: lineItems.map((li) => ({
+      ingredientName: li.ingredientName ?? "",
+      receivedQuantity: li.receivedQuantity ?? 0,
+      rejectedQuantity: li.rejectedQuantity ?? 0,
+      unitPrice: li.unitPrice ?? 0,
+      lineTotal: li.lineTotal ?? 0,
+      reason: li.reason ?? null,
+    })),
+  });
+}
+
+/** Server-function wrapper kept for tabs loaded before the print document moved. */
 export const printMutasiInvoice = createServerFn({ method: "GET" })
   .validator((data: { transferId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-
-    const [tr] = await db
-      .select()
-      .from(scmTransfers)
-      .where(eq(scmTransfers.id, data.transferId))
-      .limit(1);
-    if (!tr) throw new Error("Mutasi transfer not found");
-
-    assertTransferAccess(user, tr, "view");
-
-    const [invoice] = await db
-      .select()
-      .from(scmTransferInvoices)
-      .where(eq(scmTransferInvoices.scmTransferId, data.transferId))
-      .limit(1);
-    if (!invoice) throw new Error("No invoice has been generated for this transfer yet");
-
-    const lineItems = z
-      .array(
-        z.object({
-          ingredientName: z.string(),
-          receivedQuantity: z.number(),
-          rejectedQuantity: z.number(),
-          unitPrice: z.number(),
-          lineTotal: z.number(),
-          reason: z.string().nullable(),
-        }),
-      )
-      .catch([])
-      .parse(invoice.lineItems);
-
-    const allBranches = await db.select().from(branches);
-    const from = allBranches.find((b) => b.id === tr.fromBranchId);
-    const to = allBranches.find((b) => b.id === tr.toBranchId);
-
-    return buildMutasiInvoiceHtml({
-      code: invoice.code,
-      transferCode: tr.code,
-      generatedAt: invoice.createdAt,
-      paidAt: invoice.paidAt,
-      totalAmount: invoice.totalAmount,
-      fromBranchName: from?.name ?? tr.fromBranchId,
-      toBranchName: to?.name ?? tr.toBranchId,
-      showUnitPrice: user.role !== "branch_admin",
-      showMoney: user.role !== "branch_admin",
-      lineItems: lineItems.map((li) => ({
-        ingredientName: li.ingredientName ?? "",
-        receivedQuantity: li.receivedQuantity ?? 0,
-        rejectedQuantity: li.rejectedQuantity ?? 0,
-        unitPrice: li.unitPrice ?? 0,
-        lineTotal: li.lineTotal ?? 0,
-        reason: li.reason ?? null,
-      })),
-    });
-  });
+  .handler(async ({ data }) => buildTransferInvoiceHtml(data.transferId));
 
 // =============================================================================
 // Helpers

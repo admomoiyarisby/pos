@@ -50,7 +50,7 @@ import {
   recentMonths,
   weeksInMonth,
 } from "#/lib/report-period";
-import { openPrintUrl } from "#/lib/print-window";
+import { openPrintDocument } from "#/lib/print-window";
 import { financePrintUrl } from "#/lib/print-links";
 import { toast } from "sonner";
 
@@ -1548,7 +1548,7 @@ function FinancePage() {
               // function for its HTML: no RPC in the path means nothing to
               // turn into a "Failed to fetch" toast, and the window can be
               // reloaded if the connection blipped.
-              const opened = openPrintUrl(
+              openPrintDocument(
                 financePrintUrl({
                   dateFrom: effectiveDateRange.from || undefined,
                   dateTo: effectiveDateRange.to || undefined,
@@ -1556,11 +1556,6 @@ function FinancePage() {
                   channel,
                 }),
               );
-              if (!opened) {
-                toast.error("Jendela cetak diblokir", {
-                  description: "Izinkan pop-up untuk situs ini, lalu cetak ulang.",
-                });
-              }
             }}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-md border text-sm font-medium transition-colors hover:bg-muted active:scale-[0.99] sm:h-9 sm:px-4"
           >

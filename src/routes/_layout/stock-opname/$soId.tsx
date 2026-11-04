@@ -15,7 +15,7 @@ import {
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
-import { openPrintUrl } from "#/lib/print-window";
+import { openPrintDocument } from "#/lib/print-window";
 import { stockOpnamePrintUrl } from "#/lib/print-links";
 import { cn, formatQuantity, parseQuantityInput, roundQuantity } from "#/lib/utils";
 import { toast } from "sonner";
@@ -378,11 +378,7 @@ function StockOpnameDetailPage() {
               onClick={() => {
                 // Navigate to the printable document instead of fetching its
                 // HTML through a server function — see /api/print/stock-opname.
-                if (!openPrintUrl(stockOpnamePrintUrl(soId))) {
-                  toast.error("Jendela cetak diblokir", {
-                    description: "Izinkan pop-up untuk situs ini, lalu cetak ulang.",
-                  });
-                }
+                openPrintDocument(stockOpnamePrintUrl(soId));
               }}
               className="inline-flex items-center justify-center h-8 px-3 rounded-lg sm:rounded-md border bg-background text-xs font-medium hover:bg-muted transition-colors shrink-0"
             >

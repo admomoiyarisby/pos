@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
-import { financePrintUrl, PRINT_FINANCE_PATH, stockOpnamePrintUrl } from "./print-links";
+import {
+  financePrintUrl,
+  PRINT_FINANCE_PATH,
+  procurementInvoicePrintUrl,
+  procurementSuratJalanPrintUrl,
+  stockOpnamePrintUrl,
+  transferInvoicePrintUrl,
+  transferSuratJalanPrintUrl,
+} from "./print-links";
 
 describe("financePrintUrl", () => {
   it("drops empty filters instead of writing `undefined` into the query", () => {
@@ -41,4 +49,23 @@ describe("stockOpnamePrintUrl", () => {
     expect(parsed.pathname).toBe("/api/print/stock-opname");
     expect(parsed.searchParams.get("soId")).toBe("33333333-3333-3333-3333-333333333333");
   });
+});
+
+describe("SCM document URLs", () => {
+  // One table: the point is that every button/route pair agrees on the path and
+  // on the query key, and a typo in either is what this catches.
+  const cases = [
+    [procurementSuratJalanPrintUrl, "/api/print/procurement/surat-jalan", "procurementId"],
+    [procurementInvoicePrintUrl, "/api/print/procurement/invoice", "procurementId"],
+    [transferSuratJalanPrintUrl, "/api/print/transfer/surat-jalan", "transferId"],
+    [transferInvoicePrintUrl, "/api/print/transfer/invoice", "transferId"],
+  ] as const;
+
+  for (const [buildUrl, path, param] of cases) {
+    it(`${path} takes ${param}`, () => {
+      const parsed = new URL(buildUrl("abc-123"), "https://pos.test");
+      expect(parsed.pathname).toBe(path);
+      expect(parsed.searchParams.get(param)).toBe("abc-123");
+    });
+  }
 });

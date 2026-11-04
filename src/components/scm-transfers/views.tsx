@@ -48,8 +48,8 @@ import {
   removeMutasiTransferDraftItem,
   toggleMutasiInvoiceChecked,
 } from "#/lib/server/scm-transfers";
-import { printMutasiSuratJalan, printMutasiInvoice } from "#/lib/server/scm-transfer-print";
-import { openPrintWindow } from "#/lib/print-window";
+import { openPrintDocument } from "#/lib/print-window";
+import { transferInvoicePrintUrl, transferSuratJalanPrintUrl } from "#/lib/print-links";
 import { lookupLabel } from "#/lib/label-lookup";
 import { formatQuantity } from "#/lib/utils";
 import { toast } from "sonner";
@@ -174,8 +174,6 @@ function useTransferActions(transferId: string) {
   const saveDraftNotesMut = useServerFn(updateMutasiTransferDraftNotes);
   const addDraftItemMut = useServerFn(addMutasiTransferDraftItem);
   const removeDraftItemMut = useServerFn(removeMutasiTransferDraftItem);
-  const printSJ = useServerFn(printMutasiSuratJalan);
-  const printInv = useServerFn(printMutasiInvoice);
   const toggleCheckedMut = useServerFn(toggleMutasiInvoiceChecked);
 
   async function run<T>(fn: () => Promise<T>) {
@@ -272,14 +270,10 @@ function useTransferActions(transferId: string) {
           throw err;
         }
       },
-      printSJ: async () => {
-        const html = await printSJ({ data: { transferId } });
-        openPrintWindow(html);
-      },
-      printInvoice: async () => {
-        const html = await printInv({ data: { transferId } });
-        openPrintWindow(html);
-      },
+      // The printable documents are URLs (see /api/print/transfer/*), so these
+      // only open a window — no server call that a flaky link can break.
+      printSJ: () => openPrintDocument(transferSuratJalanPrintUrl(transferId)),
+      printInvoice: () => openPrintDocument(transferInvoicePrintUrl(transferId)),
     },
   };
 }

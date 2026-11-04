@@ -22,6 +22,32 @@ export function printHtmlResponse(html: string): Response {
 }
 
 /**
+ * Handler body for a print document identified by one query parameter.
+ *
+ * Every `/api/print/*` route is the same three steps — read the id, build the
+ * document, explain any failure on the page — so they share this instead of
+ * repeating it. `param` is the query key (`soId`, `procurementId`, …) the URL
+ * builders in `src/lib/print-links.ts` write.
+ */
+export function printDocumentHandler(
+  param: string,
+  build: (id: string) => Promise<string>,
+): (context: { request: Request }) => Promise<Response> {
+  return async ({ request }) => {
+    const id = new URL(request.url).searchParams.get(param);
+    if (!id) return printNotFoundResponse();
+    try {
+      return printHtmlResponse(await build(id));
+    } catch (err) {
+      // Anything that is not an Error carries no message worth printing; let
+      // the framework's 500 page take it.
+      if (!(err instanceof Error)) throw err;
+      return printFailureResponse(err);
+    }
+  };
+}
+
+/**
  * Turn a print handler's error into a page that explains itself, with the status
  * a caller or a log can act on:
  *
@@ -55,9 +81,14 @@ export function printFailureResponse(error: Error): Response {
     );
   }
   if (error.message.endsWith("not found")) {
-    return failurePage("Data tidak ditemukan", "Data yang ingin dicetak sudah tidak ada.", 404);
+    return printNotFoundResponse();
   }
   return failurePage("Gagal membuat dokumen", error.message, 500);
+}
+
+/** The record is gone (deleted, or never existed): nothing to print. */
+export function printNotFoundResponse(): Response {
+  return failurePage("Data tidak ditemukan", "Data yang ingin dicetak sudah tidak ada.", 404);
 }
 
 /** Minimal standalone page — the print window has no app shell to lean on. */

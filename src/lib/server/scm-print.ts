@@ -143,42 +143,52 @@ function buildSuratJalanHtml(d: SuratJalanData): string {
 </body></html>`;
 }
 
+/**
+ * Printable surat jalan (delivery note) for one procurement.
+ *
+ * A plain async function rather than a server function so
+ * `/api/print/procurement/surat-jalan` can serve it as a GET document the print
+ * window navigates to — see `buildFinancePrintHtml` in `finance.ts`.
+ */
+export async function buildProcurementSuratJalanHtml(procurementId: string): Promise<string> {
+  await requireAuth();
+
+  const [proc] = await db
+    .select()
+    .from(scmProcurements)
+    .where(eq(scmProcurements.id, procurementId))
+    .limit(1);
+  if (!proc) throw new Error("Procurement not found");
+
+  const items = await db
+    .select({
+      id: scmProcurementItems.id,
+      ingredientName: ingredients.name,
+      stockUnit: ingredients.stockUnit,
+      pickedQuantity: scmProcurementItems.pickedQuantity,
+    })
+    .from(scmProcurementItems)
+    .innerJoin(ingredients, eq(ingredients.id, scmProcurementItems.ingredientId))
+    .where(eq(scmProcurementItems.scmProcurementId, procurementId));
+
+  const allBranches = await db.select().from(branches);
+  const dest = allBranches.find((b) => b.id === proc.branchId);
+  const central = allBranches.find((b) => b.type === "Central");
+
+  return buildSuratJalanHtml({
+    code: proc.code,
+    shippedAt: proc.shippedAt,
+    createdAt: proc.createdAt,
+    items,
+    sourceBranchName: central?.name ?? "Central Kitchen",
+    destBranchName: dest?.name ?? "-",
+  });
+}
+
+/** Server-function wrapper kept for tabs loaded before the print document moved. */
 export const printSuratJalan = createServerFn({ method: "GET" })
   .validator((data: { procurementId: string }) => data)
-  .handler(async ({ data }) => {
-    await requireAuth();
-
-    const [proc] = await db
-      .select()
-      .from(scmProcurements)
-      .where(eq(scmProcurements.id, data.procurementId))
-      .limit(1);
-    if (!proc) throw new Error("Procurement not found");
-
-    const items = await db
-      .select({
-        id: scmProcurementItems.id,
-        ingredientName: ingredients.name,
-        stockUnit: ingredients.stockUnit,
-        pickedQuantity: scmProcurementItems.pickedQuantity,
-      })
-      .from(scmProcurementItems)
-      .innerJoin(ingredients, eq(ingredients.id, scmProcurementItems.ingredientId))
-      .where(eq(scmProcurementItems.scmProcurementId, data.procurementId));
-
-    const allBranches = await db.select().from(branches);
-    const dest = allBranches.find((b) => b.id === proc.branchId);
-    const central = allBranches.find((b) => b.type === "Central");
-
-    return buildSuratJalanHtml({
-      code: proc.code,
-      shippedAt: proc.shippedAt,
-      createdAt: proc.createdAt,
-      items,
-      sourceBranchName: central?.name ?? "Central Kitchen",
-      destBranchName: dest?.name ?? "-",
-    });
-  });
+  .handler(async ({ data }) => buildProcurementSuratJalanHtml(data.procurementId));
 
 // =============================================================================
 // Invoice SCM
@@ -383,66 +393,73 @@ function buildInvoiceHtml(d: InvoiceData): string {
 </body></html>`;
 }
 
+/**
+ * Printable invoice for one procurement. See `buildProcurementSuratJalanHtml`.
+ * Money and unit prices are hidden from branch admins, as on screen.
+ */
+export async function buildProcurementInvoiceHtml(procurementId: string): Promise<string> {
+  const user = await requireAuth();
+
+  const [proc] = await db
+    .select()
+    .from(scmProcurements)
+    .where(eq(scmProcurements.id, procurementId))
+    .limit(1);
+  if (!proc) throw new Error("Procurement not found");
+
+  const [invoice] = await db
+    .select()
+    .from(scmProcurementInvoices)
+    .where(eq(scmProcurementInvoices.scmProcurementId, procurementId))
+    .limit(1);
+  if (!invoice) throw new Error("Invoice not found for this procurement");
+
+  const lineItems = z
+    .array(
+      z.object({
+        ingredientName: z.string(),
+        receivedQuantity: z.number(),
+        rejectedQuantity: z.number(),
+        unitPrice: z.number(),
+        lineTotal: z.number(),
+        reason: z.string().nullable(),
+      }),
+    )
+    .catch([])
+    .parse(invoice.lineItems);
+
+  // Fetch requester name
+  const [requester] = proc.requestedById
+    ? await db
+        .select({ name: users.name })
+        .from(users)
+        .where(eq(users.id, proc.requestedById))
+        .limit(1)
+    : [];
+
+  const allBranches = await db.select().from(branches);
+  const dest = allBranches.find((b) => b.id === proc.branchId);
+  const central = allBranches.find((b) => b.type === "Central");
+
+  return buildInvoiceHtml({
+    code: proc.code,
+    generatedAt: invoice.generatedAt,
+    paidAt: invoice.paidAt,
+    totalAmount: invoice.totalAmount,
+    lineItems,
+    sourceBranchName: central?.name ?? "Central Kitchen",
+    destBranchName: dest?.name ?? "-",
+    requestedByName: requester?.name ?? null,
+    requestSource: proc.requestSource ?? null,
+    showUnitPrice: user.role !== "branch_admin",
+    showMoney: user.role !== "branch_admin",
+  });
+}
+
+/** Server-function wrapper kept for tabs loaded before the print document moved. */
 export const printInvoice = createServerFn({ method: "GET" })
   .validator((data: { procurementId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-
-    const [proc] = await db
-      .select()
-      .from(scmProcurements)
-      .where(eq(scmProcurements.id, data.procurementId))
-      .limit(1);
-    if (!proc) throw new Error("Procurement not found");
-
-    const [invoice] = await db
-      .select()
-      .from(scmProcurementInvoices)
-      .where(eq(scmProcurementInvoices.scmProcurementId, data.procurementId))
-      .limit(1);
-    if (!invoice) throw new Error("Invoice not found for this procurement");
-
-    const lineItems = z
-      .array(
-        z.object({
-          ingredientName: z.string(),
-          receivedQuantity: z.number(),
-          rejectedQuantity: z.number(),
-          unitPrice: z.number(),
-          lineTotal: z.number(),
-          reason: z.string().nullable(),
-        }),
-      )
-      .catch([])
-      .parse(invoice.lineItems);
-
-    // Fetch requester name
-    const [requester] = proc.requestedById
-      ? await db
-          .select({ name: users.name })
-          .from(users)
-          .where(eq(users.id, proc.requestedById))
-          .limit(1)
-      : [];
-
-    const allBranches = await db.select().from(branches);
-    const dest = allBranches.find((b) => b.id === proc.branchId);
-    const central = allBranches.find((b) => b.type === "Central");
-
-    return buildInvoiceHtml({
-      code: proc.code,
-      generatedAt: invoice.generatedAt,
-      paidAt: invoice.paidAt,
-      totalAmount: invoice.totalAmount,
-      lineItems,
-      sourceBranchName: central?.name ?? "Central Kitchen",
-      destBranchName: dest?.name ?? "-",
-      requestedByName: requester?.name ?? null,
-      requestSource: proc.requestSource ?? null,
-      showUnitPrice: user.role !== "branch_admin",
-      showMoney: user.role !== "branch_admin",
-    });
-  });
+  .handler(async ({ data }) => buildProcurementInvoiceHtml(data.procurementId));
 
 // =============================================================================
 // Helpers

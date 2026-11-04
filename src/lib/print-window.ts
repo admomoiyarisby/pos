@@ -1,8 +1,13 @@
+import { toast } from "sonner";
+
 /**
  * Client-side helper to open a print window and write HTML to it.
  * The HTML is expected to include a <script> at the end that calls
  * window.print() and window.close() on load (matching the POS receipt
  * pattern in src/lib/pos-print.ts).
+ *
+ * Prefer `openPrintDocument` + a `/api/print/*` URL where the document exists
+ * server-side: this path needs a server function to succeed first.
  */
 export function openPrintWindow(html: string): void {
   // Try popup first
@@ -68,4 +73,17 @@ export function openPrintWindow(html: string): void {
  */
 export function openPrintUrl(url: string): boolean {
   return window.open(url, "_blank") !== null;
+}
+
+/**
+ * Open a print document, or tell the user why it did not happen.
+ *
+ * Every print button goes through this so a blocked pop-up always produces the
+ * same instruction instead of a button that appears to do nothing.
+ */
+export function openPrintDocument(url: string): void {
+  if (openPrintUrl(url)) return;
+  toast.error("Jendela cetak diblokir", {
+    description: "Izinkan pop-up untuk situs ini, lalu cetak ulang.",
+  });
 }

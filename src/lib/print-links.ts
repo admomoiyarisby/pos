@@ -2,13 +2,17 @@
  * Links to printable documents.
  *
  * Printing is a **navigation**, not an RPC: `/api/print/*` answers with a
- * finished HTML document that calls `window.print()` on load. Keeping the URL
- * here means the button and the route can never disagree about the path or the
+ * finished HTML document that calls `window.print()` on load. Keeping the URLs
+ * here means a button and its route can never disagree about the path or the
  * query-parameter names.
  */
 
 export const PRINT_FINANCE_PATH = "/api/print/finance";
 export const PRINT_STOCK_OPNAME_PATH = "/api/print/stock-opname";
+export const PRINT_PROCUREMENT_SURAT_JALAN_PATH = "/api/print/procurement/surat-jalan";
+export const PRINT_PROCUREMENT_INVOICE_PATH = "/api/print/procurement/invoice";
+export const PRINT_TRANSFER_SURAT_JALAN_PATH = "/api/print/transfer/surat-jalan";
+export const PRINT_TRANSFER_INVOICE_PATH = "/api/print/transfer/invoice";
 
 /** Filters the printable finance report can be narrowed by. */
 export interface FinancePrintLinkFilters {
@@ -34,5 +38,33 @@ export function financePrintUrl(filters: FinancePrintLinkFilters): string {
 
 /** URL of the printable stock-opname sheet for one stock opname. */
 export function stockOpnamePrintUrl(soId: string): string {
-  return `${PRINT_STOCK_OPNAME_PATH}?${new URLSearchParams({ soId }).toString()}`;
+  return documentUrl(PRINT_STOCK_OPNAME_PATH, "soId", soId);
+}
+
+/** Surat jalan (delivery note) for one procurement. */
+export function procurementSuratJalanPrintUrl(procurementId: string): string {
+  return documentUrl(PRINT_PROCUREMENT_SURAT_JALAN_PATH, "procurementId", procurementId);
+}
+
+/** Invoice for one procurement. */
+export function procurementInvoicePrintUrl(procurementId: string): string {
+  return documentUrl(PRINT_PROCUREMENT_INVOICE_PATH, "procurementId", procurementId);
+}
+
+/** Surat jalan for one branch-to-branch stock transfer. */
+export function transferSuratJalanPrintUrl(transferId: string): string {
+  return documentUrl(PRINT_TRANSFER_SURAT_JALAN_PATH, "transferId", transferId);
+}
+
+/** Invoice for one branch-to-branch stock transfer. */
+export function transferInvoicePrintUrl(transferId: string): string {
+  return documentUrl(PRINT_TRANSFER_INVOICE_PATH, "transferId", transferId);
+}
+
+/**
+ * One document, one identifying query parameter. Relative on purpose: the print
+ * window must stay same-origin so the session cookie rides along.
+ */
+function documentUrl(path: string, param: string, value: string): string {
+  return `${path}?${new URLSearchParams({ [param]: value }).toString()}`;
 }

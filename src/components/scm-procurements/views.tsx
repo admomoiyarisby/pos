@@ -22,8 +22,8 @@ import {
   type ScmProcurementInvoiceLineItem,
 } from "#/lib/server/scm-queries";
 import { getIngredients } from "#/lib/server/ingredients";
-import { printSuratJalan, printInvoice } from "#/lib/server/scm-print";
-import { openPrintWindow } from "#/lib/print-window";
+import { openPrintDocument } from "#/lib/print-window";
+import { procurementInvoicePrintUrl, procurementSuratJalanPrintUrl } from "#/lib/print-links";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
@@ -148,8 +148,10 @@ function AuditLogSection({ procurementId }: { procurementId: string }) {
 }
 
 /**
- * SuratJalanButton — opens a print window with the SJ document.
- * Mirrors the POS receipt pattern: window.open + auto-print + auto-close.
+ * SuratJalanButton — opens the printable SJ document in its own window.
+ * The document is a URL, so there is nothing to fetch first: a dropped
+ * connection cannot turn this into an error toast, and the window can be
+ * reloaded.
  */
 function SuratJalanButton({
   procurementId,
@@ -158,27 +160,19 @@ function SuratJalanButton({
   procurementId: string;
   label?: string;
 }) {
-  const [loading, setLoading] = useState(false);
-  async function handleClick() {
-    try {
-      setLoading(true);
-      const html = await printSuratJalan({ data: { procurementId } });
-      openPrintWindow(html);
-    } catch (err) {
-      alert(`Gagal mencetak: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setLoading(false);
-    }
-  }
   return (
-    <Button variant="outline" size="sm" onClick={handleClick} disabled={loading}>
-      {loading ? "Menyiapkan..." : label}
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => openPrintDocument(procurementSuratJalanPrintUrl(procurementId))}
+    >
+      {label}
     </Button>
   );
 }
 
 /**
- * InvoiceButton — opens a print window with the Invoice document.
+ * InvoiceButton — opens the printable Invoice document in its own window.
  */
 function InvoiceButton({
   procurementId,
@@ -187,21 +181,13 @@ function InvoiceButton({
   procurementId: string;
   label?: string;
 }) {
-  const [loading, setLoading] = useState(false);
-  async function handleClick() {
-    try {
-      setLoading(true);
-      const html = await printInvoice({ data: { procurementId } });
-      openPrintWindow(html);
-    } catch (err) {
-      alert(`Gagal mencetak: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setLoading(false);
-    }
-  }
   return (
-    <Button variant="outline" size="sm" onClick={handleClick} disabled={loading}>
-      {loading ? "Menyiapkan..." : label}
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => openPrintDocument(procurementInvoicePrintUrl(procurementId))}
+    >
+      {label}
     </Button>
   );
 }
