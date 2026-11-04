@@ -1,7 +1,8 @@
 /**
  * Shared HTML utilities for server-side PDF/print generation.
  *
- * Used by printStockOpname, printFinancePage, and future print functions.
+ * Used by the printable documents served from `/api/print/*` (finance report,
+ * stock-opname sheet) and future print functions.
  */
 
 /**

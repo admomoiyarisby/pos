@@ -89,6 +89,8 @@ import { Route as LayoutStockTransfersTrIdRouteImport } from './routes/_layout/s
 import { Route as LayoutSupplierDeliveriesIndexRouteImport } from './routes/_layout/supplier-deliveries/index'
 import { Route as LayoutWasteIndexRouteImport } from './routes/_layout/waste/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiPrintFinanceRouteImport } from './routes/api/print/finance'
+import { Route as ApiPrintStockOpnameRouteImport } from './routes/api/print/stock-opname'
 import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
 import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
 
@@ -513,6 +515,16 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPrintFinanceRoute = ApiPrintFinanceRouteImport.update({
+  id: '/api/print/finance',
+  path: '/api/print/finance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPrintStockOpnameRoute = ApiPrintStockOpnameRouteImport.update({
+  id: '/api/print/stock-opname',
+  path: '/api/print/stock-opname',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DemoFormAddressRoute = DemoFormAddressRouteImport.update({
   id: '/demo/form/address',
   path: '/demo/form/address',
@@ -583,6 +595,8 @@ export interface FileRoutesByFullPath {
   '/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/print/finance': typeof ApiPrintFinanceRoute
+  '/api/print/stock-opname': typeof ApiPrintStockOpnameRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/admin/': typeof LayoutAdminIndexRoute
@@ -666,6 +680,8 @@ export interface FileRoutesByTo {
   '/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/print/finance': typeof ApiPrintFinanceRoute
+  '/api/print/stock-opname': typeof ApiPrintStockOpnameRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/admin': typeof LayoutAdminIndexRoute
@@ -751,6 +767,8 @@ export interface FileRoutesById {
   '/_layout/stock-opname/$soId': typeof LayoutStockOpnameSoIdRoute
   '/_layout/stock-transfers/$trId': typeof LayoutStockTransfersTrIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/print/finance': typeof ApiPrintFinanceRoute
+  '/api/print/stock-opname': typeof ApiPrintStockOpnameRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/_layout/admin/': typeof LayoutAdminIndexRoute
@@ -836,6 +854,8 @@ export interface FileRouteTypes {
     | '/stock-opname/$soId'
     | '/stock-transfers/$trId'
     | '/api/auth/$'
+    | '/api/print/finance'
+    | '/api/print/stock-opname'
     | '/demo/form/address'
     | '/demo/form/simple'
     | '/admin/'
@@ -919,6 +939,8 @@ export interface FileRouteTypes {
     | '/stock-opname/$soId'
     | '/stock-transfers/$trId'
     | '/api/auth/$'
+    | '/api/print/finance'
+    | '/api/print/stock-opname'
     | '/demo/form/address'
     | '/demo/form/simple'
     | '/admin'
@@ -1003,6 +1025,8 @@ export interface FileRouteTypes {
     | '/_layout/stock-opname/$soId'
     | '/_layout/stock-transfers/$trId'
     | '/api/auth/$'
+    | '/api/print/finance'
+    | '/api/print/stock-opname'
     | '/demo/form/address'
     | '/demo/form/simple'
     | '/_layout/admin/'
@@ -1040,6 +1064,8 @@ export interface RootRouteChildren {
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   MediaSplatRoute: typeof MediaSplatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiPrintFinanceRoute: typeof ApiPrintFinanceRoute
+  ApiPrintStockOpnameRoute: typeof ApiPrintStockOpnameRoute
   DemoFormAddressRoute: typeof DemoFormAddressRoute
   DemoFormSimpleRoute: typeof DemoFormSimpleRoute
 }
@@ -1606,6 +1632,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/print/finance': {
+      id: '/api/print/finance'
+      path: '/api/print/finance'
+      fullPath: '/api/print/finance'
+      preLoaderRoute: typeof ApiPrintFinanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/print/stock-opname': {
+      id: '/api/print/stock-opname'
+      path: '/api/print/stock-opname'
+      fullPath: '/api/print/stock-opname'
+      preLoaderRoute: typeof ApiPrintStockOpnameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/demo/form/address': {
       id: '/demo/form/address'
       path: '/demo/form/address'
@@ -1783,6 +1823,8 @@ const rootRouteChildren: RootRouteChildren = {
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   MediaSplatRoute: MediaSplatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiPrintFinanceRoute: ApiPrintFinanceRoute,
+  ApiPrintStockOpnameRoute: ApiPrintStockOpnameRoute,
   DemoFormAddressRoute: DemoFormAddressRoute,
   DemoFormSimpleRoute: DemoFormSimpleRoute,
 }

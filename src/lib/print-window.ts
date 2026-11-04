@@ -49,3 +49,23 @@ export function openPrintWindow(html: string): void {
     }
   }
 }
+
+/**
+ * Open a print document URL in its own window and let the document print
+ * itself on load.
+ *
+ * Preferred over `openPrintWindow(html)` wherever the document can be a URL:
+ * nothing has to be fetched by script first, so a flaky connection, a strict
+ * proxy, or an antivirus HTTPS scanner cannot turn "Cetak PDF" into a silent
+ * `TypeError: Failed to fetch`. The window is also reloadable, which is what a
+ * user reaches for after any failure.
+ *
+ * Returns false when the pop-up was blocked. Deliberately no hidden-iframe
+ * fallback: a print job that appears from nowhere — or, worse, prints the page
+ * behind it — is harder to diagnose than the one instruction the user needs.
+ * The caller turns false into "allow pop-ups, then print again", the same
+ * wording the thermal-receipt fallback uses (src/lib/pos-print.ts).
+ */
+export function openPrintUrl(url: string): boolean {
+  return window.open(url, "_blank") !== null;
+}

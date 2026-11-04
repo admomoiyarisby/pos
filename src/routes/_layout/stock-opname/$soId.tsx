@@ -11,12 +11,12 @@ import {
   updateStockOpnameCounts,
   markStockOpnameInvestigation,
   realizeStockOpname,
-  printStockOpname,
 } from "#/lib/server/inventory";
 import { Badge } from "#/components/ui/badge";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
-import { openPrintWindow } from "#/lib/print-window";
+import { openPrintUrl } from "#/lib/print-window";
+import { stockOpnamePrintUrl } from "#/lib/print-links";
 import { cn, formatQuantity, parseQuantityInput, roundQuantity } from "#/lib/utils";
 import { toast } from "sonner";
 import { calculateNasiConversion } from "#/lib/server/nasi-conversion";
@@ -375,13 +375,12 @@ function StockOpnameDetailPage() {
             </div>
             <button
               type="button"
-              onClick={async () => {
-                try {
-                  const result = await printStockOpname({ data: { soId } });
-                  openPrintWindow(result.html);
-                } catch (err) {
-                  toast.error("Gagal mencetak", {
-                    description: err instanceof Error ? err.message : String(err),
+              onClick={() => {
+                // Navigate to the printable document instead of fetching its
+                // HTML through a server function — see /api/print/stock-opname.
+                if (!openPrintUrl(stockOpnamePrintUrl(soId))) {
+                  toast.error("Jendela cetak diblokir", {
+                    description: "Izinkan pop-up untuk situs ini, lalu cetak ulang.",
                   });
                 }
               }}

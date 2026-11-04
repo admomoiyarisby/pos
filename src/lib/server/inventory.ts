@@ -1604,71 +1604,73 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
   };
 }
 
-// ID13: Print Stock Opname to PDF (HTML + browser print)
-export const printStockOpname = createServerFn({ method: "GET" })
-  .validator((data: { soId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
+/**
+ * Printable stock-opname sheet (A4 landscape, HTML + browser print).
+ *
+ * A plain async function rather than a server function, so `/api/print/stock-opname`
+ * can serve it as a GET document the print window *navigates* to — see
+ * `buildFinancePrintHtml` in `finance.ts` for why printing must not depend on
+ * an RPC surviving first. `printStockOpname` below stays for tabs that were
+ * loaded before that switch.
+ */
+export async function buildStockOpnamePrintHtml(soId: string): Promise<string> {
+  const user = await requireAuth();
 
-    const [so] = await db
-      .select()
-      .from(stockOpnames)
-      .where(eq(stockOpnames.id, data.soId))
-      .limit(1);
-    if (!so) throw new Error("Stock Opname not found");
+  const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, soId)).limit(1);
+  if (!so) throw new Error("Stock Opname not found");
 
-    // Branch access check (mirrors getStockOpnameDetail)
-    if (user.role === "branch_admin" && user.branchId && so.branchId !== user.branchId) {
-      throw new Error("Unauthorized: you can only print Stock Opnames for your branch");
+  // Branch access check (mirrors getStockOpnameDetail)
+  if (user.role === "branch_admin" && user.branchId && so.branchId !== user.branchId) {
+    throw new Error("Unauthorized: you can only print Stock Opnames for your branch");
+  }
+  if (user.role === "admin_pusat") {
+    const centralBranch = await getCentralWarehouse(db);
+    if (centralBranch && so.branchId !== centralBranch.id) {
+      throw new Error("Unauthorized: Admin Pusat can only print Central Warehouse Stock Opnames");
     }
-    if (user.role === "admin_pusat") {
-      const centralBranch = await getCentralWarehouse(db);
-      if (centralBranch && so.branchId !== centralBranch.id) {
-        throw new Error("Unauthorized: Admin Pusat can only print Central Warehouse Stock Opnames");
-      }
-    }
+  }
 
-    const [branch] = await db.select().from(branches).where(eq(branches.id, so.branchId)).limit(1);
+  const [branch] = await db.select().from(branches).where(eq(branches.id, so.branchId)).limit(1);
 
-    // The printed sheet is the same SNAPSHOT the detail view shows: exactly the
-    // rows the trigger wrote, with no second master-data filter — an ingredient
-    // flagged off or soft-deleted after the trigger keeps its line, because
-    // realize still applies its count. LEFT JOIN (not INNER) so a row whose
-    // ingredient was hard-deleted still prints instead of silently shrinking
-    // the sheet. Same order as the detail page.
-    const items = await db
-      .select({
-        id: stockOpnameItems.id,
-        ingredientName: ingredients.name,
-        ingredientCode: ingredients.code,
-        systemStock: stockOpnameItems.systemStock,
-        physicalStock: stockOpnameItems.physicalStock,
-        variance: stockOpnameItems.variance,
-        countedAt: stockOpnameItems.countedAt,
-        isBranchVisible: ingredients.isBranchVisible,
-      })
-      .from(stockOpnameItems)
-      .leftJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
-      .where(eq(stockOpnameItems.stockOpnameId, data.soId))
-      .orderBy(ingredients.name);
+  // The printed sheet is the same SNAPSHOT the detail view shows: exactly the
+  // rows the trigger wrote, with no second master-data filter — an ingredient
+  // flagged off or soft-deleted after the trigger keeps its line, because
+  // realize still applies its count. LEFT JOIN (not INNER) so a row whose
+  // ingredient was hard-deleted still prints instead of silently shrinking
+  // the sheet. Same order as the detail page.
+  const items = await db
+    .select({
+      id: stockOpnameItems.id,
+      ingredientName: ingredients.name,
+      ingredientCode: ingredients.code,
+      systemStock: stockOpnameItems.systemStock,
+      physicalStock: stockOpnameItems.physicalStock,
+      variance: stockOpnameItems.variance,
+      countedAt: stockOpnameItems.countedAt,
+      isBranchVisible: ingredients.isBranchVisible,
+    })
+    .from(stockOpnameItems)
+    .leftJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
+    .where(eq(stockOpnameItems.stockOpnameId, soId))
+    .orderBy(ingredients.name);
 
-    // Same marker as the detail page, through the same shared helper. Printed
-    // as a suffix so a counter working from paper still sees it.
-    const lines = items.map((it) => ({
-      ...it,
-      outsideBranchCatalog: isOutsideBranchCatalog(branch?.type, it.isBranchVisible),
-    }));
-    const outsideCount = lines.filter((l) => l.outsideBranchCatalog).length;
+  // Same marker as the detail page, through the same shared helper. Printed
+  // as a suffix so a counter working from paper still sees it.
+  const lines = items.map((it) => ({
+    ...it,
+    outsideBranchCatalog: isOutsideBranchCatalog(branch?.type, it.isBranchVisible),
+  }));
+  const outsideCount = lines.filter((l) => l.outsideBranchCatalog).length;
 
-    // Blind SO: branch admins (and admin pusat on the central warehouse) must
-    // not see system stock or variance — same rule as getStockOpnameDetail.
-    const isBlind = user.role === "branch_admin" || user.role === "admin_pusat";
+  // Blind SO: branch admins (and admin pusat on the central warehouse) must
+  // not see system stock or variance — same rule as getStockOpnameDetail.
+  const isBlind = user.role === "branch_admin" || user.role === "admin_pusat";
 
-    // Uncounted items are printed as "—": partial opname means an unfilled
-    // field was never counted, not that stock was counted as 0.
-    const rows = lines
-      .map(
-        (it, idx) => `
+  // Uncounted items are printed as "—": partial opname means an unfilled
+  // field was never counted, not that stock was counted as 0.
+  const rows = lines
+    .map(
+      (it, idx) => `
         <tr>
           <td style="text-align:center;">${idx + 1}</td>
           <td>${escapeHtml(it.ingredientCode ?? "")}</td>
@@ -1681,17 +1683,17 @@ export const printStockOpname = createServerFn({ method: "GET" })
           <td style="text-align:right;">${it.countedAt ? `${it.variance > 0 ? "+" : ""}${formatQuantity(it.variance)}` : "—"}</td>`
           }
         </tr>`,
-      )
-      .join("");
+    )
+    .join("");
 
-    const statusLabel =
-      so.status === "Approved"
-        ? "Disetujui"
-        : so.status === "Under Investigation"
-          ? "Investigasi"
-          : so.status;
+  const statusLabel =
+    so.status === "Approved"
+      ? "Disetujui"
+      : so.status === "Under Investigation"
+        ? "Investigasi"
+        : so.status;
 
-    const body = `
+  const body = `
 <div class="header-flex">
   <div>
     <div class="title">Laporan Stock Opname</div>
@@ -1725,8 +1727,19 @@ ${outsideCount > 0 ? `<p style="margin-top:6pt;font-size:9pt;color:#b45309;">[di
   <div><p>Menyetujui,</p><div class="line">( &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; )</div></div>
 </div>`;
 
-    return { html: buildPrintHtml(`Stock Opname ${branch?.name ?? ""}`, body, "landscape") };
-  });
+  return buildPrintHtml(`Stock Opname ${branch?.name ?? ""}`, body, "landscape");
+}
+
+/**
+ * Server-function wrapper over `buildStockOpnamePrintHtml`.
+ *
+ * Nothing in the app calls it any more — Cetak PDF navigates to
+ * `/api/print/stock-opname`. It stays registered so a tab that was already open
+ * when the print document moved can still print.
+ */
+export const printStockOpname = createServerFn({ method: "GET" })
+  .validator((data: { soId: string }) => data)
+  .handler(async ({ data }) => ({ html: await buildStockOpnamePrintHtml(data.soId) }));
 
 // Manual stock adjustment (batch) — adjust stock across one or many branches in
 // one atomic action. Each line is a signed IN/OUT; the whole batch shares a

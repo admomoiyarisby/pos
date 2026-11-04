@@ -2075,69 +2075,89 @@ export const getHourlyAnalytics = createServerFn({ method: "GET" })
     }));
   });
 
-// ID13: Print Finance page to PDF (HTML + browser print)
-export const printFinancePage = createServerFn({ method: "GET" })
-  .validator(
-    (data: { dateFrom?: string; dateTo?: string; branchId?: string; channel?: string }) => ({
-      ...data,
-      channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
-    }),
-  )
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    const summary = await getFinanceSummary({ data });
+/** Filters a printable finance report can be narrowed by. */
+export interface FinancePrintFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  branchId?: string;
+  channel?: string;
+}
 
-    // Fetch branch name if branchId provided
-    let branchName = "Semua Cabang";
-    if (data.branchId) {
-      const [branch] = await db
-        .select({ name: branches.name })
-        .from(branches)
-        .where(eq(branches.id, data.branchId))
-        .limit(1);
-      branchName = branch?.name ?? "-";
+/**
+ * Printable A4 finance report (HTML + browser print).
+ *
+ * Deliberately a plain async function rather than a server function: the
+ * document is served by `/api/print/finance` as a GET, so the print window can
+ * *navigate* to it. A server-function round trip has to survive the framed RPC
+ * transport before a single page of paper exists, and on a client whose
+ * browser, proxy, or Wi-Fi drops that request the user gets nothing but a bare
+ * `TypeError: Failed to fetch` toast — no document, no reason. A navigation is
+ * retried by the browser, can be reloaded, and fails visibly in its own window.
+ *
+ * `printFinancePage` stays below for tabs that were loaded before that switch.
+ */
+export async function buildFinancePrintHtml(data: FinancePrintFilters): Promise<string> {
+  // `channel` arrives from a query string or an RPC payload, so it is
+  // re-validated here instead of trusted: anything that is not a real channel
+  // means "all channels", exactly like the ledger filter.
+  const filters = {
+    ...data,
+    channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
+  };
+  const user = await requireAuth();
+  const summary = await getFinanceSummary({ data: filters });
+
+  // Fetch branch name if branchId provided
+  let branchName = "Semua Cabang";
+  if (filters.branchId) {
+    const [branch] = await db
+      .select({ name: branches.name })
+      .from(branches)
+      .where(eq(branches.id, filters.branchId))
+      .limit(1);
+    branchName = branch?.name ?? "-";
+  }
+
+  // Per-channel period roll-up on the payout basis (ADR 0028) — the same
+  // aggregation the ledger and the on-screen Per Channel table use.
+  const pnlDays = await getDailyPnlCore(user, {
+    branchId: filters.branchId,
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+    channel: filters.channel,
+  });
+  const byChannel = new Map<string, { orderCount: number; omzet: number; hpp: number }>();
+  for (const day of pnlDays) {
+    for (const line of day.channels) {
+      const entry = byChannel.get(line.channel) ?? { orderCount: 0, omzet: 0, hpp: 0 };
+      entry.orderCount += line.orderCount;
+      entry.omzet += line.omzet;
+      entry.hpp += line.hpp;
+      byChannel.set(line.channel, entry);
     }
+  }
+  const adjustment = pnlDays.reduce((s, d) => s + d.adjustment, 0);
 
-    // Per-channel period roll-up on the payout basis (ADR 0028) — the same
-    // aggregation the ledger and the on-screen Per Channel table use.
-    const pnlDays = await getDailyPnlCore(user, {
-      branchId: data.branchId,
-      dateFrom: data.dateFrom,
-      dateTo: data.dateTo,
-      channel: data.channel,
-    });
-    const byChannel = new Map<string, { orderCount: number; omzet: number; hpp: number }>();
-    for (const day of pnlDays) {
-      for (const line of day.channels) {
-        const entry = byChannel.get(line.channel) ?? { orderCount: 0, omzet: 0, hpp: 0 };
-        entry.orderCount += line.orderCount;
-        entry.omzet += line.omzet;
-        entry.hpp += line.hpp;
-        byChannel.set(line.channel, entry);
-      }
-    }
-    const adjustment = pnlDays.reduce((s, d) => s + d.adjustment, 0);
+  const channelRows = [...byChannel.entries()]
+    .map(([channel, ch]) => {
+      const gross = ch.omzet - ch.hpp;
+      const margin =
+        ch.orderCount > 0 && ch.omzet > 0 ? `${((gross / ch.omzet) * 100).toFixed(1)}%` : "—";
+      return {
+        channel,
+        orderCount: ch.orderCount,
+        omzet: ch.omzet,
+        hpp: ch.hpp,
+        gross,
+        margin,
+      };
+    })
+    .sort((a, b) => b.omzet - a.omzet);
 
-    const channelRows = [...byChannel.entries()]
-      .map(([channel, ch]) => {
-        const gross = ch.omzet - ch.hpp;
-        const margin =
-          ch.orderCount > 0 && ch.omzet > 0 ? `${((gross / ch.omzet) * 100).toFixed(1)}%` : "—";
-        return {
-          channel,
-          orderCount: ch.orderCount,
-          omzet: ch.omzet,
-          hpp: ch.hpp,
-          gross,
-          margin,
-        };
-      })
-      .sort((a, b) => b.omzet - a.omzet);
-
-    const channelTableRows = channelRows
-      .map(
-        (ch) =>
-          `<tr>
+  const channelTableRows = channelRows
+    .map(
+      (ch) =>
+        `<tr>
           <td>${escapeHtml(ch.channel)}</td>
           <td style="text-align:right;">${ch.orderCount}</td>
           <td style="text-align:right;">${formatRupiah(ch.omzet)}</td>
@@ -2145,27 +2165,27 @@ export const printFinancePage = createServerFn({ method: "GET" })
           <td style="text-align:right;">${formatRupiah(ch.gross)}</td>
           <td style="text-align:right;">${ch.margin}</td>
         </tr>`,
-      )
-      .join("\n");
+    )
+    .join("\n");
 
-    const totalChannelMargin =
-      summary.orderCount > 0 && summary.omzet !== 0
-        ? `${((summary.grossProfit / summary.omzet) * 100).toFixed(1)}%`
-        : "—";
+  const totalChannelMargin =
+    summary.orderCount > 0 && summary.omzet !== 0
+      ? `${((summary.grossProfit / summary.omzet) * 100).toFixed(1)}%`
+      : "—";
 
-    const periodLabel =
-      data.dateFrom || data.dateTo
-        ? `${data.dateFrom ?? "-"} s.d. ${data.dateTo ?? "-"}`
-        : "Semua Periode";
+  const periodLabel =
+    filters.dateFrom || filters.dateTo
+      ? `${filters.dateFrom ?? "-"} s.d. ${filters.dateTo ?? "-"}`
+      : "Semua Periode";
 
-    const channelLabel = data.channel || "Semua Channel";
+  const channelLabel = filters.channel || "Semua Channel";
 
-    const gpClass = summary.grossProfit >= 0 ? "green" : "red";
-    const gpSign = summary.grossProfit >= 0 ? "" : "-";
-    const opClass = summary.operatingProfit >= 0 ? "green" : "red";
-    const opSign = summary.operatingProfit >= 0 ? "" : "-";
+  const gpClass = summary.grossProfit >= 0 ? "green" : "red";
+  const gpSign = summary.grossProfit >= 0 ? "" : "-";
+  const opClass = summary.operatingProfit >= 0 ? "green" : "red";
+  const opSign = summary.operatingProfit >= 0 ? "" : "-";
 
-    const html = `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Laporan Keuangan</title>
 <style>
   @page { size: A4; margin: 1.5cm; }
@@ -2267,8 +2287,20 @@ ${adjustment !== 0 ? `<tr><td>Penyesuaian harian</td><td style="text-align:right
 <script>window.onload = function() { window.print(); };</script>
 </body></html>`;
 
-    return { html };
-  });
+  return html;
+}
+
+/**
+ * Server-function wrapper over `buildFinancePrintHtml`.
+ *
+ * Nothing in the app calls it any more — the Cetak PDF button navigates to
+ * `/api/print/finance` instead. It stays registered so a tab that was already
+ * open when the print document moved can still print, and it costs one thin
+ * handler to keep.
+ */
+export const printFinancePage = createServerFn({ method: "GET" })
+  .validator((data: FinancePrintFilters) => data)
+  .handler(async ({ data }) => ({ html: await buildFinancePrintHtml(data) }));
 
 // ─── Pencatatan Manual Functions ───
 

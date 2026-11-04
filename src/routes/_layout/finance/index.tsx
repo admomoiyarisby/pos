@@ -22,7 +22,6 @@ import {
   createManualRevenue,
   createChannelRevenue,
   createManualExpense,
-  printFinancePage,
 } from "#/lib/server/finance";
 import { summarizePnl, type ChannelPnlLine, type DailyPnl } from "#/lib/finance-pnl";
 import { getBrokenStock } from "#/lib/server/waste";
@@ -51,7 +50,8 @@ import {
   recentMonths,
   weeksInMonth,
 } from "#/lib/report-period";
-import { openPrintWindow } from "#/lib/print-window";
+import { openPrintUrl } from "#/lib/print-window";
+import { financePrintUrl } from "#/lib/print-links";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_layout/finance/")({
@@ -1543,20 +1543,22 @@ function FinancePage() {
           </button>
           <button
             type="button"
-            onClick={async () => {
-              try {
-                const result = await printFinancePage({
-                  data: {
-                    dateFrom: effectiveDateRange.from || undefined,
-                    dateTo: effectiveDateRange.to || undefined,
-                    branchId,
-                    channel,
-                  },
-                });
-                openPrintWindow(result.html);
-              } catch (err) {
-                toast.error("Gagal mencetak", {
-                  description: err instanceof Error ? err.message : String(err),
+            onClick={() => {
+              // Navigate to the printable document instead of asking a server
+              // function for its HTML: no RPC in the path means nothing to
+              // turn into a "Failed to fetch" toast, and the window can be
+              // reloaded if the connection blipped.
+              const opened = openPrintUrl(
+                financePrintUrl({
+                  dateFrom: effectiveDateRange.from || undefined,
+                  dateTo: effectiveDateRange.to || undefined,
+                  branchId,
+                  channel,
+                }),
+              );
+              if (!opened) {
+                toast.error("Jendela cetak diblokir", {
+                  description: "Izinkan pop-up untuk situs ini, lalu cetak ulang.",
                 });
               }
             }}
