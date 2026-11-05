@@ -117,6 +117,18 @@ async function createFixture(db: TestDb): Promise<TestFixture> {
   return { branchA, branchB, branchC, recipeCodes };
 }
 
+/**
+ * Codes of the given recipes that this branch can see, sorted the same way the
+ * assertions sort their expectations.
+ *
+ * The SQL still orders by code (that is what a UI list does), but the result is
+ * re-sorted in JS before it is compared: `ORDER BY code` follows the *database*
+ * collation, and glibc's `en_US.utf8` — what CI's postgres image uses — treats
+ * '-' as ignorable, so `IT-A-f4c6` and `IT-AB-df7d` compare as `ITAf4c6` vs
+ * `ITABdf7d` and the random hex suffix decides which comes first. That made this
+ * test pass or fail depending on the fixture's random suffix. Membership is what
+ * this test is about, not collation.
+ */
 async function visibleRecipeCodes(
   db: TestDb,
   branchId: string | undefined,
@@ -142,7 +154,7 @@ async function visibleRecipeCodes(
     )
     .orderBy(schema.recipes.code);
 
-  return rows.map((row) => row.code);
+  return rows.map((row) => row.code).sort();
 }
 
 describe("branch visibility SQL integration", () => {
