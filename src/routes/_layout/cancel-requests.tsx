@@ -105,13 +105,22 @@ function CancelRequestsPage() {
 
   const approveMutation = useMutation({
     mutationFn: approveCancelRequest,
-    onSuccess: () => {
+    onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["cancel-requests"] });
       setConfirmAction(null);
       setSelectedRequest(null);
-      toast.success("Permintaan disetujui", {
-        description: "Kasir sekarang dapat mengeksekusi pembatalan.",
-      });
+      // Approval *is* the cancellation (ADR: no second push). The old copy
+      // promised the cashier could still execute it, which was two changes ago.
+      if (result?.alreadyVoid) {
+        toast.success("Permintaan ditutup", {
+          description:
+            "Pesanan ini sudah dibatalkan sebelumnya, jadi tidak ada stok yang dikembalikan lagi.",
+        });
+      } else {
+        toast.success("Permintaan disetujui", {
+          description: "Pesanan dibatalkan dan stok dikembalikan.",
+        });
+      }
     },
     onError: (error: Error) => {
       toast.error("Gagal menyetujui permintaan", { description: error.message });

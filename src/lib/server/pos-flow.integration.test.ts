@@ -582,6 +582,171 @@ describe("POS — cancel request: approval executes immediately", () => {
       expect(await inventoryQty(branchId, ingId)).toBe(100);
     },
   );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a direct void closes the pending request instead of stranding it",
+    async () => {
+      // The reported bug: a manager cancels the order from the POS (the void
+      // button they already have) instead of approving the cashier's request.
+      // The request stayed Pending, every approval answered "Order sudah
+      // dibatalkan" and rolled back, and the row could never leave the review
+      // queue — only rejecting it cleared it.
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const admin = await seedUser("super_admin");
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+
+      const order = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Gofood",
+        paymentMethod: "gofood",
+        items: [{ recipeId, quantity: 2, price: 15000 }],
+      });
+      const req = await posApi.createCancelRequestCore(cashier, {
+        orderId: order.id,
+        reason: "Salah Input",
+      });
+
+      await posApi.voidOrderCore(admin, { orderId: order.id, reason: "Salah input" });
+      expect(await inventoryQty(branchId, ingId)).toBe(100);
+
+      const [persisted] = await db
+        .select()
+        .from(schema.cancelRequests)
+        .where(eq(schema.cancelRequests.id, req.id));
+      expect(persisted.status).toBe("Executed");
+
+      // The cashier is told why their request disappeared.
+      const notifications = await db
+        .select({ title: schema.systemNotifications.title })
+        .from(schema.systemNotifications)
+        .where(eq(schema.systemNotifications.userId, cashier.id));
+      expect(notifications.map((n) => n.title)).toContain("Cancel Request Ditutup");
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "approving a request whose order is already void closes it without restoring stock twice",
+    async () => {
+      // Rows the old code left behind: Pending request, order already Void.
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const admin = await seedUser("super_admin");
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+
+      const order = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Gofood",
+        paymentMethod: "gofood",
+        items: [{ recipeId, quantity: 2, price: 15000 }],
+      });
+      const req = await posApi.createCancelRequestCore(cashier, {
+        orderId: order.id,
+        reason: "Customer Cancel",
+      });
+
+      // Cancelled elsewhere without going through this request (the historical
+      // state that had no way out). Inventory is left as the void left it.
+      await db
+        .update(schema.orders)
+        .set({ status: "Void", voidReason: "Cancel: Customer Cancel" })
+        .where(eq(schema.orders.id, order.id));
+
+      const closed = await posApi.approveCancelRequestCore(admin, { requestId: req.id });
+      expect(closed.status).toBe("Void");
+      expect(closed.alreadyVoid).toBe(true);
+
+      const [persisted] = await db
+        .select()
+        .from(schema.cancelRequests)
+        .where(eq(schema.cancelRequests.id, req.id));
+      expect(persisted.status).toBe("Executed");
+
+      // 96 is what the order consumed; the approval must not add the 4 back on
+      // top of a restore that already happened elsewhere.
+      expect(await inventoryQty(branchId, ingId)).toBe(96);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "a second request for the same order returns the open one instead of queueing a duplicate",
+    async () => {
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+
+      const order = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Gofood",
+        paymentMethod: "gofood",
+        items: [{ recipeId, quantity: 1, price: 15000 }],
+      });
+
+      const first = await posApi.createCancelRequestCore(cashier, {
+        orderId: order.id,
+        reason: "Salah Input",
+      });
+      const again = await posApi.createCancelRequestCore(cashier, {
+        orderId: order.id,
+        reason: "Customer Cancel",
+      });
+
+      expect(again.id).toBe(first.id);
+      expect("alreadyPending" in again && again.alreadyPending).toBe(true);
+
+      const rows = await db
+        .select({ id: schema.cancelRequests.id })
+        .from(schema.cancelRequests)
+        .where(eq(schema.cancelRequests.orderId, order.id));
+      expect(rows).toHaveLength(1);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "no request can be raised against an order that is already cancelled",
+    async () => {
+      const branchId = await seedBranch();
+      const cashier = await seedUser("branch_admin", branchId);
+      const admin = await seedUser("super_admin");
+      const [catRow] = await db
+        .insert(schema.categories)
+        .values({ code: uniq("CAT"), name: "Menu" })
+        .returning({ id: schema.categories.id });
+      const ingId = await seedIngredient();
+      const recipeId = await seedRecipe(catRow.id, ingId);
+      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+
+      const order = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Gofood",
+        paymentMethod: "gofood",
+        items: [{ recipeId, quantity: 1, price: 15000 }],
+      });
+      await posApi.voidOrderCore(admin, { orderId: order.id, reason: "Salah input" });
+
+      await expect(
+        posApi.createCancelRequestCore(cashier, { orderId: order.id, reason: "Salah Input" }),
+      ).rejects.toThrow("Order sudah dibatalkan");
+    },
+  );
 });
 
 describe("POS — reprint approval flow via the real cores", () => {

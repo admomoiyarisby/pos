@@ -1425,7 +1425,7 @@ export async function voidOrderCore(user: AppUser, data: { orderId: string; reas
     throw new Error("Forbidden: order is outside your assigned branches");
   }
 
-  const order = await db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
     const [updatedOrder] = await tx
       .update(orders)
       .set({ status: "Void", voidReason: data.reason })
@@ -1434,8 +1434,31 @@ export async function voidOrderCore(user: AppUser, data: { orderId: string; reas
 
     await restoreInventoryForVoid(data.orderId, old.branchId, data.reason, tx);
 
-    return updatedOrder;
+    // A pending cancel request for this order is moot the moment the order is
+    // cancelled here. Leaving it Pending is what stranded it: the reviewer's
+    // approval would answer "Order sudah dibatalkan" and roll back, so the row
+    // kept reappearing in the queue with no way to clear it (a manager with the
+    // void button is exactly the person who would cancel it directly instead of
+    // approving). Close it in the same transaction and tell the requester.
+    const closedRequests = await tx
+      .update(cancelRequests)
+      .set({ status: "Executed", approvedBy: user.id, approvedAt: new Date() })
+      .where(and(eq(cancelRequests.orderId, data.orderId), eq(cancelRequests.status, "Pending")))
+      .returning({ id: cancelRequests.id, requestedBy: cancelRequests.requestedBy });
+
+    return { order: updatedOrder, closedRequests };
   });
+
+  const order = outcome.order;
+
+  for (const closed of outcome.closedRequests) {
+    await db.insert(systemNotifications).values({
+      userId: closed.requestedBy,
+      title: "Cancel Request Ditutup",
+      message: `Permintaan pembatalan untuk order #${order.orderCode ?? order.id.slice(0, 8)} ditutup karena pesanannya sudah dibatalkan oleh ${user.name}.`,
+      type: "info",
+    });
+  }
 
   await logSystemAction(
     user,
@@ -1718,6 +1741,16 @@ export const consumePrintRequest = createServerFn({ method: "POST" })
 
 // ─── Cancel Requests ───
 
+/**
+ * A cancel request that already exists in `Pending` for the order, returned by
+ * `createCancelRequestCore` instead of queueing a duplicate. Same convention as
+ * `requestReprintCore`: the flag is the signal, not a throw, because asking
+ * twice is what a double tap looks like and the cashier did nothing wrong.
+ */
+export type ExistingCancelRequest = typeof cancelRequests.$inferSelect & {
+  alreadyPending: true;
+};
+
 // User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
 export async function createCancelRequestCore(
   user: AppUser,
@@ -1726,7 +1759,37 @@ export async function createCancelRequestCore(
     reason: "Stok Habis" | "Salah Input" | "Customer Cancel";
     detail?: string;
   },
-) {
+): Promise<typeof cancelRequests.$inferSelect | ExistingCancelRequest> {
+  const [order] = await db
+    .select({ id: orders.id, status: orders.status })
+    .from(orders)
+    .where(eq(orders.id, data.orderId))
+    .limit(1);
+
+  if (!order) throw new Error("Order not found");
+  // A request against an order that is already cancelled can never be approved
+  // (see approveCancelRequestCore), so refusing it here is the difference
+  // between a cashier who is told "this order is already cancelled" and a row
+  // that sits in the review queue forever.
+  if (order.status === "Void") throw new Error("Order sudah dibatalkan");
+
+  // One open request per order. Without this, a double tap (or a second tab,
+  // or a stale POS row) queues a second request that the approver then has to
+  // chase: approving the first voids the order, and the second can only ever
+  // answer "Order sudah dibatalkan".
+  const [existing] = await db
+    .select()
+    .from(cancelRequests)
+    .where(
+      and(
+        eq(cancelRequests.orderId, data.orderId),
+        eq(cancelRequests.status, "Pending"),
+        isNull(cancelRequests.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (existing) return { ...existing, alreadyPending: true as const };
+
   const [req] = await db
     .insert(cancelRequests)
     .values({
@@ -1802,6 +1865,13 @@ export const getCancelRequests = createServerFn({ method: "GET" })
     return result;
   });
 
+/**
+ * The order an approval voided, plus `alreadyVoid` when it was already
+ * cancelled by another path — callers narrow on the flag before promising the
+ * user that *this* click restored stock.
+ */
+export type ApprovedCancelOrder = typeof orders.$inferSelect & { alreadyVoid?: true };
+
 // User-parameterized core (ADR-0015), so integration tests can drive it with an
 // impersonated actor. It also re-checks the role the wrapper delegates to —
 // see the guard below.
@@ -1818,7 +1888,18 @@ export const getCancelRequests = createServerFn({ method: "GET" })
 // claimed with a conditional UPDATE. Two concurrent approvals cannot both move
 // the request out of "Pending", which is what would otherwise restore the same
 // inventory twice.
-export async function approveCancelRequestCore(user: AppUser, data: { requestId: string }) {
+//
+// The claim is what closes a request whose order was cancelled by another path
+// (a direct void from the POS, or an earlier request for the same order). That
+// used to throw and roll the claim back, so the request stayed `Pending` and
+// every later approval answered "Order sudah dibatalkan" — a row that could
+// never be cleared from the review queue. The request is resolved now and the
+// caller is told the order was already gone; inventory is *not* restored a
+// second time.
+export async function approveCancelRequestCore(
+  user: AppUser,
+  data: { requestId: string },
+): Promise<ApprovedCancelOrder> {
   // Server-side mirror of the /cancel-requests RoleGuard. The page only offers
   // Approve/Reject to these roles; the endpoint previously accepted any signed-in
   // user, so a branch_admin could approve their own request and void their own
@@ -1840,7 +1921,7 @@ export async function approveCancelRequestCore(user: AppUser, data: { requestId:
   const [order] = await db.select().from(orders).where(eq(orders.id, old.orderId)).limit(1);
   if (!order) throw new Error("Order not found");
 
-  const voidedOrder = await db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
     // Claim the request: only the caller whose conditional UPDATE matches a row
     // proceeds to the void. A second concurrent approval matches nothing and
     // bails out below, so the stock restore cannot run twice. This is the
@@ -1862,33 +1943,43 @@ export async function approveCancelRequestCore(user: AppUser, data: { requestId:
       .where(and(eq(orders.id, old.orderId), ne(orders.status, "Void")))
       .returning();
 
-    if (!updatedOrder) throw new Error("Order sudah dibatalkan");
+    // Someone else already cancelled this order while the request waited. The
+    // claim above still commits (the request is resolved), but the stock was
+    // restored by that other path, so restoring again here would inflate it.
+    if (!updatedOrder) return { order, alreadyVoid: true as const };
 
     await restoreInventoryForVoid(old.orderId, order.branchId, old.reason, tx);
 
-    return updatedOrder;
+    return { order: updatedOrder, alreadyVoid: false as const };
   });
 
-  // Notify the requesting cashier that it is already done.
+  // Notify the requesting cashier that it is done — including the case where
+  // their request was closed because the order had already been cancelled.
   await db.insert(systemNotifications).values({
     userId: old.requestedBy,
-    title: "Cancel Request Approved",
-    message: `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} telah disetujui dan langsung dibatalkan. Stok telah dikembalikan.`,
+    title: outcome.alreadyVoid ? "Cancel Request Ditutup" : "Cancel Request Approved",
+    message: outcome.alreadyVoid
+      ? `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} ditutup karena pesanannya sudah dibatalkan sebelumnya.`
+      : `Permintaan pembatalan untuk order #${old.orderId.slice(0, 8)} telah disetujui dan langsung dibatalkan. Stok telah dikembalikan.`,
     type: "info",
   });
 
   await logSystemAction(
     user,
     "Approve Cancel Request",
-    `Cancel request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}; order #${order.orderCode ?? order.id.slice(0, 8)} langsung dibatalkan. Alasan: ${old.reason}`,
+    outcome.alreadyVoid
+      ? `Cancel request #${data.requestId.slice(0, 8)} ditutup oleh ${user.name}; order #${order.orderCode ?? order.id.slice(0, 8)} sudah dibatalkan sebelumnya.`
+      : `Cancel request #${data.requestId.slice(0, 8)} diapprove oleh ${user.name}; order #${order.orderCode ?? order.id.slice(0, 8)} langsung dibatalkan. Alasan: ${old.reason}`,
   );
   await logAudit(user, "cancelRequests", data.requestId, "STATUS_CHANGE", old, {
     ...old,
     status: "Executed" as const,
   });
-  await logAudit(user, "orders", old.orderId, "STATUS_CHANGE", order, voidedOrder);
+  if (!outcome.alreadyVoid) {
+    await logAudit(user, "orders", old.orderId, "STATUS_CHANGE", order, outcome.order);
+  }
 
-  return voidedOrder;
+  return outcome.alreadyVoid ? { ...outcome.order, alreadyVoid: true as const } : outcome.order;
 }
 
 export const approveCancelRequest = createServerFn({ method: "POST" })
@@ -1973,7 +2064,7 @@ export async function executeApprovedCancelCore(user: AppUser, data: { requestId
 
   if (!order) throw new Error("Order not found");
 
-  const voidedOrder = await db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
     // Claim the request: only the caller that moves it out of "Approved"
     // restores stock, so a double tap cannot restore twice. Authoritative over
     // the order's Void flag, for the same reason as approve.
@@ -1992,21 +2083,27 @@ export async function executeApprovedCancelCore(user: AppUser, data: { requestId
       .where(and(eq(orders.id, old.orderId), ne(orders.status, "Void")))
       .returning();
 
-    if (!updatedOrder) throw new Error("Order sudah dibatalkan");
+    // Already cancelled by another path — resolve the request and leave the
+    // stock alone, exactly as approveCancelRequestCore does.
+    if (!updatedOrder) return { order, alreadyVoid: true as const };
 
     await restoreInventoryForVoid(old.orderId, order.branchId, old.reason, tx);
 
-    return updatedOrder;
+    return { order: updatedOrder, alreadyVoid: false as const };
   });
 
   await logSystemAction(
     user,
     "Execute Cancel",
-    `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name} (cancel request #${data.requestId.slice(0, 8)}). Alasan: ${old.reason}`,
+    outcome.alreadyVoid
+      ? `Cancel request #${data.requestId.slice(0, 8)} ditutup oleh ${user.name}; order #${order.orderCode ?? order.id.slice(0, 8)} sudah dibatalkan sebelumnya.`
+      : `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name} (cancel request #${data.requestId.slice(0, 8)}). Alasan: ${old.reason}`,
   );
-  await logAudit(user, "orders", old.orderId, "STATUS_CHANGE", order, voidedOrder);
+  if (!outcome.alreadyVoid) {
+    await logAudit(user, "orders", old.orderId, "STATUS_CHANGE", order, outcome.order);
+  }
 
-  return voidedOrder;
+  return outcome.alreadyVoid ? { ...outcome.order, alreadyVoid: true as const } : outcome.order;
 }
 
 export const executeApprovedCancel = createServerFn({ method: "POST" })
