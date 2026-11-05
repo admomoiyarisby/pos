@@ -298,10 +298,8 @@ function HppMenuTable({ rows }: { rows: MenuCogsRow[] }) {
         </table>
       </div>
       <p className="text-xs text-muted-foreground">
-        HPP yang tercatat tidak ikut berubah saat harga bahan diperbaiki — karena itu selisih besar
-        berarti harga bahan saat transaksi berbeda jauh dari harga sekarang. Baris disorot bila
-        selisihnya ≥ 50% dari harga sekarang. Menu berisi bahan yang salah harga akan menyimpang
-        bersamaan; itu pola yang paling mudah dikenali.
+        HPP tercatat tidak ikut berubah saat harga bahan diperbaiki. Baris disorot bila selisihnya ≥
+        50%; menu dengan bahan salah harga menyimpang bersamaan.
       </p>
     </div>
   );
@@ -430,13 +428,10 @@ function HppDetailModal({
             </div>
 
             <p className="text-xs text-muted-foreground">
-              HPP tiap bahan diambil dari biaya yang dibekukan saat transaksi (per baris order),
-              bukan dari harga bahan hari ini. Baris lama yang belum punya biaya tersimpan
-              diskalakan ke HPP ordernya. HPP yang tidak bisa diatribusikan ke bahan — penjualan
-              tanpa rincian item (Data Penjualan) — muncul sebagai &quot;{UNALLOCATED_LABEL}
-              &quot;.
+              HPP dari biaya yang dibekukan saat transaksi, bukan harga hari ini. Penjualan tanpa
+              rincian item masuk &quot;{UNALLOCATED_LABEL}&quot;.
               {rows.length > HPP_CHART_TOP_N &&
-                ` Grafik menampilkan ${HPP_CHART_TOP_N} bahan terbesar; tabel memuat semuanya.`}
+                ` Grafik: ${HPP_CHART_TOP_N} bahan terbesar; tabel: semua.`}
             </p>
           </>
         )}
