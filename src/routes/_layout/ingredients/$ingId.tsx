@@ -467,9 +467,11 @@ function IngredientDetailPage() {
         {costConfirmation && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              {costConfirmation.verdict === "extreme"
-                ? "Perubahan ini hampir pasti salah satuan — harga kemasan tertulis sebagai harga per satuan stok."
-                : "Perubahan ini besar. Pastikan memang harga barunya, bukan harga kemasan."}
+              {costConfirmation.breakingMenus > 0
+                ? `Dengan harga ini, ${costConfirmation.breakingMenus} menu jadi dijual di bawah HPP-nya. Hampir pasti salah satuan — harga kemasan tertulis sebagai harga per satuan stok.`
+                : costConfirmation.verdict === "extreme"
+                  ? "Perubahan ini hampir pasti salah satuan — harga kemasan tertulis sebagai harga per satuan stok."
+                  : "Perubahan ini besar. Pastikan memang harga barunya, bukan harga kemasan."}
             </p>
             <div className="rounded-lg border p-3 text-sm space-y-1">
               <div className="font-medium">{costConfirmation.name}</div>
@@ -504,17 +506,26 @@ function IngredientDetailPage() {
                   {costConfirmation.biggest.length > 0 ? ", terbesar:" : ""}
                 </p>
                 <ul className="space-y-1 text-sm">
-                  {costConfirmation.biggest.map((menu) => (
-                    <li key={menu.recipeId} className="flex justify-between gap-3 tabular-nums">
-                      <span className="truncate">{menu.name}</span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {formatRp(menu.cogsBefore)} →{" "}
-                        <span className="font-medium text-foreground">
-                          {formatRp(menu.cogsAfter)}
+                  {costConfirmation.biggest.map((menu) => {
+                    const underwater = menu.sellPrice > 0 && menu.cogsAfter >= menu.sellPrice;
+                    return (
+                      <li
+                        key={menu.recipeId}
+                        className={`flex justify-between gap-3 tabular-nums ${underwater ? "text-destructive" : ""}`}
+                      >
+                        <span className="truncate">{menu.name}</span>
+                        <span className="shrink-0">
+                          {formatRp(menu.cogsBefore)} →{" "}
+                          <span className="font-medium">{formatRp(menu.cogsAfter)}</span>
+                          {menu.sellPrice > 0 && (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              / jual {formatRp(menu.sellPrice)}
+                            </span>
+                          )}
                         </span>
-                      </span>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}

@@ -423,6 +423,30 @@ describe("Ingredients — cost guard (package price typed as a unit price)", () 
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
+    "asks on a first costing that would sell a menu below its HPP",
+    async () => {
+      // The production case: Air went 0 → 369/ml, so there was no previous price
+      // for the ratio to compare against. The selling-price check is what sees it.
+      const admin = await seedUser("super_admin");
+      const { ingredient, recipeId } = await seedCostedIngredient(admin, 0);
+
+      const result = await ingredientsApi.updateIngredientCore(admin, {
+        id: ingredient.id,
+        averageCost: 369,
+      });
+
+      if (!("needsConfirmation" in result)) throw new Error("guard did not ask");
+      // The ratio has nothing to say about a first costing…
+      expect(result.verdict).toBe("silent");
+      // …but 180 ml x Rp 369 = Rp 66.420 against a Rp 15.000 menu is not a
+      // judgement call.
+      expect(result.breakingMenus).toBe(1);
+      expect(result.biggest[0]).toMatchObject({ recipeId, sellPrice: 15_000 });
+      expect(await storedCost(ingredient.id)).toBe(0);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
     "first costing (0 → price) is not a ratio question and saves silently",
     async () => {
       const admin = await seedUser("super_admin");

@@ -17,8 +17,10 @@ import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import {
   assessCostChange,
+  costBreaksSellingPrice,
   needsCostConfirmation,
   type CostChangeAssessment,
+  type CostChangeVerdict,
 } from "#/lib/cost-guard";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { branchCatalogClause } from "#/lib/server/branch-catalog";
@@ -369,6 +371,8 @@ export interface CostChangeImpactRow {
   name: string;
   cogsBefore: number;
   cogsAfter: number;
+  /** Menu's selling price; 0 for pseudo-menus (packaging, LPG). */
+  sellPrice: number;
 }
 
 /**
@@ -392,9 +396,17 @@ export interface CostChangeConfirmation {
   next: number;
   /** `next / previous`; null when there was no previous price. */
   ratio: number | null;
-  verdict: "confirm" | "extreme";
+  /** The ratio band. `silent` here means the ratio is fine — see `breaksSellingPrice`. */
+  verdict: CostChangeVerdict;
   /** How many menus use this ingredient at all. */
   affectedMenus: number;
+  /**
+   * Menus this change would push to (or past) their selling price. Fires
+   * independently of the ratio, which is what catches a *first* costing
+   * (`0 → price` has no previous value to compare) and a small edit that still
+   * tips a menu underwater.
+   */
+  breakingMenus: number;
   /** The menus it reprices most, largest swing first. */
   biggest: CostChangeImpactRow[];
 }
@@ -410,22 +422,28 @@ async function previewCostChangeImpact(
   ingredientId: string,
   previous: number,
   next: number,
-): Promise<{ affectedMenus: number; biggest: CostChangeImpactRow[] }> {
+): Promise<{
+  affectedMenus: number;
+  breakingMenus: number;
+  biggest: CostChangeImpactRow[];
+}> {
   const rows = await db
     .select({
       recipeId: recipes.id,
       name: recipes.name,
+      sellPrice: recipes.basePrice,
       cogsBefore: recipes.totalCogs,
       quantity: sql<number>`COALESCE(SUM(${recipeIngredients.quantity}), 0)`,
     })
     .from(recipeIngredients)
     .innerJoin(recipes, eq(recipeIngredients.recipeId, recipes.id))
     .where(eq(recipeIngredients.ingredientId, ingredientId))
-    .groupBy(recipes.id, recipes.name, recipes.totalCogs);
+    .groupBy(recipes.id, recipes.name, recipes.basePrice, recipes.totalCogs);
 
   const impact = rows.map((row) => ({
     recipeId: row.recipeId,
     name: row.name,
+    sellPrice: Number(row.sellPrice),
     cogsBefore: Number(row.cogsBefore),
     cogsAfter: Number(row.cogsBefore) + (next - previous) * Number(row.quantity),
   }));
@@ -436,7 +454,11 @@ async function previewCostChangeImpact(
       a.name.localeCompare(b.name),
   );
 
-  return { affectedMenus: impact.length, biggest: impact.slice(0, 5) };
+  const breakingMenus = impact.filter((row) =>
+    costBreaksSellingPrice(row.cogsBefore, row.cogsAfter, row.sellPrice),
+  ).length;
+
+  return { affectedMenus: impact.length, breakingMenus, biggest: impact.slice(0, 5) };
 }
 
 export const updateIngredient = createServerFn({ method: "POST" })
@@ -468,28 +490,34 @@ export async function updateIngredientCore(
   // ingredient for as long as it stands. Ask before writing, showing what it
   // does to those menus — nothing is persisted on the asking call.
   let costAssessment: CostChangeAssessment | null = null;
-  let costImpact: { affectedMenus: number; biggest: CostChangeImpactRow[] } | null = null;
+  let costImpact: Awaited<ReturnType<typeof previewCostChangeImpact>> | null = null;
   if (updates.averageCost !== undefined && updates.averageCost !== old.averageCost) {
     costAssessment = assessCostChange(old.averageCost, updates.averageCost);
-    if (needsCostConfirmation(costAssessment.verdict)) {
-      costImpact = await previewCostChangeImpact(id, old.averageCost, updates.averageCost);
-      if (!confirmCostChange) {
-        return {
-          needsConfirmation: true,
-          ingredientId: id,
-          name: old.name,
-          stockUnit: old.stockUnit,
-          purchaseUnit: old.purchaseUnit,
-          conversionFactor: old.conversionFactor,
-          previous: old.averageCost,
-          next: updates.averageCost,
-          ratio: costAssessment.ratio,
-          // SAFETY: `needsCostConfirmation` is true only for these two verdicts.
-          verdict: costAssessment.verdict as "confirm" | "extreme",
-          affectedMenus: costImpact.affectedMenus,
-          biggest: costImpact.biggest,
-        };
-      }
+    // One grouped query, so the preview is always available: the selling-price
+    // check needs it even when the ratio alone would stay silent (a first costing
+    // has no previous price to compare against, and a small edit can still tip a
+    // menu underwater).
+    costImpact = await previewCostChangeImpact(id, old.averageCost, updates.averageCost);
+
+    if (
+      (needsCostConfirmation(costAssessment.verdict) || costImpact.breakingMenus > 0) &&
+      !confirmCostChange
+    ) {
+      return {
+        needsConfirmation: true,
+        ingredientId: id,
+        name: old.name,
+        stockUnit: old.stockUnit,
+        purchaseUnit: old.purchaseUnit,
+        conversionFactor: old.conversionFactor,
+        previous: old.averageCost,
+        next: updates.averageCost,
+        ratio: costAssessment.ratio,
+        verdict: costAssessment.verdict,
+        affectedMenus: costImpact.affectedMenus,
+        breakingMenus: costImpact.breakingMenus,
+        biggest: costImpact.biggest,
+      };
     }
   }
 

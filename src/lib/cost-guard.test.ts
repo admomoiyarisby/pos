@@ -3,6 +3,7 @@ import {
   assessCostChange,
   COST_EXTREME_RATIO,
   COST_SILENT_RATIO,
+  costBreaksSellingPrice,
   costPerPurchaseUnit,
   needsCostConfirmation,
   resolveQuotedCost,
@@ -127,5 +128,26 @@ describe("resolveQuotedCost — a price quoted in the wrong unit", () => {
       costPerStockUnit: 600,
       convertedFrom: "botol",
     });
+  });
+});
+
+describe("costBreaksSellingPrice", () => {
+  it("fires when the new cost puts a menu at or above its selling price", () => {
+    // Miso Sup: HPP 1.871 at Rp 10.000, water at Rp 369/ml makes it 66.420.
+    expect(costBreaksSellingPrice(1_871, 66_420, 10_000)).toBe(true);
+    expect(costBreaksSellingPrice(1_871, 10_000, 10_000)).toBe(true);
+  });
+
+  it("stays quiet while the menu is still profitable", () => {
+    expect(costBreaksSellingPrice(1_871, 2_500, 10_000)).toBe(false);
+  });
+
+  it("does not nag about a menu that is already underwater and getting better", () => {
+    expect(costBreaksSellingPrice(12_000, 11_000, 10_000)).toBe(false);
+  });
+
+  it("ignores pseudo-menus priced at zero", () => {
+    // Recipes created for LPG or packaging carry no selling price.
+    expect(costBreaksSellingPrice(0, 20_000, 0)).toBe(false);
   });
 });

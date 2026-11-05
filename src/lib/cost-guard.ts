@@ -121,3 +121,22 @@ export function resolveQuotedCost(
   }
   return { ok: false };
 }
+
+/**
+ * A menu whose HPP now meets or exceeds what it is sold for.
+ *
+ * Ratio bands only describe a *change*; they cannot see a first costing (0 → price
+ * has no previous value) and they are blind to a small change that still tips a
+ * menu underwater. This is the check that does not depend on either: the sale is
+ * losing money on paper, so the number has to be wrong (or the price does).
+ *
+ * `sellPrice > 0` keeps pseudo-menus — the ones created with price 0 for
+ * packaging or LPG — from asking forever.
+ */
+export function costBreaksSellingPrice(
+  cogsBefore: number,
+  cogsAfter: number,
+  sellPrice: number,
+): boolean {
+  return sellPrice > 0 && cogsAfter >= sellPrice && cogsAfter > cogsBefore;
+}
