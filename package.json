@@ -21,6 +21,7 @@
     "db:pull": "drizzle-kit pull",
     "db:studio": "drizzle-kit studio",
     "migrate-csv": "tsx scripts/migrate-csv/index.ts",
+    "repair:hpp": "tsx scripts/repair-hpp-date-range.ts",
     "prepare": "vp config"
   },
   "dependencies": {
