@@ -33,7 +33,11 @@ import { migrateChannelAccounting } from "./channel-accounting";
 
 config({ path: [".env.local", ".env"] });
 
-type MigrationOptions = { dryRun?: boolean };
+type MigrationOptions = {
+  dryRun?: boolean;
+  /** `harga-invoice` only: write rows the cost guard flags as suspicious. */
+  applySuspect?: boolean;
+};
 type MigrationFn = (options: MigrationOptions) => Promise<void>;
 
 type MigrationSpec = {
@@ -79,8 +83,9 @@ function parseArgs(argv: string[]) {
   const onlyIdx = argv.indexOf("--only");
   const only = onlyIdx >= 0 ? (argv[onlyIdx + 1] ?? "") || null : null;
   const dryRun = argv.includes("--dry-run");
+  const applySuspect = argv.includes("--apply-suspect");
   const help = argv.includes("--help") || argv.includes("-h");
-  return { only, dryRun, help };
+  return { only, dryRun, applySuspect, help };
 }
 
 function printHelp(): void {
@@ -90,6 +95,8 @@ function printHelp(): void {
   console.log("Options:");
   console.log("  --only <name>  Run only the named migration");
   console.log("  --dry-run      Parse the CSV and print rows without touching the DB");
+  console.log("  --apply-suspect  harga-invoice: also write rows the cost guard flags");
+  console.log("                   (a >5x price jump or a CSV unit that is not the stock unit)");
   console.log("");
   console.log("Registered migrations (in declared order):");
   for (const n of names) console.log(`  - ${n}`);
@@ -117,7 +124,7 @@ async function truncateTablesOnce(
 }
 
 async function main(): Promise<void> {
-  const { only, dryRun, help } = parseArgs(process.argv.slice(2));
+  const { only, dryRun, applySuspect, help } = parseArgs(process.argv.slice(2));
   if (help) {
     printHelp();
     return;
@@ -147,7 +154,7 @@ async function main(): Promise<void> {
     if (!dryRun && spec.truncateTables && url) {
       await truncateTablesOnce(url, spec.truncateTables, alreadyTruncated);
     }
-    await spec.fn({ dryRun });
+    await spec.fn({ dryRun, applySuspect });
   }
   console.log("[migrate-csv] done.");
 }

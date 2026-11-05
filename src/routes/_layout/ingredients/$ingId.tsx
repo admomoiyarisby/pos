@@ -7,9 +7,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { lookupLabel } from "#/lib/label-lookup";
 import { getIngredient, updateIngredient } from "#/lib/server/ingredients";
+import type { CostChangeConfirmation } from "#/lib/server/ingredients";
+import { costPerPurchaseUnit } from "#/lib/cost-guard";
+import { formatRp } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
 import { toast } from "sonner";
 import MoneyInput from "#/components/MoneyInput";
+import Modal from "#/components/ui/Modal";
 import { Separator } from "#/components/ui/separator";
 import { Switch } from "#/components/ui/switch";
 import { ArrowLeft } from "lucide-react";
@@ -31,6 +35,15 @@ function IngredientDetailPage() {
   const goBack = useGoBackToList("/ingredients");
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
+  // Raw integer the cost field currently holds, so the per-purchase-unit hint
+  // can update while typing (the number that would have caught Rp 369/ml).
+  const [costDraft, setCostDraft] = useState<number | null>(initial?.averageCost ?? null);
+  // A large cost edit comes back as a preview instead of a save: nothing is
+  // written until the user accepts it here.
+  const [costConfirmation, setCostConfirmation] = useState<CostChangeConfirmation | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<
+    Parameters<typeof updateIngredient>[0]["data"] | null
+  >(null);
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>(initial?.branchIds ?? []);
   const [isBranchVisible, setIsBranchVisible] = useState<boolean>(
     initial?.isBranchVisible ?? false,
@@ -44,10 +57,19 @@ function IngredientDetailPage() {
 
   const updateMutation = useMutation({
     mutationFn: updateIngredient,
-    onSuccess: () => {
+    onSuccess: (result) => {
+      // The cost guard answered instead of saving: show what it would reprice and
+      // wait for a second submit with `confirmCostChange`.
+      if ("needsConfirmation" in result) {
+        setCostConfirmation(result);
+        return;
+      }
       void queryClient.invalidateQueries({ queryKey: ["ingredient", ingId] });
       void queryClient.invalidateQueries({ queryKey: ["ingredients"] });
       setIsEditing(false);
+      setPendingUpdate(null);
+      // Re-seed the draft so reopening the form shows what was actually saved.
+      setCostDraft(result.averageCost);
       toast.success("Bahan baku berhasil diperbarui");
     },
     onError: (error: Error) => {
@@ -76,6 +98,14 @@ function IngredientDetailPage() {
       // Central-only (toggle off) ⇒ no branch links; branch-visible ⇒ honor selection.
       branchIds: isBranchVisible ? selectedBranchIds : [],
     };
+    setPendingUpdate(data);
+    void updateMutation.mutateAsync({ data });
+  };
+
+  const confirmCostChange = () => {
+    if (!pendingUpdate) return;
+    const data = { ...pendingUpdate, confirmCostChange: true };
+    setCostConfirmation(null);
     void updateMutation.mutateAsync({ data });
   };
 
@@ -112,7 +142,12 @@ function IngredientDetailPage() {
             <p className="text-sm text-muted-foreground mt-1">Kode: {ingredient.code}</p>
           </div>
           <button
-            onClick={() => setIsEditing(!isEditing)}
+            onClick={() => {
+              // Reopening the form starts from the saved cost, not from whatever
+              // was typed (and abandoned) last time.
+              if (!isEditing) setCostDraft(ingredient.averageCost);
+              setIsEditing(!isEditing);
+            }}
             className="h-10 md:h-9 px-4 rounded-md border text-sm font-medium"
           >
             {isEditing ? "Batal" : "Edit"}
@@ -212,13 +247,22 @@ function IngredientDetailPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">HPP (Rp)</label>
+                {/* The unit belongs in the label: this number is rupiah per stock
+                    unit, and a bottle price typed here is how a whole day of HPP
+                    went wrong. */}
+                <label className="text-sm font-medium">HPP per {ingredient.stockUnit}</label>
                 <MoneyInput
                   name="averageCost"
-                  defaultValue={ingredient.averageCost}
+                  value={costDraft}
+                  onChange={setCostDraft}
                   required
                   className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
+                <p className="text-xs text-muted-foreground">
+                  {ingredient.conversionFactor > 1
+                    ? `= ${formatRp(costPerPurchaseUnit(costDraft ?? 0, ingredient.conversionFactor))} per ${ingredient.purchaseUnit} (1 ${ingredient.purchaseUnit} = ${ingredient.conversionFactor} ${ingredient.stockUnit})`
+                    : `Rupiah per ${ingredient.stockUnit} — sama dengan per ${ingredient.purchaseUnit}`}
+                </p>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">ROP</label>
@@ -412,6 +456,94 @@ function IngredientDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Cost-change confirmation: nothing is saved until this is accepted. */}
+      <Modal
+        open={!!costConfirmation}
+        onClose={() => setCostConfirmation(null)}
+        title="HPP berubah sangat besar"
+        size="md"
+      >
+        {costConfirmation && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {costConfirmation.verdict === "extreme"
+                ? "Perubahan ini hampir pasti salah satuan — harga kemasan tertulis sebagai harga per satuan stok."
+                : "Perubahan ini besar. Pastikan memang harga barunya, bukan harga kemasan."}
+            </p>
+            <div className="rounded-lg border p-3 text-sm space-y-1">
+              <div className="font-medium">{costConfirmation.name}</div>
+              <div className="tabular-nums">
+                {formatRp(costConfirmation.previous)} →{" "}
+                <span className="font-semibold">{formatRp(costConfirmation.next)}</span> per{" "}
+                {costConfirmation.stockUnit}
+                {costConfirmation.ratio !== null && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {costConfirmation.ratio >= 1
+                      ? `${costConfirmation.ratio.toFixed(1)}× lebih mahal`
+                      : `${(1 / costConfirmation.ratio).toFixed(1)}× lebih murah`}
+                  </span>
+                )}
+              </div>
+              {costConfirmation.conversionFactor > 1 && (
+                <div className="text-xs text-muted-foreground">
+                  Setara{" "}
+                  {formatRp(
+                    costPerPurchaseUnit(costConfirmation.next, costConfirmation.conversionFactor),
+                  )}{" "}
+                  per {costConfirmation.purchaseUnit} (1 {costConfirmation.purchaseUnit} ={" "}
+                  {costConfirmation.conversionFactor} {costConfirmation.stockUnit})
+                </div>
+              )}
+            </div>
+
+            {costConfirmation.affectedMenus > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {costConfirmation.affectedMenus} menu ikut berubah HPP-nya
+                  {costConfirmation.biggest.length > 0 ? ", terbesar:" : ""}
+                </p>
+                <ul className="space-y-1 text-sm">
+                  {costConfirmation.biggest.map((menu) => (
+                    <li key={menu.recipeId} className="flex justify-between gap-3 tabular-nums">
+                      <span className="truncate">{menu.name}</span>
+                      <span className="shrink-0 text-muted-foreground">
+                        {formatRp(menu.cogsBefore)} →{" "}
+                        <span className="font-medium text-foreground">
+                          {formatRp(menu.cogsAfter)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              HPP penjualan yang sudah terjadi tidak ikut berubah — hanya penjualan berikutnya.
+            </p>
+
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCostConfirmation(null)}
+                disabled={updateMutation.isPending}
+                className="h-10 sm:h-9 px-4 rounded-md border text-sm disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={confirmCostChange}
+                disabled={updateMutation.isPending}
+                className="h-10 sm:h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium disabled:opacity-50"
+              >
+                {updateMutation.isPending ? "Menyimpan..." : "Tetap simpan"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </RoleGuard>
   );
 }

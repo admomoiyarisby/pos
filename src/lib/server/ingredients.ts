@@ -4,6 +4,7 @@ import { db } from "#/lib/server/db";
 import {
   ingredients,
   recipeIngredients,
+  recipes,
   ingredientBranches,
   inventory,
   branches,
@@ -14,6 +15,11 @@ import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
+import {
+  assessCostChange,
+  needsCostConfirmation,
+  type CostChangeAssessment,
+} from "#/lib/cost-guard";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { branchCatalogClause } from "#/lib/server/branch-catalog";
 import { describeDbError, isUniqueViolation } from "#/lib/server/db-errors";
@@ -350,7 +356,88 @@ const updateIngredientInput = ingredientInput
     roq: z.number().int().min(0).optional(),
     moq: z.number().int().min(1).optional(),
     countable: z.boolean().optional(),
+    /**
+     * Second call only: the user saw the cost-change preview and accepted it.
+     * Never persisted — it is stripped before the update.
+     */
+    confirmCostChange: z.boolean().optional(),
   });
+
+/** One menu whose HPP this cost change would reprice. */
+export interface CostChangeImpactRow {
+  recipeId: string;
+  name: string;
+  cogsBefore: number;
+  cogsAfter: number;
+}
+
+/**
+ * Returned instead of the saved ingredient when a cost edit is large enough to
+ * need a second look. Nothing is written on this call: the form shows the
+ * preview and re-submits with `confirmCostChange`.
+ *
+ * Same convention as `requestReprintCore`'s `alreadyPending` and
+ * `approveCancelRequestCore`'s `alreadyVoid` — a flag on the result, not a
+ * thrown error, because this is an ordinary answer to an ordinary request.
+ */
+export interface CostChangeConfirmation {
+  needsConfirmation: true;
+  ingredientId: string;
+  name: string;
+  /** Rupiah is per this unit — the whole point of the preview. */
+  stockUnit: string;
+  purchaseUnit: string;
+  conversionFactor: number;
+  previous: number;
+  next: number;
+  /** `next / previous`; null when there was no previous price. */
+  ratio: number | null;
+  verdict: "confirm" | "extreme";
+  /** How many menus use this ingredient at all. */
+  affectedMenus: number;
+  /** The menus it reprices most, largest swing first. */
+  biggest: CostChangeImpactRow[];
+}
+
+/**
+ * What this cost change does to the menus that use the ingredient.
+ *
+ * `recipes.total_cogs` is Σ(average cost × BOM quantity), so a single ingredient
+ * moves a menu by exactly `(next − previous) × its quantity` — no need to re-read
+ * the whole BOM. Sorted by absolute swing so the preview leads with the damage.
+ */
+async function previewCostChangeImpact(
+  ingredientId: string,
+  previous: number,
+  next: number,
+): Promise<{ affectedMenus: number; biggest: CostChangeImpactRow[] }> {
+  const rows = await db
+    .select({
+      recipeId: recipes.id,
+      name: recipes.name,
+      cogsBefore: recipes.totalCogs,
+      quantity: sql<number>`COALESCE(SUM(${recipeIngredients.quantity}), 0)`,
+    })
+    .from(recipeIngredients)
+    .innerJoin(recipes, eq(recipeIngredients.recipeId, recipes.id))
+    .where(eq(recipeIngredients.ingredientId, ingredientId))
+    .groupBy(recipes.id, recipes.name, recipes.totalCogs);
+
+  const impact = rows.map((row) => ({
+    recipeId: row.recipeId,
+    name: row.name,
+    cogsBefore: Number(row.cogsBefore),
+    cogsAfter: Number(row.cogsBefore) + (next - previous) * Number(row.quantity),
+  }));
+
+  impact.sort(
+    (a, b) =>
+      Math.abs(b.cogsAfter - b.cogsBefore) - Math.abs(a.cogsAfter - a.cogsBefore) ||
+      a.name.localeCompare(b.name),
+  );
+
+  return { affectedMenus: impact.length, biggest: impact.slice(0, 5) };
+}
 
 export const updateIngredient = createServerFn({ method: "POST" })
   .validator((data: z.input<typeof updateIngredientInput>) => updateIngredientInput.parse(data))
@@ -362,17 +449,49 @@ export const updateIngredient = createServerFn({ method: "POST" })
 export async function updateIngredientCore(
   user: AppUser,
   data: z.infer<typeof updateIngredientInput>,
-) {
+): Promise<typeof ingredients.$inferSelect | CostChangeConfirmation> {
   if (!["super_admin", "admin_pusat", "central_kitchen"].includes(user.role)) {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat | central_kitchen)`,
     );
   }
 
-  const { id, branchIds, ...updates } = data;
+  // `confirmCostChange` is a request flag, not a column — never let it reach the
+  // UPDATE statement.
+  const { id, branchIds, confirmCostChange, ...updates } = data;
 
   const [old] = await db.select().from(ingredients).where(eq(ingredients.id, id)).limit(1);
   if (!old) throw new Error("Ingredient not found");
+
+  // Cost guard (see `#/lib/cost-guard`): a large jump is usually a package price
+  // typed into a per-unit field, and it reprices every menu that uses this
+  // ingredient for as long as it stands. Ask before writing, showing what it
+  // does to those menus — nothing is persisted on the asking call.
+  let costAssessment: CostChangeAssessment | null = null;
+  let costImpact: { affectedMenus: number; biggest: CostChangeImpactRow[] } | null = null;
+  if (updates.averageCost !== undefined && updates.averageCost !== old.averageCost) {
+    costAssessment = assessCostChange(old.averageCost, updates.averageCost);
+    if (needsCostConfirmation(costAssessment.verdict)) {
+      costImpact = await previewCostChangeImpact(id, old.averageCost, updates.averageCost);
+      if (!confirmCostChange) {
+        return {
+          needsConfirmation: true,
+          ingredientId: id,
+          name: old.name,
+          stockUnit: old.stockUnit,
+          purchaseUnit: old.purchaseUnit,
+          conversionFactor: old.conversionFactor,
+          previous: old.averageCost,
+          next: updates.averageCost,
+          ratio: costAssessment.ratio,
+          // SAFETY: `needsCostConfirmation` is true only for these two verdicts.
+          verdict: costAssessment.verdict as "confirm" | "extreme",
+          affectedMenus: costImpact.affectedMenus,
+          biggest: costImpact.biggest,
+        };
+      }
+    }
+  }
 
   // Same duplicate-code guard as create (see createIngredientCore).
   if (updates.code !== undefined) {
@@ -429,6 +548,22 @@ export async function updateIngredientCore(
     "Update Ingredient",
     `Bahan baku "${result.name}" diperbarui oleh ${user.name}`,
   );
+
+  // A confirmed jump is logged as a warning, not just as another edit: this is
+  // the line that explains a future "why did HPP move" question.
+  if (costAssessment && needsCostConfirmation(costAssessment.verdict)) {
+    const ratioLabel =
+      costAssessment.ratio === null
+        ? "tanpa harga sebelumnya"
+        : `${costAssessment.ratio.toFixed(2)}×`;
+    await logSystemAction(
+      user,
+      "Update Ingredient Cost",
+      `HPP bahan "${result.name}" diubah ${old.averageCost} → ${result.averageCost} per ${result.stockUnit} (${ratioLabel}, ${costImpact?.affectedMenus ?? 0} menu terpengaruh) oleh ${user.name}`,
+      "Warning",
+    );
+  }
+
   await logAudit(user, "ingredients", id, "UPDATE", old, result);
 
   return result;

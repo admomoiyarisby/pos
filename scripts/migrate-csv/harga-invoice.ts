@@ -29,6 +29,11 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
 import * as schema from "../../src/db/schema";
+import {
+  assessCostChange,
+  needsCostConfirmation,
+  resolveQuotedCost,
+} from "../../src/lib/cost-guard";
 import { parseCsv, findColumns } from "./csv";
 import { canonicalName } from "./normalize";
 
@@ -41,6 +46,7 @@ const CSV_PATH = resolve(process.cwd(), "docs/csv/Detail POS - Harga Invoice all
 const COL_LEFT_NO = 0;
 const COL_LEFT_ITEM = 1;
 const COL_LEFT_PER_UNIT = 6;
+const COL_LEFT_UNIT = 7;
 
 function parseIdrPerUnit(raw: string): number {
   const trimmed = raw.trim();
@@ -75,15 +81,23 @@ function parseIdrPerUnit(raw: string): number {
   return parseInt(cleaned, 10);
 }
 
-async function loadIngredientCodesByName(
-  client: Client,
-): Promise<Map<string, { id: string; averageCost: number }>> {
-  const result = await client.query<{ id: string; name: string; averageCost: number }>(
-    `SELECT id, name, average_cost as "averageCost" FROM ingredients`,
+interface CostTarget {
+  id: string;
+  name: string;
+  averageCost: number;
+  stockUnit: string;
+  purchaseUnit: string;
+  conversionFactor: number;
+}
+
+async function loadIngredientCodesByName(client: Client): Promise<Map<string, CostTarget>> {
+  const result = await client.query<CostTarget>(
+    `SELECT id, name, average_cost as "averageCost", stock_unit as "stockUnit",
+            purchase_unit as "purchaseUnit", conversion_factor as "conversionFactor"
+       FROM ingredients`,
   );
-  const m = new Map<string, { id: string; averageCost: number }>();
-  for (const r of result.rows)
-    m.set(r.name.toLowerCase(), { id: r.id, averageCost: r.averageCost });
+  const m = new Map<string, CostTarget>();
+  for (const r of result.rows) m.set(r.name.toLowerCase(), r);
   return m;
 }
 
@@ -91,7 +105,7 @@ async function loadIngredientCodesByName(
  * For dry-run: read both ingredient CSVs to know which canonical names
  * are recognised (without DB).
  */
-function loadIngredientNamesFromCsvs(): Map<string, { id: string; averageCost: number }> {
+function loadIngredientNamesFromCsvs(): Map<string, CostTarget> {
   const names = new Set<string>();
   for (const path of [
     "docs/csv/Detail POS - List Item Central Kitchen.csv",
@@ -109,12 +123,25 @@ function loadIngredientNamesFromCsvs(): Map<string, { id: string; averageCost: n
       if (canonical) names.add(canonical);
     }
   }
-  const m = new Map<string, { id: string; averageCost: number }>();
-  for (const n of names) m.set(n.toLowerCase(), { id: `dry-${n}`, averageCost: 0 });
+  const m = new Map<string, CostTarget>();
+  for (const n of names) {
+    m.set(n.toLowerCase(), {
+      id: `dry-${n}`,
+      name: n,
+      averageCost: 0,
+      stockUnit: "",
+      purchaseUnit: "",
+      conversionFactor: 1,
+    });
+  }
   return m;
 }
 
-export type HargaInvoiceOptions = { dryRun?: boolean };
+export type HargaInvoiceOptions = {
+  dryRun?: boolean;
+  /** Apply rows the cost guard flags as suspicious (unit mismatch or a >5x jump). */
+  applySuspect?: boolean;
+};
 
 export async function migrateHargaInvoice(options: HargaInvoiceOptions = {}): Promise<void> {
   const raw = readFileSync(CSV_PATH, "utf-8");
@@ -143,7 +170,9 @@ export async function migrateHargaInvoice(options: HargaInvoiceOptions = {}): Pr
   let updated = 0;
   let skipped = 0;
   let missing = 0;
-  const updates: { id: string; averageCost: number; rawName: string }[] = [];
+  let suspects = 0;
+  const updates: { id: string; averageCost: number; rawName: string; previous: number }[] = [];
+  const suspectNotes: string[] = [];
   const skipNotes: string[] = [];
   const missingNotes: string[] = [];
 
@@ -154,7 +183,8 @@ export async function migrateHargaInvoice(options: HargaInvoiceOptions = {}): Pr
     if (rawName.toLowerCase() === "item") continue;
     if (rawName.toLowerCase().startsWith("harga invoice")) continue;
     if (!/^\d+$/.test((row[COL_LEFT_NO] ?? "").trim())) continue;
-    const perUnit = parseIdrPerUnit(row[COL_LEFT_PER_UNIT] ?? "");
+    const csvUnit = (row[COL_LEFT_UNIT] ?? "").trim().toLowerCase();
+    let perUnit = parseIdrPerUnit(row[COL_LEFT_PER_UNIT] ?? "");
     if (!perUnit) continue;
     const canonical = canonicalName(rawName);
     if (canonical === null) {
@@ -168,18 +198,60 @@ export async function migrateHargaInvoice(options: HargaInvoiceOptions = {}): Pr
       missing++;
       continue;
     }
+
+    // The CSV's "Satuan" is the unit its price is quoted in. Writing it straight
+    // into `average_cost` is only correct when it is the *stock* unit — a price
+    // per purchase unit would otherwise become a price per gram/ml/pcs, which is
+    // how a whole day of HPP gets mispriced.
+    const resolved = resolveQuotedCost(perUnit, csvUnit, {
+      stockUnit: ing.stockUnit,
+      purchaseUnit: ing.purchaseUnit,
+      conversionFactor: ing.conversionFactor,
+    });
+    if (!resolved.ok) {
+      skipNotes.push(
+        `skip ${rawName} (satuan CSV "${csvUnit}" bukan satuan stok "${ing.stockUnit}")`,
+      );
+      skipped++;
+      continue;
+    }
+    perUnit = resolved.costPerStockUnit;
+
     if (ing.averageCost === perUnit && perUnit > 0) {
       continue;
     }
-    updates.push({ id: ing.id, averageCost: perUnit, rawName });
+
+    const assessment = assessCostChange(ing.averageCost, perUnit);
+    if (needsCostConfirmation(assessment.verdict)) {
+      const ratioLabel =
+        assessment.ratio === null ? "tanpa harga lama" : `${assessment.ratio.toFixed(2)}x`;
+      suspectNotes.push(
+        `${rawName}: ${ing.averageCost} -> ${perUnit} /${ing.stockUnit} (${ratioLabel})`,
+      );
+      suspects++;
+      if (!options.applySuspect) continue;
+    }
+
+    updates.push({ id: ing.id, averageCost: perUnit, rawName, previous: ing.averageCost });
     updated++;
   }
+
+  const suspectHeader = `  ! ${suspects} baris mencurigakan (perubahan >5x atau satuan tidak cocok)`;
+  const suspectLines = suspectNotes.map((n) => `  ! ${n}`);
+  const applyNote = options.applySuspect
+    ? ""
+    : "  ! baris di atas DILEWATI; jalankan dengan --apply-suspect untuk menulisnya";
 
   if (options.dryRun) {
     console.log(
       `[harga-invoice] dry-run: would update ${updated} ingredients (skipped ${skipped}, missing ${missing})`,
     );
     for (const u of updates) console.log(`  ~ ${u.rawName} → ${u.averageCost}`);
+    if (suspects > 0) {
+      console.log(suspectHeader);
+      for (const line of suspectLines) console.log(line);
+      if (applyNote) console.log(applyNote);
+    }
     for (const s of skipNotes) console.log(`  - ${s}`);
     for (const m of missingNotes) console.log(`  ? ${m}`);
     await client.end();
@@ -195,6 +267,29 @@ export async function migrateHargaInvoice(options: HargaInvoiceOptions = {}): Pr
         .set({ averageCost: u.averageCost })
         .where(eq(schema.ingredients.id, u.id));
     }
+
+    // Reprice the menus that use any touched ingredient, the way the UI path does
+    // (`recalculateRecipeCostsForIngredient`). Without it `recipes.total_cogs`
+    // keeps the old cost, and the next report is wrong in a new way.
+    if (updates.length > 0) {
+      await client.query(
+        `UPDATE recipes r
+            SET total_cogs = sub.total
+           FROM (
+             SELECT ri.recipe_id,
+                    round(sum(i.average_cost * ri.quantity))::int AS total
+               FROM recipe_ingredients ri
+               JOIN ingredients i ON i.id = ri.ingredient_id
+              GROUP BY ri.recipe_id
+           ) sub
+          WHERE r.id = sub.recipe_id
+            AND r.id IN (
+              SELECT DISTINCT recipe_id FROM recipe_ingredients WHERE ingredient_id = ANY($1::uuid[])
+            )`,
+        [updates.map((u) => u.id)],
+      );
+    }
+
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
@@ -206,5 +301,10 @@ export async function migrateHargaInvoice(options: HargaInvoiceOptions = {}): Pr
   console.log(
     `[harga-invoice] updated ${updated} ingredients (skipped ${skipped}, missing ${missing})`,
   );
+  if (suspects > 0) {
+    console.log(suspectHeader);
+    for (const line of suspectLines) console.log(line);
+    if (applyNote) console.log(applyNote);
+  }
   for (const m of missingNotes) console.log(`  ? ${m}`);
 }
