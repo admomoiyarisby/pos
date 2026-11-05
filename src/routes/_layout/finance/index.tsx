@@ -24,6 +24,7 @@ import {
   createManualExpense,
 } from "#/lib/server/finance";
 import { summarizePnl, type ChannelPnlLine, type DailyPnl } from "#/lib/finance-pnl";
+import type { MenuCogsRow } from "#/lib/finance-hpp";
 import { getBrokenStock } from "#/lib/server/waste";
 import { getBranches } from "#/lib/server/branches";
 import {
@@ -232,6 +233,80 @@ function HppCompositionChart({ data }: { data: { name: string; cost: number }[] 
   );
 }
 
+// The per-menu table is the diagnostic half of the HPP drill-down: the
+// ingredient rows are scaled to the frozen total, so they agree with it whatever
+// it says. Comparing each menu's frozen HPP to the same lines at today's prices
+// is what shows a sale that was priced with a bad ingredient cost.
+const MENU_DIVERGENCE_RATIO = 0.5;
+
+function isMenuDivergent(ratio: number | null): boolean {
+  return ratio !== null && Math.abs(ratio) >= MENU_DIVERGENCE_RATIO;
+}
+
+function HppMenuTable({ rows }: { rows: MenuCogsRow[] }) {
+  if (rows.length === 0) return null;
+  const divergent = rows.filter((r) => isMenuDivergent(r.ratio)).length;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold">HPP per Menu</h3>
+        <p className="text-xs text-muted-foreground">
+          Dicatat saat transaksi vs harga bahan sekarang
+          {divergent > 0 && ` · ${divergent} menu menyimpang`}
+        </p>
+      </div>
+      <div className="rounded-lg border overflow-x-auto">
+        <table className="w-full text-sm min-w-[520px]">
+          <thead>
+            <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
+              <th className="py-2 px-3 text-left font-medium">Menu</th>
+              <th className="py-2 px-3 text-right font-medium w-16">Qty</th>
+              <th className="py-2 px-3 text-right font-medium w-28">HPP/unit dicatat</th>
+              <th className="py-2 px-3 text-right font-medium w-28">HPP/unit sekarang</th>
+              <th className="py-2 px-3 text-right font-medium w-28">Selisih</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const flagged = isMenuDivergent(r.ratio);
+              return (
+                <tr key={r.recipeId} className={flagged ? "border-b bg-amber-500/5" : "border-b"}>
+                  <td className="py-1.5 px-3">{r.name}</td>
+                  <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">
+                    {r.quantity}
+                  </td>
+                  <td
+                    className={`py-1.5 px-3 text-right tabular-nums ${flagged ? "font-medium text-amber-700 dark:text-amber-400" : ""}`}
+                  >
+                    {formatRp(r.quantity > 0 ? r.cogsFrozen / r.quantity : 0)}
+                  </td>
+                  <td className="py-1.5 px-3 text-right tabular-nums">
+                    {formatRp(r.quantity > 0 ? r.cogsCurrent / r.quantity : 0)}
+                  </td>
+                  <td
+                    className={`py-1.5 px-3 text-right tabular-nums ${flagged ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}
+                  >
+                    {r.delta === 0
+                      ? "—"
+                      : `${r.delta > 0 ? "+" : "−"}${formatRp(Math.abs(r.delta))}`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        HPP yang tercatat tidak ikut berubah saat harga bahan diperbaiki — karena itu selisih besar
+        berarti harga bahan saat transaksi berbeda jauh dari harga sekarang. Baris disorot bila
+        selisihnya ≥ 50% dari harga sekarang. Menu berisi bahan yang salah harga akan menyimpang
+        bersamaan; itu pola yang paling mudah dikenali.
+      </p>
+    </div>
+  );
+}
+
 // HPP drill-down. The ledger's HPP number is Σ orders.totalCogs, persisted at
 // sale time — it cannot be recomputed from today's BOM because discounts,
 // modifiers, exclusions and BOGO all shaped it. The server re-resolves each
@@ -302,6 +377,8 @@ function HppDetailModal({
           </p>
         ) : (
           <>
+            <HppMenuTable rows={data?.menus ?? []} />
+
             {rows.length > 0 && <HppCompositionChart data={rows} />}
 
             <div className="rounded-lg border overflow-hidden">

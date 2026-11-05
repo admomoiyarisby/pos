@@ -174,3 +174,97 @@ export function allocateHpp(orders: readonly HppOrderInput[], dayTotalCogs: numb
   const allocated = rows.reduce((s, r) => s + r.cost, 0);
   return { rows, allocated, unallocated: dayTotalCogs - allocated };
 }
+
+/**
+ * One sold line, priced twice: what the ledger charged (`cogsAtTransaction`,
+ * frozen at sale time) and what the same composition costs at today's ingredient
+ * prices. Both are per ordered unit.
+ */
+export interface MenuCogsLine {
+  recipeId: string;
+  name: string;
+  quantity: number;
+  /** Per-unit COGS frozen on the line at sale time — the ledger's basis. */
+  cogsAtTransaction: number;
+  /** Per-unit COGS for the identical composition at today's average costs. */
+  currentCogs: number;
+}
+
+export interface MenuCogsRow {
+  recipeId: string;
+  name: string;
+  /** Units sold on the day. */
+  quantity: number;
+  /** Σ over the menu's lines of `cogsAtTransaction × quantity`. */
+  cogsFrozen: number;
+  /** The same lines at today's prices. */
+  cogsCurrent: number;
+  /** `cogsFrozen − cogsCurrent`: positive means the ledger charged more. */
+  delta: number;
+  /**
+   * `delta / cogsCurrent`, or `null` when today's cost is zero/unknown — a
+   * ratio against nothing is noise, and a menu that is now free is a different
+   * bug than one that is 30× too expensive.
+   */
+  ratio: number | null;
+}
+
+/**
+ * Per-menu reconciliation for the HPP drill-down: the ledger's frozen COGS next
+ * to the same lines at today's prices.
+ *
+ * This is the view that answers "which menu is wrong" in one glance. A day whose
+ * HPP was charged with a mispriced ingredient shows every menu containing that
+ * ingredient with a large positive delta, while menus without it sit at ~0 — a
+ * pattern no per-ingredient table can show, because the ingredient rows are
+ * scaled to the (wrong) frozen total and therefore agree with it by
+ * construction.
+ *
+ * Sorted by absolute delta: the biggest suspect first, then by name so equal
+ * deltas keep a stable order between renders.
+ *
+ * Pure: no DB, no clock — unit-tested in `finance-hpp.test.ts`.
+ */
+export function compareMenuCogs(lines: readonly MenuCogsLine[]): MenuCogsRow[] {
+  const byRecipe = new Map<string, MenuCogsRow>();
+
+  for (const line of lines) {
+    if (line.quantity <= 0) continue;
+    const frozen = line.cogsAtTransaction * line.quantity;
+    const current = line.currentCogs * line.quantity;
+    const existing = byRecipe.get(line.recipeId);
+    if (existing) {
+      existing.quantity += line.quantity;
+      existing.cogsFrozen += frozen;
+      existing.cogsCurrent += current;
+      continue;
+    }
+    byRecipe.set(line.recipeId, {
+      recipeId: line.recipeId,
+      name: line.name,
+      quantity: line.quantity,
+      cogsFrozen: frozen,
+      cogsCurrent: current,
+      delta: 0,
+      ratio: null,
+    });
+  }
+
+  const rows = [...byRecipe.values()].map((row) => {
+    const cogsFrozen = Math.round(row.cogsFrozen);
+    const cogsCurrent = Math.round(row.cogsCurrent);
+    const delta = cogsFrozen - cogsCurrent;
+    return {
+      ...row,
+      cogsFrozen,
+      cogsCurrent,
+      delta,
+      ratio: cogsCurrent === 0 ? null : delta / cogsCurrent,
+    };
+  });
+
+  return rows.sort((a, b) => {
+    const byDelta = Math.abs(b.delta) - Math.abs(a.delta);
+    return byDelta !== 0 ? byDelta : a.name.localeCompare(b.name);
+  });
+}

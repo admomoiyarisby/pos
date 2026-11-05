@@ -33,6 +33,14 @@ export interface ResolvedIngredient {
   quantity: number; // positive = consumed, negative = excluded/restored
   ingredientName: string;
   cost?: number; // only when includeCost is true
+  /**
+   * The same quantity at *today's* average cost, next to `cost` which may be the
+   * frozen sale-time value (ADR 0031). Both come from the same resolved
+   * composition, so comparing them answers "what changed since the sale" per
+   * line — including modifiers and exclusions, which a recipe-level figure
+   * would miss. Only when `includeCost` is true.
+   */
+  currentCost?: number;
 }
 
 export interface ResolvedItemIngredients {
@@ -137,6 +145,7 @@ function buildSnapshotResolution(
         entry.cost = Math.round((info?.averageCost ?? 0) * row.quantity);
         allFrozen = false;
       }
+      entry.currentCost = Math.round((info?.averageCost ?? 0) * row.quantity);
     }
     ingredientsList.push(entry);
   }
@@ -381,6 +390,9 @@ export async function resolveNewItemIngredients(
     if (includeCost) {
       // cost per unit, not total
       entry.cost = Math.round(data.cost);
+      // Live BOM at today's cost — identical to `cost` here, since this path
+      // never had a sale-time price to freeze.
+      entry.currentCost = Math.round(data.cost);
     }
     ingredientsList.push(entry);
   }
@@ -488,6 +500,8 @@ async function resolveLiveFallback(
     };
     if (includeCost) {
       entry.cost = Math.round(data.cost);
+      // Re-priced at today's cost either way, so `currentCost` matches.
+      entry.currentCost = Math.round(data.cost);
     }
     ingredientsList.push(entry);
   }

@@ -243,6 +243,50 @@ describe("HPP breakdown — sale-time cost and per-order reconciliation", () => 
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
+    "compares each menu's frozen HPP with today's prices",
+    async () => {
+      // The production shape of the bug: a sale charged at a wrong ingredient
+      // price, fixed afterwards. The per-ingredient rows agree with the frozen
+      // total whatever it says, so this per-menu row is the only thing that
+      // shows the day is stale.
+      const s = await seedIngredients(1000);
+      await posApi.createOrderCore(s.admin, {
+        branchId: s.branchId,
+        channel: "Dine-in",
+        customerName: "Pelanggan Uji",
+        items: [{ recipeId: s.recipeId, quantity: 3, price: 10000 }],
+        paymentMethod: "cash",
+      });
+
+      // The price was wrong at sale time; correcting it must not rewrite the
+      // sale, but it must show up as the divergence.
+      await setAverageCost(s.ingredientId, 100);
+
+      const breakdown = await financeApi.getDailyHppBreakdownCore(s.admin, {
+        branchId: s.branchId,
+        date: jakartaToday(),
+      });
+
+      expect(breakdown.menus).toHaveLength(1);
+      expect(breakdown.menus[0]).toMatchObject({
+        recipeId: s.recipeId,
+        name: "Menu Uji",
+        quantity: 3,
+        // 3 x (2 units x Rp 1.000) charged, 3 x (2 units x Rp 100) today.
+        cogsFrozen: 6000,
+        cogsCurrent: 600,
+        delta: 5400,
+      });
+      expect(breakdown.menus[0]?.ratio).toBeCloseTo(9);
+
+      // The ingredient table still reconciles to the frozen total, which is why
+      // it cannot reveal the stale price on its own.
+      const allocated = breakdown.rows.reduce((sum, r) => sum + r.cost, 0);
+      expect(allocated + breakdown.unallocated).toBe(breakdown.totalCogs);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
     "rescales a legacy row (no frozen cost) to its line COGS",
     async () => {
       const s = await seedIngredients(1000);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocateHpp, type HppItemInput, type HppOrderInput } from "./finance-hpp";
+import { allocateHpp, compareMenuCogs, type HppItemInput, type HppOrderInput } from "./finance-hpp";
 
 const ing = (ingredientId: string, cost: number) => ({
   ingredientId,
@@ -149,5 +149,83 @@ describe("allocateHpp", () => {
 
   it("is empty when there is nothing to allocate", () => {
     expect(allocateHpp([], 0)).toEqual({ rows: [], allocated: 0, unallocated: 0 });
+  });
+});
+
+describe("compareMenuCogs — frozen HPP vs today's prices, per menu", () => {
+  const line = (
+    recipeId: string,
+    name: string,
+    quantity: number,
+    cogsAtTransaction: number,
+    currentCogs: number,
+  ) => ({ recipeId, name, quantity, cogsAtTransaction, currentCogs });
+
+  it("aggregates every line of a menu, including lines sold at different prices", () => {
+    const rows = compareMenuCogs([
+      line("miso", "Miso Sup", 10, 68_329, 1_871),
+      line("miso", "Miso Sup", 3, 60_000, 1_871),
+      line("tea", "Ice Tea", 3, 20_155, 1_474),
+    ]);
+
+    const miso = rows.find((r) => r.recipeId === "miso");
+    expect(miso).toEqual({
+      recipeId: "miso",
+      name: "Miso Sup",
+      quantity: 13,
+      cogsFrozen: 863_290,
+      cogsCurrent: 24_323,
+      delta: 838_967,
+      ratio: 863_290 / 24_323 - 1,
+    });
+  });
+
+  it("puts the biggest divergence first, whatever its direction", () => {
+    const rows = compareMenuCogs([
+      line("small", "Kecil", 1, 1_100, 1_000), // +100
+      line("big", "Besar", 1, 68_329, 1_871), // +66k
+      line("under", "Di bawah", 1, 500, 5_000), // −4.5k
+    ]);
+
+    expect(rows.map((r) => r.recipeId)).toEqual(["big", "under", "small"]);
+    expect(rows.map((r) => r.delta)).toEqual([66_458, -4_500, 100]);
+  });
+
+  it("keeps a stable order when deltas tie", () => {
+    const rows = compareMenuCogs([line("b", "B", 1, 2_000, 1_000), line("a", "A", 1, 1_000, 0)]);
+
+    expect(rows.map((r) => r.recipeId)).toEqual(["a", "b"]);
+  });
+
+  it("reports no ratio when today's cost is zero instead of dividing by it", () => {
+    const [row] = compareMenuCogs([line("free", "Gratis", 2, 5_000, 0)]);
+
+    expect(row.cogsFrozen).toBe(10_000);
+    expect(row.cogsCurrent).toBe(0);
+    expect(row.delta).toBe(10_000);
+    expect(row.ratio).toBeNull();
+  });
+
+  it("rounds to whole rupiah and drops unsold lines", () => {
+    const rows = compareMenuCogs([
+      line("frac", "Pecahan", 1, 1_000.4, 500.6),
+      line("voided", "Tidak terjual", 0, 9_999, 1),
+    ]);
+
+    expect(rows).toEqual([
+      {
+        recipeId: "frac",
+        name: "Pecahan",
+        quantity: 1,
+        cogsFrozen: 1_000,
+        cogsCurrent: 501,
+        delta: 499,
+        ratio: 499 / 501,
+      },
+    ]);
+  });
+
+  it("is empty when nothing was sold", () => {
+    expect(compareMenuCogs([])).toEqual([]);
   });
 });

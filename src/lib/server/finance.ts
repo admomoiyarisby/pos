@@ -38,7 +38,8 @@ import { resolvePersistedItemsIngredients } from "./ingredient-resolver";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, formatRupiah } from "./html-utils";
 import { buildDailyPnl, summarizePnl, type DailyPnl, type OrderAggregate } from "#/lib/finance-pnl";
-import { allocateHpp, type HppItemInput } from "#/lib/finance-hpp";
+import { allocateHpp, compareMenuCogs, type HppItemInput } from "#/lib/finance-hpp";
+import type { MenuCogsLine, MenuCogsRow } from "#/lib/finance-hpp";
 
 /**
  * Validate a `dateFrom`/`dateTo` pair of Jakarta-local ("YYYY-MM-DD") dates and
@@ -259,6 +260,14 @@ export interface HppBreakdown {
    * cost. `rows` + this always equals `totalCogs`.
    */
   unallocated: number;
+  /**
+   * Per-menu reconciliation: the ledger's frozen HPP for the day next to the
+   * same lines at today's ingredient prices. The per-ingredient rows above are
+   * scaled to the frozen total, so they agree with it by construction and cannot
+   * reveal a mispriced sale — this can, and it is what turns "this day looks
+   * wrong" into "this menu was charged 30× its cost".
+   */
+  menus: MenuCogsRow[];
 }
 
 // Per-day HPP breakdown, reconciled with the ledger's HPP column.
@@ -739,15 +748,18 @@ export async function getDailyHppBreakdownCore(
     .select({
       orderId: orders.id,
       orderItemId: orderItems.id,
+      recipeId: orderItems.recipeId,
+      recipeName: recipes.name,
       quantity: orderItems.quantity,
       cogsAtTransaction: orderItems.cogsAtTransaction,
     })
     .from(orderItems)
     .innerJoin(orders, eq(orderItems.orderId, orders.id))
+    .innerJoin(recipes, eq(orderItems.recipeId, recipes.id))
     .where(orderConditions.length > 0 ? and(...orderConditions) : undefined);
 
   if (orderRows.length === 0 || dayTotalCogs === 0) {
-    return { rows: [], totalCogs: dayTotalCogs, unallocated: dayTotalCogs };
+    return { rows: [], totalCogs: dayTotalCogs, unallocated: dayTotalCogs, menus: [] };
   }
 
   // One batched resolver call for the whole day (ADR 0031 also gives each
@@ -779,6 +791,23 @@ export async function getDailyHppBreakdownCore(
     dayTotalCogs,
   );
 
+  // Per-menu reconciliation from the same resolved lines. `currentCost` is the
+  // identical composition at today's average cost, so a frozen line and a live
+  // one compare apples to apples (modifiers and exclusions included).
+  const menuLines: MenuCogsLine[] = [];
+  for (const row of itemRows) {
+    const resolvedItem = resolved.get(row.orderItemId);
+    const currentCogs =
+      resolvedItem?.ingredients.reduce((sum, ing) => sum + (ing.currentCost ?? 0), 0) ?? 0;
+    menuLines.push({
+      recipeId: row.recipeId,
+      name: row.recipeName,
+      quantity: row.quantity,
+      cogsAtTransaction: Number(row.cogsAtTransaction),
+      currentCogs: currentCogs / (row.quantity || 1),
+    });
+  }
+
   const result: HppBreakdownRow[] = allocation.rows.map((row) => ({
     ...row,
     category: "", // filled in below, batched
@@ -801,6 +830,7 @@ export async function getDailyHppBreakdownCore(
     rows: result,
     totalCogs: dayTotalCogs,
     unallocated: allocation.unallocated,
+    menus: compareMenuCogs(menuLines),
   };
 }
 
