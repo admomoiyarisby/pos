@@ -356,7 +356,7 @@ function buildInvoiceHtml(d: InvoiceData): string {
       <div class="info-value">${escapeHtml(d.requestedByName ?? "-")}</div>
     </div>
     <div class="info-block">
-      <div class="info-label">Sumber</div>
+      <div class="info-label">Keterangan</div>
       <div class="info-value">${escapeHtml(d.requestSource ?? "-")}</div>
     </div>
   </div>

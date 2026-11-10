@@ -411,7 +411,7 @@ function NewProcurementPage() {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Sumber Permintaan (opsional)</Label>
+                <Label>Keterangan (opsional)</Label>
                 <Input
                   placeholder="mis. WhatsApp, Telepon, Walk-in"
                   value={requestSource}

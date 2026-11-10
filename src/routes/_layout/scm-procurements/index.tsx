@@ -206,7 +206,7 @@ function ProcurementsListPage() {
     },
     {
       accessorKey: "requestSource",
-      header: "Sumber",
+      header: "Keterangan",
       render: (row) => (
         <span className="text-xs text-muted-foreground">{row.requestSource ?? "System"}</span>
       ),

@@ -6,7 +6,7 @@ import RoleGuard from "#/components/RoleGuard";
 import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
 import { Skeleton } from "#/components/ui/skeleton";
-import { ArrowLeft, Building2, User, CalendarDays, Hash } from "lucide-react";
+import { ArrowLeft, Building2, User, Hash, StickyNote } from "lucide-react";
 import {
   getProcurement,
   getProcurementItems,
@@ -219,8 +219,8 @@ function ProcurementDetailPage() {
             </div>
             <div className="rounded-lg bg-muted/40 px-2.5 py-2">
               <div className="flex items-center gap-1 text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
-                <CalendarDays className="h-3 w-3" />
-                Sumber
+                <StickyNote className="h-3 w-3" />
+                Keterangan
               </div>
               <div className="font-medium truncate mt-0.5">{proc.requestSource ?? "System"}</div>
             </div>
