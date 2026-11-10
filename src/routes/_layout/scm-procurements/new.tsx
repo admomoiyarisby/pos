@@ -22,8 +22,11 @@ import { getIngredients } from "#/lib/server/ingredients";
 import { getStockRecommendations } from "#/lib/server/stock-recommendation";
 import type { StockRecommendation } from "#/lib/server/stock-recommendation";
 import { StockStatusBadge } from "#/components/inventory/StockStatusBadge";
-import { formatDaysCover } from "#/lib/stock-recommendation";
-import { formatQuantity } from "#/lib/utils";
+import {
+  formatDaysCover,
+  formatRecommendationQuantity,
+  roundRecommendation,
+} from "#/lib/stock-recommendation";
 import { useUnsavedDraft } from "#/hooks/useUnsavedDraft";
 import { RestoreDraftBanner } from "#/components/draft/RestoreDraftBanner";
 import { toast } from "sonner";
@@ -302,12 +305,13 @@ function NewProcurementPage() {
                       <span>
                         Stok:{" "}
                         <span className="font-medium">
-                          {formatQuantity(selectedRecommendation.currentStock)}{" "}
+                          {formatRecommendationQuantity(selectedRecommendation.currentStock)}{" "}
                           {selectedRecommendation.stockUnit}
                         </span>
                       </span>
                       <span className="text-muted-foreground">
-                        Acuan 5 hari: {formatQuantity(selectedRecommendation.targetStock)}{" "}
+                        Acuan 5 hari:{" "}
+                        {formatRecommendationQuantity(selectedRecommendation.targetStock)}{" "}
                         {selectedRecommendation.stockUnit}
                       </span>
                       <span className="text-muted-foreground">
@@ -318,10 +322,14 @@ function NewProcurementPage() {
                           size="sm"
                           variant="outline"
                           className="sm:ml-auto"
-                          onClick={() => setQuantity(selectedRecommendation.recommendedOrder)}
+                          onClick={() =>
+                            setQuantity(
+                              roundRecommendation(selectedRecommendation.recommendedOrder),
+                            )
+                          }
                         >
                           Isi rekomendasi: +
-                          {formatQuantity(selectedRecommendation.recommendedOrder)}{" "}
+                          {formatRecommendationQuantity(selectedRecommendation.recommendedOrder)}{" "}
                           {selectedRecommendation.stockUnit}
                         </Button>
                       ) : (

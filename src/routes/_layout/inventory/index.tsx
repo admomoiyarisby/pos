@@ -24,9 +24,9 @@ import { StockStatusBadge } from "#/components/inventory/StockStatusBadge";
 import {
   STOCK_STATUS_HINT,
   formatDaysCover,
+  formatRecommendationQuantity,
   stockRecommendationKey,
 } from "#/lib/stock-recommendation";
-import { formatQuantity } from "#/lib/utils";
 
 interface InvRow {
   id: string;
@@ -53,8 +53,8 @@ const skuLabels = { RM: "RM", SFG: "SFG", FG: "FG" } satisfies Record<string, st
 /** The numbers behind a badge, so the colour is not the only signal. */
 function recommendationTitle(rec: StockRecommendation) {
   return [
-    `Rata-rata ${formatQuantity(rec.avgDailyUsage)} ${rec.stockUnit}/hari`,
-    `Acuan 5 hari ${formatQuantity(rec.targetStock)} ${rec.stockUnit}`,
+    `Rata-rata ${formatRecommendationQuantity(rec.avgDailyUsage)} ${rec.stockUnit}/hari`,
+    `Acuan 5 hari ${formatRecommendationQuantity(rec.targetStock)} ${rec.stockUnit}`,
     `Cover ${formatDaysCover(rec.daysCover)}`,
   ].join(" · ");
 }
@@ -341,7 +341,7 @@ function InventoryPage() {
             title={recommendationTitle(rec)}
             className={rec.status === "low" ? "font-medium text-destructive" : "font-medium"}
           >
-            +{formatQuantity(rec.recommendedOrder)} {rec.stockUnit}
+            +{formatRecommendationQuantity(rec.recommendedOrder)} {rec.stockUnit}
           </span>
         );
       },

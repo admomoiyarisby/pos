@@ -39,9 +39,10 @@ Status permintaan: **Draft** → **Pending**
 
 ### 3. Admin Pusat Menyiapkan dan Mengirim Barang
 
-1. Setelah disetujui, Admin Pusat menyiapkan barang
-2. Mengisi Surat Jalan (SJ) dengan detail pengiriman
-3. Mengirim barang: Status berubah ke **In Transit**
+1. Saat **review** (status _Under Review_), Admin Pusat bisa mencetak **Surat Jalan (Qty Kosong)** — dokumen yang sama dengan kolom Qty Kirim dibiarkan kosong, supaya tim yang menyiapkan barang menulis jumlah kirim dengan tangan. Baris yang sudah ditolak tidak ikut dicetak.
+2. Setelah disetujui, Admin Pusat menyiapkan barang
+3. Mengisi Surat Jalan (SJ) dengan detail pengiriman
+4. Mengirim barang: Status berubah ke **In Transit**
 
 ### 4. Branch Admin Menerima Barang
 

@@ -152,19 +152,29 @@ function AuditLogSection({ procurementId }: { procurementId: string }) {
  * The document is a URL, so there is nothing to fetch first: a dropped
  * connection cannot turn this into an error toast, and the window can be
  * reloaded.
+ *
+ * `blankQty` asks for the preparation sheet: same document, Qty column left
+ * empty so the team packing the goods writes the shipped quantity by hand,
+ * which is what the reviewer prints before any quantity is picked.
  */
 function SuratJalanButton({
   procurementId,
   label = "Lihat Surat Jalan",
+  blankQty = false,
+  className,
 }: {
   procurementId: string;
   label?: string;
+  blankQty?: boolean;
+  className?: string;
 }) {
   return (
     <Button
       variant="outline"
       size="sm"
-      onClick={() => openPrintDocument(procurementSuratJalanPrintUrl(procurementId))}
+      className={className}
+      title={blankQty ? "Cetak surat jalan dengan kolom qty kosong untuk diisi tangan" : undefined}
+      onClick={() => openPrintDocument(procurementSuratJalanPrintUrl(procurementId, { blankQty }))}
     >
       {label}
     </Button>
@@ -660,6 +670,12 @@ export function UnderReviewCaReview({ procurement, items, showPrices }: StateVie
           />
         </div>
         <ActionBar>
+          <SuratJalanButton
+            procurementId={procurement.id}
+            label="Cetak SJ (Qty Kosong)"
+            blankQty
+            className="w-full sm:w-auto h-11 sm:h-10 sm:mr-auto"
+          />
           <Button
             variant="destructive"
             className="w-full sm:w-auto h-11 sm:h-10"

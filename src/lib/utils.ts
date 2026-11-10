@@ -20,6 +20,13 @@ export function formatRp(value: number | string | bigint | null | undefined): st
 const QUANTITY_MAX_FRACTION_DIGITS = 3;
 
 /**
+ * Max fraction digits for recommendation figures (shortfall, 5-day target,
+ * average usage). One decimal is as fine as a kitchen can act on, and 10,667
+ * on a purchase screen reads as false precision next to a 1 pcs stock unit.
+ */
+export const RECOMMENDATION_MAX_FRACTION_DIGITS = 1;
+
+/**
  * Clean a quantity for storage: rounds float32 residue away at the same
  * precision `formatQuantity` displays.
  *
@@ -30,9 +37,12 @@ const QUANTITY_MAX_FRACTION_DIGITS = 3;
  * unrounded (see `STOCK_CHECK_EPSILON` in scm-effects for why the float32
  * residue is tolerated rather than chased).
  */
-export function roundQuantity(value: number): number {
+export function roundQuantity(
+  value: number,
+  maxFractionDigits: number = QUANTITY_MAX_FRACTION_DIGITS,
+): number {
   if (!Number.isFinite(value)) return value;
-  const factor = 10 ** QUANTITY_MAX_FRACTION_DIGITS;
+  const factor = 10 ** maxFractionDigits;
   return Math.round(value * factor) / factor;
 }
 
@@ -84,12 +94,17 @@ export function parseQuantityInput(value: string): number | null {
  * comma (2.25 → "2,25").
  *
  * e.g. 6000 → "6.000", 2.25 → "2,25", 0.1 + 0.2 → "0,3"
+ *
+ * `maxFractionDigits` narrows the display for numbers a human only reads
+ * coarsely (e.g. a stock recommendation at 1 decimal), without touching the
+ * 3-digit default that stock counts rely on.
  */
-export function formatQuantity(value: number | null | undefined): string {
+export function formatQuantity(
+  value: number | null | undefined,
+  maxFractionDigits: number = QUANTITY_MAX_FRACTION_DIGITS,
+): string {
   const num = Number(value ?? 0);
-  return num.toLocaleString("id-ID", {
-    maximumFractionDigits: QUANTITY_MAX_FRACTION_DIGITS,
-  });
+  return num.toLocaleString("id-ID", { maximumFractionDigits: maxFractionDigits });
 }
 
 /**

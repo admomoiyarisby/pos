@@ -14,6 +14,12 @@ export const PRINT_PROCUREMENT_INVOICE_PATH = "/api/print/procurement/invoice";
 export const PRINT_TRANSFER_SURAT_JALAN_PATH = "/api/print/transfer/surat-jalan";
 export const PRINT_TRANSFER_INVOICE_PATH = "/api/print/transfer/invoice";
 
+/**
+ * Query flag asking for the preparation sheet: the same surat jalan, with the
+ * Qty column left empty so it can be filled in by hand.
+ */
+export const PRINT_BLANK_QTY_PARAM = "blankQty";
+
 /** Filters the printable finance report can be narrowed by. */
 export interface FinancePrintLinkFilters {
   dateFrom?: string;
@@ -42,8 +48,21 @@ export function stockOpnamePrintUrl(soId: string): string {
 }
 
 /** Surat jalan (delivery note) for one procurement. */
-export function procurementSuratJalanPrintUrl(procurementId: string): string {
-  return documentUrl(PRINT_PROCUREMENT_SURAT_JALAN_PATH, "procurementId", procurementId);
+export function procurementSuratJalanPrintUrl(
+  procurementId: string,
+  options: { blankQty?: boolean } = {},
+): string {
+  const url = documentUrl(PRINT_PROCUREMENT_SURAT_JALAN_PATH, "procurementId", procurementId);
+  return options.blankQty ? `${url}&${PRINT_BLANK_QTY_PARAM}=1` : url;
+}
+
+/**
+ * Whether a print request asks for the blank-quantity preparation sheet.
+ * Mirrors `procurementSuratJalanPrintUrl`, so the button and the route can never
+ * disagree about the flag or its value.
+ */
+export function wantsBlankQtySheet(params: URLSearchParams): boolean {
+  return params.get(PRINT_BLANK_QTY_PARAM) === "1";
 }
 
 /** Invoice for one procurement. */

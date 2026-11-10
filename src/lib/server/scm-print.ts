@@ -21,9 +21,20 @@ interface SuratJalanItem {
   ingredientName: string;
   stockUnit: string | null;
   pickedQuantity: number | null;
+  caDecision: "pending" | "approved" | "rejected";
 }
 
-interface SuratJalanData {
+/** How a surat jalan is printed — see `buildProcurementSuratJalanHtml`. */
+export interface SuratJalanPrintOptions {
+  /**
+   * Print the preparation sheet instead of the shipped document: every line
+   * that is still in play, with the Qty column left empty so the team packing
+   * the goods writes the quantity by hand (client request, 2026-11).
+   */
+  blankQuantity?: boolean;
+}
+
+interface SuratJalanData extends SuratJalanPrintOptions {
   code: string;
   shippedAt: Date | null;
   createdAt: Date;
@@ -32,19 +43,27 @@ interface SuratJalanData {
   destBranchName: string;
 }
 
-function buildSuratJalanHtml(d: SuratJalanData): string {
+/** Pure renderer, exported so the two print modes are testable without a DB. */
+export function buildSuratJalanHtml(d: SuratJalanData): string {
   const date = d.shippedAt
     ? new Date(d.shippedAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })
     : new Date(d.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" });
 
-  const rows = d.items
-    .filter((it) => (it.pickedQuantity ?? 0) > 0)
+  const blankQuantity = d.blankQuantity === true;
+
+  // Shipped sheet: only what was actually picked. Preparation sheet: anything
+  // not rejected, including lines still undecided — the packer fills them in.
+  const items = blankQuantity
+    ? d.items.filter((it) => it.caDecision !== "rejected")
+    : d.items.filter((it) => (it.pickedQuantity ?? 0) > 0);
+
+  const rows = items
     .map(
       (it, idx) => `
         <tr>
           <td style="text-align:center;">${idx + 1}</td>
           <td>${escapeHtml(it.ingredientName)}</td>
-          <td style="text-align:right;">${it.pickedQuantity ?? 0}</td>
+          <td style="text-align:right;">${blankQuantity ? "" : (it.pickedQuantity ?? 0)}</td>
           <td style="text-align:left;">${escapeHtml(it.stockUnit ?? "-")}</td>
         </tr>`,
     )
@@ -73,6 +92,7 @@ function buildSuratJalanHtml(d: SuratJalanData): string {
   .sig-space { height: 56pt; }
   .sig-name { border-top: 1pt solid #000; padding-top: 4pt; }
   .empty { text-align: center; color: #999; padding: 16pt; }
+  .note { margin-top: 6pt; font-size: 9pt; color: #555; font-style: italic; }
 </style>
 </head>
 <body>
@@ -103,14 +123,18 @@ function buildSuratJalanHtml(d: SuratJalanData): string {
       <tr>
         <th style="width:30pt;">No</th>
         <th>Bahan</th>
-        <th style="width:60pt; text-align:right;">Qty</th>
+        <th style="width:60pt; text-align:right;">${blankQuantity ? "Qty Kirim" : "Qty"}</th>
         <th style="width:80pt;">Satuan</th>
       </tr>
     </thead>
     <tbody>
-      ${rows || `<tr><td colspan="4" class="empty">Tidak ada item yang dikirim.</td></tr>`}
+      ${
+        rows ||
+        `<tr><td colspan="4" class="empty">${blankQuantity ? "Tidak ada item untuk disiapkan." : "Tidak ada item yang dikirim."}</td></tr>`
+      }
     </tbody>
   </table>
+  ${blankQuantity ? `<div class="note">Kolom Qty Kirim diisi tangan oleh tim yang menyiapkan barang.</div>` : ""}
 
   <div class="signatures">
     <div class="sig-block">
@@ -149,8 +173,15 @@ function buildSuratJalanHtml(d: SuratJalanData): string {
  * A plain async function rather than a server function so
  * `/api/print/procurement/surat-jalan` can serve it as a GET document the print
  * window navigates to — see `buildFinancePrintHtml` in `finance.ts`.
+ *
+ * `blankQuantity` prints the preparation sheet: every line that is not rejected
+ * with an empty Qty column, for the team packing the goods to fill in by hand
+ * at the review stage (client request, 2026-11).
  */
-export async function buildProcurementSuratJalanHtml(procurementId: string): Promise<string> {
+export async function buildProcurementSuratJalanHtml(
+  procurementId: string,
+  options: SuratJalanPrintOptions = {},
+): Promise<string> {
   await requireAuth();
 
   const [proc] = await db
@@ -166,6 +197,7 @@ export async function buildProcurementSuratJalanHtml(procurementId: string): Pro
       ingredientName: ingredients.name,
       stockUnit: ingredients.stockUnit,
       pickedQuantity: scmProcurementItems.pickedQuantity,
+      caDecision: scmProcurementItems.caDecision,
     })
     .from(scmProcurementItems)
     .innerJoin(ingredients, eq(ingredients.id, scmProcurementItems.ingredientId))
@@ -182,6 +214,7 @@ export async function buildProcurementSuratJalanHtml(procurementId: string): Pro
     items,
     sourceBranchName: central?.name ?? "Central Kitchen",
     destBranchName: dest?.name ?? "-",
+    blankQuantity: options.blankQuantity,
   });
 }
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   formatDaysCover,
+  formatRecommendationQuantity,
+  roundRecommendation,
   stockRecommendationFor,
   stockStatusFor,
 } from "#/lib/stock-recommendation";
@@ -44,6 +46,29 @@ describe("stockRecommendationFor", () => {
     // avg 1/3 → target 5/3; stock 1 → shortfall 2/3 → 0,667 at 3 decimals.
     const rec = stockRecommendationFor(1, 1);
     expect(rec.recommendedOrder).toBe(0.667);
+  });
+});
+
+describe("recommendation display precision", () => {
+  it("shows one decimal, not three", () => {
+    // The client's complaint: "isi rekomendasi: +10,667 pcs" — the third
+    // decimal is noise for a stock unit counted in whole pcs.
+    expect(formatRecommendationQuantity(10.667)).toBe("10,7");
+    expect(formatRecommendationQuantity(11.667)).toBe("11,7");
+    expect(formatRecommendationQuantity(4)).toBe("4");
+  });
+
+  it("fills the quantity with the number the button promised", () => {
+    // Whatever label the buyer clicked, the input must hold that value — a
+    // +10,7 button that fills 10,667 is the same bug in another place.
+    expect(roundRecommendation(10.667)).toBe(10.7);
+    expect(roundRecommendation(10)).toBe(10);
+  });
+
+  it("leaves the raw recommendation untouched", () => {
+    const rec = stockRecommendationFor(1, 1);
+    expect(rec.recommendedOrder).toBe(0.667);
+    expect(roundRecommendation(rec.recommendedOrder)).toBe(0.7);
   });
 });
 

@@ -27,17 +27,19 @@ export function printHtmlResponse(html: string): Response {
  * Every `/api/print/*` route is the same three steps — read the id, build the
  * document, explain any failure on the page — so they share this instead of
  * repeating it. `param` is the query key (`soId`, `procurementId`, …) the URL
- * builders in `src/lib/print-links.ts` write.
+ * builders in `src/lib/print-links.ts` write. `build` also receives the full
+ * query so a document can be asked for a variant (e.g. a blank-quantity sheet).
  */
 export function printDocumentHandler(
   param: string,
-  build: (id: string) => Promise<string>,
+  build: (id: string, params: URLSearchParams) => Promise<string>,
 ): (context: { request: Request }) => Promise<Response> {
   return async ({ request }) => {
-    const id = new URL(request.url).searchParams.get(param);
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get(param);
     if (!id) return printNotFoundResponse();
     try {
-      return printHtmlResponse(await build(id));
+      return printHtmlResponse(await build(id, searchParams));
     } catch (err) {
       // Anything that is not an Error carries no message worth printing; let
       // the framework's 500 page take it.

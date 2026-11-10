@@ -58,6 +58,17 @@ describe("formatQuantity", () => {
     expect(formatQuantity(0.0001)).toBe("0");
   });
 
+  it("narrows the display when a coarser precision is asked for", () => {
+    // Recommendation figures: 10,667 reads as false precision next to a 1 pcs
+    // stock unit, so those screens show one decimal.
+    expect(formatQuantity(10.667, 1)).toBe("10,7");
+    expect(formatQuantity(11.667, 1)).toBe("11,7");
+    expect(formatQuantity(2.25, 1)).toBe("2,3");
+    expect(formatQuantity(6000, 1)).toBe("6.000");
+    // Default stays at 3 digits — stock counts must not be coarsened.
+    expect(formatQuantity(10.667)).toBe("10,667");
+  });
+
   it("tolerates null/undefined as zero", () => {
     expect(formatQuantity(null)).toBe("0");
     expect(formatQuantity(undefined)).toBe("0");
@@ -77,6 +88,12 @@ describe("roundQuantity", () => {
     expect(roundQuantity(-2.25)).toBe(-2.25);
     expect(roundQuantity(Number.NaN)).toBeNaN();
     expect(roundQuantity(Number.POSITIVE_INFINITY)).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("rounds at the requested precision", () => {
+    expect(roundQuantity(10.667, 1)).toBe(10.7);
+    expect(roundQuantity(2.25, 1)).toBe(2.3);
+    expect(roundQuantity(10.667)).toBe(10.667);
   });
 });
 

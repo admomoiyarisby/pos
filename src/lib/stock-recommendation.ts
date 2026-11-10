@@ -1,4 +1,4 @@
-import { formatQuantity, roundQuantity } from "#/lib/utils";
+import { RECOMMENDATION_MAX_FRACTION_DIGITS, formatQuantity, roundQuantity } from "#/lib/utils";
 
 /**
  * Safety-stock rule requested by the client: the reference stock for an
@@ -89,4 +89,22 @@ export function stockRecommendationKey(branchId: string, ingredientId: string): 
 export function formatDaysCover(daysCover: number | null): string {
   if (daysCover === null) return "—";
   return `${formatQuantity(daysCover)} hari`;
+}
+
+/**
+ * The recommendation as the screen shows it: one decimal, not three.
+ *
+ * `10,667` next to a stock unit measured in whole pcs reads as false precision,
+ * and the number is multiplied by a 3-day usage window, so the third decimal is
+ * noise anyway. `recommendedOrder` itself stays exact; round it with
+ * `roundRecommendation` before showing or applying it so the field a buyer sees
+ * is the price they pay.
+ */
+export function formatRecommendationQuantity(value: number | null | undefined): string {
+  return formatQuantity(value, RECOMMENDATION_MAX_FRACTION_DIGITS);
+}
+
+/** `recommendedOrder` at display precision — what "Isi rekomendasi" fills in. */
+export function roundRecommendation(value: number): number {
+  return roundQuantity(value, RECOMMENDATION_MAX_FRACTION_DIGITS);
 }

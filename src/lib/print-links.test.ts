@@ -7,6 +7,7 @@ import {
   stockOpnamePrintUrl,
   transferInvoicePrintUrl,
   transferSuratJalanPrintUrl,
+  wantsBlankQtySheet,
 } from "./print-links";
 
 describe("financePrintUrl", () => {
@@ -68,4 +69,29 @@ describe("SCM document URLs", () => {
       expect(parsed.searchParams.get(param)).toBe("abc-123");
     });
   }
+});
+
+describe("procurementSuratJalanPrintUrl variants", () => {
+  it("asks for the shipped document by default", () => {
+    const parsed = new URL(procurementSuratJalanPrintUrl("abc-123"), "https://pos.test");
+    expect(parsed.searchParams.get("blankQty")).toBeNull();
+    expect(wantsBlankQtySheet(parsed.searchParams)).toBe(false);
+  });
+
+  it("carries the blank-qty flag the print route reads back", () => {
+    // Button and route must agree on both the flag name and the value the route
+    // treats as "on" — a mismatch prints the wrong document silently.
+    const parsed = new URL(
+      procurementSuratJalanPrintUrl("abc-123", { blankQty: true }),
+      "https://pos.test",
+    );
+    expect(parsed.pathname).toBe("/api/print/procurement/surat-jalan");
+    expect(parsed.searchParams.get("procurementId")).toBe("abc-123");
+    expect(wantsBlankQtySheet(parsed.searchParams)).toBe(true);
+  });
+
+  it("does not treat any other value as the blank-qty sheet", () => {
+    expect(wantsBlankQtySheet(new URLSearchParams("blankQty=true"))).toBe(false);
+    expect(wantsBlankQtySheet(new URLSearchParams("blankQty=0"))).toBe(false);
+  });
 });
