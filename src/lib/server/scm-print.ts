@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
 import { requireAuth } from "./auth";
+import { formatQuantity } from "#/lib/utils";
 import {
   branches,
   ingredients,
@@ -20,6 +21,8 @@ interface SuratJalanItem {
   id: string;
   ingredientName: string;
   stockUnit: string | null;
+  /** What the branch asked for — the "Qty Order" column. */
+  quantity: number;
   pickedQuantity: number | null;
   caDecision: "pending" | "approved" | "rejected";
 }
@@ -28,8 +31,8 @@ interface SuratJalanItem {
 export interface SuratJalanPrintOptions {
   /**
    * Print the preparation sheet instead of the shipped document: every line
-   * that is still in play, with the Qty column left empty so the team packing
-   * the goods writes the quantity by hand (client request, 2026-11).
+   * that is still in play, with the Qty Kirim column left empty so the team
+   * packing the goods writes the quantity by hand (client request, 2026-11).
    */
   blankQuantity?: boolean;
 }
@@ -63,8 +66,10 @@ export function buildSuratJalanHtml(d: SuratJalanData): string {
         <tr>
           <td style="text-align:center;">${idx + 1}</td>
           <td>${escapeHtml(it.ingredientName)}</td>
-          <td style="text-align:right;">${blankQuantity ? "" : (it.pickedQuantity ?? 0)}</td>
+          <td style="text-align:right;">${formatQuantity(it.quantity)}</td>
           <td style="text-align:left;">${escapeHtml(it.stockUnit ?? "-")}</td>
+          <td style="text-align:right;">${blankQuantity ? "" : formatQuantity(it.pickedQuantity ?? 0)}</td>
+          <td style="text-align:left;"></td>
         </tr>`,
     )
     .join("");
@@ -121,20 +126,22 @@ export function buildSuratJalanHtml(d: SuratJalanData): string {
   <table>
     <thead>
       <tr>
-        <th style="width:30pt;">No</th>
+        <th style="width:26pt;">No</th>
         <th>Bahan</th>
-        <th style="width:60pt; text-align:right;">${blankQuantity ? "Qty Kirim" : "Qty"}</th>
-        <th style="width:80pt;">Satuan</th>
+        <th style="width:52pt; text-align:right;">Qty Order</th>
+        <th style="width:46pt;">Satuan</th>
+        <th style="width:52pt; text-align:right;">Qty Kirim</th>
+        <th style="width:120pt;">Keterangan</th>
       </tr>
     </thead>
     <tbody>
       ${
         rows ||
-        `<tr><td colspan="4" class="empty">${blankQuantity ? "Tidak ada item untuk disiapkan." : "Tidak ada item yang dikirim."}</td></tr>`
+        `<tr><td colspan="6" class="empty">${blankQuantity ? "Tidak ada item untuk disiapkan." : "Tidak ada item yang dikirim."}</td></tr>`
       }
     </tbody>
   </table>
-  ${blankQuantity ? `<div class="note">Kolom Qty Kirim diisi tangan oleh tim yang menyiapkan barang.</div>` : ""}
+  ${blankQuantity ? `<div class="note">Kolom Qty Kirim dan Keterangan diisi tangan oleh tim yang menyiapkan barang.</div>` : ""}
 
   <div class="signatures">
     <div class="sig-block">
@@ -174,9 +181,10 @@ export function buildSuratJalanHtml(d: SuratJalanData): string {
  * `/api/print/procurement/surat-jalan` can serve it as a GET document the print
  * window navigates to — see `buildFinancePrintHtml` in `finance.ts`.
  *
- * `blankQuantity` prints the preparation sheet: every line that is not rejected
- * with an empty Qty column, for the team packing the goods to fill in by hand
- * at the review stage (client request, 2026-11).
+ * `blankQuantity` prints the preparation sheet: every line that is not rejected,
+ * with columns Qty Order, Satuan, Qty Kirim and Keterangan — the last two left
+ * empty for the team packing the goods to fill in by hand at the review stage
+ * (client request, 2026-11).
  */
 export async function buildProcurementSuratJalanHtml(
   procurementId: string,
@@ -196,6 +204,8 @@ export async function buildProcurementSuratJalanHtml(
       id: scmProcurementItems.id,
       ingredientName: ingredients.name,
       stockUnit: ingredients.stockUnit,
+      // Requested quantity — the "Qty Order" column.
+      quantity: scmProcurementItems.quantity,
       pickedQuantity: scmProcurementItems.pickedQuantity,
       caDecision: scmProcurementItems.caDecision,
     })

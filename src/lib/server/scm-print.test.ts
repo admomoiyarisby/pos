@@ -4,8 +4,11 @@ import { buildSuratJalanHtml } from "./scm-print";
 /**
  * Two prints come out of the same document: the shipped surat jalan (what
  * actually left the warehouse) and the preparation sheet the reviewer prints at
- * the review stage, whose Qty column is deliberately empty so the team packing
- * the goods writes the quantity by hand.
+ * the review stage, whose Qty Kirim and Keterangan columns are deliberately
+ * empty so the team packing the goods writes them by hand.
+ *
+ * Both prints carry the same columns — the paper form the client's team already
+ * writes on: Qty Order next to Qty Kirim, plus Keterangan.
  */
 const base = {
   code: "PRWYG/091126/01",
@@ -20,6 +23,7 @@ const items = [
     id: "1",
     ingredientName: "Plastik Kresek 20",
     stockUnit: "pack",
+    quantity: 5,
     pickedQuantity: 3,
     caDecision: "approved" as const,
   },
@@ -27,6 +31,7 @@ const items = [
     id: "2",
     ingredientName: "Tutup Bowl 650 ml",
     stockUnit: "pcs",
+    quantity: 1500,
     pickedQuantity: null,
     caDecision: "pending" as const,
   },
@@ -34,6 +39,7 @@ const items = [
     id: "3",
     ingredientName: "Paper Bowl 650 ml",
     stockUnit: "pcs",
+    quantity: 200,
     pickedQuantity: null,
     caDecision: "rejected" as const,
   },
@@ -55,24 +61,33 @@ function bodyRows(html: string) {
 }
 
 describe("buildSuratJalanHtml", () => {
-  it("prints the shipped document with picked quantities only", () => {
+  it("keeps the columns the client's team writes on", () => {
+    const html = buildSuratJalanHtml({ ...base, items });
+
+    expect(html).toContain(">Qty Order<");
+    expect(html).toContain(">Qty Kirim<");
+    expect(html).toContain(">Satuan<");
+    expect(html).toContain(">Keterangan<");
+  });
+
+  it("prints the shipped document with ordered and picked quantities only", () => {
     const html = buildSuratJalanHtml({ ...base, items });
 
     expect(html).toContain("<body>");
     expect(html).toContain("</html>");
-    expect(html).toContain(">Qty<");
     // Rejected and un-picked lines never reach the shipped sheet.
-    expect(bodyRows(html)).toEqual(["1 Plastik Kresek 20 3 pack"]);
+    expect(bodyRows(html)).toEqual(["1 Plastik Kresek 20 5 pack 3"]);
   });
 
   it("prints every line still in play on the blank-qty preparation sheet", () => {
     const html = buildSuratJalanHtml({ ...base, items, blankQuantity: true });
 
-    expect(html).toContain(">Qty Kirim<");
-    expect(html).toContain("Kolom Qty Kirim diisi tangan");
-    // Pending and approved lines are listed; the rejected one is not. The qty
-    // cell is empty on purpose: that blank is what gets written on by hand.
-    expect(bodyRows(html)).toEqual(["1 Plastik Kresek 20 pack", "2 Tutup Bowl 650 ml pcs"]);
+    expect(html).toContain("Kolom Qty Kirim dan Keterangan diisi tangan");
+    // Pending and approved lines are listed — with the ordered quantity, so the
+    // packer knows how much to prepare — but the rejected one is not. Qty Kirim
+    // and Keterangan are empty on purpose: those blanks are what gets written
+    // on by hand.
+    expect(bodyRows(html)).toEqual(["1 Plastik Kresek 20 5 pack", "2 Tutup Bowl 650 ml 1.500 pcs"]);
   });
 
   it("says so instead of printing an empty table", () => {
