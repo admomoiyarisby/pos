@@ -915,6 +915,11 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
             Stock sudah keluar dari gudang. Cabang akan menandai "Sudah Dikirim" setelah barang
             tiba.
           </p>
+          <p className="mb-3 text-sm text-muted-foreground">
+            <strong>Cetak Surat Jalan</strong> berisi Qty Kirim yang sudah dipilih. Untuk lembar
+            yang Qty Kirim-nya masih kosong (diisi tangan tim yang menyiapkan barang), pakai{" "}
+            <strong>Cetak SJ (Qty Kosong)</strong>.
+          </p>
           <ScmItemTable mode="read-only" items={rowsToItems(items)} />
         </CardContent>
       </Card>
@@ -945,6 +950,13 @@ export function InTransitCaDetail({ procurement, items }: StateViewProps) {
           </Button>
           <div className="w-full sm:w-auto [&>button]:w-full sm:[&>button]:w-auto [&>button]:h-11 sm:[&>button]:h-10">
             <SuratJalanButton procurementId={procurement.id} label="Cetak Surat Jalan" />
+          </div>
+          <div className="w-full sm:w-auto [&>button]:w-full sm:[&>button]:w-auto [&>button]:h-11 sm:[&>button]:h-10">
+            <SuratJalanButton
+              procurementId={procurement.id}
+              label="Cetak SJ (Qty Kosong)"
+              blankQty
+            />
           </div>
         </div>
       </div>
