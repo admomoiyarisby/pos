@@ -58,7 +58,7 @@ Saat memilih bahan di form pengadaan, sistem menampilkan acuan stok:
 
 ## Surat Jalan Qty Kosong (saat review)
 
-Di tahap **Sedang Direview**, Admin Pusat bisa menekan **Cetak SJ (Qty Kosong)**: Surat Jalan yang sama, tetapi kolom **Qty Kirim** dan **Keterangan** dibiarkan kosong agar tim yang menyiapkan barang menulis jumlah kirimnya dengan tangan. Kolom **Qty Order** tetap tercetak sebagai acuan jumlah yang diminta. Baris yang sudah ditolak tidak ikut tercetak. Setelah qty diisi di sistem dan pengadaan dikirim, cetak **Surat Jalan** biasa: kolom Qty Order dan Qty Kirim sama-sama terisi.
+Di tahap **Sedang Direview**, Admin Pusat bisa menekan **Cetak SJ (Qty Kosong)**: Surat Jalan yang sama, tetapi kolom **Qty Kirim** dan **Keterangan** dibiarkan kosong agar tim yang menyiapkan barang menulis jumlah kirimnya dengan tangan. Kolom **Qty Order** tetap tercetak sebagai acuan, dan **Satuan** tercetak di kedua sisi (setelah Qty Order dan setelah Qty Kirim), sama seperti form kertas tim gudang. Baris yang sudah ditolak tidak ikut tercetak. Setelah qty diisi di sistem dan pengadaan dikirim, cetak **Surat Jalan** biasa: kolom Qty Order dan Qty Kirim sama-sama terisi.
 
 ## Pertanyaan Umum
 

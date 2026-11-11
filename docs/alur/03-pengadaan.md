@@ -39,7 +39,7 @@ Status permintaan: **Draft** → **Pending**
 
 ### 3. Admin Pusat Menyiapkan dan Mengirim Barang
 
-1. Saat **review** (status _Under Review_), Admin Pusat bisa mencetak **Surat Jalan (Qty Kosong)** — dokumen yang sama dengan kolom **Qty Kirim** dan **Keterangan** dibiarkan kosong, supaya tim yang menyiapkan barang menulis jumlah kirim dengan tangan. Kolom **Qty Order** tetap tercetak sebagai acuan. Baris yang sudah ditolak tidak ikut dicetak.
+1. Saat **review** (status _Under Review_), Admin Pusat bisa mencetak **Surat Jalan (Qty Kosong)** — dokumen yang sama dengan kolom **Qty Kirim** dan **Keterangan** dibiarkan kosong, supaya tim yang menyiapkan barang menulis jumlah kirim dengan tangan. Kolom **Qty Order** tetap tercetak sebagai acuan, dan **Satuan** muncul di kedua sisi (setelah Qty Order dan setelah Qty Kirim), mengikuti form kertas tim gudang. Baris yang sudah ditolak tidak ikut dicetak.
 2. Setelah disetujui, Admin Pusat menyiapkan barang
 3. Mengisi Surat Jalan (SJ) dengan detail pengiriman
 4. Mengirim barang: Status berubah ke **In Transit**

@@ -66,8 +66,9 @@ describe("buildSuratJalanHtml", () => {
 
     expect(html).toContain(">Qty Order<");
     expect(html).toContain(">Qty Kirim<");
-    expect(html).toContain(">Satuan<");
     expect(html).toContain(">Keterangan<");
+    // Satuan appears twice: once beside each quantity, like the paper form.
+    expect(html.match(/>Satuan</g)).toHaveLength(2);
   });
 
   it("prints the shipped document with ordered and picked quantities only", () => {
@@ -75,8 +76,9 @@ describe("buildSuratJalanHtml", () => {
 
     expect(html).toContain("<body>");
     expect(html).toContain("</html>");
-    // Rejected and un-picked lines never reach the shipped sheet.
-    expect(bodyRows(html)).toEqual(["1 Plastik Kresek 20 5 pack 3"]);
+    // Rejected and un-picked lines never reach the shipped sheet, and the unit
+    // is repeated under Qty Kirim.
+    expect(bodyRows(html)).toEqual(["1 Plastik Kresek 20 5 pack 3 pack"]);
   });
 
   it("prints every line still in play on the blank-qty preparation sheet", () => {
@@ -85,9 +87,12 @@ describe("buildSuratJalanHtml", () => {
     expect(html).toContain("Kolom Qty Kirim dan Keterangan diisi tangan");
     // Pending and approved lines are listed — with the ordered quantity, so the
     // packer knows how much to prepare — but the rejected one is not. Qty Kirim
-    // and Keterangan are empty on purpose: those blanks are what gets written
-    // on by hand.
-    expect(bodyRows(html)).toEqual(["1 Plastik Kresek 20 5 pack", "2 Tutup Bowl 650 ml 1.500 pcs"]);
+    // is empty on purpose (the packer writes it by hand) while the unit beside
+    // it is printed, because the unit is known and cannot change.
+    expect(bodyRows(html)).toEqual([
+      "1 Plastik Kresek 20 5 pack pack",
+      "2 Tutup Bowl 650 ml 1.500 pcs pcs",
+    ]);
   });
 
   it("says so instead of printing an empty table", () => {

@@ -61,17 +61,22 @@ export function buildSuratJalanHtml(d: SuratJalanData): string {
     : d.items.filter((it) => (it.pickedQuantity ?? 0) > 0);
 
   const rows = items
-    .map(
-      (it, idx) => `
+    .map((it, idx) => {
+      // The unit is printed twice — once beside each quantity — because the form
+      // the client's team writes on has a Satuan column next to both Qty Order
+      // and Qty Kirim (client request, 2026-11).
+      const unit = escapeHtml(it.stockUnit ?? "-");
+      return `
         <tr>
           <td style="text-align:center;">${idx + 1}</td>
           <td>${escapeHtml(it.ingredientName)}</td>
           <td style="text-align:right;">${formatQuantity(it.quantity)}</td>
-          <td style="text-align:left;">${escapeHtml(it.stockUnit ?? "-")}</td>
+          <td style="text-align:left;">${unit}</td>
           <td style="text-align:right;">${blankQuantity ? "" : formatQuantity(it.pickedQuantity ?? 0)}</td>
+          <td style="text-align:left;">${unit}</td>
           <td style="text-align:left;"></td>
-        </tr>`,
-    )
+        </tr>`;
+    })
     .join("");
 
   return `<!DOCTYPE html>
@@ -128,16 +133,17 @@ export function buildSuratJalanHtml(d: SuratJalanData): string {
       <tr>
         <th style="width:26pt;">No</th>
         <th>Bahan</th>
-        <th style="width:52pt; text-align:right;">Qty Order</th>
-        <th style="width:46pt;">Satuan</th>
-        <th style="width:52pt; text-align:right;">Qty Kirim</th>
-        <th style="width:120pt;">Keterangan</th>
+        <th style="width:48pt; text-align:right;">Qty Order</th>
+        <th style="width:42pt;">Satuan</th>
+        <th style="width:48pt; text-align:right;">Qty Kirim</th>
+        <th style="width:42pt;">Satuan</th>
+        <th style="width:104pt;">Keterangan</th>
       </tr>
     </thead>
     <tbody>
       ${
         rows ||
-        `<tr><td colspan="6" class="empty">${blankQuantity ? "Tidak ada item untuk disiapkan." : "Tidak ada item yang dikirim."}</td></tr>`
+        `<tr><td colspan="7" class="empty">${blankQuantity ? "Tidak ada item untuk disiapkan." : "Tidak ada item yang dikirim."}</td></tr>`
       }
     </tbody>
   </table>
