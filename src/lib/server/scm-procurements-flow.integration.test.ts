@@ -1031,3 +1031,154 @@ describe("Pengadaan — removing a draft line", () => {
     },
   );
 });
+
+// =============================================================================
+// DRAFT HEADER TEXT (Keterangan + Catatan)
+//
+// The requester can only set these at creation, so before this existed a typo
+// meant cancelling the draft and re-entering every line. Editable while Draft,
+// by the owning branch only, and every change lands in the audit trail.
+// =============================================================================
+
+describe("Pengadaan — editing draft Keterangan & Catatan", () => {
+  async function headerOf(procurementId: string) {
+    const [row] = await db
+      .select({
+        requestSource: schema.scmProcurements.requestSource,
+        notes: schema.scmProcurements.notes,
+      })
+      .from(schema.scmProcurements)
+      .where(eq(schema.scmProcurements.id, procurementId));
+    if (!row) throw new Error("procurement not found");
+    return row;
+  }
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "saves Keterangan and Catatan while Draft and records the change",
+    async () => {
+      const outlet = await seedBranch(uniq("PR-HDR-OUT"));
+      const ingredient = await seedIngredient(uniq("PR-HDR-ING"));
+      const requester = await seedUser("branch_admin", outlet);
+      const { id: procurementId } = await scm.createProcurementCore(requester, {
+        branchId: outlet,
+        items: [{ ingredientId: ingredient, quantity: 5 }],
+        notes: "catatan awal",
+        requestSource: "WhatsApp",
+      });
+
+      const res = await scm.updateProcurementDetailsCore(requester, {
+        procurementId,
+        patch: { requestSource: "Telepon", notes: "  dikoreksi  " },
+      });
+      expect(res).toMatchObject({ changed: true });
+
+      // Text is trimmed on the way in, so the list and the print agree.
+      await expect(headerOf(procurementId)).resolves.toEqual({
+        requestSource: "Telepon",
+        notes: "dikoreksi",
+      });
+
+      const trail = await db
+        .select({
+          event: schema.scmProcurementAuditLog.event,
+          note: schema.scmProcurementAuditLog.note,
+        })
+        .from(schema.scmProcurementAuditLog)
+        .where(eq(schema.scmProcurementAuditLog.scmProcurementId, procurementId));
+      const change = trail.find((e) => e.event === "details-update");
+      expect(change).toBeDefined();
+      expect(JSON.parse(change?.note ?? "{}")).toMatchObject({
+        requestSource: "Telepon",
+        notes: "dikoreksi",
+      });
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "leaves unsent fields alone, clears on empty text, and skips no-op saves",
+    async () => {
+      const outlet = await seedBranch(uniq("PR-HDR2-OUT"));
+      const ingredient = await seedIngredient(uniq("PR-HDR2-ING"));
+      const requester = await seedUser("branch_admin", outlet);
+      const { id: procurementId } = await scm.createProcurementCore(requester, {
+        branchId: outlet,
+        items: [{ ingredientId: ingredient, quantity: 5 }],
+        notes: "catatan awal",
+        requestSource: "WhatsApp",
+      });
+
+      // Only `requestSource` was sent: Catatan must survive untouched.
+      await scm.updateProcurementDetailsCore(requester, {
+        procurementId,
+        patch: { requestSource: "Walk-in" },
+      });
+      await expect(headerOf(procurementId)).resolves.toEqual({
+        requestSource: "Walk-in",
+        notes: "catatan awal",
+      });
+
+      // Whitespace-only text is stored as NULL, not as an empty string.
+      await scm.updateProcurementDetailsCore(requester, {
+        procurementId,
+        patch: { requestSource: "   ", notes: "" },
+      });
+      await expect(headerOf(procurementId)).resolves.toEqual({
+        requestSource: null,
+        notes: null,
+      });
+
+      // Nothing changed: no write, no audit row pretending otherwise.
+      const before = await db
+        .select({ id: schema.scmProcurementAuditLog.id })
+        .from(schema.scmProcurementAuditLog)
+        .where(eq(schema.scmProcurementAuditLog.scmProcurementId, procurementId));
+      await expect(
+        scm.updateProcurementDetailsCore(requester, {
+          procurementId,
+          patch: { requestSource: "", notes: "  " },
+        }),
+      ).resolves.toMatchObject({ changed: false });
+      const after = await db
+        .select({ id: schema.scmProcurementAuditLog.id })
+        .from(schema.scmProcurementAuditLog)
+        .where(eq(schema.scmProcurementAuditLog.scmProcurementId, procurementId));
+      expect(after).toHaveLength(before.length);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "is refused once submitted, and by a branch that does not own the draft",
+    async () => {
+      const outlet = await seedBranch(uniq("PR-HDR3-OUT"));
+      const otherOutlet = await seedBranch(uniq("PR-HDR3-OTHER"));
+      const ingredient = await seedIngredient(uniq("PR-HDR3-ING"));
+      const requester = await seedUser("branch_admin", outlet);
+      const otherBa = await seedUser("branch_admin", otherOutlet);
+      const { id: procurementId } = await scm.createProcurementCore(requester, {
+        branchId: outlet,
+        items: [{ ingredientId: ingredient, quantity: 5 }],
+        requestSource: "WhatsApp",
+      });
+
+      await expect(
+        scm.updateProcurementDetailsCore(otherBa, {
+          procurementId,
+          patch: { requestSource: "Dibajak" },
+        }),
+      ).rejects.toThrow("Forbidden");
+
+      await t(requester, procurementId, "submit");
+      await expect(
+        scm.updateProcurementDetailsCore(requester, {
+          procurementId,
+          patch: { requestSource: "Terlambat" },
+        }),
+      ).rejects.toThrow("selama pengadaan masih Draft");
+
+      // Both refusals left the header as the requester wrote it.
+      await expect(headerOf(procurementId)).resolves.toMatchObject({
+        requestSource: "WhatsApp",
+      });
+    },
+  );
+});

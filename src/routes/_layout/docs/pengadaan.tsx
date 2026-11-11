@@ -24,6 +24,7 @@ const markdownContent = `
 ## Alur Kerja
 
 1. **Branch Admin** membuat permintaan (PR) di \`/scm-procurements\`
+   Selama masih **Draft**, permintaan masih bisa diubah: jumlah bahan, tambah/hapus bahan, serta **Keterangan** dan **Catatan** (tombol **Simpan Keterangan**). Semua perubahan masuk Riwayat.
 2. **Admin Pusat** meninjau dan menyetujui permintaan
 3. **Admin Pusat** menyiapkan barang, membuat Surat Jalan, mengirim
 4. **Branch Admin** menerima barang dan mengisi form penerimaan

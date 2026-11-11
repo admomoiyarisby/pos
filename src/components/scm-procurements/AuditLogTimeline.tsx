@@ -34,6 +34,7 @@ const eventLabels = {
   "item-update": "Item Diperbarui",
   "item-add": "Item Ditambahkan",
   "item-remove": "Item Dihapus",
+  "details-update": "Keterangan Diperbarui",
 };
 
 export interface AuditLogTimelineProps {

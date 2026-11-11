@@ -716,6 +716,100 @@ export const removeProcurementItem = createServerFn({ method: "POST" })
   });
 
 // =============================================================================
+// updateProcurementDetails (Draft-only)
+// =============================================================================
+//
+// The header text a requester types before submitting: Keterangan
+// (request_source) and Catatan (notes). It was only settable at creation, so a
+// typo or a late remark meant cancelling and re-entering the whole draft.
+// Draft-only and branch-scoped, the same gate as the item edits (ADR 0004 §3).
+// Audit event: 'details-update'.
+//
+// Empty text is stored as NULL so "nothing written" has one representation.
+
+export interface ProcurementDetailsPatch {
+  requestSource?: string;
+  notes?: string;
+}
+
+/** Header text is a line or two, not a document: cap it at the write path. */
+const ProcurementDetailsSchema = z.object({
+  requestSource: z.string().trim().max(200).optional(),
+  notes: z.string().trim().max(2000).optional(),
+});
+
+function blankToNull(value: string | null): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed === "" ? null : trimmed;
+}
+
+export async function updateProcurementDetailsCore(
+  user: { id: string; role: string; branchId?: string },
+  data: { procurementId: string; patch: ProcurementDetailsPatch },
+) {
+  return await db.transaction(async (tx) => {
+    const [proc] = await tx
+      .select({
+        id: scmProcurements.id,
+        status: scmProcurements.status,
+        branchId: scmProcurements.branchId,
+        requestSource: scmProcurements.requestSource,
+        notes: scmProcurements.notes,
+      })
+      .from(scmProcurements)
+      .where(eq(scmProcurements.id, data.procurementId))
+      .for("update");
+    if (!proc) throw new Error("Procurement not found");
+    if (proc.status !== "Draft") {
+      throw new Error("Keterangan dan catatan hanya bisa diubah selama pengadaan masih Draft");
+    }
+    if (user.role === "branch_admin" && user.branchId && proc.branchId !== user.branchId) {
+      throw new Error("Forbidden");
+    }
+
+    // Only the fields the caller sent change; `undefined` means "leave alone".
+    const next = {
+      requestSource:
+        data.patch.requestSource === undefined
+          ? proc.requestSource
+          : blankToNull(data.patch.requestSource),
+      notes: data.patch.notes === undefined ? proc.notes : blankToNull(data.patch.notes),
+    };
+    if (next.requestSource === proc.requestSource && next.notes === proc.notes) {
+      return { changed: false };
+    }
+
+    await tx
+      .update(scmProcurements)
+      .set({ requestSource: next.requestSource, notes: next.notes })
+      .where(eq(scmProcurements.id, data.procurementId));
+
+    await tx.insert(scmProcurementAuditLog).values({
+      scmProcurementId: data.procurementId,
+      event: "details-update",
+      fromState: "Draft",
+      toState: "Draft",
+      itemId: null,
+      actorId: user.id,
+      actorRole: user.role,
+      note: JSON.stringify({ requestSource: next.requestSource, notes: next.notes }),
+    });
+
+    return { changed: true };
+  });
+}
+
+export const updateProcurementDetails = createServerFn({ method: "POST" })
+  .validator((data: { procurementId: string; patch: UnknownRecord }) => ({
+    procurementId: data.procurementId,
+    patch: ProcurementDetailsSchema.parse(data.patch),
+  }))
+  .handler(async ({ data }) => {
+    const user = await requireRole("branch_admin", "super_admin");
+    return await updateProcurementDetailsCore(user, data);
+  });
+
+// =============================================================================
 // getProcurementInvoice (header + line items)
 // =============================================================================
 

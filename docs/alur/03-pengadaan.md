@@ -24,10 +24,20 @@ Ketika cabang kehabisan stok dan perlu dikirim dari Gudang Pusat. Ini adalah **c
 3. Isi form:
    - Pilih bahan yang dibutuhkan
    - Masukkan jumlah yang diminta
-   - Tambahkan catatan jika perlu
+   - Isi **Keterangan** (mis. WhatsApp, Telepon) dan **Catatan** jika perlu
 4. Klik **"Simpan"**
 
 Status permintaan: **Draft** → **Pending**
+
+### 1a. Selama Masih Draft, Permintaan Masih Bisa Diubah
+
+Branch Admin (atau Super Admin) bisa mengubah permintaan yang belum di-submit:
+
+- **Jumlah** tiap bahan — langsung tersimpan per baris
+- **Tambah** bahan baru dan **hapus** bahan
+- **Keterangan** dan **Catatan** — lewat form di bawah daftar bahan, tersimpan saat klik **Simpan Keterangan**
+
+Semua perubahan tercatat di Riwayat. Setelah **Submit Pengadaan**, semuanya terkunci; Admin Pusat bisa mengembalikannya ke Draft lewat **Tarik Kembali** (hanya selama statusnya masih _Menunggu Review_).
 
 ### 2. Admin Pusat Meninjau Permintaan
 

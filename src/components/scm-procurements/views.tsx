@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
+import { Label } from "#/components/ui/label";
+import { Textarea } from "#/components/ui/textarea";
 import Modal from "#/components/ui/Modal";
 import {
   Select,
@@ -16,6 +18,7 @@ import { AuditLogCard } from "./AuditLogCard";
 import {
   transitionProcurement,
   updateProcurementItem,
+  updateProcurementDetails,
   addProcurementItem,
   removeProcurementItem,
   getCentralStockForProcurement,
@@ -59,6 +62,9 @@ function SectionDivider() {
 /** Procurement row fields rendered by these views. */
 export interface ProcurementRow {
   id: string;
+  /** Header text the requester can still edit while the draft is not submitted. */
+  requestSource: string | null;
+  notes: string | null;
   rejectionReason: string | null;
   cancellationReason: string | null;
 }
@@ -281,6 +287,100 @@ function useUpdateItemMutation() {
 // immediately (no separate "save" step) so the audit log records every
 // mutation.
 
+/**
+ * DraftDetailsForm — Keterangan (request_source) and Catatan (notes), editable
+ * while the draft has not been submitted.
+ *
+ * The item table above saves on every keystroke; free text does not, so this is
+ * an explicit save: nothing is written until "Simpan" is clicked, and the button
+ * stays disabled while the fields still match what the server holds. Before
+ * this existed the only way to fix a typo here was to cancel the draft and
+ * re-enter every line.
+ */
+function DraftDetailsForm({ procurement }: { procurement: ProcurementRow }) {
+  const queryClient = useQueryClient();
+  const serverValues = {
+    requestSource: procurement.requestSource ?? "",
+    notes: procurement.notes ?? "",
+  };
+  const [values, setValues] = useState(serverValues);
+
+  // Re-sync when the server row changes (a reload, or another tab saved). Only
+  // reachable while the form is not dirty, so it cannot eat what is being typed.
+  useEffect(() => {
+    setValues({
+      requestSource: procurement.requestSource ?? "",
+      notes: procurement.notes ?? "",
+    });
+  }, [procurement.requestSource, procurement.notes]);
+
+  const dirty =
+    values.requestSource.trim() !== serverValues.requestSource.trim() ||
+    values.notes.trim() !== serverValues.notes.trim();
+
+  const saveM = useMutation({
+    mutationFn: async () =>
+      updateProcurementDetails({
+        data: {
+          procurementId: procurement.id,
+          patch: { requestSource: values.requestSource, notes: values.notes },
+        },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurement", procurement.id] });
+      // The list shows Keterangan as a column.
+      void queryClient.invalidateQueries({ queryKey: ["scm-procurements"] });
+      toast.success("Keterangan & catatan tersimpan");
+    },
+    onError: (error: Error) => {
+      toast.error("Gagal menyimpan keterangan", { description: error.message });
+    },
+  });
+
+  return (
+    <div>
+      <SectionHeading>Keterangan &amp; Catatan</SectionHeading>
+      <p className="text-sm text-muted-foreground mb-3">
+        Terlihat oleh Admin Pusat saat review. Bisa diubah selama pengadaan masih Draft.
+      </p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="procurement-request-source">Keterangan (opsional)</Label>
+          <Input
+            id="procurement-request-source"
+            placeholder="mis. WhatsApp, Telepon, Walk-in"
+            value={values.requestSource}
+            onChange={(e) => setValues((prev) => ({ ...prev, requestSource: e.target.value }))}
+            className="h-11 sm:h-10 text-base sm:text-sm"
+            maxLength={200}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="procurement-notes">Catatan (opsional)</Label>
+          <Textarea
+            id="procurement-notes"
+            value={values.notes}
+            onChange={(e) => setValues((prev) => ({ ...prev, notes: e.target.value }))}
+            rows={2}
+            className="text-base sm:text-sm"
+            maxLength={2000}
+          />
+        </div>
+      </div>
+      <div className="flex justify-end mt-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => saveM.mutate()}
+          disabled={!dirty || saveM.isPending}
+        >
+          {saveM.isPending ? "Menyimpan..." : "Simpan Keterangan"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
   const transitionM = useTransitionMutation();
   const updateM = useUpdateItemMutation();
@@ -465,6 +565,10 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
           </p>
         ) : null}
       </div>
+
+      <SectionDivider />
+
+      <DraftDetailsForm procurement={procurement} />
 
       <SectionDivider />
 
