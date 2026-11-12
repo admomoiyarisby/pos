@@ -16,7 +16,7 @@ import {
 import { eq, and, desc, inArray, or, sql, isNull } from "drizzle-orm";
 import { fuzzySearch } from "./fuzzy";
 import { resolveNewItemIngredients } from "./ingredient-resolver";
-import { todayDateInputValue } from "#/lib/utils";
+import { lineAmount, todayDateInputValue } from "#/lib/utils";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
@@ -192,7 +192,7 @@ export async function createWasteEntryCore(
       )
       .limit(1);
     if (!recipe) throw new Error("Forbidden: recipe is not available to your branch");
-    valuation = data.quantity * (recipe.totalCogs ?? 0);
+    valuation = lineAmount(data.quantity, recipe.totalCogs ?? 0);
     displayName = recipe.name;
     stockUnit = "porsi";
   } else {
@@ -213,7 +213,7 @@ export async function createWasteEntryCore(
       )
       .limit(1);
     if (!ing) throw new Error("Forbidden: ingredient is not available to your branch");
-    valuation = data.quantity * (ing.averageCost ?? 0);
+    valuation = lineAmount(data.quantity, ing.averageCost ?? 0);
     displayName = ing.name;
     stockUnit = ing.stockUnit ?? "";
   }

@@ -46,6 +46,20 @@ export function roundQuantity(
   return Math.round(value * factor) / factor;
 }
 
+/**
+ * Rupiah amount for `quantity` at `unitPrice`, in whole Rupiah.
+ *
+ * Quantities are `real` — 1500,5 ml of water, 0,25 kg of flour — while every
+ * money column in the schema is an `integer` (there is no sen anywhere). The
+ * product therefore has to be rounded before it reaches a column: writing
+ * 1,5 × Rp1 = 1.5 into `scm_procurement_invoices.total_amount` makes the driver
+ * send "1.5" for an integer, which Postgres rejects with SQLSTATE 22P02, and
+ * the UI can only report that as "Format angka tidak sesuai kolomnya".
+ */
+export function lineAmount(quantity: number, unitPrice: number): number {
+  return Math.round(quantity * unitPrice);
+}
+
 /** id-ID grouped form: "1.234", "6.000", "1.234.567", "1.234,5". */
 const GROUPED_ID_ID = /^\d{1,3}(\.\d{3})*(,\d+)?$/;
 /** Ungrouped form: "23", "23.5", "0.5", "1234.5". */

@@ -25,6 +25,7 @@ import {
 } from "#/db/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { lineAmount } from "#/lib/utils";
 import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
@@ -544,7 +545,7 @@ export async function createPurchaseOrderCore(
         ingredientId: item.ingredientId,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
-        totalPrice: item.unitPrice ? item.unitPrice * item.quantity : null,
+        totalPrice: item.unitPrice ? lineAmount(item.quantity, item.unitPrice) : null,
       })),
     );
   }
@@ -609,7 +610,7 @@ export async function updatePurchaseOrderCore(
           ingredientId: item.ingredientId,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          totalPrice: item.unitPrice ? item.unitPrice * item.quantity : null,
+          totalPrice: item.unitPrice ? lineAmount(item.quantity, item.unitPrice) : null,
         })),
       );
     }
@@ -1631,7 +1632,7 @@ export async function generateSCMInvoiceCore(user: AppUser, data: { dnId: string
 
     const unitPrice = ing?.averageCost ?? 0;
     const qty = item.receivedQuantity ?? 0;
-    const totalPrice = unitPrice * qty;
+    const totalPrice = lineAmount(qty, unitPrice);
     totalAmount += totalPrice;
 
     invoiceItems.push({

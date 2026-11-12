@@ -1,4 +1,5 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { lineAmount } from "#/lib/utils";
 import type { db as DbType } from "./db";
 import {
   inTransitInventory,
@@ -552,7 +553,8 @@ export async function generateTransferInvoiceSnapshot(
   let totalAmount = 0;
   const lineItems = itemRows.map((row) => {
     const received = row.receivedQuantity ?? 0;
-    const lineTotal = received * row.unitPrice;
+    // Rounded: the line total is money (integer Rupiah), the quantity is not.
+    const lineTotal = lineAmount(received, row.unitPrice);
     totalAmount += lineTotal;
     return {
       ingredientId: row.ingredientId,

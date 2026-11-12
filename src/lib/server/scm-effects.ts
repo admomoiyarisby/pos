@@ -1,4 +1,5 @@
 import { and, eq, isNull, sum } from "drizzle-orm";
+import { lineAmount } from "#/lib/utils";
 import { getCentralWarehouse } from "./central-warehouse";
 import { z } from "zod";
 import type { db as DbType } from "./db";
@@ -662,7 +663,8 @@ export async function generateInvoiceSnapshot(
     const accepted = item.receivedQuantity ?? 0;
     const rejected = item.rejectedQuantity ?? 0;
     const unitPrice = item.unitPrice ?? 0;
-    const lineTotal = accepted * unitPrice;
+    // Rounded: the line total is money (integer Rupiah), the quantity is not.
+    const lineTotal = lineAmount(accepted, unitPrice);
     return {
       itemId: item.id,
       ingredientId: item.ingredientId,

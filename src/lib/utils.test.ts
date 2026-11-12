@@ -4,6 +4,7 @@ import {
   formatJakartaDateTime,
   formatJakartaTime,
   formatQuantity,
+  lineAmount,
   parseDateOnlyInput,
   parseQuantityInput,
   roundQuantity,
@@ -94,6 +95,21 @@ describe("roundQuantity", () => {
     expect(roundQuantity(10.667, 1)).toBe(10.7);
     expect(roundQuantity(2.25, 1)).toBe(2.3);
     expect(roundQuantity(10.667)).toBe(10.667);
+  });
+});
+
+describe("lineAmount", () => {
+  it("returns whole Rupiah for a fractional quantity", () => {
+    // The Air case: 1,5 ml of water at Rp1. An unrounded 1.5 cannot be stored
+    // in the integer money columns.
+    expect(lineAmount(1.5, 1)).toBe(2);
+    expect(lineAmount(1500.5, 1)).toBe(1501);
+    expect(lineAmount(0.25, 8000)).toBe(2000);
+  });
+
+  it("leaves whole-Rupiah products untouched", () => {
+    expect(lineAmount(5, 1000)).toBe(5000);
+    expect(lineAmount(0, 1000)).toBe(0);
   });
 });
 
