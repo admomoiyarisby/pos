@@ -11,6 +11,8 @@ import {
   ComboboxEmpty,
 } from "#/components/ui/combobox";
 import { adjustBranchStockBatch } from "#/lib/server/inventory";
+import { QuantityInput } from "#/components/QuantityInput";
+import { parseQuantityInput } from "#/lib/utils";
 import { uuid } from "#/lib/uuid";
 
 export interface IngredientOption {
@@ -469,12 +471,9 @@ export default function StockAdjustmentModal({
                   <option value="OUT">Keluarkan</option>
                 </select>
 
-                <input
-                  type="number"
-                  min={0.0001}
-                  step="any"
-                  value={line.quantity}
-                  onChange={(e) => updateLine(line.id, { quantity: e.target.value })}
+                <QuantityInput
+                  value={parseQuantityInput(line.quantity)}
+                  onChange={(q) => updateLine(line.id, { quantity: String(q) })}
                   placeholder="Jml"
                   className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                 />

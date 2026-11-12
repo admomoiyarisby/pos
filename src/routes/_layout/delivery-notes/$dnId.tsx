@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { badgeVariant, formatQuantity } from "#/lib/utils";
+import { badgeVariant, formatQuantity, parseQuantityInput } from "#/lib/utils";
 import { lookupLabel } from "#/lib/label-lookup";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
+import { QuantityInput } from "#/components/QuantityInput";
 import {
   getDeliveryNote,
   receiveDeliveryNote,
@@ -177,23 +178,30 @@ function DNDetailPage() {
   const fromBranch = branches.find((b) => b.id === dn.fromBranchId);
   const toBranch = branches.find((b) => b.id === dn.toBranchId);
 
+  /**
+   * What each quantity field shows: the receiver's own edit once it is a
+   * complete number, otherwise the delivery note's recorded (or expected)
+   * quantity. Shared by the fields, the disposition hint and the submit
+   * payload so those three can never disagree about what will be sent.
+   */
+  const receivedValue = (item: DNItem) =>
+    parseQuantityInput(receiveInputs[item.id]?.received ?? "") ??
+    item.receivedQuantity ??
+    item.pickedQuantity ??
+    item.quantity;
+  const rejectedValue = (item: DNItem) =>
+    parseQuantityInput(receiveInputs[item.id]?.rejected ?? "") ?? item.rejectedQuantity ?? 0;
+
   // Drives the disposition explainer: only worth showing once at least one
-  // line is actually being rejected. Reads the same source the submit handler
-  // uses, so the hint can never disagree with what gets sent.
-  const anyRejected = dn.items.some((item: DNItem) => {
-    const picked = item.pickedQuantity ?? item.quantity;
-    const rejected = Number(receiveInputs[item.id]?.rejected ?? item.rejectedQuantity ?? 0);
-    return Number.isFinite(rejected) && rejected > 0 && rejected <= picked;
-  });
+  // line is actually being rejected.
+  const anyRejected = dn.items.some((item: DNItem) => rejectedValue(item) > 0);
 
   const handleReceive = () => {
     const items = dn.items.map((item: DNItem) => {
-      const picked = item.pickedQuantity ?? item.quantity;
-      const received = Number(receiveInputs[item.id]?.received ?? item.receivedQuantity ?? picked);
-      const rejected = Number(receiveInputs[item.id]?.rejected ?? item.rejectedQuantity ?? 0);
+      const rejected = rejectedValue(item);
       return {
         itemId: item.id,
-        receivedQuantity: received,
+        receivedQuantity: receivedValue(item),
         rejectedQuantity: rejected,
         rejectionDisposition:
           rejected > 0 ? (receiveInputs[item.id]?.disposition ?? "Return to Source") : undefined,
@@ -322,15 +330,12 @@ function DNDetailPage() {
                       <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
                         Diterima
                       </span>
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        defaultValue={item.receivedQuantity ?? item.pickedQuantity ?? item.quantity}
-                        onChange={(e) =>
+                      <QuantityInput
+                        value={receivedValue(item)}
+                        onChange={(v) =>
                           setReceiveInputs((prev) => ({
                             ...prev,
-                            [item.id]: { ...prev[item.id], received: e.target.value },
+                            [item.id]: { ...prev[item.id], received: String(v) },
                           }))
                         }
                         className="mt-1 h-11 w-full rounded-md border border-input bg-background px-2 text-sm text-right tabular-nums"
@@ -340,15 +345,12 @@ function DNDetailPage() {
                       <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
                         Reject
                       </span>
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        defaultValue={item.rejectedQuantity ?? 0}
-                        onChange={(e) =>
+                      <QuantityInput
+                        value={rejectedValue(item)}
+                        onChange={(v) =>
                           setReceiveInputs((prev) => ({
                             ...prev,
-                            [item.id]: { ...prev[item.id], rejected: e.target.value },
+                            [item.id]: { ...prev[item.id], rejected: String(v) },
                           }))
                         }
                         className="mt-1 h-11 w-full rounded-md border border-input bg-background px-2 text-sm text-right tabular-nums"
@@ -367,7 +369,7 @@ function DNDetailPage() {
                     }
                     className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
                   />
-                  {Number(receiveInputs[item.id]?.rejected ?? item.rejectedQuantity ?? 0) > 0 && (
+                  {rejectedValue(item) > 0 && (
                     <select
                       onChange={(e) =>
                         setReceiveInputs((prev) => ({
@@ -452,15 +454,12 @@ function DNDetailPage() {
                   </td>
                   <td className="px-4 py-3">
                     {canReceive ? (
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        defaultValue={item.receivedQuantity ?? item.pickedQuantity ?? item.quantity}
-                        onChange={(e) =>
+                      <QuantityInput
+                        value={receivedValue(item)}
+                        onChange={(v) =>
                           setReceiveInputs((prev) => ({
                             ...prev,
-                            [item.id]: { ...prev[item.id], received: e.target.value },
+                            [item.id]: { ...prev[item.id], received: String(v) },
                           }))
                         }
                         className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-right"
@@ -475,15 +474,12 @@ function DNDetailPage() {
                   </td>
                   <td className="px-4 py-3">
                     {canReceive ? (
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        defaultValue={item.rejectedQuantity ?? 0}
-                        onChange={(e) =>
+                      <QuantityInput
+                        value={rejectedValue(item)}
+                        onChange={(v) =>
                           setReceiveInputs((prev) => ({
                             ...prev,
-                            [item.id]: { ...prev[item.id], rejected: e.target.value },
+                            [item.id]: { ...prev[item.id], rejected: String(v) },
                           }))
                         }
                         className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-right"
@@ -510,8 +506,7 @@ function DNDetailPage() {
                           }
                           className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
                         />
-                        {Number(receiveInputs[item.id]?.rejected ?? item.rejectedQuantity ?? 0) >
-                          0 && (
+                        {rejectedValue(item) > 0 && (
                           <select
                             onChange={(e) =>
                               setReceiveInputs((prev) => ({

@@ -5,8 +5,8 @@ import { Button } from "#/components/ui/button";
 import { Badge } from "#/components/ui/badge";
 import { Checkbox } from "#/components/ui/checkbox";
 import Modal from "#/components/ui/Modal";
+import { QuantityInput } from "#/components/QuantityInput";
 import { getInventory } from "#/lib/server/inventory";
-
 import {
   Send,
   Check,
@@ -51,7 +51,7 @@ import {
 import { openPrintDocument } from "#/lib/print-window";
 import { transferInvoicePrintUrl, transferSuratJalanPrintUrl } from "#/lib/print-links";
 import { lookupLabel } from "#/lib/label-lookup";
-import { formatQuantity } from "#/lib/utils";
+import { formatQuantity, parseQuantityInput, roundQuantity } from "#/lib/utils";
 import { toast } from "sonner";
 
 /** What happens to a rejected line's stock (issue #93 follow-up). */
@@ -688,13 +688,10 @@ function EditableDraftItems({
                 >
                   Jumlah
                 </label>
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={raw}
+                <QuantityInput
+                  value={parseQuantityInput(raw)}
                   aria-label={`Jumlah ${ing?.name ?? it.ingredientId.slice(0, 8)}`}
-                  onChange={(e) => onEdit(it.id, e.target.value)}
+                  onChange={(quantity) => onEdit(it.id, String(quantity))}
                   className={`h-9 w-24 rounded-md border px-2 text-sm text-right ${
                     invalid || overStock
                       ? "border-destructive bg-destructive/5 text-destructive"
@@ -959,13 +956,10 @@ export function DraftSenderForm(props: TransferViewProps) {
                 <ComboboxEmpty>Tidak ada bahan yang cocok</ComboboxEmpty>
               </ComboboxContent>
             </Combobox>
-            <input
-              type="number"
-              min={0}
-              step="any"
+            <QuantityInput
               aria-label="Jumlah item baru"
-              value={newQuantity}
-              onChange={(e) => setNewQuantity(e.target.value)}
+              value={parseQuantityInput(newQuantity)}
+              onChange={(quantity) => setNewQuantity(String(quantity))}
               className="h-9 w-24 rounded-md border border-input bg-background px-2 text-sm text-right"
             />
             <Button
@@ -1469,6 +1463,17 @@ function resolveReviewEdit(it: TransferItemRow, override?: ReviewEdit): ReviewEd
   };
 }
 
+/**
+ * Does this line's received + rejected account for the promised quantity?
+ *
+ * Compared after rounding to quantity precision (3 fraction digits): both
+ * fields accept decimals now, and `0.1 + 0.2 !== 0.3` in binary floating
+ * point, so an exact `===` would refuse a perfectly correct split.
+ */
+function sumsToPromised(edit: ReviewEdit, promised: number): boolean {
+  return roundQuantity(edit.received + edit.rejected) === roundQuantity(promised);
+}
+
 export function ReviewingReceiverInteractive(props: TransferViewProps) {
   const { transfer, items, ingredientById, auditLog } = props;
   const { error, setError, actions } = useTransferActions(transfer.id);
@@ -1488,7 +1493,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
     items.length > 0 &&
     items.every((it) => {
       const e = editFor(it);
-      return e.rejected === 0 && e.received === it.quantity;
+      return e.rejected === 0 && sumsToPromised(e, it.quantity);
     });
 
   /** Has the receiver touched this line, or is it still the untouched 0 default? */
@@ -1506,7 +1511,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
     }> = [];
     for (const it of items) {
       const edit = editFor(it);
-      if (edit.received + edit.rejected !== it.quantity) {
+      if (!sumsToPromised(edit, it.quantity)) {
         const ing = ingredientById.get(it.ingredientId);
         setReviewError(
           `${ing?.name ?? it.ingredientId.slice(0, 8)}: diterima + ditolak harus = ${it.quantity}`,
@@ -1599,7 +1604,7 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
           {items.map((it) => {
             const ing = ingredientById.get(it.ingredientId);
             const edit = editFor(it);
-            const sumOk = edit.received + edit.rejected === it.quantity;
+            const sumOk = sumsToPromised(edit, it.quantity);
             return (
               <div key={it.id} className="space-y-3 p-4">
                 <div className="flex items-baseline gap-2">
@@ -1618,19 +1623,15 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                     >
                       Diterima{ing?.stockUnit ? ` (${ing.stockUnit})` : ""}
                     </label>
-                    <input
+                    <QuantityInput
                       id={`received-${it.id}`}
-                      type="number"
-                      min={0}
-                      step="any"
                       value={edit.received}
-                      onChange={(e) => {
-                        const val = e.target.value === "" ? 0 : Number(e.target.value);
+                      onChange={(val) =>
                         setReviewEdits((prev) => ({
                           ...prev,
                           [it.id]: { ...edit, received: val },
-                        }));
-                      }}
+                        }))
+                      }
                       className="h-11 w-full rounded-md border border-input bg-background px-2 text-right text-base tabular-nums sm:w-20 lg:h-8 lg:text-sm"
                     />
                   </div>
@@ -1641,19 +1642,15 @@ export function ReviewingReceiverInteractive(props: TransferViewProps) {
                     >
                       Ditolak
                     </label>
-                    <input
+                    <QuantityInput
                       id={`rejected-${it.id}`}
-                      type="number"
-                      min={0}
-                      step="any"
                       value={edit.rejected}
-                      onChange={(e) => {
-                        const val = e.target.value === "" ? 0 : Number(e.target.value);
+                      onChange={(val) =>
                         setReviewEdits((prev) => ({
                           ...prev,
                           [it.id]: { ...edit, rejected: val },
-                        }));
-                      }}
+                        }))
+                      }
                       className="h-11 w-full rounded-md border border-input bg-background px-2 text-right text-base tabular-nums sm:w-20 lg:h-8 lg:text-sm"
                     />
                   </div>

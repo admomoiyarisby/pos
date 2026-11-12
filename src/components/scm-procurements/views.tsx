@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "#/components/ui/select";
 import { ScmItemTable, type ScmItemRow } from "./ScmItemTable";
+import { QuantityInput } from "#/components/QuantityInput";
 import { AuditLogCard } from "./AuditLogCard";
 import {
   transitionProcurement,
@@ -535,14 +536,10 @@ export function DraftForm({ procurement, items, showPrices }: StateViewProps) {
             </SelectContent>
           </Select>
           <div className="flex gap-2">
-            <Input
-              type="number"
-              min={0}
-              step="any"
+            <QuantityInput
               value={newQuantity}
-              onChange={(e) => setNewQuantity(Number(e.target.value))}
+              onChange={setNewQuantity}
               className="h-11 sm:h-10 flex-1 sm:w-24 text-base sm:text-sm"
-              inputMode="decimal"
             />
             <Button
               onClick={handleAdd}

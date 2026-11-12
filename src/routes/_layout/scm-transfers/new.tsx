@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
+import { QuantityInput } from "#/components/QuantityInput";
 import { Button } from "#/components/ui/button";
 import { AlertCircle, ArrowLeft, Plus, Trash2, AlertTriangle } from "lucide-react";
 import {
@@ -515,13 +516,10 @@ function NewMutasiPage() {
                       </ComboboxContent>
                     </Combobox>
                     <div className="relative pt-0">
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
+                      <QuantityInput
                         value={it.quantity}
                         disabled={!it.ingredientId}
-                        onChange={(e) => updateItem(it.id, { quantity: Number(e.target.value) })}
+                        onChange={(quantity) => updateItem(it.id, { quantity })}
                         className={`h-9 w-20 rounded-md border px-2 text-sm text-right ${
                           over
                             ? "border-destructive bg-destructive/5 text-destructive"

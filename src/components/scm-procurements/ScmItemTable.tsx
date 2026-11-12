@@ -1,3 +1,4 @@
+import { QuantityInput } from "#/components/QuantityInput";
 import { Input } from "#/components/ui/input";
 import { lookupLabel } from "#/lib/label-lookup";
 import { Badge } from "#/components/ui/badge";
@@ -145,17 +146,11 @@ export function ScmItemTable({
                     <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
                       {isDraft ? "Jumlah" : "Disetujui"}
                     </div>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="any"
+                    <QuantityInput
                       value={ready}
                       disabled={disabled}
-                      onChange={(e) =>
-                        onItemChange?.(it.id, { readyQuantity: Number(e.target.value) })
-                      }
+                      onChange={(readyQuantity) => onItemChange?.(it.id, { readyQuantity })}
                       className="h-9 mt-1 text-sm"
-                      inputMode="numeric"
                     />
                   </div>
                 </div>
@@ -255,15 +250,10 @@ export function ScmItemTable({
                       </td>
                     )}
                     <td className="px-3 py-2 text-right">
-                      <Input
-                        type="number"
-                        min={0}
-                        step="any"
+                      <QuantityInput
                         value={ready}
                         disabled={disabled}
-                        onChange={(e) =>
-                          onItemChange?.(it.id, { readyQuantity: Number(e.target.value) })
-                        }
+                        onChange={(readyQuantity) => onItemChange?.(it.id, { readyQuantity })}
                         className="h-8 w-24 text-right"
                       />
                       {it.stockUnit ? (
@@ -342,7 +332,7 @@ export function ScmItemTable({
                 <div className="flex items-start justify-between gap-2">
                   <div className="font-medium text-sm truncate">{it.ingredientName}</div>
                   <div className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-mono">
-                    Kirim {picked || "-"}
+                    Kirim {picked ? formatQuantity(picked) : "-"}
                     {it.stockUnit ? ` ${it.stockUnit}` : ""}
                   </div>
                 </div>
@@ -351,33 +341,27 @@ export function ScmItemTable({
                     <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
                       Diterima
                     </div>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="any"
-                      max={picked}
+                    <QuantityInput
                       value={received}
+                      max={picked}
+                      aria-label={`Diterima: ${it.ingredientName}`}
                       disabled={disabled}
-                      onChange={(e) => {
-                        const raw = Number(e.target.value);
-                        const newReceived = Math.min(
-                          Math.max(0, Number.isNaN(raw) ? 0 : raw),
-                          picked,
-                        );
+                      onChange={(newReceived) =>
                         onItemChange?.(it.id, {
                           receivedQuantity: newReceived,
                           rejectedQuantity: picked - newReceived,
-                        });
-                      }}
+                        })
+                      }
                       className="h-11 mt-1 text-base"
-                      inputMode="numeric"
                     />
                   </div>
                   <div className="rounded-lg bg-muted/40 px-2.5 py-2 flex flex-col justify-center">
                     <div className="text-[11px] tracking-widest uppercase text-muted-foreground font-medium">
                       Ditolak (auto)
                     </div>
-                    <div className="font-mono text-sm font-semibold mt-1">{rejected}</div>
+                    <div className="font-mono text-sm font-semibold mt-1">
+                      {formatQuantity(rejected)}
+                    </div>
                   </div>
                 </div>
                 <div className="mt-2">
@@ -446,26 +430,21 @@ export function ScmItemTable({
                         <span className="text-xs text-muted-foreground"> ({it.stockUnit})</span>
                       ) : null}
                     </td>
-                    <td className="px-3 py-2 text-right font-mono">{picked || "-"}</td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {picked ? formatQuantity(picked) : "-"}
+                    </td>
                     <td className="px-3 py-2 text-right">
-                      <Input
-                        type="number"
-                        min={0}
-                        step="any"
-                        max={picked}
+                      <QuantityInput
                         value={received}
+                        max={picked}
+                        aria-label={`Diterima: ${it.ingredientName}`}
                         disabled={disabled}
-                        onChange={(e) => {
-                          const raw = Number(e.target.value);
-                          const newReceived = Math.min(
-                            Math.max(0, Number.isNaN(raw) ? 0 : raw),
-                            picked,
-                          );
+                        onChange={(newReceived) =>
                           onItemChange?.(it.id, {
                             receivedQuantity: newReceived,
                             rejectedQuantity: picked - newReceived,
-                          });
-                        }}
+                          })
+                        }
                         className="h-8 w-24 text-right"
                       />
                       {it.stockUnit ? (
@@ -473,7 +452,7 @@ export function ScmItemTable({
                       ) : null}
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                      {rejected}
+                      {formatQuantity(rejected)}
                     </td>
                     <td className="px-3 py-2">
                       <Input

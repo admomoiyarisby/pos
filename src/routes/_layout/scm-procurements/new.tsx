@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import RoleGuard from "#/components/RoleGuard";
+import { QuantityInput } from "#/components/QuantityInput";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -283,14 +284,7 @@ function NewProcurementPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
-                  className="w-32"
-                />
+                <QuantityInput value={quantity} onChange={setQuantity} className="w-32" />
                 <Button onClick={addItem} variant="secondary">
                   <Plus className="h-4 w-4" />
                   Tambah Bahan

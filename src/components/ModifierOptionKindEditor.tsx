@@ -3,6 +3,7 @@ import { getIngredients } from "#/lib/server/ingredients";
 import { getRecipes } from "#/lib/server/recipes";
 import { Label } from "#/components/ui/label";
 import { Input } from "#/components/ui/input";
+import { QuantityInput } from "#/components/QuantityInput";
 import {
   Combobox,
   ComboboxContent,
@@ -163,12 +164,9 @@ export default function ModifierOptionKindEditor({
             </div>
             <div className="w-20 space-y-1">
               <Label className="text-xs">Qty</Label>
-              <Input
-                type="number"
-                min={0}
-                step="any"
+              <QuantityInput
                 value={draft.ingredientQty ?? 1}
-                onChange={(e) => onChange({ ingredientQty: Number(e.target.value) })}
+                onChange={(qty) => onChange({ ingredientQty: qty })}
                 disabled={!draft.ingredientId}
                 className="h-9"
               />
@@ -223,12 +221,9 @@ export default function ModifierOptionKindEditor({
             </div>
             <div className="w-20 space-y-1">
               <Label className="text-xs">Qty</Label>
-              <Input
-                type="number"
-                min={0}
-                step="any"
+              <QuantityInput
                 value={draft.recipeQty ?? 1}
-                onChange={(e) => onChange({ recipeQty: Number(e.target.value) })}
+                onChange={(qty) => onChange({ recipeQty: qty })}
                 disabled={!draft.recipeId}
                 className="h-9"
               />
