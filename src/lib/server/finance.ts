@@ -28,9 +28,23 @@ import {
   areaManagerBranches,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, gte, lte, sql, desc, isNotNull, isNull, inArray, ne } from "drizzle-orm";
+import {
+  DrizzleQueryError,
+  eq,
+  and,
+  gte,
+  lte,
+  sql,
+  desc,
+  isNotNull,
+  isNull,
+  inArray,
+  ne,
+} from "drizzle-orm";
+import { isUniqueViolation } from "./db-errors";
 import { z } from "zod";
 import { requireAuth, requireRole } from "./auth";
+import { requireOpenPeriod } from "./period-lock";
 import { USAGE_SOURCE_ORDER, usageSourceSql } from "./usage-source";
 import type { UsageSource } from "./usage-source";
 import type { AppUser } from "./auth";
@@ -1017,6 +1031,8 @@ export async function upsertDailyOverrideCore(
   user: AppUser,
   data: { branchId: string; date: string; field: string; value: number },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1384,6 +1400,8 @@ export async function createManualRevenueCore(
     notes?: string;
   },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1466,6 +1484,8 @@ export async function createChannelRevenueCore(
     notes?: string;
   },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1524,6 +1544,8 @@ export async function upsertChannelRevenueCore(
     notes?: string;
   },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1616,6 +1638,8 @@ export async function createManualExpenseCore(
   user: AppUser,
   data: { branchId: string; date: string; category: string; amount: number; notes?: string },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1656,6 +1680,8 @@ export const createManualExpense = createServerFn({ method: "POST" })
 
 // User-parameterized core (ADR-0015). Mirrors the wrapper's requireRole guard.
 export async function deleteManualExpenseCore(user: AppUser, data: { id: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1821,15 +1847,25 @@ export async function openPeriodCore(user: AppUser, data: { periodName: string }
   // Get current inventory as opening balances
   const currentInv = await db.select().from(inventory);
 
-  const [period] = await db
-    .insert(periodLogs)
-    .values({
-      periodName: data.periodName,
-      status: "Open",
-      openedAt: new Date(),
-      openedBy: user.id,
-    })
-    .returning();
+  // The unique partial index `period_one_open` is the authoritative guard: two
+  // concurrent opens both pass the check above, and the loser lands here.
+  let period: typeof periodLogs.$inferSelect;
+  try {
+    [period] = await db
+      .insert(periodLogs)
+      .values({
+        periodName: data.periodName,
+        status: "Open",
+        openedAt: new Date(),
+        openedBy: user.id,
+      })
+      .returning();
+  } catch (err) {
+    if (err instanceof DrizzleQueryError && isUniqueViolation(err)) {
+      throw new Error("Tutup periode yang sedang aktif terlebih dahulu");
+    }
+    throw err;
+  }
 
   // Create opening balances
   for (const inv of currentInv) {
@@ -2597,6 +2633,8 @@ export async function saveFixedCostsCore(
     sewa: number;
   },
 ) {
+  await requireOpenPeriod(user);
+
   const categories = [
     { category: "Gaji", value: data.gaji },
     { category: "ListrikAir", value: data.listrikAir },

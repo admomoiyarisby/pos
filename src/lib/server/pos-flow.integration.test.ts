@@ -6,16 +6,15 @@
  * (`openShiftCore`, `takeOverShiftCore`, `closeShiftCore`, `createOrderCore`,
  * `completeOrderCore`, `voidOrderCore`, `updateOrderStatusCore`,
  * `requestReprintCore`, `approveReprintCore`, `consumePrintRequestCore`,
- * `createCancelRequestCore`, `approveCancelRequestCore`,
- * `executeApprovedCancelCore`) against the local dockerized test Postgres.
+ * `createCancelRequestCore`, `approveCancelRequestCore`) against the local
+ * dockerized test Postgres.
  *
  * Lifecycles covered:
  *  - Shift: open → take-over → close (with session rows logged in/out).
  *  - Order: create (inventory OUT + Kartu Stok) → complete; void restores stock.
  *  - Cancel approval flow: create → approve, where approving is the step that
  *    voids the order and restores inventory (no separate push). Also covers the
- *    role guard on approve/reject, a concurrent double-approval, and the legacy
- *    `Approved` → execute path for requests raised before auto-execute.
+ *    role guard on approve/reject and a concurrent double-approval.
  *  - Reprint approval flow: request → approve → consume.
  *
  * Most of these cores carry no role guard (any authenticated staff may operate
@@ -183,8 +182,17 @@ describe("POS — shift lifecycle via the real server-function cores", () => {
       expect(opened.cashFloat).toBe(200000);
       expect(await shiftStatus(opened.id)).toBe("Open");
 
-      // A second open while a shift is open is allowed (separate row); the
-      // lifecycle here is a single cashier shift. Self-take-over is refused.
+      // One branch, one open shift. A second open must be refused, otherwise
+      // POS orders are attributed to whichever open row was found first.
+      await expect(
+        posApi.openShiftCore(cashier2, {
+          branchId,
+          userId: cashier2.id,
+          cashFloat: 50000,
+        }),
+      ).rejects.toThrow("Shift sudah dibuka di cabang ini");
+
+      // Self-take-over is refused.
       await expect(
         posApi.takeOverShiftCore(cashier1, {
           branchId,
@@ -247,10 +255,25 @@ describe("POS — shift lifecycle via the real server-function cores", () => {
       expect(closed.actualCash).toBe(100000);
       expect(closed.expectedCash).toBe(250000);
 
-      // Adjusting a closed shift is refused.
+      // Closing it again is refused — it would overwrite the cash count above.
+      await expect(
+        posApi.closeShiftCore(cashier2, {
+          shiftId: opened.id,
+          actualCash: 1,
+        }),
+      ).rejects.toThrow("Shift tidak ditemukan atau sudah ditutup");
+
+      // Adjusting or taking over a closed shift is refused.
       await expect(
         posApi.adjustCashFloatCore(cashier2, { shiftId: opened.id, amountDelta: 1000 }),
       ).rejects.toThrow("Shift tidak ditemukan atau sudah ditutup");
+      await expect(
+        posApi.takeOverShiftCore(cashier1, {
+          branchId,
+          userId: cashier1.id,
+          shiftId: opened.id,
+        }),
+      ).rejects.toThrow("Shift sudah ditutup");
     },
   );
 });
@@ -261,6 +284,7 @@ describe("POS — order lifecycle: create → complete, and void restores stock"
     async () => {
       const branchId = await seedBranch();
       const cashier = await seedUser("branch_admin", branchId);
+      const admin = await seedUser("super_admin");
       const [catRow] = await db
         .insert(schema.categories)
         .values({ code: uniq("CAT"), name: "Menu" })
@@ -287,8 +311,13 @@ describe("POS — order lifecycle: create → complete, and void restores stock"
       expect(completed.status).toBe("Completed");
       expect(completed.completedAt).toBeTruthy();
 
-      // Void restores the 6 units (back to 100)
-      const voided = await posApi.voidOrderCore(cashier, {
+      // A branch_admin cannot void directly — that is the request flow's job.
+      await expect(
+        posApi.voidOrderCore(cashier, { orderId: order.id, reason: "Salah input" }),
+      ).rejects.toThrow("Forbidden: insufficient role");
+
+      // An admin void restores the 6 units (back to 100)
+      const voided = await posApi.voidOrderCore(admin, {
         orderId: order.id,
         reason: "Salah input",
       });
@@ -296,11 +325,90 @@ describe("POS — order lifecycle: create → complete, and void restores stock"
       expect(await inventoryQty(branchId, ingId)).toBe(100);
 
       // Void again refused
-      await expect(
-        posApi.voidOrderCore(cashier, { orderId: order.id, reason: "x" }),
-      ).rejects.toThrow("Order sudah dibatalkan");
+      await expect(posApi.voidOrderCore(admin, { orderId: order.id, reason: "x" })).rejects.toThrow(
+        "Order sudah dibatalkan",
+      );
+
+      // No edge leaves Void — completing it is refused too.
+      await expect(posApi.completeOrderCore(admin, { orderId: order.id })).rejects.toThrow(
+        "Cannot complete an order in Void",
+      );
     },
   );
+
+  it.skipIf(!hasTestDatabaseUrl)("status changes follow the forward-only order FSM", async () => {
+    const branchId = await seedBranch();
+    const cashier = await seedUser("branch_admin", branchId);
+    const [catRow] = await db
+      .insert(schema.categories)
+      .values({ code: uniq("CAT"), name: "Menu" })
+      .returning({ id: schema.categories.id });
+    const ingId = await seedIngredient();
+    const recipeId = await seedRecipe(catRow.id, ingId);
+    await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+
+    const order = await posApi.createOrderCore(cashier, {
+      branchId,
+      channel: "Dine-in",
+      customerName: "Budi Santoso",
+      items: [{ recipeId, quantity: 1, price: 10000 }],
+    });
+
+    // New → Processing → In Delivery → Completed
+    expect(
+      (
+        await posApi.updateOrderStatusCore(cashier, {
+          orderId: order.id,
+          newStatus: "Processing",
+        })
+      ).status,
+    ).toBe("Processing");
+    expect(
+      (
+        await posApi.updateOrderStatusCore(cashier, {
+          orderId: order.id,
+          newStatus: "In Delivery",
+        })
+      ).status,
+    ).toBe("In Delivery");
+    expect(
+      (
+        await posApi.updateOrderStatusCore(cashier, {
+          orderId: order.id,
+          newStatus: "Completed",
+        })
+      ).status,
+    ).toBe("Completed");
+
+    // Completed is terminal for fulfilment: there is no edge back.
+    await expect(
+      posApi.updateOrderStatusCore(cashier, {
+        orderId: order.id,
+        newStatus: "In Delivery",
+      }),
+    ).rejects.toThrow("Cannot dispatch an order in Completed");
+
+    // A New order may also be completed directly (walk-in), but not
+    // "started" once it is already Completed.
+    const walkIn = await posApi.createOrderCore(cashier, {
+      branchId,
+      channel: "Dine-in",
+      customerName: "Siti",
+      items: [{ recipeId, quantity: 1, price: 10000 }],
+    });
+    await expect(
+      posApi.updateOrderStatusCore(cashier, {
+        orderId: walkIn.id,
+        newStatus: "Completed",
+      }),
+    ).resolves.toMatchObject({ status: "Completed" });
+    await expect(
+      posApi.updateOrderStatusCore(cashier, {
+        orderId: walkIn.id,
+        newStatus: "Processing",
+      }),
+    ).rejects.toThrow("Cannot start-processing an order in Completed");
+  });
 });
 
 describe("POS — cancel request: approval executes immediately", () => {
@@ -347,13 +455,8 @@ describe("POS — cancel request: approval executes immediately", () => {
       expect(persisted.status).toBe("Executed");
       expect(persisted.approvedBy).toBe(admin.id);
 
-      // No second push needed — and the legacy Execute step refuses, because
-      // the request is no longer "Approved".
-      await expect(
-        posApi.executeApprovedCancelCore(cashier, { requestId: req.id }),
-      ).rejects.toThrow("Request belum disetujui atau sudah dieksekusi");
-
-      // Re-approving is refused (nothing left in "Pending"), and crucially the
+      // Approval is the only push. Re-approving is refused (nothing left in
+      // "Pending"), and crucially the
       // inventory is not restored a second time.
       await expect(posApi.approveCancelRequestCore(admin, { requestId: req.id })).rejects.toThrow(
         "Request sudah diproses",
@@ -505,6 +608,9 @@ describe("POS — cancel request: approval executes immediately", () => {
       const branchId = await seedBranch();
       const cashier = await seedUser("branch_admin", branchId);
       const am = await seedUser("area_manager");
+      // The void edge is branch-bounded for area managers.
+      await db.insert(schema.areaManagerBranches).values({ userId: am.id, branchId });
+      am.assignedBranches = [branchId];
       const [catRow] = await db
         .insert(schema.categories)
         .values({ code: uniq("CAT"), name: "Menu" })
@@ -537,48 +643,6 @@ describe("POS — cancel request: approval executes immediately", () => {
       });
       const voided = await posApi.approveCancelRequestCore(am, { requestId: secondReq.id });
       expect(voided.status).toBe("Void");
-      expect(await inventoryQty(branchId, ingId)).toBe(100);
-    },
-  );
-
-  it.skipIf(!hasTestDatabaseUrl)(
-    "legacy 'Approved' requests can still be finished by the execute step",
-    async () => {
-      const branchId = await seedBranch();
-      const cashier = await seedUser("branch_admin", branchId);
-      const [catRow] = await db
-        .insert(schema.categories)
-        .values({ code: uniq("CAT"), name: "Menu" })
-        .returning({ id: schema.categories.id });
-      const ingId = await seedIngredient();
-      const recipeId = await seedRecipe(catRow.id, ingId);
-      await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
-
-      const order = await posApi.createOrderCore(cashier, {
-        branchId,
-        channel: "Gofood",
-        paymentMethod: "gofood",
-        items: [{ recipeId, quantity: 2, price: 15000 }],
-      });
-      const req = await posApi.createCancelRequestCore(cashier, {
-        orderId: order.id,
-        reason: "Stok Habis",
-      });
-
-      // Simulate a request approved before approving started auto-executing.
-      await db
-        .update(schema.cancelRequests)
-        .set({ status: "Approved" })
-        .where(eq(schema.cancelRequests.id, req.id));
-
-      const voided = await posApi.executeApprovedCancelCore(cashier, { requestId: req.id });
-      expect(voided.status).toBe("Void");
-      expect(await inventoryQty(branchId, ingId)).toBe(100);
-
-      // Second execution refused, and no second restore.
-      await expect(
-        posApi.executeApprovedCancelCore(cashier, { requestId: req.id }),
-      ).rejects.toThrow("Request belum disetujui atau sudah dieksekusi");
       expect(await inventoryQty(branchId, ingId)).toBe(100);
     },
   );
@@ -790,6 +854,19 @@ describe("POS — reprint approval flow via the real cores", () => {
       await expect(posApi.consumePrintRequestCore(admin, { requestId: req.id })).rejects.toThrow(
         "Hanya request dengan status Approved yang dapat dikonsumsi",
       );
+
+      // Reject a Consumed request is refused — the paper is already printed.
+      await expect(posApi.rejectReprintCore(admin, { requestId: req.id })).rejects.toThrow(
+        "Request sudah diproses",
+      );
+
+      // An Approved request cannot be rejected either: approval is the only
+      // edge into printing, so Rejected must stay a Pending-only outcome.
+      const req2 = await posApi.requestReprintCore(cashier, { orderId: order.id });
+      await posApi.approveReprintCore(admin, { requestId: req2.id });
+      await expect(posApi.rejectReprintCore(admin, { requestId: req2.id })).rejects.toThrow(
+        "Request sudah diproses",
+      );
     },
   );
 });
@@ -825,9 +902,6 @@ describe("POS — negatives: not-found and wrong-state guards with no side effec
       await expect(
         posApi.approveCancelRequestCore(cashier, { requestId: missing }),
       ).rejects.toThrow("Forbidden: insufficient role");
-      await expect(
-        posApi.executeApprovedCancelCore(cashier, { requestId: missing }),
-      ).rejects.toThrow("Cancel request not found");
       await expect(posApi.approveReprintCore(cashier, { requestId: missing })).rejects.toThrow(
         "Print request not found",
       );
@@ -835,7 +909,7 @@ describe("POS — negatives: not-found and wrong-state guards with no side effec
         "Print request not found",
       );
 
-      // A pending cancel request cannot be executed (must be approved first)
+      // A failed approval (wrong role) leaves the pending request untouched.
       const [catRow] = await db
         .insert(schema.categories)
         .values({ code: uniq("CAT"), name: "Menu" })
@@ -853,9 +927,9 @@ describe("POS — negatives: not-found and wrong-state guards with no side effec
         orderId: order.id,
         reason: "Salah Input",
       });
-      await expect(
-        posApi.executeApprovedCancelCore(cashier, { requestId: req.id }),
-      ).rejects.toThrow("Request belum disetujui atau sudah dieksekusi");
+      await expect(posApi.approveCancelRequestCore(cashier, { requestId: req.id })).rejects.toThrow(
+        "Forbidden: insufficient role",
+      );
 
       // No side effects — request still Pending, order still New, stock intact
       const [reqRow] = await db
@@ -867,9 +941,12 @@ describe("POS — negatives: not-found and wrong-state guards with no side effec
       expect(await orderStatus(order.id)).toBe("New");
       expect(await inventoryQty(branchId, ingId)).toBe(8); // 10 - 2 used
 
-      // Close a missing shift is refused (returns undefined closed → later db
-      // access throws on branch.id lookup — no row). Opening with a real branch
-      // still works (smoke).
+      // Closing a missing shift is refused before any write. Opening with a
+      // real branch still works (smoke).
+      await expect(
+        posApi.closeShiftCore(cashier, { shiftId: crypto.randomUUID(), actualCash: 0 }),
+      ).rejects.toThrow("Shift tidak ditemukan");
+
       const opened = await posApi.openShiftCore(cashier, {
         branchId,
         userId: cashier.id,

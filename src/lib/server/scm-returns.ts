@@ -12,6 +12,7 @@ import {
 import { requireAuth, requireRole, type AppUser } from "./auth";
 import { logAudit } from "./logging";
 import { fuzzySearch } from "./fuzzy";
+import { scmReturnLifecycle } from "#/lib/lifecycles";
 import { z } from "zod";
 
 /**
@@ -184,15 +185,16 @@ export async function confirmScmReturnPickupCore(
   if (!existing) {
     return { success: false, error: "Data retur tidak ditemukan." };
   }
-  if (existing.status === "PickedUp") {
+  const to = scmReturnLifecycle.to(existing.status, "pickup");
+  if (to === undefined) {
     return { success: false, error: "Retur ini sudah ditandai sudah kembali." };
   }
 
   const pickedUpAt = new Date();
   await db
     .update(scmReturns)
-    .set({ status: "PickedUp", pickedUpAt, pickedUpBy: user.id })
-    .where(and(eq(scmReturns.id, data.returnId), eq(scmReturns.status, "Pending")));
+    .set({ status: to, pickedUpAt, pickedUpBy: user.id })
+    .where(and(eq(scmReturns.id, data.returnId), eq(scmReturns.status, existing.status)));
 
   await logAudit(
     user,
@@ -244,13 +246,14 @@ export async function reopenScmReturnCore(
   if (!existing) {
     return { success: false, error: "Data retur tidak ditemukan." };
   }
-  if (existing.status === "Pending") {
+  const to = scmReturnLifecycle.to(existing.status, "reopen");
+  if (to === undefined) {
     return { success: false, error: "Retur ini masih menunggu pickup." };
   }
 
   await db
     .update(scmReturns)
-    .set({ status: "Pending", pickedUpAt: null, pickedUpBy: null })
+    .set({ status: to, pickedUpAt: null, pickedUpBy: null })
     .where(and(eq(scmReturns.id, data.returnId), isNotNull(scmReturns.pickedUpAt)));
 
   await logAudit(

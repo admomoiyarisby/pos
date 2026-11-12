@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, desc, eq, inArray, sql, isNull } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
+import { requireOpenPeriod } from "./period-lock";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import {
   ingredients,
@@ -88,6 +89,8 @@ export async function createProcurementCore(
     requestSource?: string;
   },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "branch_admin" && user.role !== "super_admin") {
     throw new Error("Only branch_admin or super_admin can create a procurement");
   }
@@ -496,6 +499,8 @@ export async function transitionProcurementCore(
   user: { id: string; role: string },
   data: { procurementId: string; event: ScmProcurementEvent; payload: FsmPayload },
 ): Promise<TransitionResult> {
+  await requireOpenPeriod(user);
+
   return transition(data.procurementId, data.event, data.payload, { id: user.id, role: user.role });
 }
 
@@ -511,6 +516,8 @@ export async function updateProcurementItemCore(
   user: { id: string; role: string },
   data: { procurementId: string; itemId: string; patch: UpdateItemPatch },
 ): Promise<UpdateItemResult> {
+  await requireOpenPeriod(user);
+
   return updateItem(data.procurementId, data.itemId, data.patch, { id: user.id, role: user.role });
 }
 
@@ -534,6 +541,8 @@ export async function addProcurementItemCore(
   user: { id: string; role: string; branchId?: string },
   data: { procurementId: string; ingredientId: string; quantity: number },
 ) {
+  await requireOpenPeriod(user);
+
   return await db.transaction(async (tx) => {
     const [proc] = await tx
       .select({
@@ -630,6 +639,8 @@ export async function removeProcurementItemCore(
   user: { id: string; role: string; branchId?: string },
   data: { procurementId: string; itemId: string },
 ) {
+  await requireOpenPeriod(user);
+
   return await db.transaction(async (tx) => {
     const [proc] = await tx
       .select({
@@ -747,6 +758,8 @@ export async function updateProcurementDetailsCore(
   user: { id: string; role: string; branchId?: string },
   data: { procurementId: string; patch: ProcurementDetailsPatch },
 ) {
+  await requireOpenPeriod(user);
+
   return await db.transaction(async (tx) => {
     const [proc] = await tx
       .select({

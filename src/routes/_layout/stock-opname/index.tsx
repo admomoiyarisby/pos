@@ -35,16 +35,26 @@ interface SORow {
   id: string;
   branchId: string;
   date: string;
-  status: "Submitted" | "Approved" | "Under Investigation";
+  status: "Triggered" | "Submitted" | "Under Investigation" | "Approved" | "Realized";
   branchName: string | null;
   createdAt: Date;
 }
 
 const statusColors = {
+  Triggered: "default",
   Submitted: "default",
-  Approved: "success",
   "Under Investigation": "warning",
+  Approved: "success",
+  Realized: "success",
 } satisfies Record<string, "default" | "warning" | "success">;
+
+function statusLabel(status: string): string {
+  return status === "Under Investigation"
+    ? "Investigasi"
+    : status === "Realized"
+      ? "Realize"
+      : status;
+}
 
 export const Route = createFileRoute("/_layout/stock-opname/")({
   component: StockOpnamePage,
@@ -93,7 +103,7 @@ function StockOpnamePage() {
       enableSorting: true,
       cell: ({ row }) => (
         <Badge variant={statusColors[row.original.status] ?? "default"}>
-          {row.original.status === "Under Investigation" ? "Investigasi" : row.original.status}
+          {statusLabel(row.original.status)}
         </Badge>
       ),
     },
@@ -214,7 +224,13 @@ function StockOpnamePage() {
     });
   };
   const statusFilter = filters.status;
-  const STATUS_TABS = ["Submitted", "Approved", "Under Investigation"] as const;
+  const STATUS_TABS = [
+    "Triggered",
+    "Submitted",
+    "Under Investigation",
+    "Approved",
+    "Realized",
+  ] as const;
   const filteredOpnames = statusFilter ? opnames.filter((o) => o.status === statusFilter) : opnames;
   const displayRows = filteredOpnames.filter((r) => {
     if (!search.trim()) return true;
@@ -350,7 +366,7 @@ function StockOpnamePage() {
                     variant={statusColors[r.status] ?? "default"}
                     className="shrink-0 rounded-full px-2.5 py-1 text-[11px]"
                   >
-                    {r.status === "Under Investigation" ? "Investigasi" : r.status}
+                    {statusLabel(r.status)}
                   </Badge>
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground border-t pt-2">

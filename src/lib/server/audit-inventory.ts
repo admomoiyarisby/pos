@@ -63,7 +63,7 @@ export const getAuditInventory = createServerFn({ method: "GET" })
     // database voided orders net to -1 unit (111,821 OUT vs 111,822 restored),
     // i.e. fully reversed. `New` is the status the POS actually sells with —
     // 2,163,520 units net consumed — so excluding it would discard every real
-    // sale. `Cancel Requested` orders are still pending, not reversed.
+    // sale.
     const conditions = [ne(orders.status, "Void"), isNull(orders.deletedAt)];
     if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
     if (data.channel) conditions.push(eq(orders.channel, data.channel));

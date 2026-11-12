@@ -264,6 +264,16 @@ describe("Recipes — full lifecycle via the real server-function cores", () => 
       const del = await recipesApi.deleteRecipeCore(superAdmin, { id: recipe.id });
       expect(del.success).toBe(true);
       expect(await recipeStatus(recipe.id)).toBe("Deleted");
+
+      // 6. Deleted is terminal: neither deactivate nor reactivate may clear
+      //    the tombstone (ADR 0009 — restore is DB-only).
+      await expect(recipesApi.reactivateRecipeCore(superAdmin, { id: recipe.id })).rejects.toThrow(
+        "Resep sudah dihapus dan tidak dapat diaktifkan kembali",
+      );
+      await expect(recipesApi.deactivateRecipeCore(superAdmin, { id: recipe.id })).rejects.toThrow(
+        "Resep sudah dihapus dan tidak dapat dinonaktifkan",
+      );
+      expect(await recipeStatus(recipe.id)).toBe("Deleted");
     },
   );
 });

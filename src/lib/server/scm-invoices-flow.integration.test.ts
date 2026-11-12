@@ -183,6 +183,11 @@ describe("SCM invoices — full lifecycle via the real server-function cores", (
       await expect(scm.cancelSCMInvoiceCore(adminPusat, { id: invoice.id })).rejects.toThrow(
         "Only Unpaid invoices can be cancelled",
       );
+
+      // Paid invoice cannot be paid a second time (would overwrite paidAt)
+      await expect(scm.paySCMInvoiceCore(adminPusat, { id: invoice.id })).rejects.toThrow(
+        "Only Unpaid invoices can be paid",
+      );
     },
   );
 
@@ -197,6 +202,16 @@ describe("SCM invoices — full lifecycle via the real server-function cores", (
 
     const cancelled = await scm.cancelSCMInvoiceCore(adminPusat, { id: invoice.id });
     expect(cancelled.status).toBe("Cancelled");
+
+    // A Cancelled invoice is terminal — it can never be paid.
+    await expect(scm.paySCMInvoiceCore(adminPusat, { id: invoice.id })).rejects.toThrow(
+      "Only Unpaid invoices can be paid",
+    );
+    const [row] = await db
+      .select({ status: schema.scmInvoices.status })
+      .from(schema.scmInvoices)
+      .where(eq(schema.scmInvoices.id, invoice.id));
+    expect(row.status).toBe("Cancelled");
   });
 });
 

@@ -12,9 +12,9 @@ import {
   getSalesRecords,
   createSalesRecord,
   updateSalesRecord,
-  deleteSalesRecord,
   type SalesRow,
 } from "#/lib/server/sales";
+import { voidOrder } from "#/lib/server/pos";
 import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { getBranches } from "#/lib/server/branches";
 import { Badge } from "#/components/ui/badge";
@@ -39,7 +39,6 @@ const statusColors = {
   Completed: "success",
   Processing: "default",
   Void: "destructive",
-  "Cancel Requested": "secondary",
 } satisfies Record<string, "default" | "success" | "destructive" | "secondary">;
 
 function formatRupiah(value: number): string {
@@ -99,14 +98,14 @@ function SalesAdminPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteSalesRecord,
+    mutationFn: voidOrder,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["sales-admin"] });
       setDeleteModal(false);
-      toast.success("Data penjualan berhasil dihapus");
+      toast.success("Data penjualan dibatalkan (void)");
     },
     onError: (err) => {
-      toast.error("Gagal menghapus", { description: err.message });
+      toast.error("Gagal membatalkan", { description: err.message });
     },
   });
 
@@ -625,7 +624,12 @@ function SalesAdminPage() {
                   <button
                     onClick={() => {
                       if (!selectedOrder) return;
-                      void deleteMutation.mutateAsync({ data: { id: selectedOrder.id } });
+                      void deleteMutation.mutateAsync({
+                        data: {
+                          orderId: selectedOrder.id,
+                          reason: "Dihapus oleh Admin Pusat",
+                        },
+                      });
                     }}
                     disabled={deleteMutation.isPending}
                     className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"

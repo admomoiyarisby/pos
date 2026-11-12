@@ -25,6 +25,7 @@ import {
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { branchCatalogClause } from "#/lib/server/branch-catalog";
 import { describeDbError, isUniqueViolation } from "#/lib/server/db-errors";
+import { ingredientLifecycle } from "#/lib/lifecycles";
 import { z } from "zod";
 
 const ingredientInput = z.object({
@@ -485,6 +486,21 @@ export async function updateIngredientCore(
   const [old] = await db.select().from(ingredients).where(eq(ingredients.id, id)).limit(1);
   if (!old) throw new Error("Ingredient not found");
 
+  // Status is a lifecycle edge, not an arbitrary column. Deleted is a terminal
+  // tombstone, so the toggle can never resurrect a removed ingredient.
+  if (updates.status !== undefined) {
+    const event = updates.status === "Active" ? "activate" : "deactivate";
+    ingredientLifecycle.assert(
+      old.status,
+      event,
+      old.status === "Deleted"
+        ? "Bahan baku sudah dihapus"
+        : updates.status === "Active"
+          ? "Bahan baku sudah aktif"
+          : "Bahan baku sudah nonaktif",
+    );
+  }
+
   // Cost guard (see `#/lib/cost-guard`): a large jump is usually a package price
   // typed into a per-unit field, and it reprices every menu that uses this
   // ingredient for as long as it stands. Ask before writing, showing what it
@@ -645,15 +661,17 @@ export async function deleteIngredientCore(
   if (!old) {
     throw new Error("Ingredient not found");
   }
+  const to = ingredientLifecycle.assert(old.status, "delete", "Bahan baku sudah dihapus");
 
   // Soft delete tombstone (ADR-0009 mirror): status → Deleted. The row is
   // preserved for historical references, hidden from every list, and restore
   // is DB-only (the UI never re-activates a Deleted ingredient).
   const [result] = await db
     .update(ingredients)
-    .set({ status: "Deleted", updatedAt: new Date() })
-    .where(eq(ingredients.id, id))
+    .set({ status: to, updatedAt: new Date() })
+    .where(and(eq(ingredients.id, id), eq(ingredients.status, old.status)))
     .returning();
+  if (!result) throw new Error("Bahan baku sudah dihapus");
 
   await logSystemAction(
     user,

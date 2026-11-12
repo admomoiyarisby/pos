@@ -491,6 +491,34 @@
       "when": 1796000000000,
       "tag": "0066_order_item_ingredient_cost",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1796086400000,
+      "tag": "0067_retire_cancel_requested_and_approved",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1796172800000,
+      "tag": "0068_stock_opname_triggered_realized",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1796259200000,
+      "tag": "0069_one_open_shift_and_period",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1796345600000,
+      "tag": "0070_state_coherence_constraints",
+      "breakpoints": true
     }
   ]
 }

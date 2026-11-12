@@ -9,6 +9,7 @@ import {
   numeric,
   real,
   index,
+  uniqueIndex,
   jsonb,
   unique,
   check,
@@ -57,16 +58,19 @@ export const ORDER_CHANNEL_VALUES = [
 
 export const orderChannelEnum = pgEnum("order_channel", ORDER_CHANNEL_VALUES);
 
-export const orderStatusEnum = pgEnum("order_status", [
+export const ORDER_STATUS_VALUES = [
   "New",
   "Processing",
   "In Delivery",
   "Completed",
   "Void",
-  "Cancel Requested",
-]);
+] as const;
 
-export const shiftStatusEnum = pgEnum("shift_status", ["Open", "Closed"]);
+export const orderStatusEnum = pgEnum("order_status", ORDER_STATUS_VALUES);
+
+export const SHIFT_STATUS_VALUES = ["Open", "Closed"] as const;
+
+export const shiftStatusEnum = pgEnum("shift_status", SHIFT_STATUS_VALUES);
 
 export const stockLedgerTypeEnum = pgEnum("stock_ledger_type", ["IN", "OUT"]);
 
@@ -82,11 +86,18 @@ export const wasteCategoryEnum = pgEnum("waste_category", [
 // visible with a badge, and the stock effect is reversed with an IN ledger row.
 export const wasteEntryStatusEnum = pgEnum("waste_entry_status", ["Active", "Cancelled"]);
 
-export const stockOpnameStatusEnum = pgEnum("stock_opname_status", [
+// Sheet lifecycle: Triggered (snapshot taken, nothing counted) → Submitted
+// (counts saved) → Under Investigation (recount requested) → Approved (review
+// signed off) → Realized (variance applied to stock, 25th only, ADR 0021).
+export const STOCK_OPNAME_STATUS_VALUES = [
+  "Triggered",
   "Submitted",
-  "Approved",
   "Under Investigation",
-]);
+  "Approved",
+  "Realized",
+] as const;
+
+export const stockOpnameStatusEnum = pgEnum("stock_opname_status", STOCK_OPNAME_STATUS_VALUES);
 
 export const stockTransferStatusEnum = pgEnum("stock_transfer_status", [
   "Pending Approval",
@@ -145,9 +156,11 @@ export const cancelRequestReasonEnum = pgEnum("cancel_request_reason", [
   "Customer Cancel",
 ]);
 
+// Approval executes the cancellation in one step, so there is no intermediate
+// `Approved` state: Pending → Executed | Rejected. Legacy `Approved` rows were
+// migrated to Executed (drizzle 0067).
 export const cancelRequestStatusEnum = pgEnum("cancel_request_status", [
   "Pending",
-  "Approved",
   "Rejected",
   "Executed",
 ]);
@@ -245,7 +258,11 @@ export const users = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (t) => [unique("user_pin_branch_unique").on(t.pin, t.branchId)],
+  (t) => [
+    unique("user_pin_branch_unique").on(t.pin, t.branchId),
+    // A tombstoned user is always Inactive; Inactive alone means suspended.
+    check("user_deleted_status_coherent", sql`${t.deletedAt} IS NULL OR ${t.status} = 'Inactive'`),
+  ],
 );
 
 export const branches = pgTable("branches", {
@@ -636,6 +653,12 @@ export const orders = pgTable(
     index("order_status_idx").on(t.status),
     index("order_created_idx").on(t.createdAt),
     index("order_shift_idx").on(t.shiftId),
+    // A void always states why; a non-void never carries a stale reason.
+    check(
+      "order_void_reason_coherent",
+      sql`(CASE WHEN ${t.status} = 'Void' THEN 1 ELSE 0 END) =
+          (CASE WHEN ${t.voidReason} IS NOT NULL THEN 1 ELSE 0 END)`,
+    ),
   ],
 );
 
@@ -812,6 +835,17 @@ export const shifts = pgTable(
     index("shift_branch_idx").on(t.branchId),
     index("shift_user_idx").on(t.userId),
     index("shift_status_idx").on(t.status),
+    // A branch has at most one open shift. The app serializes opens on the
+    // branch row; this is the database backstop.
+    uniqueIndex("shift_one_open_per_branch")
+      .on(t.branchId)
+      .where(sql`${t.status} = 'Open'`),
+    // Closed means the drawer was counted and an end time was recorded.
+    check(
+      "shift_closed_coherent",
+      sql`(CASE WHEN ${t.status} = 'Closed' THEN 1 ELSE 0 END) =
+          (CASE WHEN ${t.endTime} IS NOT NULL THEN 1 ELSE 0 END)`,
+    ),
   ],
 );
 
@@ -995,7 +1029,15 @@ export const yieldConversions = pgTable(
     // and items preserved.
     deletedAt: timestamp("deleted_at", { mode: "date" }),
   },
-  (t) => [index("yc_branch_idx").on(t.branchId), index("yc_status_idx").on(t.status)],
+  (t) => [
+    index("yc_branch_idx").on(t.branchId),
+    index("yc_status_idx").on(t.status),
+    check(
+      "yc_cancel_coherent",
+      sql`(CASE WHEN ${t.status} = 'Cancelled' THEN 1 ELSE 0 END) =
+          (CASE WHEN ${t.cancelledAt} IS NOT NULL THEN 1 ELSE 0 END)`,
+    ),
+  ],
 );
 
 // One row per ingredient movement within a production record.
@@ -1211,7 +1253,15 @@ export const scmInvoices = pgTable(
     dueDate: timestamp("due_date", { mode: "date" }).notNull(),
     paidAt: timestamp("paid_at", { mode: "date" }),
   },
-  (t) => [index("inv_dn_idx").on(t.deliveryNoteId), index("inv_status_idx").on(t.status)],
+  (t) => [
+    index("inv_dn_idx").on(t.deliveryNoteId),
+    index("inv_status_idx").on(t.status),
+    check(
+      "inv_paid_coherent",
+      sql`(CASE WHEN ${t.status} = 'Paid' THEN 1 ELSE 0 END) =
+          (CASE WHEN ${t.paidAt} IS NOT NULL THEN 1 ELSE 0 END)`,
+    ),
+  ],
 );
 
 export const scmInvoiceItems = pgTable(
@@ -1330,6 +1380,11 @@ export const scmProcurements = pgTable(
   (t) => [
     index("sp_branch_idx").on(t.branchId),
     index("sp_status_idx").on(t.status),
+    check(
+      "sp_cancel_coherent",
+      sql`(CASE WHEN ${t.status} = 'Cancelled' THEN 1 ELSE 0 END) =
+          (CASE WHEN ${t.cancelledAt} IS NOT NULL THEN 1 ELSE 0 END)`,
+    ),
     index("sp_requested_by_idx").on(t.requestedById),
     index("sp_created_at_idx").on(t.createdAt),
     index("sp_branch_status_idx").on(t.branchId, t.status),
@@ -1413,7 +1468,10 @@ export const scmProcurementInvoices = pgTable(
     // Mirrors scm_transfer_invoices.cancelled_at (ADR 0006).
     cancelledAt: timestamp("cancelled_at", { mode: "date" }),
   },
-  (t) => [index("spin_procurement_idx").on(t.scmProcurementId)],
+  (t) => [
+    index("spin_procurement_idx").on(t.scmProcurementId),
+    check("spin_paid_stamps_paired", sql`(${t.paidAt} IS NULL) = (${t.paidById} IS NULL)`),
+  ],
 );
 
 export const pendingReviewInventory = pgTable(
@@ -1505,6 +1563,11 @@ export const scmTransfers = pgTable(
     index("stx_from_branch_idx").on(t.fromBranchId),
     index("stx_to_branch_idx").on(t.toBranchId),
     index("stx_status_idx").on(t.status),
+    check(
+      "stx_cancel_coherent",
+      sql`(CASE WHEN ${t.status} = 'Cancelled' THEN 1 ELSE 0 END) =
+          (CASE WHEN ${t.cancelledAt} IS NOT NULL THEN 1 ELSE 0 END)`,
+    ),
     index("stx_requested_by_idx").on(t.requestedById),
     index("stx_created_at_idx").on(t.createdAt),
     index("stx_branches_status_idx").on(t.fromBranchId, t.toBranchId, t.status),
@@ -1595,7 +1658,15 @@ export const scmTransferInvoices = pgTable(
     checkedAt: timestamp("checked_at", { mode: "date" }),
     checkedById: uuid("checked_by_id").references(() => users.id),
   },
-  (t) => [index("stxinv_transfer_idx").on(t.scmTransferId)],
+  (t) => [
+    index("stxinv_transfer_idx").on(t.scmTransferId),
+    check("stxinv_paid_stamps_paired", sql`(${t.paidAt} IS NULL) = (${t.paidById} IS NULL)`),
+    check(
+      "stxinv_checked_coherent",
+      sql`(${t.checked}) = (${t.checkedAt} IS NOT NULL) AND
+          (${t.checked}) = (${t.checkedById} IS NOT NULL)`,
+    ),
+  ],
 );
 
 export const scmTransferAuditLog = pgTable(
@@ -1763,6 +1834,11 @@ export const wasteEntries = pgTable(
     index("waste_ingredient_idx").on(t.ingredientId),
     index("waste_recipe_idx").on(t.recipeId),
     check(
+      "waste_cancel_coherent",
+      sql`(CASE WHEN ${t.status} = 'Cancelled' THEN 1 ELSE 0 END) =
+          (CASE WHEN ${t.cancelledAt} IS NOT NULL THEN 1 ELSE 0 END)`,
+    ),
+    check(
       "waste_exactly_one_target",
       sql`((CASE WHEN ${t.ingredientId} IS NOT NULL THEN 1 ELSE 0 END) + (CASE WHEN ${t.recipeId} IS NOT NULL THEN 1 ELSE 0 END)) = 1`,
     ),
@@ -1825,7 +1901,7 @@ export const stockOpnames = pgTable(
       .notNull()
       .references(() => branches.id),
     date: text("date").notNull(),
-    status: stockOpnameStatusEnum("status").notNull().default("Submitted"),
+    status: stockOpnameStatusEnum("status").notNull().default("Triggered"),
     triggeredBy: uuid("triggered_by")
       .notNull()
       .references(() => users.id),
@@ -1846,6 +1922,12 @@ export const stockOpnames = pgTable(
     index("so_branch_idx").on(t.branchId),
     index("so_date_idx").on(t.date),
     index("so_status_idx").on(t.status),
+    // Realize writes the status and the timestamp in the same statement.
+    check(
+      "so_realized_coherent",
+      sql`(CASE WHEN ${t.status} = 'Realized' THEN 1 ELSE 0 END) =
+          (CASE WHEN ${t.realizedAt} IS NOT NULL THEN 1 ELSE 0 END)`,
+    ),
   ],
 );
 
@@ -2001,7 +2083,20 @@ export const periodLogs = pgTable(
     closedBy: uuid("closed_by").references(() => users.id),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
-  (t) => [unique("period_name_unique").on(t.periodName), index("period_status_idx").on(t.status)],
+  (t) => [
+    unique("period_name_unique").on(t.periodName),
+    index("period_status_idx").on(t.status),
+    // One open period at a time. `(true)` is a constant key so the partial
+    // index permits at most one matching row.
+    uniqueIndex("period_one_open")
+      .on(sql`(true)`)
+      .where(sql`${t.status} = 'Open'`),
+    check(
+      "period_closed_coherent",
+      sql`(CASE WHEN ${t.status} = 'Closed' THEN 1 ELSE 0 END) =
+          (CASE WHEN ${t.closedAt} IS NOT NULL THEN 1 ELSE 0 END)`,
+    ),
+  ],
 );
 
 export const periodBalances = pgTable(

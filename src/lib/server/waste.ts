@@ -19,6 +19,7 @@ import { resolveNewItemIngredients } from "./ingredient-resolver";
 import { lineAmount, todayDateInputValue } from "#/lib/utils";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import { requireAuth, requireRole } from "./auth";
+import { requireOpenPeriod } from "./period-lock";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
@@ -155,6 +156,8 @@ export async function createWasteEntryCore(
   user: AppUser,
   data: z.infer<typeof createWasteEntryInput>,
 ) {
+  await requireOpenPeriod(user);
+
   // The wrapper's zod validator enforces this over HTTP; the core re-checks so
   // direct callers (e.g. integration tests) get the same contract.
   if (!!data.ingredientId === !!data.recipeId) {
@@ -350,6 +353,8 @@ export async function addInvestigationNoteCore(
   user: AppUser,
   data: z.infer<typeof addInvestigationNoteInput>,
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "area_manager") {
     throw new Error(
       "Unauthorized: hanya super_admin dan area_manager yang dapat menambahkan catatan investigasi",
@@ -407,6 +412,8 @@ export async function updateWasteEntryCore(
   user: AppUser,
   data: z.infer<typeof updateWasteEntryInput>,
 ) {
+  await requireOpenPeriod(user);
+
   const [existing] = await db
     .select()
     .from(wasteEntries)
@@ -561,6 +568,9 @@ export async function applyWasteCancellation(
   actor: { id: string },
   reason: string,
 ): Promise<typeof wasteEntries.$inferSelect> {
+  // Claim the row: only a caller whose conditional UPDATE matches an Active
+  // entry may reverse stock. Without this a double tap (or two tabs) both read
+  // Active and both restore the quantity, inflating inventory (ADR 0012).
   const [updated] = await tx
     .update(wasteEntries)
     .set({
@@ -569,8 +579,9 @@ export async function applyWasteCancellation(
       cancelledBy: actor.id,
       cancelReason: reason,
     })
-    .where(eq(wasteEntries.id, entry.id))
+    .where(and(eq(wasteEntries.id, entry.id), eq(wasteEntries.status, "Active")))
     .returning();
+  if (!updated) throw new Error("Waste entry sudah dibatalkan");
 
   await tx.delete(operationalExpenses).where(eq(operationalExpenses.wasteEntryId, entry.id));
 
@@ -594,6 +605,8 @@ export async function cancelWasteEntryCore(
   user: AppUser,
   data: z.infer<typeof cancelWasteEntryInput>,
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "area_manager") {
     throw new Error(
       "Unauthorized: hanya super_admin dan area_manager yang dapat membatalkan waste entry",
@@ -897,6 +910,8 @@ export async function createBomWasteEntryCore(
   user: AppUser,
   data: z.infer<typeof createBomWasteEntryInput>,
 ) {
+  await requireOpenPeriod(user);
+
   const branchId = data.branchId || (user.role === "branch_admin" ? user.branchId : undefined);
   if (!branchId) throw new Error("Branch is required");
 
@@ -1044,6 +1059,7 @@ export const softDeleteWasteEntry = createServerFn({ method: "POST" })
   .validator((data: { wasteEntryId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
+    await requireOpenPeriod(user);
 
     const [existing] = await db
       .select()

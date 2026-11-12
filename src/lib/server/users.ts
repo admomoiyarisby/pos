@@ -15,6 +15,7 @@ import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
 import { hashPassword } from "better-auth/crypto";
 import { canManageUser } from "#/lib/user-roles";
+import { userStatusLifecycle } from "#/lib/lifecycles";
 
 // better-auth >=1.7 matches credential accounts on providerId + issuer +
 // accountId during signInEmail. Every write to the credential account must
@@ -411,8 +412,18 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
     setData.branchId = null;
   }
 
+  // Suspending an account revokes its live sessions in the same transaction:
+  // `getCurrentUserRaw` already refuses an Inactive row, but leaving usable
+  // session rows behind would let a later re-activation revive them.
+  const deactivating = data.status === "Inactive" && oldUser.status !== "Inactive";
+
   if (Object.keys(setData).length > 0) {
-    await db.update(usersTable).set(setData).where(eq(usersTable.id, id));
+    await db.transaction(async (tx) => {
+      await tx.update(usersTable).set(setData).where(eq(usersTable.id, id));
+      if (deactivating) {
+        await tx.delete(sessionTable).where(eq(sessionTable.userId, id));
+      }
+    });
   }
 
   // Build new user data for audit
@@ -457,6 +468,8 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
 
   // Check for status change
   if (data.status && data.status !== oldUser.status) {
+    const event = data.status === "Active" ? "activate" : "deactivate";
+    userStatusLifecycle.assert(oldUser.status, event, "Status user tidak dapat diubah");
     await logSystemAction(
       user,
       "Update User Status",

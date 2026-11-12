@@ -77,6 +77,10 @@ const config = defineConfig({
     dedupe: ["react", "react-dom"],
   },
   test: {
+    // Migration runs once, before the first test file. Without it a fresh
+    // test volume fails in every `*-flow` file that sorts before
+    // `migrations.integration.test.ts`.
+    globalSetup: ["./src/test/global-setup.ts"],
     // Integration flow tests share ONE database. `setupFlowHarness`
     // (src/lib/server/integration-test-harness.ts) TRUNCATEs the root tables
     // (`users`, `branches`, `ingredients`, …) in `beforeEach` so each test

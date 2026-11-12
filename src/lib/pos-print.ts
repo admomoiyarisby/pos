@@ -5,7 +5,7 @@
 import { toast } from "sonner";
 
 import { printViaBridge } from "./print-bridge";
-import type { BridgeAlign, BridgeBlock, BridgeTextSize } from "./print-bridge";
+import type { BridgeAlign, BridgeBlock, BridgePrintRequest, BridgeTextSize } from "./print-bridge";
 import type { CartItem, OrderResult } from "./pos-types";
 
 interface PrintBillParams {
@@ -350,6 +350,26 @@ function reportBrowserFallback(): void {
   });
 }
 
+/**
+ * One transport decision for every document: try the bridge, fall back to the
+ * browser dialog when the bridge is not there, and surface a bridge failure
+ * verbatim. Extracted so the four documents cannot drift in how they report
+ * the path that ran (a clipped receipt with no warning was the original bug).
+ */
+async function runPrintJob(
+  request: BridgePrintRequest,
+  browserFallback: () => void,
+): Promise<void> {
+  const result = await printViaBridge(request);
+  if (result.kind === "printed") return;
+  if (result.kind === "unavailable") {
+    reportBrowserFallback();
+    browserFallback();
+    return;
+  }
+  reportPrintFailure(result.message);
+}
+
 /** A blocked popup is a print that never happens — and looks like nothing at all. */
 function openPrintWindow(): Window | null {
   let printWindow = window.open("", "_blank");
@@ -427,19 +447,15 @@ function receiptBlocks({
  * browser print dialog, which is the only option on desktop.
  */
 export async function printReceipt(params: PrintReceiptParams): Promise<void> {
-  let result = await printViaBridge({
-    content: receiptBlocks(params),
-    paperWidth: 58,
-    cut: true,
-    reference: params.order.orderCode ?? params.order.id.slice(0, 8).toUpperCase(),
-  });
-  if (result.kind === "printed") return;
-  if (result.kind === "unavailable") {
-    reportBrowserFallback();
-    printReceiptInBrowser(params);
-    return;
-  }
-  reportPrintFailure(result.message);
+  await runPrintJob(
+    {
+      content: receiptBlocks(params),
+      paperWidth: 58,
+      cut: true,
+      reference: params.order.orderCode ?? params.order.id.slice(0, 8).toUpperCase(),
+    },
+    () => printReceiptInBrowser(params),
+  );
 }
 
 function printReceiptInBrowser({
@@ -612,19 +628,15 @@ function billBlocks({
 
 /** Falls back to the browser print dialog when no thermal printer is attached. */
 export async function printBill(params: PrintBillParams): Promise<void> {
-  let result = await printViaBridge({
-    content: billBlocks(params),
-    paperWidth: 58,
-    cut: true,
-    reference: params.orderCode,
-  });
-  if (result.kind === "printed") return;
-  if (result.kind === "unavailable") {
-    reportBrowserFallback();
-    printBillInBrowser(params);
-    return;
-  }
-  reportPrintFailure(result.message);
+  await runPrintJob(
+    {
+      content: billBlocks(params),
+      paperWidth: 58,
+      cut: true,
+      reference: params.orderCode,
+    },
+    () => printBillInBrowser(params),
+  );
 }
 
 function printBillInBrowser({
@@ -799,19 +811,15 @@ function checkerBlocks({
 
 /** Falls back to the browser print dialog when no thermal printer is attached. */
 export async function printChecker(params: PrintCheckerParams): Promise<void> {
-  let result = await printViaBridge({
-    content: checkerBlocks(params),
-    paperWidth: 58,
-    cut: true,
-    reference: params.orderCode,
-  });
-  if (result.kind === "printed") return;
-  if (result.kind === "unavailable") {
-    reportBrowserFallback();
-    printCheckerInBrowser(params);
-    return;
-  }
-  reportPrintFailure(result.message);
+  await runPrintJob(
+    {
+      content: checkerBlocks(params),
+      paperWidth: 58,
+      cut: true,
+      reference: params.orderCode,
+    },
+    () => printCheckerInBrowser(params),
+  );
 }
 
 function printCheckerInBrowser({
@@ -1048,19 +1056,15 @@ export async function printSCMInvoice(
 ): Promise<void> {
   // Per-unit prices are the HPP snapshot — hidden for branch_admin.
   const showUnitPrice = opts?.showUnitPrice ?? true;
-  let result = await printViaBridge({
-    content: scmInvoiceBlocks(inv, showUnitPrice),
-    paperWidth: 80,
-    cut: true,
-    reference: inv.code,
-  });
-  if (result.kind === "printed") return;
-  if (result.kind === "unavailable") {
-    reportBrowserFallback();
-    printSCMInvoiceInBrowser(inv, showUnitPrice);
-    return;
-  }
-  reportPrintFailure(result.message);
+  await runPrintJob(
+    {
+      content: scmInvoiceBlocks(inv, showUnitPrice),
+      paperWidth: 80,
+      cut: true,
+      reference: inv.code,
+    },
+    () => printSCMInvoiceInBrowser(inv, showUnitPrice),
+  );
 }
 
 function printSCMInvoiceInBrowser(inv: SCMInvoiceParams, showUnitPrice: boolean) {

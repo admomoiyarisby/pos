@@ -24,6 +24,11 @@ import { toast } from "sonner";
 import { printReceipt } from "#/lib/pos-print";
 import { ORDER_CHANNEL_OPTIONS, channelLabel } from "#/lib/order-channels";
 import { orderBranchOptions } from "#/lib/order-branches";
+import {
+  orderForwardStatuses,
+  type OrderStatus,
+  type OrderTargetStatus,
+} from "#/lib/order-lifecycle";
 
 interface OrderRow {
   id: string;
@@ -33,7 +38,7 @@ interface OrderRow {
   orderCode: string | null;
   customerName: string | null;
   totalAmount: number;
-  status: string;
+  status: OrderStatus;
   createdAt: Date;
 }
 
@@ -42,7 +47,6 @@ const statusColors = {
   New: "default",
   Processing: "warning",
   Void: "secondary",
-  "Cancel Requested": "destructive",
 } satisfies Record<string, string>;
 
 const columns: Column<OrderRow>[] = [
@@ -106,12 +110,11 @@ const columns: Column<OrderRow>[] = [
   },
 ];
 
-const allowedStatusLabels = {
-  New: "New",
+const targetStatusLabels = {
   Processing: "Processing",
   "In Delivery": "In Delivery",
   Completed: "Completed",
-} satisfies Record<string, string>;
+} satisfies Record<OrderTargetStatus, string>;
 
 export const Route = createFileRoute("/_layout/order-history")({
   component: OrderHistoryPage,
@@ -137,9 +140,7 @@ function OrderHistoryPage() {
   const [dateTo, setDateTo] = useState("");
 
   const [statusModalOrder, setStatusModalOrder] = useState<OrderRow | null>(null);
-  const [targetStatus, setTargetStatus] = useState<
-    "" | "New" | "Processing" | "In Delivery" | "Completed"
-  >("");
+  const [targetStatus, setTargetStatus] = useState<OrderTargetStatus | "">("");
   const [voidModalOrder, setVoidModalOrder] = useState<OrderRow | null>(null);
   const [voidReason, setVoidReason] = useState("");
 
@@ -330,26 +331,19 @@ function OrderHistoryPage() {
                   <Badge variant={badgeVariant(lookupLabel(statusColors, selectedOrder.status))}>
                     {selectedOrder.status}
                   </Badge>
-                  <button
-                    onClick={function (e: any) {
-                      e.stopPropagation();
-                      setStatusModalOrder(selectedOrder);
-                      // SAFETY: only orders in one of the four mutable statuses
-                      // open the change-status modal (allowedStatusLabels keys).
-                      setTargetStatus(
-                        selectedOrder.status as
-                          | ""
-                          | "New"
-                          | "Processing"
-                          | "In Delivery"
-                          | "Completed",
-                      );
-                    }}
-                    title="Ubah status"
-                    className="h-5 w-5 inline-flex items-center justify-center rounded border text-muted-foreground hover:bg-accent"
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </button>
+                  {orderForwardStatuses(selectedOrder.status).length > 0 && (
+                    <button
+                      onClick={function (e: any) {
+                        e.stopPropagation();
+                        setStatusModalOrder(selectedOrder);
+                        setTargetStatus("");
+                      }}
+                      title="Ubah status"
+                      className="h-5 w-5 inline-flex items-center justify-center rounded border text-muted-foreground hover:bg-accent"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="rounded-md border p-3">
@@ -552,7 +546,8 @@ function OrderHistoryPage() {
               <span className="font-mono font-medium">#{statusModalOrder.id.slice(0, 8)}</span>
             </p>
             <div className="space-y-2">
-              {Object.entries(allowedStatusLabels).map(function ([val, label]) {
+              {orderForwardStatuses(statusModalOrder.status).map(function (val) {
+                const label = targetStatusLabels[val];
                 return (
                   <label
                     key={val}
@@ -567,11 +562,7 @@ function OrderHistoryPage() {
                       value={val}
                       checked={targetStatus === val}
                       onChange={function () {
-                        // SAFETY: val iterates allowedStatusLabels keys, which
-                        // are exactly the four mutable order statuses.
-                        setTargetStatus(
-                          val as "" | "New" | "Processing" | "In Delivery" | "Completed",
-                        );
+                        setTargetStatus(val);
                       }}
                       className="text-primary"
                     />

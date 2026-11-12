@@ -2843,9 +2843,13 @@ const BRANCH_CODES = [
 const CHANNELS: Array<
   "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok" | "Perlengkapan"
 > = ["Gofood", "Grabfood", "ShopeeFood", "Dine-in", "TikTok", "Perlengkapan"];
-const ORDER_STATUSES: Array<
-  "New" | "Processing" | "In Delivery" | "Completed" | "Void" | "Cancel Requested"
-> = ["New", "Processing", "In Delivery", "Completed", "Void", "Cancel Requested"];
+const ORDER_STATUSES: Array<"New" | "Processing" | "In Delivery" | "Completed" | "Void"> = [
+  "New",
+  "Processing",
+  "In Delivery",
+  "Completed",
+  "Void",
+];
 const RECIPE_PROTO_IDS = [
   "rec001",
   "rec002",
@@ -2892,7 +2896,7 @@ export const ORDERS_DATA = (() => {
     idx: number;
     branchCode: string;
     channel: "Gofood" | "Grabfood" | "ShopeeFood" | "Dine-in" | "TikTok" | "Perlengkapan";
-    status: "New" | "Processing" | "In Delivery" | "Completed" | "Void" | "Cancel Requested";
+    status: "New" | "Processing" | "In Delivery" | "Completed" | "Void";
     subtotal: number;
     merchantDiscount: number;
     platformDiscount: number;
@@ -2923,8 +2927,7 @@ export const ORDERS_DATA = (() => {
     else if (statusIdx < 6) status = "Processing";
     else if (statusIdx < 8) status = "In Delivery";
     else if (statusIdx < 17) status = "Completed";
-    else if (statusIdx < 19) status = "Void";
-    else status = "Cancel Requested";
+    else status = "Void";
 
     // Days ago: spread across 60 days, more recent orders have more "New" status.
     // Ensure "New" and "Processing" orders always land on today (daysAgo: 0)
@@ -3426,7 +3429,7 @@ export const CANCEL_REQUESTS_DATA = (() => {
     detail?: string;
     requestedByEmail: string;
     approvedByEmail?: string;
-    status: "Pending" | "Approved" | "Rejected";
+    status: "Pending" | "Executed" | "Rejected";
     createdAt: Date;
   }[] = [];
   const reasons: Array<"Stok Habis" | "Salah Input" | "Customer Cancel"> = [
@@ -3435,7 +3438,7 @@ export const CANCEL_REQUESTS_DATA = (() => {
     "Customer Cancel",
   ];
   for (let i = 1; i <= 12; i++) {
-    const status = i % 3 === 0 ? "Pending" : i % 3 === 1 ? "Approved" : "Rejected";
+    const status = i % 3 === 0 ? "Pending" : i % 3 === 1 ? "Executed" : "Rejected";
     crs.push({
       orderIdx: 100 + i * 3,
       reason: reasons[i % reasons.length],

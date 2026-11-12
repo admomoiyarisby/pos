@@ -85,6 +85,76 @@ describe("database migrations", () => {
            where schemaname = 'public' and indexname = 'yield_conversions_branch_date_idx'`,
         );
         expect(yieldIdx.rows).toHaveLength(1);
+
+        // Migration 0067 retired two states that no writer produced:
+        // `orders.status = 'Cancel Requested'` (cancellation lives in
+        // cancel_requests) and `cancel_requests.status = 'Approved'` (approval
+        // executes the void). Migration 0068 made stock opname explicit:
+        // Triggered and Realized are states now, not an overloaded Submitted
+        // plus a nullable realized_at. Pin both so a future generate cannot
+        // quietly undo them.
+        // `json_agg` (not `array_agg` on `name[]`) so pg parses the result into
+        // a real JS array instead of returning the Postgres array literal.
+        const enumRows = await client.query<{ typname: string; labels: string[] }>(
+          `select t.typname, json_agg(e.enumlabel order by e.enumsortorder) as labels
+           from pg_type t join pg_enum e on e.enumtypid = t.oid
+           where t.typname in ('order_status', 'cancel_request_status', 'stock_opname_status')
+           group by t.typname`,
+        );
+        const labelsByEnum = Object.fromEntries(
+          enumRows.rows.map((row) => [row.typname, row.labels]),
+        );
+        expect(labelsByEnum.order_status).not.toContain("Cancel Requested");
+        expect(labelsByEnum.cancel_request_status).not.toContain("Approved");
+        expect(labelsByEnum.stock_opname_status).toEqual([
+          "Triggered",
+          "Submitted",
+          "Under Investigation",
+          "Approved",
+          "Realized",
+        ]);
+
+        // Migration 0069 turns the two "one open …" invariants into database
+        // constraints (the app checks are racy on their own).
+        const oneOpen = await client.query<{ indexname: string; indexdef: string }>(
+          `select indexname, indexdef from pg_indexes
+           where schemaname = 'public'
+             and indexname in ('shift_one_open_per_branch', 'period_one_open')`,
+        );
+        expect(oneOpen.rows).toHaveLength(2);
+        for (const row of oneOpen.rows) {
+          expect(row.indexdef).toMatch(/UNIQUE/i);
+          expect(row.indexdef).toMatch(/WHERE/i);
+        }
+
+        // Migration 0070 pairs each derived timestamp with its status flag.
+        const coherence = await client.query<{ conname: string }>(
+          `select conname from pg_constraint
+           where conname in (
+             'so_realized_coherent', 'inv_paid_coherent', 'waste_cancel_coherent',
+             'yc_cancel_coherent', 'sp_cancel_coherent', 'stx_cancel_coherent',
+             'user_deleted_status_coherent', 'period_closed_coherent',
+             'shift_closed_coherent', 'order_void_reason_coherent',
+             'spin_paid_stamps_paired', 'stxinv_paid_stamps_paired',
+             'stxinv_checked_coherent'
+           )
+           order by conname`,
+        );
+        expect(coherence.rows.map((row) => row.conname)).toEqual([
+          "inv_paid_coherent",
+          "order_void_reason_coherent",
+          "period_closed_coherent",
+          "shift_closed_coherent",
+          "so_realized_coherent",
+          "sp_cancel_coherent",
+          "spin_paid_stamps_paired",
+          "stx_cancel_coherent",
+          "stxinv_checked_coherent",
+          "stxinv_paid_stamps_paired",
+          "user_deleted_status_coherent",
+          "waste_cancel_coherent",
+          "yc_cancel_coherent",
+        ]);
       } finally {
         await client.end();
       }

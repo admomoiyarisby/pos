@@ -23,10 +23,20 @@ import { calculateNasiConversion } from "#/lib/server/nasi-conversion";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { useUnsavedDraft } from "#/hooks/useUnsavedDraft";
 const statusColors = {
+  Triggered: "default",
   Submitted: "default",
-  Approved: "success",
   "Under Investigation": "warning",
+  Approved: "success",
+  Realized: "success",
 } satisfies Record<string, "default" | "warning" | "success">;
+
+function statusLabel(status: string): string {
+  return status === "Under Investigation"
+    ? "Investigasi"
+    : status === "Realized"
+      ? "Realize"
+      : status;
+}
 
 export const Route = createFileRoute("/_layout/stock-opname/$soId")({
   component: StockOpnameDetailPage,
@@ -189,13 +199,14 @@ function StockOpnameDetailPage() {
     user?.role ?? "",
   );
   const outsideCatalogCount = detail.outsideCatalogCount ?? 0;
-  const canApprove =
-    ["super_admin", "area_manager"].includes(user?.role ?? "") && detail.status !== "Approved";
+  // Approved signs off the sheet; Realized applies it. Neither may be edited.
+  const isLocked = detail.status === "Approved" || detail.status === "Realized";
+  const canApprove = ["super_admin", "area_manager"].includes(user?.role ?? "") && !isLocked;
   // Supervisors can run the full flow themselves (trigger → count → submit →
   // approve). Without this, a super_admin/area_manager filling counts would have
   // no way to persist them before approving, and approve would apply zeros.
   const canSubmit =
-    (detail.status === "Submitted" || detail.status === "Under Investigation") &&
+    ["Triggered", "Submitted", "Under Investigation"].includes(detail.status) &&
     ["branch_admin", "super_admin", "area_manager"].includes(user?.role ?? "");
   const canUpdate =
     detail.status === "Under Investigation" &&
@@ -350,7 +361,7 @@ function StockOpnameDetailPage() {
                 variant={statusColors[detail.status] ?? "default"}
                 className="rounded-full px-3 py-1 text-xs"
               >
-                {detail.status === "Under Investigation" ? "Investigasi" : detail.status}
+                {statusLabel(detail.status)}
               </Badge>
               {isBlind && (
                 <Badge variant="outline" className="rounded-full text-[11px]">
@@ -432,7 +443,7 @@ function StockOpnameDetailPage() {
             return (
               <div
                 key={item.id}
-                className={`rounded-xl border bg-card p-3.5 shadow-xs ${hasVariance ? "border-warning/30 bg-warning/5" : ""} ${isEmpty && detail.status !== "Approved" ? "ring-1 ring-warning/20" : ""}`}
+                className={`rounded-xl border bg-card p-3.5 shadow-xs ${hasVariance ? "border-warning/30 bg-warning/5" : ""} ${isEmpty && !isLocked ? "ring-1 ring-warning/20" : ""}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
@@ -507,14 +518,12 @@ function StockOpnameDetailPage() {
                         }
                       }
                     }}
-                    disabled={detail.status === "Approved"}
+                    disabled={isLocked}
                     aria-label={`${item.ingredientName} stok fisik`}
                     placeholder="kosong = tetap"
                     className={cn(
                       "mt-1 h-12 w-full rounded-xl border bg-background px-3 text-base font-medium tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
-                      !isTouched && detail.status !== "Approved"
-                        ? "border-warning/40 bg-warning/10"
-                        : "border-input",
+                      !isTouched && !isLocked ? "border-warning/40 bg-warning/10" : "border-input",
                     )}
                   />
                 </div>
@@ -605,12 +614,12 @@ function StockOpnameDetailPage() {
                             }
                           }
                         }}
-                        disabled={detail.status === "Approved"}
+                        disabled={isLocked}
                         aria-label={`${item.ingredientName} stok fisik`}
                         placeholder="kosong = tetap"
                         className={cn(
                           "h-8 w-24 rounded-md border bg-background px-2 text-sm text-right disabled:opacity-50",
-                          !touchedItems.includes(item.id) && detail.status !== "Approved"
+                          !touchedItems.includes(item.id) && !isLocked
                             ? "border-warning/40 bg-warning/10"
                             : "border-input",
                         )}
@@ -770,7 +779,7 @@ function StockOpnameDetailPage() {
                 Tandai Investigasi
               </button>
             )}
-            {canApprove && detail.status !== "Approved" && (
+            {canApprove && (
               <button
                 onClick={() => setApproveModal(true)}
                 className="inline-flex items-center justify-center h-11 sm:h-10 px-4 rounded-xl sm:rounded-md bg-primary text-primary-foreground text-sm font-medium w-full sm:w-auto shadow-sm"
@@ -788,7 +797,7 @@ function StockOpnameDetailPage() {
               </button>
             )}
             {/* Note-only opnames: the whole flow runs, nothing moves (ADR 0021) */}
-            {detail.status !== "Approved" && !soIs25th && (
+            {!isLocked && !soIs25th && (
               <p className="text-xs text-muted-foreground w-full sm:w-auto sm:self-center">
                 Opname di luar tanggal 25 hanya catatan — realisasi tidak mengubah stok.
               </p>
@@ -798,7 +807,7 @@ function StockOpnameDetailPage() {
                 Opname di luar tanggal 25 hanya catatan — tidak ada perubahan stok.
               </p>
             )}
-            {soIs25th && !soCycleOpen && detail.status !== "Approved" && (
+            {soIs25th && !soCycleOpen && !isLocked && (
               <p className="text-xs text-muted-foreground w-full sm:w-auto sm:self-center">
                 Opname periode {soCycle} — Realize terbuka mulai periode {soCycle} (bulan itu).
               </p>

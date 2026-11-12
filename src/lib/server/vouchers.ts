@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import type { UnknownRecord } from "#/lib/unknown-record";
+import { voucherLifecycle } from "#/lib/lifecycles";
 import { z } from "zod";
 
 const voucherInput = z.object({
@@ -175,13 +176,18 @@ export async function deactivateVoucherCore(user: AppUser, data: { id: string })
 
   const [old] = await db.select().from(vouchers).where(eq(vouchers.id, data.id)).limit(1);
   if (!old) throw new Error("Voucher not found");
-  if (old.status !== "Active") throw new Error("Voucher sudah nonaktif atau dihapus");
+  const to = voucherLifecycle.assert(
+    old.status,
+    "deactivate",
+    "Voucher sudah nonaktif atau dihapus",
+  );
 
   const [result] = await db
     .update(vouchers)
-    .set({ status: "Inactive" })
-    .where(and(eq(vouchers.id, data.id), eq(vouchers.status, "Active")))
+    .set({ status: to })
+    .where(and(eq(vouchers.id, data.id), eq(vouchers.status, old.status)))
     .returning();
+  if (!result) throw new Error("Voucher sudah nonaktif atau dihapus");
 
   await logSystemAction(
     user,
@@ -212,16 +218,20 @@ export async function deleteVoucherCore(user: AppUser, data: { id: string }) {
 
   const [old] = await db.select().from(vouchers).where(eq(vouchers.id, data.id)).limit(1);
   if (!old) throw new Error("Voucher not found");
-  if (old.status === "Active") {
-    throw new Error("Nonaktifkan voucher terlebih dahulu sebelum menghapusnya");
-  }
-  if (old.status === "Deleted") throw new Error("Voucher sudah dihapus");
+  const to = voucherLifecycle.assert(
+    old.status,
+    "delete",
+    old.status === "Active"
+      ? "Nonaktifkan voucher terlebih dahulu sebelum menghapusnya"
+      : "Voucher sudah dihapus",
+  );
 
   const [result] = await db
     .update(vouchers)
-    .set({ status: "Deleted" })
-    .where(and(eq(vouchers.id, data.id), eq(vouchers.status, "Inactive")))
+    .set({ status: to })
+    .where(and(eq(vouchers.id, data.id), eq(vouchers.status, old.status)))
     .returning();
+  if (!result) throw new Error("Voucher sudah dihapus");
 
   await logSystemAction(
     user,

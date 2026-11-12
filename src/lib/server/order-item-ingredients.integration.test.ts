@@ -255,6 +255,7 @@ describe("ADR 0020 — order_item_ingredients snapshot", () => {
     async () => {
       const branch = await seedBranch();
       const cashier = await seedUser("branch_admin", branch);
+      const admin = await seedUser("admin_pusat");
       const cat = await seedCategory();
       const ing = await seedIngredient();
       const recipe = await seedRecipe(cat, ing, 2);
@@ -284,7 +285,7 @@ describe("ADR 0020 — order_item_ingredients snapshot", () => {
 
       // Recipe edited after the sale, then the order is voided ("Salah Input").
       await setBomQty(recipe, ing, 5);
-      const voided = await posApi.voidOrderCore(cashier, {
+      const voided = await posApi.voidOrderCore(admin, {
         orderId: order.id,
         reason: "Salah input",
       });
@@ -397,7 +398,10 @@ describe("ADR 0020 — order_item_ingredients snapshot", () => {
       expect(await inventoryQty(branch, ing)).toBe(96);
 
       // The order was voided: its stock was restored by the void itself.
-      await db.update(schema.orders).set({ status: "Void" }).where(eq(schema.orders.id, order.id));
+      await db
+        .update(schema.orders)
+        .set({ status: "Void", voidReason: "migrasi test" })
+        .where(eq(schema.orders.id, order.id));
       await db
         .update(schema.inventory)
         .set({ quantity: 100 })

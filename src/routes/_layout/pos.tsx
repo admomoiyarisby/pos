@@ -20,11 +20,11 @@ import {
   requestReprint,
   getOrderWithItems,
   createCancelRequest,
-  executeApprovedCancel,
   consumePrintRequest,
   getActiveRequestsForOrders,
 } from "#/lib/server/pos";
 import { getBrands } from "#/lib/server/brands";
+import { deriveOrderActionState } from "#/lib/order-action-state";
 import { getBranches } from "#/lib/server/branches";
 import { getVouchers } from "#/lib/server/vouchers";
 import { getInventory } from "#/lib/server/inventory";
@@ -228,8 +228,7 @@ function PosPage() {
   let _u = useState<{
     orderId: string;
     reason: string;
-    mode?: "direct" | "request" | "execute";
-    requestId?: string;
+    mode?: "direct" | "request";
   } | null>(null);
   let voidModal = _u[0];
   let setVoidModal = _u[1];
@@ -699,19 +698,6 @@ function PosPage() {
     },
   });
 
-  let executeCancelMutation = useMutation({
-    mutationFn: executeApprovedCancel,
-    onSuccess: function () {
-      void queryClient.invalidateQueries({ queryKey: ["pos-recent-orders"] });
-      void queryClient.invalidateQueries({ queryKey: ["active-requests"] });
-      void queryClient.invalidateQueries({ queryKey: ["inventory"] });
-      setVoidModal(null);
-    },
-    onError: function (err) {
-      setCheckoutError(err instanceof Error ? err.message : "Gagal menjalankan pembatalan");
-    },
-  });
-
   let cartTotal = cart.reduce(function (sum, item) {
     return sum + item.price * item.quantity;
   }, 0);
@@ -1017,12 +1003,7 @@ function PosPage() {
 
   function handleVoid() {
     if (!voidModal) return;
-    if (voidModal.mode === "execute" && voidModal.requestId) {
-      // Cashier executing an approved cancel request
-      void executeCancelMutation.mutateAsync({
-        data: { requestId: voidModal.requestId },
-      });
-    } else if (voidModal.mode === "request") {
+    if (voidModal.mode === "request") {
       // Cashier requesting cancel approval
       // SAFETY: the reason select is required and only offers the three
       // literal options; the submit button is disabled until one is chosen.
@@ -1636,24 +1617,12 @@ function PosPage() {
                       recentOrders.map(function (o) {
                         const isVoid = o.status === "Void";
                         const req = activeRequestsMap[o.id];
-                        const printStatus = req?.print?.status ?? null;
-                        const cancelStatus = req?.cancel?.status ?? null;
-                        const printState = canDirectPrint
-                          ? "direct"
-                          : isVoid
-                            ? "hidden"
-                            : printStatus === "Approved"
-                              ? "active"
-                              : printStatus === "Pending"
-                                ? "pending"
-                                : "neutral";
-                        const cancelState = isVoid
-                          ? "hidden"
-                          : cancelStatus === "Approved"
-                            ? "active"
-                            : cancelStatus === "Pending"
-                              ? "pending"
-                              : "neutral";
+                        const action = deriveOrderActionState({
+                          status: o.status,
+                          canDirectPrint,
+                          printRequestStatus: req?.print?.status,
+                          cancelRequestStatus: req?.cancel?.status,
+                        });
                         const isExpanded = expandedOrderId === o.id;
                         return (
                           <div key={o.id}>
@@ -1711,30 +1680,30 @@ function PosPage() {
                                 <span className="text-sm font-semibold">
                                   Rp {o.totalAmount.toLocaleString("id-ID")}
                                 </span>
-                                {printState !== "hidden" && (
+                                {action.print !== "hidden" && (
                                   <button
                                     onClick={function (e: React.MouseEvent) {
                                       e.stopPropagation();
-                                      if (canDirectPrint) {
+                                      if (action.printIntent === "direct") {
                                         void printApprovedOrder(o.id);
                                         return;
                                       }
-                                      let rs = printStatus;
-                                      let rid = req?.print?.requestId;
-                                      if (rs === "Approved") {
-                                        if (rid)
+                                      if (action.printIntent === "consume-and-print") {
+                                        if (req?.print?.requestId)
                                           void consumePrintMutation.mutateAsync({
-                                            data: { requestId: rid },
+                                            data: { requestId: req.print.requestId },
                                           });
                                         void printApprovedOrder(o.id);
-                                      } else if (!rs || rs === "Rejected") handleReprint(o.id);
+                                      } else if (action.printIntent === "request") {
+                                        handleReprint(o.id);
+                                      }
                                     }}
-                                    disabled={printState === "pending"}
+                                    disabled={action.print === "pending"}
                                     className={
                                       "h-7 w-7 inline-flex items-center justify-center rounded-full border " +
-                                      (printState === "direct" || printState === "active"
+                                      (action.print === "direct" || action.print === "active"
                                         ? "bg-primary text-primary-foreground border-primary"
-                                        : printState === "pending"
+                                        : action.print === "pending"
                                           ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
                                           : "bg-card")
                                     }
@@ -1742,40 +1711,26 @@ function PosPage() {
                                     <Receipt className="h-3.5 w-3.5" />
                                   </button>
                                 )}
-                                {!canVoid && canRequestCancel && cancelState !== "hidden" && (
+                                {!canVoid && canRequestCancel && action.cancel !== "hidden" && (
                                   <button
                                     onClick={function (e: React.MouseEvent) {
                                       e.stopPropagation();
-                                      let cs = cancelStatus;
-                                      if (cs === "Approved" && req?.cancel?.requestId)
-                                        setVoidModal({
-                                          orderId: o.id,
-                                          reason: req?.cancel?.reason ?? "",
-                                          mode: "execute",
-                                          requestId: req.cancel.requestId,
-                                        });
-                                      else if (!cs || cs === "Rejected")
+                                      if (action.cancelIntent === "request")
                                         setVoidModal({
                                           orderId: o.id,
                                           reason: "",
                                           mode: "request",
                                         });
                                     }}
-                                    disabled={cancelState === "pending"}
+                                    disabled={action.cancel === "pending"}
                                     className={
                                       "h-7 px-1.5 inline-flex items-center justify-center rounded-full border text-[11px] font-medium " +
-                                      (cancelState === "active"
-                                        ? "bg-primary text-primary-foreground border-primary"
-                                        : cancelState === "pending"
-                                          ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
-                                          : "border-destructive/30 text-destructive")
+                                      (action.cancel === "pending"
+                                        ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
+                                        : "border-destructive/30 text-destructive")
                                     }
                                   >
-                                    {cancelState === "pending"
-                                      ? "..."
-                                      : cancelState === "active"
-                                        ? "Batal"
-                                        : "Btl"}
+                                    {action.cancel === "pending" ? "..." : "Btl"}
                                   </button>
                                 )}
                                 {canVoid && !isVoid && (
@@ -1984,39 +1939,35 @@ function PosPage() {
             totalPages={totalHistoryPages}
             onPageChange={setHistoryPage}
             onPrintClick={function (orderId: string) {
-              if (canDirectPrint) {
+              const req = activeRequestsMap[orderId];
+              const action = deriveOrderActionState({
+                canDirectPrint,
+                printRequestStatus: req?.print?.status,
+              });
+              if (action.printIntent === "direct") {
                 void printApprovedOrder(orderId);
                 return;
               }
-              let req = activeRequestsMap[orderId];
-              let printStatus = req?.print?.status;
-              let printRequestId = req?.print?.requestId;
-              if (printStatus === "Approved") {
-                if (printRequestId) {
+              if (action.printIntent === "consume-and-print") {
+                if (req?.print?.requestId) {
                   void consumePrintMutation.mutateAsync({
-                    data: { requestId: printRequestId },
+                    data: { requestId: req.print.requestId },
                   });
                 }
                 void printApprovedOrder(orderId);
-              } else if (!printStatus || printStatus === "Rejected") {
+              } else if (action.printIntent === "request") {
                 handleReprint(orderId);
               }
             }}
             onCancelClick={function (orderId: string) {
-              // State machine: null → open modal, Pending → no-op, Approved → open execute modal
-              let req = activeRequestsMap[orderId];
-              let cancelStatus = req?.cancel?.status;
-              if (cancelStatus === "Approved" && req?.cancel?.requestId) {
-                setVoidModal({
-                  orderId: orderId,
-                  reason: req?.cancel?.reason ?? "",
-                  mode: "execute",
-                  requestId: req.cancel.requestId,
-                });
-              } else if (!cancelStatus || cancelStatus === "Rejected") {
+              const req = activeRequestsMap[orderId];
+              const action = deriveOrderActionState({
+                canDirectPrint,
+                cancelRequestStatus: req?.cancel?.status,
+              });
+              if (action.cancelIntent === "request") {
                 setVoidModal({ orderId: orderId, reason: "", mode: "request" });
               }
-              // Pending → no-op
             }}
             onDirectVoid={function (orderId: string) {
               setVoidModal({ orderId: orderId, reason: "" });
@@ -2139,22 +2090,14 @@ function PosPage() {
         onClose={function () {
           setVoidModal(null);
         }}
-        title={
-          voidModal?.mode === "request"
-            ? "Minta Pembatalan"
-            : voidModal?.mode === "execute"
-              ? "Eksekusi Pembatalan"
-              : "Batalkan Pesanan"
-        }
+        title={voidModal?.mode === "request" ? "Minta Pembatalan" : "Batalkan Pesanan"}
         size="sm"
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
             {voidModal?.mode === "request"
               ? "Ajukan permintaan pembatalan pesanan ini. Area Manager akan menyetujui atau menolak permintaan Anda."
-              : voidModal?.mode === "execute"
-                ? "Apakah Anda yakin ingin membatalkan pesanan ini? Permintaan telah disetujui oleh Area Manager. Stok bahan baku akan dikembalikan."
-                : "Apakah Anda yakin ingin membatalkan pesanan ini? Stok bahan baku akan dikembalikan."}
+              : "Apakah Anda yakin ingin membatalkan pesanan ini? Stok bahan baku akan dikembalikan."}
           </p>
           <div className="space-y-2">
             <label className="text-sm font-medium">Alasan Pembatalan</label>
@@ -2187,7 +2130,6 @@ function PosPage() {
                 }}
                 placeholder="Alasan pembatalan..."
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                readOnly={voidModal?.mode === "execute"}
               />
             )}
           </div>
@@ -2205,16 +2147,11 @@ function PosPage() {
               type="button"
               onClick={handleVoid}
               disabled={
-                !voidModal?.reason ||
-                voidOrderMutation.isPending ||
-                cancelRequestMutation.isPending ||
-                executeCancelMutation.isPending
+                !voidModal?.reason || voidOrderMutation.isPending || cancelRequestMutation.isPending
               }
               className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
             >
-              {voidOrderMutation.isPending ||
-              cancelRequestMutation.isPending ||
-              executeCancelMutation.isPending
+              {voidOrderMutation.isPending || cancelRequestMutation.isPending
                 ? "Memproses..."
                 : voidModal?.mode === "request"
                   ? "Ajukan Permintaan"

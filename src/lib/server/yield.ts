@@ -14,6 +14,7 @@ import {
 } from "#/db/schema";
 import { and, eq, inArray, desc, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { requireOpenPeriod } from "./period-lock";
 import type { AppUser } from "./auth";
 import { formatJakartaDateTime, parseDateOnlyInput } from "#/lib/utils";
 import { logSystemAction, logAudit } from "./logging";
@@ -287,6 +288,8 @@ export async function createYieldConversionCore(
     confirmDuplicate?: boolean;
   },
 ) {
+  await requireOpenPeriod(user);
+
   if (!["super_admin", "central_kitchen", "branch_admin"].includes(user.role)) {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | central_kitchen | branch_admin)`,
@@ -481,6 +484,8 @@ export async function requestYieldCancelCore(
   user: AppUser,
   data: { yieldConversionId: string; reason: string; detail?: string },
 ) {
+  await requireOpenPeriod(user);
+
   if (!["branch_admin", "central_kitchen", "super_admin"].includes(user.role)) {
     throw new Error(
       "Unauthorized: only branch_admin, central_kitchen, or super_admin may request cancel",
@@ -636,6 +641,8 @@ export const approveYieldCancelRequest = createServerFn({ method: "POST" })
   });
 
 export async function approveYieldCancelRequestCore(user: AppUser, data: { requestId: string }) {
+  await requireOpenPeriod(user);
+
   if (!["super_admin", "area_manager"].includes(user.role)) {
     throw new Error("Unauthorized: only super_admin or area_manager may approve");
   }
@@ -666,12 +673,22 @@ export async function approveYieldCancelRequestCore(user: AppUser, data: { reque
   }
 
   const updatedReq = await db.transaction(async (tx) => {
+    // Claim the request: only the caller whose conditional UPDATE moves it out
+    // of Pending may cancel the production and reverse its stock. A second
+    // concurrent approval matches nothing and rolls back, so the same quantity
+    // cannot be restored twice.
     const [r] = await tx
       .update(yieldCancelRequests)
       .set({ status: "Approved", approvedBy: user.id, approvedAt: new Date() })
-      .where(eq(yieldCancelRequests.id, data.requestId))
+      .where(
+        and(eq(yieldCancelRequests.id, data.requestId), eq(yieldCancelRequests.status, "Pending")),
+      )
       .returning();
-    await tx
+    if (!r) throw new Error("Request sudah diproses");
+
+    // Claim the production too: a production already cancelled by another path
+    // (direct cancel, or an earlier request) must not be reversed again.
+    const [cancelled] = await tx
       .update(yieldConversions)
       .set({
         status: "Cancelled",
@@ -679,7 +696,12 @@ export async function approveYieldCancelRequestCore(user: AppUser, data: { reque
         cancelledBy: user.id,
         cancelReason: req.reason,
       })
-      .where(eq(yieldConversions.id, req.yieldConversionId));
+      .where(
+        and(eq(yieldConversions.id, req.yieldConversionId), eq(yieldConversions.status, "Active")),
+      )
+      .returning();
+    if (!cancelled) throw new Error("Produksi sudah dibatalkan");
+
     // Reverse the stock mutation (restore OUT, deduct PRODUCED) — ADR 0012.
     await reverseYieldStockEffect(tx, req.yieldConversionId, yc.branchId);
     return r;
@@ -714,6 +736,8 @@ export const rejectYieldCancelRequest = createServerFn({ method: "POST" })
   });
 
 export async function rejectYieldCancelRequestCore(user: AppUser, data: { requestId: string }) {
+  await requireOpenPeriod(user);
+
   if (!["super_admin", "area_manager"].includes(user.role)) {
     throw new Error("Unauthorized: only super_admin or area_manager may reject");
   }
@@ -772,6 +796,8 @@ export async function directCancelYieldConversionCore(
   user: AppUser,
   data: { yieldConversionId: string; reason: string },
 ) {
+  await requireOpenPeriod(user);
+
   // Mirrors the wrapper's requireRole("super_admin").
   if (user.role !== "super_admin") {
     throw new Error(
@@ -789,9 +815,11 @@ export async function directCancelYieldConversionCore(
   if (!yc) throw new Error("Produksi tidak ditemukan");
   if (yc.status === "Cancelled") throw new Error("Produksi sudah dibatalkan");
 
-  // Cancel + stock reversal in one transaction (ADR 0012).
+  // Cancel + stock reversal in one transaction (ADR 0012). The conditional
+  // update is the claim: a concurrent cancel (direct or via an approved
+  // request) matches nothing and rolls back before touching stock.
   const updated = await db.transaction(async (tx) => {
-    const [updated] = await tx
+    const [cancelled] = await tx
       .update(yieldConversions)
       .set({
         status: "Cancelled",
@@ -799,10 +827,14 @@ export async function directCancelYieldConversionCore(
         cancelledBy: user.id,
         cancelReason: reason,
       })
-      .where(eq(yieldConversions.id, data.yieldConversionId))
+      .where(
+        and(eq(yieldConversions.id, data.yieldConversionId), eq(yieldConversions.status, "Active")),
+      )
       .returning();
+    if (!cancelled) throw new Error("Produksi sudah dibatalkan");
+
     await reverseYieldStockEffect(tx, data.yieldConversionId, yc.branchId);
-    return updated;
+    return cancelled;
   });
 
   await logSystemAction(
@@ -832,6 +864,7 @@ export const softDeleteYieldConversion = createServerFn({ method: "POST" })
   .validator((data: { yieldConversionId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
+    await requireOpenPeriod(user);
 
     const [existing] = await db
       .select()

@@ -3,12 +3,13 @@
 // ============================================================
 
 import { useState } from "react";
-import { Printer, X, Clock, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
+import { Printer, X, Clock, ChevronDown, ChevronRight } from "lucide-react";
 import type { OrderResult } from "#/lib/pos-types";
 import OrderItemsTray from "#/components/pos/OrderItemsTray";
 import HistoryDateFilter from "#/components/pos/HistoryDateFilter";
 import HistoryPagination from "#/components/pos/HistoryPagination";
 import { ORDER_CHANNEL_OPTIONS, channelLabel } from "#/lib/order-channels";
+import { deriveOrderActionState } from "#/lib/order-action-state";
 import type { ORDER_CHANNEL_VALUES } from "#/db/schema";
 
 type OrderChannel = (typeof ORDER_CHANNEL_VALUES)[number];
@@ -118,29 +119,13 @@ export default function OrderHistory({
           recentOrders.map(function (o: any) {
             const isVoid = o.status === "Void";
             const req = activeRequests[o.id];
-            const printStatus = req?.print?.status ?? null;
-            const cancelStatus = req?.cancel?.status ?? null;
             const isExpanded = expandedId === o.id;
-
-            // Print button: neutral | pending | active | direct
-            const printState = canDirectPrint
-              ? "direct"
-              : isVoid
-                ? "hidden"
-                : printStatus === "Approved"
-                  ? "active"
-                  : printStatus === "Pending"
-                    ? "pending"
-                    : "neutral";
-
-            // Cancel button: neutral | pending | active | hidden
-            const cancelState = isVoid
-              ? "hidden"
-              : cancelStatus === "Approved"
-                ? "active"
-                : cancelStatus === "Pending"
-                  ? "pending"
-                  : "neutral";
+            const action = deriveOrderActionState({
+              status: o.status,
+              canDirectPrint,
+              printRequestStatus: req?.print?.status,
+              cancelRequestStatus: req?.cancel?.status,
+            });
 
             return (
               <div key={o.id} className="border-b border-dashed last:border-0">
@@ -203,14 +188,14 @@ export default function OrderHistory({
                     </span>
 
                     {/* ── Print button ── */}
-                    {printState !== "hidden" && (
+                    {action.print !== "hidden" && (
                       <span
                         title={
-                          printState === "direct"
+                          action.print === "direct"
                             ? "Cetak"
-                            : printState === "pending"
+                            : action.print === "pending"
                               ? "Menunggu persetujuan..."
-                              : printState === "active"
+                              : action.print === "active"
                                 ? "Klik untuk cetak"
                                 : "Minta cetak ulang"
                         }
@@ -220,12 +205,12 @@ export default function OrderHistory({
                             e.stopPropagation();
                             onPrintClick(o.id);
                           }}
-                          disabled={printState === "pending"}
+                          disabled={action.print === "pending"}
                           className={
                             "h-5 w-5 inline-flex items-center justify-center rounded border transition-colors " +
-                            (printState === "direct" || printState === "active"
+                            (action.print === "direct" || action.print === "active"
                               ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
-                              : printState === "pending"
+                              : action.print === "pending"
                                 ? "bg-warning/10 text-warning border-warning/30 cursor-not-allowed"
                                 : "text-muted-foreground hover:bg-accent")
                           }
@@ -236,14 +221,12 @@ export default function OrderHistory({
                     )}
 
                     {/* ── Cancel button (state machine, branch_admin) ── */}
-                    {!canVoid && canRequestCancel && cancelState !== "hidden" && (
+                    {!canVoid && canRequestCancel && action.cancel !== "hidden" && (
                       <span
                         title={
-                          cancelState === "pending"
+                          action.cancel === "pending"
                             ? "Menunggu persetujuan..."
-                            : cancelState === "active"
-                              ? "Klik untuk batalkan"
-                              : "Minta pembatalan"
+                            : "Minta pembatalan"
                         }
                       >
                         <button
@@ -251,23 +234,15 @@ export default function OrderHistory({
                             e.stopPropagation();
                             onCancelClick(o.id);
                           }}
-                          disabled={cancelState === "pending"}
+                          disabled={action.cancel === "pending"}
                           className={
                             "h-5 px-1.5 inline-flex items-center justify-center rounded border text-[10px] font-medium transition-colors " +
-                            (cancelState === "active"
-                              ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
-                              : cancelState === "pending"
-                                ? "bg-warning/10 text-warning border-warning/30 cursor-not-allowed"
-                                : "text-destructive hover:bg-destructive/10 border-destructive/30")
+                            (action.cancel === "pending"
+                              ? "bg-warning/10 text-warning border-warning/30 cursor-not-allowed"
+                              : "text-destructive hover:bg-destructive/10 border-destructive/30")
                           }
                         >
-                          {cancelState === "pending" ? (
-                            <Clock className="h-2.5 w-2.5" />
-                          ) : cancelState === "active" ? (
-                            <CheckCircle2 className="h-2.5 w-2.5" />
-                          ) : (
-                            "Btl"
-                          )}
+                          {action.cancel === "pending" ? <Clock className="h-2.5 w-2.5" /> : "Btl"}
                         </button>
                       </span>
                     )}

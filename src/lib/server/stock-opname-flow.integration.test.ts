@@ -211,7 +211,9 @@ describe("Stock opname — full lifecycle via the real server-function cores", (
         branchId: branch,
         date: "2026-08-25",
       });
-      expect(so.status).toBe("Submitted");
+      // A fresh sheet is Triggered (snapshot taken, nothing counted), not
+      // Submitted. The two states used to be conflated.
+      expect(so.status).toBe("Triggered");
       expect(so.triggeredBy).toBe(ba.id);
 
       let item = await firstItem(so.id);
@@ -280,6 +282,7 @@ describe("Stock opname — full lifecycle via the real server-function cores", (
       expect(realized.success).toBe(true);
       expect(await getStock(branch, ingredient)).toBe(8);
       st = await soStatus(so.id);
+      expect(st.status).toBe("Realized");
       expect(st.realizedAt).toBeTruthy();
 
       const ledger = await db
@@ -356,6 +359,41 @@ describe("Stock opname — state guards", () => {
       // Already approved → cannot re-approve
       await expect(inv.approveStockOpnameCore(am, { soId: so.id })).rejects.toThrow(
         "Stock opname sudah di-approve",
+      );
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "approved and realized sheets are locked against further counts",
+    async () => {
+      const { so, ba, am, superAdmin } = await seededSo();
+      const item = await firstItem(so.id);
+
+      await inv.submitStockOpnameCore(ba, {
+        soId: so.id,
+        items: [{ itemId: item.id, physicalStock: 8 }],
+      });
+      await inv.approveStockOpnameCore(am, { soId: so.id });
+
+      // Approved: counts are signed off, submit is refused.
+      await expect(
+        inv.submitStockOpnameCore(ba, {
+          soId: so.id,
+          items: [{ itemId: item.id, physicalStock: 7 }],
+        }),
+      ).rejects.toThrow("tidak dapat di-submit");
+
+      // Realized: terminal. Neither counts nor a second approve may move it.
+      await inv.realizeStockOpnameCore(superAdmin, { soId: so.id });
+      expect((await soStatus(so.id)).status).toBe("Realized");
+      await expect(
+        inv.submitStockOpnameCore(ba, {
+          soId: so.id,
+          items: [{ itemId: item.id, physicalStock: 6 }],
+        }),
+      ).rejects.toThrow("tidak dapat di-submit");
+      await expect(inv.approveStockOpnameCore(am, { soId: so.id })).rejects.toThrow(
+        "Stock Opname sudah di-realize",
       );
     },
   );
@@ -918,7 +956,7 @@ describe("Stock opname — wrong-role and wrong-branch actors are rejected", () 
         .select()
         .from(schema.stockOpnames)
         .where(eq(schema.stockOpnames.id, so.id));
-      expect(row.status).toBe("Submitted");
+      expect(row.status).toBe("Triggered");
       expect(row.approvedBy).toBeNull();
     },
   );

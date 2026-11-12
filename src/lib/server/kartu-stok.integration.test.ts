@@ -719,7 +719,7 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
-    "P3: executeApprovedCancel (Pending→Approved→Executed) voids via same IN ledger path as P2",
+    "P3: approved cancel request (Pending→Executed) voids via same IN ledger path as P2",
     async () => {
       await withTx(async (db) => {
         const branchId = await createBranch(db, suid("BR-P3"));
@@ -732,7 +732,6 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
         await setInventory(db, branchId, ingId, 60);
         const orderId = crypto.randomUUID();
         const requesterId = await createUser(db, branchId, "branch_admin");
-        const approverId = await createUser(db, branchId, "area_manager");
         // Simulate order creation (deduct 8)
         await db.insert(schema.orders).values({
           id: orderId,
@@ -765,7 +764,7 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
           balance: 52,
           reference: orderId,
         });
-        // Create cancel request Pending -> Approved -> Executed (state machine)
+        // Approval executes the cancellation: Pending -> Executed.
         const crId = crypto.randomUUID();
         await db.insert(schema.cancelRequests).values({
           id: crId,
@@ -774,10 +773,6 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
           requestedBy: requesterId,
           status: "Pending",
         });
-        await db
-          .update(schema.cancelRequests)
-          .set({ status: "Approved", approvedBy: approverId })
-          .where(eq(schema.cancelRequests.id, crId));
         // Execute: void via same resolver path as P2
         const { resolvePersistedItemIngredients } = await import("./ingredient-resolver");
         const resolved = await resolvePersistedItemIngredients(oiId, { tx: db });
@@ -786,7 +781,10 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
           .update(schema.cancelRequests)
           .set({ status: "Executed" })
           .where(eq(schema.cancelRequests.id, crId));
-        await db.update(schema.orders).set({ status: "Void" }).where(eq(schema.orders.id, orderId));
+        await db
+          .update(schema.orders)
+          .set({ status: "Void", voidReason: "migrasi test" })
+          .where(eq(schema.orders.id, orderId));
         const [invPre] = await db
           .select()
           .from(schema.inventory)
@@ -2202,10 +2200,10 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
         // Not Approved status — realize should be rejected by business rule (but our direct ledger test just proves no auto-ledger)
         const ledgersBefore = await ledgerRows(db, `SO:${soId}`);
         expect(ledgersBefore).toHaveLength(0);
-        // Already realized guard: set realizedAt
+        // Already realized guard: status and stamp move together (0070)
         await db
           .update(schema.stockOpnames)
-          .set({ realizedAt: new Date() })
+          .set({ status: "Realized", realizedAt: new Date() })
           .where(eq(schema.stockOpnames.id, soId));
         const [so] = await db
           .select()
@@ -2939,6 +2937,7 @@ describe.skipIf(!hasTestDatabaseUrl)("Kartu Stok (stock_ledger) — per-path led
           productionDate: new Date(),
           processedBy: await createUser(db, branchId, "super_admin"),
           status: "Cancelled",
+          cancelledAt: new Date(),
         });
         await db.insert(schema.yieldConversionItems).values([
           { conversionId: convId, ingredientId: ingOutId, quantity: 10, direction: "OUT" },

@@ -137,6 +137,13 @@ describe("Users — full lifecycle via the real server-function cores", () => {
       expect(account.password).toBeTruthy();
 
       // 2. Update the branch admin — name + status
+      // A live session from before the suspension must not survive it.
+      await db.insert(schema.session).values({
+        id: crypto.randomUUID(),
+        token: crypto.randomUUID(),
+        userId: ba.userId,
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
       const updated = await usersApi.updateUserCore(superAdmin, {
         id: ba.userId,
         name: "Branch Admin Satu (Updated)",
@@ -149,6 +156,9 @@ describe("Users — full lifecycle via the real server-function cores", () => {
         .where(eq(schema.users.id, ba.userId));
       expect(afterUpdate.name).toBe("Branch Admin Satu (Updated)");
       expect(afterUpdate.status).toBe("Inactive");
+      expect(
+        await db.select().from(schema.session).where(eq(schema.session.userId, ba.userId)),
+      ).toHaveLength(0);
 
       // 3. Create an area manager with assigned branches
       const am = await usersApi.createUserCore(superAdmin, {

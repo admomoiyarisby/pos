@@ -265,7 +265,7 @@ function PeriodControlPage() {
                         linkTo = {
                           to: "/order-history",
                           label: "Buka Riwayat Pesanan",
-                          search: { status: "Cancel Requested" },
+                          search: { status: "New" },
                         };
                       else if (name.includes("mutasi stok"))
                         linkTo = {

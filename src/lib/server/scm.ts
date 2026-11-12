@@ -27,6 +27,8 @@ import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { lineAmount } from "#/lib/utils";
 import { requireAuth, requireRole } from "./auth";
+import { requireOpenPeriod } from "./period-lock";
+import { scmInvoiceLifecycle } from "#/lib/lifecycles";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
@@ -166,6 +168,8 @@ export async function createPurchaseRequisitionCore(
     notes?: string;
   },
 ) {
+  await requireOpenPeriod(user);
+
   const branchId = data.branchId || (user.role === "branch_admin" ? user.branchId : undefined);
   if (!branchId) throw new Error("Branch is required");
 
@@ -247,6 +251,8 @@ export async function updatePurchaseRequisitionCore(
     rejectionReason?: string;
   },
 ) {
+  await requireOpenPeriod(user);
+
   const { id, items, status, rejectionReason } = data;
 
   const [oldPr] = await db
@@ -342,6 +348,8 @@ export async function processPurchaseRequisitionCore(
   user: AppUser,
   data: { id: string; alsoCreateSJ: boolean; driverName?: string; vehicleNumber?: string },
 ) {
+  await requireOpenPeriod(user);
+
   if (!["area_manager", "admin_pusat", "super_admin"].includes(user.role)) {
     throw new Error("Forbidden: insufficient role to process PR");
   }
@@ -518,6 +526,8 @@ export async function createPurchaseOrderCore(
     notes?: string;
   },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -635,6 +645,8 @@ export const sendPurchaseOrder = createServerFn({ method: "POST" })
   });
 
 export async function sendPurchaseOrderCore(user: AppUser, data: { id: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -673,6 +685,8 @@ export async function receivePurchaseOrderCore(
   user: AppUser,
   data: { id: string; items: { itemId: string; receivedQuantity: number }[] },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -730,6 +744,8 @@ export const cancelPurchaseOrder = createServerFn({ method: "POST" })
   });
 
 export async function cancelPurchaseOrderCore(user: AppUser, data: { id: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -857,6 +873,8 @@ export async function createDeliveryNoteCore(
     items: { ingredientId: string; quantity: number; readyQuantity: number }[];
   },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -931,6 +949,8 @@ export async function updateDeliveryNoteCore(
     vehicleNumber?: string;
   },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -980,6 +1000,8 @@ export const shipDeliveryNote = createServerFn({ method: "POST" })
   });
 
 export async function shipDeliveryNoteCore(user: AppUser, data: { dnId: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1109,239 +1131,273 @@ export async function receiveDeliveryNoteCore(
     }[];
   },
 ) {
-  const [dn] = await db
-    .select()
-    .from(deliveryNotes)
-    .where(eq(deliveryNotes.id, data.dnId))
-    .limit(1);
+  await requireOpenPeriod(user);
 
-  if (!dn) throw new Error("Delivery note not found");
-  if (!["In Transit", "Partial Received"].includes(dn.status)) {
-    throw new Error("SJ must be In Transit or Partial Received to receive");
-  }
-
-  const dnItems = await db
-    .select()
-    .from(deliveryNoteItems)
-    .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
-
-  // Validate quantities
-  for (const item of data.items) {
-    const dnItem = dnItems.find((i) => i.id === item.itemId);
-    if (!dnItem) throw new Error("Invalid item ID");
-
-    const pickedQty = dnItem.pickedQuantity ?? dnItem.quantity;
-    if (item.receivedQuantity + item.rejectedQuantity > pickedQty) {
-      throw new Error(
-        `Item ${dnItem.ingredientId}: Diterima (${item.receivedQuantity}) + Reject (${item.rejectedQuantity}) tidak boleh melebihi jumlah dikirim (${pickedQty})`,
-      );
-    }
-  }
-
-  // Process each item
-  console.log(`[receiveDeliveryNote] Processing ${data.items.length} items for DN ${data.dnId}`);
-  for (const item of data.items) {
-    console.log(
-      `[receiveDeliveryNote] Processing item ${item.itemId}: received=${item.receivedQuantity}, rejected=${item.rejectedQuantity}`,
-    );
-    await db
-      .update(deliveryNoteItems)
-      .set({
-        receivedQuantity: item.receivedQuantity,
-        rejectedQuantity: item.rejectedQuantity,
-        rejectionDisposition: item.rejectionDisposition,
-        discrepancyNote: item.discrepancyNote,
-      })
-      .where(eq(deliveryNoteItems.id, item.itemId));
-
-    const dnItem = dnItems.find((i) => i.id === item.itemId)!;
-    const ingredientId = dnItem.ingredientId;
-
-    // Add received to destination inventory
-    console.log(
-      `[receiveDeliveryNote] Updating inventory for ingredient ${ingredientId} at branch ${dn.toBranchId}`,
-    );
-    const [targetInv] = await db
+  // Receiving is cumulative and idempotent: the form prefills each line with
+  // the totals recorded so far, so only the DELTA between the payload and the
+  // persisted row may move stock. Locking the document row serializes
+  // concurrent submissions; the status check at the top and the per-line
+  // "cannot go backwards" guard make a double tap a no-op instead of a second
+  // stock IN. The whole receive is one transaction so a failure halfway through
+  // leaves neither partial inventory nor a half-settled in-transit row.
+  const outcome = await db.transaction(async (tx) => {
+    const [dn] = await tx
       .select()
-      .from(inventory)
-      .where(and(eq(inventory.branchId, dn.toBranchId), eq(inventory.ingredientId, ingredientId)))
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .for("update")
       .limit(1);
 
-    if (targetInv) {
-      const newQty = targetInv.quantity + item.receivedQuantity;
-      console.log(
-        `[receiveDeliveryNote] Updating existing inventory: ${targetInv.quantity} → ${newQty}`,
-      );
-      await db
-        .update(inventory)
-        .set({ quantity: newQty, lastUpdated: new Date() })
-        .where(eq(inventory.id, targetInv.id));
-
-      await db.insert(stockLedger).values({
-        branchId: dn.toBranchId,
-        ingredientId,
-        type: "IN",
-        quantity: item.receivedQuantity,
-        balance: newQty,
-        reference: data.dnId,
-        notes: `SJ Terima ${dn.code}${item.rejectedQuantity > 0 ? ` (Reject: ${item.rejectedQuantity})` : ""}`,
-      });
-    } else {
-      console.log(`[receiveDeliveryNote] Creating new inventory entry: ${item.receivedQuantity}`);
-      await db.insert(inventory).values({
-        branchId: dn.toBranchId,
-        ingredientId,
-        quantity: item.receivedQuantity,
-      });
-
-      await db.insert(stockLedger).values({
-        branchId: dn.toBranchId,
-        ingredientId,
-        type: "IN",
-        quantity: item.receivedQuantity,
-        balance: item.receivedQuantity,
-        reference: data.dnId,
-        notes: `SJ Terima ${dn.code}`,
-      });
+    if (!dn) throw new Error("Delivery note not found");
+    if (!["In Transit", "Partial Received"].includes(dn.status)) {
+      throw new Error("SJ must be In Transit or Partial Received to receive");
     }
 
-    // Handle rejected quantity disposition
-    if (item.rejectedQuantity > 0) {
-      if (item.rejectionDisposition === "Return to Source") {
-        // Return stock to source branch
-        const [sourceInv] = await db
-          .select()
+    const dnItems = await tx
+      .select()
+      .from(deliveryNoteItems)
+      .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
+    const itemById = new Map(dnItems.map((item) => [item.id, item]));
+
+    // Validate before any write: ids must belong to this document, each line
+    // may appear once, totals may not exceed the picked quantity, and a line
+    // cannot be reduced — a quantity whose stock was already booked cannot be
+    // retracted by re-submitting a smaller number.
+    const seen = new Set<string>();
+    for (const item of data.items) {
+      if (seen.has(item.itemId)) throw new Error("Item duplikat pada payload penerimaan");
+      seen.add(item.itemId);
+
+      const dnItem = itemById.get(item.itemId);
+      if (!dnItem) throw new Error("Invalid item ID");
+
+      const pickedQty = dnItem.pickedQuantity ?? dnItem.quantity;
+      if (item.receivedQuantity + item.rejectedQuantity > pickedQty) {
+        throw new Error(
+          `Item ${dnItem.ingredientId}: Diterima (${item.receivedQuantity}) + Reject (${item.rejectedQuantity}) tidak boleh melebihi jumlah dikirim (${pickedQty})`,
+        );
+      }
+      const prevReceived = dnItem.receivedQuantity ?? 0;
+      if (item.receivedQuantity < prevReceived) {
+        throw new Error(
+          `Item ${dnItem.ingredientId}: jumlah diterima tidak boleh lebih kecil dari yang sudah tercatat (${prevReceived})`,
+        );
+      }
+      const prevRejected = dnItem.rejectedQuantity ?? 0;
+      if (item.rejectedQuantity < prevRejected) {
+        throw new Error(
+          `Item ${dnItem.ingredientId}: jumlah ditolak tidak boleh lebih kecil dari yang sudah tercatat (${prevRejected})`,
+        );
+      }
+    }
+
+    const touchedIngredientIds: string[] = [];
+
+    for (const item of data.items) {
+      const dnItem = itemById.get(item.itemId)!;
+      const ingredientId = dnItem.ingredientId;
+      touchedIngredientIds.push(ingredientId);
+
+      const prevReceived = dnItem.receivedQuantity ?? 0;
+      const prevRejected = dnItem.rejectedQuantity ?? 0;
+      const deltaReceived = item.receivedQuantity - prevReceived;
+      const deltaRejected = item.rejectedQuantity - prevRejected;
+      const newRejected = item.rejectedQuantity;
+      const newDisposition =
+        newRejected > 0
+          ? (item.rejectionDisposition ?? dnItem.rejectionDisposition ?? "Return to Source")
+          : null;
+
+      await tx
+        .update(deliveryNoteItems)
+        .set({
+          receivedQuantity: item.receivedQuantity,
+          rejectedQuantity: item.rejectedQuantity,
+          rejectionDisposition: newDisposition,
+          discrepancyNote: item.discrepancyNote ?? dnItem.discrepancyNote,
+        })
+        .where(eq(deliveryNoteItems.id, item.itemId));
+
+      // Only the newly received quantity enters destination inventory. The
+      // upsert is atomic, so two documents touching the same ingredient cannot
+      // lose each other's increment.
+      let destQty: number;
+      if (deltaReceived > 0) {
+        const [dest] = await tx
+          .insert(inventory)
+          .values({
+            branchId: dn.toBranchId,
+            ingredientId,
+            quantity: deltaReceived,
+          })
+          .onConflictDoUpdate({
+            target: [inventory.branchId, inventory.ingredientId],
+            set: {
+              quantity: sql`${inventory.quantity} + ${deltaReceived}`,
+              lastUpdated: new Date(),
+            },
+          })
+          .returning({ quantity: inventory.quantity });
+        destQty = dest.quantity;
+
+        await tx.insert(stockLedger).values({
+          branchId: dn.toBranchId,
+          ingredientId,
+          type: "IN",
+          quantity: deltaReceived,
+          balance: destQty,
+          reference: data.dnId,
+          notes: `SJ Terima ${dn.code}${newRejected > 0 ? ` (Reject: ${newRejected})` : ""}`,
+        });
+      } else {
+        const [dest] = await tx
+          .select({ quantity: inventory.quantity })
           .from(inventory)
           .where(
-            and(eq(inventory.branchId, dn.fromBranchId), eq(inventory.ingredientId, ingredientId)),
+            and(eq(inventory.branchId, dn.toBranchId), eq(inventory.ingredientId, ingredientId)),
           )
           .limit(1);
+        destQty = dest?.quantity ?? 0;
+      }
 
-        if (sourceInv) {
-          const newQty = sourceInv.quantity + item.rejectedQuantity;
-          await db
-            .update(inventory)
-            .set({ quantity: newQty, lastUpdated: new Date() })
-            .where(eq(inventory.id, sourceInv.id));
+      // Rejected stock never entered the destination. Only the increment is
+      // dispositioned, so a second submission cannot return or scrap the same
+      // units twice.
+      if (deltaRejected > 0) {
+        if (newDisposition === "Return to Source") {
+          const [source] = await tx
+            .insert(inventory)
+            .values({
+              branchId: dn.fromBranchId,
+              ingredientId,
+              quantity: deltaRejected,
+            })
+            .onConflictDoUpdate({
+              target: [inventory.branchId, inventory.ingredientId],
+              set: {
+                quantity: sql`${inventory.quantity} + ${deltaRejected}`,
+                lastUpdated: new Date(),
+              },
+            })
+            .returning({ quantity: inventory.quantity });
 
-          await db.insert(stockLedger).values({
+          await tx.insert(stockLedger).values({
             branchId: dn.fromBranchId,
             ingredientId,
             type: "IN",
-            quantity: item.rejectedQuantity,
-            balance: newQty,
+            quantity: deltaRejected,
+            balance: source.quantity,
             reference: data.dnId,
             notes: `SJ Return Reject ${dn.code}`,
-          });
-        } else {
-          await db.insert(inventory).values({
-            branchId: dn.fromBranchId,
-            ingredientId,
-            quantity: item.rejectedQuantity,
           });
 
-          await db.insert(stockLedger).values({
-            branchId: dn.fromBranchId,
+          // Informational OUT at the receiver: the stock never landed here.
+          await tx.insert(stockLedger).values({
+            branchId: dn.toBranchId,
             ingredientId,
-            type: "IN",
-            quantity: item.rejectedQuantity,
-            balance: item.rejectedQuantity,
+            type: "OUT",
+            quantity: deltaRejected,
+            balance: destQty,
             reference: data.dnId,
-            notes: `SJ Return Reject ${dn.code}`,
+            notes: `SJ Reject OUT ${dn.code}`,
+          });
+        } else if (newDisposition === "Scrap") {
+          await tx.insert(wasteEntries).values({
+            branchId: dn.toBranchId,
+            ingredientId,
+            quantity: deltaRejected,
+            category: "Biaya Operasional",
+            notes: `Reject dari SJ ${dn.code}`,
+            submittedBy: user.id,
+          });
+
+          await tx.insert(stockLedger).values({
+            branchId: dn.toBranchId,
+            ingredientId,
+            type: "OUT",
+            quantity: deltaRejected,
+            balance: destQty,
+            reference: data.dnId,
+            notes: `SJ Reject Scrap ${dn.code}`,
           });
         }
-
-        // Also create an OUT ledger at destination for the rejected amount
-        await db.insert(stockLedger).values({
-          branchId: dn.toBranchId,
-          ingredientId,
-          type: "OUT",
-          quantity: item.rejectedQuantity,
-          balance: (targetInv?.quantity ?? 0) + item.receivedQuantity - item.rejectedQuantity,
-          reference: data.dnId,
-          notes: `SJ Reject OUT ${dn.code}`,
-        });
-      } else if (item.rejectionDisposition === "Scrap") {
-        // Create waste entry
-        await db.insert(wasteEntries).values({
-          branchId: dn.toBranchId,
-          ingredientId,
-          quantity: item.rejectedQuantity,
-          category: "Biaya Operasional",
-          notes: `Reject dari SJ ${dn.code}`,
-          submittedBy: user.id,
-        });
-
-        await db.insert(stockLedger).values({
-          branchId: dn.toBranchId,
-          ingredientId,
-          type: "OUT",
-          quantity: item.rejectedQuantity,
-          balance: (targetInv?.quantity ?? 0) + item.receivedQuantity - item.rejectedQuantity,
-          reference: data.dnId,
-          notes: `SJ Reject Scrap ${dn.code}`,
-        });
+        // Quarantine: named disposition with no bucket yet (ADR 0018 note).
       }
-      // Quarantine: for now just track in ledger; future enhancement can add quarantine table
+
+      // Draw down in-transit by what this submission settled. A partial receive
+      // keeps the remainder in transit instead of deleting the whole row.
+      const settled = deltaReceived + deltaRejected;
+      if (settled > 0) {
+        const transitRows = await tx
+          .select()
+          .from(inTransitInventory)
+          .where(
+            and(
+              eq(inTransitInventory.deliveryNoteId, data.dnId),
+              eq(inTransitInventory.ingredientId, ingredientId),
+            ),
+          );
+        let remainingToSettle = settled;
+        for (const row of transitRows) {
+          if (remainingToSettle <= 0) break;
+          const take = Math.min(row.quantity, remainingToSettle);
+          remainingToSettle -= take;
+          const left = row.quantity - take;
+          if (left <= 0) {
+            await tx.delete(inTransitInventory).where(eq(inTransitInventory.id, row.id));
+          } else {
+            await tx
+              .update(inTransitInventory)
+              .set({ quantity: left })
+              .where(eq(inTransitInventory.id, row.id));
+          }
+        }
+      }
     }
 
-    // Remove from in-transit
-    await db
-      .delete(inTransitInventory)
-      .where(
-        and(
-          eq(inTransitInventory.deliveryNoteId, data.dnId),
-          eq(inTransitInventory.ingredientId, ingredientId),
-        ),
-      );
-  }
+    const updatedItems = await tx
+      .select()
+      .from(deliveryNoteItems)
+      .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
 
-  // Determine if fully received
-  const updatedItems = await db
-    .select()
-    .from(deliveryNoteItems)
-    .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
+    const allFullyReceived = updatedItems.every((item) => {
+      const picked = item.pickedQuantity ?? item.quantity;
+      return (item.receivedQuantity ?? 0) + (item.rejectedQuantity ?? 0) >= picked;
+    });
 
-  const allFullyReceived = updatedItems.every((item) => {
-    const picked = item.pickedQuantity ?? item.quantity;
-    return (item.receivedQuantity ?? 0) + (item.rejectedQuantity ?? 0) >= picked;
+    const newStatus = allFullyReceived ? "Received" : "Partial Received";
+
+    await tx
+      .update(deliveryNotes)
+      .set({
+        status: newStatus,
+        receivedBy: user.id,
+        receivedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(deliveryNotes.id, data.dnId));
+
+    const [updatedDn] = await tx
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .limit(1);
+
+    return { dn, updatedDn, newStatus, touchedIngredientIds };
   });
 
-  const newStatus = allFullyReceived ? "Received" : "Partial Received";
-
-  await db
-    .update(deliveryNotes)
-    .set({
-      status: newStatus,
-      receivedBy: user.id,
-      receivedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(deliveryNotes.id, data.dnId));
-
-  const [updatedDn] = await db
-    .select()
-    .from(deliveryNotes)
-    .where(eq(deliveryNotes.id, data.dnId))
-    .limit(1);
+  const { dn, updatedDn, newStatus, touchedIngredientIds } = outcome;
 
   await logSystemAction(
     user,
     "Receive Delivery Note",
-    `SJ "${dn?.code}" diterima (${newStatus}) oleh ${user.name}`,
+    `SJ "${dn.code}" diterima (${newStatus}) oleh ${user.name}`,
   );
   await logAudit(user, "deliveryNotes", data.dnId, "STATUS_CHANGE", dn, updatedDn);
 
-  // Trigger BOM cost roll-up
-  for (const item of data.items) {
-    const dnItem = await db
-      .select({ ingredientId: deliveryNoteItems.ingredientId })
-      .from(deliveryNoteItems)
-      .where(eq(deliveryNoteItems.id, item.itemId))
-      .limit(1);
-    if (dnItem[0]?.ingredientId) {
-      await recalculateRecipeCostsForIngredient(dnItem[0].ingredientId);
-    }
+  // Trigger BOM cost roll-up once per ingredient, not once per line.
+  for (const ingredientId of new Set(touchedIngredientIds)) {
+    await recalculateRecipeCostsForIngredient(ingredientId);
   }
 
   // Notify admin pusat
@@ -1377,6 +1433,8 @@ export async function cancelDeliveryNoteCore(
   user: AppUser,
   data: { dnId: string; reason: string },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1470,6 +1528,8 @@ export const reviewDeliveryNote = createServerFn({ method: "POST" })
   });
 
 export async function reviewDeliveryNoteCore(user: AppUser, data: { dnId: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1582,6 +1642,8 @@ export const generateSCMInvoice = createServerFn({ method: "POST" })
   });
 
 export async function generateSCMInvoiceCore(user: AppUser, data: { dnId: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1691,6 +1753,8 @@ export const paySCMInvoice = createServerFn({ method: "POST" })
   });
 
 export async function paySCMInvoiceCore(user: AppUser, data: { id: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1699,12 +1763,16 @@ export async function paySCMInvoiceCore(user: AppUser, data: { id: string }) {
   const [oldInv] = await db.select().from(scmInvoices).where(eq(scmInvoices.id, data.id)).limit(1);
 
   if (!oldInv) throw new Error("Invoice not found");
+  // Unpaid → Paid only. A Cancelled invoice must never become Paid, and
+  // re-paying a Paid invoice would overwrite the original paidAt.
+  const to = scmInvoiceLifecycle.assert(oldInv.status, "pay", "Only Unpaid invoices can be paid");
 
   const [invoice] = await db
     .update(scmInvoices)
-    .set({ status: "Paid", paidAt: new Date() })
-    .where(eq(scmInvoices.id, data.id))
+    .set({ status: to, paidAt: new Date() })
+    .where(and(eq(scmInvoices.id, data.id), eq(scmInvoices.status, oldInv.status)))
     .returning();
+  if (!invoice) throw new Error("Only Unpaid invoices can be paid");
 
   await logSystemAction(
     user,
@@ -1724,6 +1792,8 @@ export const cancelSCMInvoice = createServerFn({ method: "POST" })
   });
 
 export async function cancelSCMInvoiceCore(user: AppUser, data: { id: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1733,13 +1803,18 @@ export async function cancelSCMInvoiceCore(user: AppUser, data: { id: string }) 
   const [oldInv] = await db.select().from(scmInvoices).where(eq(scmInvoices.id, data.id)).limit(1);
 
   if (!oldInv) throw new Error("Invoice not found");
-  if (oldInv.status !== "Unpaid") throw new Error("Only Unpaid invoices can be cancelled");
+  const to = scmInvoiceLifecycle.assert(
+    oldInv.status,
+    "cancel",
+    "Only Unpaid invoices can be cancelled",
+  );
 
   const [invoice] = await db
     .update(scmInvoices)
-    .set({ status: "Cancelled" })
-    .where(eq(scmInvoices.id, data.id))
+    .set({ status: to })
+    .where(and(eq(scmInvoices.id, data.id), eq(scmInvoices.status, oldInv.status)))
     .returning();
+  if (!invoice) throw new Error("Only Unpaid invoices can be cancelled");
 
   await logSystemAction(
     user,
@@ -1828,6 +1903,8 @@ export async function createStockTransferCore(
     quantity: number;
   },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role === "branch_admin") {
     if (data.fromBranchId !== user.branchId && data.toBranchId !== user.branchId) {
       throw new Error("Branch admin can only create transfers involving their branch");
@@ -1873,6 +1950,8 @@ export const approveStockTransfer = createServerFn({ method: "POST" })
   });
 
 export async function approveStockTransferCore(user: AppUser, data: { transferId: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "area_manager") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | area_manager)`,
@@ -1931,6 +2010,8 @@ export async function rejectStockTransferCore(
   user: AppUser,
   data: { transferId: string; reason: string },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "area_manager") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | area_manager)`,
@@ -1991,6 +2072,8 @@ export const shipStockTransfer = createServerFn({ method: "POST" })
   });
 
 export async function shipStockTransferCore(user: AppUser, data: { transferId: string }) {
+  await requireOpenPeriod(user);
+
   if (!["super_admin", "admin_pusat", "branch_admin"].includes(user.role)) {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat | branch_admin)`,
@@ -2089,6 +2172,8 @@ export const receiveStockTransfer = createServerFn({ method: "POST" })
   });
 
 export async function receiveStockTransferCore(user: AppUser, data: { transferId: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "branch_admin") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | branch_admin)`,
@@ -2189,6 +2274,8 @@ export async function cancelStockTransferCore(
   user: AppUser,
   data: { transferId: string; reason: string },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,

@@ -19,6 +19,7 @@ import {
 } from "#/db/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { requireRole } from "#/lib/server/auth";
+import { requireOpenPeriod } from "./period-lock";
 import { z } from "zod";
 
 // =============================================================================
@@ -145,6 +146,7 @@ export const createSalesRecord = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
+    await requireOpenPeriod(user);
 
     const [created] = await db
       .insert(orders)
@@ -190,6 +192,7 @@ export const updateSalesRecord = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin", "admin_pusat");
+    await requireOpenPeriod(user);
 
     // Get the order before updating for notification
     const [oldOrder] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1);
@@ -224,40 +227,10 @@ export const updateSalesRecord = createServerFn({ method: "POST" })
     return { success: true };
   });
 
-/**
- * Delete a sales record (void it).
- */
-export const deleteSalesRecord = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string() }))
-  .handler(async ({ data }) => {
-    const user = await requireRole("super_admin", "admin_pusat");
-
-    const [order] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1);
-
-    if (!order) {
-      throw new Error("Order tidak ditemukan");
-    }
-
-    // Mark as void
-    await db
-      .update(orders)
-      .set({
-        status: "Void",
-        voidReason: "Dihapus oleh Admin Pusat",
-      })
-      .where(eq(orders.id, data.id));
-
-    // Send notifications
-    await notifySalesChange(
-      user,
-      order.branchId,
-      "menghapus",
-      `Order ${order.orderCode ?? order.id}`,
-      `Order ${order.channel} senilai Rp ${order.totalAmount.toLocaleString("id-ID")} (status: ${order.status}) telah di-void oleh ${user.name}`,
-    );
-
-    return { success: true };
-  });
+// Voiding has exactly one writer: `voidOrderCore` in pos.ts. It restores the
+// order's frozen ingredient consumption and closes any pending cancel request,
+// so a "delete" from Data Penjualan must call that core — a bare status flip
+// here is what left voided orders with their stock still deducted.
 
 // =============================================================================
 // Notifications

@@ -194,6 +194,41 @@ beforeAll(async () => {
 
 describe("Yield — full flow via the real server-function cores", () => {
   it.skipIf(!hasTestDatabaseUrl)(
+    "a cancellation cannot be applied twice, by a second approval or a direct cancel",
+    async () => {
+      const branch = await seedBranch(uniq("YL-RACE"));
+      const outIng = await seedIngredient(uniq("YL-ROUT"));
+      const producedIng = await seedIngredient(uniq("YL-RPROD"));
+
+      const ba = await seedUser("branch_admin", branch);
+      const superAdmin = await seedUser("super_admin");
+
+      const { conversion } = await createConversion(ba, branch, outIng, producedIng);
+      const req = await requestCancel(ba, conversion.id);
+
+      await yieldApi.approveYieldCancelRequestCore(superAdmin, { requestId: req.id });
+
+      // The request is settled and the production is terminal: neither path
+      // may reverse the stock a second time.
+      await expect(
+        yieldApi.approveYieldCancelRequestCore(superAdmin, { requestId: req.id }),
+      ).rejects.toThrow("Request sudah diproses");
+      await expect(
+        yieldApi.directCancelYieldConversionCore(superAdmin, {
+          yieldConversionId: conversion.id,
+          reason: "dobel batal",
+        }),
+      ).rejects.toThrow("Produksi sudah dibatalkan");
+
+      // One cancellation, one reversal: 2 original rows + 2 reverse rows.
+      expect((await conversionStatus(conversion.id)).status).toBe("Cancelled");
+      expect(await getStock(branch, outIng)).toBe(0);
+      expect(await getStock(branch, producedIng)).toBe(0);
+      expect(await ledgerRows(`YIELD-${conversion.id}`)).toHaveLength(4);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
     "happy path: create (stock effect) → request cancel → approve → stock reversed",
     async () => {
       const branch = await seedBranch(uniq("YL-A"));

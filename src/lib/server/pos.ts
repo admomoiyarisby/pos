@@ -35,14 +35,19 @@ import {
 } from "#/db/schema";
 import { eq, and, ne, desc, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
+import { requireOpenPeriod } from "./period-lock";
 import type { AppUser } from "./auth";
 import { branchVisibleClause, getEffectiveBranchId } from "#/lib/server/branch-visibility";
 import { logSystemAction, logAudit } from "./logging";
+import { transitionOrder, transitionOrderTx } from "./order-fsm";
+import { cancelRequestLifecycle, printRequestLifecycle } from "#/lib/lifecycles";
 import {
-  resolveNewItemIngredients,
-  resolvePersistedItemIngredients,
-  type DbTx,
-} from "./ingredient-resolver";
+  ORDER_STATUS_EVENT,
+  ORDER_TARGET_STATUSES,
+  type OrderTargetStatus,
+} from "#/lib/order-lifecycle";
+import { shiftEventAllowed } from "#/lib/shift-lifecycle";
+import { resolveNewItemIngredients } from "./ingredient-resolver";
 import { ensureInventoryRow } from "./sales-data";
 import { z } from "zod";
 
@@ -415,6 +420,23 @@ export async function openShiftCore(
 
   const now = new Date();
   const shift = await db.transaction(async (tx) => {
+    // One open shift per branch. Locking the branch row serializes concurrent
+    // opens on the same branch, so two tabs cannot both pass the check below
+    // and create two open shifts — the POS would then attribute every order to
+    // whichever row getShiftStatus happened to return first.
+    await tx
+      .select({ id: branches.id })
+      .from(branches)
+      .where(eq(branches.id, data.branchId))
+      .for("update");
+
+    const [alreadyOpen] = await tx
+      .select({ id: shifts.id })
+      .from(shifts)
+      .where(and(eq(shifts.branchId, data.branchId), eq(shifts.status, "Open")))
+      .limit(1);
+    if (alreadyOpen) throw new Error("Shift sudah dibuka di cabang ini");
+
     const [createdShift] = await tx
       .insert(shifts)
       .values({
@@ -479,13 +501,22 @@ export async function takeOverShiftCore(
     .where(and(eq(shifts.id, data.shiftId), eq(shifts.branchId, data.branchId)))
     .limit(1);
   if (!shift) throw new Error("Shift tidak ditemukan di cabang ini");
-  if (shift.status !== "Open") throw new Error("Shift sudah ditutup");
+  if (!shiftEventAllowed(shift.status, "take-over")) throw new Error("Shift sudah ditutup");
   if (shift.userId === data.userId) {
     throw new Error("Kamu sudah memegang shift ini");
   }
 
   const now = new Date();
   const updatedShift = await db.transaction(async (tx) => {
+    // Claim the open shift before touching sessions: if it was closed between
+    // the check above and this transaction, no session is opened for it.
+    const [updated] = await tx
+      .update(shifts)
+      .set({ userId: data.userId })
+      .where(and(eq(shifts.id, data.shiftId), eq(shifts.status, "Open")))
+      .returning();
+    if (!updated) throw new Error("Shift sudah ditutup");
+
     await tx
       .update(shiftSessions)
       .set({ loggedOutAt: now })
@@ -499,11 +530,6 @@ export async function takeOverShiftCore(
       loggedInAt: now,
     });
 
-    const [updated] = await tx
-      .update(shifts)
-      .set({ userId: data.userId })
-      .where(eq(shifts.id, data.shiftId))
-      .returning();
     return updated;
   });
 
@@ -541,6 +567,13 @@ export async function closeShiftCore(
 ) {
   const [oldShift] = await db.select().from(shifts).where(eq(shifts.id, data.shiftId)).limit(1);
 
+  if (!oldShift) throw new Error("Shift tidak ditemukan");
+  // Closing is Open → Closed only. Without this a second close would overwrite
+  // the first close's actualCash/expectedCash and re-stamp the session log.
+  if (!shiftEventAllowed(oldShift.status, "close")) {
+    throw new Error("Shift tidak ditemukan atau sudah ditutup");
+  }
+
   const now = new Date();
   const shift = await db.transaction(async (tx) => {
     // Expected cash in drawer = opening float + cash sales this shift
@@ -567,8 +600,12 @@ export async function closeShiftCore(
         status: "Closed",
         notes: data.notes,
       })
-      .where(eq(shifts.id, data.shiftId))
+      // Conditional claim: a concurrent close that read the same Open row is
+      // refused here instead of writing a second close over this one.
+      .where(and(eq(shifts.id, data.shiftId), eq(shifts.status, "Open")))
       .returning();
+
+    if (!closed) throw new Error("Shift tidak ditemukan atau sudah ditutup");
 
     await tx
       .update(shiftSessions)
@@ -1342,25 +1379,20 @@ export const getOrderWithItems = createServerFn({ method: "GET" })
     };
   });
 
-// User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
+// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. The status
+// edge lives in `order-fsm.ts`; this function only adds the human-facing log.
 export async function completeOrderCore(user: AppUser, data: { orderId: string }) {
-  const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
-  if (!old) throw new Error("Order not found");
-
-  const [order] = await db
-    .update(orders)
-    .set({ status: "Completed", completedAt: new Date() })
-    .where(eq(orders.id, data.orderId))
-    .returning();
+  const result = await transitionOrder(data.orderId, "complete", user);
+  if (!result.success) throw new Error(result.error.message);
 
   await logSystemAction(
     user,
     "Complete Order",
-    `Order #${order.orderCode ?? order.id.slice(0, 8)} diselesaikan oleh ${user.name}`,
+    `Order #${result.order.orderCode ?? result.order.id.slice(0, 8)} diselesaikan oleh ${user.name}`,
   );
-  await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, order);
+  await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", result.previous, result.order);
 
-  return order;
+  return result.order;
 }
 
 export const completeOrder = createServerFn({ method: "POST" })
@@ -1370,103 +1402,26 @@ export const completeOrder = createServerFn({ method: "POST" })
     return completeOrderCore(user, data);
   });
 
-// ─── Shared helper: restore inventory for a voided order ───
-
-async function restoreInventoryForVoid(
-  orderId: string,
-  branchId: string,
-  reason: string,
-  tx: DbTx,
-): Promise<void> {
-  const orderItemsList = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-
-  const orderIdShort = orderId.slice(0, 8);
-
-  for (const oi of orderItemsList) {
-    const resolved = await resolvePersistedItemIngredients(oi.id, { tx });
-
-    for (const ing of resolved.ingredients) {
-      // ADR 0020 + loud-missing-row policy: the inventory row is created at 0
-      // when it was never seeded instead of skipping the restore silently.
-      const inv = await ensureInventoryRow(tx, branchId, ing.ingredientId);
-
-      const newQty = inv.quantity + ing.quantity;
-      await tx
-        .update(inventory)
-        .set({ quantity: newQty, lastUpdated: new Date() })
-        .where(eq(inventory.id, inv.id));
-
-      if (ing.quantity !== 0) {
-        await tx.insert(stockLedger).values({
-          branchId,
-          ingredientId: ing.ingredientId,
-          type: ing.quantity > 0 ? "IN" : "OUT",
-          quantity: Math.abs(ing.quantity),
-          balance: newQty,
-          reference: orderId,
-          notes:
-            ing.quantity > 0
-              ? `Void Order ${orderIdShort}: ${reason}`
-              : `Void re-deduct exclusion: ${orderIdShort}`,
-        });
-      }
-    }
-  }
-}
-
-// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. Branch
-// bound mirrors getOrders/getOrderWithItems: area managers may only void orders
-// from their assigned branches.
+// Voiding has one writer: `transitionOrder(..., "void")` in order-fsm.ts. The
+// edge's effects restore the order's frozen ingredient consumption, write the
+// Kartu Stok rows, close any pending cancel request, and notify the requester.
+//
+// Branch bound mirrors getOrders/getOrderWithItems: area managers may only void
+// orders from their assigned branches (enforced by the FSM rule).
 export async function voidOrderCore(user: AppUser, data: { orderId: string; reason: string }) {
-  const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
-  if (!old) throw new Error("Order not found");
-  if (old.status === "Void") throw new Error("Order sudah dibatalkan");
-  if (user.role === "area_manager" && !(user.assignedBranches ?? []).includes(old.branchId)) {
-    throw new Error("Forbidden: order is outside your assigned branches");
-  }
+  await requireOpenPeriod(user);
 
-  const outcome = await db.transaction(async (tx) => {
-    const [updatedOrder] = await tx
-      .update(orders)
-      .set({ status: "Void", voidReason: data.reason })
-      .where(eq(orders.id, data.orderId))
-      .returning();
+  const result = await transitionOrder(data.orderId, "void", user, { reason: data.reason });
+  if (!result.success) throw new Error(result.error.message);
 
-    await restoreInventoryForVoid(data.orderId, old.branchId, data.reason, tx);
-
-    // A pending cancel request for this order is moot the moment the order is
-    // cancelled here. Leaving it Pending is what stranded it: the reviewer's
-    // approval would answer "Order sudah dibatalkan" and roll back, so the row
-    // kept reappearing in the queue with no way to clear it (a manager with the
-    // void button is exactly the person who would cancel it directly instead of
-    // approving). Close it in the same transaction and tell the requester.
-    const closedRequests = await tx
-      .update(cancelRequests)
-      .set({ status: "Executed", approvedBy: user.id, approvedAt: new Date() })
-      .where(and(eq(cancelRequests.orderId, data.orderId), eq(cancelRequests.status, "Pending")))
-      .returning({ id: cancelRequests.id, requestedBy: cancelRequests.requestedBy });
-
-    return { order: updatedOrder, closedRequests };
-  });
-
-  const order = outcome.order;
-
-  for (const closed of outcome.closedRequests) {
-    await db.insert(systemNotifications).values({
-      userId: closed.requestedBy,
-      title: "Cancel Request Ditutup",
-      message: `Permintaan pembatalan untuk order #${order.orderCode ?? order.id.slice(0, 8)} ditutup karena pesanannya sudah dibatalkan oleh ${user.name}.`,
-      type: "info",
-    });
-  }
-
+  const order = result.order;
   await logSystemAction(
     user,
     "Void Order",
     `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name}. Alasan: ${data.reason}`,
     "Warning",
   );
-  await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, order);
+  await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", result.previous, order);
 
   return order;
 }
@@ -1481,28 +1436,22 @@ export const voidOrder = createServerFn({ method: "POST" })
 // User-parameterized core (ADR-0015). Mirrors the wrapper's auth.
 export async function updateOrderStatusCore(
   user: AppUser,
-  data: { orderId: string; newStatus: "New" | "Processing" | "In Delivery" | "Completed" },
+  data: { orderId: string; newStatus: OrderTargetStatus },
 ) {
-  const [old] = await db.select().from(orders).where(eq(orders.id, data.orderId)).limit(1);
+  const result = await transitionOrder(data.orderId, ORDER_STATUS_EVENT[data.newStatus], user);
+  if (!result.success) throw new Error(result.error.message);
 
-  if (!old) throw new Error("Order not found");
+  await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", result.previous, result.order);
 
-  const [updated] = await db
-    .update(orders)
-    .set({ status: data.newStatus })
-    .where(eq(orders.id, data.orderId))
-    .returning();
-
-  await logAudit(user, "orders", data.orderId, "STATUS_CHANGE", old, updated);
-
-  return updated;
+  return result.order;
 }
 
 export const updateOrderStatus = createServerFn({ method: "POST" })
   .validator(
     z.object({
       orderId: z.string(),
-      newStatus: z.enum(["New", "Processing", "In Delivery", "Completed"]),
+      // New is intentionally absent: there is no edge back to it.
+      newStatus: z.enum(ORDER_TARGET_STATUSES),
     }),
   )
   .handler(async ({ data }) => {
@@ -1621,12 +1570,16 @@ export async function approveReprintCore(user: AppUser, data: { requestId: strin
     .limit(1);
 
   if (!old) throw new Error("Print request not found");
-  if (old.status !== "Pending") throw new Error("Request sudah diproses");
+  const approvedStatus = printRequestLifecycle.assert(
+    old.status,
+    "approve",
+    "Request sudah diproses",
+  );
 
   const [req] = await db
     .update(printRequests)
     .set({
-      status: "Approved",
+      status: approvedStatus,
       approvedBy: user.id,
       approvedAt: new Date(),
     })
@@ -1667,16 +1620,25 @@ export async function rejectReprintCore(user: AppUser, data: { requestId: string
     .limit(1);
 
   if (!old) throw new Error("Print request not found");
+  // Only a Pending request can be rejected — mirrors approveReprintCore. A
+  // Consumed request has already been printed; flipping it to Rejected would
+  // rewrite history with no effect on the paper already in the customer's hand.
+  const rejectedStatus = printRequestLifecycle.assert(
+    old.status,
+    "reject",
+    "Request sudah diproses",
+  );
 
   const [req] = await db
     .update(printRequests)
     .set({
-      status: "Rejected",
+      status: rejectedStatus,
       approvedBy: user.id,
       approvedAt: new Date(),
     })
-    .where(eq(printRequests.id, data.requestId))
+    .where(and(eq(printRequests.id, data.requestId), eq(printRequests.status, "Pending")))
     .returning();
+  if (!req) throw new Error("Request sudah diproses");
 
   // Notify the requesting cashier
   await db.insert(systemNotifications).values({
@@ -1711,13 +1673,16 @@ export async function consumePrintRequestCore(user: AppUser, data: { requestId: 
     .limit(1);
 
   if (!old) throw new Error("Print request not found");
-  if (old.status !== "Approved")
-    throw new Error("Hanya request dengan status Approved yang dapat dikonsumsi");
+  const consumedStatus = printRequestLifecycle.assert(
+    old.status,
+    "consume",
+    "Hanya request dengan status Approved yang dapat dikonsumsi",
+  );
 
   const [req] = await db
     .update(printRequests)
     .set({
-      status: "Consumed",
+      status: consumedStatus,
     })
     .where(eq(printRequests.id, data.requestId))
     .returning();
@@ -1826,7 +1791,7 @@ export const createCancelRequest = createServerFn({ method: "POST" })
 export const getCancelRequests = createServerFn({ method: "GET" })
   .validator((data: { status?: string; branchId?: string }) => ({
     status: z
-      .enum(["Pending", "Approved", "Rejected"])
+      .enum(["Pending", "Executed", "Rejected"])
       .optional()
       .catch(undefined)
       .parse(data.status),
@@ -1876,13 +1841,11 @@ export type ApprovedCancelOrder = typeof orders.$inferSelect & { alreadyVoid?: t
 // impersonated actor. It also re-checks the role the wrapper delegates to —
 // see the guard below.
 //
-// Approving a cancel request now *executes* it: the order is voided and its
+// Approving a cancel request *executes* it: the order is voided and its
 // inventory restored in the same transaction, so the approver does not have to
-// hand the request back for a second person to action. Previously approval only
-// flipped the status to "Approved" and a separate Execute step did the work.
-//
-// The `Approved` state is kept in the enum for requests that were approved
-// before this change; executeApprovedCancelCore still finishes those.
+// hand the request back for a second person to action. `Approved` is not a
+// state in the enum — the legacy intermediate was retired and its rows migrated
+// to `Executed` (drizzle 0067).
 //
 // Because approval is now the step that mutates stock, the transition is
 // claimed with a conditional UPDATE. Two concurrent approvals cannot both move
@@ -1900,6 +1863,8 @@ export async function approveCancelRequestCore(
   user: AppUser,
   data: { requestId: string },
 ): Promise<ApprovedCancelOrder> {
+  await requireOpenPeriod(user);
+
   // Server-side mirror of the /cancel-requests RoleGuard. The page only offers
   // Approve/Reject to these roles; the endpoint previously accepted any signed-in
   // user, so a branch_admin could approve their own request and void their own
@@ -1917,6 +1882,13 @@ export async function approveCancelRequestCore(
     .limit(1);
 
   if (!old) throw new Error("Cancel request not found");
+  // Read-time guard for the common case; the conditional UPDATE below is the
+  // authoritative race guard. The message is the one callers already show.
+  const executedStatus = cancelRequestLifecycle.assert(
+    old.status,
+    "execute",
+    "Request sudah diproses",
+  );
 
   const [order] = await db.select().from(orders).where(eq(orders.id, old.orderId)).limit(1);
   if (!order) throw new Error("Order not found");
@@ -1930,27 +1902,29 @@ export async function approveCancelRequestCore(
     // actually happened.
     const [claimed] = await tx
       .update(cancelRequests)
-      .set({ status: "Executed", approvedBy: user.id, approvedAt: new Date() })
+      .set({ status: executedStatus, approvedBy: user.id, approvedAt: new Date() })
       .where(and(eq(cancelRequests.id, data.requestId), eq(cancelRequests.status, "Pending")))
       .returning();
 
     if (!claimed) throw new Error("Request sudah diproses");
 
-    // Void the order, guarded on it not already being Void for the same reason.
-    const [updatedOrder] = await tx
-      .update(orders)
-      .set({ status: "Void", voidReason: `Cancel: ${old.reason}` })
-      .where(and(eq(orders.id, old.orderId), ne(orders.status, "Void")))
-      .returning();
+    // Void through the same FSM edge the POS uses, so the stock restore and
+    // pending-request cleanup cannot drift between the two paths.
+    const voided = await transitionOrderTx(tx, old.orderId, "void", user, {
+      reason: `Cancel: ${old.reason}`,
+    });
 
     // Someone else already cancelled this order while the request waited. The
     // claim above still commits (the request is resolved), but the stock was
     // restored by that other path, so restoring again here would inflate it.
-    if (!updatedOrder) return { order, alreadyVoid: true as const };
+    if (!voided.success) {
+      if (voided.error.name === "OrderAlreadyVoidError") {
+        return { order, alreadyVoid: true as const };
+      }
+      throw new Error(voided.error.message);
+    }
 
-    await restoreInventoryForVoid(old.orderId, order.branchId, old.reason, tx);
-
-    return { order: updatedOrder, alreadyVoid: false as const };
+    return { order: voided.order, alreadyVoid: false as const };
   });
 
   // Notify the requesting cashier that it is done — including the case where
@@ -2010,7 +1984,11 @@ export async function rejectCancelRequestCore(user: AppUser, data: { requestId: 
   // Conditional UPDATE so a concurrent approve cannot also claim the request.
   const [req] = await db
     .update(cancelRequests)
-    .set({ status: "Rejected", approvedBy: user.id, approvedAt: new Date() })
+    .set({
+      status: cancelRequestLifecycle.assert(old.status, "reject", "Request sudah diproses"),
+      approvedBy: user.id,
+      approvedAt: new Date(),
+    })
     .where(and(eq(cancelRequests.id, data.requestId), eq(cancelRequests.status, "Pending")))
     .returning();
 
@@ -2040,79 +2018,6 @@ export const rejectCancelRequest = createServerFn({ method: "POST" })
     return rejectCancelRequestCore(user, data);
   });
 
-// ─── Execute Approved Cancel (legacy: requests approved before auto-execute) ───
-
-// User-parameterized core (ADR-0015). Mirrors the wrapper's auth. Finishes a
-// request still sitting in the "Approved" state — i.e. one approved before
-// approving started executing immediately — by voiding the order and restoring
-// inventory.
-//
-// New approvals never land in "Approved"; see approveCancelRequestCore. This
-// path stays so those older requests remain completable, and is guarded and
-// claimed the same way so it cannot double-restore.
-export async function executeApprovedCancelCore(user: AppUser, data: { requestId: string }) {
-  const [old] = await db
-    .select()
-    .from(cancelRequests)
-    .where(eq(cancelRequests.id, data.requestId))
-    .limit(1);
-
-  if (!old) throw new Error("Cancel request not found");
-  if (old.status !== "Approved") throw new Error("Request belum disetujui atau sudah dieksekusi");
-
-  const [order] = await db.select().from(orders).where(eq(orders.id, old.orderId)).limit(1);
-
-  if (!order) throw new Error("Order not found");
-
-  const outcome = await db.transaction(async (tx) => {
-    // Claim the request: only the caller that moves it out of "Approved"
-    // restores stock, so a double tap cannot restore twice. Authoritative over
-    // the order's Void flag, for the same reason as approve.
-    const [claimed] = await tx
-      .update(cancelRequests)
-      .set({ status: "Executed" })
-      .where(and(eq(cancelRequests.id, data.requestId), eq(cancelRequests.status, "Approved")))
-      .returning();
-
-    if (!claimed) throw new Error("Request belum disetujui atau sudah dieksekusi");
-
-    // Void the order, guarded on it not already being Void.
-    const [updatedOrder] = await tx
-      .update(orders)
-      .set({ status: "Void", voidReason: `Cancel: ${old.reason}` })
-      .where(and(eq(orders.id, old.orderId), ne(orders.status, "Void")))
-      .returning();
-
-    // Already cancelled by another path — resolve the request and leave the
-    // stock alone, exactly as approveCancelRequestCore does.
-    if (!updatedOrder) return { order, alreadyVoid: true as const };
-
-    await restoreInventoryForVoid(old.orderId, order.branchId, old.reason, tx);
-
-    return { order: updatedOrder, alreadyVoid: false as const };
-  });
-
-  await logSystemAction(
-    user,
-    "Execute Cancel",
-    outcome.alreadyVoid
-      ? `Cancel request #${data.requestId.slice(0, 8)} ditutup oleh ${user.name}; order #${order.orderCode ?? order.id.slice(0, 8)} sudah dibatalkan sebelumnya.`
-      : `Order #${order.orderCode ?? order.id.slice(0, 8)} dibatalkan oleh ${user.name} (cancel request #${data.requestId.slice(0, 8)}). Alasan: ${old.reason}`,
-  );
-  if (!outcome.alreadyVoid) {
-    await logAudit(user, "orders", old.orderId, "STATUS_CHANGE", order, outcome.order);
-  }
-
-  return outcome.alreadyVoid ? { ...outcome.order, alreadyVoid: true as const } : outcome.order;
-}
-
-export const executeApprovedCancel = createServerFn({ method: "POST" })
-  .validator((data: { requestId: string }) => data)
-  .handler(async ({ data }) => {
-    const user = await requireAuth();
-    return executeApprovedCancelCore(user, data);
-  });
-
 // ─── Active Requests for Orders (POS polling source) ───
 
 export const getActiveRequestsForOrders = createServerFn({ method: "GET" })
@@ -2139,7 +2044,7 @@ export const getActiveRequestsForOrders = createServerFn({ method: "GET" })
       )
       .orderBy(desc(printRequests.createdAt));
 
-    // Get latest cancel request per order (Pending or Approved)
+    // Get latest cancel request per order (still open: Pending)
     const cancelReqs = await db
       .select({
         id: cancelRequests.id,
@@ -2150,10 +2055,7 @@ export const getActiveRequestsForOrders = createServerFn({ method: "GET" })
       })
       .from(cancelRequests)
       .where(
-        and(
-          inArray(cancelRequests.orderId, data.orderIds),
-          inArray(cancelRequests.status, ["Pending", "Approved"]),
-        ),
+        and(inArray(cancelRequests.orderId, data.orderIds), eq(cancelRequests.status, "Pending")),
       )
       .orderBy(desc(cancelRequests.createdAt));
 

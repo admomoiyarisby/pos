@@ -12,6 +12,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
+import { requireOpenPeriod } from "./period-lock";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
@@ -246,6 +247,8 @@ export async function createMutasiTransferCore(
   user: MutasiActorUser,
   data: CreateMutasiTransferInput,
 ): Promise<CreateMutasiTransferResult> {
+  await requireOpenPeriod(user);
+
   // Branch-level guard: only branch_admin (at their own branch) or
   // super_admin (on behalf of any branch) can create.
   if (user.role !== "super_admin") {
@@ -432,6 +435,8 @@ export async function updateMutasiTransferDraftNotesCore(
   user: MutasiActorUser,
   data: { transferId: string; notes: string },
 ) {
+  await requireOpenPeriod(user);
+
   const result = await assertDraftEditable(user, data.transferId);
 
   const before = result.transfer.notes ?? null;
@@ -467,6 +472,8 @@ export async function updateMutasiTransferDraftItemsCore(
   user: MutasiActorUser,
   data: { transferId: string; items: Array<{ id: string; quantity: number }> },
 ) {
+  await requireOpenPeriod(user);
+
   const result = await assertDraftEditable(user, data.transferId);
 
   // Resolve every patch against a real line up front, so an unknown item id
@@ -530,6 +537,8 @@ export async function addMutasiTransferDraftItemCore(
   user: MutasiActorUser,
   data: { transferId: string; ingredientId: string; quantity: number },
 ) {
+  await requireOpenPeriod(user);
+
   const result = await assertDraftEditable(user, data.transferId);
 
   // ADR 0019: one line per ingredient per SuratJalan. The unique constraint is
@@ -600,6 +609,8 @@ export async function removeMutasiTransferDraftItemCore(
   user: MutasiActorUser,
   data: { transferId: string; itemId: string },
 ) {
+  await requireOpenPeriod(user);
+
   const result = await assertDraftEditable(user, data.transferId);
 
   const item = result.items.find((i) => i.id === data.itemId);
@@ -744,6 +755,10 @@ async function runTransition(args: {
    */
   branchGuard?: "sender" | "receiver" | "either";
 }) {
+  // Every Mutasi event changes stock or payment state; the period lock belongs
+  // before the FSM transaction, not inside it.
+  await requireOpenPeriod(args.user);
+
   const result = await loadTransferWithItems(args.transferId);
   if (!result) throw new Error("Transfer not found");
   assertTransferAccess(args.user, result.transfer, "act");

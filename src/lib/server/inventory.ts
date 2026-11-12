@@ -19,6 +19,7 @@ import { eq, and, or, desc, asc, count, inArray, sql, ilike, ne, isNull } from "
 import type { SQL } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
+import { requireOpenPeriod } from "./period-lock";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { escapeHtml, buildPrintHtml } from "./html-utils";
@@ -541,6 +542,8 @@ export async function triggerStockOpnameCore(
   user: AppUser,
   data: { branchId: string; date: string },
 ) {
+  await requireOpenPeriod(user);
+
   if (!["super_admin", "admin_pusat", "area_manager", "branch_admin"].includes(user.role)) {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat | area_manager | branch_admin)`,
@@ -628,7 +631,10 @@ export async function triggerStockOpnameCore(
           branchId: data.branchId,
           date: data.date,
           triggeredBy: user.id,
+          // Nothing is counted yet. `submittedBy` is NOT NULL, so it starts as
+          // the triggerer and is overwritten on the first submit.
           submittedBy: user.id,
+          status: "Triggered",
         })
         .returning();
 
@@ -838,7 +844,7 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
   // ("snapshot variance applied to the live balance"), so they must read the
   // same quantity — the snapshot alone goes stale as soon as stock moves.
   const currentByIngredient = new Map<string, number>();
-  if (!isBlind && so.status !== "Approved") {
+  if (!isBlind && so.status !== "Approved" && so.status !== "Realized") {
     const countedIds = lines.filter((i) => i.countedAt !== null).map((i) => i.ingredientId);
     if (countedIds.length > 0) {
       const currentInv = await db
@@ -893,7 +899,7 @@ export async function getStockOpnameDetailCore(user: AppUser, data: { id: string
   };
   let summary: SummaryRow[] = [];
   if (!isBlind) {
-    if (so.status === "Approved") {
+    if (so.status === "Approved" || so.status === "Realized") {
       const ledgerRows = await db
         .select({
           ingredientId: stockLedger.ingredientId,
@@ -972,6 +978,8 @@ export async function submitStockOpnameCore(
   user: AppUser,
   data: { soId: string; items: { itemId: string; physicalStock: number }[] },
 ) {
+  await requireOpenPeriod(user);
+
   const [oldSo] = await db
     .select()
     .from(stockOpnames)
@@ -983,6 +991,13 @@ export async function submitStockOpnameCore(
   // Branch access check
   if (user.role === "branch_admin" && user.branchId && oldSo.branchId !== user.branchId) {
     throw new Error("Unauthorized: you can only submit Stock Opnames for your branch");
+  }
+
+  // Counts can be saved while the sheet is fresh (Triggered), while it is
+  // being reviewed (Submitted), or after a recount was requested. Approved and
+  // Realized sheets are locked.
+  if (!["Triggered", "Submitted", "Under Investigation"].includes(oldSo.status)) {
+    throw new Error(`Stock opname berstatus ${oldSo.status} tidak dapat di-submit`);
   }
 
   // Partial opname: only the items the counter actually filled are sent.
@@ -1059,6 +1074,8 @@ export async function markStockOpnameInvestigationCore(
   user: AppUser,
   data: { soId: string; investigationNote?: string },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "area_manager") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | area_manager)`,
@@ -1114,6 +1131,8 @@ export async function approveStockOpnameCore(
   user: AppUser,
   data: { soId: string; investigationNote?: string },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "area_manager") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | area_manager)`,
@@ -1125,14 +1144,17 @@ export async function approveStockOpnameCore(
 
   if (!so) throw new Error("Stock opname not found");
 
-  // State guard: approval only proceeds from a counted SO (Submitted or
-  // Under Investigation), and never re-approves an Approved one. A freshly
-  // triggered SO is also "Submitted" (no enum for triggered), so the
-  // blank-count guard below is what stops approving an uncounted SO.
+  // State guard: approval only proceeds from a sheet that was submitted or is
+  // being investigated. Triggered is allowed through so the blank-count guard
+  // below can explain the real problem ("nothing counted yet") instead of a
+  // status message; an uncounted sheet can never reach Approved.
   if (so.status === "Approved") {
     throw new Error("Stock opname sudah di-approve");
   }
-  if (so.status !== "Submitted" && so.status !== "Under Investigation") {
+  if (so.status === "Realized") {
+    throw new Error("Stock Opname sudah di-realize");
+  }
+  if (!["Triggered", "Submitted", "Under Investigation"].includes(so.status)) {
     throw new Error(
       "Stock opname harus berstatus Submitted atau Under Investigation untuk di-approve",
     );
@@ -1329,6 +1351,8 @@ export async function updateStockOpnameCountsCore(
   user: AppUser,
   data: { soId: string; items: { itemId: string; physicalStock: number }[] },
 ) {
+  await requireOpenPeriod(user);
+
   if (!["branch_admin", "super_admin", "area_manager"].includes(user.role)) {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: branch_admin | super_admin | area_manager)`,
@@ -1415,6 +1439,8 @@ export const realizeStockOpname = createServerFn({ method: "POST" })
   });
 
 export async function realizeStockOpnameCore(user: AppUser, data: { soId: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -1453,12 +1479,14 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
     );
   }
 
-  if (so.status !== "Approved") {
-    throw new Error("Stock Opname harus di-approve terlebih dahulu");
+  // Realized is terminal. Check it before the Approved guard so a second
+  // realize reports "already realized", not "approve it first".
+  if (so.status === "Realized" || so.realizedAt) {
+    throw new Error("Stock Opname sudah di-realize sebelumnya");
   }
 
-  if (so.realizedAt) {
-    throw new Error("Stock Opname sudah di-realize sebelumnya");
+  if (so.status !== "Approved") {
+    throw new Error("Stock Opname harus di-approve terlebih dahulu");
   }
 
   // 3. Get SO items with ingredient info
@@ -1585,6 +1613,7 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
   await db
     .update(stockOpnames)
     .set({
+      status: "Realized",
       realizedAt: new Date(),
       realizedBy: user.id,
     })
@@ -1689,9 +1718,11 @@ export async function buildStockOpnamePrintHtml(soId: string): Promise<string> {
   const statusLabel =
     so.status === "Approved"
       ? "Disetujui"
-      : so.status === "Under Investigation"
-        ? "Investigasi"
-        : so.status;
+      : so.status === "Realized"
+        ? "Sudah Realize"
+        : so.status === "Under Investigation"
+          ? "Investigasi"
+          : so.status;
 
   const body = `
 <div class="header-flex">
@@ -1760,6 +1791,7 @@ export const adjustBranchStockBatch = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await requireRole(...STOCK_ADJUSTMENT_ROLES);
+    await requireOpenPeriod(user);
 
     const branchIds = (data.branchIds ?? []).filter(Boolean);
     if (branchIds.length === 0) {
@@ -1911,6 +1943,7 @@ export const cleanSlateInventory = createServerFn({ method: "POST" })
   .validator((data: { branchId?: string | null; alsoLedger?: boolean }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
+    await requireOpenPeriod(user);
     const branchId = data.branchId || undefined;
     const alsoLedger = !!data.alsoLedger;
     const scopeCondition = branchId ? eq(inventory.branchId, branchId) : undefined;
@@ -1962,6 +1995,7 @@ export const softDeleteStockOpname = createServerFn({ method: "POST" })
   .validator((data: { stockOpnameId: string }) => data)
   .handler(async ({ data }) => {
     const user = await requireRole("super_admin");
+    await requireOpenPeriod(user);
 
     const [existing] = await db
       .select()

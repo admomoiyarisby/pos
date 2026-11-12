@@ -25,7 +25,7 @@ interface CancelRequest {
   detail: string | null;
   requestedBy: string;
   requestedByName: string | null;
-  status: "Pending" | "Approved" | "Rejected" | "Executed";
+  status: "Pending" | "Rejected" | "Executed";
   createdAt: Date;
 }
 
@@ -41,20 +41,10 @@ const reasonLabels = {
 
 function StatusBadge({ status }: { status: string }) {
   const variant: "warning" | "success" | "destructive" | "secondary" =
-    status === "Pending"
-      ? "warning"
-      : status === "Approved" || status === "Executed"
-        ? "success"
-        : "secondary";
+    status === "Pending" ? "warning" : status === "Executed" ? "success" : "secondary";
   return (
     <Badge variant={variant}>
-      {status === "Pending"
-        ? "Menunggu"
-        : status === "Approved"
-          ? "Disetujui"
-          : status === "Executed"
-            ? "Dieksekusi"
-            : "Ditolak"}
+      {status === "Pending" ? "Menunggu" : status === "Executed" ? "Dieksekusi" : "Ditolak"}
     </Badge>
   );
 }
@@ -72,7 +62,6 @@ function formatDateTime(d: Date) {
 const STATUS_FILTERS = [
   ["", "Semua"],
   ["Pending", "Menunggu"],
-  ["Approved", "Disetujui"],
   ["Rejected", "Ditolak"],
   ["Executed", "Dieksekusi"],
 ] as const;

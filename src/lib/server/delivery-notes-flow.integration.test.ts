@@ -302,6 +302,55 @@ describe("Delivery notes — full lifecycle via the real server-function cores",
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
+    "re-submitting a partial receive is idempotent; only the delta moves stock",
+    async () => {
+      const fromBranch = await seedBranch(uniq("DN-RF"));
+      const toBranch = await seedBranch(uniq("DN-RT"));
+      const ingredient = await seedIngredient(uniq("DN-RING"));
+      await seedInventory(fromBranch, ingredient, 10);
+
+      const adminPusat = await seedUser("admin_pusat");
+
+      const dn = await createDn(adminPusat, fromBranch, toBranch, ingredient, 5);
+      await shipDn(adminPusat, dn.id);
+      const [item] = await db
+        .select()
+        .from(schema.deliveryNoteItems)
+        .where(eq(schema.deliveryNoteItems.deliveryNoteId, dn.id));
+
+      // 2 of 5 received — the remainder stays in transit.
+      const first = await receiveDn(adminPusat, dn.id, item.id, 2, 0);
+      expect(first.status).toBe("Partial Received");
+      expect(await getStock(toBranch, ingredient)).toBe(2);
+      const [transit] = await db
+        .select()
+        .from(schema.inTransitInventory)
+        .where(eq(schema.inTransitInventory.deliveryNoteId, dn.id));
+      expect(transit.quantity).toBe(3);
+
+      // Re-submitting the same totals (the form prefills them) is a no-op.
+      const again = await receiveDn(adminPusat, dn.id, item.id, 2, 0);
+      expect(again.status).toBe("Partial Received");
+      expect(await getStock(toBranch, ingredient)).toBe(2);
+
+      // A recorded quantity cannot be retracted.
+      await expect(receiveDn(adminPusat, dn.id, item.id, 1, 0)).rejects.toThrow(
+        "tidak boleh lebih kecil",
+      );
+
+      // Completing the remaining 3 moves exactly the delta.
+      const done = await receiveDn(adminPusat, dn.id, item.id, 5, 0);
+      expect(done.status).toBe("Received");
+      expect(await getStock(toBranch, ingredient)).toBe(5);
+      const transitAfter = await db
+        .select()
+        .from(schema.inTransitInventory)
+        .where(eq(schema.inTransitInventory.deliveryNoteId, dn.id));
+      expect(transitAfter).toHaveLength(0);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
     "cancel from Picking (no stock effect) and from In Transit (reverses stock)",
     async () => {
       const fromBranch = await seedBranch(uniq("DN-XF"));

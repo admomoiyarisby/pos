@@ -28,6 +28,7 @@ import { logSystemAction, logAudit } from "./logging";
 import { recalculateAllRecipeCosts as recalcAllCosts, recalculateRecipeCosts } from "./cost-rollup";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
 import { describeDbError, isUniqueViolation } from "#/lib/server/db-errors";
+import { recipeLifecycle } from "#/lib/lifecycles";
 import { z } from "zod";
 
 const recipeIngredientInput = z.object({
@@ -637,12 +638,22 @@ export async function deactivateRecipeCore(user: AppUser, data: { id: string }) 
 
   const [old] = await db.select().from(recipes).where(eq(recipes.id, data.id)).limit(1);
   if (!old) throw new Error("Recipe not found");
+  // Deleted is a tombstone, not a lifecycle position: deactivating it would
+  // clear the tombstone and resurrect a recipe the UI cannot restore (ADR 0009).
+  const to = recipeLifecycle.assert(
+    old.status,
+    "deactivate",
+    old.status === "Deleted"
+      ? "Resep sudah dihapus dan tidak dapat dinonaktifkan"
+      : "Resep sudah nonaktif",
+  );
 
   const [updated] = await db
     .update(recipes)
-    .set({ status: "Inactive", updatedAt: new Date() })
-    .where(eq(recipes.id, data.id))
+    .set({ status: to, updatedAt: new Date() })
+    .where(and(eq(recipes.id, data.id), eq(recipes.status, old.status)))
     .returning();
+  if (!updated) throw new Error("Resep sudah nonaktif atau dihapus");
 
   await logSystemAction(
     user,
@@ -672,12 +683,23 @@ export async function reactivateRecipeCore(user: AppUser, data: { id: string }) 
 
   const [old] = await db.select().from(recipes).where(eq(recipes.id, data.id)).limit(1);
   if (!old) throw new Error("Recipe not found");
+  // Reactivation is Inactive → Active only. Deleted is UI-irreversible
+  // (restore is DB-only); allowing this edge is the one bug that would make
+  // the tombstone advisory (ADR 0009).
+  const to = recipeLifecycle.assert(
+    old.status,
+    "activate",
+    old.status === "Deleted"
+      ? "Resep sudah dihapus dan tidak dapat diaktifkan kembali"
+      : "Resep sudah aktif",
+  );
 
   const [updated] = await db
     .update(recipes)
-    .set({ status: "Active", updatedAt: new Date() })
-    .where(eq(recipes.id, data.id))
+    .set({ status: to, updatedAt: new Date() })
+    .where(and(eq(recipes.id, data.id), eq(recipes.status, old.status)))
     .returning();
+  if (!updated) throw new Error("Resep sudah aktif atau dihapus");
 
   await logSystemAction(
     user,
@@ -796,6 +818,7 @@ export async function deleteRecipeCore(user: AppUser, data: { id: string }) {
 
   const [old] = await db.select().from(recipes).where(eq(recipes.id, data.id)).limit(1);
   if (!old) throw new Error("Recipe not found");
+  const to = recipeLifecycle.assert(old.status, "delete", "Resep sudah dihapus");
 
   const [activeBundleRow] = await db
     .select({ count: sql<number>`count(*)` })
@@ -816,9 +839,10 @@ export async function deleteRecipeCore(user: AppUser, data: { id: string }) {
   // retains the picture.
   const [result] = await db
     .update(recipes)
-    .set({ status: "Deleted", updatedAt: new Date() })
-    .where(eq(recipes.id, data.id))
+    .set({ status: to, updatedAt: new Date() })
+    .where(and(eq(recipes.id, data.id), eq(recipes.status, old.status)))
     .returning();
+  if (!result) throw new Error("Resep sudah dihapus");
 
   await logSystemAction(
     user,

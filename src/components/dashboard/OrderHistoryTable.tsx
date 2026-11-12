@@ -132,9 +132,7 @@ export function OrderHistoryTable({
                     ? "success"
                     : order.status === "Void"
                       ? "destructive"
-                      : order.status === "Cancel Requested"
-                        ? "warning"
-                        : "default";
+                      : "default";
 
                 return (
                   <tr key={order.id} className="border-b hover:bg-muted/50">

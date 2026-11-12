@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/lib/server/db";
+import { supplierDeliveryLifecycle } from "#/lib/lifecycles";
 import {
   supplierDeliveries,
   suppliers,
@@ -11,6 +12,7 @@ import {
 } from "#/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
+import { requireOpenPeriod } from "./period-lock";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
@@ -199,6 +201,8 @@ export async function createSupplierDeliveryCore(
   user: AppUser,
   data: { supplierName: string; ingredientId: string; quantity: number; price: number },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -286,6 +290,8 @@ export async function updateSupplierDeliveryCore(
     price?: number;
   },
 ) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -376,6 +382,8 @@ export const deleteSupplierDelivery = createServerFn({ method: "POST" })
   });
 
 export async function deleteSupplierDeliveryCore(user: AppUser, data: { id: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -426,6 +434,8 @@ export const completeSupplierDelivery = createServerFn({ method: "POST" })
   });
 
 export async function completeSupplierDeliveryCore(user: AppUser, data: { id: string }) {
+  await requireOpenPeriod(user);
+
   if (user.role !== "super_admin" && user.role !== "admin_pusat") {
     throw new Error(
       `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
@@ -440,17 +450,19 @@ export async function completeSupplierDeliveryCore(user: AppUser, data: { id: st
     .limit(1);
 
   if (!existing) throw new Error("Supplier delivery not found");
-
-  if (existing.status === "Completed") {
-    throw new Error("Delivery already completed");
-  }
+  const to = supplierDeliveryLifecycle.assert(
+    existing.status,
+    "complete",
+    "Delivery already completed",
+  );
 
   // Update status to Completed
   const [updated] = await db
     .update(supplierDeliveries)
-    .set({ status: "Completed" })
-    .where(eq(supplierDeliveries.id, data.id))
+    .set({ status: to })
+    .where(and(eq(supplierDeliveries.id, data.id), eq(supplierDeliveries.status, existing.status)))
     .returning();
+  if (!updated) throw new Error("Delivery already completed");
 
   await logSystemAction(
     user,

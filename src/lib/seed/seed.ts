@@ -728,6 +728,9 @@ export async function seedOrders(idMap: IdMap, _allSuccess: boolean) {
         netSales: o.netSales,
         orderCode: o.orderCode,
         status: o.status,
+        // Migration 0070 makes Void ⇔ void_reason. Seeded historical voids
+        // need a reason like any other row.
+        voidReason: o.status === "Void" ? "Data historis" : undefined,
         createdAt: o.createdAt,
         voucherCode: o.voucherCode,
         voucherDiscount: o.voucherDiscount,

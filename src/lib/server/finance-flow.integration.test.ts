@@ -176,6 +176,29 @@ describe("Finance — period lifecycle via the real server-function cores", () =
   );
 
   it.skipIf(!hasTestDatabaseUrl)(
+    "a closed period locks non-super-admin writes; super_admin may still write",
+    async () => {
+      const superAdmin = await seedUser("super_admin");
+      const adminPusat = await seedUser("admin_pusat");
+      const branchId = await seedBranch();
+
+      const period = await financeApi.openPeriodCore(superAdmin, { periodName: "Locked 2026" });
+      await financeApi.closePeriodCore(superAdmin, { periodId: period.id });
+
+      const revenue = { branchId, date: "2026-08-01", amount: 25_000 };
+
+      // Non-super-admin write refused before it reaches the row.
+      await expect(financeApi.createManualRevenueCore(adminPusat, revenue)).rejects.toThrow(
+        "Periode sedang ditutup. Hanya Super Admin yang dapat mengedit.",
+      );
+
+      // Super Admin is the documented emergency override (FRD §4.1).
+      const created = await financeApi.createManualRevenueCore(superAdmin, revenue);
+      expect(created.amount).toBe(25_000);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
     "open-period snaps opening balances from current inventory",
     async () => {
       const superAdmin = await seedUser("super_admin");
@@ -629,6 +652,7 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
           category: "Spoiled",
           submittedBy: admin.id,
           status: "Cancelled",
+          cancelledAt: new Date(),
           cancelReason: "Salah Input",
         })
         .returning({ id: schema.wasteEntries.id });
@@ -689,6 +713,7 @@ describe("Finance — Rincian Stok Keluar splits usage by source", () => {
           branchId,
           processedBy: admin.id,
           status: "Cancelled",
+          cancelledAt: new Date(),
           cancelReason: "Salah Input",
         })
         .returning({ id: schema.yieldConversions.id });

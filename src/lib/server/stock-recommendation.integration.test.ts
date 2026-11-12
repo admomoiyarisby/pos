@@ -145,6 +145,8 @@ async function seedOrder(branchId: string, status: "New" | "Void"): Promise<stri
       subtotal: 0,
       totalAmount: 0,
       status,
+      // 0070: Void ⇔ void_reason.
+      voidReason: status === "Void" ? "migrasi test" : undefined,
     })
     .returning({ id: schema.orders.id });
   return row.id;
@@ -165,6 +167,8 @@ async function seedWaste(
       category: "Spoiled",
       submittedBy,
       status,
+      // 0070: Cancelled ⇔ cancelled_at.
+      cancelledAt: status === "Cancelled" ? new Date() : undefined,
     })
     .returning({ id: schema.wasteEntries.id });
   return row.id;

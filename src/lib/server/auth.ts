@@ -1,8 +1,9 @@
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { auth } from "#/lib/auth";
 import { db } from "#/lib/server/db";
-import { areaManagerBranches, periodLogs } from "#/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { areaManagerBranches } from "#/db/schema";
+import { eq } from "drizzle-orm";
+import { userAccessDenial } from "#/lib/user-access";
 
 export type UserRole =
   | "super_admin"
@@ -89,8 +90,10 @@ export const getCurrentUserRaw = createServerOnlyFn(async (): Promise<AppUser | 
   };
 
   // A soft-deleted (tombstoned) user must never resolve to an AppUser, even
-  // from a session cookie that outlived the delete.
-  if (baUser.deletedAt) return null;
+  // from a session cookie that outlived the delete. The same applies to a
+  // suspended (Inactive) user: revoking access must not wait for the cookie
+  // to expire. Session creation is blocked separately in `auth.ts`.
+  if (userAccessDenial({ status: baUser.status, deletedAt: baUser.deletedAt })) return null;
 
   const appUser = parseUser({
     id: baUser.id,
@@ -137,16 +140,5 @@ export const requireRole = createServerOnlyFn(
   },
 );
 
-export async function requireOpenPeriod(user: AppUser): Promise<void> {
-  if (user.role === "super_admin") return;
-
-  const [latestPeriod] = await db
-    .select()
-    .from(periodLogs)
-    .orderBy(desc(periodLogs.openedAt))
-    .limit(1);
-
-  if (!latestPeriod || latestPeriod.status !== "Open") {
-    throw new Error("Periode sedang ditutup. Hanya Super Admin yang dapat mengedit.");
-  }
-}
+// The period-lock guard lives in `period-lock.ts` so tests can mock this
+// module (better-auth) without losing the guard.

@@ -1,9 +1,12 @@
 import { db } from "#/lib/server/db";
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { account, session, users, verification } from "#/db/schema";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { passkey } from "@better-auth/passkey";
+import { eq } from "drizzle-orm";
+import { USER_ACCESS_MESSAGE, userAccessDenial } from "#/lib/user-access";
 import { pinAuth } from "./auth-plugins/pin-auth";
 
 export const auth = betterAuth({
@@ -47,6 +50,33 @@ export const auth = betterAuth({
 
   emailAndPassword: {
     enabled: true,
+  },
+
+  // `status` is an app column, so better-auth's email/password and passkey
+  // flows do not know to honour it — only the PIN endpoints filter on it.
+  // Every sign-in path creates its session through this hook, so refusing
+  // here closes the gap for all of them without touching each route.
+  databaseHooks: {
+    session: {
+      create: {
+        before: async (newSession) => {
+          const [row] = await db
+            .select({ status: users.status, deletedAt: users.deletedAt })
+            .from(users)
+            .where(eq(users.id, String(newSession.userId)))
+            .limit(1);
+
+          // A missing row means the account vanished mid-sign-in; treat it
+          // like a tombstone rather than issuing an orphan session.
+          const denial = userAccessDenial(row ?? { deletedAt: new Date() });
+          if (denial) {
+            throw new APIError("FORBIDDEN", {
+              message: USER_ACCESS_MESSAGE[denial],
+            });
+          }
+        },
+      },
+    },
   },
   // CSRF/origin check: better-auth's originCheckMiddleware skips requests
   // with no cookies (so signin works without a trusted origin) but

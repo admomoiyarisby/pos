@@ -25,6 +25,7 @@ import {
 } from "#/db/schema";
 import { requireAuth, requireRole } from "#/lib/server/auth";
 import type { AppUser } from "./auth";
+import { requireOpenPeriod } from "./period-lock";
 import { resolveNewItemIngredients, resolvePersistedItemIngredients } from "./ingredient-resolver";
 import { eq, ne, and, sql, desc, count, inArray } from "drizzle-orm";
 import type { DbOrTx, DbTx } from "./ingredient-resolver";
@@ -370,6 +371,8 @@ export async function createSalesOrderCore(
   user: AppUser,
   data: z.output<typeof createSalesOrderInput>,
 ) {
+  await requireOpenPeriod(user);
+
   // Calculate totals from items
   let subtotal = 0;
   let totalCogs = 0;
@@ -516,6 +519,8 @@ export async function updateSalesOrderCore(
   user: AppUser,
   data: z.output<typeof updateSalesOrderInput>,
 ) {
+  await requireOpenPeriod(user);
+
   // Calculate totals
   let subtotal = 0;
   let totalCogs = 0;
@@ -660,6 +665,8 @@ export const deleteSalesOrder = createServerFn({ method: "POST" })
  *  user so it can be driven directly (e.g. from integration tests). Mirrors the
  *  wrapper's `requireRole(...)` guard. */
 export async function deleteSalesOrderCore(user: AppUser, data: { id: string }) {
+  await requireOpenPeriod(user);
+
   // Get order details before deletion (for notification)
   const [order] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1);
 
@@ -722,6 +729,8 @@ export async function toggleSalesOrderVerifiedCore(
   user: AppUser,
   data: { id: string; verified: boolean },
 ) {
+  await requireOpenPeriod(user);
+
   const [order] = await db
     .select({ id: orders.id })
     .from(orders)
