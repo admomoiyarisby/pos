@@ -76,7 +76,7 @@ type PeriodType = "bulanan" | "mingguan" | "harian";
 
 const CHANNELS = [
   { label: "Semua", value: "" },
-  { label: "Dine In", value: "Dine-in" },
+  { label: "Cash", value: "Dine-in" },
   { label: "Gojek", value: "Gofood" },
   { label: "Grab", value: "Grabfood" },
   { label: "Shopee", value: "ShopeeFood" },
@@ -446,7 +446,7 @@ const CHANNEL_LABELS = {
   Grabfood: "Grab",
   ShopeeFood: "Shopee",
   TikTok: "TikTok",
-  "Dine-in": "Dine In",
+  "Dine-in": "Cash",
   Perlengkapan: "Perlengkapan",
 } as const; // SAFETY: `in` guard narrows the key to the literal union before lookup;
 // unknown channels fall back to the raw value.
@@ -2648,7 +2648,7 @@ function FinancePage() {
                 <option value="Gofood">Gofood</option>
                 <option value="Grabfood">Grabfood</option>
                 <option value="ShopeeFood">ShopeeFood</option>
-                <option value="Dine-in">Dine-in</option>
+                <option value="Dine-in">Cash</option>
                 <option value="TikTok">TikTok</option>
                 <option value="Perlengkapan">Perlengkapan</option>
               </select>

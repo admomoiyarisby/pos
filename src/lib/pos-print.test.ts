@@ -324,6 +324,7 @@ describe("thermal checker printing", () => {
       branchPhone: "08123456789",
       customerName: "Dine in / Dapur Uyung",
       orderCode: "INV-02210",
+      channel: "Dine-in",
     });
   }
 
@@ -355,6 +356,7 @@ describe("thermal checker printing", () => {
     expect(rows.map((block) => (block.type === "row" ? block.left : ""))).toEqual([
       "Kode Order",
       "Pelanggan",
+      "Channel",
     ]);
   });
 
@@ -381,6 +383,7 @@ describe("thermal checker printing", () => {
       left: "Pelanggan",
       right: "Dine in / Dapur Uyung",
     });
+    expect(blocks).toContainEqual({ type: "row", left: "Channel", right: "Cash" });
     expect(blocks[blocks.length - 1]).toEqual({ type: "feed", lines: 6 });
   });
 

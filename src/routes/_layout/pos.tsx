@@ -732,7 +732,7 @@ function PosPage() {
   let isDineIn = channel === "Dine-in";
   let isCashChannel = channel === "Dine-in" || channel === "Perlengkapan";
 
-  // Auto-select Online Payment for online channels only (Dine-in and Perlengkapan use Cash)
+  // Auto-select Online Payment for online channels only (Cash and Perlengkapan use Cash)
   useEffect(
     function () {
       if (!isCashChannel && paymentMethod !== "Online Payment") {
@@ -900,7 +900,7 @@ function PosPage() {
     setCheckoutError(null);
     // Customer name is mandatory for Dine-in — block the checkout modal early.
     if (isDineIn && !customerName.trim()) {
-      setCheckoutError("Nama pelanggan wajib diisi untuk pesanan Dine-in");
+      setCheckoutError("Nama pelanggan wajib diisi untuk pesanan Cash");
       return;
     }
     setConfirmPaymentModal(true);
@@ -909,7 +909,7 @@ function PosPage() {
   async function handleConfirmPayment() {
     if (cart.length === 0 || (!activeShift && !canBypassShift)) return;
     if (isDineIn && !customerName.trim()) {
-      setCheckoutError("Nama pelanggan wajib diisi untuk pesanan Dine-in");
+      setCheckoutError("Nama pelanggan wajib diisi untuk pesanan Cash");
       return;
     }
     setConfirmPaymentModal(false);
@@ -1464,6 +1464,7 @@ function PosPage() {
                                 finalTotal: finalTotal,
                                 customerName: customerName || undefined,
                                 orderCode: orderCode || undefined,
+                                channel: channel,
                               });
                             }}
                             className="flex-1 h-9 rounded-full border border-dashed text-sm font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-1.5"
@@ -1479,6 +1480,7 @@ function PosPage() {
                                 branchPhone: userBranch?.phone,
                                 customerName: customerName || undefined,
                                 orderCode: orderCode || undefined,
+                                channel: channel,
                               });
                             }}
                             className="flex-1 h-9 rounded-full border border-dashed text-sm font-medium text-muted-foreground hover:bg-muted flex items-center justify-center gap-1.5"
@@ -1657,7 +1659,7 @@ function PosPage() {
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1 min-w-0">
                                   <span
-                                    title={o.channel}
+                                    title={channelLabel(o.channel)}
                                     className="shrink-0 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-primary/20 bg-primary/5 text-primary font-medium"
                                   >
                                     {channelLabel(o.channel)}
@@ -1896,6 +1898,7 @@ function PosPage() {
               finalTotal: finalTotal,
               customerName: customerName || undefined,
               orderCode: orderCode || undefined,
+              channel: channel,
             });
           }}
           onPrintChecker={function () {
@@ -1906,6 +1909,7 @@ function PosPage() {
               branchPhone: userBranch?.phone,
               customerName: customerName || undefined,
               orderCode: orderCode || undefined,
+              channel: channel,
             });
           }}
           onClearError={function () {

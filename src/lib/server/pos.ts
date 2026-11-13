@@ -863,7 +863,7 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
   // Dine-in requires the customer name (client also enforces this — the server
   // check is the authoritative gate against direct API calls).
   if (data.channel === "Dine-in" && !(data.customerName ?? "").trim()) {
-    throw new Error("Nama pelanggan wajib diisi untuk pesanan Dine-in");
+    throw new Error("Nama pelanggan wajib diisi untuk pesanan Cash");
   }
 
   const [branchInfo] = await db

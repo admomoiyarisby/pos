@@ -25,7 +25,7 @@ const channelLabels = {
   Gofood: "Gofood",
   Grabfood: "Grabfood",
   ShopeeFood: "ShopeeFood",
-  "Dine-in": "Dine-in / Offline",
+  "Dine-in": "Cash",
   TikTok: "TikTok",
   Perlengkapan: "Perlengkapan",
 } satisfies Record<string, string>;

@@ -9,6 +9,7 @@ import { pie, polar, radialArc, radialRule, radialText } from "@tanstack/charts/
 import { d3Curve } from "@tanstack/charts/d3/shape";
 import { curveMonotoneX } from "d3-shape";
 import { toDateInputValue } from "#/lib/utils";
+import { channelLabel } from "#/lib/order-channels";
 
 const CHANNEL_COLORS = [
   "var(--color-chart-1)",
@@ -75,7 +76,7 @@ export function computeChannelData(orders: Order[], platformChannels?: string[])
   ];
   return channels
     .map((c) => ({
-      name: c,
+      name: channelLabel(c),
       value: orders.filter((o) => o.channel === c).length,
     }))
     .filter((d) => d.value > 0);

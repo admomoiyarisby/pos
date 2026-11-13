@@ -5,6 +5,7 @@ import { useTableUrlState } from "#/hooks/useTableUrlState";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 import { lookupLabel } from "#/lib/label-lookup";
+import { channelLabel } from "#/lib/order-channels";
 import { toast } from "sonner";
 import {
   Trash2,
@@ -46,7 +47,7 @@ export const Route = createFileRoute("/_layout/data-penjualan")({
 
 const CHANNELS = [
   { value: "all", label: "Semua Channel" },
-  { value: "Dine-in", label: "Dine In" },
+  { value: "Dine-in", label: "Cash" },
   { value: "Gofood", label: "Gojek (Gofood)" },
   { value: "Grabfood", label: "Grab (Grabfood)" },
   { value: "ShopeeFood", label: "Shopee (ShopeeFood)" },
@@ -301,7 +302,7 @@ function DataPenjualanPage() {
               <span
                 className={`inline-block w-2 h-2 rounded-full ${lookupLabel(CHANNEL_COLORS, ch.channel) ?? "bg-gray-300"}`}
               />
-              <span className="text-muted-foreground">{ch.channel}:</span>
+              <span className="text-muted-foreground">{channelLabel(ch.channel)}:</span>
               <span className="font-medium tabular-nums">{ch.orderCount} order</span>
               <span className="text-muted-foreground">·</span>
               <span className="font-medium tabular-nums">{formatRp(ch.totalAmount ?? 0)}</span>
@@ -543,7 +544,7 @@ function OrderRow({
           <span
             className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${lookupLabel(CHANNEL_COLORS, order.channel) ?? "bg-gray-100"}`}
           >
-            {order.channel}
+            {channelLabel(order.channel)}
           </span>
         </td>
         <td className="py-2 px-3">{branchName}</td>
@@ -785,7 +786,7 @@ function MobileOrderCard({
             <span
               className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${lookupLabel(CHANNEL_COLORS, order.channel) ?? "bg-gray-100"}`}
             >
-              {order.channel}
+              {channelLabel(order.channel)}
             </span>
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground min-w-0">
               <Store className="h-3 w-3 shrink-0" />

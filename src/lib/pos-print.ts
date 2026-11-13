@@ -4,6 +4,7 @@
 
 import { toast } from "sonner";
 
+import { channelLabel } from "./order-channels";
 import { printViaBridge } from "./print-bridge";
 import type { BridgeAlign, BridgeBlock, BridgePrintRequest, BridgeTextSize } from "./print-bridge";
 import type { CartItem, OrderResult } from "./pos-types";
@@ -23,6 +24,8 @@ interface PrintBillParams {
   customerName?: string;
   /** External order code (delivery platforms). Omit to show "-". */
   orderCode?: string;
+  /** Channel key. Omit to show "-". */
+  channel?: string;
 }
 
 interface PrintReceiptParams {
@@ -413,7 +416,7 @@ function receiptBlocks({
     { type: "divider" },
     ...thermalRow("Kode Order", order.orderCode || idStr, { width }),
     ...thermalRow("Pelanggan", order.customerName || "-", { width }),
-    ...thermalRow("Channel", order.channel, { width }),
+    ...thermalRow("Channel", channelLabel(order.channel), { width }),
     ...thermalRow("Pembayaran", order.paymentMethod || "-", { width }),
     { type: "divider" },
     ...thermalRow("Jml  Nama Menu", "Harga", { width }),
@@ -518,7 +521,7 @@ function printReceiptInBrowser({
     '<div class="row"><span>Pelanggan:</span><span>' +
       (order.customerName || "-") +
       "</span></div>",
-    '<div class="row"><span>Channel:</span><span>' + order.channel + "</span></div>",
+    '<div class="row"><span>Channel:</span><span>' + channelLabel(order.channel) + "</span></div>",
     '<div class="row"><span>Pembayaran:</span><span>' +
       (order.paymentMethod || "-") +
       "</span></div>",
@@ -579,6 +582,7 @@ function billBlocks({
   finalTotal,
   customerName,
   orderCode,
+  channel,
 }: PrintBillParams): BridgeBlock[] {
   let width = THERMAL_58MM_CHARS;
   let blocks: BridgeBlock[] = [
@@ -601,6 +605,7 @@ function billBlocks({
     { type: "divider" },
     ...thermalRow("Kode Order", orderCode || "-", { width }),
     ...thermalRow("Pelanggan", customerName || "-", { width }),
+    ...thermalRow("Channel", channel ? channelLabel(channel) : "-", { width }),
     { type: "divider" },
     ...thermalRow("Jml  Nama Menu", "Harga", { width }),
   );
@@ -650,6 +655,7 @@ function printBillInBrowser({
   finalTotal,
   customerName,
   orderCode,
+  channel,
 }: PrintBillParams) {
   let printWindow = openPrintWindow();
   if (!printWindow) return;
@@ -701,6 +707,9 @@ function printBillInBrowser({
     '<div class="divider"></div>',
     '<div class="row"><span>Kode Order:</span><span>' + (orderCode || "-") + "</span></div>",
     '<div class="row"><span>Pelanggan:</span><span>' + (customerName || "-") + "</span></div>",
+    '<div class="row"><span>Channel:</span><span>' +
+      (channel ? channelLabel(channel) : "-") +
+      "</span></div>",
     '<div class="divider"></div>',
     // Column header: Jumlah | Nama menu | Harga
     '<div class="colhead"><span class="qty">Jml</span><span>Nama Menu</span><span>Harga</span></div>',
@@ -765,6 +774,8 @@ interface PrintCheckerParams {
   customerName?: string;
   /** External order code (delivery platforms). Omit to show "-". */
   orderCode?: string;
+  /** Channel key. Omit to show "-". */
+  channel?: string;
 }
 
 /**
@@ -779,6 +790,7 @@ function checkerBlocks({
   branchPhone,
   customerName,
   orderCode,
+  channel,
 }: PrintCheckerParams): BridgeBlock[] {
   let width = THERMAL_58MM_CHARS;
   let blocks: BridgeBlock[] = [
@@ -801,6 +813,7 @@ function checkerBlocks({
     { type: "divider" },
     ...thermalRow("Kode Order", orderCode || "-", { width }),
     ...thermalRow("Pelanggan", customerName || "-", { width }),
+    ...thermalRow("Channel", channel ? channelLabel(channel) : "-", { width }),
     { type: "divider" },
     ...thermalLines("Jml  Nama Menu", { width, size: "small" }),
   );
@@ -829,6 +842,7 @@ function printCheckerInBrowser({
   branchPhone,
   customerName,
   orderCode,
+  channel,
 }: PrintCheckerParams) {
   let printWindow = openPrintWindow();
   if (!printWindow) return;
@@ -870,6 +884,9 @@ function printCheckerInBrowser({
     '<div class="divider"></div>',
     '<div class="row"><span>Kode Order:</span><span>' + (orderCode || "-") + "</span></div>",
     '<div class="row"><span>Pelanggan:</span><span>' + (customerName || "-") + "</span></div>",
+    '<div class="row"><span>Channel:</span><span>' +
+      (channel ? channelLabel(channel) : "-") +
+      "</span></div>",
     '<div class="divider"></div>',
     // Column header: Jumlah | Nama menu. No Harga — nothing here is priced.
     '<div class="colhead"><span class="qty">Jml</span><span>Nama Menu</span></div>',

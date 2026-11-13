@@ -6,6 +6,7 @@ import { usePageTitle } from "#/hooks/usePageTitle";
 import { getSalesAnalytics } from "#/lib/server/finance";
 import { formatRp, toDateInputValue } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
+import { channelLabel } from "#/lib/order-channels";
 import { BarChart3, AlertCircle, RefreshCw, Calendar, PieChart as PieIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
@@ -62,7 +63,7 @@ function AnalyticsPage() {
 
   const channelData =
     analytics?.channelData.map((c) => ({
-      name: c.channel,
+      name: channelLabel(c.channel),
       value: c.total,
       count: c.count,
     })) ?? [];

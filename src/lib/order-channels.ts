@@ -9,10 +9,14 @@ import { ORDER_CHANNEL_VALUES } from "#/db/schema";
 /** Channel options in canonical enum order, keyed by the DB enum value. */
 export const ORDER_CHANNEL_OPTIONS = ORDER_CHANNEL_VALUES.map((key) => ({
   key,
-  label: key,
+  label: channelLabel(key),
 }));
 
-/** Human label for a channel key; falls back to the raw key for unknown values. */
+/**
+ * Human label for a channel key; falls back to the raw key for unknown values.
+ * "Dine-in" reads as "Cash" on screens and printouts, but keeps its stored
+ * value so historical orders, payouts, and reports stay addressable.
+ */
 export function channelLabel(key: string): string {
-  return ORDER_CHANNEL_OPTIONS.find((c) => c.key === key)?.label ?? key;
+  return key === "Dine-in" ? "Cash" : key;
 }

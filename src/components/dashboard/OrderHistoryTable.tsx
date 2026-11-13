@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Search } from "lucide-react";
 import { lookupLabel } from "#/lib/label-lookup";
+import { channelLabel } from "#/lib/order-channels";
 import { Badge } from "#/components/ui/badge";
 import { Pagination } from "#/components/ui/Pagination";
 
@@ -48,6 +49,7 @@ export function OrderHistoryTable({
       o.id.toLowerCase().includes(q) ||
       (o.orderCode ?? "").toLowerCase().includes(q) ||
       o.channel.toLowerCase().includes(q) ||
+      channelLabel(o.channel).toLowerCase().includes(q) ||
       new Date(o.createdAt).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" }).includes(q) ||
       o.status.toLowerCase().includes(q)
     );
@@ -162,7 +164,7 @@ export function OrderHistoryTable({
                       <span className="inline-flex items-center gap-1.5">
                         <ChannelDot channel={order.channel} />
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          {order.channel}
+                          {channelLabel(order.channel)}
                         </span>
                       </span>
                     </td>

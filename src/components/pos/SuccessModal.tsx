@@ -5,6 +5,7 @@
 import { useEffect } from "react";
 import { CheckCircle2, Printer } from "lucide-react";
 import type { OrderResult, CartItem } from "#/lib/pos-types";
+import { channelLabel } from "#/lib/order-channels";
 
 /** Outlet info passed through to the receipt printer (logo/address/phone header). */
 interface ReceiptBranchInfo {
@@ -60,7 +61,7 @@ export default function SuccessModal({
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Channel</span>
-            <span>{o.channel}</span>
+            <span>{channelLabel(o.channel)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Pembayaran</span>

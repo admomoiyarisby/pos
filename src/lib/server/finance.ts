@@ -54,6 +54,7 @@ import { escapeHtml, formatRupiah } from "./html-utils";
 import { buildDailyPnl, summarizePnl, type DailyPnl, type OrderAggregate } from "#/lib/finance-pnl";
 import { allocateHpp, compareMenuCogs, type HppItemInput } from "#/lib/finance-hpp";
 import type { MenuCogsLine, MenuCogsRow } from "#/lib/finance-hpp";
+import { channelLabel as orderChannelLabel } from "#/lib/order-channels";
 
 /**
  * Validate a `dateFrom`/`dateTo` pair of Jakarta-local ("YYYY-MM-DD") dates and
@@ -2224,7 +2225,7 @@ export async function buildFinancePrintHtml(data: FinancePrintFilters): Promise<
     .map(
       (ch) =>
         `<tr>
-          <td>${escapeHtml(ch.channel)}</td>
+          <td>${escapeHtml(orderChannelLabel(ch.channel))}</td>
           <td style="text-align:right;">${ch.orderCount}</td>
           <td style="text-align:right;">${formatRupiah(ch.omzet)}</td>
           <td style="text-align:right;">${formatRupiah(ch.hpp)}</td>
@@ -2244,7 +2245,7 @@ export async function buildFinancePrintHtml(data: FinancePrintFilters): Promise<
       ? `${filters.dateFrom ?? "-"} s.d. ${filters.dateTo ?? "-"}`
       : "Semua Periode";
 
-  const channelLabel = filters.channel || "Semua Channel";
+  const channelFilterLabel = filters.channel ? orderChannelLabel(filters.channel) : "Semua Channel";
 
   const gpClass = summary.grossProfit >= 0 ? "green" : "red";
   const gpSign = summary.grossProfit >= 0 ? "" : "-";
@@ -2281,7 +2282,7 @@ export async function buildFinancePrintHtml(data: FinancePrintFilters): Promise<
   <div style="margin-top: 8pt; font-size: 10pt;">
     <div><strong>Periode:</strong> ${escapeHtml(periodLabel)}</div>
     <div><strong>Cabang:</strong> ${escapeHtml(branchName)}</div>
-    <div><strong>Channel:</strong> ${escapeHtml(channelLabel)}</div>
+    <div><strong>Channel:</strong> ${escapeHtml(channelFilterLabel)}</div>
   </div>
 </div>
 

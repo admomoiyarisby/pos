@@ -147,7 +147,7 @@ export default function OrderHistory({
                       })}
                     </span>
                     <span
-                      title={o.channel}
+                      title={channelLabel(o.channel)}
                       className="shrink-0 text-[9px] px-1 py-0.5 rounded border border-primary/20 bg-primary/5 text-primary font-medium"
                     >
                       {channelLabel(o.channel)}
