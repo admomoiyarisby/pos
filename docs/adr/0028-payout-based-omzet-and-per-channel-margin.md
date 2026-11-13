@@ -1,5 +1,10 @@
 # 0028 — Reporting Omzet Is the Channel Payout, POS Net as Fallback
 
+> **Display update (2026-11-13):** a margin that cannot be computed because
+> omzet is zero now renders as `0.0%` instead of `—`, on screen and in the PDF;
+> an empty Omzet Real cell keeps its `—`. The stored margin stays null, so the
+> "no ratio" distinction survives in the data.
+
 ## Context
 
 The `Ledger Harian` on `/finance` reported omzet as Σ `orders.netSales`

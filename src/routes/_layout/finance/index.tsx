@@ -612,8 +612,14 @@ function AdjustmentCell({
 const marginClass = (margin: number | null) =>
   margin === null ? "text-muted-foreground" : margin >= 0 ? "text-emerald-600" : "text-destructive";
 
-const formatMargin = (margin: number | null) =>
-  margin === null ? "—" : `${(margin * 100).toFixed(1)}%`;
+// A null margin (omzet of zero or no POS orders) reads as 0.0%, not a dash:
+// the column always carries a number, including for an explicit payout of 0.
+const formatMargin = (margin: number | null) => `${((margin ?? 0) * 100).toFixed(1)}%`;
+
+// The Per Channel tab keeps its empty-cell rule: no Omzet Real input at all is
+// still "—", but a typed zero is a value and must read 0.0%.
+const formatRealMargin = (real: number | null, margin: number | null) =>
+  real === null ? "—" : formatMargin(margin);
 
 const formatSignedRp = (value: number) =>
   value < 0 ? `−${formatRp(Math.abs(value))}` : `${value > 0 ? "+" : ""}${formatRp(value)}`;
@@ -967,7 +973,7 @@ function ChannelPnlSection({
                                 : "text-muted-foreground"
                           }`}
                         >
-                          {r.margin !== null ? `${(r.margin * 100).toFixed(1)}%` : "—"}
+                          {formatRealMargin(r.omzetReal, r.margin)}
                         </td>
                       </tr>
                     ))}
@@ -989,7 +995,7 @@ function ChannelPnlSection({
                         )}
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums">
-                        {dayReal.margin !== null ? `${(dayReal.margin * 100).toFixed(1)}%` : "—"}
+                        {formatRealMargin(dayReal.real, dayReal.margin)}
                       </td>
                     </tr>
                   </Fragment>
@@ -1014,7 +1020,7 @@ function ChannelPnlSection({
                   )}
                 </td>
                 <td className="py-2.5 px-3 text-right tabular-nums">
-                  {totalReal.margin !== null ? `${(totalReal.margin * 100).toFixed(1)}%` : "—"}
+                  {formatRealMargin(totalReal.real, totalReal.margin)}
                 </td>
               </tr>
             </tfoot>
@@ -1037,7 +1043,7 @@ function ChannelPnlSection({
                   })}
                 </span>
                 <span className="text-xs tabular-nums text-muted-foreground">
-                  Margin {dayReal.margin !== null ? `${(dayReal.margin * 100).toFixed(1)}%` : "—"}
+                  Margin {formatRealMargin(dayReal.real, dayReal.margin)}
                 </span>
               </div>
               <div className="divide-y">
@@ -1054,7 +1060,7 @@ function ChannelPnlSection({
                               : "text-muted-foreground"
                         }`}
                       >
-                        {r.margin !== null ? `${(r.margin * 100).toFixed(1)}%` : "—"}
+                        {formatRealMargin(r.omzetReal, r.margin)}
                       </span>
                     </div>
                     <div className="mt-1 grid grid-cols-3 gap-2 text-xs">

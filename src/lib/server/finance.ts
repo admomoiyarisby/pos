@@ -2208,7 +2208,7 @@ export async function buildFinancePrintHtml(data: FinancePrintFilters): Promise<
     .map(([channel, ch]) => {
       const gross = ch.omzet - ch.hpp;
       const margin =
-        ch.orderCount > 0 && ch.omzet > 0 ? `${((gross / ch.omzet) * 100).toFixed(1)}%` : "—";
+        ch.orderCount > 0 && ch.omzet > 0 ? `${((gross / ch.omzet) * 100).toFixed(1)}%` : "0.0%";
       return {
         channel,
         orderCount: ch.orderCount,
@@ -2237,7 +2237,7 @@ export async function buildFinancePrintHtml(data: FinancePrintFilters): Promise<
   const totalChannelMargin =
     summary.orderCount > 0 && summary.omzet !== 0
       ? `${((summary.grossProfit / summary.omzet) * 100).toFixed(1)}%`
-      : "—";
+      : "0.0%";
 
   const periodLabel =
     filters.dateFrom || filters.dateTo
