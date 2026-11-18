@@ -1,14 +1,24 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  brandLifecycle,
   cancelRequestLifecycle,
+  deliveryNoteLifecycle,
   ingredientLifecycle,
+  periodLifecycle,
   printRequestLifecycle,
+  productionLifecycle,
+  purchaseOrderLifecycle,
+  purchaseRequisitionLifecycle,
   recipeLifecycle,
   scmInvoiceLifecycle,
   scmReturnLifecycle,
+  stockOpnameLifecycle,
+  stockTransferLifecycle,
   supplierDeliveryLifecycle,
   userStatusLifecycle,
   voucherLifecycle,
+  wasteEntryLifecycle,
+  yieldCancelRequestLifecycle,
 } from "./lifecycles";
 import type { Lifecycle } from "./lifecycle";
 
@@ -77,6 +87,16 @@ describe("small lifecycles — generic invariants", () => {
     validate("scm return", scmReturnLifecycle);
     validate("print request", printRequestLifecycle);
     validate("cancel request", cancelRequestLifecycle);
+    validate("waste entry", wasteEntryLifecycle);
+    validate("production", productionLifecycle);
+    validate("yield cancel request", yieldCancelRequestLifecycle);
+    validate("stock opname", stockOpnameLifecycle);
+    validate("period", periodLifecycle);
+    validate("brand", brandLifecycle);
+    validate("purchase requisition", purchaseRequisitionLifecycle);
+    validate("purchase order", purchaseOrderLifecycle);
+    validate("delivery note", deliveryNoteLifecycle);
+    validate("stock transfer", stockTransferLifecycle);
   });
 
   it("rejects an edge that is not in the table with a readable error", () => {
@@ -152,5 +172,74 @@ describe("small lifecycles — expected edges", () => {
     expect(cancelRequestLifecycle.to("Pending", "reject")).toBe("Rejected");
     expect(cancelRequestLifecycle.to("Rejected", "execute")).toBeUndefined();
     expect(cancelRequestLifecycle.to("Executed", "reject")).toBeUndefined();
+  });
+});
+
+describe("newly explicit machines — expected edges", () => {
+  it("waste and production cancel once and stay terminal", () => {
+    for (const lifecycle of [wasteEntryLifecycle, productionLifecycle]) {
+      expect(lifecycle.to("Active", "cancel")).toBe("Cancelled");
+      expect(lifecycle.to("Cancelled", "cancel")).toBeUndefined();
+    }
+  });
+
+  it("yield cancel request executes from Pending, never from Rejected", () => {
+    expect(yieldCancelRequestLifecycle.to("Pending", "execute")).toBe("Executed");
+    expect(yieldCancelRequestLifecycle.to("Pending", "reject")).toBe("Rejected");
+    expect(yieldCancelRequestLifecycle.to("Rejected", "execute")).toBeUndefined();
+    expect(yieldCancelRequestLifecycle.to("Executed", "reject")).toBeUndefined();
+  });
+
+  it("stock opname allows a recount but keeps approve and realize ordered", () => {
+    expect(stockOpnameLifecycle.to("Triggered", "submit")).toBe("Submitted");
+    expect(stockOpnameLifecycle.to("Submitted", "investigate")).toBe("Under Investigation");
+    expect(stockOpnameLifecycle.to("Under Investigation", "submit")).toBe("Submitted");
+    expect(stockOpnameLifecycle.to("Under Investigation", "approve")).toBe("Approved");
+    expect(stockOpnameLifecycle.to("Approved", "realize")).toBe("Realized");
+    expect(stockOpnameLifecycle.to("Submitted", "realize")).toBeUndefined();
+    expect(stockOpnameLifecycle.to("Approved", "submit")).toBeUndefined();
+    expect(stockOpnameLifecycle.to("Realized", "realize")).toBeUndefined();
+  });
+
+  it("period and brand are two-state machines", () => {
+    expect(periodLifecycle.to("Open", "close")).toBe("Closed");
+    expect(periodLifecycle.to("Closed", "close")).toBeUndefined();
+    expect(brandLifecycle.to("Active", "deactivate")).toBe("Inactive");
+    expect(brandLifecycle.to("Inactive", "activate")).toBe("Active");
+  });
+
+  it("purchase requisition follows the approval chain", () => {
+    expect(purchaseRequisitionLifecycle.to("Draft", "submit")).toBe("Pending");
+    expect(purchaseRequisitionLifecycle.to("Pending", "approve")).toBe("Approved");
+    expect(purchaseRequisitionLifecycle.to("Approved", "reject")).toBe("Rejected");
+    expect(purchaseRequisitionLifecycle.to("Pending", "process")).toBe("Processed");
+    expect(purchaseRequisitionLifecycle.to("Processed", "fulfill")).toBe("Fulfilled");
+    expect(purchaseRequisitionLifecycle.to("Fulfilled", "approve")).toBeUndefined();
+    expect(purchaseRequisitionLifecycle.to("Rejected", "process")).toBeUndefined();
+  });
+
+  it("purchase order cancels before completion and never twice", () => {
+    expect(purchaseOrderLifecycle.to("Draft", "send")).toBe("Sent");
+    expect(purchaseOrderLifecycle.to("Sent", "receive")).toBe("Partial");
+    expect(purchaseOrderLifecycle.to("Partial", "complete")).toBe("Completed");
+    expect(purchaseOrderLifecycle.to("Sent", "cancel")).toBe("Cancelled");
+    expect(purchaseOrderLifecycle.to("Cancelled", "cancel")).toBeUndefined();
+    expect(purchaseOrderLifecycle.to("Completed", "cancel")).toBeUndefined();
+  });
+
+  it("delivery note can partially receive, cancel in transit, and not after receipt", () => {
+    expect(deliveryNoteLifecycle.to("Picking", "ship")).toBe("In Transit");
+    expect(deliveryNoteLifecycle.to("In Transit", "receive")).toBe("Partial Received");
+    expect(deliveryNoteLifecycle.to("Partial Received", "complete")).toBe("Received");
+    expect(deliveryNoteLifecycle.to("In Transit", "cancel")).toBe("Cancelled");
+    expect(deliveryNoteLifecycle.to("Received", "cancel")).toBeUndefined();
+  });
+
+  it("legacy stock transfer moves Pending → Approved → In Transit → Completed", () => {
+    expect(stockTransferLifecycle.to("Pending Approval", "approve")).toBe("Approved");
+    expect(stockTransferLifecycle.to("Approved", "ship")).toBe("In Transit");
+    expect(stockTransferLifecycle.to("In Transit", "complete")).toBe("Completed");
+    expect(stockTransferLifecycle.to("In Transit", "cancel")).toBe("Cancelled");
+    expect(stockTransferLifecycle.to("Completed", "cancel")).toBeUndefined();
   });
 });

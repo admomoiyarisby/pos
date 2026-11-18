@@ -641,9 +641,10 @@ describe("Stock opname — partial counting (fields not filled keep their stock)
       expect(realized.itemsAdjusted).toBe(1);
       expect(await getStock(branch, ingA)).toBe(0);
 
-      // Fresh SO with zero filled fields → approve refused (blank-submit guard)
+      // Fresh SO with zero filled fields → approve refused (blank-submit guard).
+      // Use the fresh branch's supervisor, not the previous test branch's.
       const fresh = await seededPairSo();
-      await expect(inv.approveStockOpnameCore(am, { soId: fresh.so.id })).rejects.toThrow(
+      await expect(inv.approveStockOpnameCore(fresh.am, { soId: fresh.so.id })).rejects.toThrow(
         "Belum ada stok fisik yang diisi",
       );
     },
@@ -917,13 +918,35 @@ describe("Stock opname — wrong-role and wrong-branch actors are rejected", () 
       const so = await inv.triggerStockOpnameCore(ba, { branchId: branch, date: "2026-08-25" });
       const item = await firstItem(so.id);
 
-      // Submit: other-branch BA refused
+      // Submit: other-branch BA refused; admin_pusat is not a counter role
       await expect(
         inv.submitStockOpnameCore(otherBa, {
           soId: so.id,
           items: [{ itemId: item.id, physicalStock: 5 }],
         }),
       ).rejects.toThrow("Unauthorized: you can only submit Stock Opnames for your branch");
+      await expect(
+        inv.submitStockOpnameCore(adminPusat, {
+          soId: so.id,
+          items: [{ itemId: item.id, physicalStock: 5 }],
+        }),
+      ).rejects.toThrow("Forbidden: insufficient role (user ");
+
+      // An area manager may only act on assigned branches. Create a sheet at
+      // the other branch and probe the supervisor steps against it.
+      const otherSo = await inv.triggerStockOpnameCore(otherBa, {
+        branchId: otherBranch,
+        date: "2026-08-25",
+      });
+      await expect(inv.approveStockOpnameCore(am, { soId: otherSo.id })).rejects.toThrow(
+        "Unauthorized: Area Manager hanya dapat mengakses cabang yang ditugaskan",
+      );
+      await expect(inv.markStockOpnameInvestigationCore(am, { soId: otherSo.id })).rejects.toThrow(
+        "Unauthorized: Area Manager hanya dapat mengakses cabang yang ditugaskan",
+      );
+      await expect(
+        inv.updateStockOpnameCountsCore(am, { soId: otherSo.id, items: [] }),
+      ).rejects.toThrow("Unauthorized: Area Manager hanya dapat mengakses cabang yang ditugaskan");
 
       // Supervisors only: markInvestigation / approve need super_admin | area_manager
       await expect(inv.markStockOpnameInvestigationCore(ba, { soId: so.id })).rejects.toThrow(

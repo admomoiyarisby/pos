@@ -29,6 +29,35 @@ import { roundQuantity, formatQuantity } from "#/lib/utils";
 import { ensureInventoryRow } from "./sales-data";
 import { branchCatalogClause, heldAtBranchClause, isOutsideBranchCatalog } from "./branch-catalog";
 import { assertAdjustmentBranchScope, STOCK_ADJUSTMENT_ROLES } from "./stock-adjustment-scope";
+import { stockOpnameLifecycle } from "#/lib/lifecycles";
+
+/**
+ * Branch bound shared by every stock-opname transition. The UI shows the sheet
+ * to supervisors, but the server must not trust it: an area manager may only
+ * touch assigned branches, a branch admin only its own, and Admin Pusat only
+ * the central warehouse it owns.
+ */
+async function assertStockOpnameBranchAccess(user: AppUser, branchId: string) {
+  if (user.role === "super_admin") return;
+  if (user.role === "branch_admin") {
+    if (user.branchId === branchId) return;
+    throw new Error("Unauthorized: you can only submit Stock Opnames for your branch");
+  }
+  if (user.role === "area_manager") {
+    const assigned = await db
+      .select({ branchId: areaManagerBranches.branchId })
+      .from(areaManagerBranches)
+      .where(eq(areaManagerBranches.userId, user.id));
+    if (assigned.some((row) => row.branchId === branchId)) return;
+    throw new Error("Unauthorized: Area Manager hanya dapat mengakses cabang yang ditugaskan");
+  }
+  if (user.role === "admin_pusat") {
+    const central = await getCentralWarehouse(db);
+    if (central?.id === branchId) return;
+    throw new Error("Unauthorized: Admin Pusat hanya dapat mengakses Central Warehouse");
+  }
+  throw new Error("Unauthorized: role tidak dapat mengakses stock opname cabang ini");
+}
 
 /**
  * A physical count is a finite, non-negative number of stock units — a fraction
@@ -980,6 +1009,12 @@ export async function submitStockOpnameCore(
 ) {
   await requireOpenPeriod(user);
 
+  if (!["branch_admin", "super_admin", "area_manager"].includes(user.role)) {
+    throw new Error(
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: branch_admin | super_admin | area_manager)`,
+    );
+  }
+
   const [oldSo] = await db
     .select()
     .from(stockOpnames)
@@ -987,18 +1022,17 @@ export async function submitStockOpnameCore(
     .limit(1);
 
   if (!oldSo) throw new Error("Stock opname not found");
+  if (oldSo.deletedAt) throw new Error("Stock opname sudah dihapus");
+  await assertStockOpnameBranchAccess(user, oldSo.branchId);
 
-  // Branch access check
-  if (user.role === "branch_admin" && user.branchId && oldSo.branchId !== user.branchId) {
-    throw new Error("Unauthorized: you can only submit Stock Opnames for your branch");
-  }
-
-  // Counts can be saved while the sheet is fresh (Triggered), while it is
-  // being reviewed (Submitted), or after a recount was requested. Approved and
-  // Realized sheets are locked.
-  if (!["Triggered", "Submitted", "Under Investigation"].includes(oldSo.status)) {
-    throw new Error(`Stock opname berstatus ${oldSo.status} tidak dapat di-submit`);
-  }
+  // Triggered/Submitted/Under Investigation can (re)save counts. The lifecycle
+  // also owns the Submitted self-edge, so a recount after investigation is a
+  // real transition rather than an ad-hoc status assignment.
+  const newStatus = stockOpnameLifecycle.assert(
+    oldSo.status,
+    "submit",
+    `Stock opname berstatus ${oldSo.status} tidak dapat di-submit`,
+  );
 
   // Partial opname: only the items the counter actually filled are sent.
   // Unfilled items keep countedAt NULL and their stock is left unchanged on
@@ -1008,46 +1042,46 @@ export async function submitStockOpnameCore(
     data.items.map((item) => [item.itemId, normalizePhysicalCount(item.physicalStock)]),
   );
 
-  for (const item of data.items) {
-    // Get current system stock
-    const [soItem] = await db
-      .select()
-      .from(stockOpnameItems)
-      .where(eq(stockOpnameItems.id, item.itemId))
-      .limit(1);
+  await db.transaction(async (tx) => {
+    // Claim the header first: two simultaneous submits then serialise, and the
+    // loser reports a processed sheet instead of writing counts under a status
+    // transition it did not own.
+    const [claimed] = await tx
+      .update(stockOpnames)
+      .set({ status: newStatus, submittedBy: user.id })
+      .where(and(eq(stockOpnames.id, data.soId), eq(stockOpnames.status, oldSo.status)))
+      .returning();
+    if (!claimed) throw new Error("Stock opname sudah diproses oleh pengguna lain");
 
-    if (!soItem) continue;
+    for (const item of data.items) {
+      const [soItem] = await tx
+        .select()
+        .from(stockOpnameItems)
+        .where(eq(stockOpnameItems.id, item.itemId))
+        .limit(1);
 
-    const physicalStock = counts.get(item.itemId) ?? 0;
-    const variance = physicalStock - soItem.systemStock;
-    const variancePercentage =
-      soItem.systemStock > 0
-        ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
-        : 0;
+      if (!soItem) continue;
 
-    await db
-      .update(stockOpnameItems)
-      .set({
-        physicalStock,
-        variance,
-        variancePercentage: String(variancePercentage),
-        // Explicitly entering a value marks the item counted — even 0 — so a
-        // legitimate all-zero count is distinguishable from never-filled rows.
-        countedAt: new Date(),
-      })
-      .where(eq(stockOpnameItems.id, item.itemId));
-  }
+      const physicalStock = counts.get(item.itemId) ?? 0;
+      const variance = physicalStock - soItem.systemStock;
+      const variancePercentage =
+        soItem.systemStock > 0
+          ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
+          : 0;
 
-  // Always set to "Submitted" — supervisor decides if investigation is needed
-  const newStatus = "Submitted";
-
-  await db
-    .update(stockOpnames)
-    .set({
-      status: newStatus,
-      submittedBy: user.id,
-    })
-    .where(eq(stockOpnames.id, data.soId));
+      await tx
+        .update(stockOpnameItems)
+        .set({
+          physicalStock,
+          variance,
+          variancePercentage: String(variancePercentage),
+          // Explicitly entering a value marks the item counted — even 0 — so a
+          // legitimate all-zero count is distinguishable from never-filled rows.
+          countedAt: new Date(),
+        })
+        .where(eq(stockOpnameItems.id, item.itemId));
+    }
+  });
 
   await logSystemAction(
     user,
@@ -1085,17 +1119,25 @@ export async function markStockOpnameInvestigationCore(
   const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.soId)).limit(1);
 
   if (!so) throw new Error("Stock opname not found");
-  if (so.status !== "Submitted") throw new Error("Stock opname is not in Submitted status");
+  if (so.deletedAt) throw new Error("Stock opname sudah dihapus");
+  await assertStockOpnameBranchAccess(user, so.branchId);
 
+  const newStatus = stockOpnameLifecycle.assert(
+    so.status,
+    "investigate",
+    "Stock opname is not in Submitted status",
+  );
   const oldSo = { ...so };
 
-  await db
+  const [claimed] = await db
     .update(stockOpnames)
     .set({
-      status: "Under Investigation",
+      status: newStatus,
       investigationNote: data.investigationNote || null,
     })
-    .where(eq(stockOpnames.id, data.soId));
+    .where(and(eq(stockOpnames.id, data.soId), eq(stockOpnames.status, "Submitted")))
+    .returning();
+  if (!claimed) throw new Error("Stock opname sudah diproses oleh pengguna lain");
 
   await logSystemAction(
     user,
@@ -1104,7 +1146,7 @@ export async function markStockOpnameInvestigationCore(
   );
   await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
     ...oldSo,
-    status: "Under Investigation",
+    status: newStatus,
     investigationNote: data.investigationNote,
   });
 
@@ -1143,6 +1185,8 @@ export async function approveStockOpnameCore(
   const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.soId)).limit(1);
 
   if (!so) throw new Error("Stock opname not found");
+  if (so.deletedAt) throw new Error("Stock opname sudah dihapus");
+  await assertStockOpnameBranchAccess(user, so.branchId);
 
   // State guard: approval only proceeds from a sheet that was submitted or is
   // being investigated. Triggered is allowed through so the blank-count guard
@@ -1154,11 +1198,11 @@ export async function approveStockOpnameCore(
   if (so.status === "Realized") {
     throw new Error("Stock Opname sudah di-realize");
   }
-  if (!["Triggered", "Submitted", "Under Investigation"].includes(so.status)) {
-    throw new Error(
-      "Stock opname harus berstatus Submitted atau Under Investigation untuk di-approve",
-    );
-  }
+  const approvedStatus = stockOpnameLifecycle.assert(
+    so.status,
+    "approve",
+    "Stock opname harus berstatus Submitted atau Under Investigation untuk di-approve",
+  );
 
   const oldSo = { ...so };
 
@@ -1251,14 +1295,18 @@ export async function approveStockOpnameCore(
     });
   }
 
-  await db
+  const [claimedSo] = await db
     .update(stockOpnames)
     .set({
-      status: "Approved",
+      status: approvedStatus,
       approvedBy: user.id,
       investigationNote: data.investigationNote || null,
     })
-    .where(eq(stockOpnames.id, data.soId));
+    .where(and(eq(stockOpnames.id, data.soId), eq(stockOpnames.status, so.status)))
+    .returning();
+  if (!claimedSo) {
+    throw new Error("Stock opname sudah diproses oleh pengguna lain — muat ulang halaman");
+  }
 
   // Resolve ingredient names for the change summary returned to the caller.
   const namedIds = [
@@ -1322,7 +1370,7 @@ export async function approveStockOpnameCore(
   );
   await logAudit(user, "stockOpnames", data.soId, "STATUS_CHANGE", oldSo, {
     ...oldSo,
-    status: "Approved",
+    status: approvedStatus,
     approvedBy: user.id,
   });
 
@@ -1362,45 +1410,56 @@ export async function updateStockOpnameCountsCore(
   const [so] = await db.select().from(stockOpnames).where(eq(stockOpnames.id, data.soId)).limit(1);
 
   if (!so) throw new Error("Stock opname not found");
-  if (so.status !== "Under Investigation")
+  if (so.deletedAt) throw new Error("Stock opname sudah dihapus");
+  await assertStockOpnameBranchAccess(user, so.branchId);
+  if (so.status !== "Under Investigation") {
     throw new Error("Stock opname is not under investigation");
-  // Branch admin can only update their own branch SOs
-  if (user.role === "branch_admin" && user.branchId && so.branchId !== user.branchId)
-    throw new Error("Unauthorized: you can only update Stock Opnames for your branch");
+  }
 
   const oldSo = { ...so };
-
-  // Same rule as submit: only sent items are (re)counted; validate first.
   const counts = new Map(
     data.items.map((item) => [item.itemId, normalizePhysicalCount(item.physicalStock)]),
   );
 
-  for (const item of data.items) {
-    const [soItem] = await db
+  await db.transaction(async (tx) => {
+    // Lock the header so a recount cannot interleave with submit/approve.
+    const [locked] = await tx
       .select()
-      .from(stockOpnameItems)
-      .where(eq(stockOpnameItems.id, item.itemId))
+      .from(stockOpnames)
+      .where(eq(stockOpnames.id, data.soId))
+      .for("update")
       .limit(1);
+    if (!locked || locked.status !== "Under Investigation") {
+      throw new Error("Stock opname sudah diproses oleh pengguna lain — muat ulang halaman");
+    }
 
-    if (!soItem) continue;
+    for (const item of data.items) {
+      const [soItem] = await tx
+        .select()
+        .from(stockOpnameItems)
+        .where(eq(stockOpnameItems.id, item.itemId))
+        .limit(1);
 
-    const physicalStock = counts.get(item.itemId) ?? 0;
-    const variance = physicalStock - soItem.systemStock;
-    const variancePercentage =
-      soItem.systemStock > 0
-        ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
-        : 0;
+      if (!soItem) continue;
 
-    await db
-      .update(stockOpnameItems)
-      .set({
-        physicalStock,
-        variance,
-        variancePercentage: String(variancePercentage),
-        countedAt: new Date(),
-      })
-      .where(eq(stockOpnameItems.id, item.itemId));
-  }
+      const physicalStock = counts.get(item.itemId) ?? 0;
+      const variance = physicalStock - soItem.systemStock;
+      const variancePercentage =
+        soItem.systemStock > 0
+          ? Number(((Math.abs(variance) / soItem.systemStock) * 100).toFixed(2))
+          : 0;
+
+      await tx
+        .update(stockOpnameItems)
+        .set({
+          physicalStock,
+          variance,
+          variancePercentage: String(variancePercentage),
+          countedAt: new Date(),
+        })
+        .where(eq(stockOpnameItems.id, item.itemId));
+    }
+  });
 
   await logSystemAction(
     user,
@@ -1454,6 +1513,14 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
   if (!so) {
     throw new Error("Stock Opname tidak ditemukan");
   }
+  if (so.deletedAt) throw new Error("Stock opname sudah dihapus");
+  await assertStockOpnameBranchAccess(user, so.branchId);
+
+  // Realized is terminal. Check it before the Approved guard so a second
+  // realize reports "already realized", not "approve it first".
+  if (so.status === "Realized" || so.realizedAt) {
+    throw new Error("Stock Opname sudah di-realize sebelumnya");
+  }
 
   // ADR 0021: ONLY the opname dated the 25th moves stock. Every other opname is
   // a note — it can be counted, submitted, investigated, and approved, but it
@@ -1479,157 +1546,168 @@ export async function realizeStockOpnameCore(user: AppUser, data: { soId: string
     );
   }
 
-  // Realized is terminal. Check it before the Approved guard so a second
-  // realize reports "already realized", not "approve it first".
-  if (so.status === "Realized" || so.realizedAt) {
-    throw new Error("Stock Opname sudah di-realize sebelumnya");
-  }
-
-  if (so.status !== "Approved") {
-    throw new Error("Stock Opname harus di-approve terlebih dahulu");
-  }
-
-  // 3. Get SO items with ingredient info
-  const allItems = await db
-    .select({
-      id: stockOpnameItems.id,
-      ingredientId: stockOpnameItems.ingredientId,
-      systemStock: stockOpnameItems.systemStock,
-      physicalStock: stockOpnameItems.physicalStock,
-      countedAt: stockOpnameItems.countedAt,
-      isNasi: ingredients.isNasi,
-      ingredientName: ingredients.name,
-    })
-    .from(stockOpnameItems)
-    .innerJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
-    .where(eq(stockOpnameItems.stockOpnameId, data.soId));
-
-  // Partial opname: only counted items are realized — uncounted items keep
-  // their current stock untouched.
-  const items = allItems.filter((i) => i.countedAt !== null);
+  const realizedStatus = stockOpnameLifecycle.assert(
+    so.status,
+    "realize",
+    "Stock Opname harus di-approve terlebih dahulu",
+  );
 
   // Import Nasi conversion
   const { calculateNasiConversion } = await import("./nasi-conversion");
   const { ingredients: ingredientsTable } = await import("#/db/schema");
 
-  // 4. For each counted item, apply the VARIANCE the count found — not the
-  // counted absolute. `systemStock` is the trigger-time snapshot, so
-  // `physicalStock - systemStock` is the discrepancy the count discovered.
-  // Adding that variance to the CURRENT quantity preserves everything recorded
-  // after the count (sales, waste, deliveries), so realizing a 25th-dated
-  // opname on the 28th no longer rewinds the books to the 25th and silently
-  // erases three days of stock-out. The result is clamped at zero: a variance
-  // larger than the remaining stock must not push inventory negative.
-  //
   // `quantity` is a float32 column, so a stored count can read back as
   // 0.30000001192092896; ledger notes are for humans, so trim the noise.
   const forNote = (n: number) => Number(n.toFixed(4));
-  for (const item of items) {
-    const variance = item.physicalStock - item.systemStock;
 
-    // Special handling for Nasi: convert to raw ingredients. Nasi has no
-    // inventory row of its own, so only a POSITIVE variance (more nasi on hand
-    // than the snapshot expected) has an effect: those extra portions consumed
-    // raw ingredients that were never recorded as production. A negative
-    // variance is nasi already accounted for as consumed, so no raw stock is
-    // returned.
-    if (item.isNasi) {
-      if (variance <= 0) continue;
-      const conversions = calculateNasiConversion(variance);
-
-      for (const conv of conversions) {
-        // Find the raw ingredient by name
-        const [rawIngredient] = await db
-          .select({ id: ingredientsTable.id })
-          .from(ingredientsTable)
-          .where(eq(ingredientsTable.name, conv.ingredientName))
-          .limit(1);
-
-        if (!rawIngredient) continue;
-
-        // Same loud-missing-row policy as the normal path below.
-        const inv = await ensureInventoryRow(db, so.branchId, rawIngredient.id);
-        // Nasi was made from raw ingredients, so subtract them
-        const rawAmount = conv.totalAmount;
-        // Clamp to what is actually there, and record the *applied* amount —
-        // the old code wrote `rawAmount` to the ledger while inventory only
-        // lost `min(stock, rawAmount)`, so the ledger overstated the
-        // movement whenever stock was short.
-        const applied = Math.min(inv.quantity, rawAmount);
-        const newQty = inv.quantity - applied;
-
-        await db
-          .update(inventory)
-          .set({ quantity: newQty, lastUpdated: new Date() })
-          .where(eq(inventory.id, inv.id));
-
-        if (applied > 0) {
-          await db.insert(stockLedger).values({
-            branchId: so.branchId,
-            ingredientId: rawIngredient.id,
-            type: "OUT",
-            quantity: applied,
-            balance: newQty,
-            reference: `SO:${data.soId}`,
-            notes: `SO Realization: Nasi +${forNote(variance)} porsi → ${conv.ingredientName} -${forNote(applied)}${conv.unit}`,
-          });
-        }
-      }
-      // Skip the normal inventory adjustment for Nasi
-      continue;
-    }
-
-    // Normal items: apply the snapshot variance to the live balance.
-    // (row created at 0 when missing — never skip the correction silently)
-    const inv = await ensureInventoryRow(db, so.branchId, item.ingredientId);
-    const oldQty = inv.quantity;
-    const newQty = Math.max(0, oldQty + variance);
-    const delta = newQty - oldQty;
-
-    // Update inventory
-    await db
-      .update(inventory)
+  // One transaction claims the sheet and applies every movement. Before this,
+  // two concurrent Realize clicks both read Approved, both applied the
+  // variance, and both marked it Realized — the same stock was corrected
+  // twice. The conditional claim below is the single writer.
+  const outcome = await db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .update(stockOpnames)
       .set({
-        quantity: newQty,
-        lastUpdated: new Date(),
+        status: realizedStatus,
+        realizedAt: new Date(),
+        realizedBy: user.id,
       })
-      .where(eq(inventory.id, inv.id));
+      .where(
+        and(
+          eq(stockOpnames.id, data.soId),
+          eq(stockOpnames.status, so.status),
+          isNull(stockOpnames.realizedAt),
+        ),
+      )
+      .returning();
+    if (!claimed) throw new Error("Stock Opname sudah di-realize sebelumnya");
 
-    // Create stock ledger entry for the adjustment
-    if (delta !== 0) {
-      await db.insert(stockLedger).values({
-        branchId: so.branchId,
-        ingredientId: item.ingredientId,
-        type: delta > 0 ? "IN" : "OUT",
-        quantity: Math.abs(delta),
-        balance: newQty,
-        reference: `SO:${data.soId}`,
-        notes: `SO Realization: selisih ${forNote(variance)} (sistem ${forNote(item.systemStock)} → fisik ${forNote(item.physicalStock)}), stok ${forNote(oldQty)} → ${forNote(newQty)}`,
-      });
+    // 3. Get SO items with ingredient info
+    const allItems = await tx
+      .select({
+        id: stockOpnameItems.id,
+        ingredientId: stockOpnameItems.ingredientId,
+        systemStock: stockOpnameItems.systemStock,
+        physicalStock: stockOpnameItems.physicalStock,
+        countedAt: stockOpnameItems.countedAt,
+        isNasi: ingredients.isNasi,
+        ingredientName: ingredients.name,
+      })
+      .from(stockOpnameItems)
+      .innerJoin(ingredients, eq(stockOpnameItems.ingredientId, ingredients.id))
+      .where(eq(stockOpnameItems.stockOpnameId, data.soId));
+
+    // Partial opname: only counted items are realized — uncounted items keep
+    // their current stock untouched.
+    const items = allItems.filter((i) => i.countedAt !== null);
+
+    // 4. For each counted item, apply the VARIANCE the count found — not the
+    // counted absolute. `systemStock` is the trigger-time snapshot, so
+    // `physicalStock - systemStock` is the discrepancy the count discovered.
+    // Adding that variance to the CURRENT quantity preserves everything recorded
+    // after the count (sales, waste, deliveries), so realizing a 25th-dated
+    // opname on the 28th no longer rewinds the books to the 25th and silently
+    // erases three days of stock-out. The result is clamped at zero: a variance
+    // larger than the remaining stock must not push inventory negative.
+    for (const item of items) {
+      const variance = item.physicalStock - item.systemStock;
+
+      // Special handling for Nasi: convert to raw ingredients. Nasi has no
+      // inventory row of its own, so only a POSITIVE variance (more nasi on hand
+      // than the snapshot expected) has an effect: those extra portions consumed
+      // raw ingredients that were never recorded as production. A negative
+      // variance is nasi already accounted for as consumed, so no raw stock is
+      // returned.
+      if (item.isNasi) {
+        if (variance <= 0) continue;
+        const conversions = calculateNasiConversion(variance);
+
+        for (const conv of conversions) {
+          // Find the raw ingredient by name
+          const [rawIngredient] = await tx
+            .select({ id: ingredientsTable.id })
+            .from(ingredientsTable)
+            .where(eq(ingredientsTable.name, conv.ingredientName))
+            .limit(1);
+
+          if (!rawIngredient) continue;
+
+          // Same loud-missing-row policy as the normal path below.
+          const inv = await ensureInventoryRow(tx, so.branchId, rawIngredient.id);
+          // Nasi was made from raw ingredients, so subtract them
+          const rawAmount = conv.totalAmount;
+          // Clamp to what is actually there, and record the *applied* amount —
+          // the old code wrote `rawAmount` to the ledger while inventory only
+          // lost `min(stock, rawAmount)`, so the ledger overstated the
+          // movement whenever stock was short.
+          const applied = Math.min(inv.quantity, rawAmount);
+          const newQty = inv.quantity - applied;
+
+          await tx
+            .update(inventory)
+            .set({ quantity: newQty, lastUpdated: new Date() })
+            .where(eq(inventory.id, inv.id));
+
+          if (applied > 0) {
+            await tx.insert(stockLedger).values({
+              branchId: so.branchId,
+              ingredientId: rawIngredient.id,
+              type: "OUT",
+              quantity: applied,
+              balance: newQty,
+              reference: `SO:${data.soId}`,
+              notes: `SO Realization: Nasi +${forNote(variance)} porsi → ${conv.ingredientName} -${forNote(applied)}${conv.unit}`,
+            });
+          }
+        }
+        // Skip the normal inventory adjustment for Nasi
+        continue;
+      }
+
+      // Normal items: apply the snapshot variance to the live balance.
+      // (row created at 0 when missing — never skip the correction silently)
+      const inv = await ensureInventoryRow(tx, so.branchId, item.ingredientId);
+      const oldQty = inv.quantity;
+      const newQty = Math.max(0, oldQty + variance);
+      const delta = newQty - oldQty;
+
+      // Update inventory
+      await tx
+        .update(inventory)
+        .set({
+          quantity: newQty,
+          lastUpdated: new Date(),
+        })
+        .where(eq(inventory.id, inv.id));
+
+      // Create stock ledger entry for the adjustment
+      if (delta !== 0) {
+        await tx.insert(stockLedger).values({
+          branchId: so.branchId,
+          ingredientId: item.ingredientId,
+          type: delta > 0 ? "IN" : "OUT",
+          quantity: Math.abs(delta),
+          balance: newQty,
+          reference: `SO:${data.soId}`,
+          notes: `SO Realization: selisih ${forNote(variance)} (sistem ${forNote(item.systemStock)} → fisik ${forNote(item.physicalStock)}), stok ${forNote(oldQty)} → ${forNote(newQty)}`,
+        });
+      }
     }
-  }
 
-  // 5. Mark SO as realized
-  await db
-    .update(stockOpnames)
-    .set({
-      status: "Realized",
-      realizedAt: new Date(),
-      realizedBy: user.id,
-    })
-    .where(eq(stockOpnames.id, data.soId));
+    return { adjusted: items.length, skipped: allItems.length - items.length };
+  });
 
-  // 6. Log the action
+  // 5. Log the action
   await logSystemAction(
     user,
     "Realize SO",
-    `Stock Opname ${data.soId} realized by ${user.name}. Inventory adjusted for ${items.length} of ${allItems.length} items (partial opname: uncounted items unchanged).`,
+    `Stock Opname ${data.soId} realized by ${user.name}. Inventory adjusted for ${outcome.adjusted} of ${outcome.adjusted + outcome.skipped} items (partial opname: uncounted items unchanged).`,
   );
 
   return {
     success: true,
-    itemsAdjusted: items.length,
-    itemsSkipped: allItems.length - items.length,
+    itemsAdjusted: outcome.adjusted,
+    itemsSkipped: outcome.skipped,
   };
 }
 

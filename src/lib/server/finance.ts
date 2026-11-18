@@ -42,6 +42,7 @@ import {
   ne,
 } from "drizzle-orm";
 import { isUniqueViolation } from "./db-errors";
+import { periodLifecycle } from "#/lib/lifecycles";
 import { z } from "zod";
 import { requireAuth, requireRole } from "./auth";
 import { requireOpenPeriod } from "./period-lock";
@@ -1871,34 +1872,39 @@ export async function openPeriodCore(user: AppUser, data: { periodName: string }
   const currentInv = await db.select().from(inventory);
 
   // The unique partial index `period_one_open` is the authoritative guard: two
-  // concurrent opens both pass the check above, and the loser lands here.
+  // concurrent opens both pass the check above, and the loser lands here. The
+  // header and its opening balances share one transaction, so a failed balance
+  // insert cannot leave an open period with no baseline.
   let period: typeof periodLogs.$inferSelect;
   try {
-    [period] = await db
-      .insert(periodLogs)
-      .values({
-        periodName: data.periodName,
-        status: "Open",
-        openedAt: new Date(),
-        openedBy: user.id,
-      })
-      .returning();
+    period = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(periodLogs)
+        .values({
+          periodName: data.periodName,
+          status: "Open",
+          openedAt: new Date(),
+          openedBy: user.id,
+        })
+        .returning();
+
+      for (const inv of currentInv) {
+        await tx.insert(periodBalances).values({
+          periodLogId: created.id,
+          branchId: inv.branchId,
+          ingredientId: inv.ingredientId,
+          balanceType: "opening",
+          quantity: inv.quantity,
+        });
+      }
+
+      return created;
+    });
   } catch (err) {
     if (err instanceof DrizzleQueryError && isUniqueViolation(err)) {
       throw new Error("Tutup periode yang sedang aktif terlebih dahulu");
     }
     throw err;
-  }
-
-  // Create opening balances
-  for (const inv of currentInv) {
-    await db.insert(periodBalances).values({
-      periodLogId: period.id,
-      branchId: inv.branchId,
-      ingredientId: inv.ingredientId,
-      balanceType: "opening",
-      quantity: inv.quantity,
-    });
   }
 
   await logSystemAction(
@@ -1933,7 +1939,7 @@ export async function closePeriodCore(user: AppUser, data: { periodId: string })
     .limit(1);
 
   if (!period) throw new Error("Periode tidak ditemukan");
-  if (period.status !== "Open") throw new Error("Periode sudah ditutup");
+  const closedStatus = periodLifecycle.assert(period.status, "close", "Periode sudah ditutup");
 
   // Exhaustive verification checklist
   const checks: { name: string; passed: boolean; message: string }[] = [];
@@ -2065,33 +2071,34 @@ export async function closePeriodCore(user: AppUser, data: { periodId: string })
     return { success: false, checks, message: "Verifikasi gagal. Perbaiki masalah di atas." };
   }
 
-  // Save closing balances
+  // Save closing balances and close the period atomically. The conditional
+  // status claim is the single writer: a concurrent close cannot insert a
+  // second set of closing balances and then both report success.
   const currentInv = await db.select().from(inventory);
-  for (const inv of currentInv) {
-    await db.insert(periodBalances).values({
-      periodLogId: period.id,
-      branchId: inv.branchId,
-      ingredientId: inv.ingredientId,
-      balanceType: "closing",
-      quantity: inv.quantity,
-    });
-  }
+  const updatedPeriod = await db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .update(periodLogs)
+      .set({
+        status: closedStatus,
+        closedAt: new Date(),
+        closedBy: user.id,
+      })
+      .where(and(eq(periodLogs.id, data.periodId), eq(periodLogs.status, "Open")))
+      .returning();
+    if (!claimed) throw new Error("Periode sudah ditutup oleh pengguna lain");
 
-  // Close period
-  await db
-    .update(periodLogs)
-    .set({
-      status: "Closed",
-      closedAt: new Date(),
-      closedBy: user.id,
-    })
-    .where(eq(periodLogs.id, data.periodId));
+    for (const inv of currentInv) {
+      await tx.insert(periodBalances).values({
+        periodLogId: period.id,
+        branchId: inv.branchId,
+        ingredientId: inv.ingredientId,
+        balanceType: "closing",
+        quantity: inv.quantity,
+      });
+    }
 
-  const [updatedPeriod] = await db
-    .select()
-    .from(periodLogs)
-    .where(eq(periodLogs.id, data.periodId))
-    .limit(1);
+    return claimed;
+  });
 
   // Notify all active users that period is closed
   const allActiveUsers = await db

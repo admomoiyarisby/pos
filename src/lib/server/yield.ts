@@ -24,6 +24,7 @@ import {
   todayDateInputValue,
 } from "#/lib/utils";
 import { logSystemAction, logAudit } from "./logging";
+import { productionLifecycle, yieldCancelRequestLifecycle } from "#/lib/lifecycles";
 
 // ─── Stock effect (ADR 0012) ────────────────────────────────────────────────
 // Recording a production mutates stock at the record's branch: Barang Keluar is
@@ -538,7 +539,8 @@ export async function requestYieldCancelCore(
     .where(eq(yieldConversions.id, data.yieldConversionId))
     .limit(1);
   if (!yc) throw new Error("Produksi tidak ditemukan");
-  if (yc.status === "Cancelled") throw new Error("Produksi sudah dibatalkan");
+  if (yc.deletedAt) throw new Error("Produksi sudah dihapus");
+  productionLifecycle.assert(yc.status, "cancel", "Produksi sudah dibatalkan");
 
   // Branch scoping for branch_admin / central_kitchen
   if (
@@ -549,31 +551,51 @@ export async function requestYieldCancelCore(
     throw new Error("Unauthorized branch");
   }
 
-  // Duplicate guard: only one Pending per conversion
-  const [existing] = await db
-    .select()
-    .from(yieldCancelRequests)
-    .where(
-      and(
-        eq(yieldCancelRequests.yieldConversionId, data.yieldConversionId),
-        eq(yieldCancelRequests.status, "Pending"),
-      ),
-    )
-    .limit(1);
-  if (existing) {
-    return { ...existing, alreadyPending: true };
-  }
+  // Duplicate guard + insert under one row lock. Two cashiers requesting a
+  // cancel at the same time used to both find no Pending row and both insert,
+  // leaving two open approvals for the same production. The lock serialises
+  // them: the loser sees the winner's Pending row and gets it back.
+  const requestOutcome = await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select()
+      .from(yieldConversions)
+      .where(eq(yieldConversions.id, data.yieldConversionId))
+      .for("update")
+      .limit(1);
+    if (!locked) throw new Error("Produksi tidak ditemukan");
+    if (locked.deletedAt) throw new Error("Produksi sudah dihapus");
+    productionLifecycle.assert(locked.status, "cancel", "Produksi sudah dibatalkan");
+    if (locked.branchId !== yc.branchId) throw new Error("Produksi berubah, coba lagi");
 
-  const [req] = await db
-    .insert(yieldCancelRequests)
-    .values({
-      yieldConversionId: data.yieldConversionId,
-      reason,
-      detail: data.detail?.trim() || null,
-      requestedBy: user.id,
-      status: "Pending",
-    })
-    .returning();
+    const [existing] = await tx
+      .select()
+      .from(yieldCancelRequests)
+      .where(
+        and(
+          eq(yieldCancelRequests.yieldConversionId, data.yieldConversionId),
+          eq(yieldCancelRequests.status, "Pending"),
+        ),
+      )
+      .limit(1);
+    if (existing) return { request: existing, alreadyPending: true as const };
+
+    const [created] = await tx
+      .insert(yieldCancelRequests)
+      .values({
+        yieldConversionId: data.yieldConversionId,
+        reason,
+        detail: data.detail?.trim() || null,
+        requestedBy: user.id,
+        status: "Pending",
+      })
+      .returning();
+    return { request: created, alreadyPending: false as const };
+  });
+
+  const req = requestOutcome.request;
+  if (requestOutcome.alreadyPending) {
+    return { ...req, alreadyPending: true };
+  }
 
   await logSystemAction(
     user,
@@ -699,7 +721,17 @@ export async function approveYieldCancelRequestCore(user: AppUser, data: { reque
     .where(eq(yieldConversions.id, req.yieldConversionId))
     .limit(1);
   if (!yc) throw new Error("Produksi tidak ditemukan");
-  if (yc.status === "Cancelled") throw new Error("Produksi sudah dibatalkan");
+  if (yc.deletedAt) throw new Error("Produksi sudah dihapus");
+  const executedStatus = yieldCancelRequestLifecycle.assert(
+    req.status,
+    "execute",
+    "Request sudah diproses",
+  );
+  const cancelledStatus = productionLifecycle.assert(
+    yc.status,
+    "cancel",
+    "Produksi sudah dibatalkan",
+  );
 
   if (
     user.role === "area_manager" &&
@@ -717,7 +749,7 @@ export async function approveYieldCancelRequestCore(user: AppUser, data: { reque
     // cannot be restored twice.
     const [r] = await tx
       .update(yieldCancelRequests)
-      .set({ status: "Approved", approvedBy: user.id, approvedAt: new Date() })
+      .set({ status: executedStatus, approvedBy: user.id, approvedAt: new Date() })
       .where(
         and(eq(yieldCancelRequests.id, data.requestId), eq(yieldCancelRequests.status, "Pending")),
       )
@@ -729,7 +761,7 @@ export async function approveYieldCancelRequestCore(user: AppUser, data: { reque
     const [cancelled] = await tx
       .update(yieldConversions)
       .set({
-        status: "Cancelled",
+        status: cancelledStatus,
         cancelledAt: new Date(),
         cancelledBy: user.id,
         cancelReason: req.reason,
@@ -787,6 +819,11 @@ export async function rejectYieldCancelRequestCore(user: AppUser, data: { reques
     .limit(1);
   if (!req) throw new Error("Request not found");
   if (req.status !== "Pending") throw new Error("Request sudah diproses");
+  const rejectedStatus = yieldCancelRequestLifecycle.assert(
+    req.status,
+    "reject",
+    "Request sudah diproses",
+  );
 
   const [yc] = await db
     .select()
@@ -801,11 +838,16 @@ export async function rejectYieldCancelRequestCore(user: AppUser, data: { reques
     throw new Error("Unauthorized: Area Manager hanya dapat menolak untuk cabang yang ditugaskan");
   }
 
+  // Conditional claim, mirroring approve: a concurrent approval that already
+  // executed the request must not be overwritten with Rejected.
   const [updated] = await db
     .update(yieldCancelRequests)
-    .set({ status: "Rejected", approvedBy: user.id, approvedAt: new Date() })
-    .where(eq(yieldCancelRequests.id, data.requestId))
+    .set({ status: rejectedStatus, approvedBy: user.id, approvedAt: new Date() })
+    .where(
+      and(eq(yieldCancelRequests.id, data.requestId), eq(yieldCancelRequests.status, "Pending")),
+    )
     .returning();
+  if (!updated) throw new Error("Request sudah diproses");
 
   await db.insert(systemNotifications).values({
     userId: req.requestedBy,
@@ -851,7 +893,12 @@ export async function directCancelYieldConversionCore(
     .where(eq(yieldConversions.id, data.yieldConversionId))
     .limit(1);
   if (!yc) throw new Error("Produksi tidak ditemukan");
-  if (yc.status === "Cancelled") throw new Error("Produksi sudah dibatalkan");
+  if (yc.deletedAt) throw new Error("Produksi sudah dihapus");
+  const cancelledStatus = productionLifecycle.assert(
+    yc.status,
+    "cancel",
+    "Produksi sudah dibatalkan",
+  );
 
   // Cancel + stock reversal in one transaction (ADR 0012). The conditional
   // update is the claim: a concurrent cancel (direct or via an approved
@@ -860,7 +907,7 @@ export async function directCancelYieldConversionCore(
     const [cancelled] = await tx
       .update(yieldConversions)
       .set({
-        status: "Cancelled",
+        status: cancelledStatus,
         cancelledAt: new Date(),
         cancelledBy: user.id,
         cancelReason: reason,

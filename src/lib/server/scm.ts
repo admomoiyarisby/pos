@@ -28,13 +28,36 @@ import { z } from "zod";
 import { lineAmount } from "#/lib/utils";
 import { requireAuth, requireRole } from "./auth";
 import { requireOpenPeriod } from "./period-lock";
-import { scmInvoiceLifecycle } from "#/lib/lifecycles";
+import {
+  deliveryNoteLifecycle,
+  purchaseOrderLifecycle,
+  purchaseRequisitionLifecycle,
+  scmInvoiceLifecycle,
+  stockTransferLifecycle,
+} from "#/lib/lifecycles";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { recalculateRecipeCostsForIngredient } from "./cost-rollup";
 import { outsideBranchCatalogItems } from "#/lib/server/branch-catalog";
+import { ensureInventoryRow } from "./sales-data";
 
 // ─── Helpers ───
+
+type PrStatus = (typeof PR_STATUS_VALUES)[number];
+
+/** PR status target → the lifecycle event that reaches it. Draft has no edge
+ *  into it (a PR starts there); null means "no transition". */
+const PR_EVENT_BY_TARGET = {
+  Draft: null,
+  Pending: "submit",
+  Approved: "approve",
+  Rejected: "reject",
+  Processed: "process",
+  Fulfilled: "fulfill",
+} as const satisfies Record<
+  PrStatus,
+  "submit" | "approve" | "reject" | "process" | "fulfill" | null
+>;
 
 async function notifyUsers(
   roles: (typeof USER_ROLE_VALUES)[number][],
@@ -283,14 +306,24 @@ export async function updatePurchaseRequisitionCore(
   }
 
   if (status) {
+    const target = z.enum(PR_STATUS_VALUES).parse(status);
+    if (target !== oldPr.status) {
+      const event = PR_EVENT_BY_TARGET[target];
+      if (!event) throw new Error(`Status PR tidak dapat diubah ke ${target}`);
+      purchaseRequisitionLifecycle.assert(
+        oldPr.status,
+        event,
+        `Status PR tidak dapat diubah dari ${oldPr.status} ke ${target}`,
+      );
+    }
     const updateData: UnknownRecord = {
-      status,
+      status: target,
       updatedAt: new Date(),
     };
-    if (status === "Rejected" && rejectionReason) {
+    if (target === "Rejected" && rejectionReason) {
       updateData.rejectionReason = rejectionReason;
     }
-    if (status === "Approved" || status === "Processed" || status === "Rejected") {
+    if (target === "Approved" || target === "Processed" || target === "Rejected") {
       updateData.approvedBy = user.id;
     }
     await db.update(purchaseRequisitions).set(updateData).where(eq(purchaseRequisitions.id, id));
@@ -361,9 +394,11 @@ export async function processPurchaseRequisitionCore(
     .limit(1);
 
   if (!pr) throw new Error("PR not found");
-  if (!["Pending", "Approved"].includes(pr.status)) {
-    throw new Error("PR must be Pending or Approved to process");
-  }
+  purchaseRequisitionLifecycle.assert(
+    pr.status,
+    "process",
+    "PR must be Pending or Approved to process",
+  );
 
   if (user.role === "area_manager") {
     assertBranchAccess(user, pr.branchId);
@@ -660,11 +695,15 @@ export async function sendPurchaseOrderCore(user: AppUser, data: { id: string })
     .limit(1);
 
   if (!oldPo) throw new Error("PO not found");
-  if (oldPo.status !== "Draft") throw new Error("Only Draft PO can be sent");
+  const sentStatus = purchaseOrderLifecycle.assert(
+    oldPo.status,
+    "send",
+    "Only Draft PO can be sent",
+  );
 
   const [po] = await db
     .update(purchaseOrders)
-    .set({ status: "Sent", updatedAt: new Date() })
+    .set({ status: sentStatus, updatedAt: new Date() })
     .where(eq(purchaseOrders.id, data.id))
     .returning();
 
@@ -700,9 +739,7 @@ export async function receivePurchaseOrderCore(
     .limit(1);
 
   if (!po) throw new Error("PO not found");
-  if (!["Sent", "Partial"].includes(po.status)) {
-    throw new Error("PO must be Sent or Partial to receive");
-  }
+  purchaseOrderLifecycle.assert(po.status, "receive", "PO must be Sent or Partial to receive");
 
   for (const item of data.items) {
     await db
@@ -718,7 +755,12 @@ export async function receivePurchaseOrderCore(
     .where(eq(purchaseOrderItems.purchaseOrderId, data.id));
 
   const allReceived = poItems.every((item) => (item.receivedQuantity ?? 0) >= item.quantity);
-  const newStatus = allReceived ? "Completed" : "Partial";
+  const event = allReceived ? "complete" : "receive";
+  const newStatus = purchaseOrderLifecycle.assert(
+    po.status,
+    event,
+    "PO must be Sent or Partial to receive",
+  );
 
   const [updatedPo] = await db
     .update(purchaseOrders)
@@ -759,11 +801,15 @@ export async function cancelPurchaseOrderCore(user: AppUser, data: { id: string 
     .limit(1);
 
   if (!oldPo) throw new Error("PO not found");
-  if (oldPo.status === "Completed") throw new Error("Completed PO cannot be cancelled");
+  const cancelledStatus = purchaseOrderLifecycle.assert(
+    oldPo.status,
+    "cancel",
+    "Completed PO cannot be cancelled",
+  );
 
   const [po] = await db
     .update(purchaseOrders)
-    .set({ status: "Cancelled", updatedAt: new Date() })
+    .set({ status: cancelledStatus, updatedAt: new Date() })
     .where(eq(purchaseOrders.id, data.id))
     .returning();
 
@@ -1008,69 +1054,80 @@ export async function shipDeliveryNoteCore(user: AppUser, data: { dnId: string }
     );
   }
 
-  const items = await db
-    .select()
-    .from(deliveryNoteItems)
-    .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
-
-  const [dn] = await db
-    .select()
-    .from(deliveryNotes)
-    .where(eq(deliveryNotes.id, data.dnId))
-    .limit(1);
-
-  if (!dn) throw new Error("Delivery note not found");
-  if (dn.status !== "Picking") throw new Error("SJ must be in Picking status to ship");
-
-  for (const item of items) {
-    const shipQty = item.pickedQuantity ?? item.quantity;
-
-    const [inv] = await db
+  // One transaction + a row lock: shipping used to deduct source inventory and
+  // insert in-transit rows before flipping the status, so two concurrent ship
+  // clicks (or a retry after a partial failure) deducted the same goods twice.
+  const { dn, updatedDn } = await db.transaction(async (tx) => {
+    const [dn] = await tx
       .select()
-      .from(inventory)
-      .where(
-        and(eq(inventory.branchId, dn.fromBranchId), eq(inventory.ingredientId, item.ingredientId)),
-      )
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .for("update")
       .limit(1);
 
-    if (inv) {
-      const newQty = Math.max(0, inv.quantity - shipQty);
-      await db
-        .update(inventory)
-        .set({ quantity: newQty, lastUpdated: new Date() })
-        .where(eq(inventory.id, inv.id));
+    if (!dn) throw new Error("Delivery note not found");
+    const inTransitStatus = deliveryNoteLifecycle.assert(
+      dn.status,
+      "ship",
+      "SJ must be in Picking status to ship",
+    );
 
-      await db.insert(stockLedger).values({
-        branchId: dn.fromBranchId,
+    const items = await tx
+      .select()
+      .from(deliveryNoteItems)
+      .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
+
+    for (const item of items) {
+      const shipQty = item.pickedQuantity ?? item.quantity;
+
+      const [inv] = await tx
+        .select()
+        .from(inventory)
+        .where(
+          and(
+            eq(inventory.branchId, dn.fromBranchId),
+            eq(inventory.ingredientId, item.ingredientId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+
+      if (inv) {
+        const newQty = Math.max(0, inv.quantity - shipQty);
+        await tx
+          .update(inventory)
+          .set({ quantity: newQty, lastUpdated: new Date() })
+          .where(eq(inventory.id, inv.id));
+
+        await tx.insert(stockLedger).values({
+          branchId: dn.fromBranchId,
+          ingredientId: item.ingredientId,
+          type: "OUT",
+          quantity: shipQty,
+          balance: newQty,
+          reference: data.dnId,
+          notes: `SJ Kirim ${dn.code}`,
+        });
+      }
+
+      await tx.insert(inTransitInventory).values({
+        deliveryNoteId: data.dnId,
+        branchId: dn.toBranchId,
         ingredientId: item.ingredientId,
-        type: "OUT",
         quantity: shipQty,
-        balance: newQty,
-        reference: data.dnId,
-        notes: `SJ Kirim ${dn.code}`,
       });
     }
 
-    await db.insert(inTransitInventory).values({
-      deliveryNoteId: data.dnId,
-      branchId: dn.toBranchId,
-      ingredientId: item.ingredientId,
-      quantity: shipQty,
-    });
-  }
+    const [updatedDn] = await tx
+      .update(deliveryNotes)
+      .set({ status: inTransitStatus, updatedAt: new Date() })
+      .where(eq(deliveryNotes.id, data.dnId))
+      .returning();
 
-  await db
-    .update(deliveryNotes)
-    .set({ status: "In Transit", updatedAt: new Date() })
-    .where(eq(deliveryNotes.id, data.dnId));
+    return { dn, updatedDn };
+  });
 
-  const [updatedDn] = await db
-    .select()
-    .from(deliveryNotes)
-    .where(eq(deliveryNotes.id, data.dnId))
-    .limit(1);
-
-  await logSystemAction(user, "Ship Delivery Note", `SJ "${dn?.code}" dikirim oleh ${user.name}`);
+  await logSystemAction(user, "Ship Delivery Note", `SJ "${dn.code}" dikirim oleh ${user.name}`);
   await logAudit(user, "deliveryNotes", data.dnId, "STATUS_CHANGE", dn, updatedDn);
 
   // Notify branch admin
@@ -1365,7 +1422,12 @@ export async function receiveDeliveryNoteCore(
       return (item.receivedQuantity ?? 0) + (item.rejectedQuantity ?? 0) >= picked;
     });
 
-    const newStatus = allFullyReceived ? "Received" : "Partial Received";
+    const event = allFullyReceived ? "complete" : "receive";
+    const newStatus = deliveryNoteLifecycle.assert(
+      dn.status,
+      event,
+      "SJ must be In Transit or Partial Received to receive",
+    );
 
     await tx
       .update(deliveryNotes)
@@ -1441,72 +1503,83 @@ export async function cancelDeliveryNoteCore(
     );
   }
 
-  const [dn] = await db
-    .select()
-    .from(deliveryNotes)
-    .where(eq(deliveryNotes.id, data.dnId))
-    .limit(1);
+  // One transaction + a row lock: cancelling an In Transit SJ restores source
+  // stock, so a double click must not restore it twice. The lock serialises
+  // the two callers and the loser sees Cancelled (no cancel edge).
+  const { dn, updatedDn } = await db.transaction(async (tx) => {
+    const [dn] = await tx
+      .select()
+      .from(deliveryNotes)
+      .where(eq(deliveryNotes.id, data.dnId))
+      .for("update")
+      .limit(1);
 
-  if (!dn) throw new Error("Delivery note not found");
-  if (!["Picking", "In Transit"].includes(dn.status)) {
-    throw new Error("Can only cancel SJ in Picking or In Transit status");
-  }
+    if (!dn) throw new Error("Delivery note not found");
+    const cancelledStatus = deliveryNoteLifecycle.assert(
+      dn.status,
+      "cancel",
+      "Can only cancel SJ in Picking or In Transit status",
+    );
 
-  const items = await db
-    .select()
-    .from(deliveryNoteItems)
-    .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
+    const items = await tx
+      .select()
+      .from(deliveryNoteItems)
+      .where(eq(deliveryNoteItems.deliveryNoteId, data.dnId));
 
-  if (dn.status === "In Transit") {
-    // Reverse source inventory deduction and clean up in-transit
-    for (const item of items) {
-      const shipQty = item.pickedQuantity ?? item.quantity;
+    if (dn.status === "In Transit") {
+      // Reverse source inventory deduction and clean up in-transit
+      for (const item of items) {
+        const shipQty = item.pickedQuantity ?? item.quantity;
 
-      const [sourceInv] = await db
-        .select()
-        .from(inventory)
-        .where(
-          and(
-            eq(inventory.branchId, dn.fromBranchId),
-            eq(inventory.ingredientId, item.ingredientId),
-          ),
-        )
-        .limit(1);
+        const [sourceInv] = await tx
+          .select()
+          .from(inventory)
+          .where(
+            and(
+              eq(inventory.branchId, dn.fromBranchId),
+              eq(inventory.ingredientId, item.ingredientId),
+            ),
+          )
+          .for("update")
+          .limit(1);
 
-      if (sourceInv) {
-        const newQty = sourceInv.quantity + shipQty;
-        await db
-          .update(inventory)
-          .set({ quantity: newQty, lastUpdated: new Date() })
-          .where(eq(inventory.id, sourceInv.id));
+        if (sourceInv) {
+          const newQty = sourceInv.quantity + shipQty;
+          await tx
+            .update(inventory)
+            .set({ quantity: newQty, lastUpdated: new Date() })
+            .where(eq(inventory.id, sourceInv.id));
 
-        await db.insert(stockLedger).values({
-          branchId: dn.fromBranchId,
-          ingredientId: item.ingredientId,
-          type: "IN",
-          quantity: shipQty,
-          balance: newQty,
-          reference: data.dnId,
-          notes: `SJ Batal ${dn.code}`,
-        });
+          await tx.insert(stockLedger).values({
+            branchId: dn.fromBranchId,
+            ingredientId: item.ingredientId,
+            type: "IN",
+            quantity: shipQty,
+            balance: newQty,
+            reference: data.dnId,
+            notes: `SJ Batal ${dn.code}`,
+          });
+        }
+
+        await tx
+          .delete(inTransitInventory)
+          .where(
+            and(
+              eq(inTransitInventory.deliveryNoteId, data.dnId),
+              eq(inTransitInventory.ingredientId, item.ingredientId),
+            ),
+          );
       }
-
-      await db
-        .delete(inTransitInventory)
-        .where(
-          and(
-            eq(inTransitInventory.deliveryNoteId, data.dnId),
-            eq(inTransitInventory.ingredientId, item.ingredientId),
-          ),
-        );
     }
-  }
 
-  const [updatedDn] = await db
-    .update(deliveryNotes)
-    .set({ status: "Cancelled", updatedAt: new Date() })
-    .where(eq(deliveryNotes.id, data.dnId))
-    .returning();
+    const [updatedDn] = await tx
+      .update(deliveryNotes)
+      .set({ status: cancelledStatus, updatedAt: new Date() })
+      .where(eq(deliveryNotes.id, data.dnId))
+      .returning();
+
+    return { dn, updatedDn };
+  });
 
   await logSystemAction(
     user,
@@ -1517,8 +1590,6 @@ export async function cancelDeliveryNoteCore(
 
   return { success: true };
 }
-
-// ─── Review Delivery Note ───
 
 export const reviewDeliveryNote = createServerFn({ method: "POST" })
   .validator((data: { dnId: string }) => data)
@@ -1560,10 +1631,13 @@ export async function reviewDeliveryNoteCore(user: AppUser, data: { dnId: string
       .where(eq(purchaseRequisitions.id, dn.purchaseRequisitionId))
       .limit(1);
 
-    if (pr && pr.status === "Processed") {
+    if (pr && purchaseRequisitionLifecycle.can(pr.status, "fulfill")) {
       await db
         .update(purchaseRequisitions)
-        .set({ status: "Fulfilled", updatedAt: new Date() })
+        .set({
+          status: purchaseRequisitionLifecycle.assert(pr.status, "fulfill"),
+          updatedAt: new Date(),
+        })
         .where(eq(purchaseRequisitions.id, pr.id));
 
       await logSystemAction(
@@ -1965,7 +2039,11 @@ export async function approveStockTransferCore(user: AppUser, data: { transferId
     .limit(1);
 
   if (!transfer) throw new Error("Transfer not found");
-  if (transfer.status !== "Pending Approval") throw new Error("Transfer must be Pending Approval");
+  const approvedStatus = stockTransferLifecycle.assert(
+    transfer.status,
+    "approve",
+    "Transfer must be Pending Approval",
+  );
 
   if (user.role === "area_manager") {
     assertBranchAccess(user, transfer.fromBranchId);
@@ -1973,7 +2051,7 @@ export async function approveStockTransferCore(user: AppUser, data: { transferId
 
   await db
     .update(stockTransfers)
-    .set({ status: "Approved", approvedBy: user.id })
+    .set({ status: approvedStatus, approvedBy: user.id })
     .where(eq(stockTransfers.id, data.transferId));
 
   await logSystemAction(
@@ -2025,7 +2103,11 @@ export async function rejectStockTransferCore(
     .limit(1);
 
   if (!transfer) throw new Error("Transfer not found");
-  if (transfer.status !== "Pending Approval") throw new Error("Transfer must be Pending Approval");
+  const rejectedStatus = stockTransferLifecycle.assert(
+    transfer.status,
+    "reject",
+    "Transfer must be Pending Approval",
+  );
 
   if (user.role === "area_manager") {
     assertBranchAccess(user, transfer.fromBranchId);
@@ -2034,7 +2116,7 @@ export async function rejectStockTransferCore(
   await db
     .update(stockTransfers)
     .set({
-      status: "Rejected",
+      status: rejectedStatus,
       rejectedBy: user.id,
       rejectionReason: data.reason,
     })
@@ -2080,39 +2162,34 @@ export async function shipStockTransferCore(user: AppUser, data: { transferId: s
     );
   }
 
-  const [transfer] = await db
-    .select()
-    .from(stockTransfers)
-    .where(eq(stockTransfers.id, data.transferId))
-    .limit(1);
+  const { transfer } = await db.transaction(async (tx) => {
+    const [transfer] = await tx
+      .select()
+      .from(stockTransfers)
+      .where(eq(stockTransfers.id, data.transferId))
+      .for("update")
+      .limit(1);
 
-  if (!transfer) throw new Error("Transfer not found");
-  if (transfer.status !== "Approved") throw new Error("Transfer must be Approved to ship");
+    if (!transfer) throw new Error("Transfer not found");
+    const inTransitStatus = stockTransferLifecycle.assert(
+      transfer.status,
+      "ship",
+      "Transfer must be Approved to ship",
+    );
 
-  if (user.role === "branch_admin" && transfer.fromBranchId !== user.branchId) {
-    throw new Error("Can only ship transfers from your own branch");
-  }
+    if (user.role === "branch_admin" && transfer.fromBranchId !== user.branchId) {
+      throw new Error("Can only ship transfers from your own branch");
+    }
 
-  // Deduct from source
-  const [sourceInv] = await db
-    .select()
-    .from(inventory)
-    .where(
-      and(
-        eq(inventory.branchId, transfer.fromBranchId),
-        eq(inventory.ingredientId, transfer.ingredientId),
-      ),
-    )
-    .limit(1);
-
-  if (sourceInv) {
+    // Deduct from source under the same lock that claimed the transfer.
+    const sourceInv = await ensureInventoryRow(tx, transfer.fromBranchId, transfer.ingredientId);
     const newQty = Math.max(0, sourceInv.quantity - transfer.quantity);
-    await db
+    await tx
       .update(inventory)
       .set({ quantity: newQty, lastUpdated: new Date() })
       .where(eq(inventory.id, sourceInv.id));
 
-    await db.insert(stockLedger).values({
+    await tx.insert(stockLedger).values({
       branchId: transfer.fromBranchId,
       ingredientId: transfer.ingredientId,
       type: "OUT",
@@ -2121,20 +2198,21 @@ export async function shipStockTransferCore(user: AppUser, data: { transferId: s
       reference: data.transferId,
       notes: `Mutasi ke ${transfer.toBranchId}`,
     });
-  }
 
-  // Create in-transit record
-  await db.insert(inTransitInventory).values({
-    stockTransferId: data.transferId,
-    branchId: transfer.toBranchId,
-    ingredientId: transfer.ingredientId,
-    quantity: transfer.quantity,
+    await tx.insert(inTransitInventory).values({
+      stockTransferId: data.transferId,
+      branchId: transfer.toBranchId,
+      ingredientId: transfer.ingredientId,
+      quantity: transfer.quantity,
+    });
+
+    await tx
+      .update(stockTransfers)
+      .set({ status: inTransitStatus })
+      .where(eq(stockTransfers.id, data.transferId));
+
+    return { transfer };
   });
-
-  await db
-    .update(stockTransfers)
-    .set({ status: "In Transit" })
-    .where(eq(stockTransfers.id, data.transferId));
 
   await logSystemAction(
     user,
@@ -2180,39 +2258,33 @@ export async function receiveStockTransferCore(user: AppUser, data: { transferId
     );
   }
 
-  const [transfer] = await db
-    .select()
-    .from(stockTransfers)
-    .where(eq(stockTransfers.id, data.transferId))
-    .limit(1);
+  const { transfer } = await db.transaction(async (tx) => {
+    const [transfer] = await tx
+      .select()
+      .from(stockTransfers)
+      .where(eq(stockTransfers.id, data.transferId))
+      .for("update")
+      .limit(1);
 
-  if (!transfer) throw new Error("Transfer not found");
-  if (transfer.status !== "In Transit") throw new Error("Transfer must be In Transit to receive");
+    if (!transfer) throw new Error("Transfer not found");
+    const completedStatus = stockTransferLifecycle.assert(
+      transfer.status,
+      "complete",
+      "Transfer must be In Transit to receive",
+    );
 
-  if (user.role === "branch_admin" && transfer.toBranchId !== user.branchId) {
-    throw new Error("Can only receive transfers to your own branch");
-  }
+    if (user.role === "branch_admin" && transfer.toBranchId !== user.branchId) {
+      throw new Error("Can only receive transfers to your own branch");
+    }
 
-  // Add to destination
-  const [targetInv] = await db
-    .select()
-    .from(inventory)
-    .where(
-      and(
-        eq(inventory.branchId, transfer.toBranchId),
-        eq(inventory.ingredientId, transfer.ingredientId),
-      ),
-    )
-    .limit(1);
-
-  if (targetInv) {
+    const targetInv = await ensureInventoryRow(tx, transfer.toBranchId, transfer.ingredientId);
     const newQty = targetInv.quantity + transfer.quantity;
-    await db
+    await tx
       .update(inventory)
       .set({ quantity: newQty, lastUpdated: new Date() })
       .where(eq(inventory.id, targetInv.id));
 
-    await db.insert(stockLedger).values({
+    await tx.insert(stockLedger).values({
       branchId: transfer.toBranchId,
       ingredientId: transfer.ingredientId,
       type: "IN",
@@ -2221,33 +2293,18 @@ export async function receiveStockTransferCore(user: AppUser, data: { transferId
       reference: data.transferId,
       notes: `Mutasi dari ${transfer.fromBranchId}`,
     });
-  } else {
-    await db.insert(inventory).values({
-      branchId: transfer.toBranchId,
-      ingredientId: transfer.ingredientId,
-      quantity: transfer.quantity,
-    });
 
-    await db.insert(stockLedger).values({
-      branchId: transfer.toBranchId,
-      ingredientId: transfer.ingredientId,
-      type: "IN",
-      quantity: transfer.quantity,
-      balance: transfer.quantity,
-      reference: data.transferId,
-      notes: `Mutasi dari ${transfer.fromBranchId}`,
-    });
-  }
+    await tx
+      .delete(inTransitInventory)
+      .where(eq(inTransitInventory.stockTransferId, data.transferId));
 
-  // Remove in-transit
-  await db
-    .delete(inTransitInventory)
-    .where(eq(inTransitInventory.stockTransferId, data.transferId));
+    await tx
+      .update(stockTransfers)
+      .set({ status: completedStatus, approvedBy: user.id })
+      .where(eq(stockTransfers.id, data.transferId));
 
-  await db
-    .update(stockTransfers)
-    .set({ status: "Completed", approvedBy: user.id })
-    .where(eq(stockTransfers.id, data.transferId));
+    return { transfer };
+  });
 
   await logSystemAction(
     user,
@@ -2282,38 +2339,32 @@ export async function cancelStockTransferCore(
     );
   }
 
-  const [transfer] = await db
-    .select()
-    .from(stockTransfers)
-    .where(eq(stockTransfers.id, data.transferId))
-    .limit(1);
-
-  if (!transfer) throw new Error("Transfer not found");
-  if (!["Approved", "In Transit"].includes(transfer.status)) {
-    throw new Error("Can only cancel Approved or In Transit transfers");
-  }
-
-  if (transfer.status === "In Transit") {
-    // Reverse source deduction
-    const [sourceInv] = await db
+  const { transfer } = await db.transaction(async (tx) => {
+    const [transfer] = await tx
       .select()
-      .from(inventory)
-      .where(
-        and(
-          eq(inventory.branchId, transfer.fromBranchId),
-          eq(inventory.ingredientId, transfer.ingredientId),
-        ),
-      )
+      .from(stockTransfers)
+      .where(eq(stockTransfers.id, data.transferId))
+      .for("update")
       .limit(1);
 
-    if (sourceInv) {
+    if (!transfer) throw new Error("Transfer not found");
+    const cancelledStatus = stockTransferLifecycle.assert(
+      transfer.status,
+      "cancel",
+      "Can only cancel Approved or In Transit transfers",
+    );
+
+    if (transfer.status === "In Transit") {
+      // Reverse source deduction under the lock; a retry sees Cancelled and
+      // cannot restore the quantity a second time.
+      const sourceInv = await ensureInventoryRow(tx, transfer.fromBranchId, transfer.ingredientId);
       const newQty = sourceInv.quantity + transfer.quantity;
-      await db
+      await tx
         .update(inventory)
         .set({ quantity: newQty, lastUpdated: new Date() })
         .where(eq(inventory.id, sourceInv.id));
 
-      await db.insert(stockLedger).values({
+      await tx.insert(stockLedger).values({
         branchId: transfer.fromBranchId,
         ingredientId: transfer.ingredientId,
         type: "IN",
@@ -2322,17 +2373,19 @@ export async function cancelStockTransferCore(
         reference: data.transferId,
         notes: `Mutasi Batal ${transfer.code}`,
       });
+
+      await tx
+        .delete(inTransitInventory)
+        .where(eq(inTransitInventory.stockTransferId, data.transferId));
     }
 
-    await db
-      .delete(inTransitInventory)
-      .where(eq(inTransitInventory.stockTransferId, data.transferId));
-  }
+    await tx
+      .update(stockTransfers)
+      .set({ status: cancelledStatus })
+      .where(eq(stockTransfers.id, data.transferId));
 
-  await db
-    .update(stockTransfers)
-    .set({ status: "Cancelled" })
-    .where(eq(stockTransfers.id, data.transferId));
+    return { transfer };
+  });
 
   await logSystemAction(
     user,

@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { z } from "zod";
+import { brandLifecycle } from "#/lib/lifecycles";
 
 const brandInput = z.object({
   code: z.string().min(1).max(20),
@@ -97,10 +98,14 @@ export async function deleteBrandCore(user: AppUser, data: { id: string }) {
 
   const [old] = await db.select().from(brands).where(eq(brands.id, data.id)).limit(1);
   if (!old) throw new Error("Brand not found");
+  if (old.status !== "Active" && old.status !== "Inactive") {
+    throw new Error("Status brand tidak dikenal");
+  }
+  const inactiveStatus = brandLifecycle.assert(old.status, "deactivate", "Brand sudah tidak aktif");
 
   const [result] = await db
     .update(brands)
-    .set({ status: "Inactive" })
+    .set({ status: inactiveStatus })
     .where(eq(brands.id, data.id))
     .returning();
 

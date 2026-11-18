@@ -23,6 +23,7 @@ import { requireOpenPeriod } from "./period-lock";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import { branchVisibleClause } from "#/lib/server/branch-visibility";
+import { wasteEntryLifecycle } from "#/lib/lifecycles";
 import { z } from "zod";
 
 export const getWasteEntries = createServerFn({ method: "GET" })
@@ -472,6 +473,7 @@ export async function reverseWasteStockEffect(
     ingredientId: string | null;
     recipeId: string | null;
     quantity: number;
+    status: "Active" | "Cancelled";
   },
 ): Promise<void> {
   const [wroteStock] = await tx
@@ -564,17 +566,20 @@ export async function applyWasteCancellation(
     ingredientId: string | null;
     recipeId: string | null;
     quantity: number;
+    status: "Active" | "Cancelled";
   },
   actor: { id: string },
   reason: string,
 ): Promise<typeof wasteEntries.$inferSelect> {
+  const cancelledStatus = wasteEntryLifecycle.assert(entry.status, "cancel");
+
   // Claim the row: only a caller whose conditional UPDATE matches an Active
   // entry may reverse stock. Without this a double tap (or two tabs) both read
   // Active and both restore the quantity, inflating inventory (ADR 0012).
   const [updated] = await tx
     .update(wasteEntries)
     .set({
-      status: "Cancelled",
+      status: cancelledStatus,
       cancelledAt: new Date(),
       cancelledBy: actor.id,
       cancelReason: reason,
@@ -622,7 +627,7 @@ export async function cancelWasteEntryCore(
     .where(eq(wasteEntries.id, data.wasteEntryId))
     .limit(1);
   if (!entry) throw new Error("Waste entry tidak ditemukan");
-  if (entry.status === "Cancelled") throw new Error("Waste entry sudah dibatalkan");
+  wasteEntryLifecycle.assert(entry.status, "cancel", "Waste entry sudah dibatalkan");
 
   if (user.role === "area_manager" && !user.assignedBranches?.includes(entry.branchId)) {
     throw new Error(

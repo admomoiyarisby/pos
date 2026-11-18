@@ -278,7 +278,7 @@ describe("Yield — full flow via the real server-function cores", () => {
       const approved = await yieldApi.approveYieldCancelRequestCore(superAdmin, {
         requestId: req.id,
       });
-      expect(approved.status).toBe("Approved");
+      expect(approved.status).toBe("Executed");
       expect(approved.approvedBy).toBe(superAdmin.id);
 
       const after = await conversionStatus(conversion.id);
