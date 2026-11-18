@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ORDER_CHANNEL_VALUES } from "#/db/schema";
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
@@ -22,6 +22,7 @@ import {
   createCancelRequest,
   consumePrintRequest,
   getActiveRequestsForOrders,
+  checkDuplicateOrders,
 } from "#/lib/server/pos";
 import { getBrands } from "#/lib/server/brands";
 import { deriveOrderActionState } from "#/lib/order-action-state";
@@ -61,6 +62,8 @@ import HistoryDateFilter, { isoDateDaysAgo } from "#/components/pos/HistoryDateF
 import HistoryPagination from "#/components/pos/HistoryPagination";
 import { default as SuccessModal } from "#/components/pos/SuccessModal";
 import { default as ModifierModalComp } from "#/components/pos/ModifierModal";
+import DuplicateOrderModal from "#/components/pos/DuplicateOrderModal";
+import type { DuplicateOrderMatch } from "#/lib/duplicate-order";
 import { ORDER_CHANNEL_OPTIONS, channelLabel } from "#/lib/order-channels";
 
 // Number of orders fetched per history page; the server also enforces its own
@@ -198,6 +201,15 @@ function PosPage() {
   let _p = useState(false);
   let confirmPaymentModal = _p[0];
   let setConfirmPaymentModal = _p[1];
+  let _dup = useState<{ blocking: boolean; matches: DuplicateOrderMatch[] } | null>(null);
+  let duplicateWarning = _dup[0];
+  let setDuplicateWarning = _dup[1];
+  let _dupPending = useState(false);
+  let duplicateCheckPending = _dupPending[0];
+  let setDuplicateCheckPending = _dupPending[1];
+  // Mutation `isPending` only updates after a render; this ref closes the
+  // same-frame window in which a double tap could submit twice.
+  let submitLock = useRef(false);
 
   let _q = useState<{
     item: MenuItem;
@@ -528,7 +540,15 @@ function PosPage() {
     function () {
       function handleKeyDown(e: KeyboardEvent) {
         // Only active when no modal is open
-        if (modifierModal || voidModal || shiftModal || successOrder) return;
+        if (
+          modifierModal ||
+          voidModal ||
+          shiftModal ||
+          successOrder ||
+          confirmPaymentModal ||
+          duplicateWarning
+        )
+          return;
 
         // Escape clears cart
         if (e.key === "Escape" && cart.length > 0 && !mobileCartOpen) {
@@ -607,6 +627,8 @@ function PosPage() {
       voidModal,
       shiftModal,
       successOrder,
+      confirmPaymentModal,
+      duplicateWarning,
       mobileCartOpen,
       cart,
       activeShift,
@@ -912,9 +934,41 @@ function PosPage() {
       setCheckoutError("Nama pelanggan wajib diisi untuk pesanan Cash");
       return;
     }
-    setConfirmPaymentModal(false);
+    if (createOrderMutation.isPending || duplicateCheckPending) return;
 
-    let items = cart.map(function (c) {
+    setCheckoutError(null);
+
+    // ADR 0032: look for an existing copy before writing anything. The
+    // server runs the same rules again on submit, so a failed pre-check
+    // (offline blip) does not turn into a lost sale.
+    setDuplicateCheckPending(true);
+    try {
+      let duplicateCheck = await checkDuplicateOrders({
+        data: {
+          branchId: activeBranchId,
+          channel,
+          orderCode: channel !== "Dine-in" ? orderCode : undefined,
+          customerName: channel === "Dine-in" ? customerName : undefined,
+          totalAmount: finalTotal,
+          items: buildOrderItems(),
+        },
+      });
+      if (duplicateCheck.matches.length > 0) {
+        setConfirmPaymentModal(false);
+        setDuplicateWarning(duplicateCheck);
+        return;
+      }
+    } catch (err) {
+      console.error("Duplicate check failed:", err);
+    } finally {
+      setDuplicateCheckPending(false);
+    }
+
+    await submitOrder(false);
+  }
+
+  function buildOrderItems() {
+    return cart.map(function (c) {
       return {
         recipeId: c.recipeId,
         brandId: c.brandId,
@@ -931,6 +985,14 @@ function PosPage() {
         notes: c.notes,
       };
     });
+  }
+
+  async function submitOrder(confirmDuplicate: boolean) {
+    if (cart.length === 0 || (!activeShift && !canBypassShift)) return;
+    if (submitLock.current) return;
+    submitLock.current = true;
+    setConfirmPaymentModal(false);
+    setDuplicateWarning(null);
 
     try {
       await createOrderMutation.mutateAsync({
@@ -939,18 +1001,21 @@ function PosPage() {
           channel,
           customerName: channel === "Dine-in" ? customerName : undefined,
           orderCode: channel !== "Dine-in" ? orderCode : undefined,
-          items: items,
+          items: buildOrderItems(),
           voucherCode: appliedVoucher?.voucher.code,
           voucherDiscount: voucherDiscount > 0 ? voucherDiscount : undefined,
           taxAmount: taxAmount > 0 ? taxAmount : undefined,
           paymentMethod: paymentMethod,
           shiftId: activeShift?.id,
           notes: orderNotes || undefined,
+          confirmDuplicate: confirmDuplicate || undefined,
         },
       });
     } catch (err) {
       console.error("Checkout error:", err);
       setCheckoutError(err instanceof Error ? err.message : "Transaksi gagal");
+    } finally {
+      submitLock.current = false;
     }
   }
 
@@ -2048,18 +2113,34 @@ function PosPage() {
             </button>
             <button
               onClick={handleConfirmPayment}
-              disabled={createOrderMutation.isPending}
+              disabled={createOrderMutation.isPending || duplicateCheckPending}
               className="h-10 px-6 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
             >
-              {createOrderMutation.isPending
-                ? "Memproses..."
-                : isCashChannel
-                  ? "Bayar"
-                  : "Konfirmasi"}
+              {duplicateCheckPending
+                ? "Memeriksa..."
+                : createOrderMutation.isPending
+                  ? "Memproses..."
+                  : isCashChannel
+                    ? "Bayar"
+                    : "Konfirmasi"}
             </button>
           </div>
         </div>
       </Modal>
+
+      {/* Duplicate Order Guard (ADR 0032) */}
+      <DuplicateOrderModal
+        open={duplicateWarning !== null}
+        blocking={duplicateWarning?.blocking ?? false}
+        matches={duplicateWarning?.matches ?? []}
+        confirmPending={createOrderMutation.isPending}
+        onClose={function () {
+          setDuplicateWarning(null);
+        }}
+        onConfirm={function () {
+          void submitOrder(true);
+        }}
+      />
 
       {/* Success Modal */}
       <SuccessModal

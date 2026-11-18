@@ -8,6 +8,10 @@ A point-of-sale and supply-chain management system for a restaurant group with m
 A customer transaction recorded at a branch, consisting of one or more order items, optionally with modifiers, exclusions, and voucher discounts.
 _Avoid_: Transaction, sale
 
+**Duplicate Order Guard (Penjaga Pesanan Ganda)**:
+The pre-write check that stops one physical order from becoming two rows (ADR 0032). Two strengths: a **same-code** match — an existing non-void order at the same branch and channel with the same Kode Order after trimming/casing — is refused outright, because re-entering a delivered platform order is always a mistake; a **same-identity** match — same channel, total, customer and item lines within 10 minutes — opens a popup listing the existing order and saves only after the cashier explicitly confirms. `void` and soft-deleted orders never match. The popup is advisory; `createOrderCore` re-runs the same rules when writing.
+_Avoid_: duplicate prevention (too broad — stock double-entry is a separate guard), duplicate validation, warning
+
 **Receipt (Struk)**:
 A printed document generated after an order is paid, confirming the transaction. Always shows Kode Order and Pelanggan.
 _Avoid_: Invoice (when referring to customer receipts; invoice is reserved for SCM B2B documents)

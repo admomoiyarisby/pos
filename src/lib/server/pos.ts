@@ -33,7 +33,7 @@ import {
   users,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
-import { eq, and, ne, desc, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { eq, and, ne, desc, gte, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, getCurrentUserRaw } from "./auth";
 import { requireOpenPeriod } from "./period-lock";
 import type { AppUser } from "./auth";
@@ -49,6 +49,15 @@ import {
 import { shiftEventAllowed } from "#/lib/shift-lifecycle";
 import { resolveNewItemIngredients } from "./ingredient-resolver";
 import { ensureInventoryRow } from "./sales-data";
+import {
+  DUPLICATE_ORDER_WINDOW_MINUTES,
+  findDuplicateOrderMatches,
+  hasBlockingDuplicate,
+  normalizeOrderCode,
+  type DuplicateOrderCandidate,
+  type DuplicateOrderLine,
+  type DuplicateOrderMatch,
+} from "#/lib/duplicate-order";
 import { z } from "zod";
 
 export const getPosMenu = createServerFn({ method: "GET" })
@@ -834,7 +843,222 @@ export interface CreateOrderInput {
   paymentMethod?: string;
   shiftId?: string;
   notes?: string;
+  /**
+   * Set only after the cashier has seen the duplicate warning and chosen to
+   * save anyway. It unlocks `same-identity` matches — never `same-code`, which
+   * stays refused so the platform order cannot be recorded twice.
+   */
+  confirmDuplicate?: boolean;
 }
+
+/** Payload for the pre-submit duplicate check (mirrors the order being built). */
+export interface DuplicateOrderCheckInput {
+  branchId: string;
+  channel: (typeof ORDER_CHANNEL_VALUES)[number];
+  orderCode?: string;
+  customerName?: string;
+  totalAmount: number;
+  items: z.infer<typeof orderItemInput>[];
+}
+
+/**
+ * Thrown when the order being written matches an existing one (ADR 0032).
+ * The POS checks first and shows a popup; this is the authoritative re-check
+ * for direct API calls and races between two cashiers.
+ */
+export class DuplicateOrderError extends Error {
+  readonly matches: DuplicateOrderMatch[];
+  readonly blocking: boolean;
+  constructor(matches: DuplicateOrderMatch[]) {
+    const blocking = hasBlockingDuplicate(matches);
+    const first = matches[0];
+    const label = first ? `#${first.order.id.slice(0, 8).toUpperCase()}` : "sebelumnya";
+    const time = first
+      ? first.order.createdAt.toLocaleTimeString("id-ID", {
+          timeZone: "Asia/Jakarta",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
+    super(
+      blocking
+        ? `Kode order ${first?.order.orderCode ?? ""} sudah tercatat pada pesanan ${label} (${time} WIB). Pesanan tidak disimpan — periksa Riwayat Pesanan.`
+        : `Pesanan ini kemungkinan duplikat dari ${label} (${time} WIB, Rp${(first?.order.totalAmount ?? 0).toLocaleString("id-ID")}). Simpan hanya jika pesanan memang terpisah.`,
+    );
+    this.name = "DuplicateOrderError";
+    this.matches = matches;
+    this.blocking = blocking;
+  }
+}
+
+function assertPosBranchAccess(user: AppUser, branchId: string) {
+  if (user.role === "super_admin" || user.role === "admin_pusat") return;
+  if (user.role === "branch_admin" && user.branchId === branchId) return;
+  if (user.role === "area_manager" && (user.assignedBranches ?? []).includes(branchId)) return;
+  throw new Error("Forbidden: you do not have access to this branch");
+}
+
+function linesFromItems(items: z.infer<typeof orderItemInput>[]): DuplicateOrderLine[] {
+  return items.map(function (item) {
+    return {
+      recipeId: item.recipeId,
+      quantity: item.quantity,
+      price: item.price,
+      modifierIds: (item.selectedModifiers ?? []).map(function (mod) {
+        return mod.modifierId;
+      }),
+      notes: item.notes,
+    };
+  });
+}
+
+/**
+ * Load possible duplicates for an order at one branch.
+ *
+ * Two disjoint sets are fetched in one pass: orders from the recent window
+ * (same-identity candidates) and, when a Kode Order was typed, every non-void
+ * order carrying that code regardless of age (same-code candidates). Item
+ * lines are loaded for those orders only, so the query stays bounded.
+ */
+async function loadDuplicateOrderCandidates(
+  input: DuplicateOrderCheckInput,
+  now: Date,
+): Promise<DuplicateOrderCandidate[]> {
+  const normalizedCode = normalizeOrderCode(input.orderCode);
+  const since = new Date(now.getTime() - DUPLICATE_ORDER_WINDOW_MINUTES * 60 * 1000);
+  // Same-identity matching requires an equal total, so only recent orders at
+  // that total can be candidates. The code arm stays unbounded in time.
+  const recentSameTotal = and(
+    gte(orders.createdAt, since),
+    eq(orders.totalAmount, input.totalAmount),
+  );
+  const recentOrMatchingCode = normalizedCode
+    ? or(sql`lower(btrim(${orders.orderCode})) = ${normalizedCode}`, recentSameTotal)
+    : recentSameTotal;
+
+  const orderRows = await db
+    .select({
+      id: orders.id,
+      channel: orders.channel,
+      orderCode: orders.orderCode,
+      customerName: orders.customerName,
+      totalAmount: orders.totalAmount,
+      status: orders.status,
+      createdAt: orders.createdAt,
+    })
+    .from(orders)
+    .where(
+      and(
+        eq(orders.branchId, input.branchId),
+        eq(orders.channel, input.channel),
+        isNull(orders.deletedAt),
+        ne(orders.status, "Void"),
+        recentOrMatchingCode,
+      ),
+    );
+
+  if (orderRows.length === 0) return [];
+
+  const orderIds = orderRows.map(function (row) {
+    return row.id;
+  });
+  const itemRows = await db
+    .select({
+      id: orderItems.id,
+      orderId: orderItems.orderId,
+      recipeId: orderItems.recipeId,
+      recipeName: recipes.name,
+      quantity: orderItems.quantity,
+      price: orderItems.price,
+      notes: orderItems.notes,
+    })
+    .from(orderItems)
+    .leftJoin(recipes, eq(recipes.id, orderItems.recipeId))
+    .where(inArray(orderItems.orderId, orderIds));
+
+  const modifierRows =
+    itemRows.length > 0
+      ? await db
+          .select({
+            orderItemId: orderItemModifiers.orderItemId,
+            modifierId: orderItemModifiers.modifierId,
+          })
+          .from(orderItemModifiers)
+          .where(
+            inArray(
+              orderItemModifiers.orderItemId,
+              itemRows.map(function (item) {
+                return item.id;
+              }),
+            ),
+          )
+      : [];
+
+  const modifiersByItem = new Map<string, string[]>();
+  for (const modifier of modifierRows) {
+    const list = modifiersByItem.get(modifier.orderItemId) ?? [];
+    list.push(modifier.modifierId);
+    modifiersByItem.set(modifier.orderItemId, list);
+  }
+
+  const linesByOrder = new Map<string, DuplicateOrderLine[]>();
+  for (const item of itemRows) {
+    const lines = linesByOrder.get(item.orderId) ?? [];
+    lines.push({
+      recipeId: item.recipeId,
+      recipeName: item.recipeName,
+      quantity: item.quantity,
+      price: item.price,
+      modifierIds: modifiersByItem.get(item.id) ?? [],
+      notes: item.notes,
+    });
+    linesByOrder.set(item.orderId, lines);
+  }
+
+  return orderRows.map(function (row) {
+    return {
+      ...row,
+      lines: linesByOrder.get(row.id) ?? [],
+    };
+  });
+}
+
+/** Shared by the pre-submit popup and the create-order re-check. */
+async function resolveDuplicateOrderMatches(
+  input: DuplicateOrderCheckInput,
+  now: Date = new Date(),
+): Promise<DuplicateOrderMatch[]> {
+  const candidates = await loadDuplicateOrderCandidates(input, now);
+  return findDuplicateOrderMatches(
+    {
+      channel: input.channel,
+      orderCode: input.orderCode,
+      customerName: input.customerName,
+      totalAmount: input.totalAmount,
+      lines: linesFromItems(input.items),
+    },
+    candidates,
+    now,
+  );
+}
+
+/**
+ * Pre-submit duplicate check used by the POS popup. Returns the matching
+ * orders so the cashier can identify the copy before deciding.
+ */
+export const checkDuplicateOrders = createServerFn({ method: "GET" })
+  .validator((data: DuplicateOrderCheckInput) => ({
+    ...data,
+    channel: z.enum(ORDER_CHANNEL_VALUES).parse(data.channel),
+    totalAmount: z.number().int().min(0).parse(data.totalAmount),
+    items: z.array(orderItemInput).parse(data.items),
+  }))
+  .handler(async ({ data }) => {
+    const user = await requireAuth();
+    assertPosBranchAccess(user, data.branchId);
+    const matches = await resolveDuplicateOrderMatches(data);
+    return { blocking: hasBlockingDuplicate(matches), matches };
+  });
 
 /**
  * Thrown by `createOrderCore` when the order would push any branch ingredient
@@ -866,6 +1090,33 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
     throw new Error("Nama pelanggan wajib diisi untuk pesanan Cash");
   }
 
+  // Totals are needed before the duplicate guard so the guard can compare the
+  // order about to be written against stored rows without resolving stock.
+  const voucherDiscount = data.voucherDiscount ?? 0;
+  const taxAmount = data.taxAmount ?? 0;
+  const subtotal = data.items.reduce(function (sum, item) {
+    return sum + item.price * item.quantity;
+  }, 0);
+  const totalAmount = subtotal - voucherDiscount + taxAmount;
+
+  // ADR 0032 — duplicate order guard. A same-code match is always refused; a
+  // same-identity match is refused unless the cashier confirmed the popup. This
+  // re-check is authoritative (the popup is advisory and can be raced).
+  const duplicateMatches = await resolveDuplicateOrderMatches({
+    branchId: data.branchId,
+    channel: data.channel,
+    orderCode: data.orderCode,
+    customerName: data.customerName,
+    totalAmount,
+    items: data.items,
+  });
+  if (
+    duplicateMatches.length > 0 &&
+    (hasBlockingDuplicate(duplicateMatches) || !data.confirmDuplicate)
+  ) {
+    throw new DuplicateOrderError(duplicateMatches);
+  }
+
   const [branchInfo] = await db
     .select({ name: branches.name })
     .from(branches)
@@ -890,17 +1141,11 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
   const netConsumption = new Map<string, { name: string; qty: number }>();
   const negativeStockAlerts: { ingredientName: string; shortfall: number; branchName: string }[] =
     [];
-  let subtotal = 0;
   let totalCogs = 0;
-  const voucherDiscount = data.voucherDiscount ?? 0;
-  const taxAmount = data.taxAmount ?? 0;
   const itemCogsList: number[] = [];
 
   for (let i = 0; i < data.items.length; i++) {
-    const item = data.items[i];
     const resolved = resolvedPerItem[i];
-
-    subtotal += item.price * item.quantity;
 
     const itemCogs = resolved.ingredients.reduce((sum, ing) => sum + (ing.cost ?? 0), 0);
     itemCogsList.push(itemCogs);
@@ -974,8 +1219,6 @@ export async function createOrderCore(user: AppUser, data: CreateOrderInput) {
 
     throw new OrderInsufficientStockError(insufficientLines);
   }
-
-  const totalAmount = subtotal - voucherDiscount + taxAmount;
 
   const [fee] = await db
     .select()

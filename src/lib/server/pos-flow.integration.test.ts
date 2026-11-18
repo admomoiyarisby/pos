@@ -1102,3 +1102,95 @@ describe("POS — hard stock block: order refused when main or addon ingredients
     },
   );
 });
+
+describe("POS — duplicate order guard (ADR 0032)", () => {
+  async function seedPos() {
+    const branchId = await seedBranch();
+    const cashier = await seedUser("branch_admin", branchId);
+    const [catRow] = await db
+      .insert(schema.categories)
+      .values({ code: uniq("CAT"), name: "Menu" })
+      .returning({ id: schema.categories.id });
+    const ingId = await seedIngredient();
+    const recipeId = await seedRecipe(catRow.id, ingId);
+    await db.insert(schema.inventory).values({ branchId, ingredientId: ingId, quantity: 100 });
+    return { branchId, cashier, recipeId, ingId };
+  }
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "refuses a second order with the same Kode Order and writes no stock",
+    async () => {
+      const { branchId, cashier, recipeId, ingId } = await seedPos();
+
+      await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "ShopeeFood",
+        orderCode: "210",
+        items: [{ recipeId, quantity: 1, price: 60000 }],
+      });
+      expect(await inventoryQty(branchId, ingId)).toBe(98);
+
+      // Whitespace/casing are input noise; a different cart does not matter —
+      // the platform code already owns this order.
+      await expect(
+        posApi.createOrderCore(cashier, {
+          branchId,
+          channel: "ShopeeFood",
+          orderCode: " 210 ",
+          items: [{ recipeId, quantity: 2, price: 60000 }],
+        }),
+      ).rejects.toThrow("sudah tercatat");
+
+      // The refused second attempt did not deduct stock again.
+      expect(await inventoryQty(branchId, ingId)).toBe(98);
+      const rows = await db.select().from(schema.orders);
+      expect(rows).toHaveLength(1);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "warns on an identical recent cash order and saves after explicit confirmation",
+    async () => {
+      const { branchId, cashier, recipeId } = await seedPos();
+      const input = {
+        branchId,
+        channel: "Dine-in" as const,
+        customerName: "Budi Santoso",
+        items: [{ recipeId, quantity: 1, price: 10000 }],
+      };
+
+      await posApi.createOrderCore(cashier, input);
+      await expect(posApi.createOrderCore(cashier, input)).rejects.toThrow("kemungkinan duplikat");
+
+      // Refusal is not a dead end: the popup's "Tetap Simpan" resubmits with
+      // the confirmation flag and the genuinely separate order is written.
+      const confirmed = await posApi.createOrderCore(cashier, {
+        ...input,
+        confirmDuplicate: true,
+      });
+      expect(confirmed.status).toBe("New");
+
+      const rows = await db.select().from(schema.orders);
+      expect(rows).toHaveLength(2);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)("does not warn when the customer or cart differs", async () => {
+    const { branchId, cashier, recipeId } = await seedPos();
+
+    await posApi.createOrderCore(cashier, {
+      branchId,
+      channel: "Dine-in",
+      customerName: "Budi Santoso",
+      items: [{ recipeId, quantity: 1, price: 10000 }],
+    });
+
+    const otherCustomer = await posApi.createOrderCore(cashier, {
+      branchId,
+      channel: "Dine-in",
+      customerName: "Siti",
+      items: [{ recipeId, quantity: 1, price: 10000 }],
+    });
+    expect(otherCustomer.status).toBe("New");
+  });
+});
