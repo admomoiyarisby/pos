@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { getSalesAnalytics } from "#/lib/server/finance";
 import { formatRp, toDateInputValue } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
 import { channelLabel } from "#/lib/order-channels";
+import { dashboardSearchSchema, resolveDashboardSearch, shiftIsoDay } from "#/lib/dashboard-range";
+import type { DashboardPeriod, DashboardSearch } from "#/lib/dashboard-range";
+import type { UnknownRecord } from "#/lib/unknown-record";
+import DashboardFilterBar from "#/components/dashboard/DashboardFilterBar";
 import { BarChart3, AlertCircle, RefreshCw, Calendar, PieChart as PieIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
@@ -20,6 +24,7 @@ import { pie, polar, radialArc } from "@tanstack/charts/polar";
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8", "#82ca9d"];
 
 export const Route = createFileRoute("/_layout/analytics/")({
+  validateSearch: (search: UnknownRecord) => dashboardSearchSchema.parse(search),
   component: AnalyticsPage,
   loader: async () => {
     const branches = await getBranches({ data: {} });
@@ -27,24 +32,52 @@ export const Route = createFileRoute("/_layout/analytics/")({
   },
 });
 
-function getDefaultRange() {
-  const d = new Date();
-  d.setDate(d.getDate() - 7);
-  return toDateInputValue(d);
-}
-
-function getThirtyDayRange() {
-  const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 30);
-  return { from: toDateInputValue(from), to: toDateInputValue(to) };
-}
-
 function AnalyticsPage() {
   const { branches } = Route.useLoaderData();
-  const [dateFrom, setDateFrom] = useState(getDefaultRange);
-  const [dateTo, setDateTo] = useState(() => toDateInputValue(new Date()));
-  const [selectedBranch, setSelectedBranch] = useState("");
+  const navigate = Route.useNavigate();
+  const search = Route.useSearch();
+  const range = useMemo(() => resolveDashboardSearch(search), [search]);
+  const branchId = search.branch;
+
+  const updateSearch = function (patch: Partial<DashboardSearch>) {
+    void navigate({
+      search: function (prev) {
+        const next: DashboardSearch = { ...prev, ...patch };
+        if (!next.period) delete next.period;
+        if (!next.from) delete next.from;
+        if (!next.to) delete next.to;
+        if (!next.branch) delete next.branch;
+        return next;
+      },
+      replace: true,
+    });
+  };
+
+  function handlePeriodChange(period: DashboardPeriod) {
+    if (period === "custom") {
+      updateSearch({ period: "custom", from: range.from, to: range.to });
+      return;
+    }
+    updateSearch({ period, from: undefined, to: undefined });
+  }
+
+  function handleFromChange(from: string) {
+    if (!from) {
+      updateSearch({ period: "custom", from: undefined });
+      return;
+    }
+    const to = range.to ?? toDateInputValue(new Date());
+    updateSearch({ period: "custom", from, to: from > to ? from : to });
+  }
+
+  function handleToChange(to: string) {
+    if (!to) {
+      updateSearch({ period: "custom", to: undefined });
+      return;
+    }
+    const from = range.from ?? shiftIsoDay(to, -29);
+    updateSearch({ period: "custom", from: to < from ? to : from, to });
+  }
 
   const {
     data: analytics,
@@ -52,11 +85,14 @@ function AnalyticsPage() {
     isError,
     error,
     refetch,
+    isFetching,
   } = useQuery({
-    queryKey: ["analytics", dateFrom, dateTo, selectedBranch],
+    queryKey: ["analytics", range.from ?? "all", range.to ?? "all", branchId ?? "all"],
     queryFn: () =>
-      getSalesAnalytics({ data: { dateFrom, dateTo, branchId: selectedBranch || undefined } }),
-    enabled: !!dateFrom && !!dateTo,
+      getSalesAnalytics({
+        data: { dateFrom: range.from, dateTo: range.to, branchId },
+      }),
+    placeholderData: keepPreviousData,
   });
 
   usePageTitle("Dashboard Analitik", "Analisis penjualan & performa");
@@ -157,43 +193,31 @@ function AnalyticsPage() {
   );
 
   function handleResetRange() {
-    const next = getThirtyDayRange();
-    setDateFrom(next.from);
-    setDateTo(next.to);
+    updateSearch({ period: "30d", from: undefined, to: undefined });
   }
 
   return (
     <RoleGuard allowedRoles={["super_admin"]}>
       <div className="space-y-6">
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <select
-            value={selectedBranch}
-            onChange={(e) => setSelectedBranch(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">Semua Cabang</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          />
-          <span className="text-muted-foreground">sampai</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          />
-          <span className="text-xs text-muted-foreground ml-auto">Maks 31 hari</span>
-        </div>
+        <DashboardFilterBar
+          period={range.period}
+          from={range.from}
+          to={range.to}
+          branchId={branchId}
+          branches={branches}
+          showBranchFilter={branches.length > 1}
+          dateLabel={range.dateLabel}
+          isFetching={isFetching}
+          onPeriodChange={handlePeriodChange}
+          onFromChange={handleFromChange}
+          onToChange={handleToChange}
+          onBranchChange={function (nextBranch) {
+            updateSearch({ branch: nextBranch || undefined });
+          }}
+          onRefresh={function () {
+            void refetch();
+          }}
+        />
 
         {isPending ? (
           <AnalyticsSkeleton />
@@ -209,7 +233,8 @@ function AnalyticsPage() {
             {/* Channel Distribution */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="rounded-lg border p-4">
-                <h3 className="text-sm font-semibold mb-4">Distribusi Channel</h3>
+                <h3 className="text-sm font-semibold">Distribusi Channel</h3>
+                <p className="mb-4 text-xs text-muted-foreground">Pendapatan · {range.dateLabel}</p>
                 {channelData.length === 0 ? (
                   <ChartEmpty
                     icon={<PieIcon className="h-5 w-5 text-muted-foreground" />}
@@ -241,7 +266,10 @@ function AnalyticsPage() {
 
               {/* Top Sales */}
               <div className="rounded-lg border p-4">
-                <h3 className="text-sm font-semibold mb-4">Top Sales (Qty)</h3>
+                <h3 className="text-sm font-semibold">Top Sales (Qty)</h3>
+                <p className="mb-4 text-xs text-muted-foreground">
+                  Kuantitas terjual · {range.dateLabel}
+                </p>
                 {topSales.length === 0 ? (
                   <ChartEmpty
                     icon={<BarChart3 className="h-5 w-5 text-muted-foreground" />}

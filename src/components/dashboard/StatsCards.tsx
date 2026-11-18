@@ -5,9 +5,16 @@ interface StatsCardsProps {
   totalSales: number;
   completedCount: number;
   voidCount: number;
+  /** "Penjualan Hari Ini" only when the filter is today; otherwise "Penjualan". */
+  salesLabel?: string;
 }
 
-export function StatsCards({ totalSales, completedCount, voidCount }: StatsCardsProps) {
+export function StatsCards({
+  totalSales,
+  completedCount,
+  voidCount,
+  salesLabel = "Penjualan",
+}: StatsCardsProps) {
   return (
     <div className="grid grid-cols-1 gap-4 md:gap-6 md:grid-cols-3">
       <div className="rounded-lg border bg-card p-6 shadow-sm">
@@ -15,7 +22,7 @@ export function StatsCards({ totalSales, completedCount, voidCount }: StatsCards
           <DollarSign className="h-6 w-6 text-muted-foreground/60" />
           <TrendingUp className="h-5 w-5 text-muted-foreground/60" />
         </div>
-        <p className="text-sm font-medium text-muted-foreground">Penjualan Hari Ini</p>
+        <p className="text-sm font-medium text-muted-foreground">{salesLabel}</p>
         <h3 className="text-2xl font-bold text-foreground">
           Rp {totalSales.toLocaleString("id-ID")}
         </h3>

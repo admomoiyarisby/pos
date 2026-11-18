@@ -1,27 +1,27 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { useAuth } from "#/lib/auth-context";
-import { getDashboardData } from "#/lib/server/dashboard";
+import { getDashboardDetails, getDashboardOverview } from "#/lib/server/dashboard";
+import type { DashboardOverview } from "#/lib/server/dashboard";
+import { dashboardSearchSchema, resolveDashboardSearch, shiftIsoDay } from "#/lib/dashboard-range";
+import type { DashboardPeriod, DashboardSearch } from "#/lib/dashboard-range";
 import type { DashboardFilter } from "#/lib/dashboard-filter";
-import { currentDateValue, currentMonthValue, lastDayOfMonth } from "#/lib/report-period";
+import type { UnknownRecord } from "#/lib/unknown-record";
 import { toDateInputValue } from "#/lib/utils";
+import { channelLabel } from "#/lib/order-channels";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "#/components/ui/tabs";
 import { StatsCards } from "#/components/dashboard/StatsCards";
 import { AnomalyAlerts, type Anomaly } from "#/components/dashboard/AnomalyAlerts";
-import { UnsafeStockTable, type UnsafeStockItem } from "#/components/dashboard/UnsafeStockTable";
+import { UnsafeStockTable } from "#/components/dashboard/UnsafeStockTable";
 import { CogsAnalysisTable, computeCogsData } from "#/components/dashboard/CogsAnalysisTable";
 import {
   SalesTrendChart,
   ChannelPieChart,
   SalesByBranchChart,
   BrandPerformanceChart,
-  computeSalesTrend,
-  computeChannelData,
-  computeSalesByBranch,
-  computeSalesByBrand,
 } from "#/components/dashboard/Charts";
 import { HppAlertCards, computeHppAlerts } from "#/components/dashboard/HppAlertCards";
 import { DiscrepancyTable, computeDiscrepancies } from "#/components/dashboard/DiscrepancyTable";
@@ -29,84 +29,29 @@ import { WasteLossTable, computeWasteLoss } from "#/components/dashboard/WasteLo
 import { OrderHistoryTable } from "#/components/dashboard/OrderHistoryTable";
 import { ProductionTrackingSection } from "#/components/dashboard/ProductionTracking";
 import { WasteBreakdownSection } from "#/components/dashboard/WasteBreakdown";
+import DashboardFilterBar from "#/components/dashboard/DashboardFilterBar";
 
 export const Route = createFileRoute("/_layout/dashboard")({
+  validateSearch: (search: UnknownRecord) => dashboardSearchSchema.parse(search),
   component: DashboardPage,
 });
 
-type DashboardPeriod = "bulan-ini" | "bulan-lalu" | "30-hari" | "semua" | "custom";
-
-interface DateRange {
-  from: string;
-  to: string;
-}
-
-const PERIOD_OPTIONS: { value: DashboardPeriod; label: string }[] = [
-  { value: "bulan-ini", label: "Bulan ini" },
-  { value: "bulan-lalu", label: "Bulan lalu" },
-  { value: "30-hari", label: "30 hari terakhir" },
-  { value: "semua", label: "Semua waktu" },
-  { value: "custom", label: "Rentang khusus" },
-];
-
-/** Jakarta calendar month as an inclusive `YYYY-MM-DD` range. */
-function monthRange(monthOffset: number, now = new Date()): DateRange {
-  const [year, month] = currentMonthValue(now).split("-").map(Number);
-  const target = new Date(Date.UTC(year, month - 1 + monthOffset, 1));
-  const targetYear = target.getUTCFullYear();
-  const targetMonth = target.getUTCMonth() + 1;
-  const ym = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
-  const lastDay = lastDayOfMonth(targetYear, targetMonth);
-  return {
-    from: `${ym}-01`,
-    to: `${ym}-${String(lastDay).padStart(2, "0")}`,
-  };
-}
-
-/** Inclusive rolling 30-day window ending today (Jakarta). */
-function thirtyDayRange(now = new Date()): DateRange {
-  return {
-    from: toDateInputValue(new Date(now.getTime() - 29 * 86400000)),
-    to: currentDateValue(now),
-  };
-}
-
-function presetRange(
-  period: Exclude<DashboardPeriod, "custom" | "semua">,
-  now = new Date(),
-): DateRange {
-  switch (period) {
-    case "bulan-ini":
-      return monthRange(0, now);
-    case "bulan-lalu":
-      return monthRange(-1, now);
-    case "30-hari":
-      return thirtyDayRange(now);
-  }
-}
+const DASHBOARD_TABS = ["ringkasan", "operasional", "produksi-waste", "keuangan", "inventaris"];
 
 function DashboardPage() {
   const { user } = useAuth();
   usePageTitle("Dashboard", "Analitik & ikhtisar");
 
   const isSuperAdmin = user?.role === "super_admin";
+  const navigate = Route.useNavigate();
+  const search = Route.useSearch();
+  const range = React.useMemo(() => resolveDashboardSearch(search), [search]);
+  const branchId = search.branch;
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["dashboard-data"],
-    queryFn: () => getDashboardData(),
-    retry: 1,
-    refetchInterval: 60_000,
-  });
-
-  const dataUpdatedAt = data ? Date.now() : null;
-
-  const [activeTab, setActiveTab] = React.useState(() => {
+  const [activeTab, setActiveTab] = React.useState(function () {
     try {
       const stored = localStorage.getItem("dashboard-tab");
-      if (
-        stored &&
-        ["ringkasan", "operasional", "produksi-waste", "keuangan", "inventaris"].includes(stored)
-      ) {
+      if (stored && DASHBOARD_TABS.includes(stored)) {
         if (
           (stored === "keuangan" || stored === "inventaris" || stored === "produksi-waste") &&
           !isSuperAdmin
@@ -119,178 +64,206 @@ function DashboardPage() {
     return "ringkasan";
   });
 
-  const handleTabChange = (value: string) => {
+  const needsDetails = activeTab !== "ringkasan";
+  const queryKey = [range.from ?? "all", range.to ?? "all", branchId ?? "all"];
+
+  const overviewQuery = useQuery({
+    queryKey: ["dashboard-overview", ...queryKey],
+    queryFn: () =>
+      getDashboardOverview({
+        data: { from: range.from, to: range.to, branchId },
+      }),
+    placeholderData: keepPreviousData,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  const detailsQuery = useQuery({
+    queryKey: ["dashboard-details", ...queryKey],
+    queryFn: () =>
+      getDashboardDetails({
+        data: { from: range.from, to: range.to, branchId },
+      }),
+    enabled: needsDetails,
+    placeholderData: keepPreviousData,
+    retry: 1,
+  });
+
+  // Merge URL patches into the existing search, dropping keys that return to
+  // their default so a clean filter produces a clean URL.
+  const updateSearch = React.useCallback(
+    function (patch: Partial<DashboardSearch>) {
+      void navigate({
+        search: function (prev) {
+          const next: DashboardSearch = { ...prev, ...patch };
+          // Clean URLs: drop keys that returned to their default.
+          if (!next.period) delete next.period;
+          if (!next.from) delete next.from;
+          if (!next.to) delete next.to;
+          if (!next.branch) delete next.branch;
+          return next;
+        },
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
+  function handleTabChange(value: string) {
     setActiveTab(value);
     try {
       localStorage.setItem("dashboard-tab", value);
     } catch {}
-  };
+  }
 
-  const [productionWastePeriod, setProductionWastePeriod] =
-    React.useState<DashboardPeriod>("bulan-ini");
-  const [productionWasteRange, setProductionWasteRange] = React.useState<DateRange>(() =>
-    monthRange(0),
-  );
-  const [productionWasteBranchId, setProductionWasteBranchId] = React.useState("");
-
-  const productionWasteFilter: DashboardFilter = React.useMemo(
-    () => ({
-      from: productionWasteRange.from || undefined,
-      to: productionWasteRange.to || undefined,
-      branchId: productionWasteBranchId || undefined,
-    }),
-    [productionWasteRange, productionWasteBranchId],
-  );
-
-  const handlePeriodChange = (value: string) => {
-    const next = PERIOD_OPTIONS.find((option) => option.value === value)?.value;
-    if (!next) return;
-
-    setProductionWastePeriod(next);
-    if (next === "semua") {
-      setProductionWasteRange({ from: "", to: "" });
+  function handlePeriodChange(period: DashboardPeriod) {
+    if (period === "custom") {
+      updateSearch({ period: "custom", from: range.from, to: range.to });
       return;
     }
-    if (next === "custom") return;
-    setProductionWasteRange(presetRange(next));
-  };
+    // Presets are derived; keeping stale custom ends in the URL would fight
+    // the preset's resolved range.
+    updateSearch({ period, from: undefined, to: undefined });
+  }
 
-  if (isLoading) {
+  function handleFromChange(from: string) {
+    if (!from) {
+      updateSearch({ period: "custom", from: undefined });
+      return;
+    }
+    const to = range.to ?? toDateInputValue(new Date());
+    updateSearch({ period: "custom", from, to: from > to ? from : to });
+  }
+
+  function handleToChange(to: string) {
+    if (!to) {
+      updateSearch({ period: "custom", to: undefined });
+      return;
+    }
+    const from = range.from ?? shiftIsoDay(to, -29);
+    updateSearch({ period: "custom", from: to < from ? to : from, to });
+  }
+
+  function handleBranchChange(nextBranch: string) {
+    updateSearch({ branch: nextBranch || undefined });
+  }
+
+  function handleRefresh() {
+    void overviewQuery.refetch();
+    if (needsDetails) void detailsQuery.refetch();
+  }
+
+  if (overviewQuery.isPending) {
     return (
       <div className="space-y-6">
         <div className="h-8 w-48 animate-pulse rounded bg-muted" />
+        <div className="h-24 animate-pulse rounded-lg bg-muted" />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-lg bg-muted" />
-          ))}
+          {Array.from({ length: 3 }).map(function (_, i) {
+            return <div key={i} className="h-24 animate-pulse rounded-lg bg-muted" />;
+          })}
         </div>
       </div>
     );
   }
 
-  if (error || !data) {
-    // SAFETY: React Query surfaces server-function rejections here; the only
-    // shape with a string `message` field is an Error-like, so reading it via
-    // a structured check (no typeof narrowing beyond Error itself) is sound.
-    const message = error instanceof Error ? error.message : null;
-    return (
-      <div className="flex h-64 flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-muted-foreground">Gagal memuat data dashboard</p>
-        {message && (
-          <p className="max-w-2xl font-mono text-xs text-destructive" role="alert">
-            {message}
-          </p>
-        )}
-      </div>
-    );
+  if (overviewQuery.isError || !overviewQuery.data) {
+    return <DashboardError message={overviewQuery.error} onRetry={handleRefresh} />;
   }
 
-  // Loader data is always available — no loading/error states needed
-  const {
-    orders,
-    orderItems,
-    inventory,
-    recipes,
-    ingredients,
-    branches,
-    brands,
-    platformFees,
-    stockOpnames,
-    wasteEntries,
-    manualRevenues,
-    production,
-  } = data;
+  const overview: DashboardOverview = overviewQuery.data;
+  const details = detailsQuery.data;
+  const dataUpdatedAt = overviewQuery.dataUpdatedAt;
 
-  // Hydrate orders with items
-  const ordersWithItems = orders.map((o) => ({
-    ...o,
-    items: orderItems.filter((oi) => oi.orderId === o.id),
-  }));
+  const isBranchAdmin = user?.role === "branch_admin";
+  const showBranchFilter = !isBranchAdmin && overview.branches.length > 0;
 
-  // ─── Stats ───
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayOrders = ordersWithItems.filter((o) => new Date(o.createdAt) >= today);
-  const todayManual = manualRevenues?.filter((mr) => new Date(mr.date) >= today) ?? [];
-
-  const totalSales =
-    todayOrders.reduce((acc, o) => acc + o.totalAmount, 0) +
-    todayManual.reduce((acc, mr) => acc + mr.amount, 0);
-  const completedCount =
-    todayOrders.filter((o) => o.status === "Completed").length + todayManual.length;
-  const voidCount = todayOrders.filter((o) => o.status === "Void").length;
-
-  // ─── Anomalies (no per-item detail anymore — the Unsafe Stock table is the source of truth) ───
+  // ─── Anomalies (range-scoped except stock, which is a current-state read) ───
+  const totalOrders = overview.stats.orderCount + overview.stats.voidCount;
   const anomalies: Anomaly[] = [];
-  if (voidCount > todayOrders.length * 0.1 && todayOrders.length > 5) {
+  if (overview.stats.voidCount > totalOrders * 0.1 && totalOrders > 5) {
     anomalies.push({
       type: "Void Anomaly",
-      message: `Tingkat pembatalan tinggi (${voidCount} pesanan)`,
+      message: `Tingkat pembatalan tinggi (${overview.stats.voidCount} pesanan)`,
       severity: "warning",
     });
   }
-  // Aggregate per ingredient. The dashboard inventory spans branches, so the
-  // same ingredientId can appear once per branch, but UnsafeStockItem is
-  // ingredient-level (no branch column). Collapse to one row per ingredient
-  // using the worst-case (lowest) stock so the ingredientId React keys stay
-  // unique and the table reflects where each item is most at risk.
-  const byIngredient = new Map<string, UnsafeStockItem>();
-  for (const i of inventory) {
-    if (i.quantity >= 100) continue;
-    const existing = byIngredient.get(i.ingredientId);
-    if (existing) {
-      existing.quantity = Math.min(existing.quantity, i.quantity);
-      continue;
-    }
-    const ing = ingredients.find((ig) => ig.id === i.ingredientId);
-    byIngredient.set(i.ingredientId, {
-      ingredientId: i.ingredientId,
-      ingredientName: ing?.name ?? i.ingredientId,
-      quantity: i.quantity,
-      rop: ing?.rop ?? 0,
-      stockUnit: ing?.stockUnit,
-    });
-  }
-  const lowStockItems: UnsafeStockItem[] = [...byIngredient.values()]
-    .sort((a, b) => a.quantity - b.quantity)
-    .slice(0, 10);
-  if (lowStockItems.length > 0) {
+  if (overview.lowStock.length > 0) {
     anomalies.push({
       type: "Stock Alert",
-      message: `${lowStockItems.length} bahan baku di bawah batas aman`,
+      message: `${overview.lowStock.length} bahan baku di bawah batas aman`,
       severity: "error",
     });
   }
 
-  // ─── COGS ───
-  const cogsData = computeCogsData(recipes, ingredients);
+  // ─── Chart inputs (already aggregated by the server over the full range) ───
+  const salesTrend = overview.salesTrend.map(function (point) {
+    return { name: point.label, sales: point.revenue / 1000 };
+  });
+  const channelData = [...overview.channelData]
+    .sort(function (a, b) {
+      return b.count - a.count;
+    })
+    .map(function (row) {
+      return { name: channelLabel(row.channel), value: row.count };
+    });
+  const salesByBranch = overview.branchSales;
+  const salesByBrand = overview.brandSales;
 
-  // ─── Charts ───
-  const salesTrend = computeSalesTrend(ordersWithItems);
-  const channelData = computeChannelData(
-    ordersWithItems,
-    platformFees.map((pf) => pf.channel),
+  // ─── Tab row sets ───
+  const itemsByOrder = React.useMemo(
+    function () {
+      const map = new Map<string, { recipeId: string; quantity: number }[]>();
+      for (const item of details?.orderItems ?? []) {
+        const list = map.get(item.orderId) ?? [];
+        list.push({ recipeId: item.recipeId, quantity: item.quantity });
+        map.set(item.orderId, list);
+      }
+      return map;
+    },
+    [details],
   );
-  const salesByBranch = isSuperAdmin
-    ? computeSalesByBranch(ordersWithItems, branches, manualRevenues ?? [])
+
+  const ordersWithItems = (details?.orders ?? []).map(function (order) {
+    return {
+      ...order,
+      items: itemsByOrder.get(order.id) ?? [],
+    };
+  });
+
+  const cogsData = details ? computeCogsData(details.recipes, details.ingredients) : [];
+  const hppAlerts = details ? computeHppAlerts(details.recipes, details.ingredients) : [];
+  const discrepancies = details
+    ? computeDiscrepancies(details.stockOpnames, details.ingredients, overview.branches)
     : [];
-  const salesByBrand = isSuperAdmin
-    ? computeSalesByBrand(ordersWithItems, brands, manualRevenues ?? [])
-    : [];
+  const wasteLoss = details ? computeWasteLoss(details.wasteEntries, details.ingredients) : [];
 
-  // ─── HPP Alerts ───
-  const hppAlerts = computeHppAlerts(recipes, ingredients);
-
-  // ─── Discrepancies ───
-  const discrepancies = computeDiscrepancies(stockOpnames, ingredients, branches);
-
-  // ─── Waste Loss ───
-  const wasteLoss = computeWasteLoss(wasteEntries, ingredients);
+  const productionWasteFilter: DashboardFilter = {
+    from: range.from,
+    to: range.to,
+    branchId,
+  };
 
   return (
     <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
       <div className="space-y-6">
-        {dataUpdatedAt && (
+        <DashboardFilterBar
+          period={range.period}
+          from={range.from}
+          to={range.to}
+          branchId={branchId}
+          branches={overview.branches}
+          showBranchFilter={showBranchFilter}
+          dateLabel={range.dateLabel}
+          isFetching={overviewQuery.isFetching || detailsQuery.isFetching}
+          onPeriodChange={handlePeriodChange}
+          onFromChange={handleFromChange}
+          onToChange={handleToChange}
+          onBranchChange={handleBranchChange}
+          onRefresh={handleRefresh}
+        />
+
+        {dataUpdatedAt > 0 && (
           <div className="flex items-center justify-end">
             <p className="text-xs text-muted-foreground">
               Terakhir diperbarui:{" "}
@@ -320,14 +293,15 @@ function DashboardPage() {
           <TabsContent value="ringkasan">
             <div className="space-y-6">
               <StatsCards
-                totalSales={totalSales}
-                completedCount={completedCount}
-                voidCount={voidCount}
+                totalSales={overview.stats.totalSales}
+                completedCount={overview.stats.completedCount}
+                voidCount={overview.stats.voidCount}
+                salesLabel={range.period === "today" ? "Penjualan Hari Ini" : "Penjualan"}
               />
               <AnomalyAlerts anomalies={anomalies} />
               <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
-                <SalesTrendChart data={salesTrend} />
-                <ChannelPieChart data={channelData} />
+                <SalesTrendChart data={salesTrend} rangeLabel={range.dateLabel} />
+                <ChannelPieChart data={channelData} rangeLabel={range.dateLabel} />
               </div>
             </div>
           </TabsContent>
@@ -335,13 +309,21 @@ function DashboardPage() {
           {/* ─── Operasional (Operations) ─── */}
           <TabsContent value="operasional">
             <div className="space-y-6">
-              {lowStockItems.length > 0 && <UnsafeStockTable data={lowStockItems} />}
-              <OrderHistoryTable
-                orders={ordersWithItems}
-                recipes={recipes}
-                branches={branches}
-                showBranch={isSuperAdmin}
-              />
+              {detailsQuery.isError ? (
+                <DashboardError message={detailsQuery.error} onRetry={handleRefresh} />
+              ) : !details ? (
+                <TabSkeleton />
+              ) : (
+                <>
+                  {overview.lowStock.length > 0 && <UnsafeStockTable data={overview.lowStock} />}
+                  <OrderHistoryTable
+                    orders={ordersWithItems}
+                    recipes={details.recipes}
+                    branches={overview.branches}
+                    showBranch={overview.branches.length > 1}
+                  />
+                </>
+              )}
             </div>
           </TabsContent>
 
@@ -349,100 +331,34 @@ function DashboardPage() {
           {isSuperAdmin && (
             <TabsContent value="produksi-waste">
               <div className="space-y-8">
-                <div className="rounded-lg border bg-card p-3 shadow-sm md:p-4">
-                  <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3">
-                    <div className="space-y-1 sm:w-44">
-                      <label
-                        htmlFor="produksi-waste-period"
-                        className="text-xs font-medium text-muted-foreground"
-                      >
-                        Periode
-                      </label>
-                      <select
-                        id="produksi-waste-period"
-                        value={productionWastePeriod}
-                        onChange={(e) => handlePeriodChange(e.target.value)}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-9"
-                      >
-                        {PERIOD_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="order-3 col-span-2 grid grid-cols-2 gap-2 sm:order-none sm:flex">
-                      <div className="space-y-1">
-                        <label
-                          htmlFor="produksi-waste-from"
-                          className="text-xs font-medium text-muted-foreground"
-                        >
-                          Dari
-                        </label>
-                        <input
-                          id="produksi-waste-from"
-                          type="date"
-                          value={productionWasteRange.from}
-                          onChange={(e) => {
-                            setProductionWastePeriod("custom");
-                            setProductionWasteRange((prev) => ({ ...prev, from: e.target.value }));
-                          }}
-                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-9 sm:w-36"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label
-                          htmlFor="produksi-waste-to"
-                          className="text-xs font-medium text-muted-foreground"
-                        >
-                          Sampai
-                        </label>
-                        <input
-                          id="produksi-waste-to"
-                          type="date"
-                          value={productionWasteRange.to}
-                          onChange={(e) => {
-                            setProductionWastePeriod("custom");
-                            setProductionWasteRange((prev) => ({ ...prev, to: e.target.value }));
-                          }}
-                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-9 sm:w-36"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="order-2 space-y-1 sm:order-none sm:w-56">
-                      <label
-                        htmlFor="produksi-waste-branch"
-                        className="text-xs font-medium text-muted-foreground"
-                      >
-                        Cabang
-                      </label>
-                      <select
-                        id="produksi-waste-branch"
-                        value={productionWasteBranchId}
-                        onChange={(e) => setProductionWasteBranchId(e.target.value)}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-9"
-                      >
-                        <option value="">Semua Cabang</option>
-                        {branches.map((branch) => (
-                          <option key={branch.id} value={branch.id}>
-                            {branch.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <p className="order-4 col-span-2 text-xs text-muted-foreground sm:order-none sm:ml-auto sm:pb-2">
-                      {productionWastePeriod === "semua"
-                        ? "Semua waktu"
-                        : `${productionWasteRange.from || "…"} — ${productionWasteRange.to || "…"}`}
-                    </p>
-                  </div>
-                </div>
-
-                <ProductionTrackingSection records={production} filter={productionWasteFilter} />
-                <WasteBreakdownSection entries={wasteEntries} filter={productionWasteFilter} />
+                <p className="text-sm text-muted-foreground">
+                  Menampilkan produksi dan waste pada {range.dateLabel}.
+                  {branchId
+                    ? ` Cabang: ${overview.branches.find((b) => b.id === branchId)?.name ?? "—"}.`
+                    : " Semua cabang."}
+                </p>
+                {detailsQuery.isError ? (
+                  <DashboardError message={detailsQuery.error} onRetry={handleRefresh} />
+                ) : !details ? (
+                  <TabSkeleton />
+                ) : (
+                  <>
+                    {(details.truncated.production || details.truncated.waste) && (
+                      <p className="text-xs text-muted-foreground">
+                        Sebagian catatan dibatasi ke 500 baris terbaru pada rentang ini. Persempit
+                        tanggal untuk melihat sisanya.
+                      </p>
+                    )}
+                    <ProductionTrackingSection
+                      records={details.production}
+                      filter={productionWasteFilter}
+                    />
+                    <WasteBreakdownSection
+                      entries={details.wasteEntries}
+                      filter={productionWasteFilter}
+                    />
+                  </>
+                )}
               </div>
             </TabsContent>
           )}
@@ -450,28 +366,82 @@ function DashboardPage() {
           {/* ─── Keuangan (Financials) — super_admin only ─── */}
           {isSuperAdmin && (
             <TabsContent value="keuangan">
-              <div className="space-y-6">
-                <CogsAnalysisTable data={cogsData} />
-                <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
-                  <SalesByBranchChart data={salesByBranch} />
-                  <BrandPerformanceChart data={salesByBrand} />
+              {detailsQuery.isError ? (
+                <DashboardError message={detailsQuery.error} onRetry={handleRefresh} />
+              ) : !details ? (
+                <TabSkeleton />
+              ) : (
+                <div className="space-y-6">
+                  <p className="text-xs text-muted-foreground">
+                    COGS dan HPP memakai resep serta biaya bahan saat ini; chart penjualan mengikuti{" "}
+                    {range.dateLabel}.
+                  </p>
+                  <CogsAnalysisTable data={cogsData} />
+                  <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
+                    <SalesByBranchChart data={salesByBranch} rangeLabel={range.dateLabel} />
+                    <BrandPerformanceChart data={salesByBrand} rangeLabel={range.dateLabel} />
+                  </div>
+                  <HppAlertCards data={hppAlerts} />
                 </div>
-                <HppAlertCards data={hppAlerts} />
-              </div>
+              )}
             </TabsContent>
           )}
 
           {/* ─── Inventaris (Inventory) — super_admin only ─── */}
           {isSuperAdmin && (
             <TabsContent value="inventaris">
-              <div className="space-y-6">
-                <DiscrepancyTable data={discrepancies} />
-                <WasteLossTable data={wasteLoss} />
-              </div>
+              {detailsQuery.isError ? (
+                <DashboardError message={detailsQuery.error} onRetry={handleRefresh} />
+              ) : !details ? (
+                <TabSkeleton />
+              ) : (
+                <div className="space-y-6">
+                  {details.truncated.stockOpnames && (
+                    <p className="text-xs text-muted-foreground">
+                      Menampilkan 200 stock opname terbaru pada rentang ini.
+                    </p>
+                  )}
+                  <DiscrepancyTable data={discrepancies} />
+                  <WasteLossTable data={wasteLoss} />
+                </div>
+              )}
             </TabsContent>
           )}
         </Tabs>
       </div>
     </RoleGuard>
+  );
+}
+
+function DashboardError({ message, onRetry }: { message: Error | null; onRetry: () => void }) {
+  const text = message instanceof Error ? message.message : null;
+  return (
+    <div className="flex h-64 flex-col items-center justify-center gap-3 px-4 text-center">
+      <p className="text-muted-foreground">Gagal memuat data dashboard</p>
+      {text && (
+        <p className="max-w-2xl font-mono text-xs text-destructive" role="alert">
+          {text}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={onRetry}
+        className="h-9 rounded-md border px-4 text-sm font-medium hover:bg-muted"
+      >
+        Coba lagi
+      </button>
+    </div>
+  );
+}
+
+function TabSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="h-28 animate-pulse rounded-lg bg-muted" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="h-64 animate-pulse rounded-lg bg-muted" />
+        <div className="h-64 animate-pulse rounded-lg bg-muted" />
+      </div>
+    </div>
   );
 }

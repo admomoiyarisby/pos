@@ -1723,80 +1723,102 @@ export const deleteManualExpense = createServerFn({ method: "POST" })
 export interface SalesAnalytics {
   channelData: { channel: string; total: number; count: number }[];
   topSales: { recipeId: string; totalQty: number; totalRevenue: number; name: string }[];
-  dateRange: { from: string; to: string };
+  dateRange: { from?: string; to?: string };
+}
+
+export interface SalesAnalyticsInput {
+  branchId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  category?: string;
+}
+
+/** User-parameterized core (ADR 0015) so the aggregate is testable without a session. */
+export async function getSalesAnalyticsCore(
+  user: AppUser,
+  data: SalesAnalyticsInput,
+): Promise<SalesAnalytics> {
+  if (user.role !== "super_admin") {
+    throw new Error("Forbidden: insufficient role");
+  }
+  if (data.dateFrom && data.dateTo) {
+    validateDateRange(data.dateFrom, data.dateTo, 366);
+  } else if (!!data.dateFrom !== !!data.dateTo) {
+    throw new Error("Isi tanggal awal dan akhir sekaligus");
+  }
+
+  // Void and soft-deleted orders never count as sales; a channel mix that
+  // included them overstated both the revenue and the order count.
+  const saleClauses = [
+    isNull(orders.deletedAt),
+    ne(orders.status, "Void"),
+    data.branchId ? eq(orders.branchId, data.branchId) : undefined,
+    data.dateFrom
+      ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
+      : undefined,
+    data.dateTo
+      ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
+      : undefined,
+  ];
+
+  // Channel distribution
+  const channelData = await db
+    .select({
+      channel: orders.channel,
+      total: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(orders)
+    .where(and(...saleClauses))
+    .groupBy(orders.channel);
+
+  // Top sales by recipe
+  const topSales = await db
+    .select({
+      recipeId: orderItems.recipeId,
+      totalQty: sql<number>`SUM(${orderItems.quantity})`,
+      totalRevenue: sql<number>`COALESCE(SUM(${orderItems.price} * ${orderItems.quantity}), 0)`,
+    })
+    .from(orderItems)
+    .innerJoin(orders, eq(orderItems.orderId, orders.id))
+    .where(and(...saleClauses))
+    .groupBy(orderItems.recipeId)
+    .orderBy(sql`SUM(${orderItems.quantity}) DESC`)
+    .limit(10);
+
+  // Get recipe names
+  const recipeIds = topSales.map((t) => t.recipeId);
+  const recipeNames: Record<string, string> = {};
+  for (const id of recipeIds) {
+    const [r] = await db
+      .select({ name: recipes.name })
+      .from(recipes)
+      .where(eq(recipes.id, id))
+      .limit(1);
+    if (r) recipeNames[id] = r.name;
+  }
+
+  return {
+    channelData: channelData.map((c) => ({
+      ...c,
+      total: Number(c.total),
+      count: Number(c.count),
+    })),
+    topSales: topSales.map((t) => ({
+      ...t,
+      totalQty: Number(t.totalQty),
+      totalRevenue: Number(t.totalRevenue),
+      name: recipeNames[t.recipeId] ?? t.recipeId,
+    })),
+    dateRange: { from: data.dateFrom, to: data.dateTo },
+  };
 }
 
 export const getSalesAnalytics = createServerFn({ method: "GET" })
-  .validator(
-    (data: { branchId?: string; dateFrom: string; dateTo: string; category?: string }) => data,
-  )
+  .validator((data: SalesAnalyticsInput) => data)
   .handler(async ({ data }): Promise<SalesAnalytics> => {
-    await requireRole("super_admin");
-    validateDateRange(data.dateFrom, data.dateTo, 31);
-
-    // Channel distribution
-    const channelData = await db
-      .select({
-        channel: orders.channel,
-        total: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
-        count: sql<number>`COUNT(*)`,
-      })
-      .from(orders)
-      .where(
-        and(
-          sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
-          sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
-          data.branchId ? eq(orders.branchId, data.branchId) : undefined,
-        ),
-      )
-      .groupBy(orders.channel);
-
-    // Top sales by recipe
-    const topSales = await db
-      .select({
-        recipeId: orderItems.recipeId,
-        totalQty: sql<number>`SUM(${orderItems.quantity})`,
-        totalRevenue: sql<number>`COALESCE(SUM(${orderItems.price} * ${orderItems.quantity}), 0)`,
-      })
-      .from(orderItems)
-      .innerJoin(orders, eq(orderItems.orderId, orders.id))
-      .where(
-        and(
-          sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
-          sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`,
-          data.branchId ? eq(orders.branchId, data.branchId) : undefined,
-        ),
-      )
-      .groupBy(orderItems.recipeId)
-      .orderBy(sql`SUM(${orderItems.quantity}) DESC`)
-      .limit(10);
-
-    // Get recipe names
-    const recipeIds = topSales.map((t) => t.recipeId);
-    const recipeNames: Record<string, string> = {};
-    for (const id of recipeIds) {
-      const [r] = await db
-        .select({ name: recipes.name })
-        .from(recipes)
-        .where(eq(recipes.id, id))
-        .limit(1);
-      if (r) recipeNames[id] = r.name;
-    }
-
-    return {
-      channelData: channelData.map((c) => ({
-        ...c,
-        total: Number(c.total),
-        count: Number(c.count),
-      })),
-      topSales: topSales.map((t) => ({
-        ...t,
-        totalQty: Number(t.totalQty),
-        totalRevenue: Number(t.totalRevenue),
-        name: recipeNames[t.recipeId] ?? t.recipeId,
-      })),
-      dateRange: { from: data.dateFrom, to: data.dateTo },
-    };
+    const user = await requireRole("super_admin");
+    return getSalesAnalyticsCore(user, data);
   });
 
 // ─── Period Control ───

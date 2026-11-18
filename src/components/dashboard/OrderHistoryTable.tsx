@@ -123,7 +123,7 @@ export function OrderHistoryTable({
                 >
                   {search.trim()
                     ? "Tidak ada pesanan yang cocok dengan pencarian."
-                    : "Belum ada pesanan hari ini. Buka POS untuk memulai."}
+                    : "Belum ada pesanan pada rentang tanggal ini."}
                 </td>
               </tr>
             ) : (

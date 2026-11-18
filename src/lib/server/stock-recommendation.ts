@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { appSettings, areaManagerBranches, ingredients, inventory, stockLedger } from "#/db/schema";
+import { appSettings, ingredients, inventory, stockLedger } from "#/db/schema";
 import { db } from "#/lib/server/db";
 import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
+import { scopedBranchIds } from "./branch-scope";
 import { notCancelledProductionSql, notCancelledWasteSql, notVoidedOrderSql } from "./finance";
 import {
   MAX_LEAD_TIME_DAYS,
@@ -110,33 +111,6 @@ function shiftDate(date: string, days: number): string {
   const shifted = new Date(`${date}T00:00:00Z`);
   shifted.setUTCDate(shifted.getUTCDate() + days);
   return shifted.toISOString().slice(0, 10);
-}
-
-/**
- * Which branches this reader may see. `undefined` means all (supervisors
- * without a branch filter); `[]` means none, so the caller can return early.
- */
-async function scopedBranchIds(
-  user: AppUser,
-  requestedBranchId?: string,
-): Promise<string[] | undefined> {
-  if (user.role === "super_admin" || user.role === "admin_pusat") {
-    return requestedBranchId ? [requestedBranchId] : undefined;
-  }
-  if (user.role === "area_manager") {
-    const assigned = await db
-      .select({ branchId: areaManagerBranches.branchId })
-      .from(areaManagerBranches)
-      .where(eq(areaManagerBranches.userId, user.id));
-    const assignedIds = assigned.map((row) => row.branchId);
-    if (assignedIds.length === 0) return [];
-    // A branch outside the assignment is ignored rather than honored, same as
-    // the Stok Keluar report.
-    return requestedBranchId && assignedIds.includes(requestedBranchId)
-      ? [requestedBranchId]
-      : assignedIds;
-  }
-  return user.branchId ? [user.branchId] : [];
 }
 
 /**

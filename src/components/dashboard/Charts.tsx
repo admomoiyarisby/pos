@@ -8,9 +8,6 @@ import { Chart } from "@tanstack/charts/react";
 import { pie, polar, radialArc, radialRule, radialText } from "@tanstack/charts/polar";
 import { d3Curve } from "@tanstack/charts/d3/shape";
 import { curveMonotoneX } from "d3-shape";
-import { toDateInputValue } from "#/lib/utils";
-import { channelLabel } from "#/lib/order-channels";
-
 const CHANNEL_COLORS = [
   "var(--color-chart-1)",
   "var(--color-chart-2)",
@@ -20,118 +17,13 @@ const CHANNEL_COLORS = [
 
 const monotone = d3Curve(curveMonotoneX);
 
-interface Order {
-  id: string;
-  channel: string;
-  totalAmount: number;
-  branchId: string;
-  createdAt: Date;
-  brandId?: string | null;
-  status: string;
-}
-
-interface Branch {
-  id: string;
-  name: string;
-}
-
-interface Brand {
-  id: string;
-  name: string;
-}
-
-interface ManualRevenue {
-  id: string;
-  branchId: string;
-  amount: number;
-  date: string;
-  brandBreakdown?: { brandId: string; amount: number }[];
-}
-
-export function computeSalesTrend(orders: Order[]) {
-  const days: { name: string; sales: number }[] = [];
-  for (let i = 6; i >= 0; i--) {
-    // Bucket by Jakarta calendar day: the business day runs 00:00–23:59 WIB.
-    // UTC-day bucketing attributed 00:00–06:59 WIB sales to the previous day,
-    // and `getDay()` labels them in the device timezone — both wrong here.
-    const ref = new Date(Date.now() - i * 86400000);
-    const dStr = toDateInputValue(ref);
-    const dayOrders = orders.filter((o) => toDateInputValue(o.createdAt) === dStr);
-    days.push({
-      name: ref.toLocaleDateString("id-ID", { weekday: "short", timeZone: "Asia/Jakarta" }),
-      sales: dayOrders.reduce((acc, o) => acc + o.totalAmount, 0) / 1000,
-    });
-  }
-  return days;
-}
-
-export function computeChannelData(orders: Order[], platformChannels?: string[]) {
-  const channels = platformChannels ?? [
-    "Gofood",
-    "Grabfood",
-    "ShopeeFood",
-    "Dine-in",
-    "TikTok",
-    "Perlengkapan",
-  ];
-  return channels
-    .map((c) => ({
-      name: channelLabel(c),
-      value: orders.filter((o) => o.channel === c).length,
-    }))
-    .filter((d) => d.value > 0);
-}
-
-export function computeSalesByBranch(
-  orders: Order[],
-  branches: Branch[],
-  manualRevenues: ManualRevenue[],
-) {
-  const completedOrders = orders.filter((o) => o.status === "Completed");
-  return branches
-    .map((b) => {
-      const branchOrders = completedOrders.filter((o) => o.branchId === b.id);
-      const branchManual = manualRevenues.filter((mr) => mr.branchId === b.id);
-      const revenue =
-        branchOrders.reduce((sum, o) => sum + o.totalAmount, 0) +
-        branchManual.reduce((sum, mr) => sum + mr.amount, 0);
-      return { name: b.name, revenue, count: branchOrders.length + branchManual.length };
-    })
-    .filter((b) => b.revenue > 0);
-}
-
-export function computeSalesByBrand(
-  orders: Order[],
-  brands: Brand[],
-  manualRevenues: ManualRevenue[],
-) {
-  const completedOrders = orders.filter((o) => o.status === "Completed");
-  const brandSales: Record<string, { name: string; revenue: number; count: number }> = {};
-  brands.forEach((b) => {
-    brandSales[b.id] = { name: b.name, revenue: 0, count: 0 };
-  });
-
-  completedOrders.forEach((o) => {
-    if (o.brandId && brandSales[o.brandId]) {
-      brandSales[o.brandId].revenue += o.totalAmount;
-    }
-  });
-
-  manualRevenues.forEach((mr) => {
-    if (mr.brandBreakdown) {
-      mr.brandBreakdown.forEach((bb) => {
-        if (brandSales[bb.brandId]) {
-          brandSales[bb.brandId].revenue += bb.amount;
-          brandSales[bb.brandId].count += 1;
-        }
-      });
-    }
-  });
-
-  return Object.values(brandSales).filter((b) => b.revenue > 0);
-}
-
-export function SalesTrendChart({ data }: { data: { name: string; sales: number }[] }) {
+export function SalesTrendChart({
+  data,
+  rangeLabel,
+}: {
+  data: { name: string; sales: number }[];
+  rangeLabel?: string;
+}) {
   const definition = useMemo(
     () =>
       defineChart({
@@ -200,8 +92,10 @@ export function SalesTrendChart({ data }: { data: { name: string; sales: number 
   return (
     <div className="rounded-lg border bg-card p-3 md:p-4 shadow-sm">
       <div className="mb-2">
-        <h3 className="text-base font-bold text-foreground">Tren Penjualan (7 Hari Terakhir)</h3>
-        <p className="text-sm text-muted-foreground">Dalam ribuan Rupiah</p>
+        <h3 className="text-base font-bold text-foreground">Tren Penjualan</h3>
+        <p className="text-sm text-muted-foreground">
+          Dalam ribuan Rupiah{rangeLabel ? ` · ${rangeLabel}` : ""}
+        </p>
       </div>
       <div style={{ width: "100%", height: 320 }} className="min-w-0">
         <Chart
@@ -214,7 +108,13 @@ export function SalesTrendChart({ data }: { data: { name: string; sales: number 
   );
 }
 
-export function ChannelPieChart({ data }: { data: { name: string; value: number }[] }) {
+export function ChannelPieChart({
+  data,
+  rangeLabel,
+}: {
+  data: { name: string; value: number }[];
+  rangeLabel?: string;
+}) {
   const chartData = data.length > 0 ? data : [{ name: "Belum Ada Data", value: 1 }];
 
   const definition = useMemo(() => {
@@ -286,7 +186,9 @@ export function ChannelPieChart({ data }: { data: { name: string; value: number 
     <div className="rounded-lg border bg-card p-3 md:p-4 shadow-sm">
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">Distribusi Channel</h3>
-        <p className="text-sm text-muted-foreground">Berdasarkan volume pesanan</p>
+        <p className="text-sm text-muted-foreground">
+          Berdasarkan volume pesanan{rangeLabel ? ` · ${rangeLabel}` : ""}
+        </p>
       </div>
       <div style={{ width: "100%", height: 320 }} className="min-w-0">
         <Chart
@@ -315,8 +217,10 @@ export function ChannelPieChart({ data }: { data: { name: string; value: number 
 
 export function SalesByBranchChart({
   data,
+  rangeLabel,
 }: {
   data: { name: string; revenue: number; count: number }[];
+  rangeLabel?: string;
 }) {
   if (data.length === 0) return null;
 
@@ -371,7 +275,9 @@ export function SalesByBranchChart({
     <div className="rounded-lg border bg-card p-3 md:p-4 shadow-sm">
       <div className="mb-2">
         <h3 className="text-base font-bold text-foreground">Penjualan per Cabang</h3>
-        <p className="text-sm text-muted-foreground">Total pendapatan kotor per outlet</p>
+        <p className="text-sm text-muted-foreground">
+          Total pendapatan kotor per outlet{rangeLabel ? ` · ${rangeLabel}` : ""}
+        </p>
       </div>
       <div style={{ width: "100%", height: 256 }} className="min-w-0">
         <Chart
@@ -386,8 +292,10 @@ export function SalesByBranchChart({
 
 export function BrandPerformanceChart({
   data,
+  rangeLabel,
 }: {
   data: { name: string; revenue: number; count: number }[];
+  rangeLabel?: string;
 }) {
   if (data.length === 0) return null;
 
@@ -444,6 +352,7 @@ export function BrandPerformanceChart({
         <h3 className="text-base font-bold text-foreground">Performa Brand</h3>
         <p className="text-sm text-muted-foreground">
           Kontribusi pendapatan per Brand (Termasuk Manual)
+          {rangeLabel ? ` · ${rangeLabel}` : ""}
         </p>
       </div>
       <div style={{ width: "100%", height: 256 }} className="min-w-0">
