@@ -86,19 +86,6 @@ function resolveProductionDate(value: string | undefined): Date {
   return parseDateOnlyInput(value) ?? new Date(value);
 }
 
-/**
- * The server's Jakarta calendar day, as a `<input type="date">` value.
- *
- * The production form must not derive "today" from the tablet clock: a device
- * whose date is a day ahead pre-fills tomorrow and the operator has to correct
- * it on every submission (Mulyorejo, Nov 2026). The picker's default and `max`
- * come from here instead, so a broken device cannot inject a future day.
- */
-export const getServerToday = createServerFn({ method: "GET" }).handler(async () => {
-  await requireAuth();
-  return todayDateInputValue();
-});
-
 async function applyYieldStockEffect(
   tx: YieldTx,
   branchId: string,

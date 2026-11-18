@@ -16,7 +16,7 @@ import {
 } from "#/lib/server/inventory";
 import { getBranches } from "#/lib/server/branches";
 import { getBranchCatalogGaps } from "#/lib/server/ingredients";
-import { toDateInputValue } from "#/lib/utils";
+import { getServerToday } from "#/lib/server/server-date";
 import { Badge } from "#/components/ui/badge";
 import {
   ArrowRight,
@@ -59,9 +59,12 @@ function statusLabel(status: string): string {
 export const Route = createFileRoute("/_layout/stock-opname/")({
   component: StockOpnamePage,
   loader: async () => {
-    const opnames = await getStockOpnames({ data: {} });
-    const branches = await getBranches({ data: {} });
-    return { opnames, branches };
+    const [opnames, branches, serverToday] = await Promise.all([
+      getStockOpnames({ data: {} }),
+      getBranches({ data: {} }),
+      getServerToday(),
+    ]);
+    return { opnames, branches, serverToday };
   },
 });
 
@@ -71,12 +74,32 @@ function StockOpnamePage() {
     status?: string;
   }>(["status"]);
   const { user } = useAuth();
-  const { opnames: initial, branches } = Route.useLoaderData();
+  const { opnames: initial, branches, serverToday: initialServerToday } = Route.useLoaderData();
   const queryClient = useQueryClient();
   const navigate = useNavigate({ from: Route.fullPath });
   const [triggerModal, setTriggerModal] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState("");
-  const [selectedDate, setSelectedDate] = useState(() => toDateInputValue(new Date()));
+  /**
+   * Seeded from the server's Jakarta date, not the device clock: a tablet whose
+   * date runs ahead opened this form on tomorrow (Mulyorejo, Nov 2026). A
+   * future date is still selectable on purpose — a branch may prepare the
+   * month's 25th sheet early (ADR 0021) — so this only fixes the default.
+   */
+  const [selectedDate, setSelectedDate] = useState(initialServerToday);
+
+  // A tab can stay open across midnight; re-read the server day when the form
+  // opens so the default does not drift to yesterday.
+  const { data: freshServerToday } = useQuery({
+    queryKey: ["server-today"],
+    queryFn: () => getServerToday(),
+    enabled: triggerModal,
+    refetchOnWindowFocus: false,
+  });
+  const serverToday = freshServerToday ?? initialServerToday;
+
+  useEffect(() => {
+    if (triggerModal) setSelectedDate(serverToday);
+  }, [triggerModal, serverToday]);
 
   // Soft-delete (history housekeeping) — super_admin only.
   const [deleteTarget, setDeleteTarget] = useState<SORow | null>(null);

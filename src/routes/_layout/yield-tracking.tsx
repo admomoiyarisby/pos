@@ -13,7 +13,6 @@ import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
 import {
   getYieldConversions,
-  getServerToday,
   createYieldConversion,
   requestYieldCancel,
   getYieldCancelRequests,
@@ -24,6 +23,7 @@ import {
 } from "#/lib/server/yield";
 import { getIngredients } from "#/lib/server/ingredients";
 import { getBranches } from "#/lib/server/branches";
+import { getServerToday } from "#/lib/server/server-date";
 import { getInventory } from "#/lib/server/inventory";
 import { useAuth } from "#/lib/auth-context";
 import { toast } from "sonner";
