@@ -211,18 +211,14 @@ function DashboardPage() {
   const salesByBrand = overview.brandSales;
 
   // ─── Tab row sets ───
-  const itemsByOrder = React.useMemo(
-    function () {
-      const map = new Map<string, { recipeId: string; quantity: number }[]>();
-      for (const item of details?.orderItems ?? []) {
-        const list = map.get(item.orderId) ?? [];
-        list.push({ recipeId: item.recipeId, quantity: item.quantity });
-        map.set(item.orderId, list);
-      }
-      return map;
-    },
-    [details],
-  );
+  // Plain computation, not a hook: this sits after the loading/error early
+  // returns, and a hook here would change the hook order between renders.
+  const itemsByOrder = new Map<string, { recipeId: string; quantity: number }[]>();
+  for (const item of details?.orderItems ?? []) {
+    const list = itemsByOrder.get(item.orderId) ?? [];
+    list.push({ recipeId: item.recipeId, quantity: item.quantity });
+    itemsByOrder.set(item.orderId, list);
+  }
 
   const ordersWithItems = (details?.orders ?? []).map(function (order) {
     return {
