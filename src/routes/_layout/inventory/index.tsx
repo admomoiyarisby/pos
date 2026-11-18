@@ -22,10 +22,11 @@ import { getStockRecommendations } from "#/lib/server/stock-recommendation";
 import type { StockRecommendation } from "#/lib/server/stock-recommendation";
 import { StockStatusBadge } from "#/components/inventory/StockStatusBadge";
 import {
-  STOCK_STATUS_HINT,
+  LEAD_TIME_DAYS,
   formatDaysCover,
   formatRecommendationQuantity,
   stockRecommendationKey,
+  stockStatusHint,
 } from "#/lib/stock-recommendation";
 
 interface InvRow {
@@ -54,7 +55,7 @@ const skuLabels = { RM: "RM", SFG: "SFG", FG: "FG" } satisfies Record<string, st
 function recommendationTitle(rec: StockRecommendation) {
   return [
     `Rata-rata ${formatRecommendationQuantity(rec.avgDailyUsage)} ${rec.stockUnit}/hari`,
-    `Acuan 5 hari ${formatRecommendationQuantity(rec.targetStock)} ${rec.stockUnit}`,
+    `Acuan ${rec.leadTimeDays} hari ${formatRecommendationQuantity(rec.targetStock)} ${rec.stockUnit}`,
     `Cover ${formatDaysCover(rec.daysCover)}`,
   ].join(" · ");
 }
@@ -175,9 +176,10 @@ function InventoryPage() {
   const inventory = result?.data ?? [];
   const total = result?.total ?? 0;
 
-  // Safety-stock marker: 3-day average stock-out × 5-day lead time. Fetched per
-  // branch filter (all branches for a supervisor who has not picked one) and
-  // joined to the visible rows by (branch, ingredient).
+  // Safety-stock marker: 3-day average stock-out × the configured lead time
+  // (5 days by default). Fetched per branch filter (all branches for a
+  // supervisor who has not picked one) and joined to the visible rows by
+  // (branch, ingredient).
   const { data: recommendations } = useQuery({
     queryKey: ["stock-recommendations", branchId ?? "all"],
     queryFn: () => getStockRecommendations({ data: { branchId: branchId || undefined } }),
@@ -317,9 +319,10 @@ function InventoryPage() {
           stockRecommendationKey(row.original.branchId, row.original.ingredientId),
         );
         const status = rec?.status ?? "no-data";
+        const leadTimeDays = rec?.leadTimeDays ?? LEAD_TIME_DAYS;
         return (
-          <span title={rec ? recommendationTitle(rec) : STOCK_STATUS_HINT[status]}>
-            <StockStatusBadge status={status} />
+          <span title={rec ? recommendationTitle(rec) : stockStatusHint(status, leadTimeDays)}>
+            <StockStatusBadge status={status} leadTimeDays={leadTimeDays} />
           </span>
         );
       },

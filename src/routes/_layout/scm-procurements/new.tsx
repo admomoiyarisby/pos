@@ -24,6 +24,7 @@ import { getStockRecommendations } from "#/lib/server/stock-recommendation";
 import type { StockRecommendation } from "#/lib/server/stock-recommendation";
 import { StockStatusBadge } from "#/components/inventory/StockStatusBadge";
 import {
+  LEAD_TIME_DAYS,
   formatDaysCover,
   formatRecommendationQuantity,
   roundRecommendation,
@@ -293,7 +294,10 @@ function NewProcurementPage() {
 
               {selectedIngredient ? (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                  <StockStatusBadge status={selectedRecommendation?.status ?? "no-data"} />
+                  <StockStatusBadge
+                    status={selectedRecommendation?.status ?? "no-data"}
+                    leadTimeDays={selectedRecommendation?.leadTimeDays ?? LEAD_TIME_DAYS}
+                  />
                   {selectedRecommendation && selectedRecommendation.status !== "no-data" ? (
                     <>
                       <span>
@@ -304,7 +308,7 @@ function NewProcurementPage() {
                         </span>
                       </span>
                       <span className="text-muted-foreground">
-                        Acuan 5 hari:{" "}
+                        Acuan {selectedRecommendation.leadTimeDays} hari:{" "}
                         {formatRecommendationQuantity(selectedRecommendation.targetStock)}{" "}
                         {selectedRecommendation.stockUnit}
                       </span>

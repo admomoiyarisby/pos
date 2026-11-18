@@ -221,6 +221,29 @@ describe("Safety-stock recommendation via the real core", () => {
     expect(row.recommendedOrder).toBe(5);
   });
 
+  it.skipIf(!hasTestDatabaseUrl)("reads the configured lead time from app settings", async () => {
+    const branch = await seedBranch();
+    const ingredient = await seedIngredient();
+    await seedInventory(branch, ingredient, 10);
+    const admin = await seedUser("branch_admin", branch);
+
+    for (const date of ["2026-08-27", "2026-08-28", "2026-08-29"]) {
+      await seedLedger({ branchId: branch, ingredientId: ingredient, quantity: 3, date });
+    }
+    await db.insert(schema.appSettings).values({ key: "stock_lead_time_days", value: "7" });
+
+    const [row] = await recommendations.getStockRecommendationCore(
+      admin,
+      {},
+      jakartaNoon("2026-08-30"),
+    );
+
+    expect(row.leadTimeDays).toBe(7);
+    expect(row.avgDailyUsage).toBe(3);
+    expect(row.targetStock).toBe(21);
+    expect(row.recommendedOrder).toBe(11);
+  });
+
   it.skipIf(!hasTestDatabaseUrl)(
     "ignores voided orders and cancelled waste but keeps active documents",
     async () => {

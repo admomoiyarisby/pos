@@ -3,8 +3,9 @@ import { RECOMMENDATION_MAX_FRACTION_DIGITS, formatQuantity, roundQuantity } fro
 /**
  * Safety-stock rule requested by the client: the reference stock for an
  * ingredient is its average daily stock-out over the last 3 complete days
- * multiplied by a 5-day lead time. Current stock is compared against that
- * reference, and the shortfall is the amount staff should order.
+ * multiplied by a lead time (5 days by default, configurable via
+ * `stock_lead_time_days`). Current stock is compared against that reference,
+ * and the shortfall is the amount staff should order.
  *
  * Kept free of database access so the arithmetic and the colour thresholds can
  * be tested without a fixture (the server core feeds it aggregated numbers).
@@ -12,10 +13,12 @@ import { RECOMMENDATION_MAX_FRACTION_DIGITS, formatQuantity, roundQuantity } fro
 export const USAGE_WINDOW_DAYS = 3;
 export const LEAD_TIME_DAYS = 5;
 
-/** Below the lead time means the next delivery may not arrive in time. */
-const LOW_COVER_DAYS = 5;
+/** Sane bounds for the configured lead time; anything else falls back to 5. */
+export const MIN_LEAD_TIME_DAYS = 1;
+export const MAX_LEAD_TIME_DAYS = 90;
+
 /** Up to one lead time plus a short buffer still needs attention. */
-const WATCH_COVER_DAYS = 7;
+export const WATCH_BUFFER_DAYS = 2;
 
 export type StockStatus = "low" | "watch" | "ok" | "no-data";
 
@@ -33,12 +36,35 @@ export const STOCK_STATUS_VARIANT = {
   "no-data": "outline",
 } satisfies Record<StockStatus, "destructive" | "warning" | "success" | "outline">;
 
-export const STOCK_STATUS_HINT = {
-  low: "Stok di bawah acuan 5 hari",
-  watch: "Stok cukup untuk 5–7 hari",
-  ok: "Stok lebih dari 7 hari",
-  "no-data": "Belum ada pemakaian 3 hari terakhir",
-} satisfies Record<StockStatus, string>;
+/**
+ * Resolve a stored setting to a usable day count. Missing, fractional,
+ * non-numeric and out-of-range values all fall back to the business default
+ * instead of producing a nonsensical target.
+ */
+export function normalizeLeadTimeDays(raw: string | number | null | undefined): number {
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < MIN_LEAD_TIME_DAYS || parsed > MAX_LEAD_TIME_DAYS) {
+    return LEAD_TIME_DAYS;
+  }
+  return parsed;
+}
+
+/** Accessible description for a marker at the configured lead time. */
+export function stockStatusHint(
+  status: StockStatus,
+  leadTimeDays: number = LEAD_TIME_DAYS,
+): string {
+  switch (status) {
+    case "low":
+      return `Stok di bawah acuan ${leadTimeDays} hari`;
+    case "watch":
+      return `Stok cukup untuk ${leadTimeDays}–${leadTimeDays + WATCH_BUFFER_DAYS} hari`;
+    case "ok":
+      return `Stok lebih dari ${leadTimeDays + WATCH_BUFFER_DAYS} hari`;
+    case "no-data":
+      return `Belum ada pemakaian ${USAGE_WINDOW_DAYS} hari terakhir`;
+  }
+}
 
 export interface StockRecommendationNumbers {
   usage3d: number;
@@ -50,10 +76,14 @@ export interface StockRecommendationNumbers {
   recommendedOrder: number;
 }
 
-export function stockStatusFor(avgDailyUsage: number, daysCover: number | null): StockStatus {
+export function stockStatusFor(
+  avgDailyUsage: number,
+  daysCover: number | null,
+  leadTimeDays: number = LEAD_TIME_DAYS,
+): StockStatus {
   if (!(avgDailyUsage > 0) || daysCover === null) return "no-data";
-  if (daysCover < LOW_COVER_DAYS) return "low";
-  if (daysCover <= WATCH_COVER_DAYS) return "watch";
+  if (daysCover < leadTimeDays) return "low";
+  if (daysCover <= leadTimeDays + WATCH_BUFFER_DAYS) return "watch";
   return "ok";
 }
 
@@ -66,7 +96,7 @@ export function stockRecommendationFor(
   const avgDailyUsage = windowDays > 0 ? usage3d / windowDays : 0;
   const targetStock = avgDailyUsage * leadTimeDays;
   const daysCover = avgDailyUsage > 0 ? currentStock / avgDailyUsage : null;
-  const status = stockStatusFor(avgDailyUsage, daysCover);
+  const status = stockStatusFor(avgDailyUsage, daysCover, leadTimeDays);
   return {
     usage3d,
     avgDailyUsage,

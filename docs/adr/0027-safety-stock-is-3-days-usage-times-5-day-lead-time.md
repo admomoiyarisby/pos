@@ -1,5 +1,9 @@
 # Safety stock is 3 days of usage times 5 days of lead time
 
+> **Amended by ADR 0033.** The 5-day lead time is now the
+> `stock_lead_time_days` setting, defaulting to 5; the status bands scale with
+> it. The 3-day window and the rest of this decision still stand.
+
 ## Context
 
 Branch staff order from the Central Kitchen without a stock reference: they

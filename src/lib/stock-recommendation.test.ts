@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  LEAD_TIME_DAYS,
   formatDaysCover,
   formatRecommendationQuantity,
+  normalizeLeadTimeDays,
   roundRecommendation,
   stockRecommendationFor,
   stockStatusFor,
+  stockStatusHint,
 } from "#/lib/stock-recommendation";
 
 describe("stockRecommendationFor", () => {
@@ -15,6 +18,14 @@ describe("stockRecommendationFor", () => {
     expect(rec.targetStock).toBe(15);
     expect(rec.status).toBe("low");
     expect(rec.recommendedOrder).toBe(5);
+  });
+
+  it("uses the configured lead time for the reference and the marker", () => {
+    const rec = stockRecommendationFor(10, 9, 3, 10);
+    expect(rec.avgDailyUsage).toBe(3);
+    expect(rec.targetStock).toBe(30);
+    expect(rec.status).toBe("low");
+    expect(rec.recommendedOrder).toBe(20);
   });
 
   it("recommends nothing once stock is at or above the reference", () => {
@@ -80,9 +91,43 @@ describe("stockStatusFor", () => {
     expect(stockStatusFor(2, 7.01)).toBe("ok");
   });
 
+  it("moves the bands with the configured lead time", () => {
+    expect(stockStatusFor(2, 9.99, 10)).toBe("low");
+    expect(stockStatusFor(2, 10, 10)).toBe("watch");
+    expect(stockStatusFor(2, 12, 10)).toBe("watch");
+    expect(stockStatusFor(2, 12.01, 10)).toBe("ok");
+  });
+
   it("is no-data whenever usage is unknown", () => {
     expect(stockStatusFor(0, null)).toBe("no-data");
     expect(stockStatusFor(0, 3)).toBe("no-data");
+  });
+});
+
+describe("normalizeLeadTimeDays", () => {
+  it("accepts a whole day count in range", () => {
+    expect(normalizeLeadTimeDays("7")).toBe(7);
+    expect(normalizeLeadTimeDays(1)).toBe(1);
+    expect(normalizeLeadTimeDays(90)).toBe(90);
+  });
+
+  it("falls back to the 5-day default for anything unusable", () => {
+    expect(normalizeLeadTimeDays(undefined)).toBe(LEAD_TIME_DAYS);
+    expect(normalizeLeadTimeDays(null)).toBe(LEAD_TIME_DAYS);
+    expect(normalizeLeadTimeDays("")).toBe(LEAD_TIME_DAYS);
+    expect(normalizeLeadTimeDays("abc")).toBe(LEAD_TIME_DAYS);
+    expect(normalizeLeadTimeDays("5.5")).toBe(LEAD_TIME_DAYS);
+    expect(normalizeLeadTimeDays("0")).toBe(LEAD_TIME_DAYS);
+    expect(normalizeLeadTimeDays("91")).toBe(LEAD_TIME_DAYS);
+  });
+});
+
+describe("stockStatusHint", () => {
+  it("labels the bands with the configured lead time", () => {
+    expect(stockStatusHint("low", 10)).toBe("Stok di bawah acuan 10 hari");
+    expect(stockStatusHint("watch", 10)).toBe("Stok cukup untuk 10–12 hari");
+    expect(stockStatusHint("ok", 10)).toBe("Stok lebih dari 12 hari");
+    expect(stockStatusHint("no-data")).toBe("Belum ada pemakaian 3 hari terakhir");
   });
 });
 

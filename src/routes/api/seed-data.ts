@@ -1014,6 +1014,11 @@ export async function seedDatabase() {
       value: "10",
       description: "Hari permintaan stok ulang (Reorder Quantity)",
     },
+    {
+      key: "stock_lead_time_days",
+      value: "5",
+      description: "Hari acuan rekomendasi stok (lead time)",
+    },
   ];
   for (const s of settings) {
     const existing = await db

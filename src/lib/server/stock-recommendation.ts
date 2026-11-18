@@ -1,13 +1,78 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { areaManagerBranches, ingredients, inventory, stockLedger } from "#/db/schema";
+import { appSettings, areaManagerBranches, ingredients, inventory, stockLedger } from "#/db/schema";
 import { db } from "#/lib/server/db";
-import { requireAuth } from "./auth";
+import { requireAuth, requireRole } from "./auth";
 import type { AppUser } from "./auth";
 import { notCancelledProductionSql, notCancelledWasteSql, notVoidedOrderSql } from "./finance";
-import { stockRecommendationFor } from "#/lib/stock-recommendation";
+import {
+  MAX_LEAD_TIME_DAYS,
+  MIN_LEAD_TIME_DAYS,
+  USAGE_WINDOW_DAYS,
+  normalizeLeadTimeDays,
+  stockRecommendationFor,
+} from "#/lib/stock-recommendation";
 import type { StockStatus } from "#/lib/stock-recommendation";
 import { toDateInputValue } from "#/lib/utils";
+import { z } from "zod";
+
+/** `app_settings.key` for the lead-time horizon used by the recommendation. */
+export const STOCK_LEAD_TIME_SETTING_KEY = "stock_lead_time_days";
+
+/** Read the configured lead time, falling back to the business default. */
+async function readLeadTimeDays(): Promise<number> {
+  const [row] = await db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, STOCK_LEAD_TIME_SETTING_KEY))
+    .limit(1);
+  return normalizeLeadTimeDays(row?.value);
+}
+
+export const getStockRecommendationSettings = createServerFn({ method: "GET" }).handler(
+  async () => {
+    await requireRole("super_admin", "admin_pusat");
+    return { leadTimeDays: await readLeadTimeDays() };
+  },
+);
+
+export const updateStockRecommendationSettings = createServerFn({ method: "POST" })
+  .validator((data: { leadTimeDays: number }) => ({
+    leadTimeDays: z
+      .number()
+      .int()
+      .min(MIN_LEAD_TIME_DAYS)
+      .max(MAX_LEAD_TIME_DAYS)
+      .parse(data.leadTimeDays),
+  }))
+  .handler(async ({ data }) => {
+    const user = await requireRole("super_admin", "admin_pusat");
+    const [existing] = await db
+      .select({ id: appSettings.id })
+      .from(appSettings)
+      .where(eq(appSettings.key, STOCK_LEAD_TIME_SETTING_KEY))
+      .limit(1);
+
+    if (existing) {
+      await db
+        .update(appSettings)
+        .set({
+          value: String(data.leadTimeDays),
+          updatedBy: user.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(appSettings.id, existing.id));
+    } else {
+      await db.insert(appSettings).values({
+        key: STOCK_LEAD_TIME_SETTING_KEY,
+        value: String(data.leadTimeDays),
+        description: "Hari acuan rekomendasi stok (lead time)",
+        updatedBy: user.id,
+      });
+    }
+
+    return { leadTimeDays: data.leadTimeDays };
+  });
 
 export interface StockRecommendation {
   branchId: string;
@@ -18,6 +83,8 @@ export interface StockRecommendation {
   usage3d: number;
   avgDailyUsage: number;
   targetStock: number;
+  /** Lead-time horizon behind `targetStock`, so the UI can label it honestly. */
+  leadTimeDays: number;
   /** `null` when the item had no stock-out in the window. */
   daysCover: number | null;
   status: StockStatus;
@@ -89,9 +156,10 @@ export async function getStockRecommendationCore(
   const branchIds = await scopedBranchIds(user, data.branchId);
   if (branchIds && branchIds.length === 0) return [];
 
+  const leadTimeDays = await readLeadTimeDays();
   const today = toDateInputValue(now);
   const dateTo = shiftDate(today, -1);
-  const dateFrom = shiftDate(today, -3);
+  const dateFrom = shiftDate(today, -USAGE_WINDOW_DAYS);
   const branchCondition = branchIds ? inArray(stockLedger.branchId, branchIds) : undefined;
   const inventoryBranchCondition = branchIds ? inArray(inventory.branchId, branchIds) : undefined;
 
@@ -180,13 +248,19 @@ export async function getStockRecommendationCore(
 
   return [...byKey.values()]
     .map((row) => {
-      const numbers = stockRecommendationFor(row.currentStock, row.usage3d);
+      const numbers = stockRecommendationFor(
+        row.currentStock,
+        row.usage3d,
+        USAGE_WINDOW_DAYS,
+        leadTimeDays,
+      );
       return {
         branchId: row.branchId,
         ingredientId: row.ingredientId,
         ingredientName: row.name,
         stockUnit: row.unit,
         currentStock: row.currentStock,
+        leadTimeDays,
         ...numbers,
         dateFrom,
         dateTo,

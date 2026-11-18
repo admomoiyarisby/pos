@@ -53,9 +53,9 @@ const markdownContent = `
 Saat memilih bahan di form pengadaan, sistem menampilkan acuan stok:
 
 - **Rata-rata pemakaian** — total stok keluar 3 hari lengkap terakhir (hari ini tidak dihitung) dibagi 3
-- **Acuan 5 hari** — rata-rata pemakaian × 5 hari (lead time)
-- **Status** — merah: stok kurang dari 5 hari; kuning: 5–7 hari; hijau: lebih dari 7 hari
-- **Rekomendasi** — kekurangan stok terhadap acuan 5 hari. Tombol **Isi rekomendasi** mengisi jumlahnya, dan angkanya tetap bisa disesuaikan. Angka rekomendasi ditampilkan satu desimal (mis. \`+10,7 pcs\`), bukan tiga.
+- **Acuan lead time** — rata-rata pemakaian × jumlah hari lead time (default 5 hari). Nilainya diatur oleh Admin Pusat di **Pengaturan → Pemesanan Ulang Otomatis**.
+- **Status** — merah: stok kurang dari lead time; kuning: lead time sampai lead time + 2 hari; hijau: lebih dari itu
+- **Rekomendasi** — kekurangan stok terhadap acuan lead time. Tombol **Isi rekomendasi** mengisi jumlahnya, dan angkanya tetap bisa disesuaikan. Angka rekomendasi ditampilkan satu desimal (mis. \`+10,7 pcs\`), bukan tiga.
 
 ## Surat Jalan Qty Kosong (saat review)
 
