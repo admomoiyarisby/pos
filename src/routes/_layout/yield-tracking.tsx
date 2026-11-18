@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTableSearch } from "#/hooks/useTableSearch";
 import { useTableUrlState } from "#/hooks/useTableUrlState";
-import { formText, formatJakartaDate, formatJakartaTime, todayDateInputValue } from "#/lib/utils";
+import { formText, formatJakartaDate, formatJakartaTime } from "#/lib/utils";
 import { useState, useMemo, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -13,6 +13,7 @@ import Modal from "#/components/ui/Modal";
 import { Button } from "#/components/ui/button";
 import {
   getYieldConversions,
+  getServerToday,
   createYieldConversion,
   requestYieldCancel,
   getYieldCancelRequests,
@@ -356,10 +357,13 @@ function SidePicker({
 export const Route = createFileRoute("/_layout/yield-tracking")({
   component: YieldTrackingPage,
   loader: async () => {
-    const conversions = await getYieldConversions({ data: {} });
-    const ingredients = await getIngredients({ data: { excludeNasi: true } });
-    const branches = await getBranches({ data: {} });
-    return { conversions, ingredients, branches };
+    const [conversions, ingredients, branches, serverToday] = await Promise.all([
+      getYieldConversions({ data: {} }),
+      getIngredients({ data: { excludeNasi: true } }),
+      getBranches({ data: {} }),
+      getServerToday(),
+    ]);
+    return { conversions, ingredients, branches, serverToday };
   },
 });
 
@@ -373,11 +377,26 @@ function YieldTrackingPage() {
     filters: { branchId },
     setFilter,
   } = useTableUrlState<{ branchId?: string }>(["branchId"]);
-  const { conversions: initial, ingredients, branches } = Route.useLoaderData();
+  const {
+    conversions: initial,
+    ingredients,
+    branches,
+    serverToday: initialServerToday,
+  } = Route.useLoaderData();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
-  const [result, setResult] = useState<{ outCount: number; producedCount: number } | null>(null);
+  const [result, setResult] = useState<{
+    outCount: number;
+    producedCount: number;
+    productionDate: string;
+  } | null>(null);
+  /**
+   * The day the form submits. Seeded from the server's Jakarta date, not the
+   * device clock: a tablet whose date runs ahead pre-fills tomorrow and the
+   * operator must correct it on every submission (Mulyorejo, Nov 2026).
+   */
+  const [productionDate, setProductionDate] = useState(initialServerToday);
   const [outItems, setOutItems] = useState<ProductionItem[]>([]);
   const [producedItems, setProducedItems] = useState<ProductionItem[]>([]);
   const [outPickerOpen, setOutPickerOpen] = useState(true);
@@ -449,6 +468,20 @@ function YieldTrackingPage() {
     return conversions.filter((c) => c.branchId === branchId);
   }, [conversions, branchId, highlightId]);
 
+  // The page can stay open across midnight, so re-read the server's Jakarta
+  // day whenever the form opens instead of trusting the loader value forever.
+  const { data: freshServerToday } = useQuery({
+    queryKey: ["server-today"],
+    queryFn: () => getServerToday(),
+    enabled: modalOpen,
+    refetchOnWindowFocus: false,
+  });
+  const serverToday = freshServerToday ?? initialServerToday;
+
+  useEffect(() => {
+    if (modalOpen) setProductionDate(serverToday);
+  }, [modalOpen, serverToday]);
+
   const createMutation = useMutation({
     mutationFn: createYieldConversion,
     onSuccess: () => {
@@ -456,10 +489,12 @@ function YieldTrackingPage() {
       void queryClient.invalidateQueries({ queryKey: ["branch-inventory"] });
       setModalOpen(false);
       setDuplicatePrompt(null);
+      setDatePrompt(null);
       const v = createMutation.variables?.data;
       setResult({
         outCount: v?.out?.length ?? 0,
         producedCount: v?.produced?.length ?? 0,
+        productionDate: v?.productionDate ?? serverToday,
       });
       setOutItems([{ ingredientId: "", quantity: 0 }]);
       setProducedItems([{ ingredientId: "", quantity: 0 }]);
@@ -474,6 +509,13 @@ function YieldTrackingPage() {
       // toast. ADR 0019.
       if (error.name === "DuplicateProductionError") {
         setDuplicatePrompt({ message: error.message, payload: createMutation.variables?.data });
+        return;
+      }
+      // A future date is recoverable too: offer the server's day in one tap
+      // instead of a dead end, because the operator cannot see that the
+      // device's calendar is wrong.
+      if (error.name === "FutureProductionDateError") {
+        setDatePrompt({ message: error.message, payload: createMutation.variables?.data });
         return;
       }
       toast.error("Gagal menyimpan", { description: error.message });
@@ -491,6 +533,20 @@ function YieldTrackingPage() {
       produced: { ingredientId: string; quantity: number }[];
       notes?: string;
       productionDate?: string;
+    };
+  } | null>(null);
+
+  // A submission refused because its date is in the future. The payload is kept
+  // so "use the server date" re-sends the same batch with the corrected day.
+  const [datePrompt, setDatePrompt] = useState<{
+    message: string;
+    payload?: {
+      branchId: string;
+      out: { ingredientId: string; quantity: number }[];
+      produced: { ingredientId: string; quantity: number }[];
+      notes?: string;
+      productionDate?: string;
+      confirmDuplicate?: boolean;
     };
   } | null>(null);
 
@@ -665,6 +721,22 @@ function YieldTrackingPage() {
   const resetForm = () => {
     setOutItems([]);
     setProducedItems([]);
+  };
+
+  /**
+   * Closing is destructive: `resetForm` drops every picked ingredient row. A
+   * rejected submission leaves the form open, so one stray Escape (or a click
+   * on the overlay) must not delete a whole batch — confirm when there is work.
+   */
+  const closeForm = () => {
+    const hasWork =
+      outItems.some((i) => i.ingredientId && i.quantity > 0) ||
+      producedItems.some((i) => i.ingredientId && i.quantity > 0);
+    if (hasWork && !confirm("Tutup form? Bahan yang sudah dipilih akan hilang.")) return;
+    setModalOpen(false);
+    resetForm();
+    createMutation.reset();
+    setDatePrompt(null);
   };
 
   const totalOut = filteredConversions.reduce(
@@ -897,8 +969,9 @@ function YieldTrackingPage() {
           <div className="rounded-lg border border-success/30 bg-success/10 p-4 text-sm text-success-foreground">
             <p className="font-medium">Produksi berhasil dicatat!</p>
             <p>
-              {result.outCount} bahan keluar · {result.producedCount} bahan dihasilkan dicatat. Stok
-              diperbarui: bahan keluar dikurangi, bahan dihasilkan ditambah.
+              Produksi <b>{formatJakartaDate(result.productionDate)}</b> — {result.outCount} bahan
+              keluar · {result.producedCount} bahan dihasilkan. Stok diperbarui: bahan keluar
+              dikurangi, bahan dihasilkan ditambah.
             </p>
           </div>
         )}
@@ -974,16 +1047,7 @@ function YieldTrackingPage() {
           </div>
         )}
 
-        <Modal
-          open={modalOpen}
-          onClose={() => {
-            setModalOpen(false);
-            resetForm();
-            createMutation.reset();
-          }}
-          title="Input Produksi"
-          size="3xl"
-        >
+        <Modal open={modalOpen} onClose={closeForm} title="Input Produksi" size="3xl">
           <form onSubmit={handleSubmit} className="space-y-4">
             {createMutation.isError && (
               <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
@@ -1031,7 +1095,9 @@ function YieldTrackingPage() {
               <input
                 type="date"
                 name="productionDate"
-                defaultValue={todayDateInputValue()}
+                value={productionDate}
+                max={serverToday}
+                onChange={(e) => setProductionDate(e.target.value)}
                 className="h-10 md:h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
@@ -1099,11 +1165,7 @@ function YieldTrackingPage() {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => {
-                  setModalOpen(false);
-                  resetForm();
-                  createMutation.reset();
-                }}
+                onClick={closeForm}
                 className="h-10 md:h-9 px-4 rounded-md border text-sm"
               >
                 Batal
@@ -1147,6 +1209,40 @@ function YieldTrackingPage() {
                 }}
               >
                 Ya, ini batch terpisah
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* ── Future Production Date Confirm ── */}
+        <Modal
+          open={!!datePrompt}
+          onClose={() => setDatePrompt(null)}
+          title="Tanggal produksi belum terjadi"
+        >
+          <div className="space-y-4">
+            <div className="flex gap-2 rounded-md bg-amber-500/10 p-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-sm text-muted-foreground">{datePrompt?.message}</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Pakai tanggal server, <b>{formatJakartaDate(serverToday)}</b>, untuk batch ini? Bahan
+              yang sudah dipilih tetap tersimpan.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDatePrompt(null)}>
+                Batal, periksa tanggal
+              </Button>
+              <Button
+                onClick={() => {
+                  const payload = datePrompt?.payload;
+                  if (!payload) return;
+                  setProductionDate(serverToday);
+                  setDatePrompt(null);
+                  void submitProduction({ ...payload, productionDate: serverToday });
+                }}
+              >
+                Ya, pakai {formatJakartaDate(serverToday)}
               </Button>
             </div>
           </div>

@@ -16,7 +16,13 @@ import { and, eq, inArray, desc, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "./auth";
 import { requireOpenPeriod } from "./period-lock";
 import type { AppUser } from "./auth";
-import { formatJakartaDateTime, parseDateOnlyInput } from "#/lib/utils";
+import {
+  formatJakartaDate,
+  formatJakartaDateTime,
+  parseDateOnlyInput,
+  toDateInputValue,
+  todayDateInputValue,
+} from "#/lib/utils";
 import { logSystemAction, logAudit } from "./logging";
 
 // ─── Stock effect (ADR 0012) ────────────────────────────────────────────────
@@ -40,6 +46,27 @@ export class DuplicateProductionError extends Error {
   }
 }
 
+/**
+ * Thrown when a production is dated after the server's Jakarta "today".
+ *
+ * A production record documents a transformation that already happened, so a
+ * future day is never valid. Mulyorejo's tablet ran a day ahead and left the
+ * date picker on tomorrow, so operators silently filed batches under the wrong
+ * day — which also sidestepped `DuplicateProductionError`, whose key includes
+ * the date. A distinct class lets the form offer "use the server date" instead
+ * of a dead-end error, mirroring the duplicate confirmation (ADR 0019).
+ */
+export class FutureProductionDateError extends Error {
+  constructor(submitted: string, serverToday: string) {
+    super(
+      `Tanggal produksi ${formatJakartaDate(submitted)} belum terjadi. ` +
+        `Menurut server sekarang ${formatJakartaDate(serverToday)}. ` +
+        `Tanggal di perangkat ini sepertinya meleset.`,
+    );
+    this.name = "FutureProductionDateError";
+  }
+}
+
 /** Trim float noise so 882 and 882.0 fingerprint identically. */
 function roundQty(q: number): string {
   return String(Math.round(q * 1e6) / 1e6);
@@ -58,6 +85,19 @@ function resolveProductionDate(value: string | undefined): Date {
   if (!value) return new Date();
   return parseDateOnlyInput(value) ?? new Date(value);
 }
+
+/**
+ * The server's Jakarta calendar day, as a `<input type="date">` value.
+ *
+ * The production form must not derive "today" from the tablet clock: a device
+ * whose date is a day ahead pre-fills tomorrow and the operator has to correct
+ * it on every submission (Mulyorejo, Nov 2026). The picker's default and `max`
+ * come from here instead, so a broken device cannot inject a future day.
+ */
+export const getServerToday = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAuth();
+  return todayDateInputValue();
+});
 
 async function applyYieldStockEffect(
   tx: YieldTx,
@@ -304,6 +344,18 @@ export async function createYieldConversionCore(
   }
   if (!branchId) throw new Error("Branch is required");
 
+  // The production day is a calendar day, not an instant. Compare Jakarta day
+  // strings so a device, server, or DB timezone can never shift the verdict.
+  const productionDate = resolveProductionDate(data.productionDate);
+  if (Number.isNaN(productionDate.getTime())) {
+    throw new Error("Tanggal produksi tidak valid");
+  }
+  const serverToday = todayDateInputValue();
+  const submittedDay = toDateInputValue(productionDate);
+  if (submittedDay > serverToday) {
+    throw new FutureProductionDateError(submittedDay, serverToday);
+  }
+
   const out = (data.out ?? []).filter((s) => s.ingredientId && s.quantity > 0);
   const produced = (data.produced ?? []).filter((s) => s.ingredientId && s.quantity > 0);
 
@@ -351,7 +403,6 @@ export async function createYieldConversionCore(
   // `confirmDuplicate`, so this delays a legitimate double-entry rather than
   // forbidding it.
   if (!data.confirmDuplicate) {
-    const productionDate = resolveProductionDate(data.productionDate);
     const notesKey = (data.notes ?? "").trim().toLowerCase();
 
     // Canonical fingerprint of this submission's items, so the comparison is on
@@ -412,7 +463,7 @@ export async function createYieldConversionCore(
         branchId,
         notes: data.notes,
         processedBy: user.id,
-        productionDate: resolveProductionDate(data.productionDate),
+        productionDate,
       })
       .returning();
 

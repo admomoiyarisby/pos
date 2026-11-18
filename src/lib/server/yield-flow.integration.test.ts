@@ -24,6 +24,7 @@
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { and, eq } from "drizzle-orm";
 import * as schema from "#/db/schema";
+import { toDateInputValue } from "#/lib/utils";
 import { getTestDatabaseUrl } from "./test-database";
 import type { TestDb } from "./integration-test-harness";
 import { setupFlowHarness } from "./integration-test-harness";
@@ -718,5 +719,88 @@ describe.skipIf(!hasTestDatabaseUrl)("Yield — duplicate-production guard (ADR 
       yieldConversionId: again.conversion.id,
       reason: "test cleanup",
     });
+  });
+});
+
+// =============================================================================
+// Production date guard
+//
+// Mulyorejo, Nov 2026: the branch tablet's calendar ran a day ahead, so the
+// date picker opened on tomorrow and operators filed batches under the wrong
+// day. The server refuses a production dated after its Jakarta "today" so a
+// broken device cannot write the future; the form turns the refusal into a
+// one-tap "use the server date" recovery. Backdating stays legal (Central
+// Kitchen records yesterday's output on purpose).
+// =============================================================================
+
+describe.skipIf(!hasTestDatabaseUrl)("Yield — production date guard", () => {
+  let branchAdmin: AppUser;
+  let branchId: string;
+  let outIngredientId: string;
+  let producedIngredientId: string;
+
+  const dayOffset = (days: number) => toDateInputValue(new Date(Date.now() + days * 86_400_000));
+
+  const batch = (productionDate: string, notes = "Masak malam") => ({
+    branchId,
+    out: [{ ingredientId: outIngredientId, quantity: 5 }],
+    produced: [{ ingredientId: producedIngredientId, quantity: 3 }],
+    notes,
+    productionDate,
+  });
+
+  async function seedDateFixtures(): Promise<void> {
+    branchId = await seedBranch(uniq("DATE"), "Outlet");
+    branchAdmin = await seedUser("branch_admin", branchId);
+    outIngredientId = await seedIngredient(uniq("DATE-OUT"));
+    producedIngredientId = await seedIngredient(uniq("DATE-PROD"));
+  }
+
+  it("refuses a production dated tomorrow and writes nothing", async () => {
+    await seedDateFixtures();
+
+    await expect(
+      yieldApi.createYieldConversionCore(branchAdmin, batch(dayOffset(1))),
+    ).rejects.toThrow(/belum terjadi/);
+
+    // The guard fires before the transaction: no record, no stock movement.
+    const rows = await db
+      .select({ id: schema.yieldConversions.id })
+      .from(schema.yieldConversions)
+      .where(eq(schema.yieldConversions.branchId, branchId));
+    expect(rows).toHaveLength(0);
+    expect(await getStock(branchId, outIngredientId)).toBe(0);
+    expect(await getStock(branchId, producedIngredientId)).toBe(0);
+  });
+
+  it("throws FutureProductionDateError so the form can offer the server date", async () => {
+    await seedDateFixtures();
+
+    const err = await yieldApi
+      .createYieldConversionCore(branchAdmin, batch(dayOffset(1)))
+      .then(() => null)
+      .catch((e: Error) => e);
+
+    expect(err).not.toBeNull();
+    expect(err?.name).toBe("FutureProductionDateError");
+  });
+
+  it("still allows today and backdated records", async () => {
+    await seedDateFixtures();
+
+    const today = await yieldApi.createYieldConversionCore(
+      branchAdmin,
+      batch(dayOffset(0), "Hari ini"),
+    );
+    expect(today.success).toBe(true);
+
+    const yesterday = await yieldApi.createYieldConversionCore(
+      branchAdmin,
+      batch(dayOffset(-1), "Kemarin"),
+    );
+    expect(yesterday.success).toBe(true);
+
+    // Both wrote stock: the guard rejects only the future.
+    expect(await getStock(branchId, producedIngredientId)).toBe(6);
   });
 });
