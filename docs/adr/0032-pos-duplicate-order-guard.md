@@ -27,10 +27,15 @@ the customer waits.
 Check every order before it is written, using two match strengths defined once
 in `src/lib/duplicate-order.ts` (shared by the popup and the server guard):
 
-- **Same Kode Order — blocked, no override.** For the same branch and channel,
-  any non-void, non-deleted order whose `order_code` matches after trimming and
-  case-folding makes the new order a duplicate. Age is irrelevant: re-entering
-  a delivered order is always a mistake. There is no "save anyway" button.
+- **Same Kode Order today — blocked, no override.** For the same branch and
+  channel, any non-void, non-deleted order recorded on the same Asia/Jakarta
+  calendar day whose `order_code` matches after trimming and case-folding makes
+  the new order a duplicate. There is no "save anyway" button. The day scope is
+  not optional: Grab and ShopeeFood number their orders with a short daily
+  sequence, so "642" belongs to yesterday's 16.12 order and again to a
+  different order today. An unscoped code match made the second day impossible
+  to enter — the cashier was refused with "Kode Order Sudah Tercatat" for an
+  order that had never been recorded.
 - **Same order identity — warned, confirmable.** Same branch, channel, total,
   customer name, and item lines (recipes, quantities, prices, modifiers, notes)
   within the last **10 minutes**. This covers the code-less retype and the
@@ -41,7 +46,10 @@ in `src/lib/duplicate-order.ts` (shared by the popup and the server guard):
   it.
 
 The POS calls `checkDuplicateOrders` when the cashier confirms payment and
-opens the popup _before_ writing anything. The write still re-runs the same
+opens the popup _before_ writing anything. The popup names the colliding order
+when it happened (full WIB date and time) and, when the audit trail knows it,
+which staff member recorded it — the cashier's next move is usually to ask that
+person rather than search by hand. The write still re-runs the same
 rules in `createOrderCore` (`DuplicateOrderError`), because a popup is advisory:
 direct API calls, two tablets, and races can all bypass it. A failed pre-check
 does not stop the sale — the server recheck remains authoritative.
@@ -54,6 +62,11 @@ confirmed warning is a deliberate action.
 
 - Same-code re-entry is a dead end by design; the popup points at Riwayat
   Pesanan. The refusal is not a lost sale — the sale already exists.
+- The day scoping accepts one residual risk: re-entering yesterday's delivered
+  order today is not blocked by its code, because that code now belongs to a
+  different order. The 10-minute identity window and Riwayat Pesanan remain the
+  backstop; a code that is reused daily simply cannot be a stronger signal
+  than its day.
 - Identical separate orders remain possible, but only as a deliberate,
   recorded choice made against a shown duplicate.
 - Detection is application-level, not a database unique index: existing

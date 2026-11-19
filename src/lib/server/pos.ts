@@ -31,6 +31,7 @@ import {
   printRequests,
   cancelRequests,
   users,
+  auditLogs,
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { eq, and, ne, desc, gte, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
@@ -58,6 +59,7 @@ import {
   type DuplicateOrderLine,
   type DuplicateOrderMatch,
 } from "#/lib/duplicate-order";
+import { toDateInputValue } from "#/lib/utils";
 import { z } from "zod";
 
 export const getPosMenu = createServerFn({ method: "GET" })
@@ -874,16 +876,20 @@ export class DuplicateOrderError extends Error {
     const first = matches[0];
     const label = first ? `#${first.order.id.slice(0, 8).toUpperCase()}` : "sebelumnya";
     const time = first
-      ? first.order.createdAt.toLocaleTimeString("id-ID", {
+      ? first.order.createdAt.toLocaleString("id-ID", {
           timeZone: "Asia/Jakarta",
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
           hour: "2-digit",
           minute: "2-digit",
         })
       : "";
+    const by = first?.order.createdByName ? ` oleh ${first.order.createdByName}` : "";
     super(
       blocking
-        ? `Kode order ${first?.order.orderCode ?? ""} sudah tercatat pada pesanan ${label} (${time} WIB). Pesanan tidak disimpan — periksa Riwayat Pesanan.`
-        : `Pesanan ini kemungkinan duplikat dari ${label} (${time} WIB, Rp${(first?.order.totalAmount ?? 0).toLocaleString("id-ID")}). Simpan hanya jika pesanan memang terpisah.`,
+        ? `Kode order ${first?.order.orderCode ?? ""} sudah tercatat pada pesanan ${label} (${time} WIB${by}). Pesanan tidak disimpan — periksa Riwayat Pesanan.`
+        : `Pesanan ini kemungkinan duplikat dari ${label} (${time} WIB${by}, Rp${(first?.order.totalAmount ?? 0).toLocaleString("id-ID")}). Simpan hanya jika pesanan memang terpisah.`,
     );
     this.name = "DuplicateOrderError";
     this.matches = matches;
@@ -917,8 +923,10 @@ function linesFromItems(items: z.infer<typeof orderItemInput>[]): DuplicateOrder
  *
  * Two disjoint sets are fetched in one pass: orders from the recent window
  * (same-identity candidates) and, when a Kode Order was typed, every non-void
- * order carrying that code regardless of age (same-code candidates). Item
- * lines are loaded for those orders only, so the query stays bounded.
+ * order carrying that code **on the same Jakarta day** (same-code candidates).
+ * Grab/Shopee restart their code sequence daily, so yesterday's "642" is a
+ * different order and must not block today's input. Item lines are loaded for
+ * those orders only, so the query stays bounded.
  */
 async function loadDuplicateOrderCandidates(
   input: DuplicateOrderCheckInput,
@@ -927,13 +935,17 @@ async function loadDuplicateOrderCandidates(
   const normalizedCode = normalizeOrderCode(input.orderCode);
   const since = new Date(now.getTime() - DUPLICATE_ORDER_WINDOW_MINUTES * 60 * 1000);
   // Same-identity matching requires an equal total, so only recent orders at
-  // that total can be candidates. The code arm stays unbounded in time.
+  // that total can be candidates. The code arm looks at today's rows only.
   const recentSameTotal = and(
     gte(orders.createdAt, since),
     eq(orders.totalAmount, input.totalAmount),
   );
+  const matchingCodeToday = and(
+    sql`lower(btrim(${orders.orderCode})) = ${normalizedCode}`,
+    sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') = ${toDateInputValue(now)}`,
+  );
   const recentOrMatchingCode = normalizedCode
-    ? or(sql`lower(btrim(${orders.orderCode})) = ${normalizedCode}`, recentSameTotal)
+    ? or(matchingCodeToday, recentSameTotal)
     : recentSameTotal;
 
   const orderRows = await db
@@ -962,19 +974,38 @@ async function loadDuplicateOrderCandidates(
   const orderIds = orderRows.map(function (row) {
     return row.id;
   });
-  const itemRows = await db
-    .select({
-      id: orderItems.id,
-      orderId: orderItems.orderId,
-      recipeId: orderItems.recipeId,
-      recipeName: recipes.name,
-      quantity: orderItems.quantity,
-      price: orderItems.price,
-      notes: orderItems.notes,
-    })
-    .from(orderItems)
-    .leftJoin(recipes, eq(recipes.id, orderItems.recipeId))
-    .where(inArray(orderItems.orderId, orderIds));
+  // "By whom" comes from the CREATE audit row — orders have no creator column,
+  // and the audit trail is the record of who wrote each row (ADR 0032).
+  const [itemRows, creatorRows] = await Promise.all([
+    db
+      .select({
+        id: orderItems.id,
+        orderId: orderItems.orderId,
+        recipeId: orderItems.recipeId,
+        recipeName: recipes.name,
+        quantity: orderItems.quantity,
+        price: orderItems.price,
+        notes: orderItems.notes,
+      })
+      .from(orderItems)
+      .leftJoin(recipes, eq(recipes.id, orderItems.recipeId))
+      .where(inArray(orderItems.orderId, orderIds)),
+    db
+      .select({ recordId: auditLogs.recordId, name: users.name })
+      .from(auditLogs)
+      .innerJoin(users, eq(users.id, auditLogs.userId))
+      .where(
+        and(
+          eq(auditLogs.tableName, "orders"),
+          eq(auditLogs.action, "CREATE"),
+          inArray(auditLogs.recordId, orderIds),
+        ),
+      ),
+  ]);
+  const creatorByOrder = new Map<string, string>();
+  for (const row of creatorRows) {
+    if (!creatorByOrder.has(row.recordId)) creatorByOrder.set(row.recordId, row.name);
+  }
 
   const modifierRows =
     itemRows.length > 0
@@ -1018,6 +1049,7 @@ async function loadDuplicateOrderCandidates(
   return orderRows.map(function (row) {
     return {
       ...row,
+      createdByName: creatorByOrder.get(row.id) ?? null,
       lines: linesByOrder.get(row.id) ?? [],
     };
   });

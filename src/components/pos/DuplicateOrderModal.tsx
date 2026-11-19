@@ -17,9 +17,12 @@ interface DuplicateOrderModalProps {
   onConfirm: () => void;
 }
 
-function formatTime(date: Date): string {
-  return new Date(date).toLocaleTimeString("id-ID", {
+function formatWhen(date: Date): string {
+  return new Date(date).toLocaleString("id-ID", {
     timeZone: "Asia/Jakarta",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -53,10 +56,17 @@ export default function DuplicateOrderModal({
           <AlertTriangle className="h-5 w-5 shrink-0 text-warning mt-0.5" />
           <p className="text-sm text-foreground">
             {blocking
-              ? "Kode order ini sudah dipakai pesanan lain di cabang dan channel ini. Pesanan tidak dapat disimpan — periksa Riwayat Pesanan sebelum mengulang input."
+              ? "Kode order ini sudah dipakai pesanan lain hari ini di cabang dan channel ini. Pesanan tidak dapat disimpan — periksa Riwayat Pesanan sebelum mengulang input."
               : "Item, total, dan waktu pesanan ini sama dengan pesanan yang baru masuk. Periksa dulu: simpan hanya jika ini memang pesanan terpisah."}
           </p>
         </div>
+
+        {blocking && matches[0] && (
+          <p className="text-xs text-muted-foreground">
+            Terakhir dipakai {formatWhen(matches[0].order.createdAt)} WIB
+            {matches[0].order.createdByName ? ` oleh ${matches[0].order.createdByName}` : ""}.
+          </p>
+        )}
 
         <div className="space-y-2">
           {matches.map(function (match) {
@@ -68,7 +78,7 @@ export default function DuplicateOrderModal({
                   </span>
                   <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                     <Clock3 className="h-3 w-3" />
-                    {formatTime(match.order.createdAt)} WIB
+                    {formatWhen(match.order.createdAt)} WIB
                   </span>
                 </div>
 
@@ -99,6 +109,12 @@ export default function DuplicateOrderModal({
                 {match.order.customerName && (
                   <p className="text-xs text-muted-foreground">
                     Pelanggan: {match.order.customerName}
+                  </p>
+                )}
+
+                {match.order.createdByName && (
+                  <p className="text-xs text-muted-foreground">
+                    Dicatat oleh: {match.order.createdByName}
                   </p>
                 )}
 

@@ -1131,7 +1131,8 @@ describe("POS — duplicate order guard (ADR 0032)", () => {
       expect(await inventoryQty(branchId, ingId)).toBe(98);
 
       // Whitespace/casing are input noise; a different cart does not matter —
-      // the platform code already owns this order.
+      // the platform code already owns this order. The refusal also names who
+      // typed it, so the cashier knows whom to ask before re-entering.
       await expect(
         posApi.createOrderCore(cashier, {
           branchId,
@@ -1139,12 +1140,43 @@ describe("POS — duplicate order guard (ADR 0032)", () => {
           orderCode: " 210 ",
           items: [{ recipeId, quantity: 2, price: 60000 }],
         }),
-      ).rejects.toThrow("sudah tercatat");
+      ).rejects.toThrow(/sudah tercatat.*oleh ITS branch_admin/);
 
       // The refused second attempt did not deduct stock again.
       expect(await inventoryQty(branchId, ingId)).toBe(98);
       const rows = await db.select().from(schema.orders);
       expect(rows).toHaveLength(1);
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "allows today's repeat of yesterday's Kode Order (platform codes are per-day)",
+    async () => {
+      const { branchId, cashier, recipeId } = await seedPos();
+
+      const yesterday = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Grabfood",
+        orderCode: "642",
+        items: [{ recipeId, quantity: 1, price: 48000 }],
+      });
+      // Grab restarts its short code sequence every day: yesterday's "642" is
+      // a different order, so it must not block today's input.
+      await db
+        .update(schema.orders)
+        .set({ createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000) })
+        .where(eq(schema.orders.id, yesterday.id));
+
+      const today = await posApi.createOrderCore(cashier, {
+        branchId,
+        channel: "Grabfood",
+        orderCode: "642",
+        items: [{ recipeId, quantity: 1, price: 66000 }],
+      });
+
+      expect(today.status).toBe("New");
+      expect(today.orderCode).toBe("642");
+      expect(await db.select().from(schema.orders)).toHaveLength(2);
     },
   );
 

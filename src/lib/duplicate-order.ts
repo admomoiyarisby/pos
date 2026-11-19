@@ -6,9 +6,11 @@
 // duplicate (see ADR 0032):
 //
 //  - `same-code`: a non-void order at the same branch + channel already
-//    carries the same Kode Order (the external platform's code). This is
-//    certain enough to block outright — re-entering a delivered order is
-//    always a mistake, never a new sale.
+//    carries the same Kode Order (the external platform's code) **on the same
+//    day**. This is certain enough to block outright — re-entering a delivered
+//    order is always a mistake, never a new sale. The day matters because
+//    Grab/Shopee reset their code sequence every day: yesterday's "642" is a
+//    different order, so an older code must never block today's input.
 //  - `same-identity`: the same channel, total, customer and item lines were
 //    recorded within the last few minutes. That is what a double-tap or a
 //    re-typed order looks like, but it is also what two genuinely separate
@@ -17,6 +19,8 @@
 // The rules live here (pure) so the POS popup and the server guard cannot
 // drift apart. `src/lib/server/pos.ts` loads candidate rows; this module
 // decides whether they match.
+
+import { toDateInputValue } from "#/lib/utils";
 
 /** How far back an identically-shaped order counts as a likely duplicate. */
 export const DUPLICATE_ORDER_WINDOW_MINUTES = 10;
@@ -49,6 +53,11 @@ export interface DuplicateOrderCandidate extends DuplicateOrderIdentity {
   id: string;
   status: string;
   createdAt: Date;
+  /**
+   * Staff member who recorded the order, from the CREATE audit row. Null for
+   * rows that predate the audit trail (e.g. CSV imports).
+   */
+  createdByName?: string | null;
 }
 
 export type DuplicateOrderReason = "same-code" | "same-identity";
@@ -70,6 +79,18 @@ export function normalizeOrderCode(code: string | null | undefined): string | nu
 /** Customer names are compared case- and whitespace-insensitively. */
 export function normalizeCustomerName(name: string | null | undefined): string {
   return (name ?? "").trim().toLowerCase();
+}
+
+/**
+ * True when two instants fall on the same outlet calendar day (Asia/Jakarta).
+ *
+ * Platform Kode Order is a per-day sequence — "642" is reused tomorrow for a
+ * different order — so the code arm of the guard is scoped to one day. Pinned
+ * to WIB like the rest of the app: the servers run `TZ=UTC`, so a runtime-local
+ * day would move the boundary seven hours early.
+ */
+export function isSameOrderDay(a: Date, b: Date): boolean {
+  return toDateInputValue(a) === toDateInputValue(b);
 }
 
 /**
@@ -123,16 +144,17 @@ export function findDuplicateOrderMatches(
 
     const candidateCode = normalizeOrderCode(candidate.orderCode);
 
-    // Certain duplicate: the platform order code is unique per branch/channel.
-    if (inputCode !== null && candidateCode !== null && inputCode === candidateCode) {
-      seen.add(candidate.id);
-      matches.push({ reason: "same-code", order: candidate });
+    // Two different platform codes are two different orders, even when the
+    // cashier happened to ring up identical items. The same code only counts
+    // as a copy on the day it belongs to: the platforms restart their sequence
+    // daily, so yesterday's code is a different order.
+    if (inputCode !== null && candidateCode !== null) {
+      if (inputCode === candidateCode && isSameOrderDay(candidate.createdAt, now)) {
+        seen.add(candidate.id);
+        matches.push({ reason: "same-code", order: candidate });
+      }
       continue;
     }
-
-    // Two different platform codes are two different orders, even when the
-    // cashier happened to ring up identical items.
-    if (inputCode !== null && candidateCode !== null) continue;
 
     // A missing code on either side is not a differentiator — it is exactly
     // the "re-typed the delivery order without the code" case this guards.

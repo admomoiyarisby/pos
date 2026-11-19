@@ -54,16 +54,16 @@ describe("duplicate order matching", () => {
     expect(normalizeOrderCode(null)).toBeNull();
   });
 
-  it("treats the same Kode Order as a blocking duplicate regardless of cart or age", () => {
+  it("treats the same Kode Order on the same day as a blocking duplicate regardless of cart", () => {
     const matches = findDuplicateOrderMatches(
       baseOrder,
       [
         candidate({
-          id: "older",
+          id: "earlier",
           orderCode: " 210 ",
           totalAmount: 15000,
           lines: [],
-          createdAt: new Date(NOW.getTime() - 7 * 24 * 60 * 60 * 1000),
+          createdAt: new Date(NOW.getTime() - 6 * 60 * 60 * 1000),
         }),
       ],
       NOW,
@@ -71,8 +71,46 @@ describe("duplicate order matching", () => {
 
     expect(matches).toHaveLength(1);
     expect(matches[0].reason).toBe("same-code");
-    expect(matches[0].order.id).toBe("older");
+    expect(matches[0].order.id).toBe("earlier");
     expect(hasBlockingDuplicate(matches)).toBe(true);
+  });
+
+  it("does not flag yesterday's Kode Order — platforms restart the sequence daily", () => {
+    const matches = findDuplicateOrderMatches(
+      baseOrder,
+      [
+        candidate({
+          id: "yesterday",
+          orderCode: "210",
+          totalAmount: 48000,
+          lines: [],
+          createdAt: new Date(NOW.getTime() - 24 * 60 * 60 * 1000),
+        }),
+      ],
+      NOW,
+    );
+
+    expect(matches).toEqual([]);
+  });
+
+  it("scopes the Kode Order day to WIB, not the runtime clock", () => {
+    // 00:30 WIB on the 18th, right after a 23:30 WIB order on the 17th. Both
+    // share a UTC calendar day, so a UTC-based rule would wrongly block the
+    // new day's first order.
+    const justAfterMidnightWib = new Date("2026-11-17T17:30:00.000Z");
+    const matches = findDuplicateOrderMatches(
+      { ...baseOrder, orderCode: "642" },
+      [
+        candidate({
+          id: "last-night",
+          orderCode: "642",
+          createdAt: new Date("2026-11-17T16:30:00.000Z"),
+        }),
+      ],
+      justAfterMidnightWib,
+    );
+
+    expect(matches).toEqual([]);
   });
 
   it("warns on an identical recent order with no code", () => {
