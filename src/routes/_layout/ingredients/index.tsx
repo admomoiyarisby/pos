@@ -98,6 +98,13 @@ function IngredientsPage() {
     queryFn: () => getBranchCatalogGaps({ data: {} }),
   });
   const [gapsDismissed, setGapsDismissed] = useState(false);
+  // Zero-stock rows are not "stock at an outlet", so they hide by default. The
+  // banner footer reveals them, appended after the stocked ones so the 6-row
+  // preview never pushes a real gap out of view.
+  const [showZeroStockGaps, setShowZeroStockGaps] = useState(false);
+  const stockedGaps = catalogGaps.filter((g) => g.totalQuantity > 0);
+  const zeroStockGaps = catalogGaps.filter((g) => g.totalQuantity <= 0);
+  const visibleGaps = showZeroStockGaps ? [...stockedGaps, ...zeroStockGaps] : stockedGaps;
 
   const filteredIngredients = ingredients;
 
@@ -297,47 +304,64 @@ function IngredientsPage() {
           <div className="flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-warning" />
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-warning">
-                {catalogGaps.length} bahan ada stok di cabang tapi tidak masuk katalog cabang
-              </p>
-              <p className="text-warning/80 mt-1">
-                Bahan ini bertanda “hanya Pusat” (Tampil di Cabang nonaktif), jadi tidak pernah
-                muncul di halaman stock opname cabang mana pun — cabang memegangnya, tetapi tidak
-                pernah dihitung. Aktifkan “Tampil di Cabang” bila cabang memang menjualnya.
-              </p>
-              <ul className="mt-3 space-y-2">
-                {catalogGaps.slice(0, 6).map((g) => (
-                  <li
-                    key={g.ingredientId}
-                    className="flex items-center justify-between gap-3 rounded-md border border-warning/20 bg-background/60 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-mono text-xs text-muted-foreground truncate">
-                        {g.code}
+              {stockedGaps.length > 0 ? (
+                <>
+                  <p className="font-medium text-warning">
+                    {stockedGaps.length} bahan ada stok di cabang tapi tidak masuk katalog cabang
+                  </p>
+                  <p className="text-warning/80 mt-1">
+                    Bahan ini bertanda “hanya Pusat” (Tampil di Cabang nonaktif), jadi tidak pernah
+                    muncul di halaman stock opname cabang mana pun — cabang memegangnya, tetapi
+                    tidak pernah dihitung. Aktifkan “Tampil di Cabang” bila cabang memang
+                    menjualnya.
+                  </p>
+                </>
+              ) : (
+                <p className="font-medium text-warning">
+                  Tidak ada bahan berstok yang di luar katalog cabang
+                </p>
+              )}
+              {visibleGaps.length > 0 && (
+                <ul className="mt-3 space-y-2">
+                  {visibleGaps.slice(0, 6).map((g) => (
+                    <li
+                      key={g.ingredientId}
+                      className="flex items-center justify-between gap-3 rounded-md border border-warning/20 bg-background/60 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-mono text-xs text-muted-foreground truncate">
+                          {g.code}
+                        </div>
+                        <Link
+                          to="/ingredients/$ingId"
+                          params={{ ingId: g.ingredientId }}
+                          className="truncate text-sm font-medium hover:underline underline-offset-4"
+                        >
+                          {g.name}
+                        </Link>
+                        <div className="text-xs text-muted-foreground truncate">{g.outlets}</div>
                       </div>
-                      <Link
-                        to="/ingredients/$ingId"
-                        params={{ ingId: g.ingredientId }}
-                        className="truncate text-sm font-medium hover:underline underline-offset-4"
-                      >
-                        {g.name}
-                      </Link>
-                      <div className="text-xs text-muted-foreground truncate">{g.outlets}</div>
-                    </div>
-                    <div className="shrink-0 text-right text-xs">
-                      <div className="font-medium tabular-nums">{g.outletCount} cabang</div>
-                      <div className="text-muted-foreground tabular-nums">
-                        stok {formatQuantity(g.totalQuantity)}
+                      <div className="shrink-0 text-right text-xs">
+                        <div className="font-medium tabular-nums">{g.outletCount} cabang</div>
+                        <div className="text-muted-foreground tabular-nums">
+                          stok {formatQuantity(g.totalQuantity)}
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {catalogGaps.length > 6 && (
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {visibleGaps.length > 6 && (
                 <p className="mt-2 text-xs text-warning/80">
-                  dan {catalogGaps.length - 6} bahan lainnya — aktifkan “Tampil di Cabang” pada
+                  dan {visibleGaps.length - 6} bahan lainnya — aktifkan “Tampil di Cabang” pada
                   masing-masing halaman bahan.
                 </p>
+              )}
+              {zeroStockGaps.length > 0 && (
+                <label className="mt-3 flex w-fit cursor-pointer items-center gap-2 text-xs text-warning/80">
+                  <Switch checked={showZeroStockGaps} onCheckedChange={setShowZeroStockGaps} />
+                  <span>Tampilkan {zeroStockGaps.length} bahan dengan stok 0</span>
+                </label>
               )}
             </div>
             <button
