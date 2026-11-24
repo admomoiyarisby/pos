@@ -16,6 +16,29 @@ export function formatRp(value: number | string | bigint | null | undefined): st
   return `Rp ${num.toLocaleString("id-ID")}`;
 }
 
+const SHORT_RUPIAH_UNITS = [
+  { limit: 1_000_000_000_000, suffix: "T" },
+  { limit: 1_000_000_000, suffix: "miliar" },
+  { limit: 1_000_000, suffix: "jt" },
+  { limit: 1_000, suffix: "rb" },
+];
+
+/**
+ * Compact Rupiah for chart labels, legends, and donut centres, where a full
+ * "Rp 74.451.300" is wider than the space a slice label has. Exact values stay
+ * in tooltips and tables. e.g. 74_451_300 → "Rp 74,5 jt".
+ */
+export function formatRpShort(value: number | string | bigint | null | undefined): string {
+  const num = Number(value ?? 0);
+  const abs = Math.abs(num);
+  const unit = SHORT_RUPIAH_UNITS.find(function (entry) {
+    return abs >= entry.limit;
+  });
+  if (!unit) return `Rp ${num.toLocaleString("id-ID")}`;
+  const scaled = (num / unit.limit).toLocaleString("id-ID", { maximumFractionDigits: 1 });
+  return `Rp ${scaled} ${unit.suffix}`;
+}
+
 /** Max fraction digits shown for stock/quantity displays. */
 const QUANTITY_MAX_FRACTION_DIGITS = 3;
 

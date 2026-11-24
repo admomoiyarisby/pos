@@ -4,6 +4,7 @@ import {
   formatJakartaDateTime,
   formatJakartaTime,
   formatQuantity,
+  formatRpShort,
   lineAmount,
   parseDateOnlyInput,
   parseQuantityInput,
@@ -33,6 +34,18 @@ describe("formatJakartaDateTime", () => {
         process.env.TZ = originalTimezone;
       }
     }
+  });
+});
+
+describe("formatRpShort", () => {
+  it("scales to the largest Indonesian unit and keeps one decimal", () => {
+    expect(formatRpShort(950)).toBe("Rp 950");
+    expect(formatRpShort(74_451_300)).toBe("Rp 74,5 jt");
+    expect(formatRpShort(412_000_000)).toBe("Rp 412 jt");
+    expect(formatRpShort(1_250_000_000)).toBe("Rp 1,3 miliar");
+    expect(formatRpShort(2_400_000_000_000)).toBe("Rp 2,4 T");
+    expect(formatRpShort(-1_500_000)).toBe("Rp -1,5 jt");
+    expect(formatRpShort(null)).toBe("Rp 0");
   });
 });
 

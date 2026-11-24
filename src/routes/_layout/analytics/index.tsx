@@ -4,7 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
 import { usePageTitle } from "#/hooks/usePageTitle";
 import { getSalesAnalytics } from "#/lib/server/finance";
-import { formatRp, toDateInputValue } from "#/lib/utils";
+import { formatRp, formatRpShort, toDateInputValue } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
 import { channelLabel } from "#/lib/order-channels";
 import {
@@ -115,12 +115,23 @@ function AnalyticsPage() {
 
   usePageTitle("Dashboard Analitik", "Analisis penjualan & performa");
 
-  const channelData =
-    analytics?.channelData.map((c) => ({
-      name: channelLabel(c.channel),
-      value: c.total,
-      count: c.count,
-    })) ?? [];
+  // Sorted by value so the legend order matches the arcs: an unsorted legend
+  // left the reader matching colours by eye, which fails outright on the thin
+  // slices (Cash, TikTok).
+  const channelData = useMemo(() => {
+    const rows = analytics?.channelData ?? [];
+    const total = rows.reduce((sum, row) => sum + row.total, 0);
+    return rows
+      .map((row) => ({
+        name: channelLabel(row.channel),
+        value: row.total,
+        count: row.count,
+        share: total > 0 ? row.total / total : 0,
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [analytics]);
+  const channelTotal = channelData.reduce((sum, row) => sum + row.value, 0);
+  const channelOrderCount = channelData.reduce((sum, row) => sum + row.count, 0);
   const topSales = analytics?.topSales ?? [];
   const topSalesChartData = topSales.map((t) => ({
     recipeId: t.recipeId,
@@ -165,8 +176,18 @@ function AnalyticsPage() {
           { field: "name", label: "Channel" },
           {
             id: "revenue",
-            label: "Pendapatan",
+            label: "Nilai pesanan",
             text: (point) => formatRp(point.datum.value),
+          },
+          {
+            id: "count",
+            label: "Pesanan",
+            text: (point) => `${point.datum.count.toLocaleString("id-ID")} pesanan`,
+          },
+          {
+            id: "share",
+            label: "Porsi",
+            text: (point) => `${(point.datum.share * 100).toFixed(1)}%`,
           },
         ],
       },
@@ -286,7 +307,8 @@ function AnalyticsPage() {
               <div className="rounded-lg border p-4">
                 <h3 className="text-sm font-semibold">Distribusi Channel</h3>
                 <p className="mb-4 text-xs text-muted-foreground">
-                  Pendapatan · {range.dateLabel} · {salesStatusScopeCaption(statusScope)}
+                  Nilai pesanan, sebelum potongan platform · {range.dateLabel} ·{" "}
+                  {salesStatusScopeCaption(statusScope)}
                 </p>
                 {channelData.length === 0 ? (
                   <ChartEmpty
@@ -295,21 +317,36 @@ function AnalyticsPage() {
                   />
                 ) : (
                   <>
-                    <div className="h-64">
+                    <div className="relative h-64">
                       <Chart
                         definition={channelDonutDefinition}
                         height={256}
                         ariaLabel="Distribusi channel pada rentang tanggal terpilih"
                       />
+                      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Total
+                        </span>
+                        <span className="text-sm font-semibold tabular-nums">
+                          {formatRpShort(channelTotal)}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {channelOrderCount.toLocaleString("id-ID")} pesanan
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap justify-center gap-3 mt-2">
+                    <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
                       {channelData.map((c, i) => (
-                        <div key={c.name} className="flex items-center gap-1 text-xs">
+                        <div key={c.name} className="flex items-center gap-1 text-xs tabular-nums">
                           <span
-                            className="h-2 w-2 rounded-full"
+                            className="h-2 w-2 shrink-0 rounded-full"
                             style={{ backgroundColor: COLORS[i % COLORS.length] }}
                           />
-                          {c.name} ({c.count})
+                          <span>{c.name}</span>
+                          <span className="text-muted-foreground">{formatRpShort(c.value)}</span>
+                          <span className="text-muted-foreground">
+                            · {c.count.toLocaleString("id-ID")} pesanan
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -360,7 +397,7 @@ function AnalyticsPage() {
                         </div>
                       </div>
                       <div className="min-w-0 text-right">
-                        <div className="text-xs text-muted-foreground">Revenue</div>
+                        <div className="text-xs text-muted-foreground">Nilai menu</div>
                         <div className="mt-0.5 text-sm font-semibold tabular-nums">
                           {formatRp(item.totalRevenue)}
                         </div>
@@ -378,7 +415,7 @@ function AnalyticsPage() {
                   <tr>
                     <th className="px-4 py-3 text-left font-medium">Menu</th>
                     <th className="px-4 py-3 text-right font-medium">Qty Terjual</th>
-                    <th className="px-4 py-3 text-right font-medium">Revenue</th>
+                    <th className="px-4 py-3 text-right font-medium">Nilai Menu</th>
                   </tr>
                 </thead>
                 <tbody>
