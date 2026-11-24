@@ -58,6 +58,7 @@ import { allocateHpp, compareMenuCogs, type HppItemInput } from "#/lib/finance-h
 import type { MenuCogsLine, MenuCogsRow } from "#/lib/finance-hpp";
 import { channelLabel as orderChannelLabel } from "#/lib/order-channels";
 import type { SalesStatusScope } from "#/lib/dashboard-range";
+import type { OrderStatus } from "#/lib/order-lifecycle";
 
 /**
  * Validate a `dateFrom`/`dateTo` pair of Jakarta-local ("YYYY-MM-DD") dates and
@@ -1725,6 +1726,15 @@ export const deleteManualExpense = createServerFn({ method: "POST" })
 
 export interface SalesAnalytics {
   channelData: { channel: string; total: number; count: number }[];
+  /** The same population as `channelData`, split by order status, so a channel
+   *  whose money is still in flight is visible instead of averaged in. Void is
+   *  excluded, hence the narrowed type. */
+  statusBreakdown: {
+    channel: string;
+    status: Exclude<OrderStatus, "Void">;
+    total: number;
+    count: number;
+  }[];
   topSales: { recipeId: string; totalQty: number; totalRevenue: number; name: string }[];
   /** Void orders in the same range and branch — excluded from every figure
    *  above, but a total that drops them silently cannot be reconciled. */
@@ -1790,7 +1800,7 @@ export async function getSalesAnalyticsCore(
   ];
   const saleClauses = [...baseClauses, salesStatusClause(scope)];
 
-  const [[voidAgg], channelData, topSales] = await Promise.all([
+  const [[voidAgg], channelData, statusBreakdown, topSales] = await Promise.all([
     // Reported once, under every scope: void is excluded from the population,
     // not filtered by it, so the number never becomes zero just because the
     // operator is looking at completed orders only.
@@ -1812,6 +1822,19 @@ export async function getSalesAnalyticsCore(
       .from(orders)
       .where(and(...saleClauses))
       .groupBy(orders.channel),
+
+    // Status composition per channel. Same clauses as the channel mix, so the
+    // segments always add up to the donut slice they belong to.
+    db
+      .select({
+        channel: orders.channel,
+        status: orders.status,
+        total: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(orders)
+      .where(and(...saleClauses))
+      .groupBy(orders.channel, orders.status),
 
     // Top sales by recipe
     db
@@ -1845,6 +1868,13 @@ export async function getSalesAnalyticsCore(
       ...c,
       total: Number(c.total),
       count: Number(c.count),
+    })),
+    statusBreakdown: statusBreakdown.map((row) => ({
+      ...row,
+      // SAFETY: `saleClauses` excludes Void, so no returned row can carry it.
+      status: row.status as Exclude<OrderStatus, "Void">,
+      total: Number(row.total),
+      count: Number(row.count),
     })),
     topSales: topSales.map((t) => ({
       ...t,

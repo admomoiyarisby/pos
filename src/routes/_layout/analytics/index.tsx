@@ -7,6 +7,8 @@ import { getSalesAnalytics } from "#/lib/server/finance";
 import { formatRp, formatRpShort, toDateInputValue } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
 import { channelLabel } from "#/lib/order-channels";
+import { ORDER_STATUS_VALUES } from "#/db/schema";
+import type { OrderStatus } from "#/lib/order-lifecycle";
 import {
   DEFAULT_SALES_STATUS_SCOPE,
   SALES_STATUS_SCOPE_OPTIONS,
@@ -21,7 +23,7 @@ import DashboardFilterBar from "#/components/dashboard/DashboardFilterBar";
 import { BarChart3, AlertCircle, RefreshCw, Calendar, PieChart as PieIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
-import { barX, defineChart } from "@tanstack/charts";
+import { barX, defineChart, stack } from "@tanstack/charts";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { tooltip } from "@tanstack/charts/tooltip";
@@ -29,6 +31,29 @@ import { Chart } from "@tanstack/charts/react";
 import { pie, polar, radialArc } from "@tanstack/charts/polar";
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8", "#82ca9d"];
+
+/** Void never enters an aggregate, so the chart only ever shows the pipeline. */
+type DisplayOrderStatus = Exclude<OrderStatus, "Void">;
+
+const ORDER_STATUS_ORDER: DisplayOrderStatus[] = ORDER_STATUS_VALUES.filter(
+  function (status): status is DisplayOrderStatus {
+    return status !== "Void";
+  },
+);
+
+const STATUS_LABELS = {
+  New: "Baru",
+  Processing: "Diproses",
+  "In Delivery": "Dikirim",
+  Completed: "Selesai",
+} satisfies Record<DisplayOrderStatus, string>;
+
+const STATUS_COLORS = {
+  New: "#0088FE",
+  Processing: "#FFBB28",
+  "In Delivery": "#A855F7",
+  Completed: "#00C49F",
+} satisfies Record<DisplayOrderStatus, string>;
 
 export const Route = createFileRoute("/_layout/analytics/")({
   validateSearch: (search: UnknownRecord) => dashboardSearchSchema.parse(search),
@@ -132,6 +157,32 @@ function AnalyticsPage() {
   }, [analytics]);
   const channelTotal = channelData.reduce((sum, row) => sum + row.value, 0);
   const channelOrderCount = channelData.reduce((sum, row) => sum + row.count, 0);
+
+  // Same population as the donut, split by status. Channels are ordered by
+  // their total (matching the donut) and statuses by the pipeline, so the stack
+  // reads Baru → Diproses → Dikirim → Selesai from the baseline out.
+  const statusBreakdown = useMemo(() => {
+    const rows = (analytics?.statusBreakdown ?? []).map((row) => ({
+      id: `${row.channel}:${row.status}`,
+      channel: channelLabel(row.channel),
+      status: row.status,
+      label: STATUS_LABELS[row.status],
+      total: row.total,
+      count: row.count,
+    }));
+    const channelTotals = new Map<string, number>();
+    for (const row of rows) {
+      channelTotals.set(row.channel, (channelTotals.get(row.channel) ?? 0) + row.total);
+    }
+    return rows.sort((a, b) => {
+      const byTotal = (channelTotals.get(b.channel) ?? 0) - (channelTotals.get(a.channel) ?? 0);
+      if (byTotal !== 0) return byTotal;
+      return ORDER_STATUS_ORDER.indexOf(a.status) - ORDER_STATUS_ORDER.indexOf(b.status);
+    });
+  }, [analytics]);
+  const presentStatuses = ORDER_STATUS_ORDER.filter((status) =>
+    statusBreakdown.some((row) => row.status === status),
+  );
   const topSales = analytics?.topSales ?? [];
   const topSalesChartData = topSales.map((t) => ({
     recipeId: t.recipeId,
@@ -193,6 +244,66 @@ function AnalyticsPage() {
       },
     });
   }, [channelData]);
+
+  const statusChartDefinition = useMemo(
+    () =>
+      defineChart({
+        marks: [
+          barX(statusBreakdown, {
+            x: "total",
+            y: "channel",
+            z: "status",
+            color: "status",
+            key: "id",
+            layout: stack({ order: [...ORDER_STATUS_ORDER] }),
+            radius: 3,
+            inset: 2,
+          }),
+        ],
+        scales: {
+          x: {
+            scale: scaleLinear,
+            nice: true,
+            grid: true,
+            axis: {
+              line: false,
+              ticks: { size: 0, format: (value) => formatRpShort(Number(value)) },
+              tickLabels: { fontSize: 10 },
+            },
+          },
+          y: {
+            scale: () => scaleBand<string>().padding(0.3),
+            axis: { line: false, ticks: { size: 0 }, tickLabels: { fontSize: 11 } },
+          },
+        },
+        color: {
+          domain: [...ORDER_STATUS_ORDER],
+          range: ORDER_STATUS_ORDER.map((status) => STATUS_COLORS[status]),
+        },
+        theme: {
+          grid: "var(--color-border)",
+          muted: "var(--color-muted-foreground)",
+        },
+        tooltip: {
+          use: tooltip,
+          items: [
+            { field: "channel", label: "Channel" },
+            { field: "label", label: "Status" },
+            {
+              id: "total",
+              label: "Nilai pesanan",
+              text: (point) => formatRp(point.datum.total),
+            },
+            {
+              id: "count",
+              label: "Pesanan",
+              text: (point) => `${point.datum.count.toLocaleString("id-ID")} pesanan`,
+            },
+          ],
+        },
+      }),
+    [statusBreakdown],
+  );
 
   const topSalesDefinition = useMemo(
     () =>
@@ -376,6 +487,38 @@ function AnalyticsPage() {
                 )}
               </div>
             </div>
+
+            {/* Channel × status. Platform channels arrive `Completed` from the
+                import, so their bar is one block; the POS channel is where an
+                order can still be in flight, and this is the only place on the
+                page that says so. */}
+            {statusBreakdown.length > 0 && (
+              <div className="rounded-lg border p-4">
+                <h3 className="text-sm font-semibold">Status Pesanan per Channel</h3>
+                <p className="mb-4 text-xs text-muted-foreground">
+                  Nilai pesanan menurut status · {range.dateLabel} ·{" "}
+                  {salesStatusScopeCaption(statusScope)}
+                </p>
+                <div className="h-64">
+                  <Chart
+                    definition={statusChartDefinition}
+                    height={256}
+                    ariaLabel="Komposisi status pesanan per channel"
+                  />
+                </div>
+                <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
+                  {presentStatuses.map((status) => (
+                    <div key={status} className="flex items-center gap-1 text-xs">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: STATUS_COLORS[status] }}
+                      />
+                      {STATUS_LABELS[status]}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Mobile cards — at md (768px) the fixed 16rem sidebar plus p-6
                 leaves ~464px, less than the table's min-w-[480px], so cards

@@ -217,6 +217,15 @@ describe("Sales analytics aggregate", () => {
       const all = await finance.getSalesAnalyticsCore(admin, range);
       expect(all.channelData).toEqual([{ channel: "Dine-in", total: 140000, count: 2 }]);
       expect(all.voidOrders).toEqual({ count: 1, amount: 900000 });
+      // The breakdown covers the same population, split: segments always add
+      // back up to the channel totals above.
+      expect(all.statusBreakdown).toHaveLength(2);
+      expect(all.statusBreakdown).toEqual(
+        expect.arrayContaining([
+          { channel: "Dine-in", status: "Completed", total: 100000, count: 1 },
+          { channel: "Dine-in", status: "New", total: 40000, count: 1 },
+        ]),
+      );
 
       const completed = await finance.getSalesAnalyticsCore(admin, {
         ...range,
