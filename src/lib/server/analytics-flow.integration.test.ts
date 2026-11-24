@@ -2,8 +2,9 @@
  * Sales analytics aggregate — integration coverage for `getSalesAnalyticsCore`.
  *
  * Guards the status/date filters: void and soft-deleted orders must not count
- * toward the channel mix or top sales, and "Semua waktu" (no dates) must still
- * exclude them.
+ * toward the channel mix or top sales, the status scope narrows the live set
+ * without ever counting voids, and "Semua waktu" (no dates) must still exclude
+ * them.
  *
  * Run:
  *   TEST_DATABASE_URL=postgresql://omoiyari_test:omoiyari_test@localhost:5433/omoiyari_pos_test DATABASE_URL= vp test run src/lib/server/analytics-flow.integration.test.ts
@@ -179,6 +180,59 @@ describe("Sales analytics aggregate", () => {
       const allTime = await finance.getSalesAnalyticsCore(admin, {});
       expect(allTime.channelData).toEqual([{ channel: "Dine-in", total: 800000, count: 2 }]);
       expect(allTime.topSales[0]).toMatchObject({ totalQty: 7, totalRevenue: 210000 });
+    },
+  );
+
+  it.skipIf(!hasTestDatabaseUrl)(
+    "the status scope narrows the live set and void stays out of every scope",
+    async () => {
+      const branch = await seedBranch();
+      const admin = await seedUser("super_admin");
+      const recipeId = await seedRecipe();
+
+      await seedOrder({
+        branchId: branch,
+        createdAt: new Date("2026-08-28T03:00:00.000Z"),
+        totalAmount: 100000,
+        status: "Completed",
+        items: [{ recipeId, quantity: 2, price: 50000 }],
+      });
+      await seedOrder({
+        branchId: branch,
+        createdAt: new Date("2026-08-28T04:00:00.000Z"),
+        totalAmount: 40000,
+        status: "New",
+        items: [{ recipeId, quantity: 1, price: 40000 }],
+      });
+      await seedOrder({
+        branchId: branch,
+        createdAt: new Date("2026-08-28T05:00:00.000Z"),
+        totalAmount: 900000,
+        status: "Void",
+        items: [{ recipeId, quantity: 30, price: 30000 }],
+      });
+
+      const range = { dateFrom: "2026-08-28", dateTo: "2026-08-29" };
+
+      const all = await finance.getSalesAnalyticsCore(admin, range);
+      expect(all.channelData).toEqual([{ channel: "Dine-in", total: 140000, count: 2 }]);
+      expect(all.voidOrders).toEqual({ count: 1, amount: 900000 });
+
+      const completed = await finance.getSalesAnalyticsCore(admin, {
+        ...range,
+        status: "completed",
+      });
+      expect(completed.channelData).toEqual([{ channel: "Dine-in", total: 100000, count: 1 }]);
+      expect(completed.topSales).toEqual([
+        { recipeId, totalQty: 2, totalRevenue: 100000, name: "Nasi Goreng" },
+      ]);
+      // The void total describes what was excluded, not the scoped population.
+      expect(completed.voidOrders).toEqual({ count: 1, amount: 900000 });
+
+      const open = await finance.getSalesAnalyticsCore(admin, { ...range, status: "open" });
+      expect(open.channelData).toEqual([{ channel: "Dine-in", total: 40000, count: 1 }]);
+      expect(open.topSales[0]).toMatchObject({ totalQty: 1, totalRevenue: 40000 });
+      expect(open.voidOrders).toEqual({ count: 1, amount: 900000 });
     },
   );
 

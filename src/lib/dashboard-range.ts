@@ -36,6 +36,36 @@ export const DASHBOARD_PERIOD_OPTIONS: { value: DashboardPeriod; label: string }
 
 export const DEFAULT_DASHBOARD_PERIOD: DashboardPeriod = "7d";
 
+/**
+ * Which orders a sales figure counts. Void and soft-deleted orders are never
+ * sales; the scope only narrows the live set, so "all" keeps the older
+ * behaviour (every non-void order) while "completed" matches what finance
+ * reconciles and "open" isolates orders still in flight.
+ */
+export const SALES_STATUS_SCOPE_VALUES = ["all", "completed", "open"] as const;
+
+export type SalesStatusScope = (typeof SALES_STATUS_SCOPE_VALUES)[number];
+
+export const DEFAULT_SALES_STATUS_SCOPE: SalesStatusScope = "all";
+
+export const SALES_STATUS_SCOPE_OPTIONS: { value: SalesStatusScope; label: string }[] = [
+  { value: "all", label: "Semua (non-void)" },
+  { value: "completed", label: "Selesai" },
+  { value: "open", label: "Belum selesai" },
+];
+
+/** How the scope reads after a metric label, e.g. "Pendapatan · semua status". */
+export function salesStatusScopeCaption(scope: SalesStatusScope): string {
+  switch (scope) {
+    case "completed":
+      return "hanya pesanan selesai";
+    case "open":
+      return "hanya pesanan belum selesai";
+    default:
+      return "semua status non-void";
+  }
+}
+
 const isoDay = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Tanggal harus YYYY-MM-DD")
@@ -52,6 +82,7 @@ export const dashboardSearchSchema = z.object({
   from: isoDay,
   to: isoDay,
   branch: z.string().uuid().optional().catch(undefined),
+  status: z.enum(SALES_STATUS_SCOPE_VALUES).optional().catch(undefined),
 });
 
 export type DashboardSearch = z.infer<typeof dashboardSearchSchema>;

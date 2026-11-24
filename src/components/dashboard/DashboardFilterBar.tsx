@@ -25,6 +25,9 @@ interface DashboardFilterBarProps {
   onToChange: (to: string) => void;
   onBranchChange: (branchId: string) => void;
   onRefresh: () => void;
+  /** Page-specific fields (e.g. analytics' order-status scope). Rendered with
+   *  the shared ones so a page never grows a second filter surface. */
+  children?: React.ReactNode;
 }
 
 /**
@@ -47,6 +50,7 @@ export default function DashboardFilterBar({
   onToChange,
   onBranchChange,
   onRefresh,
+  children,
 }: DashboardFilterBarProps) {
   return (
     <div className="rounded-lg border bg-card p-3 shadow-sm md:p-4">
@@ -144,6 +148,8 @@ export default function DashboardFilterBar({
               </select>
             </div>
           )}
+
+          {children}
 
           <div className="ml-auto flex items-center gap-2 pb-0.5">
             <span className="text-xs text-muted-foreground">{dateLabel}</span>

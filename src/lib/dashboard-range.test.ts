@@ -61,11 +61,14 @@ describe("dashboard date ranges", () => {
       from: "18-11-2026",
       to: "2026-11-18",
       branch: "not-a-uuid",
+      status: "selesai",
     });
     expect(search.period).toBeUndefined();
     expect(search.from).toBeUndefined();
     expect(search.to).toBe("2026-11-18");
     expect(search.branch).toBeUndefined();
+    expect(search.status).toBeUndefined();
+    expect(dashboardSearchSchema.parse({ status: "completed" }).status).toBe("completed");
   });
 
   it("labels the range in id-ID", () => {

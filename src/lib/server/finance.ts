@@ -27,6 +27,7 @@ import {
   stockLedger,
   areaManagerBranches,
   ORDER_CHANNEL_VALUES,
+  ORDER_STATUS_VALUES,
 } from "#/db/schema";
 import {
   DrizzleQueryError,
@@ -56,6 +57,7 @@ import { buildDailyPnl, summarizePnl, type DailyPnl, type OrderAggregate } from 
 import { allocateHpp, compareMenuCogs, type HppItemInput } from "#/lib/finance-hpp";
 import type { MenuCogsLine, MenuCogsRow } from "#/lib/finance-hpp";
 import { channelLabel as orderChannelLabel } from "#/lib/order-channels";
+import type { SalesStatusScope } from "#/lib/dashboard-range";
 
 /**
  * Validate a `dateFrom`/`dateTo` pair of Jakarta-local ("YYYY-MM-DD") dates and
@@ -1724,6 +1726,9 @@ export const deleteManualExpense = createServerFn({ method: "POST" })
 export interface SalesAnalytics {
   channelData: { channel: string; total: number; count: number }[];
   topSales: { recipeId: string; totalQty: number; totalRevenue: number; name: string }[];
+  /** Void orders in the same range and branch — excluded from every figure
+   *  above, but a total that drops them silently cannot be reconciled. */
+  voidOrders: { count: number; amount: number };
   dateRange: { from?: string; to?: string };
 }
 
@@ -1732,6 +1737,24 @@ export interface SalesAnalyticsInput {
   dateFrom?: string;
   dateTo?: string;
   category?: string;
+  /** Narrows the live set; unknown values fall back to "all". Void is always out. */
+  status?: SalesStatusScope;
+}
+
+/** Every status except the terminal pair: what "open" means for a sale. */
+const OPEN_ORDER_STATUSES = ORDER_STATUS_VALUES.filter(function (status) {
+  return status !== "Void" && status !== "Completed";
+});
+
+function salesStatusClause(scope: SalesStatusScope) {
+  switch (scope) {
+    case "completed":
+      return eq(orders.status, "Completed");
+    case "open":
+      return inArray(orders.status, OPEN_ORDER_STATUSES);
+    default:
+      return ne(orders.status, "Void");
+  }
 }
 
 /** User-parameterized core (ADR 0015) so the aggregate is testable without a session. */
@@ -1748,11 +1771,15 @@ export async function getSalesAnalyticsCore(
     throw new Error("Isi tanggal awal dan akhir sekaligus");
   }
 
+  const scope: SalesStatusScope =
+    data.status === "completed" || data.status === "open" ? data.status : "all";
+
   // Void and soft-deleted orders never count as sales; a channel mix that
-  // included them overstated both the revenue and the order count.
-  const saleClauses = [
+  // included them overstated both the revenue and the order count. The status
+  // scope narrows further so "Pendapatan" can mean settled money rather than
+  // every table that has not left yet.
+  const baseClauses = [
     isNull(orders.deletedAt),
-    ne(orders.status, "Void"),
     data.branchId ? eq(orders.branchId, data.branchId) : undefined,
     data.dateFrom
       ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
@@ -1761,31 +1788,45 @@ export async function getSalesAnalyticsCore(
       ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') <= ${data.dateTo}`
       : undefined,
   ];
+  const saleClauses = [...baseClauses, salesStatusClause(scope)];
 
-  // Channel distribution
-  const channelData = await db
-    .select({
-      channel: orders.channel,
-      total: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
-      count: sql<number>`COUNT(*)`,
-    })
-    .from(orders)
-    .where(and(...saleClauses))
-    .groupBy(orders.channel);
+  const [[voidAgg], channelData, topSales] = await Promise.all([
+    // Reported once, under every scope: void is excluded from the population,
+    // not filtered by it, so the number never becomes zero just because the
+    // operator is looking at completed orders only.
+    db
+      .select({
+        count: sql<number>`COUNT(*)`,
+        amount: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+      })
+      .from(orders)
+      .where(and(...baseClauses, eq(orders.status, "Void"))),
 
-  // Top sales by recipe
-  const topSales = await db
-    .select({
-      recipeId: orderItems.recipeId,
-      totalQty: sql<number>`SUM(${orderItems.quantity})`,
-      totalRevenue: sql<number>`COALESCE(SUM(${orderItems.price} * ${orderItems.quantity}), 0)`,
-    })
-    .from(orderItems)
-    .innerJoin(orders, eq(orderItems.orderId, orders.id))
-    .where(and(...saleClauses))
-    .groupBy(orderItems.recipeId)
-    .orderBy(sql`SUM(${orderItems.quantity}) DESC`)
-    .limit(10);
+    // Channel distribution
+    db
+      .select({
+        channel: orders.channel,
+        total: sql<number>`COALESCE(SUM(${orders.totalAmount}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(orders)
+      .where(and(...saleClauses))
+      .groupBy(orders.channel),
+
+    // Top sales by recipe
+    db
+      .select({
+        recipeId: orderItems.recipeId,
+        totalQty: sql<number>`SUM(${orderItems.quantity})`,
+        totalRevenue: sql<number>`COALESCE(SUM(${orderItems.price} * ${orderItems.quantity}), 0)`,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(and(...saleClauses))
+      .groupBy(orderItems.recipeId)
+      .orderBy(sql`SUM(${orderItems.quantity}) DESC`)
+      .limit(10),
+  ]);
 
   // Get recipe names
   const recipeIds = topSales.map((t) => t.recipeId);
@@ -1811,6 +1852,10 @@ export async function getSalesAnalyticsCore(
       totalRevenue: Number(t.totalRevenue),
       name: recipeNames[t.recipeId] ?? t.recipeId,
     })),
+    voidOrders: {
+      count: Number(voidAgg?.count ?? 0),
+      amount: Number(voidAgg?.amount ?? 0),
+    },
     dateRange: { from: data.dateFrom, to: data.dateTo },
   };
 }

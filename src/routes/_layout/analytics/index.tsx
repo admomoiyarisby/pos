@@ -7,8 +7,15 @@ import { getSalesAnalytics } from "#/lib/server/finance";
 import { formatRp, toDateInputValue } from "#/lib/utils";
 import { getBranches } from "#/lib/server/branches";
 import { channelLabel } from "#/lib/order-channels";
-import { dashboardSearchSchema, resolveDashboardSearch, shiftIsoDay } from "#/lib/dashboard-range";
-import type { DashboardPeriod, DashboardSearch } from "#/lib/dashboard-range";
+import {
+  DEFAULT_SALES_STATUS_SCOPE,
+  SALES_STATUS_SCOPE_OPTIONS,
+  dashboardSearchSchema,
+  resolveDashboardSearch,
+  salesStatusScopeCaption,
+  shiftIsoDay,
+} from "#/lib/dashboard-range";
+import type { DashboardPeriod, DashboardSearch, SalesStatusScope } from "#/lib/dashboard-range";
 import type { UnknownRecord } from "#/lib/unknown-record";
 import DashboardFilterBar from "#/components/dashboard/DashboardFilterBar";
 import { BarChart3, AlertCircle, RefreshCw, Calendar, PieChart as PieIcon } from "lucide-react";
@@ -38,6 +45,7 @@ function AnalyticsPage() {
   const search = Route.useSearch();
   const range = useMemo(() => resolveDashboardSearch(search), [search]);
   const branchId = search.branch;
+  const statusScope = search.status ?? DEFAULT_SALES_STATUS_SCOPE;
 
   const updateSearch = function (patch: Partial<DashboardSearch>) {
     void navigate({
@@ -47,11 +55,21 @@ function AnalyticsPage() {
         if (!next.from) delete next.from;
         if (!next.to) delete next.to;
         if (!next.branch) delete next.branch;
+        if (!next.status) delete next.status;
         return next;
       },
       replace: true,
     });
   };
+
+  function handleStatusChange(next: string) {
+    const option = SALES_STATUS_SCOPE_OPTIONS.find((entry) => entry.value === next);
+    if (!option) return;
+    // "all" is the default, so it stays out of the URL like the other filters.
+    updateSearch({
+      status: option.value === DEFAULT_SALES_STATUS_SCOPE ? undefined : option.value,
+    });
+  }
 
   function handlePeriodChange(period: DashboardPeriod) {
     if (period === "custom") {
@@ -87,10 +105,10 @@ function AnalyticsPage() {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ["analytics", range.from ?? "all", range.to ?? "all", branchId ?? "all"],
+    queryKey: ["analytics", range.from ?? "all", range.to ?? "all", branchId ?? "all", statusScope],
     queryFn: () =>
       getSalesAnalytics({
-        data: { dateFrom: range.from, dateTo: range.to, branchId },
+        data: { dateFrom: range.from, dateTo: range.to, branchId, status: statusScope },
       }),
     placeholderData: keepPreviousData,
   });
@@ -217,7 +235,36 @@ function AnalyticsPage() {
           onRefresh={function () {
             void refetch();
           }}
-        />
+        >
+          <div className="space-y-1">
+            <label
+              htmlFor="analytics-status"
+              className="text-[11px] font-medium text-muted-foreground"
+            >
+              Status
+            </label>
+            <select
+              id="analytics-status"
+              value={statusScope}
+              onChange={(event) => handleStatusChange(event.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-52"
+            >
+              {SALES_STATUS_SCOPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </DashboardFilterBar>
+
+        {analytics && analytics.voidOrders.count > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {`${analytics.voidOrders.count.toLocaleString("id-ID")} pesanan void${
+              analytics.voidOrders.amount > 0 ? ` (${formatRp(analytics.voidOrders.amount)})` : ""
+            } tidak dihitung pada halaman ini.`}
+          </p>
+        )}
 
         {isPending ? (
           <AnalyticsSkeleton />
@@ -227,14 +274,20 @@ function AnalyticsPage() {
             onRetry={() => refetch()}
           />
         ) : isPageEmpty ? (
-          <EmptyState onResetRange={handleResetRange} />
+          <EmptyState
+            scope={statusScope}
+            onResetRange={handleResetRange}
+            onResetStatus={() => handleStatusChange(DEFAULT_SALES_STATUS_SCOPE)}
+          />
         ) : (
           <>
             {/* Channel Distribution */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="rounded-lg border p-4">
                 <h3 className="text-sm font-semibold">Distribusi Channel</h3>
-                <p className="mb-4 text-xs text-muted-foreground">Pendapatan · {range.dateLabel}</p>
+                <p className="mb-4 text-xs text-muted-foreground">
+                  Pendapatan · {range.dateLabel} · {salesStatusScopeCaption(statusScope)}
+                </p>
                 {channelData.length === 0 ? (
                   <ChartEmpty
                     icon={<PieIcon className="h-5 w-5 text-muted-foreground" />}
@@ -268,7 +321,7 @@ function AnalyticsPage() {
               <div className="rounded-lg border p-4">
                 <h3 className="text-sm font-semibold">Top Sales (Qty)</h3>
                 <p className="mb-4 text-xs text-muted-foreground">
-                  Kuantitas terjual · {range.dateLabel}
+                  Kuantitas terjual · {range.dateLabel} · {salesStatusScopeCaption(statusScope)}
                 </p>
                 {topSales.length === 0 ? (
                   <ChartEmpty
@@ -435,22 +488,35 @@ function ErrorState({ message, onRetry }: { message?: string; onRetry: () => voi
   );
 }
 
-function EmptyState({ onResetRange }: { onResetRange: () => void }) {
+function EmptyState({
+  scope,
+  onResetRange,
+  onResetStatus,
+}: {
+  scope: SalesStatusScope;
+  onResetRange: () => void;
+  onResetStatus: () => void;
+}) {
   return (
     <div className="rounded-lg border border-dashed p-8 text-center">
       <div className="mx-auto h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
         <BarChart3 className="h-6 w-6 text-muted-foreground" />
       </div>
-      <h3 className="font-semibold text-foreground mb-1">
-        Tidak ada penjualan pada rentang waktu ini
-      </h3>
+      <h3 className="font-semibold text-foreground mb-1">Tidak ada penjualan pada filter ini</h3>
       <p className="text-sm text-muted-foreground mb-4">
-        Coba perluas rentang tanggal, pilih cabang lain, atau hapus filter cabang.
+        Coba perluas rentang tanggal, pilih cabang lain, atau muat semua status pesanan.
       </p>
-      <Button variant="outline" onClick={onResetRange}>
-        <Calendar className="h-4 w-4" />
-        Reset rentang ke 30 hari terakhir
-      </Button>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <Button variant="outline" onClick={onResetRange}>
+          <Calendar className="h-4 w-4" />
+          Reset rentang ke 30 hari terakhir
+        </Button>
+        {scope !== DEFAULT_SALES_STATUS_SCOPE && (
+          <Button variant="outline" onClick={onResetStatus}>
+            Tampilkan semua status
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
