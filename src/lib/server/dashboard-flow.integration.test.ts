@@ -259,6 +259,43 @@ describe("Dashboard aggregates via the real cores", () => {
     },
   );
 
+  it.skipIf(!hasTestDatabaseUrl)(
+    "buckets long ranges by week and month without a parameterised GROUP BY",
+    async () => {
+      const branch = await seedBranch();
+      const admin = await seedUser("super_admin");
+      await seedOrder({
+        branchId: branch,
+        createdAt: new Date("2026-08-28T03:00:00.000Z"),
+        totalAmount: 100000,
+      });
+      await seedOrder({
+        branchId: branch,
+        createdAt: new Date("2026-06-10T03:00:00.000Z"),
+        totalAmount: 50000,
+      });
+
+      // > 45 days switches the trend to weekly buckets, > 180 to monthly. Both
+      // build the bucket with date_trunc, and a bound parameter there makes
+      // Postgres treat the SELECT and GROUP BY expressions as different.
+      const weekly = await dashboard.getDashboardOverviewCore(
+        admin,
+        { from: "2026-06-01", to: "2026-08-31" },
+        NOW,
+      );
+      expect(weekly.salesTrend.length).toBeGreaterThan(0);
+      expect(weekly.salesTrend.reduce((sum, point) => sum + point.revenue, 0)).toBe(150000);
+
+      const monthly = await dashboard.getDashboardOverviewCore(
+        admin,
+        { from: "2026-01-01", to: "2026-08-31" },
+        NOW,
+      );
+      expect(monthly.salesTrend.length).toBeGreaterThan(0);
+      expect(monthly.salesTrend.reduce((sum, point) => sum + point.revenue, 0)).toBe(150000);
+    },
+  );
+
   it.skipIf(!hasTestDatabaseUrl)("applies the same range to the detail rows", async () => {
     const branch = await seedBranch();
     const admin = await seedUser("super_admin");

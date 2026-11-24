@@ -109,7 +109,13 @@ function trendGranularity(from?: string, to?: string): TrendGranularity {
 function trendBucketSql(granularity: TrendGranularity): SQL<string> {
   const local = sql`((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`;
   if (granularity === "day") return sql<string>`to_char(${local}, 'YYYY-MM-DD')`;
-  return sql<string>`to_char(date_trunc(${granularity}, ${local}), 'YYYY-MM-DD')`;
+  // The unit must be a literal. Interpolating it binds a parameter, and
+  // Postgres parses `date_trunc($1, …)` in the SELECT and `date_trunc($2, …)` in
+  // the GROUP BY as different expressions, so it rejects the bare column with
+  // "orders.created_at must appear in the GROUP BY clause". A bound literal
+  // would also defeat the month/week index-friendly shape for no gain.
+  const unit = sql.raw(granularity === "week" ? "'week'" : "'month'");
+  return sql<string>`to_char(date_trunc(${unit}, ${local}), 'YYYY-MM-DD')`;
 }
 
 export interface DashboardStats {
