@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import RoleGuard from "#/components/RoleGuard";
@@ -461,6 +461,19 @@ function AnalyticsPage() {
                         </div>
                       ))}
                     </div>
+                    {/* Same words as the ledger, so the reader knows which page
+                        holds the payout-based number without leaving a doubt.
+                        Channels without a typed payout fall back to POS net
+                        (ADR 0028), so the sentence names both bases. */}
+                    <p className="mt-3 border-t pt-2 text-xs text-muted-foreground">
+                      Omzet setelah potongan platform — atau net POS bila payout belum diinput:{" "}
+                      <Link
+                        to="/finance"
+                        className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-4 hover:decoration-foreground"
+                      >
+                        Finance › Ledger Harian
+                      </Link>
+                    </p>
                   </>
                 )}
               </div>
