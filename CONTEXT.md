@@ -107,6 +107,10 @@ _Avoid_: Central admin, central kitchen admin (different role), warehouse manage
 The destination branch's administrator role. Owns the procurement lifecycle from the branch side: creates PRs, fills receiving forms, views invoice preview, can withdraw a Pending procurement.
 _Avoid_: store manager, outlet admin (when referring to the role)
 
+**Auditor**:
+A read-only, branch-scoped role for owners who need the numbers without operational access. Sees Data Penjualan, Keuangan & Rekonsiliasi, Dashboard, and Dashboard Analitik for the branches assigned in `area_manager_branches` (one row = a single branch, several = a group). No mutation lists the role, so it cannot write; every read derives its branch from that assignment and narrows a requested `branchId` outside it. The DB role is `auditor`. See ADR 0036.
+_Avoid_: viewer, guest, read-only admin (the scope is what defines it, not the absence of buttons)
+
 **Cabang Pengirim (Sender Branch Admin)**:
 The `branch_admin` at the **sender** branch (`fromBranchId`) in a Mutasi Stok transfer. Responsible for creating the Surat Jalan, editing items, and shipping (SuratJalanDraft → Approved → InTransit). Not to be confused with the Receiver Branch Admin — they never touch receiving or payment.
 _Avoid_: sender, pengirim (when used as a standalone role name)
