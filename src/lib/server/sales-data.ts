@@ -24,6 +24,7 @@ import {
   ORDER_CHANNEL_VALUES,
 } from "#/db/schema";
 import { requireAuth, requireRole } from "#/lib/server/auth";
+import { scopedBranchCondition, scopedBranchIds } from "./branch-scope";
 import type { AppUser } from "./auth";
 import { requireOpenPeriod } from "./period-lock";
 import { resolveNewItemIngredients, resolvePersistedItemIngredients } from "./ingredient-resolver";
@@ -187,7 +188,7 @@ export const getSalesData = createServerFn({ method: "GET" })
     }),
   )
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     const page = data.page ?? 0;
     const limit = data.limit ?? 50;
@@ -195,8 +196,12 @@ export const getSalesData = createServerFn({ method: "GET" })
 
     // Build conditions
     const conditions = [];
-    if (data.branchId) {
-      conditions.push(eq(orders.branchId, data.branchId));
+    // The branch id comes from the URL, so it is narrowed to the caller's
+    // assignment first: an auditor (or a branch admin) asking for another
+    // branch gets their own scope, never the requested one.
+    const branchCondition = await scopedBranchCondition(user, orders.branchId, data.branchId);
+    if (branchCondition) {
+      conditions.push(branchCondition);
     }
     if (data.channel) {
       conditions.push(eq(orders.channel, data.channel));
@@ -272,11 +277,17 @@ export const getSalesData = createServerFn({ method: "GET" })
 export const getSalesOrderDetail = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     const [order] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1);
 
+    // The id is a client input: an order outside the caller's branch scope must
+    // be indistinguishable from a missing one.
     if (!order) throw new Error("Order not found");
+    const branchIds = await scopedBranchIds(user);
+    if (branchIds && !branchIds.includes(order.branchId)) {
+      throw new Error("Order not found");
+    }
 
     const items = await db
       .select({
@@ -756,12 +767,13 @@ export async function toggleSalesOrderVerifiedCore(
 export const getSalesSummary = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     // Void orders stay visible in the list but never contribute to totals.
     const conditions = [ne(orders.status, "Void")];
-    if (data.branchId) {
-      conditions.push(eq(orders.branchId, data.branchId));
+    const branchCondition = await scopedBranchCondition(user, orders.branchId, data.branchId);
+    if (branchCondition) {
+      conditions.push(branchCondition);
     }
     if (data.dateFrom) {
       // Jakarta local dates (matching finance.ts) — see getSalesData above.

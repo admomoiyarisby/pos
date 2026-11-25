@@ -4,6 +4,7 @@ import { branches, users } from "#/db/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { fuzzySearch, fuzzyRank } from "./fuzzy";
 import { requireAuth, requireRole } from "./auth";
+import { scopedBranchCondition } from "./branch-scope";
 import type { AppUser } from "./auth";
 import { logSystemAction, logAudit } from "./logging";
 import type { UnknownRecord } from "#/lib/unknown-record";
@@ -59,9 +60,17 @@ export const getBranches = createServerFn({ method: "GET" })
     (data: { search?: string; type?: "Central" | "Outlet" | null; showInactive?: boolean }) => data,
   )
   .handler(async ({ data }) => {
-    await requireAuth();
+    const user = await requireAuth();
 
     const conditions = [];
+
+    // An auditor's picker must not offer a branch they cannot read: the read
+    // handlers would silently replace it with their own scope, which reads as a
+    // broken filter. Other roles keep the full list — SCM forms need to name a
+    // destination branch they do not belong to.
+    if (user.role === "auditor") {
+      conditions.push(await scopedBranchCondition(user, branches.id));
+    }
 
     // Exclude soft-deleted branches unless explicitly requested
     if (!data.showInactive) {

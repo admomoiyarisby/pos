@@ -25,7 +25,6 @@ import {
   shifts,
   shiftEdits,
   stockLedger,
-  areaManagerBranches,
   ORDER_CHANNEL_VALUES,
   ORDER_STATUS_VALUES,
 } from "#/db/schema";
@@ -46,6 +45,7 @@ import { isUniqueViolation } from "./db-errors";
 import { periodLifecycle } from "#/lib/lifecycles";
 import { z } from "zod";
 import { requireAuth, requireRole } from "./auth";
+import { scopedBranchCondition, scopedBranchIds } from "./branch-scope";
 import { requireOpenPeriod } from "./period-lock";
 import { USAGE_SOURCE_ORDER, usageSourceSql } from "./usage-source";
 import type { UsageSource } from "./usage-source";
@@ -148,10 +148,21 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
     }),
   )
   .handler(async ({ data }): Promise<FinanceSummary> => {
-    const user = await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat", "auditor");
 
+    const branchCondition = await scopedBranchCondition(user, orders.branchId, data.branchId);
+    const manualBranchCondition = await scopedBranchCondition(
+      user,
+      manualRevenues.branchId,
+      data.branchId,
+    );
+    const expenseBranchCondition = await scopedBranchCondition(
+      user,
+      operationalExpenses.branchId,
+      data.branchId,
+    );
     const conditions = [];
-    if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
+    if (branchCondition) conditions.push(branchCondition);
     if (data.channel) conditions.push(eq(orders.channel, data.channel));
 
     if (data.dateFrom)
@@ -198,7 +209,7 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
           .from(manualRevenues)
           .where(
             and(
-              data.branchId ? eq(manualRevenues.branchId, data.branchId) : undefined,
+              manualBranchCondition,
               data.dateFrom ? gte(manualRevenues.date, data.dateFrom) : undefined,
               data.dateTo ? lte(manualRevenues.date, data.dateTo) : undefined,
             ),
@@ -211,7 +222,7 @@ export const getFinanceSummary = createServerFn({ method: "GET" })
       .from(operationalExpenses)
       .where(
         and(
-          data.branchId ? eq(operationalExpenses.branchId, data.branchId) : undefined,
+          expenseBranchCondition,
           data.dateFrom ? gte(operationalExpenses.date, data.dateFrom) : undefined,
           data.dateTo ? lte(operationalExpenses.date, data.dateTo) : undefined,
         ),
@@ -334,7 +345,7 @@ export const getDailyPnl = createServerFn({ method: "GET" })
     }),
   )
   .handler(async ({ data }): Promise<DailyPnl[]> => {
-    const user = await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat", "auditor");
     return getDailyPnlCore(user, data);
   });
 
@@ -343,12 +354,22 @@ export async function getDailyPnlCore(
   user: AppUser,
   data: { branchId?: string; dateFrom?: string; dateTo?: string; channel?: OrderChannel },
 ): Promise<DailyPnl[]> {
-  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat" && user.role !== "auditor") {
     throw new Error(
-      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat | auditor)`,
     );
   }
   if (data.dateFrom && data.dateTo) validateDateRange(data.dateFrom, data.dateTo, 366);
+
+  // One resolved scope for all three sources, so a branch filter cannot apply
+  // to orders but silently not to payouts (or to the legacy adjustment).
+  const orderBranch = await scopedBranchCondition(user, orders.branchId, data.branchId);
+  const payoutBranch = await scopedBranchCondition(user, channelRevenues.branchId, data.branchId);
+  const adjustmentBranch = await scopedBranchCondition(
+    user,
+    dailyOverrides.branchId,
+    data.branchId,
+  );
 
   const posDay = sql<string>`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`;
 
@@ -366,7 +387,7 @@ export async function getDailyPnlCore(
       and(
         ne(orders.status, "Void"),
         isNull(orders.deletedAt),
-        data.branchId ? eq(orders.branchId, data.branchId) : undefined,
+        orderBranch,
         data.channel ? eq(orders.channel, data.channel) : undefined,
         data.dateFrom ? sql`${posDay} >= ${data.dateFrom}` : undefined,
         data.dateTo ? sql`${posDay} <= ${data.dateTo}` : undefined,
@@ -384,7 +405,7 @@ export async function getDailyPnlCore(
     .from(channelRevenues)
     .where(
       and(
-        data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
+        payoutBranch,
         data.channel ? eq(channelRevenues.channel, data.channel) : undefined,
         data.dateFrom ? gte(channelRevenues.date, data.dateFrom) : undefined,
         data.dateTo ? lte(channelRevenues.date, data.dateTo) : undefined,
@@ -402,7 +423,7 @@ export async function getDailyPnlCore(
         .where(
           and(
             eq(dailyOverrides.field, OMZET_ADJUSTMENT_FIELD),
-            data.branchId ? eq(dailyOverrides.branchId, data.branchId) : undefined,
+            adjustmentBranch,
             data.dateFrom ? gte(dailyOverrides.date, data.dateFrom) : undefined,
             data.dateTo ? lte(dailyOverrides.date, data.dateTo) : undefined,
           ),
@@ -455,9 +476,10 @@ export interface ShiftCashVarianceRow {
 export const getShiftCashVariance = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
   .handler(async ({ data }): Promise<ShiftCashVarianceRow[]> => {
-    // Mirrors the finance page's RoleGuard (super_admin + admin_pusat) — a
-    // narrower guard here surfaces as a mysterious empty state in the UI.
-    await requireRole("super_admin", "admin_pusat");
+    // Mirrors the finance page's RoleGuard (super_admin + admin_pusat + auditor)
+    // — a narrower guard here surfaces as a mysterious empty state in the UI.
+    const user = await requireRole("super_admin", "admin_pusat", "auditor");
+    const branchCondition = await scopedBranchCondition(user, shifts.branchId, data.branchId);
 
     const conditions = [
       eq(shifts.status, "Closed"),
@@ -465,7 +487,7 @@ export const getShiftCashVariance = createServerFn({ method: "GET" })
       isNotNull(shifts.actualCash),
       isNotNull(shifts.endTime),
     ];
-    if (data.branchId) conditions.push(eq(shifts.branchId, data.branchId));
+    if (branchCondition) conditions.push(branchCondition);
     if (data.dateFrom)
       conditions.push(
         sql`DATE((${shifts.endTime} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`,
@@ -571,7 +593,20 @@ export const getShiftCashTransactions = createServerFn({ method: "GET" })
   .validator((data: { shiftId: string }) => data)
   .handler(async ({ data }): Promise<ShiftCashTransactionRow[]> => {
     // Same guard as getShiftCashVariance — the detail feeds its table.
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat", "auditor");
+
+    // The shift id arrives from the client, so the shift's own branch is what
+    // decides access — not a branch filter the caller could omit.
+    const [shift] = await db
+      .select({ branchId: shifts.branchId })
+      .from(shifts)
+      .where(eq(shifts.id, data.shiftId))
+      .limit(1);
+    if (!shift) throw new Error("Shift tidak ditemukan");
+    const branchIds = await scopedBranchIds(user);
+    if (branchIds && !branchIds.includes(shift.branchId)) {
+      throw new Error("Forbidden: shift ini di luar cabang yang Anda awasi");
+    }
 
     const orderRows = await db
       .select({
@@ -644,13 +679,25 @@ export interface ManualFinanceEntry {
 export const getManualFinanceEntries = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom: string; dateTo: string }) => data)
   .handler(async ({ data }): Promise<ManualFinanceEntry[]> => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat", "auditor");
     validateDateRange(data.dateFrom, data.dateTo, 366);
+
+    const revenueBranch = await scopedBranchCondition(user, manualRevenues.branchId, data.branchId);
+    const channelBranch = await scopedBranchCondition(
+      user,
+      channelRevenues.branchId,
+      data.branchId,
+    );
+    const expenseBranch = await scopedBranchCondition(
+      user,
+      operationalExpenses.branchId,
+      data.branchId,
+    );
 
     const revenueConditions = [
       gte(manualRevenues.date, data.dateFrom),
       lte(manualRevenues.date, data.dateTo),
-      data.branchId ? eq(manualRevenues.branchId, data.branchId) : undefined,
+      revenueBranch,
     ];
     const manualRevenueRows = await db
       .select({
@@ -665,7 +712,7 @@ export const getManualFinanceEntries = createServerFn({ method: "GET" })
     const channelConditions = [
       gte(channelRevenues.date, data.dateFrom),
       lte(channelRevenues.date, data.dateTo),
-      data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
+      channelBranch,
     ];
     const channelRevenueRows = await db
       .select({
@@ -682,7 +729,7 @@ export const getManualFinanceEntries = createServerFn({ method: "GET" })
       isNull(operationalExpenses.wasteEntryId),
       gte(operationalExpenses.date, data.dateFrom),
       lte(operationalExpenses.date, data.dateTo),
-      data.branchId ? eq(operationalExpenses.branchId, data.branchId) : undefined,
+      expenseBranch,
     ];
     const expenseRows = await db
       .select({
@@ -723,7 +770,7 @@ export const getDailyHppBreakdown = createServerFn({ method: "GET" })
     channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
   }))
   .handler(async ({ data }): Promise<HppBreakdown> => {
-    const user = await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat", "auditor");
     return getDailyHppBreakdownCore(user, data);
   });
 
@@ -732,9 +779,9 @@ export async function getDailyHppBreakdownCore(
   user: AppUser,
   data: { branchId?: string; date: string; channel?: OrderChannel },
 ): Promise<HppBreakdown> {
-  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat" && user.role !== "auditor") {
     throw new Error(
-      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat | auditor)`,
     );
   }
 
@@ -746,7 +793,8 @@ export async function getDailyHppBreakdownCore(
   // total disagree with the cell it was opened from. Soft-deleted orders are
   // excluded for the same reason.
   const orderConditions = [ne(orders.status, "Void"), isNull(orders.deletedAt)];
-  if (data.branchId) orderConditions.push(eq(orders.branchId, data.branchId));
+  const branchCondition = await scopedBranchCondition(user, orders.branchId, data.branchId);
+  if (branchCondition) orderConditions.push(branchCondition);
   if (data.channel) orderConditions.push(eq(orders.channel, data.channel));
   orderConditions.push(
     sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') = ${data.date}`,
@@ -903,10 +951,16 @@ export const getOmzetBreakdown = createServerFn({ method: "GET" })
     channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
   }))
   .handler(async ({ data }): Promise<OmzetBreakdown> => {
-    await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat", "auditor");
+    const branchCondition = await scopedBranchCondition(user, orders.branchId, data.branchId);
+    const manualBranchCondition = await scopedBranchCondition(
+      user,
+      manualRevenues.branchId,
+      data.branchId,
+    );
 
     const conditions = [];
-    if (data.branchId) conditions.push(eq(orders.branchId, data.branchId));
+    if (branchCondition) conditions.push(branchCondition);
     if (data.channel) conditions.push(eq(orders.channel, data.channel));
     conditions.push(
       sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') = ${data.date}`,
@@ -948,10 +1002,7 @@ export const getOmzetBreakdown = createServerFn({ method: "GET" })
     // Manual revenue is memo-only (ADR 0017): shown for reference in the
     // breakdown, never added into omzet. No-channel manual revenue is omitted
     // when a specific channel is selected, mirroring the ledger.
-    const manualRevConditions = [
-      eq(manualRevenues.date, data.date),
-      data.branchId ? eq(manualRevenues.branchId, data.branchId) : undefined,
-    ];
+    const manualRevConditions = [eq(manualRevenues.date, data.date), manualBranchCondition];
     const [manualRevRow] = data.channel
       ? [undefined]
       : await db
@@ -961,9 +1012,14 @@ export const getOmzetBreakdown = createServerFn({ method: "GET" })
           .from(manualRevenues)
           .where(and(...manualRevConditions));
 
+    const channelBranchCondition = await scopedBranchCondition(
+      user,
+      channelRevenues.branchId,
+      data.branchId,
+    );
     const channelRevConditions = [
       eq(channelRevenues.date, data.date),
-      data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
+      channelBranchCondition,
       data.channel ? eq(channelRevenues.channel, data.channel) : undefined,
     ];
     const channelRevRows = await db
@@ -975,6 +1031,11 @@ export const getOmzetBreakdown = createServerFn({ method: "GET" })
       .where(and(...channelRevConditions))
       .groupBy(channelRevenues.channel);
 
+    const adjustmentBranchCondition = await scopedBranchCondition(
+      user,
+      dailyOverrides.branchId,
+      data.branchId,
+    );
     const [adjustmentRow] = data.channel
       ? [undefined]
       : await db
@@ -984,7 +1045,7 @@ export const getOmzetBreakdown = createServerFn({ method: "GET" })
             and(
               eq(dailyOverrides.date, data.date),
               eq(dailyOverrides.field, OMZET_ADJUSTMENT_FIELD),
-              data.branchId ? eq(dailyOverrides.branchId, data.branchId) : undefined,
+              adjustmentBranchCondition,
             ),
           );
 
@@ -1125,7 +1186,7 @@ export interface ChannelPnlRow {
 export const getChannelPnl = createServerFn({ method: "GET" })
   .validator((data: { branchId?: string; dateFrom?: string; dateTo?: string }) => data)
   .handler(async ({ data }): Promise<ChannelPnlRow[]> => {
-    const user = await requireRole("super_admin", "admin_pusat");
+    const user = await requireRole("super_admin", "admin_pusat", "auditor");
     return getChannelPnlCore(user, data);
   });
 
@@ -1134,17 +1195,20 @@ export async function getChannelPnlCore(
   user: AppUser,
   data: { branchId?: string; dateFrom?: string; dateTo?: string },
 ): Promise<ChannelPnlRow[]> {
-  if (user.role !== "super_admin" && user.role !== "admin_pusat") {
+  if (user.role !== "super_admin" && user.role !== "admin_pusat" && user.role !== "auditor") {
     throw new Error(
-      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat)`,
+      `Forbidden: insufficient role (user ${user.id} has role "${user.role}", required: super_admin | admin_pusat | auditor)`,
     );
   }
+
+  const orderBranch = await scopedBranchCondition(user, orders.branchId, data.branchId);
+  const payoutBranch = await scopedBranchCondition(user, channelRevenues.branchId, data.branchId);
 
   const posDay = sql<string>`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta')`;
   const conditions = [
     ne(orders.status, "Void"),
     isNull(orders.deletedAt),
-    data.branchId ? eq(orders.branchId, data.branchId) : undefined,
+    orderBranch,
     data.dateFrom ? sql`${posDay} >= ${data.dateFrom}` : undefined,
     data.dateTo ? sql`${posDay} <= ${data.dateTo}` : undefined,
   ];
@@ -1160,7 +1224,7 @@ export async function getChannelPnlCore(
     .from(channelRevenues)
     .where(
       and(
-        data.branchId ? eq(channelRevenues.branchId, data.branchId) : undefined,
+        payoutBranch,
         data.dateFrom ? gte(channelRevenues.date, data.dateFrom) : undefined,
         data.dateTo ? lte(channelRevenues.date, data.dateTo) : undefined,
       ),
@@ -1281,35 +1345,14 @@ export const getDailyIngredientUsage = createServerFn({ method: "GET" })
 
 /** `getDailyIngredientUsage` minus the session lookup — the ADR 0015 core seam.
  *  Role scoping: super_admin/admin_pusat read any branch (or all); area_manager
- *  is locked to assigned branches; branch_admin/central_kitchen to their own
- *  branch. A client-supplied branchId outside that scope is ignored rather than
- *  honored, so the scope filter below always applies. */
+ *  and auditor are locked to assigned branches; branch_admin/central_kitchen to
+ *  their own branch. A client-supplied branchId outside that scope is ignored
+ *  rather than honored, so the scope filter below always applies. */
 export async function getDailyIngredientUsageCore(
   user: AppUser,
   data: { branchId?: string; dateFrom?: string; dateTo?: string },
 ): Promise<DailyUsageRow[]> {
-  let effectiveBranchId = data.branchId;
-  const supervisorRoles = ["super_admin", "admin_pusat"];
-  if (!supervisorRoles.includes(user.role)) {
-    if (user.role === "area_manager") {
-      const assigned = await db
-        .select({ branchId: areaManagerBranches.branchId })
-        .from(areaManagerBranches)
-        .where(eq(areaManagerBranches.userId, user.id));
-      const assignedIds = assigned.map((a) => a.branchId);
-      if (assignedIds.length === 0) return [];
-      // Honor the client branchId only if it is one of the assigned branches.
-      if (effectiveBranchId && !assignedIds.includes(effectiveBranchId)) {
-        effectiveBranchId = undefined;
-      }
-    } else if (user.branchId) {
-      // branch_admin / central_kitchen: always their own branch, whatever the
-      // client sends.
-      effectiveBranchId = user.branchId;
-    } else {
-      return [];
-    }
-  }
+  const branchCondition = await scopedBranchCondition(user, stockLedger.branchId, data.branchId);
 
   const conditions = [
     eq(stockLedger.type, "OUT"),
@@ -1318,7 +1361,7 @@ export async function getDailyIngredientUsageCore(
     notCancelledWasteSql,
     notCancelledProductionSql,
     notSupplierDeliveryCorrectionSql,
-    effectiveBranchId ? eq(stockLedger.branchId, effectiveBranchId) : undefined,
+    branchCondition,
     data.dateFrom
       ? sql`DATE((${stockLedger.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
       : undefined,
@@ -1772,7 +1815,7 @@ export async function getSalesAnalyticsCore(
   user: AppUser,
   data: SalesAnalyticsInput,
 ): Promise<SalesAnalytics> {
-  if (user.role !== "super_admin") {
+  if (user.role !== "super_admin" && user.role !== "auditor") {
     throw new Error("Forbidden: insufficient role");
   }
   if (data.dateFrom && data.dateTo) {
@@ -1788,9 +1831,10 @@ export async function getSalesAnalyticsCore(
   // included them overstated both the revenue and the order count. The status
   // scope narrows further so "Pendapatan" can mean settled money rather than
   // every table that has not left yet.
+  const branchCondition = await scopedBranchCondition(user, orders.branchId, data.branchId);
   const baseClauses = [
     isNull(orders.deletedAt),
-    data.branchId ? eq(orders.branchId, data.branchId) : undefined,
+    branchCondition,
     data.dateFrom
       ? sql`DATE((${orders.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta') >= ${data.dateFrom}`
       : undefined,
@@ -1893,7 +1937,7 @@ export async function getSalesAnalyticsCore(
 export const getSalesAnalytics = createServerFn({ method: "GET" })
   .validator((data: SalesAnalyticsInput) => data)
   .handler(async ({ data }): Promise<SalesAnalytics> => {
-    const user = await requireRole("super_admin");
+    const user = await requireRole("super_admin", "auditor");
     return getSalesAnalyticsCore(user, data);
   });
 
@@ -2276,6 +2320,16 @@ export async function buildFinancePrintHtml(data: FinancePrintFilters): Promise<
     channel: z.enum(ORDER_CHANNEL_VALUES).optional().catch(undefined).parse(data.channel),
   };
   const user = await requireAuth();
+
+  // The branch id is a query-string value, so the printed report is narrowed to
+  // the caller's scope before anything is read or named. Without this an
+  // auditor could print another branch's ledger by editing the URL.
+  const scope = await scopedBranchIds(user, filters.branchId);
+  if (scope) {
+    if (scope.length === 0) throw new Error("Akun ini belum punya cabang yang diawasi");
+    filters.branchId = filters.branchId ?? (scope.length === 1 ? scope[0] : undefined);
+  }
+
   const summary = await getFinanceSummary({ data: filters });
 
   // Fetch branch name if branchId provided
