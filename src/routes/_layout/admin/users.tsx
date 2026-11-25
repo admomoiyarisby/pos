@@ -23,6 +23,7 @@ import {
   Map,
   Store,
   Users,
+  Eye,
 } from "lucide-react";
 
 // =============================================================================
@@ -85,6 +86,7 @@ const roleLabels = {
   area_manager: "Area Manager",
   branch_admin: "Branch Admin",
   central_kitchen: "Central Kitchen",
+  auditor: "Auditor",
 } satisfies Record<string, string>;
 
 const roleColors = {
@@ -93,6 +95,7 @@ const roleColors = {
   area_manager: "secondary",
   branch_admin: "outline",
   central_kitchen: "secondary",
+  auditor: "outline",
 } satisfies Record<string, string>;
 
 function buildGroupedStaff(users: UserRow[], branches: BranchRow[]): StaffGroupData[] {
@@ -131,6 +134,19 @@ function buildGroupedStaff(users: UserRow[], branches: BranchRow[]): StaffGroupD
       icon: ChefHat,
       count: centralKitchen.length,
       items: centralKitchen.map((u) => ({ type: "user" as const, user: u })),
+    });
+  }
+
+  // 3b. Auditors — read-only, branch-scoped, so they sit outside the
+  //     branch_admin hierarchy but still need a visible group to be editable.
+  const auditors = users.filter((u) => u.role === "auditor");
+  if (auditors.length > 0) {
+    groups.push({
+      id: "auditor",
+      label: "Auditor",
+      icon: Eye,
+      count: auditors.length,
+      items: auditors.map((u) => ({ type: "user" as const, user: u })),
     });
   }
 
@@ -453,7 +469,7 @@ function StaffModal({
       data.branchId = formText(fd, "branchId") || undefined;
     }
 
-    if (selectedRole === "area_manager") {
+    if (selectedRole === "area_manager" || selectedRole === "auditor") {
       data.assignedBranches = amBranches;
     }
 
@@ -465,7 +481,7 @@ function StaffModal({
   };
 
   const showBranchField = selectedRole === "branch_admin" || selectedRole === "central_kitchen";
-  const showAmBranches = selectedRole === "area_manager";
+  const showAmBranches = selectedRole === "area_manager" || selectedRole === "auditor";
 
   return (
     <Modal open={open} onClose={onClose} title={isEdit ? "Edit Staf" : "Tambah Staf"} size="lg">
@@ -564,6 +580,7 @@ function StaffModal({
               <option value="area_manager">Area Manager</option>
               <option value="branch_admin">Branch Admin</option>
               <option value="central_kitchen">Central Kitchen</option>
+              <option value="auditor">Auditor</option>
             </select>
           </div>
           <div className="space-y-2">
@@ -601,7 +618,9 @@ function StaffModal({
         {/* Area Manager branch assignment */}
         {showAmBranches && (
           <div className="space-y-2">
-            <label className="text-sm font-medium">Cabang yang Dikelola</label>
+            <label className="text-sm font-medium">
+              {selectedRole === "auditor" ? "Cabang yang Diawasi" : "Cabang yang Dikelola"}
+            </label>
             <div className="grid grid-cols-2 gap-2 rounded-md border p-3 max-h-40 overflow-y-auto">
               {branches.map((b) => (
                 <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer">

@@ -1,0 +1,12 @@
+-- Add the read-only, branch-scoped `auditor` role.
+--
+-- Auditors only ever hold read grants: every mutation lists its roles
+-- explicitly, so the role is absent from all of them by construction. Branch
+-- scope comes from `area_manager_branches` (one row = one branch, several = a
+-- group), which is why it can also express a single-branch auditor.
+--
+-- Postgres cannot remove a label from an enum, so this step is one-way. The
+-- value is not used in this file, so `ADD VALUE` is safe inside the migration's
+-- transaction (a label added here cannot be referenced until the transaction
+-- commits).
+ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'auditor';

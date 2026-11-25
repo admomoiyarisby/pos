@@ -17,7 +17,8 @@ type ManagedRoleName =
   | "admin_pusat"
   | "area_manager"
   | "central_kitchen"
-  | "branch_admin";
+  | "branch_admin"
+  | "auditor";
 
 const USER_ROLE_RANK = {
   super_admin: 5,
@@ -25,6 +26,9 @@ const USER_ROLE_RANK = {
   area_manager: 3,
   central_kitchen: 2,
   branch_admin: 1,
+  // Read-only, so it commands nothing; the rank exists so a super_admin can
+  // still manage the row (rank 0 means "nobody can edit this user").
+  auditor: 1,
 } satisfies Record<ManagedRoleName, number>;
 
 function isManagedRole(role: string): role is ManagedRoleName {

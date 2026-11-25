@@ -6,7 +6,8 @@ export type BranchVisibilityRole =
   | "admin_pusat"
   | "area_manager"
   | "branch_admin"
-  | "central_kitchen";
+  | "central_kitchen"
+  | "auditor";
 
 export interface EffectiveBranchOptions {
   role: BranchVisibilityRole;

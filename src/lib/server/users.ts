@@ -28,6 +28,7 @@ const userRoleEnum = z.enum([
   "area_manager",
   "branch_admin",
   "central_kitchen",
+  "auditor",
 ]);
 
 export const getUsers = createServerFn({ method: "GET" })
@@ -82,7 +83,7 @@ export const getUsers = createServerFn({ method: "GET" })
     return result.map((u) => ({
       ...u,
       assignedBranches:
-        u.role === "area_manager"
+        u.role === "area_manager" || u.role === "auditor"
           ? amBranches.filter((ab) => ab.userId === u.id).map((ab) => ab.branchId)
           : undefined,
     }));
@@ -207,12 +208,17 @@ export async function createUserCore(user: AppUser, data: z.infer<typeof createU
     throw new Error(`Forbidden: role "${user.role}" cannot create a "${data.role}" user`);
   }
 
-  // Area managers must be assigned at least one branch
+  // Area managers and auditors are defined by their branch assignment: with
+  // none they would see an empty app, which reads as a broken account.
   if (
-    data.role === "area_manager" &&
+    (data.role === "area_manager" || data.role === "auditor") &&
     (!data.assignedBranches || data.assignedBranches.length === 0)
   ) {
-    throw new Error("Area Manager harus memiliki minimal 1 cabang yang dikelola");
+    throw new Error(
+      data.role === "auditor"
+        ? "Auditor harus memiliki minimal 1 cabang yang diawasi"
+        : "Area Manager harus memiliki minimal 1 cabang yang dikelola",
+    );
   }
   if (data.assignedBranches?.length) {
     const found = await db
@@ -279,8 +285,8 @@ export async function createUserCore(user: AppUser, data: z.infer<typeof createU
     password: hashedPassword,
   });
 
-  // Handle area manager branches
-  if (data.role === "area_manager" && data.assignedBranches?.length) {
+  // Handle assigned branches (area managers and auditors share the table)
+  if ((data.role === "area_manager" || data.role === "auditor") && data.assignedBranches?.length) {
     for (const branchId of data.assignedBranches) {
       await db
         .insert(areaManagerBranches)
@@ -357,13 +363,17 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
     throw new Error(`Forbidden: role "${user.role}" cannot manage a "${oldUser.role}" user`);
   }
 
-  // Area managers must keep at least one assigned branch
+  // Area managers and auditors must keep at least one assigned branch
   if (
-    nextRole === "area_manager" &&
+    (nextRole === "area_manager" || nextRole === "auditor") &&
     assignedBranches !== undefined &&
     assignedBranches.length === 0
   ) {
-    throw new Error("Area Manager harus memiliki minimal 1 cabang yang dikelola");
+    throw new Error(
+      nextRole === "auditor"
+        ? "Auditor harus memiliki minimal 1 cabang yang diawasi"
+        : "Area Manager harus memiliki minimal 1 cabang yang dikelola",
+    );
   }
   if (assignedBranches?.length) {
     const found = await db
@@ -481,11 +491,15 @@ export async function updateUserCore(user: AppUser, data: z.infer<typeof updateU
 
   // When an area manager's role changes away from area_manager, drop their
   // branch assignments so no orphan rows are left behind.
-  if (oldUser.role === "area_manager" && nextRole !== "area_manager") {
+  if (
+    (oldUser.role === "area_manager" || oldUser.role === "auditor") &&
+    nextRole !== "area_manager" &&
+    nextRole !== "auditor"
+  ) {
     await db.delete(areaManagerBranches).where(eq(areaManagerBranches.userId, id));
   }
 
-  // Update area manager branches — atomic delete+insert (bad branchId must not leave 0 rows)
+  // Update assigned branches — atomic delete+insert (bad branchId must not leave 0 rows)
   if (assignedBranches !== undefined) {
     await db.transaction(async (tx) => {
       await tx.delete(areaManagerBranches).where(eq(areaManagerBranches.userId, id));

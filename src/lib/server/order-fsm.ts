@@ -50,9 +50,13 @@ export interface OrderRule {
   effects: readonly OrderEffect[];
 }
 
-/** Every authenticated role may advance fulfilment; the wrapper (`requireAuth`)
- *  is the same boundary those cores had before the table existed. */
-const ALL_ROLES = USER_ROLE_VALUES satisfies readonly UserRole[];
+/** Every operational role may advance fulfilment; the wrapper (`requireAuth`)
+ *  is the same boundary those cores had before the table existed. The read-only
+ *  auditor is excluded here as well as in `requireRole` lists, so adding a role
+ *  to the enum can never hand it a write edge by accident. */
+const ALL_ROLES = USER_ROLE_VALUES.filter(function (role) {
+  return role !== "auditor";
+}) satisfies readonly UserRole[];
 
 /** Voiding reverses stock and closes a cashier's pending request, so it stays
  *  with the roles the `voidOrder` endpoint already required. `area_manager` is

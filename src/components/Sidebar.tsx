@@ -53,6 +53,7 @@ const roleLabels = {
   area_manager: "Area Manager",
   branch_admin: "Branch Admin",
   central_kitchen: "Central Kitchen",
+  auditor: "Auditor",
 } satisfies Record<UserRole, string>;
 
 interface NavItem {
@@ -71,9 +72,21 @@ interface NavGroup {
 const navGroups: NavGroup[] = [
   {
     label: "Utama",
-    roles: ["super_admin", "admin_pusat", "area_manager", "branch_admin", "central_kitchen"],
+    roles: [
+      "super_admin",
+      "admin_pusat",
+      "area_manager",
+      "branch_admin",
+      "central_kitchen",
+      "auditor",
+    ],
     items: [
-      { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, roles: ["super_admin"] },
+      {
+        label: "Dashboard",
+        to: "/dashboard",
+        icon: LayoutDashboard,
+        roles: ["super_admin", "auditor"],
+      },
     ],
   },
   {
@@ -238,21 +251,26 @@ const navGroups: NavGroup[] = [
   },
   {
     label: "Keuangan & Analitik",
-    roles: ["super_admin", "admin_pusat"],
+    roles: ["super_admin", "admin_pusat", "auditor"],
     items: [
       {
         label: "Keuangan & Rekonsiliasi",
         to: "/finance",
         icon: DollarSign,
-        roles: ["super_admin", "admin_pusat"],
+        roles: ["super_admin", "admin_pusat", "auditor"],
       },
-      { label: "Dashboard Analitik", to: "/analytics", icon: BarChart3, roles: ["super_admin"] },
+      {
+        label: "Dashboard Analitik",
+        to: "/analytics",
+        icon: BarChart3,
+        roles: ["super_admin", "auditor"],
+      },
 
       {
         label: "Data Penjualan",
         to: "/data-penjualan",
         icon: BarChart3,
-        roles: ["super_admin", "admin_pusat"],
+        roles: ["super_admin", "admin_pusat", "auditor"],
       },
       {
         label: "Audit Inventory",

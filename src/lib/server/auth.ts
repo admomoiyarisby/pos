@@ -10,7 +10,8 @@ export type UserRole =
   | "admin_pusat"
   | "area_manager"
   | "branch_admin"
-  | "central_kitchen";
+  | "central_kitchen"
+  | "auditor";
 
 export interface AppUser {
   id: string;
@@ -29,6 +30,7 @@ const validRoles: UserRole[] = [
   "area_manager",
   "branch_admin",
   "central_kitchen",
+  "auditor",
 ];
 
 function parseUser(baUser: {

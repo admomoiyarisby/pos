@@ -26,6 +26,7 @@ export const USER_ROLE_VALUES = [
   "area_manager",
   "branch_admin",
   "central_kitchen",
+  "auditor",
 ] as const;
 
 export const userRoleEnum = pgEnum("user_role", USER_ROLE_VALUES);
