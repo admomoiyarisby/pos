@@ -16,6 +16,8 @@ function IndexComponent() {
       return <Navigate to="/pos" />;
     case "super_admin":
       return <Navigate to="/dashboard" />;
+    case "auditor":
+      return <Navigate to="/dashboard" />;
     case "admin_pusat":
       return (
         <Navigate

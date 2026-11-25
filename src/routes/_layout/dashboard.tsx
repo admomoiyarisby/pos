@@ -241,7 +241,7 @@ function DashboardPage() {
   };
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager"]}>
+    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "area_manager", "auditor"]}>
       <div className="space-y-6">
         <DashboardFilterBar
           period={range.period}

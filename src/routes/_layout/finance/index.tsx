@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useCallback, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "#/lib/auth-context";
 import RoleGuard from "#/components/RoleGuard";
 import { ShiftCashDetail } from "#/components/pos/ShiftCashDetail";
 import { IngredientUsageSection } from "#/components/finance/IngredientUsageSection";
@@ -469,6 +470,8 @@ function RealInputCell({
   current: number | null;
 }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const canEdit = user?.role !== "auditor";
   // Untouched cells start null (nothing to save) even though the input shows
   // "Rp 0": with the POS fallback (ADR 0028) an accidental save of 0 would
   // otherwise mean "this channel earned nothing" and wipe the fallback omzet.
@@ -489,36 +492,44 @@ function RealInputCell({
 
   return (
     <div className="flex items-center justify-end gap-1">
-      <MoneyInput
-        defaultValue={current ?? 0}
-        onChange={setAmount}
-        className="h-8 min-w-0 flex-1 px-2 text-right text-xs"
-        aria-label={`Omzet Real ${channelLabelOf(channel)} ${tanggal}`}
-      />
-      <button
-        type="button"
-        disabled={saveMutation.isPending || amount === null || amount === current}
-        onClick={() => {
-          if (!branchId) {
-            toast.error("Pilih cabang terlebih dahulu untuk menginput Omzet Real");
-            return;
-          }
-          if (amount === null) return;
-          void saveMutation.mutateAsync({
-            data: {
-              branchId,
-              date: tanggal,
-              channel: z.enum(ORDER_CHANNEL_VALUES).parse(channel),
-              amount,
-            },
-          });
-        }}
-        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-40"
-        title="Simpan Omzet Real"
-        aria-label={`Simpan Omzet Real ${channelLabelOf(channel)} ${tanggal}`}
-      >
-        <Check className="h-4 w-4" />
-      </button>
+      {canEdit ? (
+        <>
+          <MoneyInput
+            defaultValue={current ?? 0}
+            onChange={setAmount}
+            className="h-8 min-w-0 flex-1 px-2 text-right text-xs"
+            aria-label={`Omzet Real ${channelLabelOf(channel)} ${tanggal}`}
+          />
+          <button
+            type="button"
+            disabled={saveMutation.isPending || amount === null || amount === current}
+            onClick={() => {
+              if (!branchId) {
+                toast.error("Pilih cabang terlebih dahulu untuk menginput Omzet Real");
+                return;
+              }
+              if (amount === null) return;
+              void saveMutation.mutateAsync({
+                data: {
+                  branchId,
+                  date: tanggal,
+                  channel: z.enum(ORDER_CHANNEL_VALUES).parse(channel),
+                  amount,
+                },
+              });
+            }}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-40"
+            title="Simpan Omzet Real"
+            aria-label={`Simpan Omzet Real ${channelLabelOf(channel)} ${tanggal}`}
+          >
+            <Check className="h-4 w-4" />
+          </button>
+        </>
+      ) : (
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {current == null ? "—" : formatRp(current)}
+        </span>
+      )}
     </div>
   );
 }
@@ -565,6 +576,8 @@ function AdjustmentCell({
   current: number;
 }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const canEdit = user?.role !== "auditor";
   const [amount, setAmount] = useState<number | null>(current);
   const saveMutation = useMutation({
     mutationFn: upsertDailyOverride,
@@ -580,31 +593,37 @@ function AdjustmentCell({
 
   return (
     <div className="flex items-center justify-end gap-1">
-      <SignedAmountInput
-        defaultValue={current}
-        onChange={setAmount}
-        ariaLabel={`Penyesuaian omzet ${tanggal}`}
-        className="h-8 w-32 rounded-md border border-input bg-background px-2 text-right text-xs tabular-nums"
-      />
-      <button
-        type="button"
-        disabled={saveMutation.isPending || amount === null || amount === current}
-        onClick={() => {
-          if (!branchId) {
-            toast.error("Pilih cabang terlebih dahulu untuk mengubah penyesuaian");
-            return;
-          }
-          if (amount === null) return;
-          void saveMutation.mutateAsync({
-            data: { branchId, date: tanggal, field: "omzet_adjustment", value: amount },
-          });
-        }}
-        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-40"
-        title="Simpan penyesuaian harian"
-        aria-label={`Simpan penyesuaian omzet ${tanggal}`}
-      >
-        <Check className="h-4 w-4" />
-      </button>
+      {canEdit ? (
+        <>
+          <SignedAmountInput
+            defaultValue={current}
+            onChange={setAmount}
+            ariaLabel={`Penyesuaian omzet ${tanggal}`}
+            className="h-8 w-32 rounded-md border border-input bg-background px-2 text-right text-xs tabular-nums"
+          />
+          <button
+            type="button"
+            disabled={saveMutation.isPending || amount === null || amount === current}
+            onClick={() => {
+              if (!branchId) {
+                toast.error("Pilih cabang terlebih dahulu untuk mengubah penyesuaian");
+                return;
+              }
+              if (amount === null) return;
+              void saveMutation.mutateAsync({
+                data: { branchId, date: tanggal, field: "omzet_adjustment", value: amount },
+              });
+            }}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-40"
+            title="Simpan penyesuaian harian"
+            aria-label={`Simpan penyesuaian omzet ${tanggal}`}
+          >
+            <Check className="h-4 w-4" />
+          </button>
+        </>
+      ) : (
+        <span className="text-xs tabular-nums text-muted-foreground">{formatRp(current)}</span>
+      )}
     </div>
   );
 }
@@ -1332,6 +1351,10 @@ function VarianceBadge({ variance }: { variance: number }) {
 
 function FinancePage() {
   const { branches, daily: initialDaily } = Route.useLoaderData();
+  const { user } = useAuth();
+  // Auditors hold read grants only; every write below is also refused by the
+  // server, but rendering the controls would have them fail on click.
+  const canEdit = user?.role !== "auditor";
   const [modalOpen, setModalOpen] = useState(false);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [revenueType, setRevenueType] = useState<"manual" | "channel">("manual");
@@ -1600,25 +1623,29 @@ function FinancePage() {
   usePageTitle("Keuangan", "Laporan P&L harian, mingguan, bulanan");
 
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
+    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "auditor"]}>
       {/* Top bar — one full-width primary action on phones; right-aligned row
           from sm. The wrapper collapses into the flex row at sm (sm:contents). */}
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
-        <button
-          type="button"
-          onClick={() => setModalOpen(true)}
-          className="h-11 rounded-md bg-primary text-primary-foreground text-sm font-medium transition-colors hover:bg-primary/90 active:scale-[0.99] sm:h-9 sm:px-4"
-        >
-          Input Revenue
-        </button>
-        <div className="grid grid-cols-2 gap-2 sm:contents">
+        {canEdit && (
           <button
             type="button"
-            onClick={() => setExpenseModalOpen(true)}
-            className="h-11 rounded-md border text-sm font-medium transition-colors hover:bg-muted active:scale-[0.99] sm:h-9 sm:px-4"
+            onClick={() => setModalOpen(true)}
+            className="h-11 rounded-md bg-primary text-primary-foreground text-sm font-medium transition-colors hover:bg-primary/90 active:scale-[0.99] sm:h-9 sm:px-4"
           >
-            Input Pengeluaran
+            Input Revenue
           </button>
+        )}
+        <div className="grid grid-cols-2 gap-2 sm:contents">
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setExpenseModalOpen(true)}
+              className="h-11 rounded-md border text-sm font-medium transition-colors hover:bg-muted active:scale-[0.99] sm:h-9 sm:px-4"
+            >
+              Input Pengeluaran
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {

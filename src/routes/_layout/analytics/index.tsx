@@ -347,7 +347,7 @@ function AnalyticsPage() {
   }
 
   return (
-    <RoleGuard allowedRoles={["super_admin"]}>
+    <RoleGuard allowedRoles={["super_admin", "auditor"]}>
       <div className="space-y-6">
         <DashboardFilterBar
           period={range.period}

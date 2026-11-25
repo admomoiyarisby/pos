@@ -69,6 +69,9 @@ function DataPenjualanPage() {
   usePageTitle("Data Penjualan", "Kelola data penjualan semua channel");
 
   const { user } = useAuth();
+  // Auditors hold read grants only. Their write entry points are hidden here and
+  // refused by the server, so the two can never disagree about "read-only".
+  const canEdit = user?.role === "super_admin" || user?.role === "admin_pusat";
   const queryClient = useQueryClient();
 
   // URL-persisted filters (date range/branch/channel/search) + page so the
@@ -141,6 +144,10 @@ function DataPenjualanPage() {
   const { data: recipes } = useQuery({
     queryKey: ["recipes-hpp"],
     queryFn: () => getRecipesWithHpp({ data: {} }),
+    // The recipe list feeds the add/edit form (and carries HPP); a read-only
+    // auditor never opens it, so it is not fetched — and the server would
+    // refuse it anyway.
+    enabled: canEdit,
   });
 
   // Filter by search
@@ -190,10 +197,8 @@ function DataPenjualanPage() {
     }
   }, [deletingOrder, deleteMutation]);
 
-  const canEdit = user?.role === "super_admin" || user?.role === "admin_pusat";
-
   return (
-    <RoleGuard allowedRoles={["super_admin", "admin_pusat"]}>
+    <RoleGuard allowedRoles={["super_admin", "admin_pusat", "auditor"]}>
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3 mb-6 p-4 rounded-lg border">
         <div className="w-full lg:w-auto space-y-1">
